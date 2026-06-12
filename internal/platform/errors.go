@@ -54,7 +54,13 @@ type Error struct {
 	// before the failure. Err keeps the full chain for logs; Hint is
 	// what an API client needs to act on the side effect.
 	Hint string
-	Err  error
+	// Details carries stable, client-safe extension members merged
+	// into the problem details map (e.g. revocation: "failed",
+	// review_id: "31") so clients can branch on side-effect outcomes
+	// without parsing Hint prose. Keys must not collide with the
+	// reserved problem members (reason, provider, platformHost).
+	Details map[string]string
+	Err     error
 }
 
 func (e *Error) Error() string {

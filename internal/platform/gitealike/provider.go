@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"go.kenn.io/middleman/internal/platform"
@@ -586,7 +587,7 @@ func (p *Provider) ApproveMergeRequest(
 			return platform.MergeRequestEvent{}, p.mapError(err)
 		}
 		if current.Head.SHA != "" && current.Head.SHA != expectedHeadSHA {
-			return platform.MergeRequestEvent{}, p.staleApprovalError(nil)
+			return platform.MergeRequestEvent{}, p.staleApprovalError(nil, nil)
 		}
 	}
 	review, err := transport.CreatePullReview(ctx, ref, number, ReviewOptions{
@@ -625,19 +626,26 @@ func (p *Provider) revokeApprovalIfHeadMoved(
 	if current.Head.SHA == "" || current.Head.SHA == expectedHeadSHA {
 		return nil
 	}
+	reviewIDValue := strconv.FormatInt(reviewID, 10)
 	if deleteErr := transport.DeletePullReview(ctx, ref, number, reviewID); deleteErr != nil {
-		return p.staleApprovalError(fmt.Errorf(
-			"approval %d may stand on a moved head: deletion failed: %w",
-			reviewID, deleteErr,
-		))
+		return p.staleApprovalError(
+			fmt.Errorf(
+				"approval %d may stand on a moved head: deletion failed: %w",
+				reviewID, deleteErr,
+			),
+			map[string]string{"revocation": "failed", "review_id": reviewIDValue},
+		)
 	}
-	return p.staleApprovalError(fmt.Errorf(
-		"head moved while the approval submitted; approval %d was deleted",
-		reviewID,
-	))
+	return p.staleApprovalError(
+		fmt.Errorf(
+			"head moved while the approval submitted; approval %d was deleted",
+			reviewID,
+		),
+		map[string]string{"revocation": "succeeded", "review_id": reviewIDValue},
+	)
 }
 
-func (p *Provider) staleApprovalError(err error) error {
+func (p *Provider) staleApprovalError(err error, details map[string]string) error {
 	hint := ""
 	if err != nil {
 		hint = err.Error()
@@ -648,6 +656,7 @@ func (p *Provider) staleApprovalError(err error) error {
 		PlatformHost: p.host,
 		Capability:   "approve_merge_request",
 		Hint:         hint,
+		Details:      details,
 		Err:          err,
 	}
 }
@@ -859,23 +868,34 @@ func (p *Provider) mutationTransport(capability string) (MutationTransport, erro
 	return transport, nil
 }
 
-// headMismatchPhrase is the message Gitea and Forgejo return when a
-// merge's head_commit_id no longer matches the PR head (the
-// IsErrSHADoesNotMatch branch of their merge endpoints). Both SDKs
-// surface the response body's message field as the error text.
-const headMismatchPhrase = "head target does not match"
+// headMismatchPhrases are the messages the Gitea and Forgejo merge
+// endpoints return when head_commit_id no longer matches the PR head
+// (the IsErrSHADoesNotMatch branch in routers/api/v1/repo/pull.go).
+// Current Gitea and Forgejo lines say "head out of date"; older Gitea
+// releases said "head target does not match". Validated live against
+// the container fixtures.
+var headMismatchPhrases = []string{
+	"head out of date",
+	"head target does not match",
+}
 
 // isHeadMismatchConflict reports whether a transport error is the
 // Gitea/Forgejo 409 returned when head_commit_id no longer matches the
 // PR head. The merge endpoints also answer 409 for ordinary merge
 // conflicts and out-of-date pushes, so the status alone is not enough:
-// only the head-mismatch message classifies as stale.
+// only the head-mismatch messages classify as stale.
 func isHeadMismatchConflict(err error) bool {
 	var httpErr *HTTPError
 	if !errors.As(err, &httpErr) || httpErr == nil || httpErr.StatusCode != 409 {
 		return false
 	}
-	return strings.Contains(strings.ToLower(httpErr.Error()), headMismatchPhrase)
+	text := strings.ToLower(httpErr.Error())
+	for _, phrase := range headMismatchPhrases {
+		if strings.Contains(text, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Provider) mapError(err error) error {

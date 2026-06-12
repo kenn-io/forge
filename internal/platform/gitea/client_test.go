@@ -597,3 +597,45 @@ func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {
 	require.Error(err)
 	assert.ErrorIs(err, platform.ErrNotFound)
 }
+
+// The Gitea SDK reports any non-2xx merge response as merged=false
+// with a nil error and an unread body. The client must restore the
+// provider's status and message so a rejected merge fails (and a head
+// mismatch classifies as stale) instead of recording a merge that
+// never happened.
+func TestClientMergeRejectionSurfacesProviderStatusAndMessage(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	message := "head out of date"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos/owner/repo/pulls/7/merge" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{"message": message}))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	ref := platform.RepoRef{Owner: "owner", Name: "repo"}
+
+	_, err = client.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "merge", "reviewed-head")
+	require.Error(err, "a rejected merge must not report success")
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code,
+		"the live head-mismatch message must classify as stale")
+
+	message = "merge conflict detected"
+	_, err = client.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "merge", "reviewed-head")
+	require.Error(err)
+	require.NotErrorIs(err, platform.ErrStaleState,
+		"an unrelated 409 must stay a generic conflict")
+	var httpErr *gitealike.HTTPError
+	require.ErrorAs(err, &httpErr)
+	assert.Equal(http.StatusConflict, httpErr.StatusCode)
+	assert.Contains(httpErr.Error(), "merge conflict detected")
+}

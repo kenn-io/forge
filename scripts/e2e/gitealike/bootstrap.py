@@ -106,6 +106,11 @@ class Fixture:
         cmd = [
             "docker",
             "exec",
+            # Gitea and Forgejo refuse to run CLI commands as root, and
+            # docker exec defaults to root; 1000:1000 matches USER_UID /
+            # USER_GID in the compose fixtures.
+            "--user",
+            "1000:1000",
             self.container_id,
             self.binary,
             "admin",

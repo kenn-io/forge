@@ -553,11 +553,15 @@ func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 	assert.Equal("reviewed-head", transport.mergeOpts.ExpectedHeadSHA,
 		"merge must send the reviewed head as head_commit_id")
 
-	transport.mergeErr = &HTTPError{StatusCode: 409, Message: "Head target does not match. Please try again."}
-	_, err = provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	// Current Gitea/Forgejo reject with "head out of date"; older Gitea
+	// releases said "head target does not match". Both must classify.
+	for _, message := range []string{"head out of date", "Head target does not match. Please try again."} {
+		transport.mergeErr = &HTTPError{StatusCode: 409, Message: message}
+		_, err = provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+		var platformErr *platform.Error
+		require.ErrorAs(err, &platformErr)
+		assert.Equal(platform.ErrCodeStaleState, platformErr.Code, message)
+	}
 
 	// The merge endpoint answers 409 for ordinary merge conflicts too;
 	// those must stay generic so the UI shows the provider message

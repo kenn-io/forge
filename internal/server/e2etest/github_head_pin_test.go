@@ -330,6 +330,9 @@ func TestGitHubApproveFailedDismissalSurfacesContext(t *testing.T) {
 	assert.Contains(sideEffect, "dismissal failed",
 		"a standing approval on a moved head must be reported to the client")
 	assert.Contains(problem.Detail, "dismissal failed")
+	assert.Equal("failed", problem.Details["revocation"],
+		"clients must be able to branch on the revocation outcome without parsing prose")
+	assert.Equal("31", problem.Details["review_id"])
 }
 
 func TestGitHubApproveDismissedWhenHeadMovesDuringSubmit(t *testing.T) {
@@ -368,6 +371,8 @@ func TestGitHubApproveDismissedWhenHeadMovesDuringSubmit(t *testing.T) {
 	assert.Equal("conflict", code)
 	require.NotNil(details)
 	assert.Equal("stale_state", details["reason"])
+	assert.Equal("succeeded", details["revocation"],
+		"a clean dismissal must be distinguishable from one that left the approval standing")
 	assert.Equal(int64(31), dismissedID.Load(),
 		"the approval that landed on a moved head must be dismissed upstream")
 }

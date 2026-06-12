@@ -14062,6 +14062,167 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	})
 }
 
+// setupGitealikeHeadPinServer boots the HTTP API with real SQLite over a
+// Gitea provider whose PR 7 syncs with head "abc123", for head-pin
+// safety coverage through the real route path.
+func setupGitealikeHeadPinServer(
+	t *testing.T,
+	transport *apiTestGitealikeTransport,
+) *apiclient.Client {
+	t.Helper()
+	require := require.New(t)
+	base := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
+	transport.repo = gitealike.RepositoryDTO{
+		ID:            101,
+		Owner:         gitealike.UserDTO{UserName: "tea"},
+		Name:          "kettle",
+		FullName:      "tea/kettle",
+		HTMLURL:       "https://gitea.test/tea/kettle",
+		CloneURL:      "https://gitea.test/tea/kettle.git",
+		DefaultBranch: "main",
+		Created:       base,
+		Updated:       base,
+	}
+	transport.pulls = []gitealike.PullRequestDTO{{
+		ID:      201,
+		Index:   7,
+		HTMLURL: "https://gitea.test/tea/kettle/pulls/7",
+		Title:   "Add kettle",
+		User:    gitealike.UserDTO{UserName: "alice"},
+		State:   "open",
+		Head:    gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
+		Base:    gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+		Created: base,
+		Updated: base,
+	}}
+
+	provider := gitealike.NewProvider(
+		platform.KindGitea, "gitea.test", transport, gitealike.WithMutations(),
+	)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindGitea,
+			PlatformHost: "gitea.test",
+			Owner:        "tea",
+			Name:         "kettle",
+			RepoPath:     "tea/kettle",
+		}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	syncer.RunOnce(t.Context())
+	return setupTestClient(t, srv)
+}
+
+func decodeGitealikeConflict(t *testing.T, body []byte) (string, map[string]any) {
+	t.Helper()
+	var problem struct {
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(t, json.Unmarshal(body, &problem))
+	return problem.Code, problem.Details
+}
+
+func TestAPIGitealikePinnedMergeHeadMismatchIsStale(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	transport := &apiTestGitealikeTransport{
+		mergeErr: &gitealike.HTTPError{
+			StatusCode: 409,
+			Message:    "head out of date",
+		},
+	}
+	client := setupGitealikeHeadPinServer(t, transport)
+
+	pin := "abc123"
+	resp, err := client.HTTP.MergePullOnHostWithResponse(
+		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.MergePullOnHostJSONRequestBody{
+			Method:          "squash",
+			CommitTitle:     "t",
+			CommitMessage:   "m",
+			ExpectedHeadSha: &pin,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode())
+	code, details := decodeGitealikeConflict(t, resp.Body)
+	assert.Equal("conflict", code)
+	require.NotNil(details)
+	assert.Equal("stale_state", details["reason"],
+		"the provider's head-mismatch rejection must surface as stale_state")
+	assert.Equal("abc123", transport.lastMergeOpts.ExpectedHeadSHA,
+		"the reviewed head must reach the provider as head_commit_id")
+}
+
+func TestAPIGitealikePinnedMergeGenericConflictStaysConflict(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	transport := &apiTestGitealikeTransport{
+		mergeErr: &gitealike.HTTPError{
+			StatusCode: 409,
+			Message:    "merge conflict detected",
+		},
+	}
+	client := setupGitealikeHeadPinServer(t, transport)
+
+	pin := "abc123"
+	resp, err := client.HTTP.MergePullOnHostWithResponse(
+		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.MergePullOnHostJSONRequestBody{
+			Method:          "squash",
+			CommitTitle:     "t",
+			CommitMessage:   "m",
+			ExpectedHeadSha: &pin,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode())
+	code, details := decodeGitealikeConflict(t, resp.Body)
+	assert.Equal("conflict", code)
+	require.NotNil(details)
+	assert.Equal("conflict", details["reason"],
+		"an unrelated 409 must not present as a stale-head re-review flow")
+}
+
+func TestAPIGitealikeApproveDeletesReviewWhenHeadMoves(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	transport := &apiTestGitealikeTransport{}
+	client := setupGitealikeHeadPinServer(t, transport)
+
+	// Pre-check sees the reviewed head; the post-submit check sees a
+	// push that landed while the review submitted.
+	transport.headOverrides = []string{"abc123", "moved-head"}
+
+	pin := "abc123"
+	resp, err := client.HTTP.ApprovePullOnHostWithResponse(
+		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.ApprovePullOnHostJSONRequestBody{
+			Body:            "lgtm",
+			ExpectedHeadSha: &pin,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode())
+	code, details := decodeGitealikeConflict(t, resp.Body)
+	assert.Equal("conflict", code)
+	require.NotNil(details)
+	assert.Equal("stale_state", details["reason"])
+	assert.Equal("succeeded", details["revocation"],
+		"the deleted approval must be reported as revoked")
+	assert.Equal("980", details["review_id"])
+	assert.Contains(transport.mutationCalls, "delete_review:7:980",
+		"the approval that landed on a moved head must be deleted upstream")
+}
+
 func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -14512,6 +14673,12 @@ type apiTestGitealikeTransport struct {
 	mergeHeadPins  []string
 
 	moveHeadAfterReview string
+	lastMergeOpts       gitealike.MergeOptions
+	// headOverrides, when non-empty, replaces the head SHA returned by
+	// successive GetPullRequest calls (the final entry repeats),
+	// simulating a push racing an in-flight mutation.
+	headOverrides []string
+	headCalls     int
 }
 
 func (t *apiTestGitealikeTransport) GetRepository(
@@ -14553,6 +14720,14 @@ func (t *apiTestGitealikeTransport) GetPullRequest(
 ) (gitealike.PullRequestDTO, error) {
 	for _, pr := range t.pulls {
 		if pr.Index == number {
+			if len(t.headOverrides) > 0 {
+				i := t.headCalls
+				if i >= len(t.headOverrides) {
+					i = len(t.headOverrides) - 1
+				}
+				t.headCalls++
+				pr.Head.SHA = t.headOverrides[i]
+			}
 			return pr, nil
 		}
 	}
@@ -14799,6 +14974,7 @@ func (t *apiTestGitealikeTransport) MergePullRequest(
 	}
 	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("merge:%d:%s", number, opts.Method))
 	t.mergeHeadPins = append(t.mergeHeadPins, opts.ExpectedHeadSHA)
+	t.lastMergeOpts = opts
 	if t.mergeErr != nil {
 		return gitealike.MergeResultDTO{}, t.mergeErr
 	}

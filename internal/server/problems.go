@@ -526,10 +526,17 @@ func mapPlatformError(err error) huma.StatusError {
 		detail := "target changed since it was reviewed; refresh and retry"
 		// Surface provider side-effect context — an approval that
 		// could not be revoked, a review note already posted — instead
-		// of hiding it behind the generic re-review prompt.
+		// of hiding it behind the generic re-review prompt. Stable
+		// side-effect members (revocation, review_id) merge alongside
+		// so clients can branch without parsing prose.
 		if pe.Hint != "" {
 			d["context"] = pe.Hint
 			detail += "; " + pe.Hint
+		}
+		for key, value := range pe.Details {
+			if _, reserved := d[key]; !reserved {
+				d[key] = value
+			}
 		}
 		return problemConflict(CodeConflict, detail, d)
 	case platform.ErrCodeConflict:

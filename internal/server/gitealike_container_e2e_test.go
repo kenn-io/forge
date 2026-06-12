@@ -195,6 +195,29 @@ func assertGiteaLikeContainerSync(
 	require.NotNil(summaries[0].Overview.LatestRelease)
 	assert.Equal(manifest.ReleaseTag, summaries[0].Overview.LatestRelease.TagName)
 	assert.NotEmpty(summaries[0].Overview.Releases)
+
+	// Live validation of the pinned-merge rejection contract:
+	// isHeadMismatchConflict matches the provider's "head target does
+	// not match" message text, so probe the real API with a bogus pin
+	// and assert the rejection still classifies as stale_state. The
+	// probe must not merge the fixture PR.
+	merger, ok := client.(platform.MergeMutator)
+	require.True(ok, "container client must support merge mutations")
+	ref := platform.RepoRef{Owner: manifest.Owner, Name: manifest.Name}
+	_, mergeErr := merger.MergeMergeRequest(
+		ctx, ref, manifest.PullRequestIndex,
+		"stale pin probe", "must not merge", "merge",
+		"0000000000000000000000000000000000000000",
+	)
+	require.Error(mergeErr, "a merge pinned to a bogus head must be rejected")
+	require.ErrorIs(mergeErr, platform.ErrStaleState,
+		"the live head-mismatch rejection must classify as stale_state")
+	require.NoError(syncer.SyncMROnProvider(ctx, kind, manifest.Host, manifest.Owner, manifest.Name, manifest.PullRequestIndex))
+	mrAfterProbe, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoRow.ID, manifest.PullRequestIndex)
+	require.NoError(err)
+	require.NotNil(mrAfterProbe)
+	assert.Equal(db.MergeRequestStateOpen, mrAfterProbe.State,
+		"the rejected probe must leave the fixture PR open")
 }
 
 func runGiteaLikeContainerFixture(

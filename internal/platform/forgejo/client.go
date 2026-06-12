@@ -88,6 +88,11 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 		Base:  httpTransport,
 		Cache: mergeability,
 	}
+	mergeRejections := gitealike.NewMergeRejectionCapture()
+	httpTransport = &gitealike.MergeRejectionCaptureTransport{
+		Base:    httpTransport,
+		Capture: mergeRejections,
+	}
 	authRT := tokenauth.AuthTransport{
 		Source:              source,
 		Base:                httpTransport,
@@ -108,6 +113,7 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 		api:                api,
 		budget:             opts.budget,
 		mergeability:       mergeability,
+		mergeRejections:    mergeRejections,
 		requestContextLock: make(chan struct{}, 1),
 	}
 	return &Client{
@@ -151,6 +157,7 @@ type transport struct {
 	api                *forgejosdk.Client
 	budget             *ghsync.SyncBudget
 	mergeability       *gitealike.MergeableCache
+	mergeRejections    *gitealike.MergeRejectionCapture
 	requestContextLock chan struct{}
 }
 

@@ -289,6 +289,7 @@ func (t *transport) MergePullRequest(
 ) (gitealike.MergeResultDTO, error) {
 	var merged bool
 	var resp *giteasdk.Response
+	t.mergeRejections.Take() // drop any stale capture before this merge
 	err := t.withRequestContext(ctx, func() error {
 		var err error
 		merged, resp, err = t.api.MergePullRequest(ref.Owner, ref.Name, int64(number), giteasdk.MergePullRequestOption{
@@ -302,7 +303,25 @@ func (t *transport) MergePullRequest(
 	if err != nil {
 		return gitealike.MergeResultDTO{}, giteaHTTPError(resp, err)
 	}
+	if !merged {
+		// The SDK reports any non-2xx merge response as merged=false
+		// with a nil error; the captured rejection restores the real
+		// status and provider message so the failure classifies
+		// instead of being recorded as a successful merge.
+		return gitealike.MergeResultDTO{}, mergeRejectionError(t.mergeRejections, resp)
+	}
 	return gitealike.MergeResultDTO{Merged: merged}, nil
+}
+
+func mergeRejectionError(capture *gitealike.MergeRejectionCapture, resp *giteasdk.Response) error {
+	if rejection := capture.Take(); rejection != nil {
+		return &gitealike.HTTPError{StatusCode: rejection.StatusCode, Message: rejection.Message}
+	}
+	statusCode := 0
+	if resp != nil && resp.Response != nil {
+		statusCode = resp.StatusCode
+	}
+	return &gitealike.HTTPError{StatusCode: statusCode, Message: "provider did not perform the merge"}
 }
 
 func (t *transport) CreatePullReview(

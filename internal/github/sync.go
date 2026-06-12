@@ -1372,7 +1372,7 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 			return platform.MergeRequestEvent{}, err
 		}
 		if head := current.GetHead().GetSHA(); head != "" && head != expectedHeadSHA {
-			return platform.MergeRequestEvent{}, p.staleApprovalError(nil)
+			return platform.MergeRequestEvent{}, p.staleApprovalError(nil, nil)
 		}
 	}
 	review, err := p.client.CreateReviewWithComments(
@@ -1413,22 +1413,29 @@ func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
 	if head == "" || head == expectedHeadSHA {
 		return nil
 	}
+	reviewID := strconv.FormatInt(review.GetID(), 10)
 	if _, dismissErr := p.client.DismissReview(
 		ctx, ref.Owner, ref.Name, number, review.GetID(),
 		"head moved past the reviewed commit while the approval submitted",
 	); dismissErr != nil {
-		return p.staleApprovalError(fmt.Errorf(
-			"approval %d may stand on a moved head: dismissal failed: %w",
-			review.GetID(), dismissErr,
-		))
+		return p.staleApprovalError(
+			fmt.Errorf(
+				"approval %d may stand on a moved head: dismissal failed: %w",
+				review.GetID(), dismissErr,
+			),
+			map[string]string{"revocation": "failed", "review_id": reviewID},
+		)
 	}
-	return p.staleApprovalError(fmt.Errorf(
-		"head moved while the approval submitted; approval %d was dismissed",
-		review.GetID(),
-	))
+	return p.staleApprovalError(
+		fmt.Errorf(
+			"head moved while the approval submitted; approval %d was dismissed",
+			review.GetID(),
+		),
+		map[string]string{"revocation": "succeeded", "review_id": reviewID},
+	)
 }
 
-func (p gitHubClientProvider) staleApprovalError(err error) error {
+func (p gitHubClientProvider) staleApprovalError(err error, details map[string]string) error {
 	hint := ""
 	if err != nil {
 		hint = err.Error()
@@ -1439,6 +1446,7 @@ func (p gitHubClientProvider) staleApprovalError(err error) error {
 		PlatformHost: p.host,
 		Capability:   "approve_merge_request",
 		Hint:         hint,
+		Details:      details,
 		Err:          err,
 	}
 }
@@ -1586,7 +1594,7 @@ func (p gitHubClientProvider) PublishDiffReviewDraft(
 			return nil, err
 		}
 		if head := current.GetHead().GetSHA(); head != "" && head != headSHA {
-			return nil, p.staleApprovalError(nil)
+			return nil, p.staleApprovalError(nil, nil)
 		}
 	}
 	review, err := p.client.CreateReviewWithComments(

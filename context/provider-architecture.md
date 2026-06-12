@@ -104,22 +104,38 @@ provider-equivalent behavior from the flags alone:
   with different strength for merges and approvals. Merge pins are
   provider-gated wherever the API supports them: GitHub's `sha`,
   GitLab's `sha`, and Gitea/Forgejo's `head_commit_id` all reject a
-  moved head upstream. Gitea/Forgejo answer 409 for unrelated merge
-  conflicts too, so only their distinctive head-mismatch message
-  ("head target does not match") classifies as `stale_state`; any
-  other 409 stays a generic conflict. Approval pins are provider-gated
-  only on GitLab, whose approvals API rejects a mismatched `sha`
-  atomically. GitHub/Gitea/Forgejo review commit ids record rather
-  than gate, so approvals there are pre-checked against the live
-  provider head before submission and verified again after it: if the
-  head moved while the review submitted, the approval is revoked
-  upstream (GitHub review dismissal, Gitea/Forgejo review deletion)
-  and the caller gets `stale_state` — the same reload-and-re-review
-  flow as a pre-check rejection. If revocation itself fails, the
-  typed error says the approval may still stand on the moved head. A
-  failed post-verification read keeps the approval: the pre-check
-  already passed, and failing an approval that exists upstream would
-  invite a duplicate retry.
+  moved head upstream. The Gitea/Forgejo SDKs report any non-2xx merge
+  response as merged-false with a nil error and an unread body, so the
+  transports capture merge rejections at the HTTP layer
+  (`gitealike.MergeRejectionCaptureTransport`) and surface the real
+  status and message — without that, a rejected merge would be
+  recorded as a successful one. Both providers answer 409 for
+  unrelated merge conflicts too, so only their distinctive
+  head-mismatch messages (the `IsErrSHADoesNotMatch` branch of both
+  providers' merge endpoints: "head out of date" on current Gitea and
+  Forgejo, "head target does not match" on older Gitea) classify as
+  `stale_state`; any other 409 stays a generic conflict. If a future
+  provider release changes the phrase, the failure mode is the safe
+  direction — a true head mismatch presents as a generic conflict
+  rather than a false stale — and the container e2e fixtures probe
+  the real rejection shape live. Approval pins are provider-gated only on
+  GitLab, whose approvals API rejects a mismatched `sha` atomically.
+  GitHub/Gitea/Forgejo review commit ids record rather than gate, so
+  approvals there are pre-checked against the live provider head
+  before submission and verified again after it: if the head moved
+  while the review submitted, the approval is revoked upstream
+  (GitHub review dismissal, Gitea/Forgejo review deletion) and the
+  caller gets `stale_state` — the same reload-and-re-review flow as a
+  pre-check rejection. Revocation runs as the same token user who
+  approved and needs that user's write access to stick; if it fails,
+  the typed error says the approval may still stand on the moved
+  head, and the wire response carries `details.revocation`
+  (`succeeded`/`failed`) plus `details.review_id` per
+  `context/error-handling.md` so clients can tell a cleanly revoked
+  approval from one the user must remove manually. A failed
+  post-verification read keeps the approval: the pre-check already
+  passed, and failing an approval that exists upstream would invite a
+  duplicate retry.
   `mutation_head_binding` additionally marks providers where the pin is
   REQUIRED — omitted pins are rejected — and where approval itself is
   provider-gated. The SPA captures the pin when a merge or approval form

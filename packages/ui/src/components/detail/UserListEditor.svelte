@@ -118,6 +118,16 @@
     });
   }
 
+  function onDocumentMousedown(event: MouseEvent): void {
+    // Dismiss on any press outside the chip and panel. Pressing
+    // another editor's chip lands here too, so opening one picker
+    // closes any other before its own toggle runs.
+    if (!open) return;
+    const target = event.target as Node;
+    if (anchorEl?.contains(target) || popoverEl?.contains(target)) return;
+    closePicker();
+  }
+
   async function togglePicker(event?: MouseEvent): Promise<void> {
     if (open) {
       closePicker();
@@ -190,6 +200,8 @@
     };
   });
 </script>
+
+<svelte:document onmousedown={onDocumentMousedown} />
 
 {#if users.length > 0 || canEdit}
   <span class="user-list-editor" bind:this={anchorEl} data-user-list-editor={editorId}>

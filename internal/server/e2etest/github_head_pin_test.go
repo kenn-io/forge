@@ -99,14 +99,23 @@ func githubHeadSequenceFn(
 	}
 }
 
+type conflictProblemBody struct {
+	Code    string         `json:"code"`
+	Detail  string         `json:"detail"`
+	Details map[string]any `json:"details"`
+}
+
 func decodeConflictProblem(t *testing.T, body *json.Decoder) (string, map[string]any) {
 	t.Helper()
-	var problem struct {
-		Code    string         `json:"code"`
-		Details map[string]any `json:"details"`
-	}
-	require.NoError(t, body.Decode(&problem))
+	problem := decodeConflictProblemBody(t, body)
 	return problem.Code, problem.Details
+}
+
+func decodeConflictProblemBody(t *testing.T, body *json.Decoder) conflictProblemBody {
+	t.Helper()
+	var problem conflictProblemBody
+	require.NoError(t, body.Decode(&problem))
+	return problem
 }
 
 func TestGitHubMergePassesReviewedHeadPinToProvider(t *testing.T) {
@@ -221,6 +230,51 @@ func TestGitHubApproveBindsReviewToReviewedHead(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.Equal("reviewed-sha", recordedCommitID.Load(),
 		"the reviewed head must reach the provider review call as commit_id")
+}
+
+// When the approval lands on a moved head and the dismissal itself
+// fails, the 409 must tell the client the approval may still stand —
+// hiding that behind the generic re-review prompt would leave an
+// unreviewed approval in place silently.
+func TestGitHubApproveFailedDismissalSurfacesContext(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mock := &mockGH{
+		getPullRequestFn: githubHeadSequenceFn("reviewed-sha", "new-sha"),
+		createReviewWithCommentsFn: func(
+			_ context.Context, _, _ string, _ int, event, body, _ string,
+			_ []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			id := int64(31)
+			submitted := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequestReview{
+				ID: &id, State: &event, Body: &body, SubmittedAt: &submitted,
+			}, nil
+		},
+		dismissReviewFn: func(
+			_ context.Context, _, _ string, _ int, _ int64, _ string,
+		) (*gh.PullRequestReview, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusForbidden},
+				Message:  "Must have admin rights to dismiss a review",
+			}
+		},
+	}
+	srv, _, _ := setupGitHubHeadPinServer(t, mock)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/approve",
+		json.RawMessage(`{"body":"lgtm","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	problem := decodeConflictProblemBody(t, json.NewDecoder(rr.Body))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
+	sideEffect, _ := problem.Details["context"].(string)
+	assert.Contains(sideEffect, "dismissal failed",
+		"a standing approval on a moved head must be reported to the client")
+	assert.Contains(problem.Detail, "dismissal failed")
 }
 
 func TestGitHubApproveDismissedWhenHeadMovesDuringSubmit(t *testing.T) {

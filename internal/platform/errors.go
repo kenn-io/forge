@@ -48,7 +48,13 @@ type Error struct {
 	TokenEnv     string
 	Field        string
 	ResetAt      *time.Time
-	Err          error
+	// Hint carries client-safe side-effect context that must survive
+	// problem mapping — e.g. an approval that could not be revoked
+	// after the head moved, or a review note that was already posted
+	// before the failure. Err keeps the full chain for logs; Hint is
+	// what an API client needs to act on the side effect.
+	Hint string
+	Err  error
 }
 
 func (e *Error) Error() string {

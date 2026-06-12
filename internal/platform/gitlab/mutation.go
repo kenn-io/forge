@@ -447,6 +447,12 @@ func (c *Client) ApproveMergeRequest(
 	if err != nil {
 		mapped := mapGitLabMutationError("approve_merge_request", expectedHeadSHA, err)
 		if notePosted {
+			// The note side effect must survive problem mapping so the
+			// client knows a retry repeats the comment.
+			var platformErr *platform.Error
+			if errors.As(mapped, &platformErr) {
+				platformErr.Hint = "the review comment was already posted; retrying will repeat it"
+			}
 			return platform.MergeRequestEvent{}, fmt.Errorf(
 				"review comment was posted but the approval failed; retrying will repeat the comment: %w",
 				mapped,

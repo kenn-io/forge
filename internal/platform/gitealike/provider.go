@@ -630,11 +630,16 @@ func (p *Provider) revokeApprovalIfHeadMoved(
 }
 
 func (p *Provider) staleApprovalError(err error) error {
+	hint := ""
+	if err != nil {
+		hint = err.Error()
+	}
 	return &platform.Error{
 		Code:         platform.ErrCodeStaleState,
 		Provider:     p.kind,
 		PlatformHost: p.host,
 		Capability:   "approve_merge_request",
+		Hint:         hint,
 		Err:          err,
 	}
 }

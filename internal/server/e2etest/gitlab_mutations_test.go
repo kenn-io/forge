@@ -173,6 +173,15 @@ func setupGitLabMutationServer(
 				"description": "Updated MR body", "state": "opened"
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7/approve" && r.Method == http.MethodPost:
+			// Magic note marker for tests that need the approval to go
+			// stale only after the note posted (a push landing between
+			// the pre-check and the approvals call).
+			if note, ok := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes"); ok &&
+				strings.Contains(note.Body, "force-stale-after-note") {
+				w.WriteHeader(http.StatusConflict)
+				writeGitLabJSON(w, `{"message": "SHA does not match HEAD of source branch"}`)
+				return
+			}
 			if !strings.Contains(request.Body, `"sha":"head-sha"`) {
 				w.WriteHeader(http.StatusConflict)
 				writeGitLabJSON(w, `{"message": "SHA does not match HEAD of source branch"}`)
@@ -677,6 +686,38 @@ func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 		recorder.findEventually(http.MethodGet, "/api/v4/projects/4242/merge_requests/7"),
 		"stale merge must trigger an MR resync",
 	)
+}
+
+// When the head goes stale only after the approval note posted (a push
+// landing between the pre-check and the sha-bound approvals call), the
+// 409 must tell the client the note side effect survived: a blind retry
+// repeats the comment.
+func TestGitLabMutationStaleApproveAfterNoteSurfacesContext(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, recorder, _ := setupGitLabMutationServer(t)
+
+	rr := doGitLabJSON(t, srv, http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/approve",
+		`{"body":"force-stale-after-note","expected_head_sha":"head-sha"}`,
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem struct {
+		Code    string         `json:"code"`
+		Detail  string         `json:"detail"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
+	assert.Equal("the review comment was already posted; retrying will repeat it",
+		problem.Details["context"],
+		"the note side effect must survive problem mapping")
+	assert.Contains(problem.Detail, "retrying will repeat it")
+
+	_, noted := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
+	assert.True(noted, "this scenario posts the note before the approval fails")
 }
 
 // A body-less stale approval has no note to protect, so it relies solely

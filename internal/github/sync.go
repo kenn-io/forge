@@ -1283,11 +1283,16 @@ func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
 }
 
 func (p gitHubClientProvider) staleApprovalError(err error) error {
+	hint := ""
+	if err != nil {
+		hint = err.Error()
+	}
 	return &platform.Error{
 		Code:         platform.ErrCodeStaleState,
 		Provider:     platform.KindGitHub,
 		PlatformHost: p.host,
 		Capability:   "approve_merge_request",
+		Hint:         hint,
 		Err:          err,
 	}
 }

@@ -122,6 +122,15 @@ func (c *Client) mutateMergeRequestReviewers(
 		return nil, mapGitLabError("reviewer_mutation", err)
 	}
 	current := basicUsernames(mr.Reviewers)
+	// The merge request already carries the IDs of its current
+	// reviewers; seed the cache with them so retained reviewers never
+	// depend on /users search, which may not return every user the
+	// caller can already see on the merge request.
+	for _, reviewer := range mr.Reviewers {
+		if reviewer != nil && reviewer.Username != "" {
+			c.cacheUserID(reviewer.Username, reviewer.ID)
+		}
+	}
 	next := apply(current)
 	if slices.Equal(next, current) {
 		return current, nil
@@ -158,6 +167,19 @@ func (c *Client) resolveUserIDs(ctx context.Context, usernames []string) ([]int6
 	return ids, nil
 }
 
+func (c *Client) cacheUserID(username string, id int64) {
+	key := strings.ToLower(strings.TrimSpace(username))
+	if key == "" || id == 0 {
+		return
+	}
+	c.userIDMu.Lock()
+	if c.userIDs == nil {
+		c.userIDs = make(map[string]int64)
+	}
+	c.userIDs[key] = id
+	c.userIDMu.Unlock()
+}
+
 func (c *Client) lookupUserID(ctx context.Context, username string) (int64, error) {
 	key := strings.ToLower(strings.TrimSpace(username))
 	c.userIDMu.Lock()
@@ -178,12 +200,7 @@ func (c *Client) lookupUserID(ctx context.Context, username string) (int64, erro
 		if user == nil || !strings.EqualFold(user.Username, username) {
 			continue
 		}
-		c.userIDMu.Lock()
-		if c.userIDs == nil {
-			c.userIDs = make(map[string]int64)
-		}
-		c.userIDs[key] = user.ID
-		c.userIDMu.Unlock()
+		c.cacheUserID(user.Username, user.ID)
 		return user.ID, nil
 	}
 	return 0, &platform.Error{

@@ -103,8 +103,9 @@ func TestRequestAndRemoveMergeRequestReviewersDiffAgainstCurrentSet(t *testing.T
 			switch r.URL.Query().Get("username") {
 			case "alice":
 				writeJSON(w, `[{"id": 5, "username": "alice"}]`)
-			case "carol":
-				writeJSON(w, `[{"id": 9, "username": "carol"}]`)
+			// carol is deliberately invisible to /users search: her ID
+			// must come from the merge request's own reviewer list, so
+			// retaining an existing reviewer never depends on search.
 			default:
 				writeJSON(w, `[]`)
 			}

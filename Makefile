@@ -95,9 +95,9 @@ frontend-dev-bun: frontend-deps
 
 # Run TypeScript/Svelte lint and type checks
 frontend-check: frontend-deps
-	NODE_OPTIONS=--max-old-space-size=256 ./node_modules/.bin/vp check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern
-	cd frontend && NODE_OPTIONS=--max-old-space-size=1024 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
-	cd packages/ui && NODE_OPTIONS=--max-old-space-size=512 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+	NODE_OPTIONS=--max-old-space-size=256 node node_modules/vite-plus/bin/vp check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern
+	cd frontend && NODE_OPTIONS=--max-old-space-size=1024 node node_modules/svelte-check/bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+	cd packages/ui && NODE_OPTIONS=--max-old-space-size=512 node node_modules/svelte-check/bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check:

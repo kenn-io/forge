@@ -1,7 +1,33 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffLineAnnotation, FileDiffOptions } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
+
+type GlobalWithCSSStyleSheet = {
+  CSSStyleSheet?: {
+    prototype: CSSStyleSheet & { replaceSync?: (text: string) => void };
+  };
+};
+
+let originalReplaceSync: unknown;
+
+beforeAll(() => {
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype.replaceSync;
+  if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
+    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
+  }
+});
+
+afterAll(() => {
+  if (!(globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) return;
+  if (originalReplaceSync) {
+    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync = originalReplaceSync as (
+      text: string,
+    ) => void;
+  } else {
+    delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync;
+  }
+});
 
 const pierre = (() => {
   const counts = {
@@ -108,12 +134,16 @@ const pierre = (() => {
   };
 })();
 
-vi.doMock("@pierre/diffs", () => ({
-  FileDiff: pierre.FileDiff,
-  parsePatchFiles: pierre.parsePatchFiles,
-  processFile: pierre.processFile,
-  VirtualizedFileDiff: pierre.VirtualizedFileDiff,
-}));
+vi.doMock("@pierre/diffs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@pierre/diffs")>();
+  return {
+    ...actual,
+    FileDiff: pierre.FileDiff,
+    parsePatchFiles: pierre.parsePatchFiles,
+    processFile: pierre.processFile,
+    VirtualizedFileDiff: pierre.VirtualizedFileDiff,
+  };
+});
 
 function makeFile(): DiffFile {
   return {

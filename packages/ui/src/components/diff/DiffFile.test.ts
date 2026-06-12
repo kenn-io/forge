@@ -864,11 +864,11 @@ describe("DiffFile", () => {
     newText[77] = "new late";
 
     const file = makeFile({
-      path: "src/context.ts",
-      old_path: "src/context.ts",
-      patch: `diff --git a/src/context.ts b/src/context.ts
---- a/src/context.ts
-+++ b/src/context.ts
+      path: "src/context.txt",
+      old_path: "src/context.txt",
+      patch: `diff --git a/src/context.txt b/src/context.txt
+--- a/src/context.txt
++++ b/src/context.txt
 @@ -1,3 +1,3 @@
  shared 1
 -old early
@@ -953,8 +953,8 @@ describe("DiffFile", () => {
       expect(expandedLines.every((line) => line.length > 0)).toBe(true);
       expect(expandedLines.some((line) => line.includes("shared 10"))).toBe(true);
     });
-    expect(loadFilePreview).toHaveBeenCalledWith(expect.any(String), "n", 1, "src/context.ts", "old");
-    expect(loadFilePreview).toHaveBeenCalledWith(expect.any(String), "n", 1, "src/context.ts", "new");
+    expect(loadFilePreview).toHaveBeenCalledWith(expect.any(String), "n", 1, "src/context.txt", "old");
+    expect(loadFilePreview).toHaveBeenCalledWith(expect.any(String), "n", 1, "src/context.txt", "new");
   });
 
   it("continues expanding context after full file text is loaded", async () => {
@@ -966,11 +966,11 @@ describe("DiffFile", () => {
     newText[77] = "new late";
 
     const file = makeFile({
-      path: "src/context.ts",
-      old_path: "src/context.ts",
-      patch: `diff --git a/src/context.ts b/src/context.ts
---- a/src/context.ts
-+++ b/src/context.ts
+      path: "src/context.txt",
+      old_path: "src/context.txt",
+      patch: `diff --git a/src/context.txt b/src/context.txt
+--- a/src/context.txt
++++ b/src/context.txt
 @@ -1,3 +1,3 @@
  shared 1
 -old early

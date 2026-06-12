@@ -1,15 +1,23 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
@@ -32,7 +40,7 @@ func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, secondRR.Code)
 }
 
-func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
+func TestStartupHandlerServesStartupPageWhileAPIUnavailable(t *testing.T) {
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
@@ -61,8 +69,9 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 
 	assert := Assert.New(t)
 	assert.Equal(http.StatusOK, rootRR.Code)
-	assert.Contains(rootRR.Body.String(), `window.__BASE_PATH__="/"`)
-	assert.Contains(rootRR.Body.String(), "app")
+	assert.Contains(rootRR.Body.String(), "middleman is starting")
+	assert.Contains(rootRR.Body.String(), `const middlemanReadyPath="/healthz";`)
+	assert.NotContains(rootRR.Body.String(), `<body>app</body>`)
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
 	apiReq.Host = "127.0.0.1:8091"
@@ -138,8 +147,9 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 
 	assert := Assert.New(t)
 	assert.Equal(http.StatusOK, rr.Code)
-	assert.Contains(rr.Body.String(), `window.__BASE_PATH__="/middleman/"`)
-	assert.Contains(rr.Body.String(), `src="/middleman/assets/index.js"`)
+	assert.Contains(rr.Body.String(), "middleman is starting")
+	assert.Contains(rr.Body.String(), `const middlemanReadyPath="/healthz";`)
+	assert.NotContains(rr.Body.String(), `src="/middleman/assets/index.js"`)
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/settings", nil)
 	apiReq.Host = "127.0.0.1:8091"
@@ -156,4 +166,116 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 	handler.ServeHTTP(bareRR, bareReq)
 
 	assert.Equal(http.StatusNotFound, bareRR.Code)
+}
+
+func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
+		},
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	cfg := &config.Config{
+		Host:           "127.0.0.1",
+		Port:           port,
+		BasePath:       "/",
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_STARTUP_TEST",
+		Activity: config.Activity{
+			ViewMode:  "threaded",
+			TimeRange: "7d",
+		},
+	}
+
+	switcher := NewSwitchHandler(NewStartupHandler(
+		frontend,
+		cfg,
+		ServerOptions{},
+		ln,
+	))
+	httpSrv := &http.Server{Handler: switcher}
+	errCh := make(chan error, 1)
+	go func() {
+		if serveErr := httpSrv.Serve(ln); !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- serveErr
+		}
+	}()
+
+	var fullServer *Server
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if fullServer != nil {
+			require.NoError(t, fullServer.Shutdown(shutdownCtx))
+		} else {
+			require.NoError(t, httpSrv.Shutdown(shutdownCtx))
+		}
+		select {
+		case serveErr := <-errCh:
+			require.NoError(t, serveErr)
+		default:
+		}
+	})
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	baseURL := "http://" + ln.Addr().String()
+
+	rootStatus, _, rootBody := getHTTPBody(t, client, baseURL+"/")
+	assert := Assert.New(t)
+	assert.Equal(http.StatusOK, rootStatus)
+	assert.Contains(rootBody, "middleman is starting")
+	assert.NotContains(rootBody, `<body>app</body>`)
+
+	apiStatus, apiHeader, apiBody := getHTTPBody(
+		t, client, baseURL+"/api/v1/sync/status",
+	)
+	assert.Equal(http.StatusServiceUnavailable, apiStatus)
+	assert.Equal("application/problem+json", apiHeader.Get("Content-Type"))
+	assert.Contains(apiBody, `"reason":"starting"`)
+
+	database := dbtest.Open(t)
+	mock := &mockGH{}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	fullServer = New(
+		database, syncer, frontend, "/", cfg,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
+	)
+	fullServer.AttachHTTPServer(httpSrv, ln)
+	switcher.Swap(fullServer)
+
+	readyStatus, readyHeader, readyBody := getHTTPBody(
+		t, client, baseURL+"/api/v1/sync/status",
+	)
+	assert.Equal(http.StatusOK, readyStatus)
+	assert.True(
+		strings.HasPrefix(readyHeader.Get("Content-Type"), "application/json"),
+		readyHeader.Get("Content-Type"),
+	)
+	assert.Contains(readyBody, `"running":`)
+
+	readyRootStatus, _, readyRootBody := getHTTPBody(t, client, baseURL+"/")
+	assert.Equal(http.StatusOK, readyRootStatus)
+	assert.Contains(readyRootBody, "app")
+	assert.Contains(readyRootBody, `window.__BASE_PATH__="/"`)
+}
+
+func getHTTPBody(
+	t *testing.T,
+	client *http.Client,
+	url string,
+) (int, http.Header, string) {
+	t.Helper()
+	resp, err := client.Get(url)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return resp.StatusCode, resp.Header, string(body)
 }

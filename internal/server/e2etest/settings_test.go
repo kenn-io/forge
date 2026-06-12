@@ -468,7 +468,18 @@ name = "widget"
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 
-	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
+	// The server validates the request Host against its configured listen
+	// address, so the generated client must present the configured host
+	// rather than the random httptest port.
+	client, err := generated.NewClientWithResponses(
+		ts.URL+"/api/v1",
+		generated.WithRequestEditorFn(
+			func(_ context.Context, req *http.Request) error {
+				setAcceptedHostForE2ETest(req)
+				return nil
+			},
+		),
+	)
 	require.NoError(err)
 	return settingsWorkspaceEnv{
 		ts:           ts,

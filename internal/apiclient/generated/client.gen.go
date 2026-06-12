@@ -1249,6 +1249,7 @@ type MergeRequestDetailResponse struct {
 	Repo             RepoRefResponse              `json:"repo"`
 	RepoName         string                       `json:"repo_name"`
 	RepoOwner        string                       `json:"repo_owner"`
+	ReviewedHeadSha  string                       `json:"reviewed_head_sha"`
 	Stack            *StackContextResponse        `json:"stack,omitempty"`
 	Warnings         *[]string                    `json:"warnings,omitempty"`
 	WorkflowApproval WorkflowApprovalResponse     `json:"workflow_approval"`

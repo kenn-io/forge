@@ -296,11 +296,13 @@ func setupGitLabMutationServer(
 		Author:          "author",
 		State:           "open",
 		PlatformHeadSHA: "head-sha",
+		PlatformBaseSHA: "base-sha",
 		CreatedAt:       now,
 		UpdatedAt:       now,
 		LastActivityAt:  now,
 	})
 	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 7, "head-sha", "base-sha", "merge-base"))
 
 	existingNoteID := int64(9001)
 	threadID := gitlabMutationThreadID
@@ -383,11 +385,17 @@ func upsertGitLabTestMR(
 		Author:          "author",
 		State:           "open",
 		PlatformHeadSHA: headSHA,
+		PlatformBaseSHA: "base-sha",
 		CreatedAt:       time.Now().UTC(),
 		UpdatedAt:       time.Now().UTC(),
 		LastActivityAt:  time.Now().UTC(),
 	})
 	require.NoError(t, err)
+	if headSHA != "" {
+		require.NoError(t, database.UpdateDiffSHAs(ctx, repoID, 7, headSHA, "base-sha", "merge-base"))
+	} else {
+		require.NoError(t, database.UpdateDiffSHAs(ctx, repoID, 7, "", "", ""))
+	}
 }
 
 func doGitLabJSON(

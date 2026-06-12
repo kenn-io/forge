@@ -14,6 +14,7 @@ function pullDetail(headSHA: string): PullDetail {
       platform_head_sha: headSHA,
     },
     platform_head_sha: headSHA,
+    reviewed_head_sha: headSHA,
     repo: {
       provider: "github",
       platform_host: "github.com",

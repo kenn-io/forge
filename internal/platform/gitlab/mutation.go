@@ -23,20 +23,21 @@ const gitlabHeadMismatchPhrase = "sha does not match head"
 // request was actually sha-bound and GitLab's message is the known head
 // mismatch rejection. Any other 409 keeps the generic conflict mapping
 // so unrelated provider conflicts are not presented as staleness.
-func mapGitLabMutationError(capability, expectedHeadSHA string, err error) error {
+func mapGitLabMutationError(platformHost, capability, expectedHeadSHA string, err error) error {
 	var gitlabErr *gitlab.ErrorResponse
 	if expectedHeadSHA != "" &&
 		errors.As(err, &gitlabErr) &&
 		gitlabErr.HasStatusCode(http.StatusConflict) &&
 		strings.Contains(strings.ToLower(gitlabErr.Message), gitlabHeadMismatchPhrase) {
 		return &platform.Error{
-			Code:       platform.ErrCodeStaleState,
-			Provider:   platform.KindGitLab,
-			Capability: capability,
-			Err:        err,
+			Code:         platform.ErrCodeStaleState,
+			Provider:     platform.KindGitLab,
+			PlatformHost: platformHost,
+			Capability:   capability,
+			Err:          err,
 		}
 	}
-	return mapGitLabError(capability, err)
+	return mapGitLabErrorForHost(platformHost, capability, err)
 }
 
 // discussionIDPattern validates GitLab discussion IDs which are 40-char hex strings.
@@ -73,7 +74,7 @@ func (c *Client) ReplyToThread(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.MergeRequestEvent{}, mapGitLabError("reply_to_discussion", err)
+		return platform.MergeRequestEvent{}, c.mapGitLabError("reply_to_discussion", err)
 	}
 
 	return mergeRequestNoteEvent(normalizedRef, number, note, discussionID), nil
@@ -103,7 +104,7 @@ func (c *Client) ResolveThread(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return mapGitLabError("resolve_discussion", err)
+		return c.mapGitLabError("resolve_discussion", err)
 	}
 	return nil
 }
@@ -125,7 +126,7 @@ func (c *Client) CreateMergeRequestComment(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.MergeRequestEvent{}, mapGitLabError("create_merge_request_comment", err)
+		return platform.MergeRequestEvent{}, c.mapGitLabError("create_merge_request_comment", err)
 	}
 	return mergeRequestNoteEvent(normalizedRef, number, note, ""), nil
 }
@@ -149,7 +150,7 @@ func (c *Client) EditMergeRequestComment(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.MergeRequestEvent{}, mapGitLabError("edit_merge_request_comment", err)
+		return platform.MergeRequestEvent{}, c.mapGitLabError("edit_merge_request_comment", err)
 	}
 	return mergeRequestNoteEvent(normalizedRef, number, note, ""), nil
 }
@@ -171,7 +172,7 @@ func (c *Client) CreateIssueComment(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.IssueEvent{}, mapGitLabError("create_issue_comment", err)
+		return platform.IssueEvent{}, c.mapGitLabError("create_issue_comment", err)
 	}
 	return issueNoteEvent(normalizedRef, number, note), nil
 }
@@ -195,7 +196,7 @@ func (c *Client) EditIssueComment(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.IssueEvent{}, mapGitLabError("edit_issue_comment", err)
+		return platform.IssueEvent{}, c.mapGitLabError("edit_issue_comment", err)
 	}
 	return issueNoteEvent(normalizedRef, number, note), nil
 }
@@ -221,7 +222,7 @@ func (c *Client) SetMergeRequestState(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.MergeRequest{}, mapGitLabError("set_merge_request_state", err)
+		return platform.MergeRequest{}, c.mapGitLabError("set_merge_request_state", err)
 	}
 	return NormalizeDetailedMergeRequest(normalizedRef, mr), nil
 }
@@ -247,7 +248,7 @@ func (c *Client) SetIssueState(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.Issue{}, mapGitLabError("set_issue_state", err)
+		return platform.Issue{}, c.mapGitLabError("set_issue_state", err)
 	}
 	return NormalizeIssue(normalizedRef, issue), nil
 }
@@ -299,7 +300,9 @@ func (c *Client) MergeMergeRequest(
 	}
 	mr, _, err := c.api.MergeRequests.AcceptMergeRequest(pid, int64(number), opts, gitlab.WithContext(ctx))
 	if err != nil {
-		return platform.MergeResult{}, mapGitLabMutationError("merge_merge_request", expectedHeadSHA, err)
+		return platform.MergeResult{}, mapGitLabMutationError(
+			c.host, "merge_merge_request", expectedHeadSHA, err,
+		)
 	}
 	if mr == nil {
 		return platform.MergeResult{}, &platform.Error{
@@ -330,7 +333,7 @@ func (c *Client) CreateIssue(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.Issue{}, mapGitLabError("create_issue", err)
+		return platform.Issue{}, c.mapGitLabError("create_issue", err)
 	}
 	return NormalizeIssue(normalizedRef, issue), nil
 }
@@ -353,7 +356,7 @@ func (c *Client) EditMergeRequestContent(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.MergeRequest{}, mapGitLabError("edit_merge_request_content", err)
+		return platform.MergeRequest{}, c.mapGitLabError("edit_merge_request_content", err)
 	}
 	return NormalizeDetailedMergeRequest(normalizedRef, mr), nil
 }
@@ -376,7 +379,7 @@ func (c *Client) EditIssueContent(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.Issue{}, mapGitLabError("edit_issue_content", err)
+		return platform.Issue{}, c.mapGitLabError("edit_issue_content", err)
 	}
 	return NormalizeIssue(normalizedRef, issue), nil
 }
@@ -413,7 +416,7 @@ func (c *Client) ApproveMergeRequest(
 	if expectedHeadSHA != "" && comment != "" {
 		current, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
 		if err != nil {
-			return platform.MergeRequestEvent{}, mapGitLabError("approve_merge_request", err)
+			return platform.MergeRequestEvent{}, c.mapGitLabError("approve_merge_request", err)
 		}
 		if current != nil && current.SHA != "" && current.SHA != expectedHeadSHA {
 			return platform.MergeRequestEvent{}, &platform.Error{
@@ -433,7 +436,7 @@ func (c *Client) ApproveMergeRequest(
 			&gitlab.CreateMergeRequestNoteOptions{Body: &comment},
 			gitlab.WithContext(ctx),
 		); err != nil {
-			return platform.MergeRequestEvent{}, mapGitLabError("approve_merge_request_comment", err)
+			return platform.MergeRequestEvent{}, c.mapGitLabError("approve_merge_request_comment", err)
 		}
 		notePosted = true
 	}
@@ -445,7 +448,7 @@ func (c *Client) ApproveMergeRequest(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		mapped := mapGitLabMutationError("approve_merge_request", expectedHeadSHA, err)
+		mapped := mapGitLabMutationError(c.host, "approve_merge_request", expectedHeadSHA, err)
 		if notePosted {
 			// The note side effect must survive problem mapping so the
 			// client knows a retry repeats the comment.

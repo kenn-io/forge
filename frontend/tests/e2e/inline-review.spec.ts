@@ -111,6 +111,7 @@ function pullDetail(
     repo_name: "widgets",
     platform_host: platformHost,
     platform_head_sha: "diff-head",
+    reviewed_head_sha: "diff-head",
     platform_base_sha: "base",
     diff_head_sha: "diff-head",
     merge_base_sha: "merge-base",

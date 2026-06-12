@@ -330,6 +330,7 @@ func TestGitLabMergeMergeRequestClassifies409s(t *testing.T) {
 			require.ErrorAs(err, &platformErr)
 			assert.Equal(tt.wantCode, platformErr.Code)
 			assert.Equal("merge_merge_request", platformErr.Capability)
+			assert.Equal("gitlab.example.com", platformErr.PlatformHost)
 		})
 	}
 }
@@ -498,6 +499,7 @@ func TestGitLabApproveMergeRequestReportsNotePostedWhenApprovalFails(t *testing.
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
 	assert.Equal(platform.ErrCodePermissionDenied, platformErr.Code)
+	assert.Equal("gitlab.example.com", platformErr.PlatformHost)
 }
 
 func TestGitLabApproveMergeRequestSkipsNoteForEmptyBody(t *testing.T) {
@@ -556,6 +558,7 @@ func TestGitLabApproveMergeRequestRejectsStaleHeadBeforePostingNote(t *testing.T
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
 	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.Equal("gitlab.example.com", platformErr.PlatformHost)
 	assert.False(noteSeen, "stale review must not post the comment")
 	assert.False(approveSeen, "stale review must not approve")
 }

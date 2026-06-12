@@ -24,7 +24,7 @@ func (c *Client) ListLabels(
 	for {
 		labels, resp, err := c.api.Labels.ListLabels(pid, opt, gitlab.WithContext(ctx))
 		if err != nil {
-			return platform.LabelCatalog{}, mapGitLabError("read_labels", err)
+			return platform.LabelCatalog{}, c.mapGitLabError("read_labels", err)
 		}
 		for _, label := range labels {
 			if label == nil {
@@ -67,7 +67,7 @@ func (c *Client) SetMergeRequestLabels(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return nil, mapGitLabError("label_mutation", err)
+		return nil, c.mapGitLabError("label_mutation", err)
 	}
 	return normalizeLabelNames(normalizedRef, mr.Labels), nil
 }
@@ -93,7 +93,7 @@ func (c *Client) SetIssueLabels(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return nil, mapGitLabError("label_mutation", err)
+		return nil, c.mapGitLabError("label_mutation", err)
 	}
 	return normalizeLabelNames(normalizedRef, issue.Labels), nil
 }

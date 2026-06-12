@@ -29,6 +29,18 @@ import (
 func setupGitHubHeadPinServer(
 	t *testing.T, mock *mockGH,
 ) (*server.Server, *db.DB, int64) {
+	return setupGitHubHeadPinServerWithDiff(t, mock, true)
+}
+
+func setupGitHubHeadPinServerWithoutReviewedDiff(
+	t *testing.T, mock *mockGH,
+) (*server.Server, *db.DB, int64) {
+	return setupGitHubHeadPinServerWithDiff(t, mock, false)
+}
+
+func setupGitHubHeadPinServerWithDiff(
+	t *testing.T, mock *mockGH, seedReviewedDiff bool,
+) (*server.Server, *db.DB, int64) {
 	t.Helper()
 	require := require.New(t)
 	ctx := t.Context()
@@ -54,11 +66,17 @@ func setupGitHubHeadPinServer(
 		Author:          "author",
 		State:           "open",
 		PlatformHeadSHA: "reviewed-sha",
+		PlatformBaseSHA: "base-sha",
 		CreatedAt:       now,
 		UpdatedAt:       now,
 		LastActivityAt:  now,
 	})
 	require.NoError(err)
+	if seedReviewedDiff {
+		require.NoError(database.UpdateDiffSHAs(
+			ctx, repoID, 7, "reviewed-sha", "base-sha", "merge-base",
+		))
+	}
 
 	repo := ghclient.RepoRef{
 		Platform:     platform.KindGitHub,
@@ -125,6 +143,88 @@ func TestGitHubMergePassesReviewedHeadPinToProvider(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("merged", string(mr.State))
+}
+
+func TestGitHubDetailExposesReviewedHeadOnlyWhenDiffIsCurrent(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mock := &mockGH{}
+	srv, database, repoID := setupGitHubHeadPinServer(t, mock)
+
+	var body struct {
+		PlatformHeadSHA string `json:"platform_head_sha"`
+		ReviewedHeadSHA string `json:"reviewed_head_sha"`
+	}
+	rr := doJSONRequest(t, srv, http.MethodGet,
+		"/api/v1/pulls/github/acme/widget/7", nil,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.Equal("reviewed-sha", body.PlatformHeadSHA)
+	assert.Equal("reviewed-sha", body.ReviewedHeadSHA)
+
+	require.NoError(database.UpdatePlatformSHAs(t.Context(), repoID, 7, "new-head", "base-sha"))
+	rr = doJSONRequest(t, srv, http.MethodGet,
+		"/api/v1/pulls/github/acme/widget/7", nil,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.Equal("new-head", body.PlatformHeadSHA)
+	assert.Empty(body.ReviewedHeadSHA,
+		"a platform head without a matching diff snapshot must not be echoed as reviewed")
+}
+
+func TestGitHubMergeRejectsMissingReviewedDiff(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var providerCalled atomic.Bool
+	mock := &mockGH{
+		mergePullRequestFn: func(
+			_ context.Context, _, _ string, _ int, _, _, _, _ string,
+		) (*gh.PullRequestMergeResult, error) {
+			providerCalled.Store(true)
+			return &gh.PullRequestMergeResult{}, nil
+		},
+	}
+	srv, _, _ := setupGitHubHeadPinServerWithoutReviewedDiff(t, mock)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge",
+		json.RawMessage(`{"method":"merge","commit_title":"t","commit_message":"m","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	code, details := decodeConflictProblem(t, json.NewDecoder(rr.Body))
+	assert.Equal("conflict", code)
+	require.NotNil(details)
+	assert.Equal("head_unknown", details["reason"])
+	assert.False(providerCalled.Load())
+}
+
+func TestGitHubMergeRejectsStaleReviewedDiff(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var providerCalled atomic.Bool
+	mock := &mockGH{
+		mergePullRequestFn: func(
+			_ context.Context, _, _ string, _ int, _, _, _, _ string,
+		) (*gh.PullRequestMergeResult, error) {
+			providerCalled.Store(true)
+			return &gh.PullRequestMergeResult{}, nil
+		},
+	}
+	srv, database, repoID := setupGitHubHeadPinServer(t, mock)
+	require.NoError(database.UpdatePlatformSHAs(t.Context(), repoID, 7, "new-head", "base-sha"))
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge",
+		json.RawMessage(`{"method":"merge","commit_title":"t","commit_message":"m","expected_head_sha":"new-head"}`),
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	code, details := decodeConflictProblem(t, json.NewDecoder(rr.Body))
+	assert.Equal("conflict", code)
+	require.NotNil(details)
+	assert.Equal("stale_state", details["reason"])
+	assert.False(providerCalled.Load())
 }
 
 func TestGitHubMergeRejectsMissingReviewedHeadPin(t *testing.T) {

@@ -1232,6 +1232,7 @@ func (s *Server) buildPullDetailResponse(
 		PlatformHost:     repo.PlatformHost,
 		PlatformHeadSHA:  mr.PlatformHeadSHA,
 		PlatformBaseSHA:  mr.PlatformBaseSHA,
+		ReviewedHeadSHA:  verifiedReviewedHeadSHA(mr),
 		DiffHeadSHA:      mr.DiffHeadSHA,
 		MergeBaseSHA:     mr.MergeBaseSHA,
 		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
@@ -1273,6 +1274,31 @@ func (s *Server) buildPullDetailResponse(
 	}
 
 	return resp, nil
+}
+
+func verifiedReviewedHeadSHA(mr *db.MergeRequest) string {
+	if mr == nil || mr.DiffHeadSHA == "" {
+		return ""
+	}
+	if diffSnapshotStale(mr) {
+		return ""
+	}
+	return mr.DiffHeadSHA
+}
+
+func diffSnapshotStale(mr *db.MergeRequest) bool {
+	shas := diffSHAsForMergeRequest(mr)
+	return shas.Stale()
+}
+
+func diffSHAsForMergeRequest(mr *db.MergeRequest) db.DiffSHAs {
+	return db.DiffSHAs{
+		PlatformHeadSHA: mr.PlatformHeadSHA,
+		PlatformBaseSHA: mr.PlatformBaseSHA,
+		DiffHeadSHA:     mr.DiffHeadSHA,
+		DiffBaseSHA:     mr.DiffBaseSHA,
+		State:           string(mr.State),
+	}
 }
 
 func withSyntheticMRLifecycleEvents(mr db.MergeRequest, events []db.MREvent) []db.MREvent {
@@ -1362,14 +1388,7 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 	if mr.DiffHeadSHA == "" {
 		return []string{"Diff data is unavailable for this pull request."}
 	}
-	shas := db.DiffSHAs{
-		PlatformHeadSHA: mr.PlatformHeadSHA,
-		PlatformBaseSHA: mr.PlatformBaseSHA,
-		DiffHeadSHA:     mr.DiffHeadSHA,
-		DiffBaseSHA:     mr.DiffBaseSHA,
-		State:           string(mr.State),
-	}
-	if shas.Stale() {
+	if diffSnapshotStale(mr) {
 		return []string{"Diff data is out of date for this pull request."}
 	}
 	return nil
@@ -2767,29 +2786,44 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	}, nil
 }
 
-// reviewedHeadSHA resolves the head commit a head-bound mutation should
-// be pinned to: the locally synced head, which is what the user reviewed.
-// Providers with MutationHeadBinding must not mutate unbound, so a row
-// with no head SHA (legacy or partial sync) always fails closed with a
-// conflict. Deliberately, this path never syncs the MR: persisting a
-// fresh head here would arm a retry from the same stale UI to mutate a
-// commit nobody reviewed. The head stays unknown until a normal review
-// cycle (detail view or periodic sync) populates it.
+// reviewedHeadSHA resolves the head commit a mutation should be pinned
+// to. For head-bound providers, this is the verified diff snapshot head,
+// not the mutable platform head row: if diff sync is missing or stale,
+// middleman cannot prove the user reviewed the current code and must
+// fail closed. Deliberately, this path never refreshes a missing diff,
+// because persisting a fresh head here could arm a retry from the same
+// stale UI to mutate a commit nobody reviewed.
 func (s *Server) reviewedHeadSHA(
 	repo *db.Repo,
 	mr *db.MergeRequest,
 ) (string, error) {
-	if mr.PlatformHeadSHA != "" {
+	if !s.capabilitiesForRepo(*repo).MutationHeadBinding {
 		return mr.PlatformHeadSHA, nil
 	}
-	if !s.capabilitiesForRepo(*repo).MutationHeadBinding {
-		return "", nil
+	if mr.DiffHeadSHA == "" {
+		return "", problemConflict(
+			CodeConflict,
+			"reviewed diff data is unavailable for this pull request; refresh and re-review it once diff sync completes",
+			map[string]any{"reason": "head_unknown"},
+		)
 	}
-	return "", problemConflict(
-		CodeConflict,
-		"merge request head commit has not been synced; re-review it once the next sync completes",
-		map[string]any{"reason": "head_unknown"},
-	)
+	if diffSnapshotStale(mr) {
+		s.runBackground(func(bgCtx context.Context) {
+			if syncErr := s.syncer.SyncMROnProvider(
+				bgCtx,
+				repoProviderKind(*repo), repoProviderHost(*repo),
+				repo.Owner, repo.Name, mr.Number,
+			); syncErr != nil {
+				slog.Warn("background sync after stale reviewed diff", "err", syncErr)
+			}
+		})
+		return "", problemConflict(
+			CodeConflict,
+			"reviewed diff data is out of date for this pull request; refresh and re-review it",
+			map[string]any{"reason": "stale_state"},
+		)
+	}
+	return mr.DiffHeadSHA, nil
 }
 
 // verifyClientReviewedHead enforces the client's optional assertion of

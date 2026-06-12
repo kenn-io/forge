@@ -46,6 +46,7 @@ function pullDetail(): PullDetail {
     merge_base_sha: "base",
     platform_base_sha: "base",
     platform_head_sha: "head",
+    reviewed_head_sha: "head",
     platform_host: "github.com",
     repo_owner: "acme",
     repo_name: "widget",

@@ -377,6 +377,7 @@ function pullDetailResponse(pr: (typeof pulls)[number]) {
     repo_name: pr.repo_name,
     platform_host: pr.platform_host,
     platform_head_sha: pr.platform_head_sha ?? "",
+    reviewed_head_sha: pr.platform_head_sha ?? "",
     detail_loaded: true,
     detail_fetched_at: "2026-03-30T14:00:00Z",
     worktree_links: pr.worktree_links,

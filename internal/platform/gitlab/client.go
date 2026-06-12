@@ -752,7 +752,15 @@ func hasEscapedSlash(value string) bool {
 	}
 }
 
+func (c *Client) mapGitLabError(capability string, err error) error {
+	return mapGitLabErrorForHost(c.host, capability, err)
+}
+
 func mapGitLabError(capability string, err error) error {
+	return mapGitLabErrorForHost("", capability, err)
+}
+
+func mapGitLabErrorForHost(platformHost, capability string, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -774,10 +782,11 @@ func mapGitLabError(capability string, err error) error {
 		}
 	}
 	return &platform.Error{
-		Code:       code,
-		Provider:   platform.KindGitLab,
-		Capability: capability,
-		Err:        err,
+		Code:         code,
+		Provider:     platform.KindGitLab,
+		PlatformHost: platformHost,
+		Capability:   capability,
+		Err:          err,
 	}
 }
 

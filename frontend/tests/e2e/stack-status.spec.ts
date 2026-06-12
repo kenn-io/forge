@@ -240,6 +240,7 @@ async function mockStackedPR(
         merge_base_sha: "base",
         platform_base_sha: "base",
         platform_head_sha: "head",
+        reviewed_head_sha: "head",
         events: [],
         warnings: [],
         worktree_links: [],

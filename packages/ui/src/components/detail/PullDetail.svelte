@@ -643,19 +643,21 @@
   // is not hidden behind the generic re-review prompt.
   let headConflictContext = $state<string | null>(null);
   const detailHeadSha = $derived(
-    detailStore.getDetail()?.platform_head_sha ?? "",
+    detailStore.getDetail()?.reviewed_head_sha ?? "",
   );
-  // After head_unknown the head stays unbound until a sync records it,
+  // After head_unknown the reviewed head stays unbound until diff sync
+  // records a current snapshot,
   // so head-bound actions (approve, merge) are disabled until the
-  // refreshed detail carries a head SHA again. Once the SHA arrives
+  // refreshed detail carries a reviewed head SHA again. Once the SHA arrives
   // this clears on its own; the stale_state prompt instead stays until
   // the user completes a head-bound action or navigates away.
   const headActionsBlocked = $derived(
     headConflict === "head_unknown" && detailHeadSha === "",
   );
   // Preflight guard: a head-binding provider must never fire an unbound
-  // mutation, so head-bound actions stay disabled until a sync records
-  // the head — no request, no 409 round trip.
+  // mutation, so head-bound actions stay disabled until diff sync proves
+  // the rendered code matches the current head — no request, no 409
+  // round trip.
   const headPinMissing = $derived(
     (detailStore.getDetail()?.repo?.capabilities?.mutation_head_binding ?? false)
       && detailHeadSha === "",
@@ -760,9 +762,8 @@
         IsDraft: pr.IsDraft,
         MergeableState: pr.MergeableState,
         // Same rendered-head source as the button gating and MergeModal:
-        // the detail envelope's top-level platform_head_sha. The nested
-        // merge_request field is optional and may be absent even when
-        // the canonical top-level value is present.
+        // the detail envelope's reviewed_head_sha. The raw platform head
+        // can advance before diff sync proves the new code was reviewed.
         platform_head_sha: detailHeadSha,
       },
       ref: routeRef,

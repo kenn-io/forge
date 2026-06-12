@@ -3,10 +3,10 @@ import { mockApi } from "./support/mockApi";
 
 // Wire-level coverage for the head-pinning contract
 // (context/provider-architecture.md "Head binding"): the detail view
-// echoes the rendered platform_head_sha as expected_head_sha on merge
+// echoes the rendered reviewed_head_sha as expected_head_sha on merge
 // and approve, and branches on the 409 conflict reasons.
 
-// Matches the platform_head_sha mockApi serves for acme/widgets#42.
+// Matches the reviewed_head_sha mockApi serves for acme/widgets#42.
 const REVIEWED_SHA = "42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42";
 const SYNCED_SHA = "0123456789abcdef0123456789abcdef01234567";
 
@@ -94,7 +94,7 @@ const unboundPR = {
   worktree_links: [],
 };
 
-function unboundDetailEnvelope(platformHeadSha: string): unknown {
+function unboundDetailEnvelope(platformHeadSha: string, reviewedHeadSha = platformHeadSha): unknown {
   return {
     merge_request: unboundPR,
     repo: {
@@ -109,6 +109,7 @@ function unboundDetailEnvelope(platformHeadSha: string): unknown {
     repo_name: "widgets",
     platform_host: "github.com",
     platform_head_sha: platformHeadSha,
+    reviewed_head_sha: reviewedHeadSha,
     detail_loaded: true,
     detail_fetched_at: "2026-03-30T14:00:00Z",
     worktree_links: [],
@@ -280,14 +281,15 @@ test.describe("palette approve head conflict", () => {
 });
 
 test.describe("head_unknown approve conflict", () => {
-  test("head-bound actions stay disabled until a sync records the head", async ({ page }) => {
+  test("head-bound actions stay disabled until diff sync records the reviewed head", async ({ page }) => {
     await mockApi(page);
 
     // On a head-binding provider the UI never fires an unbound
-    // mutation: with no synced head, approve and merge are disabled
-    // preflight (the server would reject the pin-less request anyway),
-    // and they enable once a sync records the head.
-    let syncedHead = "";
+    // mutation: even with a raw platform head, approve and merge stay
+    // disabled until reviewed_head_sha proves the diff snapshot is
+    // current.
+    const platformHead = SYNCED_SHA;
+    let reviewedHead = "";
     let approveRequested = false;
 
     await page.route("**/api/v1/pulls/github/acme/widgets/77", async (route: Route) => {
@@ -298,7 +300,7 @@ test.describe("head_unknown approve conflict", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(unboundDetailEnvelope(syncedHead)),
+        body: JSON.stringify(unboundDetailEnvelope(platformHead, reviewedHead)),
       });
     });
 
@@ -306,7 +308,7 @@ test.describe("head_unknown approve conflict", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(unboundDetailEnvelope(syncedHead)),
+        body: JSON.stringify(unboundDetailEnvelope(platformHead, reviewedHead)),
       });
     });
 
@@ -330,9 +332,9 @@ test.describe("head_unknown approve conflict", () => {
     await expect(page.locator(".btn--merge").first()).toBeDisabled();
     expect(approveRequested).toBe(false);
 
-    // A sync records the head; the reloaded detail re-enables the
-    // head-bound actions.
-    syncedHead = SYNCED_SHA;
+    // A diff sync verifies the reviewed head; the reloaded detail
+    // re-enables the head-bound actions.
+    reviewedHead = SYNCED_SHA;
     await page.reload();
     await expect(page.locator(".detail-title")).toContainText("Unbound head PR");
     await expect(page.locator(".btn--approve").first()).toBeEnabled();

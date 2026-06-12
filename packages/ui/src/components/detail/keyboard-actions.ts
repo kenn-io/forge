@@ -198,7 +198,7 @@ export interface PRDetailActionInput {
   /**
    * True when the provider hard-binds mutations to the reviewed head
    * (capabilities.mutation_head_binding). Head-bound actions are
-   * unavailable until the PR row carries platform_head_sha to pin.
+   * unavailable until the loaded detail carries reviewed_head_sha to pin.
    */
   requireHeadPin?: boolean;
   /**
@@ -209,7 +209,7 @@ export interface PRDetailActionInput {
   approveCommentBody?: string;
   /**
    * Head commit the rendered detail was reviewed at
-   * (detail.platform_head_sha). When set, head-bound mutations echo it
+   * (detail.reviewed_head_sha). When set, head-bound mutations echo it
    * as expected_head_sha so the server rejects the action with a 409
    * conflict if a sync rebound the head between render and click.
    */
@@ -272,7 +272,8 @@ export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
   // Pin the approval to the head the user reviewed; the server rejects
   // the request when the synced head has moved past it. Callers that
   // build the input from the loaded detail pass expectedHeadSha; the
-  // pr row's platform_head_sha is the fallback for the rest.
+  // pr row's platform_head_sha is the fallback for callers that already
+  // projected the reviewed head into the action input.
   const expectedHeadSha = (input.expectedHeadSha ?? input.pr.platform_head_sha ?? "").trim();
   const { error } = await input.client.POST(providerItemPath("pulls", ref, "/approve"), {
     params: { path: { ...providerRouteParams(ref), number } },

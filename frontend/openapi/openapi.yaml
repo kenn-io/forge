@@ -2300,6 +2300,8 @@ components:
           type: string
         repo_owner:
           type: string
+        reviewed_head_sha:
+          type: string
         stack:
           $ref: "#/components/schemas/StackContextResponse"
         warnings:
@@ -2327,6 +2329,7 @@ components:
         - platform_host
         - platform_head_sha
         - platform_base_sha
+        - reviewed_head_sha
         - diff_head_sha
         - merge_base_sha
         - worktree_links

@@ -25,7 +25,7 @@ func (c *Client) SetMergeRequestAssignees(
 	// from the current assignee list so only new usernames need search.
 	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
-		return nil, mapGitLabError("assignee_mutation", err)
+		return nil, c.mapGitLabError("assignee_mutation", err)
 	}
 	for _, assignee := range mr.Assignees {
 		if assignee != nil {
@@ -43,7 +43,7 @@ func (c *Client) SetMergeRequestAssignees(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return nil, mapGitLabError("assignee_mutation", err)
+		return nil, c.mapGitLabError("assignee_mutation", err)
 	}
 	return basicUsernames(updated.Assignees), nil
 }
@@ -62,7 +62,7 @@ func (c *Client) SetIssueAssignees(
 	// issue's own assignee list is the authoritative ID source.
 	current, _, err := c.api.Issues.GetIssue(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
-		return nil, mapGitLabError("assignee_mutation", err)
+		return nil, c.mapGitLabError("assignee_mutation", err)
 	}
 	for _, assignee := range current.Assignees {
 		if assignee != nil {
@@ -80,7 +80,7 @@ func (c *Client) SetIssueAssignees(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return nil, mapGitLabError("assignee_mutation", err)
+		return nil, c.mapGitLabError("assignee_mutation", err)
 	}
 	assignees := make([]string, 0, len(issue.Assignees))
 	for _, a := range issue.Assignees {
@@ -142,7 +142,7 @@ func (c *Client) mutateMergeRequestReviewers(
 	}
 	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
-		return nil, mapGitLabError("reviewer_mutation", err)
+		return nil, c.mapGitLabError("reviewer_mutation", err)
 	}
 	current := basicUsernames(mr.Reviewers)
 	// The merge request already carries the IDs of its current
@@ -169,7 +169,7 @@ func (c *Client) mutateMergeRequestReviewers(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return nil, mapGitLabError("reviewer_mutation", err)
+		return nil, c.mapGitLabError("reviewer_mutation", err)
 	}
 	return basicUsernames(updated.Reviewers), nil
 }
@@ -217,7 +217,7 @@ func (c *Client) lookupUserID(ctx context.Context, username string) (int64, erro
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return 0, mapGitLabError("user_lookup", err)
+		return 0, c.mapGitLabError("user_lookup", err)
 	}
 	for _, user := range users {
 		if user == nil || !strings.EqualFold(user.Username, username) {
@@ -227,10 +227,11 @@ func (c *Client) lookupUserID(ctx context.Context, username string) (int64, erro
 		return user.ID, nil
 	}
 	return 0, &platform.Error{
-		Code:       platform.ErrCodeNotFound,
-		Provider:   platform.KindGitLab,
-		Capability: "user_lookup",
-		Err:        fmt.Errorf("gitlab user %q not found", username),
+		Code:         platform.ErrCodeNotFound,
+		Provider:     platform.KindGitLab,
+		PlatformHost: c.host,
+		Capability:   "user_lookup",
+		Err:          fmt.Errorf("gitlab user %q not found", username),
 	}
 }
 

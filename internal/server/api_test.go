@@ -1061,6 +1061,12 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 
 	prID, err := database.UpsertMergeRequest(ctx, pr)
 	require.NoError(t, err)
+	if pr.PlatformHeadSHA != "" {
+		require.NoError(t, database.UpdateDiffSHAs(
+			ctx, repoID, number,
+			pr.PlatformHeadSHA, pr.PlatformBaseSHA, "merge-base",
+		))
+	}
 	if len(pr.Labels) > 0 {
 		require.NoError(t, database.ReplaceMergeRequestLabels(ctx, repoID, prID, pr.Labels))
 	}
@@ -13927,6 +13933,7 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NotNil(repo)
+	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "abc123", "def456", "merge-base"))
 
 	editedTitle := "Edited kettle"
 	editedBody := "Updated kettle body"
@@ -14126,6 +14133,14 @@ func setupGitealikeHeadPinServer(
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	syncer.RunOnce(t.Context())
+	repo, err := database.GetRepoByIdentity(t.Context(), db.RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "gitea.test",
+		RepoPath:     "tea/kettle",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateDiffSHAs(t.Context(), repo.ID, 7, "abc123", "def456", "merge-base"))
 	return setupTestClient(t, srv)
 }
 
@@ -14501,6 +14516,7 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NotNil(repo)
+	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "abc123", "def456", "merge-base"))
 	expectedHeadSHA := requireMR(t, database, repo.ID, 7).PlatformHeadSHA
 	assert.Equal("dirty", requireMR(t, database, repo.ID, 7).MergeableState)
 
@@ -14558,6 +14574,14 @@ func setupAPIGitealikeHeadPinServer(
 	client := setupTestClient(t, srv)
 
 	syncer.RunOnce(ctx)
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "gitea.test",
+		RepoPath:     "tea/kettle",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "abc123", "def456", "merge-base"))
 	return client, database
 }
 

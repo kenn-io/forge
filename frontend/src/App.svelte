@@ -787,9 +787,8 @@
       capabilities.workflow_approval && wfa?.checked && wfa.required,
     );
     // Same rendered-head source as PullDetail: the detail envelope's
-    // canonical top-level platform_head_sha, not the optional nested
-    // merge_request field.
-    const renderedHeadSha = detail.platform_head_sha ?? "";
+    // verified reviewed_head_sha, not the mutable platform_head_sha.
+    const renderedHeadSha = detail.reviewed_head_sha ?? "";
     // TS cannot carry the !stores narrowing into the closure below.
     const appStores = stores;
     return {

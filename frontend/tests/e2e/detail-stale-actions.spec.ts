@@ -138,6 +138,7 @@ function detailEnvelopePR(pr: typeof prA & { workspace?: { id: string } }): unkn
     repo_owner: pr.repo_owner,
     repo_name: pr.repo_name,
     platform_head_sha: pr.platform_head_sha ?? "",
+    reviewed_head_sha: pr.platform_head_sha ?? "",
     detail_loaded: true,
     detail_fetched_at: "2026-04-01T12:00:00Z",
     worktree_links: pr.worktree_links,

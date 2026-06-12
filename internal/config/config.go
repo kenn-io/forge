@@ -930,6 +930,16 @@ func writeExclusive(src, dst string) error {
 }
 
 func Load(path string) (*Config, error) {
+	cfg, err := load(path)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, cfg.validate(false)
+}
+
+// load reads and normalizes path without running validation; Load and
+// LoadForGitHubAppRepair pick the validation strictness.
+func load(path string) (*Config, error) {
 	cfg := &Config{
 		SyncInterval:        defaultSyncInterval,
 		GitHubTokenEnv:      defaultGitHubTokenEnv,
@@ -1005,7 +1015,22 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg.normalizeTokenFilePaths(filepath.Dir(path))
-	return cfg, cfg.Validate()
+	return cfg, nil
+}
+
+// LoadForGitHubAppRepair loads path with GitHub App installation
+// coverage validation skipped. The middleman-github-app CLI uses it
+// so a config that is invalid only because the recorded installation
+// no longer covers the configured repos (repos added, selection
+// narrowed on GitHub, app installed on the wrong account) can still
+// be loaded to repair exactly that; every other validation rule still
+// applies.
+func LoadForGitHubAppRepair(path string) (*Config, error) {
+	cfg, err := load(path)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, cfg.validate(true)
 }
 
 func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
@@ -1021,6 +1046,12 @@ func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
 }
 
 func (c *Config) Validate() error {
+	return c.validate(false)
+}
+
+// validate runs every config rule; skipAppCoverage relaxes only the
+// GitHub App installation coverage check for the CLI's repair path.
+func (c *Config) validate(skipAppCoverage bool) error {
 	var err error
 	c.DefaultPlatformHost, err = normalizePlatformHost(
 		defaultPlatform, c.DefaultPlatformHost,
@@ -1082,8 +1113,10 @@ func (c *Config) Validate() error {
 		seen[key] = display
 	}
 
-	if err := c.validateGitHubAppCoverage(); err != nil {
-		return err
+	if !skipAppCoverage {
+		if err := c.validateGitHubAppCoverage(); err != nil {
+			return err
+		}
 	}
 
 	// Reject conflicting token source descriptors for the same host.

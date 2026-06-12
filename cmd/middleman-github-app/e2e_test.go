@@ -458,6 +458,64 @@ func TestInstallAcceptsSelectedInstallCoveringConfiguredRepos(t *testing.T) {
 	assert.Equal([]string{"kenn-io/middleman"}, cfg.GitHubApps[0].SelectedRepos)
 }
 
+func TestInstallRefreshesStaleSelectedRepoSnapshot(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-refresh")
+
+	// Install with a selected-repository installation that can reach
+	// both repos on GitHub.
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowserWithInstall(t, fake, func(appID int64) error {
+		_, err := fake.InstallSelected(appID, "kenn-io", "kenn-io/middleman", "kenn-io/other")
+		return err
+	})
+	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+
+	// Simulate the stale-snapshot failure mode the validation error
+	// points users at: the config gains a repo that the recorded
+	// snapshot does not list (here by shrinking the recorded list and
+	// adding the repo), so a strict load now fails.
+	raw, err := os.ReadFile(configPath)
+	require.NoError(err)
+	stale := strings.Replace(
+		string(raw),
+		`selected_repos = ["kenn-io/middleman", "kenn-io/other"]`,
+		`selected_repos = ["kenn-io/middleman"]`,
+		1,
+	)
+	stale = strings.Replace(stale, `[[repos]]`, `[[repos]]
+owner = "kenn-io"
+name = "other"
+
+[[repos]]`, 1)
+	require.NoError(os.WriteFile(configPath, []byte(stale), 0o600))
+	_, err = config.Load(configPath)
+	require.ErrorContains(err, "kenn-io/other is not in")
+
+	// Re-running install must load the config anyway, find the
+	// recorded installation, and refresh the snapshot — no browser
+	// interaction needed.
+	env, out := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.Contains(out.String(), "Refreshing recorded installation")
+
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	assert := assert.New(t)
+	assert.Equal("selected", cfg.GitHubApps[0].RepositorySelection)
+	assert.ElementsMatch(
+		[]string{"kenn-io/middleman", "kenn-io/other"},
+		cfg.GitHubApps[0].SelectedRepos,
+	)
+}
+
 func TestCreateWithNestedRelativeConfigPath(t *testing.T) {
 	// A relative --config with a directory component previously saved
 	// a key path that later loads re-resolved against the config dir,

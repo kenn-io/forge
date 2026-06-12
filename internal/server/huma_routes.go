@@ -3524,9 +3524,13 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 	}
 
 	syncIssueResp := issueDetailResponse{
-		Issue:        issue,
-		Events:       events,
-		Repo:         s.repoRefFromRepo(*repo),
+		Issue:  issue,
+		Events: events,
+		// The frontend replaces the issue detail payload with this
+		// response, so it must carry operations like the detail
+		// endpoint does — a bare repo ref would clear every mutation
+		// gate until the next detail load.
+		Repo:         s.repoRefWithOperations(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,

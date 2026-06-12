@@ -26,6 +26,7 @@ const (
 	operationRemoveLabel         = "remove_label"
 	operationSetAssignees        = "set_assignees"
 	operationSetReviewers        = "set_reviewers"
+	operationCreateIssue         = "create_issue"
 	operationCloseIssue          = "close_issue"
 	operationReopenIssue         = "reopen_issue"
 	operationApproveWorkflow     = "approve_workflow"
@@ -92,6 +93,7 @@ type RepoOperations struct {
 	RemoveLabel         OperationAvailability `json:"remove_label"`
 	SetAssignees        OperationAvailability `json:"set_assignees"`
 	SetReviewers        OperationAvailability `json:"set_reviewers"`
+	CreateIssue         OperationAvailability `json:"create_issue"`
 	CloseIssue          OperationAvailability `json:"close_issue"`
 	ReopenIssue         OperationAvailability `json:"reopen_issue"`
 	ApproveWorkflow     OperationAvailability `json:"approve_workflow"`
@@ -127,6 +129,7 @@ var (
 	descRemoveLabel        = operationDescriptor{name: operationRemoveLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}, bucket: apiBucketREST}
 	descSetAssignees       = operationDescriptor{name: operationSetAssignees, requiredCapabilities: []string{capabilityAssigneeMutation}, bucket: apiBucketREST}
 	descSetReviewers       = operationDescriptor{name: operationSetReviewers, requiredCapabilities: []string{capabilityReviewerMutation}, bucket: apiBucketREST}
+	descCreateIssue        = operationDescriptor{name: operationCreateIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
 	descCloseIssue         = operationDescriptor{name: operationCloseIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
 	descReopenIssue        = operationDescriptor{name: operationReopenIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
 	descApproveWorkflow    = operationDescriptor{name: operationApproveWorkflow, requiredCapabilities: []string{capabilityWorkflowApproval}, bucket: apiBucketREST}
@@ -174,6 +177,7 @@ func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 		RemoveLabel:         derive(descRemoveLabel),
 		SetAssignees:        derive(descSetAssignees),
 		SetReviewers:        derive(descSetReviewers),
+		CreateIssue:         derive(descCreateIssue),
 		CloseIssue:          derive(descCloseIssue),
 		ReopenIssue:         derive(descReopenIssue),
 		ApproveWorkflow:     derive(descApproveWorkflow),

@@ -51,6 +51,8 @@ export {
   buildRoutedItemRoute,
 } from "./routes.js";
 export { supportsLocked } from "./api/provider-capabilities.js";
+export { firstUnavailableGate, operationGate } from "./components/detail/operation-gates.js";
+export type { OperationGate } from "./components/detail/operation-gates.js";
 export { DEFAULT_MODE_VISIBILITY, DEFAULT_TERMINAL_SETTINGS } from "./api/types.js";
 export type {
   FocusListRouteRef,

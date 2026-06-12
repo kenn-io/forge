@@ -7885,6 +7885,17 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	if assert.NotNil(body.Issue) {
 		assert.Equal("GHES synced issue", body.Issue.Title)
 	}
+	// The frontend replaces the issue detail payload with this
+	// response: it must carry operations or every mutation gate would
+	// clear after a sync.
+	var withOps struct {
+		Repo struct {
+			Operations *RepoOperations `json:"operations"`
+		} `json:"repo"`
+	}
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &withOps))
+	require.NotNil(withOps.Repo.Operations,
+		"issue sync response must include repo.operations")
 
 	githubRepo, err := database.GetRepoByHostOwnerName(
 		ctx, "github.com", "acme", "widget",

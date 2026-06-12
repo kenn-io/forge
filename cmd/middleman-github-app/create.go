@@ -353,42 +353,78 @@ func (env *appEnv) runInstallFlow(
 	open bool,
 	timeout time.Duration,
 ) error {
-	url := installURL(env.webBaseFor(app.Host), app)
-	fmt.Fprintf(env.stdout,
-		"Install the app on the account that owns your synced repos:\n  %s\n", url,
-	)
-	if open {
-		if err := env.openBrowser(url); err != nil {
-			fmt.Fprintf(env.stdout, "could not open browser: %v\n", err)
-		}
-	}
-	fmt.Fprintln(env.stdout, "Waiting for the installation to appear...")
-
 	client := env.apiClient(app.Host)
-	known := make(map[int64]struct{})
-	if app.InstallationID != 0 {
-		known[app.InstallationID] = struct{}{}
-	}
+	// A recorded installation makes "install" a refresh: re-verify the
+	// existing installation and re-record its repository selection
+	// (config validation points users here when the recorded snapshot
+	// goes stale). Only when the recorded installation disappeared on
+	// GitHub does the flow fall through to waiting for a new one.
 	var picked githubapp.Installation
-	err := env.pollUntil(ctx, timeout, func(ctx context.Context) (bool, error) {
+	refreshed := false
+	if app.InstallationID != 0 {
 		jwt, err := appJWT(app, env.now())
 		if err != nil {
-			return false, err
+			return err
 		}
 		installs, err := client.ListInstallations(ctx, jwt)
 		if err != nil {
-			return false, err
+			return err
 		}
 		for _, install := range installs {
-			if _, ok := known[install.ID]; !ok {
+			if install.ID == app.InstallationID {
 				picked = install
-				return true, nil
+				refreshed = true
+				break
 			}
 		}
-		return false, nil
-	})
-	if err != nil {
-		return err
+		if refreshed {
+			fmt.Fprintf(env.stdout,
+				"Refreshing recorded installation %d on %s.\n",
+				picked.ID, picked.Account.Login,
+			)
+		} else {
+			fmt.Fprintf(env.stdout,
+				"Recorded installation %d no longer exists on GitHub; waiting for a new one.\n",
+				app.InstallationID,
+			)
+		}
+	}
+	if !refreshed {
+		url := installURL(env.webBaseFor(app.Host), app)
+		fmt.Fprintf(env.stdout,
+			"Install the app on the account that owns your synced repos:\n  %s\n", url,
+		)
+		if open {
+			if err := env.openBrowser(url); err != nil {
+				fmt.Fprintf(env.stdout, "could not open browser: %v\n", err)
+			}
+		}
+		fmt.Fprintln(env.stdout, "Waiting for the installation to appear...")
+
+		known := make(map[int64]struct{})
+		if app.InstallationID != 0 {
+			known[app.InstallationID] = struct{}{}
+		}
+		err := env.pollUntil(ctx, timeout, func(ctx context.Context) (bool, error) {
+			jwt, err := appJWT(app, env.now())
+			if err != nil {
+				return false, err
+			}
+			installs, err := client.ListInstallations(ctx, jwt)
+			if err != nil {
+				return false, err
+			}
+			for _, install := range installs {
+				if _, ok := known[install.ID]; !ok {
+					picked = install
+					return true, nil
+				}
+			}
+			return false, nil
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	app.InstallationID = picked.ID
@@ -539,7 +575,24 @@ func writePrivateKey(configPath, host, slug, pem string) (string, error) {
 	if filepath.Dir(path) != dir {
 		return "", fmt.Errorf("app key path %q escapes the config directory", path)
 	}
-	if err := os.WriteFile(path, []byte(pem), 0o600); err != nil {
+	// Exclusive create: a pre-existing file at this path is another
+	// app's key (or stale state) that must not be silently replaced,
+	// and O_EXCL also refuses to write through a planted symlink.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return "", fmt.Errorf(
+				"app private key %s already exists; refusing to overwrite it (remove the file first if it is stale)",
+				path,
+			)
+		}
+		return "", fmt.Errorf("writing app private key: %w", err)
+	}
+	if _, err := f.WriteString(pem); err != nil {
+		_ = f.Close()
+		return "", fmt.Errorf("writing app private key: %w", err)
+	}
+	if err := f.Close(); err != nil {
 		return "", fmt.Errorf("writing app private key: %w", err)
 	}
 	return path, nil

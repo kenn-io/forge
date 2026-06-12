@@ -4088,6 +4088,7 @@ export interface components {
             approve_workflow: components["schemas"]["OperationAvailability"];
             close_issue: components["schemas"]["OperationAvailability"];
             close_pr: components["schemas"]["OperationAvailability"];
+            create_issue: components["schemas"]["OperationAvailability"];
             edit_comment: components["schemas"]["OperationAvailability"];
             mark_ready_for_review: components["schemas"]["OperationAvailability"];
             merge_pr: components["schemas"]["OperationAvailability"];

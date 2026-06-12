@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ActionButton, Chip } from "@middleman/ui";
+  import { ActionButton, Chip, operationGate } from "@middleman/ui";
   import { timeAgo } from "@middleman/ui/utils/time";
   import { ExternalLinkIcon } from "../../icons.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
@@ -223,11 +223,14 @@
     </div>
 
     {#if summary.repo.capabilities.issue_mutation}
+      {@const createIssueGate = operationGate(summary.operations?.create_issue)}
       <div class="repo-card__actions">
         <ActionButton
           size="sm"
           tone="neutral"
           surface="outline"
+          disabled={createIssueGate.unavailable}
+          title={createIssueGate.unavailable ? createIssueGate.reason : undefined}
           onclick={onopencomposer}
         >
           New issue

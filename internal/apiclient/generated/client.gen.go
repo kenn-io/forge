@@ -1703,6 +1703,7 @@ type RepoOperations struct {
 	ApproveWorkflow     OperationAvailability `json:"approve_workflow"`
 	CloseIssue          OperationAvailability `json:"close_issue"`
 	ClosePr             OperationAvailability `json:"close_pr"`
+	CreateIssue         OperationAvailability `json:"create_issue"`
 	EditComment         OperationAvailability `json:"edit_comment"`
 	MarkReadyForReview  OperationAvailability `json:"mark_ready_for_review"`
 	MergePr             OperationAvailability `json:"merge_pr"`

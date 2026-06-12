@@ -25,6 +25,7 @@ const operations = {
   submit_review: unavailable,
   add_comment: unavailable,
   edit_comment: unavailable,
+  create_issue: unavailable,
   add_label: unavailable,
   remove_label: unavailable,
   close_issue: unavailable,
@@ -319,6 +320,45 @@ test.describe("missing write credential gates non-merge mutations", () => {
 
     const closeButton = page.locator(".btn--close").first();
     await expect(closeButton).toBeEnabled();
+  });
+
+  test("repo summary New issue is disabled when create_issue is unavailable", async ({ page }) => {
+    await mockApi(page);
+    await page.route("**/api/v1/repos/summary", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            owner: "acme",
+            name: "widgets",
+            platform_host: "github.com",
+            repo: repoEnvelope({
+              repo_owner: "acme",
+              repo_name: "widgets",
+              platform_host: "github.com",
+            }),
+            operations,
+            cached_pr_count: 0,
+            open_pr_count: 0,
+            draft_pr_count: 0,
+            cached_issue_count: 0,
+            open_issue_count: 0,
+            most_recent_activity_at: "2026-03-30T12:00:00Z",
+            last_sync_completed_at: "2026-03-30T14:00:30Z",
+            last_sync_started_at: "2026-03-30T14:00:00Z",
+            last_sync_error: "",
+            active_authors: [],
+            recent_issues: [],
+          },
+        ]),
+      });
+    });
+
+    await page.goto("/repos");
+    const newIssue = page.getByRole("button", { name: "New issue" }).first();
+    await expect(newIssue).toBeDisabled();
+    await expect(newIssue).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
   });
 
   test("issue detail close, comment, and labels are disabled with the reason", async ({ page }) => {

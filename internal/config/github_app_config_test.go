@@ -331,6 +331,36 @@ selected_repos = ["kenn-io/middleman"]
 	}
 }
 
+func TestLoadForGitHubAppRepairRelaxesOnlyCoverage(t *testing.T) {
+	staleSnapshot := `
+[[repos]]
+owner = "kenn-io"
+name = "added-later"
+
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+installation_id = 9
+installation_account = "kenn-io"
+repository_selection = "selected"
+selected_repos = ["kenn-io/middleman"]
+`
+	require := require.New(t)
+	_, err := Load(writeConfig(t, staleSnapshot))
+	require.Error(err, "the strict loader must keep rejecting stale snapshots")
+	cfg, err := LoadForGitHubAppRepair(writeConfig(t, staleSnapshot))
+	require.NoError(err, "the repair loader exists exactly for this failure")
+	require.Len(cfg.GitHubApps, 1)
+
+	// Every other validation rule still applies.
+	_, err = LoadForGitHubAppRepair(writeConfig(t, `
+[[github_apps]]
+app_id = 0
+private_key_path = "a.pem"
+`))
+	Assert.ErrorContains(t, err, "app_id must be a positive integer")
+}
+
 func TestGitHubAppMixedOverrideAndCoveredReposRejected(t *testing.T) {
 	// middleman resolves one credential chain per (platform, host), so
 	// a repo-level override on one repo cannot coexist with an app

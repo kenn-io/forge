@@ -3546,6 +3546,8 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         close_pr:
           $ref: "#/components/schemas/OperationAvailability"
+        create_issue:
+          $ref: "#/components/schemas/OperationAvailability"
         edit_comment:
           $ref: "#/components/schemas/OperationAvailability"
         mark_ready_for_review:
@@ -3582,6 +3584,7 @@ components:
         - remove_label
         - set_assignees
         - set_reviewers
+        - create_issue
         - close_issue
         - reopen_issue
         - approve_workflow

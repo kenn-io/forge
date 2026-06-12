@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"time"
 
+	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/githubapp"
 )
 
@@ -24,9 +25,13 @@ func runInstall(args []string, env *appEnv) error {
 		return err
 	}
 	env.configPath = *configPath
-	cfg, err := env.loadConfig()
+	// Repair-tolerant load: install is the documented remedy when the
+	// recorded installation snapshot stops covering the configured
+	// repos, so that exact validation failure must not lock the user
+	// out of the fix.
+	cfg, err := config.LoadForGitHubAppRepair(env.configPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("loading middleman config %s: %w", env.configPath, err)
 	}
 	app, err := selectApp(cfg, *host)
 	if err != nil {

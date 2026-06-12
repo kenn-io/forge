@@ -806,63 +806,7 @@ func newServer(
 	}
 
 	if frontend != nil {
-		indexBytes, err := fs.ReadFile(frontend, "index.html")
-		if err != nil {
-			indexBytes = []byte("<!DOCTYPE html><html><body>frontend not found</body></html>")
-		}
-		indexTemplate := string(indexBytes)
-		if basePath != "/" {
-			prefix := strings.TrimSuffix(basePath, "/")
-			indexTemplate = strings.ReplaceAll(indexTemplate, `src="/assets/`, `src="`+prefix+`/assets/`)
-			indexTemplate = strings.ReplaceAll(indexTemplate, `href="/assets/`, `href="`+prefix+`/assets/`)
-		}
-
-		serveIndex := func(w http.ResponseWriter) {
-			idx := strings.Replace(indexTemplate, "<head>",
-				`<head><script>`+s.bootstrapScript()+`</script>`, 1)
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			// index.html references content-hashed bundles. Browsers
-			// must always re-fetch it so a rebuild is picked up; the
-			// hashed assets it references can still be cached forever.
-			w.Header().Set("Cache-Control",
-				"no-store, no-cache, must-revalidate, max-age=0")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(idx))
-		}
-
-		fileServer := http.FileServerFS(frontend)
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api/") {
-				http.NotFound(w, r)
-				return
-			}
-			name := strings.TrimPrefix(r.URL.Path, "/")
-			if name == "" || name == "index.html" {
-				serveIndex(w)
-				return
-			}
-			f, err := frontend.Open(name)
-			if err == nil {
-				f.Close()
-				if strings.HasPrefix(r.URL.Path, "/assets/") {
-					w.Header().Set("Cache-Control",
-						"public, max-age=31536000, immutable")
-				}
-				fileServer.ServeHTTP(w, r)
-				return
-			}
-			// A missing /assets/* request is a stale-bundle fetch from
-			// an old cached index.html. Returning the SPA HTML here
-			// would 200 with the wrong Content-Type and leave the page
-			// stuck on a failed module import.
-			if strings.HasPrefix(r.URL.Path, "/assets/") {
-				http.NotFound(w, r)
-				return
-			}
-			serveIndex(w)
-		})
+		mux.Handle("/", newSPAAssetHandler(frontend, basePath, s.bootstrapScript))
 	}
 
 	// When serving under a base path, use an outer mux with
@@ -1114,9 +1058,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) checkHost(w http.ResponseWriter, r *http.Request) bool {
 	s.allowedHostMu.RLock()
-	enabled := len(s.allowedHosts) > 0
+	allowedHosts := s.allowedHosts
 	s.allowedHostMu.RUnlock()
-	if !enabled {
+	return checkListenerHost(w, r, allowedHosts)
+}
+
+func checkListenerHost(
+	w http.ResponseWriter,
+	r *http.Request,
+	allowedHosts map[string]struct{},
+) bool {
+	if len(allowedHosts) == 0 {
 		return true
 	}
 	if !authorityIsLoopbackHost(r.Host) || isLoopbackRemoteAddr(r.RemoteAddr) {
@@ -1295,6 +1247,15 @@ func (s *Server) Serve(ln net.Listener) error {
 	s.bgMu.Unlock()
 
 	return srv.Serve(ln)
+}
+
+// AttachHTTPServer records an externally-started HTTP server so Shutdown can
+// close the listener after a startup handler has been swapped to this Server.
+func (s *Server) AttachHTTPServer(srv *http.Server, ln net.Listener) {
+	s.setAllowedHostsForListener(ln)
+	s.bgMu.Lock()
+	s.httpSrv = srv
+	s.bgMu.Unlock()
 }
 
 func (s *Server) setAllowedHostsForListener(ln net.Listener) {

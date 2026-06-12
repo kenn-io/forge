@@ -370,16 +370,85 @@ func run(opts serve.Options) error {
 		}
 	}()
 
-	database, err := db.Open(cfg.DBPath())
+	ctx, stopSignals := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+	defer stopSignals()
+
+	assets, err := web.Assets()
+	if err != nil {
+		return fmt.Errorf("load frontend assets: %w", err)
+	}
+
+	addr := cfg.ListenAddr()
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", addr, err)
+	}
+
+	if err := writeRuntimeMetadata(lockHandle, ln); err != nil {
+		slog.Warn("write runtime metadata", "err", err)
+	}
+
+	startupHandler := server.NewStartupHandler(
+		assets, cfg, server.ServerOptions{}, ln,
+	)
+	switcher := server.NewSwitchHandler(startupHandler)
+	httpSrv := &http.Server{
+		Handler:     switcher,
+		ReadTimeout: 15 * time.Second,
+		// WriteTimeout is 0 (disabled) because SSE and proxy
+		// responses are long-lived by design.
+		IdleTimeout: 60 * time.Second,
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		if serveErr := httpSrv.Serve(ln); !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- serveErr
+		}
+	}()
+
+	slog.Info(fmt.Sprintf("starting server at http://%s", ln.Addr().String()))
+
+	var database *db.DB
+	var srv *server.Server
+	var syncer *ghclient.Syncer
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), 10*time.Second,
+		)
+		defer cancel()
+		if srv != nil {
+			if err := srv.Shutdown(shutdownCtx); err != nil {
+				slog.Warn("server shutdown", "err", err)
+			}
+		} else if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("startup server shutdown", "err", err)
+		}
+		if syncer != nil {
+			syncer.Stop()
+		}
+		if database != nil {
+			database.Close()
+		}
+	}()
+
+	if ctx.Err() != nil {
+		slog.Info("shutting down")
+		return nil
+	}
+
+	database, err = db.Open(cfg.DBPath())
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer database.Close()
 
 	tokenSources := tokenauth.NewSourceSet(tokenauth.Options{
 		GitHubCLI: config.GitHubCLITokenForHost,
 	})
-	providerSources, err := collectProviderTokenSources(context.Background(), cfg, tokenSources)
+	providerSources, err := collectProviderTokenSources(ctx, cfg, tokenSources)
 	if err != nil {
 		return err
 	}
@@ -392,15 +461,20 @@ func run(opts serve.Options) error {
 	}
 
 	repos := resolveStartupRepos(
-		context.Background(), cfg, startup.registry, database,
+		ctx, cfg, startup.registry, database,
 	)
 	slog.Debug("startup repos resolved", "count", len(repos))
+
+	if ctx.Err() != nil {
+		slog.Info("shutting down")
+		return nil
+	}
 
 	cloneMgr := gitclone.New(
 		filepath.Join(cfg.DataDir, "clones"), startup.cloneAuth,
 	)
 
-	syncer := ghclient.NewSyncerWithRegistry(
+	syncer = ghclient.NewSyncerWithRegistry(
 		startup.registry, database, cloneMgr, repos,
 		cfg.SyncDuration(), startup.rateTrackers, startup.budgets,
 	)
@@ -428,12 +502,7 @@ func run(opts serve.Options) error {
 		}
 	}
 
-	assets, err := web.Assets()
-	if err != nil {
-		return fmt.Errorf("load frontend assets: %w", err)
-	}
-
-	srv := server.NewWithConfig(
+	srv = server.NewWithConfig(
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
 			WorktreeDir:         filepath.Join(cfg.DataDir, "worktrees"),
@@ -467,15 +536,8 @@ func run(opts serve.Options) error {
 		Data: syncer.Status(),
 	})
 
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		syscall.SIGINT,
-		syscall.SIGTERM,
-	)
 	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	syncer.Start(ctx)
-	defer syncer.Stop()
-	defer stop()
 
 	profilerSrv, err := profiler.Start(opts.ProfilerAddr)
 	if err != nil {
@@ -501,45 +563,13 @@ func run(opts serve.Options) error {
 		}()
 	}
 
-	// srv.Shutdown MUST be the last-registered defer so LIFO runs
-	// it FIRST on return: close the HTTP listener (and SSE hub)
-	// before syncer.Stop blocks for up to 30 s, otherwise the
-	// process keeps serving requests against a syncer that is
-	// already winding down.
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(), 10*time.Second,
-		)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			slog.Warn("server shutdown", "err", err)
-		}
-	}()
-
 	displayVersion := version
 	if version == "dev" && commit != "unknown" {
 		displayVersion = "dev-" + commit
 	}
 	srv.SetVersion(displayVersion)
-
-	addr := cfg.ListenAddr()
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("listen on %s: %w", addr, err)
-	}
-
-	if err := writeRuntimeMetadata(lockHandle, ln); err != nil {
-		slog.Warn("write runtime metadata", "err", err)
-	}
-
-	slog.Info(fmt.Sprintf("starting server at http://%s", ln.Addr().String()))
-
-	errCh := make(chan error, 1)
-	go func() {
-		if serveErr := srv.Serve(ln); !errors.Is(serveErr, http.ErrServerClosed) {
-			errCh <- serveErr
-		}
-	}()
+	srv.AttachHTTPServer(httpSrv, ln)
+	switcher.Swap(srv)
 
 	select {
 	case <-ctx.Done():

@@ -291,8 +291,14 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	// Resolve the new repo set against the boot-time registry. Repos
 	// whose (platform, host) the registry never learned about cannot
 	// reach a client without a restart; skip those for SetRepos but
-	// keep them in s.cfg so the UI mirrors the file.
-	previous := s.syncer.TrackedRepos()
+	// keep them in s.cfg so the UI mirrors the file. A server built
+	// without a syncer (embedded or test setups) still hot-reloads the
+	// non-sync surfaces below, so the syncer is nil-guarded rather than
+	// treated as a reload failure.
+	var previous []ghclient.RepoRef
+	if s.syncer != nil {
+		previous = s.syncer.TrackedRepos()
+	}
 	resolved, skipped := s.resolveReposForReload(ctx, newCfg.Repos, previous)
 	if len(skipped) > 0 {
 		slog.Info(
@@ -324,11 +330,13 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		s.msgvault.applyConfig(newCfg)
 	}
 
-	s.syncer.SetRepos(resolved)
-	s.syncer.SetBranchActivityLimits(
-		newCfg.BranchActivityRetention(),
-		newCfg.Activity.DefaultBranchMaxCommits,
-	)
+	if s.syncer != nil {
+		s.syncer.SetRepos(resolved)
+		s.syncer.SetBranchActivityLimits(
+			newCfg.BranchActivityRetention(),
+			newCfg.Activity.DefaultBranchMaxCommits,
+		)
+	}
 
 	s.refreshRuntimeTargetsLocked()
 	if s.runtime != nil {

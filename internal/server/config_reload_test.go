@@ -348,6 +348,41 @@ func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
 	assert.Equal("30d", gotActivity.TimeRange)
 }
 
+// A server constructed without a syncer (Server.New permits nil; embedded
+// and docs/msgvault-only setups use it) must hot-reload non-sync surfaces
+// instead of panicking in the watcher goroutine. Regression test for a nil
+// TrackedRepos dereference that crashed the whole test binary in CI.
+func TestConfigReload_NilSyncerAppliesHotReloadWithoutPanic(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	writeConfigToml(t, cfgPath, validReloadConfig)
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	srv := NewWithConfig(
+		openTestDB(t), nil, nil, nil, cfg, cfgPath, ServerOptions{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfigChangedActivity)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid, "expected valid reload on a syncer-less server")
+	assert.Empty(ev.Error)
+	assert.False(ev.RestartRequired)
+
+	srv.cfgMu.Lock()
+	gotActivity := srv.cfg.Activity
+	srv.cfgMu.Unlock()
+	assert.Equal("flat", gotActivity.ViewMode)
+	assert.Equal("30d", gotActivity.TimeRange)
+}
+
 func TestConfigReload_UpdatesBranchActivityLimits(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

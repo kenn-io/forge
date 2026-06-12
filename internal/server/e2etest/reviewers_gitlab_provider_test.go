@@ -22,12 +22,14 @@ import (
 // alice: carol is visible on the merge request but absent from search,
 // which is the production condition the retained-ID seeding exists for.
 type fakeGitLabReviewerAPI struct {
-	mu            sync.Mutex
-	reviewersJSON string
-	assigneesJSON string
-	userQueries   []string
-	reviewerIDs   [][]int64
-	assigneeIDs   [][]int64
+	mu                 sync.Mutex
+	reviewersJSON      string
+	assigneesJSON      string
+	issueAssigneesJSON string
+	userQueries        []string
+	reviewerIDs        [][]int64
+	assigneeIDs        [][]int64
+	issueAssigneeIDs   [][]int64
 }
 
 func (f *fakeGitLabReviewerAPI) handler(t *testing.T) http.Handler {
@@ -88,6 +90,32 @@ func (f *fakeGitLabReviewerAPI) handler(t *testing.T) http.Handler {
 			_, _ = fmt.Fprintf(w,
 				`{"id": 1001, "iid": 7, "project_id": 42, "state": "opened", "reviewers": %s, "assignees": %s}`,
 				reviewersJSON, assigneesJSON,
+			)
+		case "GET /api/v4/projects/42/issues/11":
+			f.mu.Lock()
+			issueAssigneesJSON := f.issueAssigneesJSON
+			f.mu.Unlock()
+			_, _ = fmt.Fprintf(w,
+				`{"id": 3001, "iid": 11, "project_id": 42, "state": "opened", "assignees": %s}`,
+				issueAssigneesJSON,
+			)
+		case "PUT /api/v4/projects/42/issues/11":
+			var body struct {
+				AssigneeIDs *[]int64 `json:"assignee_ids"`
+			}
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			if body.AssigneeIDs == nil {
+				http.Error(w, `{"message": "assignee_ids required"}`, http.StatusBadRequest)
+				return
+			}
+			f.mu.Lock()
+			f.issueAssigneeIDs = append(f.issueAssigneeIDs, *body.AssigneeIDs)
+			f.issueAssigneesJSON = `[{"id": 7, "username": "dana"}, {"id": 5, "username": "alice"}]`
+			issueAssigneesJSON := f.issueAssigneesJSON
+			f.mu.Unlock()
+			_, _ = fmt.Fprintf(w,
+				`{"id": 3001, "iid": 11, "project_id": 42, "state": "opened", "assignees": %s}`,
+				issueAssigneesJSON,
 			)
 		default:
 			http.NotFound(w, r)
@@ -189,4 +217,50 @@ func TestGitLabSetPullAssigneesRetainsAssigneeAbsentFromUserSearch(t *testing.T)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal([]string{"bob", "alice"}, pr.Assignees)
+}
+
+// And the issue route: the retained issue assignee comes from
+// GET /issues/{iid}, not from /users search.
+func TestGitLabSetIssueAssigneesRetainsAssigneeAbsentFromUserSearch(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	fake := &fakeGitLabReviewerAPI{
+		reviewersJSON:      `[]`,
+		assigneesJSON:      `[]`,
+		issueAssigneesJSON: `[{"id": 7, "username": "dana"}]`,
+	}
+	upstream := httptest.NewServer(fake.handler(t))
+	t.Cleanup(upstream.Close)
+
+	client, err := gitlabprovider.NewClient(
+		platform.DefaultGitLabHost,
+		staticTokenSource("token"),
+		gitlabprovider.WithBaseURLForTesting(upstream.URL+"/api/v4"),
+	)
+	require.NoError(err)
+
+	repoID := seedProviderRepo(t, database, platform.KindGitLab, platform.DefaultGitLabHost)
+	seedProviderPRAndIssue(t, database, repoID)
+	srv := newLabelTestServer(t, database, client, platform.KindGitLab, platform.DefaultGitLabHost)
+
+	rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/issues/gitlab/acme/widget/11/assignees", map[string][]string{
+		"assignees": {"dana", "alice"},
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Assignees []string `json:"assignees"`
+	}
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal([]string{"dana", "alice"}, body.Assignees)
+
+	require.Len(fake.issueAssigneeIDs, 1)
+	assert.Equal([]int64{7, 5}, fake.issueAssigneeIDs[0])
+	assert.Equal([]string{"alice"}, fake.userQueries)
+
+	issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 11)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal([]string{"dana", "alice"}, issue.Assignees)
 }

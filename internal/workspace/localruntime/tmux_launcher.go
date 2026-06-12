@@ -230,7 +230,7 @@ func (l tmuxLauncher) newSessionPaneCommand() (string, func(), error) {
 	}
 	return strings.Join([]string{
 		"__middleman_env_file=" + shellCommand([]string{path}),
-		`__middleman_cleanup_env_file() { /bin/rm -f "$__middleman_env_file"; }`,
+		`__middleman_cleanup_env_file() { rm -f "$__middleman_env_file"; }`,
 		`trap __middleman_cleanup_env_file EXIT`,
 		`if [ ! -r "$__middleman_env_file" ]; then exit 127; fi`,
 		`. "$__middleman_env_file"`,
@@ -310,7 +310,7 @@ func (l tmuxLauncher) newSessionCommand(paneCommand string) []string {
 	if l.CWD != "" {
 		command = append(command, "-c", l.CWD)
 	}
-	command = append(command, paneCommand)
+	command = append(command, "/bin/sh", "-c", paneCommand)
 	if l.OwnerMarker != "" {
 		command = append(
 			command,

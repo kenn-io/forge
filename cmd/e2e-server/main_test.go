@@ -217,7 +217,8 @@ func TestBuildAppStateSeedsReviewedHeadsForUTCMergeTargets(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(
 				http.MethodGet,
-				"/api/v1/pulls/github/"+target.owner+"/"+target.repo+"/"+strconv.Itoa(target.number),
+				"http://127.0.0.1/api/v1/pulls/github/"+
+					target.owner+"/"+target.repo+"/"+strconv.Itoa(target.number),
 				nil,
 			)
 			state.handler.ServeHTTP(recorder, request)

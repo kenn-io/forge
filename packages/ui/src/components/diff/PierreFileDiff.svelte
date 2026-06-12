@@ -20,7 +20,7 @@
     parsePierreFileDiffWithContents,
     pierreFileContents,
   } from "./pierre-diff.js";
-  import { getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
+  import { diffTokenizeMaxLineLength, getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
 
   interface Props {
     file: DiffFile | null | undefined;
@@ -138,7 +138,7 @@
     theme: { dark: "pierre-dark", light: "pierre-light" },
     themeType,
     expansionLineCount: 40,
-    tokenizeMaxLineLength: 2_000,
+    tokenizeMaxLineLength: diffTokenizeMaxLineLength,
     onPostRender: () => {
       removeStalePlaceholderPres();
       applyLineTargetAttributes();

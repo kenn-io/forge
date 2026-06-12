@@ -271,6 +271,21 @@ describe("PierreFileDiff", () => {
     expect(pierre.lastOptions()?.diffStyle).toBe("split");
   });
 
+  it("caps syntax tokenization line length for Pierre renders", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const { diffTokenizeMaxLineLength } = await import("./pierre-worker-pool.js");
+
+    render(PierreFileDiff, {
+      props: { file: makeFile() },
+    });
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+    });
+
+    expect(pierre.lastOptions()?.tokenizeMaxLineLength).toBe(diffTokenizeMaxLineLength);
+  });
+
   it("rerenders when annotation metadata changes without moving lines", async () => {
     const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
     const file = makeFile();

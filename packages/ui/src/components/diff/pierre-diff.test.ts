@@ -131,14 +131,15 @@ ${patchBody}
 }
 
 describe("Pierre diff parsing", () => {
-  it("does not assign reusable cache keys to untrusted patch input", () => {
+  it("uses distinct cache keys for different patch contents", () => {
     const first = parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"));
     const second = parsePierreFileDiff(makeFile("src/foo.ts", "-other line\n+changed line"));
 
     expect(first).toBeDefined();
     expect(second).toBeDefined();
-    expect((first as { cacheKey?: string } | undefined)?.cacheKey).toBeUndefined();
-    expect((second as { cacheKey?: string } | undefined)?.cacheKey).toBeUndefined();
+    expect(first?.cacheKey).toBeDefined();
+    expect(second?.cacheKey).toBeDefined();
+    expect(first?.cacheKey).not.toBe(second?.cacheKey);
   });
 
   it("uses distinct cache keys for sparse and full context contents", () => {
@@ -300,7 +301,7 @@ new file mode 100644
 
     expect(parsed?.type).toBe("new");
     expect(parsed?.lang).toBe("go");
-    expect(parsed?.cacheKey).toBeUndefined();
+    expect(parsed?.cacheKey).toBeDefined();
   });
 
   it("quotes synthetic patch paths that can be parsed as patch control text", () => {

@@ -33,14 +33,14 @@ export function parsePierreFileDiff(
   if (options.enableDemandContextExpansion && canBuildSparsePatchContents(patchedFile)) {
     const contents = sparsePatchContents(patchedFile);
     return withAutomationLanguage(
-      withDetectedLanguage(
+      withRenderMetadata(
         patchedFile,
         withSyntheticPatchCacheKey(patchedFile, processPatchWithContext(patchedFile, contents)),
       ),
     );
   }
   return withAutomationLanguage(
-    withDetectedLanguage(patchedFile, withSyntheticPatchCacheKey(patchedFile, parsePatchOnly(patchedFile))),
+    withRenderMetadata(patchedFile, withSyntheticPatchCacheKey(patchedFile, parsePatchOnly(patchedFile))),
   );
 }
 
@@ -50,7 +50,7 @@ export function parsePierreFileDiffWithContents(
 ): FileDiffMetadata | undefined {
   const patchedFile = diffFileWithPatch(file);
   return withAutomationLanguage(
-    withDetectedLanguage(
+    withRenderMetadata(
       patchedFile,
       withSyntheticPatchCacheKey(patchedFile, processPatchWithContext(patchedFile, contents)),
     ),
@@ -134,9 +134,19 @@ function withSyntheticPatchCacheKey(file: DiffFile, meta: FileDiffMetadata | und
   };
 }
 
-function withDetectedLanguage(file: DiffFile, meta: FileDiffMetadata | undefined): FileDiffMetadata | undefined {
-  if (!meta || meta.lang) return meta;
-  return { ...meta, lang: getFiletypeFromFileName(file.path) };
+function withRenderMetadata(file: DiffFile, meta: FileDiffMetadata | undefined): FileDiffMetadata | undefined {
+  if (!meta) return meta;
+  return {
+    ...meta,
+    cacheKey:
+      meta.cacheKey ??
+      fileContentsCacheKey(
+        file.path,
+        file.patch,
+        `${syntheticPatchFiles.has(file) ? "synthetic" : "provider"}-diff:${file.status}:${file.old_path || ""}`,
+      ),
+    lang: meta.lang ?? getFiletypeFromFileName(file.path),
+  };
 }
 
 function safePierrePatch(file: DiffFile): string {

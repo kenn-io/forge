@@ -1,5 +1,7 @@
 import { getOrCreateWorkerPoolSingleton, type WorkerPoolManager } from "@pierre/diffs/worker";
 
+export const diffTokenizeMaxLineLength = 180;
+
 // Syntax highlighting is the dominant JS cost in diff-heavy e2e runs:
 // the shiki worker pool loads ~1MB of worker + wasm per page and
 // tokenizes every rendered hunk. Under browser automation diffs render
@@ -26,7 +28,7 @@ export function getPierreDiffWorkerPool(): WorkerPoolManager | undefined {
     highlighterOptions: {
       theme: { dark: "pierre-dark", light: "pierre-light" },
       lineDiffType: "word",
-      tokenizeMaxLineLength: 2_000,
+      tokenizeMaxLineLength: diffTokenizeMaxLineLength,
       langs: ["bash", "css", "go", "html", "javascript", "json", "markdown", "sql", "toml", "typescript", "yaml"],
     },
   });

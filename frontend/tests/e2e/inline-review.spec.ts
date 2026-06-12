@@ -469,6 +469,51 @@ test("unavailable operations disable inline review authoring and thread replies"
   await expect(page.getByPlaceholder("Leave a comment")).toHaveCount(0);
 });
 
+test("an existing draft cannot publish while submit_review is unavailable", async ({ page }) => {
+  // The riskiest Files-tab path: a draft authored earlier must not be
+  // publishable once submit_review becomes unavailable (here a REST
+  // rate limit), and the user sees why instead of a vanished tray.
+  const rateLimitedReason = "github.com rate-limited; retry at 14:35";
+  const publishCalls: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "GET") return;
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith("/review-draft/publish")) {
+      publishCalls.push(`${request.method()} ${path}`);
+    }
+  });
+  await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", diffResponse, undefined, {
+    operations: {
+      submit_review: {
+        available: false,
+        code: "rate_limited",
+        unavailable_reason: rateLimitedReason,
+        retry_at: "2026-03-30T14:35:00Z",
+      },
+    },
+    initialDraftComments: [
+      {
+        id: "draft-1",
+        body: "needs a test",
+        path: "internal/server/server.go",
+        side: "right",
+        line: 1,
+        new_line: 1,
+        line_type: "add",
+        diff_head_sha: "diff-head",
+        created_at: "2026-03-30T14:01:00Z",
+        updated_at: "2026-03-30T14:01:00Z",
+      },
+    ],
+  });
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await expect(page.locator(".file-content").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Publish review" })).toHaveCount(0);
+  await expect(page.locator(".review-warning")).toContainText(rateLimitedReason);
+  expect(publishCalls).toEqual([]);
+});
+
 test("adds and publishes an inline draft review comment", async ({ page }) => {
   await mockInlineReviewAPI(page);
 

@@ -28,6 +28,10 @@
     diffHeadSHA?: string | undefined;
     reviewDraftMutation?: boolean;
     canReplyToThreads?: boolean;
+    /** Why review authoring is unavailable despite the provider
+     * supporting it (missing write credential, rate limit). Rendered
+     * where the draft tray would otherwise appear. */
+    reviewUnavailableReason?: string | undefined;
     supportedReviewActions?: string[];
     nativeMultilineRanges?: boolean;
     reviewThreads?: ReviewThread[];
@@ -51,6 +55,7 @@
     diffHeadSHA = undefined,
     reviewDraftMutation = false,
     canReplyToThreads = false,
+    reviewUnavailableReason = undefined,
     supportedReviewActions = [],
     nativeMultilineRanges = false,
     reviewThreads = [],
@@ -616,6 +621,8 @@
                 <div class="review-warning">{reviewWarning}</div>
               {/if}
               <DiffReviewDraftTray onjump={jumpToDraftComment} />
+            {:else if reviewUnavailableReason}
+              <div class="review-warning">{reviewUnavailableReason}</div>
             {/if}
           </div>
         </div>

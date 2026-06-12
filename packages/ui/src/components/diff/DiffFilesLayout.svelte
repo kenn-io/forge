@@ -41,6 +41,18 @@
     onScrollTopChange,
   }: Props = $props();
 
+  const submitReviewGate = $derived(operationGate(operations?.submit_review));
+  const replyThreadGate = $derived(operationGate(operations?.reply_review_thread));
+  // When the provider supports review authoring but the operation is
+  // unavailable (missing write credential, rate limit), the authoring
+  // affordances disappear — surface why instead of leaving the user
+  // guessing.
+  const reviewUnavailableReason = $derived(
+    (capabilities?.review_draft_mutation ?? false) && submitReviewGate.unavailable
+      ? submitReviewGate.reason
+      : undefined,
+  );
+
   const storageKey = "diff-file-tree-width";
   const defaultFileTreeWidth = 280;
   const minFileTreeWidth = 200;
@@ -179,9 +191,10 @@
         {diffHeadSHA}
         {reviewThreads}
         reviewDraftMutation={(capabilities?.review_draft_mutation ?? false)
-          && !operationGate(operations?.submit_review).unavailable}
+          && !submitReviewGate.unavailable}
         canReplyToThreads={(capabilities?.thread_reply ?? false)
-          && !operationGate(operations?.reply_review_thread).unavailable}
+          && !replyThreadGate.unavailable}
+        {reviewUnavailableReason}
         supportedReviewActions={capabilities?.supported_review_actions ?? []}
         nativeMultilineRanges={capabilities?.native_multiline_ranges ?? false}
         {initialScrollTop}

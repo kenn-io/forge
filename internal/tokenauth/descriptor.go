@@ -83,6 +83,21 @@ func (d Descriptor) SafeString() string {
 	return joinCandidateStrings(d.Candidates)
 }
 
+// HasActiveGitHubApp reports whether this chain resolves reads through
+// a GitHub App installation token. Consumers use it to decide
+// split-credential behavior (separate write credential, viewer
+// permission overlays); deriving it from the descriptor rather than
+// static config keeps the answer correct when a reload re-points the
+// chain or when repo-level overrides exclude the app candidate.
+func (d Descriptor) HasActiveGitHubApp() bool {
+	for _, candidate := range d.Candidates {
+		if candidate.Kind == SourceKindGitHubApp && candidate.InstallationID != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // CanonicalSourceString returns a stable identifier for the descriptor's
 // resolution chain with duplicate and field-redundant candidates removed.
 // Two descriptors that resolve from the same ordered sources produce the same

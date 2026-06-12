@@ -272,6 +272,7 @@ func NewClient(
 	return &liveClient{
 		gh:              ghClient,
 		ghWrite:         ghWriteClient,
+		source:          source,
 		httpClient:      httpClient,
 		httpWriteClient: writeHTTPClient,
 		rateTracker:     rateTracker,
@@ -313,11 +314,13 @@ type liveClient struct {
 	// credential's budget. Nil in hand-built test clients; accessors
 	// fall back to the read client.
 	ghWrite *gh.Client
-	// splitAuth records that this host's reads and writes resolve to
-	// different credentials (a GitHub App for sync, the user's PAT for
-	// writes). It gates the extra viewer-permission fetch in
-	// GetRepository; shared-credential hosts keep single-call behavior.
-	splitAuth               bool
+	// source is the credential chain reads resolve through. Split
+	// behavior (the viewer-permission overlay in GetRepository) is
+	// derived from its current descriptor on every call, so a config
+	// reload that adds or removes a GitHub App candidate takes effect
+	// without restart and repo-override chains that exclude the app
+	// keep single-credential behavior.
+	source                  tokenauth.Source
 	httpClient              *http.Client
 	httpWriteClient         *http.Client
 	rateTracker             *RateTracker
@@ -365,9 +368,14 @@ func (c *liveClient) SetWriteGraphQLRateTracker(rateTracker *RateTracker) {
 	c.writeGraphQLRateTracker = rateTracker
 }
 
-// SetSplitAuth marks this host as using split read/write credentials.
-func (c *liveClient) SetSplitAuth(active bool) {
-	c.splitAuth = active
+// splitAuthActive reports whether reads currently resolve through a
+// GitHub App installation token while writes use the user's own
+// credential (the mutation-marked chain skips the app candidate).
+func (c *liveClient) splitAuthActive() bool {
+	if c.source == nil {
+		return false
+	}
+	return c.source.Descriptor().HasActiveGitHubApp()
 }
 
 // InvalidateListETagsForRepo evicts cached ETag entries for the repo's
@@ -2125,7 +2133,7 @@ func (c *liveClient) GetRepository(
 	if err != nil {
 		return nil, fmt.Errorf("getting repository %s/%s: %w", owner, repo, err)
 	}
-	if !c.splitAuth {
+	if !c.splitAuthActive() {
 		return r, nil
 	}
 	viewerRepo, viewerResp, viewerErr := c.writeGH().Repositories.Get(ctx, owner, repo)

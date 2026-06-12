@@ -38,7 +38,6 @@ type graphQLRateTrackerSetter interface {
 type writeRateTrackerSetter interface {
 	SetWriteRateTracker(*github.RateTracker)
 	SetWriteGraphQLRateTracker(*github.RateTracker)
-	SetSplitAuth(bool)
 }
 
 type providerStartup struct {
@@ -242,10 +241,16 @@ func buildProviderStartup(
 		// Hosts whose sync reads ride a GitHub App split off the user's
 		// PAT for writes; only those get dedicated write trackers, so
 		// write availability gates on the budget writes actually
-		// consume. Shared-credential hosts keep gating on the sync
-		// trackers, which a write tracker entry would otherwise shadow
-		// with no observed state.
-		if app, ok := cfg.GitHubAppForHost(host); ok && app.InstallationID != 0 {
+		// consume. The split is read from the host's effective
+		// credential chain, not from [[github_apps]] config alone: a
+		// host whose repos all carry terminal token overrides never
+		// uses the app candidate, and an empty write tracker would
+		// shadow the shared trackers exhausted sync had observed.
+		hostSource := startup.cloneSources[tokenauth.Key{
+			Platform: string(platform.KindGitHub),
+			Host:     host,
+		}]
+		if hostSource != nil && hostSource.Descriptor().HasActiveGitHubApp() {
 			if setter, ok := clients[host].(writeRateTrackerSetter); ok {
 				writeRT := github.NewPlatformRateTracker(
 					database, string(platform.KindGitHub), host, "rest_write",
@@ -253,7 +258,6 @@ func buildProviderStartup(
 				writeGQLRT := github.NewPlatformRateTracker(
 					database, string(platform.KindGitHub), host, "graphql_write",
 				)
-				setter.SetSplitAuth(true)
 				setter.SetWriteRateTracker(writeRT)
 				setter.SetWriteGraphQLRateTracker(writeGQLRT)
 				startup.writeRateTrackers[rateKey] = writeRT

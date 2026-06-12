@@ -166,11 +166,6 @@ installation_account = "kenn-io"
 		ghclient.WithBaseURLForTesting(fakeGitHub.URL),
 	)
 	require.NoError(err)
-	// main() marks hosts with an active [[github_apps]] entry as
-	// split-credential, which enables the viewer permission overlay.
-	splitSetter, ok := client.(interface{ SetSplitAuth(bool) })
-	require.True(ok, "github client must support split-auth marking")
-	splitSetter.SetSplitAuth(true)
 	registry, err := ghclient.NewProviderRegistry(
 		map[string]ghclient.Client{"github.com": client},
 	)

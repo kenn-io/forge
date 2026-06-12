@@ -42,7 +42,7 @@ func newSplitAuthTestClient(
 	return &liveClient{
 		gh:              ghRead,
 		ghWrite:         ghWrite,
-		splitAuth:       true,
+		source:          source,
 		httpClient:      readHTTP,
 		httpWriteClient: writeHTTP,
 		graphQLEndpoint: srv.URL + "/api/graphql",
@@ -105,9 +105,15 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	mux.HandleFunc("POST /api/graphql",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("X-RateLimit-Limit", "5000")
-			w.Header().Set("X-RateLimit-Remaining", "4321")
-			w.Header().Set("X-RateLimit-Reset", "2000000000")
+			// Rate headers only on the node-ID lookup: the lookup
+			// consumes the write credential's GraphQL budget too, and
+			// the tracker must be fed even when the mutation response
+			// carries no rate headers.
+			if graphQLCalls.Load() == 0 {
+				w.Header().Set("X-RateLimit-Limit", "5000")
+				w.Header().Set("X-RateLimit-Remaining", "4321")
+				w.Header().Set("X-RateLimit-Reset", "2000000000")
+			}
 			if graphQLCalls.Add(1) == 1 {
 				record("write:rfr-id-lookup", r)
 				_, _ = w.Write([]byte(
@@ -175,9 +181,9 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	assert.Equal("Bearer user-pat", authByCall["repo:viewer-overlay"])
 	assert.Equal(int64(1), mints.Load(),
 		"reads share one minted token; writes must not mint")
-	// The GraphQL mutation consumed the PAT's GraphQL budget; its
-	// response headers must land in the write GraphQL tracker so
-	// ready-for-review availability reflects that budget.
+	// Every write-credential GraphQL request feeds the write GraphQL
+	// tracker, including the ready-for-review node-ID lookup — the
+	// fake only sets rate headers on the lookup response.
 	assert.Equal(4321, writeGQLRT.Remaining())
 }
 

@@ -89,7 +89,7 @@ func runCreate(args []string, env *appEnv) error {
 		return err
 	}
 
-	keyPath, err := writePrivateKey(env.configPath, creds.Slug, creds.PEM)
+	keyPath, err := writePrivateKey(env.configPath, h, creds.Slug, creds.PEM)
 	if err != nil {
 		return err
 	}
@@ -492,20 +492,31 @@ func reposNotCoveredByInstallation(
 // dots, traversal — is rejected rather than written.
 var validAppSlug = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$`)
 
+// validKeyFileHost limits the host's contribution to the key
+// filename to hostname-shaped characters. Hosts are normalized by
+// config loading, but the filename must stay safe even if that
+// changes.
+var validKeyFileHost = regexp.MustCompile(`^[A-Za-z0-9.-]+(:[0-9]+)?$`)
+
 // writePrivateKey stores the app's PEM next to the config file with
 // owner-only permissions and returns its absolute path. The path is
 // absolute so later config loads do not re-resolve it against the
 // config directory (a relative --config like tmp/config.toml would
-// otherwise turn "tmp/x.pem" into "tmp/tmp/x.pem"). The slug is
-// untrusted input from the manifest conversion response; a malicious
-// GHES host must not be able to steer the write outside the config
-// directory.
-func writePrivateKey(configPath, slug, pem string) (string, error) {
+// otherwise turn "tmp/x.pem" into "tmp/tmp/x.pem"). The filename
+// carries the host because slugs are only unique per host: two apps
+// with the same slug on different hosts must not share a key file.
+// The slug is untrusted input from the manifest conversion response;
+// a malicious GHES host must not be able to steer the write outside
+// the config directory.
+func writePrivateKey(configPath, host, slug, pem string) (string, error) {
 	if !validAppSlug.MatchString(slug) {
 		return "", fmt.Errorf(
 			"refusing to use app slug %q as a filename: slugs contain only letters, digits, and hyphens",
 			slug,
 		)
+	}
+	if !validKeyFileHost.MatchString(host) {
+		return "", fmt.Errorf("refusing to use host %q in a key filename", host)
 	}
 	dir, err := filepath.Abs(filepath.Dir(configPath))
 	if err != nil {
@@ -514,7 +525,8 @@ func writePrivateKey(configPath, slug, pem string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("creating config directory: %w", err)
 	}
-	path := filepath.Join(dir, "github-app-"+slug+".pem")
+	name := "github-app-" + strings.ReplaceAll(host, ":", "_") + "-" + slug + ".pem"
+	path := filepath.Join(dir, name)
 	if filepath.Dir(path) != dir {
 		return "", fmt.Errorf("app key path %q escapes the config directory", path)
 	}

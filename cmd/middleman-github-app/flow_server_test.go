@@ -94,12 +94,20 @@ func TestWritePrivateKeyRejectsHostileSlugs(t *testing.T) {
 	for _, slug := range []string{
 		"../evil", "a/b", "a\\b", "..", ".", "", "a..b/../c", "-leading", "trailing-",
 	} {
-		_, err := writePrivateKey(configPath, slug, "pem")
+		_, err := writePrivateKey(configPath, "github.com", slug, "pem")
 		require.Error(err, "slug %q must be rejected", slug)
 	}
+	_, err := writePrivateKey(configPath, "../up", "middleman-ok", "pem")
+	require.Error(err, "hostile host must be rejected")
 
-	path, err := writePrivateKey(configPath, "middleman-3f9a2c", "pem-bytes")
+	path, err := writePrivateKey(configPath, "github.com", "middleman-3f9a2c", "pem-bytes")
 	require.NoError(err)
 	assert.True(filepath.IsAbs(path), "key path %q must be absolute", path)
 	assert.Equal(filepath.Dir(configPath), filepath.Dir(path))
+
+	// Slugs are only unique per host; same slug on another host must
+	// land in a different file instead of overwriting the first key.
+	other, err := writePrivateKey(configPath, "ghe.example.com", "middleman-3f9a2c", "pem-2")
+	require.NoError(err)
+	assert.NotEqual(path, other, "per-host keys must not collide")
 }

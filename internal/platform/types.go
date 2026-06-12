@@ -290,14 +290,21 @@ type MergeRequestReviewThread struct {
 }
 
 type Capabilities struct {
-	ReadRepositories       bool
-	ReadMergeRequests      bool
-	ReadIssues             bool
-	ReadComments           bool
-	ReadReleases           bool
-	ReadCI                 bool
-	ReadLabels             bool
-	CommentMutation        bool
+	ReadRepositories  bool
+	ReadMergeRequests bool
+	ReadIssues        bool
+	ReadComments      bool
+	ReadReleases      bool
+	ReadCI            bool
+	ReadLabels        bool
+	CommentMutation   bool
+	// StateMutation means the provider can PATCH the item itself:
+	// open/close state transitions AND title/body/content updates.
+	// Every provider implements both through the same mutator, and
+	// the UI gates both kinds of edit affordance on this flag. A
+	// provider that could change state but not content (or vice
+	// versa) must split this capability rather than half-implement
+	// it.
 	StateMutation          bool
 	MergeMutation          bool
 	ReviewMutation         bool

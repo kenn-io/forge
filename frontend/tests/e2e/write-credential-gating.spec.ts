@@ -24,11 +24,15 @@ const operations = {
   mark_ready_for_review: unavailable,
   submit_review: unavailable,
   add_comment: unavailable,
+  edit_comment: unavailable,
   add_label: unavailable,
   remove_label: unavailable,
   close_issue: unavailable,
   reopen_issue: unavailable,
   approve_workflow: unavailable,
+  update_content: unavailable,
+  reply_review_thread: unavailable,
+  resolve_review_thread: unavailable,
 };
 
 const providerCapabilities = {
@@ -94,6 +98,19 @@ function repoEnvelope(item: { repo_owner: string; repo_name: string; platform_ho
   };
 }
 
+const commentEvent = {
+  ID: 11,
+  MergeRequestID: 1,
+  PlatformID: 9101,
+  EventType: "issue_comment",
+  Author: "marius",
+  Summary: "",
+  Body: "An existing comment",
+  MetadataJSON: "",
+  CreatedAt: "2026-03-30T14:00:00Z",
+  DedupeKey: "comment-9101",
+};
+
 function detailEnvelopePR(pr: typeof draftPR): unknown {
   return {
     merge_request: pr,
@@ -103,6 +120,7 @@ function detailEnvelopePR(pr: typeof draftPR): unknown {
     detail_loaded: true,
     detail_fetched_at: "2026-04-01T12:00:00Z",
     worktree_links: pr.worktree_links,
+    events: [commentEvent],
   };
 }
 
@@ -226,7 +244,65 @@ test.describe("missing write credential gates non-merge mutations", () => {
     await labelButton.click({ force: true });
     await expect(page.locator(".label-editor-popover")).toHaveCount(0);
 
+    // Content edits (title, description) gate on update_content: the
+    // affordances are visibly disabled with the reason, not silent
+    // no-ops.
+    const editTitle = page.locator(".edit-title-btn");
+    await expect(editTitle).toBeDisabled();
+    await expect(editTitle).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
+    await editTitle.click({ force: true });
+    await expect(page.locator(".title-edit-input")).toHaveCount(0);
+    const editBody = page.locator(".edit-body-btn");
+    await expect(editBody).toBeDisabled();
+    await expect(editBody).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
+
+    // Timeline comment edits gate on edit_comment: the existing
+    // comment renders without an edit affordance.
+    await expect(page.getByText("An existing comment")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Edit comment" })).toHaveCount(0);
+
     expect(mutationCalls).toEqual([]);
+  });
+
+  test("a REST rate limit on update_content disables content edits with the retry reason", async ({ page }) => {
+    // First-class content operations inherit per-operation rate-limit
+    // gating: when only update_content is rate-limited, content edits
+    // disable with the retry reason while unrelated mutations (close)
+    // stay available.
+    const rateLimitedReason = "github.com rate-limited; retry at 14:35";
+    await mockApi(page);
+    const rateLimitedOps = {
+      ...Object.fromEntries(Object.keys(operations).map((k) => [k, { available: true }])),
+      update_content: {
+        available: false,
+        code: "rate_limited",
+        unavailable_reason: rateLimitedReason,
+        retry_at: "2026-04-01T14:35:00Z",
+      },
+    };
+    await page.route(`**/api/v1/pulls/github/acme/widgets/${draftPR.Number}`, async (route) => {
+      if (route.request().method() === "GET") {
+        const envelope = detailEnvelopePR(draftPR) as { repo: Record<string, unknown> };
+        envelope.repo = { ...envelope.repo, operations: rateLimitedOps };
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(envelope),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/pulls/github/acme/widgets/${draftPR.Number}`);
+    await expect(page.locator(".detail-title")).toContainText(draftPR.Title);
+
+    const editTitle = page.locator(".edit-title-btn");
+    await expect(editTitle).toBeDisabled();
+    await expect(editTitle).toHaveAttribute("title", rateLimitedReason);
+
+    const closeButton = page.locator(".btn--close").first();
+    await expect(closeButton).toBeEnabled();
   });
 
   test("issue detail close, comment, and labels are disabled with the reason", async ({ page }) => {

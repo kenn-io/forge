@@ -12,9 +12,16 @@ export type OperationGate = { unavailable: boolean; reason: string };
 const availableGate: OperationGate = { unavailable: false, reason: "" };
 
 /**
- * Gate for one operation. An absent entry (older server, detail
- * still loading) gates nothing — the capability checks around each
- * control still apply.
+ * Gate for one operation.
+ *
+ * Contract for absent entries (mirrored on the server's
+ * RepoOperations doc): the current server always emits every field,
+ * so `undefined` only means an older server or a payload that has
+ * not loaded yet. That is "no operation-level verdict", NOT
+ * "unavailable" — the control falls back to its capability gating,
+ * exactly the pre-operations behavior. Treating absence as disabled
+ * would blank every action against older servers and flash-disable
+ * the UI on each route change.
  */
 export function operationGate(op: OperationAvailability | undefined): OperationGate {
   if (op === undefined || op.available) {

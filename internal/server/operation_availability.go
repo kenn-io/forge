@@ -72,6 +72,14 @@ type OperationAvailability struct {
 // operations part of the OpenAPI contract: clients get typed access
 // to each field and adding a new operation requires an explicit
 // server change.
+//
+// Contract for absent fields: this server always emits every field.
+// A client can still observe a missing entry — an older server, or a
+// payload that has not loaded yet — and must treat it as "no
+// operation-level verdict": the control falls back to its capability
+// gating (the pre-operations behavior) rather than disabling. The
+// frontend helper packages/ui/.../operation-gates.ts implements this
+// side of the contract.
 type RepoOperations struct {
 	MergePR             OperationAvailability `json:"merge_pr"`
 	ClosePR             OperationAvailability `json:"close_pr"`
@@ -123,10 +131,14 @@ var (
 	descReopenIssue        = operationDescriptor{name: operationReopenIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
 	descApproveWorkflow    = operationDescriptor{name: operationApproveWorkflow, requiredCapabilities: []string{capabilityWorkflowApproval}, bucket: apiBucketREST}
 	// Content edits (PR/issue title, body, task-list writes) ride the
-	// state-mutation capability and REST budget of the routes that
-	// serve them; review-thread reply and resolution are REST on every
-	// provider that supports them (GitHub replies via REST comments,
-	// GitLab discussions via REST).
+	// state-mutation capability: state_mutation has always meant "can
+	// PATCH the item" across providers — state transitions and
+	// title/body/content updates share the same provider mutators and
+	// the UI has always gated its edit affordances on it (see
+	// platform.Capabilities.StateMutation). They consume the REST
+	// budget of the routes that serve them; review-thread reply and
+	// resolution are REST on every provider that supports them (GitHub
+	// replies via REST comments, GitLab discussions via REST).
 	descUpdateContent       = operationDescriptor{name: operationUpdateContent, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
 	descReplyReviewThread   = operationDescriptor{name: operationReplyReviewThread, requiredCapabilities: []string{capabilityThreadReply}, bucket: apiBucketREST}
 	descResolveReviewThread = operationDescriptor{name: operationResolveReviewThread, requiredCapabilities: []string{capabilityReviewThreadResolution}, bucket: apiBucketREST}

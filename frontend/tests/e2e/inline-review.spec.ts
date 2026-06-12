@@ -37,6 +37,7 @@ function pullDetail(
   capabilities = baseCapabilities,
   provider = "github",
   platformHost = "github.com",
+  operations?: Record<string, unknown>,
 ) {
   return {
     merge_request: {
@@ -106,6 +107,7 @@ function pullDetail(
       owner: "acme",
       name: "widgets",
       capabilities,
+      ...(operations !== undefined && { operations }),
     },
     repo_owner: "acme",
     repo_name: "widgets",
@@ -162,6 +164,7 @@ function pullListItem(capabilities = baseCapabilities, provider = "github", plat
       owner: "acme",
       name: "widgets",
       capabilities,
+      ...(operations !== undefined && { operations }),
     },
   };
 }
@@ -335,6 +338,7 @@ type MockInlineReviewOptions = {
   detailFetchedAtSequence?: string[];
   initialDraftComments?: Array<Record<string, unknown>>;
   remainingDraftComments?: Array<Record<string, unknown>>;
+  operations?: Record<string, unknown>;
 };
 
 async function mockInlineReviewAPI(
@@ -359,7 +363,7 @@ async function mockInlineReviewAPI(
       await route.fallback();
       return;
     }
-    const detail = pullDetail(reviewThreadResolved, capabilities, provider, platformHost);
+    const detail = pullDetail(reviewThreadResolved, capabilities, provider, platformHost, options.operations);
     if (options.detailBody !== undefined) {
       detail.merge_request.Body = options.detailBody;
     }
@@ -443,6 +447,26 @@ async function firstDiffGutterRight(page: Page): Promise<number> {
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
+});
+
+test("unavailable operations disable inline review authoring and thread replies", async ({ page }) => {
+  // A GitHub App split host with no user write credential reports
+  // submit_review and reply_review_thread unavailable; the Files tab
+  // must not offer inline review authoring or thread replies that
+  // would fail at publish/reply time.
+  const unavailableOp = {
+    available: false,
+    code: "missing_write_credential",
+    unavailable_reason: "No user credential for writes on github.com",
+  };
+  await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", diffResponse, undefined, {
+    operations: { submit_review: unavailableOp, reply_review_thread: unavailableOp },
+  });
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await expect(page.locator(".file-content").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Comment on new line/ })).toHaveCount(0);
+  await expect(page.getByPlaceholder("Leave a comment")).toHaveCount(0);
 });
 
 test("adds and publishes an inline draft review comment", async ({ page }) => {

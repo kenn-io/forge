@@ -362,6 +362,7 @@
                 repoPath={selectedPR.repoPath}
                 diffHeadSHA={selectedDetail?.diff_head_sha}
                 capabilities={selectedDetail?.repo?.capabilities ?? defaultProviderCapabilities}
+                operations={selectedDetail?.repo?.operations}
                 reviewThreads={reviewThreadsFromEvents(selectedDetail?.events)}
                 initialScrollTop={filesScrollTop()}
                 onScrollTopChange={rememberFilesScroll}
@@ -380,6 +381,7 @@
             repoPath={selectedPR.repoPath}
             diffHeadSHA={selectedDetail?.diff_head_sha}
             capabilities={selectedDetail?.repo?.capabilities ?? defaultProviderCapabilities}
+            operations={selectedDetail?.repo?.operations}
             reviewThreads={reviewThreadsFromEvents(selectedDetail?.events)}
             initialScrollTop={filesScrollTop()}
             onScrollTopChange={rememberFilesScroll}

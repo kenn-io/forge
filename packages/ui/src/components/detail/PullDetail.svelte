@@ -1377,6 +1377,7 @@
           {number}
           diffHeadSHA={detail.diff_head_sha}
           {capabilities}
+          operations={repoOperations}
           reviewThreads={reviewThreadsFromEvents(detail.events)}
         />
       {:else}

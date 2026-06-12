@@ -117,10 +117,30 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(mermaid.initialize).toHaveBeenCalledWith({
       startOnLoad: false,
       securityLevel: "strict",
-      secure: ["secure", "securityLevel", "startOnLoad", "maxTextSize", "suppressErrorRendering", "maxEdges"],
+      secure: [
+        "secure",
+        "securityLevel",
+        "startOnLoad",
+        "maxTextSize",
+        "suppressErrorRendering",
+        "maxEdges",
+        "dompurifyConfig",
+        "htmlLabels",
+        "themeCSS",
+        "fontFamily",
+        "altFontFamily",
+      ],
       maxTextSize: 50_000,
       maxEdges: 500,
       suppressErrorRendering: true,
+      dompurifyConfig: {
+        FORBID_ATTR: ["style"],
+        FORBID_TAGS: ["style"],
+      },
+      htmlLabels: false,
+      themeCSS: "",
+      fontFamily: "Inter, sans-serif",
+      altFontFamily: "Inter, sans-serif",
       theme: "base",
       themeVariables: expect.objectContaining({
         background: "#ffffff",
@@ -153,10 +173,30 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(mermaid.initialize).toHaveBeenCalledWith({
       startOnLoad: false,
       securityLevel: "strict",
-      secure: ["secure", "securityLevel", "startOnLoad", "maxTextSize", "suppressErrorRendering", "maxEdges"],
+      secure: [
+        "secure",
+        "securityLevel",
+        "startOnLoad",
+        "maxTextSize",
+        "suppressErrorRendering",
+        "maxEdges",
+        "dompurifyConfig",
+        "htmlLabels",
+        "themeCSS",
+        "fontFamily",
+        "altFontFamily",
+      ],
       maxTextSize: 50_000,
       maxEdges: 500,
       suppressErrorRendering: true,
+      dompurifyConfig: {
+        FORBID_ATTR: ["style"],
+        FORBID_TAGS: ["style"],
+      },
+      htmlLabels: false,
+      themeCSS: "",
+      fontFamily: "Inter, sans-serif",
+      altFontFamily: "Inter, sans-serif",
       theme: "base",
       themeVariables: expect.objectContaining({
         background: "#0d1117",
@@ -197,7 +237,7 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(loader).not.toHaveBeenCalled();
   });
 
-  test("allows failed mermaid renders to be retried", async () => {
+  test("restores the source and holds failed mermaid renders until the source changes", async () => {
     const root = document.createElement("div");
     root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
     const renderError = new Error("render failed");
@@ -217,17 +257,21 @@ describe("renderMarkdownMermaidDiagrams", () => {
     const loader = vi.fn(async () => mermaid);
 
     await expect(renderMarkdownMermaidDiagrams(root, loader)).rejects.toThrow(renderError);
-    expect(root.querySelector<HTMLElement>("pre.mermaid")?.dataset.mermaidRendered).toBeUndefined();
+    expect(root.querySelector<HTMLElement>("pre.mermaid")?.dataset.mermaidRendered).toBe("failed");
     expect(root.querySelector<HTMLElement>("pre.mermaid")?.dataset.processed).toBeUndefined();
     expect(root.querySelector<HTMLElement>("pre.mermaid")?.textContent).toBe("graph TD\nA-->B");
 
-    const rendered = await renderMarkdownMermaidDiagrams(root, loader);
+    const unchangedRender = await renderMarkdownMermaidDiagrams(root, loader);
+    expect(unchangedRender).toBe(0);
 
+    const block = root.querySelector<HTMLElement>("pre.mermaid");
+    if (block) block.textContent = "graph TD\nA-->C";
+    const rendered = await renderMarkdownMermaidDiagrams(root, loader);
     expect(rendered).toBe(1);
     expect(mermaid.run).toHaveBeenCalledTimes(2);
   });
 
-  test("allows suppressed mermaid render failures to be retried", async () => {
+  test("restores the source and holds suppressed mermaid render failures until the source changes", async () => {
     const root = document.createElement("div");
     root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
     let suppressOnce = true;
@@ -248,12 +292,15 @@ describe("renderMarkdownMermaidDiagrams", () => {
     const firstRender = await renderMarkdownMermaidDiagrams(root, loader);
     const block = root.querySelector<HTMLElement>("pre.mermaid");
     expect(firstRender).toBe(0);
-    expect(block?.dataset.mermaidRendered).toBeUndefined();
+    expect(block?.dataset.mermaidRendered).toBe("failed");
     expect(block?.dataset.processed).toBeUndefined();
     expect(block?.textContent).toBe("graph TD\nA-->B");
 
-    const secondRender = await renderMarkdownMermaidDiagrams(root, loader);
+    const unchangedRender = await renderMarkdownMermaidDiagrams(root, loader);
+    expect(unchangedRender).toBe(0);
 
+    if (block) block.textContent = "graph TD\nA-->C";
+    const secondRender = await renderMarkdownMermaidDiagrams(root, loader);
     expect(secondRender).toBe(1);
     expect(mermaid.run).toHaveBeenCalledTimes(2);
     expect(block?.classList.contains("mermaid-viewer")).toBe(true);

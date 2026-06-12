@@ -15,6 +15,14 @@ interface MarkdownMermaidConfig {
   maxTextSize: number;
   maxEdges: number;
   suppressErrorRendering: true;
+  dompurifyConfig: {
+    FORBID_ATTR: string[];
+    FORBID_TAGS: string[];
+  };
+  htmlLabels: false;
+  themeCSS: "";
+  fontFamily: string;
+  altFontFamily: string;
   theme: "base";
   themeVariables: MermaidThemeVariables;
 }
@@ -44,6 +52,11 @@ const MERMAID_SECURE_CONFIG = [
   "maxTextSize",
   "suppressErrorRendering",
   "maxEdges",
+  "dompurifyConfig",
+  "htmlLabels",
+  "themeCSS",
+  "fontFamily",
+  "altFontFamily",
 ];
 const MERMAID_THEME_TOKENS = {
   background: "--mermaid-bg",
@@ -85,6 +98,7 @@ const MERMAID_THEME_TOKENS = {
 let mermaidPromise: Promise<MarkdownMermaidAPI> | null = null;
 const initializedMermaidTheme = new WeakMap<MarkdownMermaidAPI, MermaidThemeName>();
 const diagramSources = new WeakMap<HTMLElement, string>();
+const failedDiagramSources = new WeakMap<HTMLElement, string>();
 let closeActiveMermaidLightbox: (() => void) | null = null;
 
 async function loadMermaid(): Promise<MarkdownMermaidAPI> {
@@ -118,18 +132,19 @@ export async function renderMarkdownMermaidDiagrams(
     let renderedCount = 0;
     for (const node of nodes) {
       if (attachMermaidViewer(node, diagramSources.get(node) ?? "")) {
+        failedDiagramSources.delete(node);
         node.dataset.mermaidRendered = "true";
         renderedCount += 1;
       } else {
         restoreMermaidSource(node);
-        clearMermaidRenderState(node);
+        markMermaidRenderFailed(node);
       }
     }
     return renderedCount;
   } catch (error: unknown) {
     for (const node of nodes) {
       restoreMermaidSource(node);
-      clearMermaidRenderState(node);
+      markMermaidRenderFailed(node);
     }
     throw error;
   }
@@ -143,6 +158,17 @@ function collectRenderableMermaidNodes(root: ParentNode): HTMLElement[] {
   for (const node of Array.from(root.querySelectorAll<HTMLElement>(MERMAID_SELECTOR))) {
     const source = mermaidNodeSource(node);
     const nextSourceBytes = mermaidSourceByteLength(source);
+    if (node.dataset.mermaidRendered === "failed") {
+      const failedSource = failedDiagramSources.get(node);
+      if (failedSource === undefined || failedSource === source) {
+        diagramCount += 1;
+        sourceBytes += nextSourceBytes;
+        continue;
+      }
+      failedDiagramSources.delete(node);
+      clearMermaidRenderState(node);
+    }
+
     if (node.dataset.mermaidRendered || node.dataset.processed === "true") {
       diagramCount += 1;
       sourceBytes += nextSourceBytes;
@@ -166,6 +192,9 @@ function collectRenderableMermaidNodes(root: ParentNode): HTMLElement[] {
 }
 
 function mermaidNodeSource(node: HTMLElement): string {
+  if (node.dataset.mermaidRendered === "failed") {
+    return node.textContent ?? "";
+  }
   return diagramSources.get(node) ?? node.textContent ?? "";
 }
 
@@ -205,6 +234,13 @@ function clearMermaidRenderState(node: HTMLElement): void {
   delete node.dataset.processed;
 }
 
+function markMermaidRenderFailed(node: HTMLElement): void {
+  const source = diagramSources.get(node) ?? node.textContent ?? "";
+  failedDiagramSources.set(node, source);
+  node.dataset.mermaidRendered = "failed";
+  delete node.dataset.processed;
+}
+
 function restoreMermaidSource(node: HTMLElement): void {
   const source = diagramSources.get(node);
   if (source !== undefined) {
@@ -215,6 +251,8 @@ function restoreMermaidSource(node: HTMLElement): void {
 function initializeMermaidForCurrentTheme(mermaid: MarkdownMermaidAPI): void {
   const theme = currentMermaidTheme();
   if (initializedMermaidTheme.get(mermaid) === theme) return;
+  const themeVariables = mermaidThemeVariables(theme);
+  const fontFamily = String(themeVariables.fontFamily);
 
   mermaid.initialize({
     startOnLoad: false,
@@ -223,8 +261,16 @@ function initializeMermaidForCurrentTheme(mermaid: MarkdownMermaidAPI): void {
     maxTextSize: MERMAID_MAX_TEXT_SIZE,
     maxEdges: MERMAID_MAX_EDGES,
     suppressErrorRendering: true,
+    dompurifyConfig: {
+      FORBID_ATTR: ["style"],
+      FORBID_TAGS: ["style"],
+    },
+    htmlLabels: false,
+    themeCSS: "",
+    fontFamily,
+    altFontFamily: fontFamily,
     theme: "base",
-    themeVariables: mermaidThemeVariables(theme),
+    themeVariables,
   });
   initializedMermaidTheme.set(mermaid, theme);
 }

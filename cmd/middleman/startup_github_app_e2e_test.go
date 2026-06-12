@@ -64,7 +64,7 @@ func TestCollectProviderTokensMintsGitHubAppToken(t *testing.T) {
 	configPath := filepath.Join(dir, "config.toml")
 	configTOML := `
 host = "127.0.0.1"
-port = 0
+port = 8091
 
 [[repos]]
 owner = "kenn-io"

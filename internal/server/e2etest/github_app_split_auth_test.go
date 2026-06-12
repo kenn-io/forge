@@ -254,7 +254,13 @@ installation_account = "kenn-io"
 	t.Cleanup(syncer.Stop)
 	srv := server.NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
-		server.ServerOptions{TokenSources: sourceSet},
+		server.ServerOptions{
+			TokenSources: sourceSet,
+			// These tests drive a real httptest server whose port is
+			// ephemeral; relax loopback port matching like the shared
+			// fixtures do.
+			HostCheckAllowLoopbackAnyPort: true,
+		},
 	)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	httpServer := httptest.NewServer(srv)
@@ -506,7 +512,13 @@ installation_account = "kenn-io"
 	t.Cleanup(syncer.Stop)
 	srv := server.NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
-		server.ServerOptions{TokenSources: sourceSet},
+		server.ServerOptions{
+			TokenSources: sourceSet,
+			// These tests drive a real httptest server whose port is
+			// ephemeral; relax loopback port matching like the shared
+			// fixtures do.
+			HostCheckAllowLoopbackAnyPort: true,
+		},
 	)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	httpServer := httptest.NewServer(srv)

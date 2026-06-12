@@ -516,6 +516,51 @@ name = "other"
 	)
 }
 
+func TestInstallRepairsWrongAccountInstallation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+
+	// The app starts correctly installed for a config whose repos are
+	// owned by wrongorg.
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(configPath, []byte(`
+[[repos]]
+owner = "wrongorg"
+name = "thing"
+`), 0o600))
+	env, _ := newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowser(t, fake, "wrongorg")
+	require.NoError(runCLI([]string{
+		"create", "--name", "middleman-wrong-account", "--timeout", "10s",
+	}, env))
+
+	// The user re-points middleman at repos the recorded installation's
+	// account does not own; the strict loader now rejects the config.
+	raw, err := os.ReadFile(configPath)
+	require.NoError(err)
+	repointed := strings.Replace(string(raw), `owner = "wrongorg"`, `owner = "kenn-io"`, 1)
+	repointed = strings.Replace(repointed, `name = "thing"`, `name = "middleman"`, 1)
+	require.NoError(os.WriteFile(configPath, []byte(repointed), 0o600))
+	_, err = config.Load(configPath)
+	require.ErrorContains(err, "not covered by the github app")
+
+	// install must not dead-end on refreshing the wrong-account
+	// installation: it falls through to waiting for an installation on
+	// the owning account and records that one.
+	env, out := newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
+	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.Contains(out.String(), "waiting for an installation on the right account")
+
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	require.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
+}
+
 func TestCreateWithNestedRelativeConfigPath(t *testing.T) {
 	// A relative --config with a directory component previously saved
 	// a key path that later loads re-resolved against the config dir,

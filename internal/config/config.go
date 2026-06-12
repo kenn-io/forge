@@ -695,19 +695,19 @@ type Config struct {
 	// Forwarded RFC 7239 host= for the Public Host validation step.
 	// The raw Host header must still pass the allowed_hosts gate
 	// before any forwarded header is read.
-	TrustReverseProxy bool             `toml:"trust_reverse_proxy"`
+	TrustReverseProxy bool              `toml:"trust_reverse_proxy"`
 	Repos             []Repo            `toml:"repos"`
 	Platforms         []PlatformConfig  `toml:"platforms"`
 	GitHubApps        []GitHubAppConfig `toml:"github_apps"`
-	Activity          Activity         `toml:"activity"`
-	Terminal          Terminal         `toml:"terminal"`
-	Modes             ModeVisibility   `toml:"modes"`
-	Agents            []Agent          `toml:"agents"`
-	DocFolders        []DocFolder      `toml:"doc_folders"`
-	Roborev           Roborev          `toml:"roborev"`
-	Msgvault          *Msgvault        `toml:"msgvault"`
-	Tmux              Tmux             `toml:"tmux"`
-	Shell             Shell            `toml:"shell"`
+	Activity          Activity          `toml:"activity"`
+	Terminal          Terminal          `toml:"terminal"`
+	Modes             ModeVisibility    `toml:"modes"`
+	Agents            []Agent           `toml:"agents"`
+	DocFolders        []DocFolder       `toml:"doc_folders"`
+	Roborev           Roborev           `toml:"roborev"`
+	Msgvault          *Msgvault         `toml:"msgvault"`
+	Tmux              Tmux              `toml:"tmux"`
+	Shell             Shell             `toml:"shell"`
 
 	// parsedAllowedHosts is the canonicalised form of AllowedHosts,
 	// populated by Validate so the server constructor does not have
@@ -2150,30 +2150,30 @@ func reposForSave(repos []Repo) []Repo {
 
 // configFile is the subset of Config written to disk.
 type configFile struct {
-	SyncInterval              string           `toml:"sync_interval"`
-	GitHubTokenEnv            string           `toml:"github_token_env"`
-	DefaultPlatformHost       string           `toml:"default_platform_host,omitempty"`
-	Host                      string           `toml:"host"`
-	Port                      int              `toml:"port"`
-	SyncBudgetPerHour         int              `toml:"sync_budget_per_hour,omitempty"`
-	SSEBufferSize             int              `toml:"sse_buffer_size,omitempty"`
-	BasePath                  string           `toml:"base_path,omitempty"`
-	DataDir                   string           `toml:"data_dir,omitempty"`
-	IssueWorkspaceBranchStyle string           `toml:"issue_workspace_branch_style,omitempty"`
-	AllowedHosts              []string         `toml:"allowed_hosts,omitempty"`
-	TrustReverseProxy         bool             `toml:"trust_reverse_proxy,omitempty"`
+	SyncInterval              string            `toml:"sync_interval"`
+	GitHubTokenEnv            string            `toml:"github_token_env"`
+	DefaultPlatformHost       string            `toml:"default_platform_host,omitempty"`
+	Host                      string            `toml:"host"`
+	Port                      int               `toml:"port"`
+	SyncBudgetPerHour         int               `toml:"sync_budget_per_hour,omitempty"`
+	SSEBufferSize             int               `toml:"sse_buffer_size,omitempty"`
+	BasePath                  string            `toml:"base_path,omitempty"`
+	DataDir                   string            `toml:"data_dir,omitempty"`
+	IssueWorkspaceBranchStyle string            `toml:"issue_workspace_branch_style,omitempty"`
+	AllowedHosts              []string          `toml:"allowed_hosts,omitempty"`
+	TrustReverseProxy         bool              `toml:"trust_reverse_proxy,omitempty"`
 	Repos                     []Repo            `toml:"repos"`
 	Platforms                 []PlatformConfig  `toml:"platforms,omitempty"`
 	GitHubApps                []GitHubAppConfig `toml:"github_apps,omitempty"`
-	Activity                  Activity         `toml:"activity"`
-	Terminal                  Terminal         `toml:"terminal,omitempty"`
-	Modes                     ModeVisibility   `toml:"modes,omitempty"`
-	Agents                    []Agent          `toml:"agents,omitempty"`
-	DocFolders                []DocFolder      `toml:"doc_folders,omitempty"`
-	Roborev                   Roborev          `toml:"roborev,omitempty"`
-	Msgvault                  *Msgvault        `toml:"msgvault,omitempty"`
-	Tmux                      Tmux             `toml:"tmux,omitempty"`
-	Shell                     Shell            `toml:"shell,omitempty"`
+	Activity                  Activity          `toml:"activity"`
+	Terminal                  Terminal          `toml:"terminal,omitempty"`
+	Modes                     ModeVisibility    `toml:"modes,omitempty"`
+	Agents                    []Agent           `toml:"agents,omitempty"`
+	DocFolders                []DocFolder       `toml:"doc_folders,omitempty"`
+	Roborev                   Roborev           `toml:"roborev,omitempty"`
+	Msgvault                  *Msgvault         `toml:"msgvault,omitempty"`
+	Tmux                      Tmux              `toml:"tmux,omitempty"`
+	Shell                     Shell             `toml:"shell,omitempty"`
 }
 
 // Save writes the current config to the given path.

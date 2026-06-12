@@ -485,9 +485,14 @@ test("unavailable operations disable inline review authoring and thread replies"
 
 test("a loaded draft becomes unpublishable when submit_review flips unavailable", async ({ page }) => {
   // The riskiest Files-tab path: a draft that is already loaded and
-  // publishable must lose its publish affordance once submit_review
-  // becomes unavailable (here a REST rate limit), with the reason
-  // shown and no publish request possible.
+  // publishable must lose its publish affordance when submit_review
+  // becomes unavailable while the diff stays mounted. Split view
+  // keeps the conversation pane (which polls the detail payload) and
+  // the files pane mounted together, so the flip arrives through the
+  // real in-app poll without any navigation or reload. The local
+  // draft view clearing while gated is the store's designed behavior;
+  // the draft itself persists server-side, so flipping back must
+  // restore it.
   const rateLimitedReason = "github.com rate-limited; retry at 14:35";
   const publishCalls: string[] = [];
   page.on("request", (request) => {
@@ -514,7 +519,7 @@ test("a loaded draft becomes unpublishable when submit_review flips unavailable"
     ],
   });
   // Override the detail route (last registered wins) so the test can
-  // flip submit_review availability between loads.
+  // flip submit_review availability between detail polls.
   let submitReviewOp: Record<string, unknown> | undefined;
   let detailGets = 0;
   await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {
@@ -527,30 +532,35 @@ test("a loaded draft becomes unpublishable when submit_review flips unavailable"
     await fulfillJson(route, pullDetail(false, baseCapabilities, "github", "github.com", operations));
   });
 
-  // Phase 1: submit_review available — the seeded draft loads and is
-  // publishable.
-  await page.goto("/pulls/github/acme/widgets/42/files");
+  await page.clock.install();
+  await page.setViewportSize({ width: 2200, height: 1000 });
+  await page.goto("/pulls/github/acme/widgets/42");
+  await page.getByRole("button", { name: "Split view", exact: true }).click();
   await expect(page.getByText("1 draft comment")).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish review" })).toBeVisible();
 
-  // Phase 2: the host's review budget is exhausted. Switching tabs is
-  // an in-app (SPA) navigation — no document reload, the client-side
-  // draft store keeps the loaded draft — and remounting the
-  // conversation pane refetches the detail payload with the flipped
-  // availability.
+  // Flip off: the next detail poll delivers the exhausted budget and
+  // the mounted diff swaps the publishable tray for the reason.
   submitReviewOp = {
     available: false,
     code: "rate_limited",
     unavailable_reason: rateLimitedReason,
     retry_at: "2026-03-30T14:35:00Z",
   };
-  const getsBeforeFlip = detailGets;
-  await page.getByRole("button", { name: "Conversation" }).click();
-  await expect.poll(() => detailGets).toBeGreaterThan(getsBeforeFlip);
-  await page.getByRole("button", { name: "Files changed" }).click();
-  await expect(page.locator(".file-content").first()).toBeVisible();
+  let getsBefore = detailGets;
+  await page.clock.fastForward(61_000);
+  await expect.poll(() => detailGets).toBeGreaterThan(getsBefore);
   await expect(page.getByRole("button", { name: "Publish review" })).toHaveCount(0);
   await expect(page.locator(".review-warning")).toContainText(rateLimitedReason);
+
+  // Flip back: the server-side draft survived the gated window and
+  // the view restores it, publishable again.
+  submitReviewOp = undefined;
+  getsBefore = detailGets;
+  await page.clock.fastForward(61_000);
+  await expect.poll(() => detailGets).toBeGreaterThan(getsBefore);
+  await expect(page.getByText("1 draft comment")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Publish review" })).toBeVisible();
   expect(publishCalls).toEqual([]);
 });
 

@@ -378,11 +378,26 @@ func (env *appEnv) runInstallFlow(
 			}
 		}
 		if refreshed {
+			// Refreshing cannot help when the installation sits on an
+			// account that does not own the configured repos — the
+			// repair for that is installing on the right account, so
+			// fall through to waiting for a new installation.
+			candidate := app
+			candidate.InstallationAccount = picked.Account.Login
+			if uncovered := reposNotCoveredByInstallation(cfg, candidate); len(uncovered) > 0 {
+				fmt.Fprintf(env.stdout,
+					"Recorded installation %d on %q cannot reach %s; waiting for an installation on the right account.\n",
+					picked.ID, picked.Account.Login, strings.Join(uncovered, ", "),
+				)
+				refreshed = false
+			}
+		}
+		if refreshed {
 			fmt.Fprintf(env.stdout,
 				"Refreshing recorded installation %d on %s.\n",
 				picked.ID, picked.Account.Login,
 			)
-		} else {
+		} else if picked.ID == 0 {
 			fmt.Fprintf(env.stdout,
 				"Recorded installation %d no longer exists on GitHub; waiting for a new one.\n",
 				app.InstallationID,

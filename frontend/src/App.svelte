@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import {
     Provider,
     PRListView,
@@ -43,6 +43,7 @@
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
+  import { waitUntilBackendReady } from "./lib/utils/backendReadiness.js";
   import {
     initTheme,
     cleanupTheme,
@@ -325,6 +326,23 @@
     };
   }
 
+  function loadKataDaemonRosterAfterBackendReady(signal: AbortSignal): void {
+    void (async () => {
+      try {
+        const roster = await loadKataDaemonRoster();
+        if (signal.aborted) return;
+        setKataDaemonRoster(roster.ids, roster.defaultId);
+        kataDaemonInfos = roster.daemons;
+        kataDefaultDaemonId = roster.defaultId;
+      } catch {
+        if (signal.aborted) return;
+        kataDaemonInfos = [];
+        kataDefaultDaemonId = undefined;
+        setKataDaemonRoster([], undefined);
+      }
+    })();
+  }
+
   function isModeVisible(mode: keyof ModeVisibility): boolean {
     return stores?.settings.isModeVisible(mode) ?? true;
   }
@@ -362,6 +380,8 @@
     const cleanupContainer = initContainerObserver(appEl);
     const cleanupItemRefs = initItemRefHandler();
     const cancelStartup = runAppStartup({
+      waitUntilBackendReady,
+      afterBackendReady: loadKataDaemonRosterAfterBackendReady,
       getSettings,
       getStores: () => startupStores,
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
@@ -510,28 +530,6 @@
   onDestroy(() => {
     stopFullAppShell();
     stores?.events.disconnect();
-  });
-
-  onMount(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const roster = await loadKataDaemonRoster();
-        if (cancelled) return;
-        setKataDaemonRoster(roster.ids, roster.defaultId);
-        kataDaemonInfos = roster.daemons;
-        kataDefaultDaemonId = roster.defaultId;
-      } catch {
-        if (!cancelled) {
-          kataDaemonInfos = [];
-          kataDefaultDaemonId = undefined;
-          setKataDaemonRoster([], undefined);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   });
 
   $effect(() => {

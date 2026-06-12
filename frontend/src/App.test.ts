@@ -142,11 +142,22 @@ vi.mock("./lib/messages/kataMessageLinker.js", () => ({
   }),
 }));
 vi.mock("./lib/utils/appStartup.js", () => ({
-  runAppStartup: ({ onReady }: { onReady: () => void }) => {
+  runAppStartup: ({
+    afterBackendReady,
+    onReady,
+  }: {
+    afterBackendReady?: (signal: AbortSignal) => void;
+    onReady: () => void;
+  }) => {
+    const signal = new AbortController().signal;
+    const markReady = () => {
+      afterBackendReady?.(signal);
+      onReady();
+    };
     if (startup.autoReady) {
-      queueMicrotask(onReady);
+      queueMicrotask(markReady);
     } else {
-      startup.readyCallbacks.push(onReady);
+      startup.readyCallbacks.push(markReady);
     }
     return vi.fn();
   },
@@ -182,6 +193,7 @@ function createAppTarget() {
 
 describe("App feature routes", () => {
   beforeEach(async () => {
+    vi.clearAllMocks();
     featureImports.docs = 0;
     featureImports.messages = 0;
     featureImports.failDocsOnce = false;
@@ -222,6 +234,7 @@ describe("App feature routes", () => {
     startup.autoReady = false;
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
+    const { fetchKataDaemons } = await import("./lib/api/kata/daemons.js");
     const { default: App } = await import("./App.svelte");
 
     render(App, { target: createAppTarget() });
@@ -229,11 +242,13 @@ describe("App feature routes", () => {
     await waitFor(() => expect(featureImports.docs).toBe(1));
 
     expect(screen.queryByTestId("docs-feature")).toBeNull();
+    expect(fetchKataDaemons).not.toHaveBeenCalled();
 
     for (const onReady of startup.readyCallbacks) {
       onReady();
     }
     await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
+    await waitFor(() => expect(fetchKataDaemons).toHaveBeenCalledTimes(1));
   });
 
   it("keeps Docs and Messages mounted while hidden", async () => {

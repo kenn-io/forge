@@ -76,6 +76,16 @@ async function flushMicrotasks(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  let reject: (reason?: unknown) => void = () => {};
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("runAppStartup", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -99,6 +109,39 @@ describe("runAppStartup", () => {
     expect(stores.settings.setModeVisibility).toHaveBeenCalledWith(settings.modes);
     expect(stores.settings.setTerminalSettings).toHaveBeenCalledWith(settings.terminal);
     expect(stores.activity.hydrateDefaults).toHaveBeenCalledWith(settings.activity);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);
+    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
+    expect(stores.issues.loadIssues).toHaveBeenCalledTimes(1);
+    expect(stores.events.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for backend readiness before fetching settings or loading data", async () => {
+    const stores = makeStores();
+    const ready = deferred<void>();
+    const getSettings = vi.fn(() => Promise.resolve(makeSettings()));
+    const onReady = vi.fn();
+
+    runAppStartup({
+      waitUntilBackendReady: () => ready.promise,
+      getSettings,
+      getStores: () => stores,
+      onReady,
+    });
+
+    await flushMicrotasks();
+
+    expect(getSettings).not.toHaveBeenCalled();
+    expect(onReady).not.toHaveBeenCalled();
+    expect(stores.sync.startPolling).not.toHaveBeenCalled();
+    expect(stores.pulls.loadPulls).not.toHaveBeenCalled();
+    expect(stores.issues.loadIssues).not.toHaveBeenCalled();
+    expect(stores.events.connect).not.toHaveBeenCalled();
+
+    ready.resolve();
+    await flushMicrotasks();
+
+    expect(getSettings).toHaveBeenCalledTimes(1);
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);
     expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);

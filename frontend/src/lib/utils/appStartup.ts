@@ -2,6 +2,8 @@ import type { StoreInstances } from "@middleman/ui";
 import type { Settings } from "@middleman/ui/api/types";
 
 export interface AppStartupDeps {
+  waitUntilBackendReady?: (signal: AbortSignal) => Promise<void>;
+  afterBackendReady?: (signal: AbortSignal) => void;
   getSettings: () => Promise<Settings>;
   getStores: () => StoreInstances | undefined;
   onReady: () => void;
@@ -40,7 +42,19 @@ async function loadSettingsWithTimeout(getSettings: () => Promise<Settings>): Pr
  */
 export function runAppStartup(deps: AppStartupDeps): () => void {
   let cancelled = false;
+  const abort = new AbortController();
   void (async () => {
+    try {
+      if (deps.waitUntilBackendReady) {
+        await deps.waitUntilBackendReady(abort.signal);
+      }
+    } catch (err) {
+      if (cancelled || abort.signal.aborted) return;
+      console.warn("Failed waiting for backend readiness:", err);
+      return;
+    }
+    if (cancelled) return;
+    deps.afterBackendReady?.(abort.signal);
     try {
       const settings = await loadSettingsWithTimeout(deps.getSettings);
       if (cancelled) return;
@@ -69,5 +83,6 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
   })();
   return () => {
     cancelled = true;
+    abort.abort();
   };
 }

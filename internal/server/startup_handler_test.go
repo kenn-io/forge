@@ -40,7 +40,7 @@ func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, secondRR.Code)
 }
 
-func TestStartupHandlerServesStartupPageWhileAPIUnavailable(t *testing.T) {
+func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
@@ -69,9 +69,9 @@ func TestStartupHandlerServesStartupPageWhileAPIUnavailable(t *testing.T) {
 
 	assert := Assert.New(t)
 	assert.Equal(http.StatusOK, rootRR.Code)
-	assert.Contains(rootRR.Body.String(), "middleman is starting")
-	assert.Contains(rootRR.Body.String(), `const middlemanReadyPath="/healthz";`)
-	assert.NotContains(rootRR.Body.String(), `<body>app</body>`)
+	assert.Contains(rootRR.Body.String(), `<body>app</body>`)
+	assert.Contains(rootRR.Body.String(), `window.__BASE_PATH__="/"`)
+	assert.NotContains(rootRR.Body.String(), "middleman is starting")
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
 	apiReq.Host = "127.0.0.1:8091"
@@ -147,9 +147,10 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 
 	assert := Assert.New(t)
 	assert.Equal(http.StatusOK, rr.Code)
-	assert.Contains(rr.Body.String(), "middleman is starting")
-	assert.Contains(rr.Body.String(), `const middlemanReadyPath="/middleman/healthz";`)
-	assert.NotContains(rr.Body.String(), `src="/middleman/assets/index.js"`)
+	assert.Contains(rr.Body.String(), `<body>app</body>`)
+	assert.Contains(rr.Body.String(), `window.__BASE_PATH__="/middleman/"`)
+	assert.Contains(rr.Body.String(), `src="/middleman/assets/index.js"`)
+	assert.NotContains(rr.Body.String(), "middleman is starting")
 
 	healthReq := httptest.NewRequest(http.MethodGet, "/middleman/healthz", nil)
 	healthReq.Host = "127.0.0.1:8091"
@@ -234,8 +235,9 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 	rootStatus, _, rootBody := getHTTPBody(t, client, baseURL+"/")
 	assert := Assert.New(t)
 	assert.Equal(http.StatusOK, rootStatus)
-	assert.Contains(rootBody, "middleman is starting")
-	assert.NotContains(rootBody, `<body>app</body>`)
+	assert.Contains(rootBody, `<body>app</body>`)
+	assert.Contains(rootBody, `window.__BASE_PATH__="/"`)
+	assert.NotContains(rootBody, "middleman is starting")
 
 	apiStatus, apiHeader, apiBody := getHTTPBody(
 		t, client, baseURL+"/api/v1/sync/status",

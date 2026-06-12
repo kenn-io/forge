@@ -163,6 +163,68 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorWhenApproveFails(t *test
 	assert.True(published)
 }
 
+func TestGitLabPublishDiffReviewDraftReturnsPartialStaleErrorWhenApproveHeadMoves(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	var published bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes":
+			assert.Equal(http.MethodPost, r.Method)
+			writeJSON(w, `{"id": 55, "note": "range note"}`)
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/55/publish":
+			assert.Equal(http.MethodPut, r.Method)
+			published = true
+			writeJSON(w, `{}`)
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/approve":
+			assert.Equal(http.MethodPost, r.Method)
+			var body struct {
+				SHA string `json:"sha"`
+			}
+			if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			assert.Equal("old-head", body.SHA)
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"message": "SHA does not match HEAD of source branch"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+		RepoPath: "group/project",
+	}, 7, platform.PublishDiffReviewDraftInput{
+		Action: platform.ReviewActionApprove,
+		Comments: []platform.LocalDiffReviewDraftComment{{
+			ID:   123,
+			Body: "range note",
+			Range: platform.DiffReviewLineRange{
+				Path:        "src/main.go",
+				Side:        "right",
+				Line:        5,
+				DiffHeadSHA: "old-head",
+			},
+		}},
+	})
+
+	require.Error(err)
+	require.NotNil(result)
+	var partialErr *platform.DiffReviewPublishPartialError
+	require.ErrorAs(err, &partialErr)
+	assert.Equal([]int64{123}, partialErr.PublishedCommentIDs)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.Equal("approve_merge_request", platformErr.Capability)
+	assert.True(published)
+	assert.False(result.SubmittedAt.IsZero())
+}
+
 func TestGitLabPublishDiffReviewDraftUsesHeadSHAForSummaryApproval(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

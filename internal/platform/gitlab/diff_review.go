@@ -93,7 +93,7 @@ func (c *Client) PublishDiffReviewDraft(
 			gitlab.WithContext(ctx),
 		)
 		if err != nil {
-			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, mapGitLabError("approve_merge_request", err))
+			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, mapGitLabMutationError("approve_merge_request", sha, err))
 		}
 	}
 	return &platform.PublishedDiffReview{SubmittedAt: submittedAt}, nil

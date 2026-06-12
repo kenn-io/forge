@@ -197,6 +197,80 @@ describe("Pierre diff parsing", () => {
     expect(parsed?.additionLines).toContain("new line\n");
   });
 
+  it("synthesizes Git new-file metadata for added files", () => {
+    const file: DiffFile = {
+      ...makeFile("src/foo.go", "+package main"),
+      status: "added",
+      old_path: "",
+      deletions: 0,
+      patch: "",
+      hunks: [
+        {
+          old_start: 0,
+          old_count: 0,
+          new_start: 1,
+          new_count: 1,
+          lines: [{ type: "add", content: "package main", new_num: 1 }],
+        },
+      ],
+    };
+
+    const patched = diffFileWithPatch(file);
+    const parsed = parsePierreFileDiff(file);
+
+    expect(patched.patch).toContain("new file mode 100644\n");
+    expect(parsed?.type).toBe("new");
+  });
+
+  it("wraps hunk-only added-file patches with Git file metadata", () => {
+    const file: DiffFile = {
+      ...makeFile("src/foo.go", "+package main"),
+      status: "added",
+      old_path: "",
+      deletions: 0,
+      patch: "@@ -0,0 +1,1 @@\n+package main\n",
+      hunks: [
+        {
+          old_start: 0,
+          old_count: 0,
+          new_start: 1,
+          new_count: 1,
+          lines: [{ type: "add", content: "package main", new_num: 1 }],
+        },
+      ],
+    };
+
+    const patched = diffFileWithPatch(file);
+    const parsed = parsePierreFileDiff(file);
+
+    expect(patched.patch).toContain("new file mode 100644\n");
+    expect(patched.patch).toContain("@@ -0,0 +1,1 @@\n+package main\n");
+    expect(parsed?.type).toBe("new");
+    expect(parsed?.lang).toBe("go");
+    expect(parsed?.additionLines).toContain("package main\n");
+    expect(parsed?.cacheKey).toBeDefined();
+  });
+
+  it("wraps hunk-only patch text when structured hunks are absent", () => {
+    const file: DiffFile = {
+      ...makeFile("src/foo.go", "+package main"),
+      status: "added",
+      old_path: "",
+      deletions: 0,
+      patch: "@@ -0,0 +1,1 @@\n+package main\n",
+      hunks: [],
+    };
+
+    const patched = diffFileWithPatch(file);
+    const parsed = parsePierreFileDiff(file);
+
+    expect(patched.patch).toContain("new file mode 100644\n");
+    expect(patched.patch).toContain("@@ -0,0 +1,1 @@\n+package main\n");
+    expect(parsed?.type).toBe("new");
+    expect(parsed?.additionLines).toContain("package main\n");
+    expect(parsed?.cacheKey).toBeDefined();
+  });
+
   it("quotes synthetic patch paths that can be parsed as patch control text", () => {
     expect(patchPath("a/src/normal.ts")).toBe("a/src/normal.ts");
     expect(patchPath("a/src/evil\n--- a/forged")).toBe('"a/src/evil\\n--- a/forged"');

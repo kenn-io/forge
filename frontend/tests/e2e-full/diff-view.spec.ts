@@ -850,13 +850,13 @@ function diffResponseFromFixture(fixture: DiffResult | DiffFixture): DiffResult 
   };
 }
 
-async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void> {
+async function mockDiffApi(page: Page, fixture: DiffResult | DiffFixture): Promise<void> {
   const responseFixture = diffResponseFromFixture(fixture);
   await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(filesFromDiff(fixture)),
+      body: JSON.stringify(filesFromDiff(responseFixture)),
     });
   });
   await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
@@ -1127,6 +1127,41 @@ test.describe("diff view", () => {
         .filter(Boolean),
     );
     expect(statusLanes).toEqual(["M"]);
+  });
+
+  test("hunk-only added-file patches render added file content", async ({ page }) => {
+    const hunkOnlyAddedDiff: DiffResult = {
+      ...smallDiff,
+      files: smallDiff.files.map((file) =>
+        file.path === "frontend/src/lib/utils/format.ts"
+          ? {
+              ...file,
+              patch: [
+                "@@ -0,0 +1,8 @@",
+                "+export function formatDate(d: Date): string {",
+                "+  const year = d.getFullYear();",
+                "+  const month = String(d.getMonth() + 1).padStart(2, '0');",
+                "+  const day = String(d.getDate()).padStart(2, '0');",
+                "+  return `${year}-${month}-${day}`;",
+                "+}",
+                "+",
+                "+export function formatNumber(n: number): string {",
+                "",
+              ].join("\n"),
+            }
+          : file,
+      ),
+    };
+    await mockDiffApi(page, hunkOnlyAddedDiff);
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const addedFile = page.locator('[data-file-path="frontend/src/lib/utils/format.ts"]');
+    await addedFile.scrollIntoViewIfNeeded();
+    await expectPierreDiffFirstText(addedFile, diffAdditionsSelector, "export function");
+    await expectPierreDiffCount(addedFile, diffDeletionsSelector, 0);
+    await expectPierreDiffCount(addedFile, diffContextSelector, 0);
   });
 
   test("sidebar shows folders for grouped files", async ({ page }) => {

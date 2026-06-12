@@ -1,4 +1,4 @@
-import { parsePatchFiles, processFile } from "@pierre/diffs";
+import { getFiletypeFromFileName, parsePatchFiles, processFile } from "@pierre/diffs";
 import type { FileContents, FileDiffMetadata, ThemeTypes } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
 import { syntaxHighlightingDisabledForAutomation } from "./pierre-worker-pool.js";
@@ -8,6 +8,7 @@ interface ParsePierreFileDiffOptions {
 }
 
 const maxSparseContextLine = 50_000;
+const syntheticPatchFiles = new WeakSet<DiffFile>();
 
 // Pierre skips tokenization entirely for "text" diffs; pinning the
 // language override is how automation runs (see pierre-worker-pool)
@@ -31,16 +32,21 @@ export function parsePierreFileDiff(
   if (!patchedFile.patch) return undefined;
   if (options.enableDemandContextExpansion && canBuildSparsePatchContents(patchedFile)) {
     const contents = sparsePatchContents(patchedFile);
-    return withAutomationLanguage(processPatchWithContext(patchedFile, contents));
+    return withAutomationLanguage(
+      withSyntheticPatchCacheKey(patchedFile, processPatchWithContext(patchedFile, contents)),
+    );
   }
-  return withAutomationLanguage(parsePatchOnly(patchedFile));
+  return withAutomationLanguage(withSyntheticPatchCacheKey(patchedFile, parsePatchOnly(patchedFile)));
 }
 
 export function parsePierreFileDiffWithContents(
   file: DiffFile,
   contents: { oldFile: FileContents; newFile: FileContents },
 ): FileDiffMetadata | undefined {
-  return withAutomationLanguage(processPatchWithContext(diffFileWithPatch(file), contents));
+  const patchedFile = diffFileWithPatch(file);
+  return withAutomationLanguage(
+    withSyntheticPatchCacheKey(patchedFile, processPatchWithContext(patchedFile, contents)),
+  );
 }
 
 export function pierreFileContents(name: string, contents: string, cacheIdentity: string): FileContents {
@@ -52,8 +58,11 @@ export function pierreFileContents(name: string, contents: string, cacheIdentity
 }
 
 export function diffFileWithPatch(file: DiffFile): DiffFile {
-  const patch = file.patch || synthesizePatch(file);
-  return patch === file.patch ? file : { ...file, patch };
+  const patch = file.patch && patchHasFileHeader(file.patch) ? file.patch : synthesizePatch(file) || file.patch;
+  if (patch === file.patch) return file;
+  const patchedFile = { ...file, patch };
+  syntheticPatchFiles.add(patchedFile);
+  return patchedFile;
 }
 
 function processPatchWithContext(
@@ -105,6 +114,19 @@ function tryParsePatch(patch: string): FileDiffMetadata | undefined {
   }
 }
 
+function patchHasFileHeader(patch: string): boolean {
+  return patch.startsWith("diff --git ") || patch.startsWith("--- ");
+}
+
+function withSyntheticPatchCacheKey(file: DiffFile, meta: FileDiffMetadata | undefined): FileDiffMetadata | undefined {
+  if (!meta || !syntheticPatchFiles.has(file)) return meta;
+  return {
+    ...meta,
+    cacheKey: fileContentsCacheKey(file.path, file.patch, `synthetic-diff:${file.status}:${file.old_path || ""}`),
+    lang: meta.lang ?? getFiletypeFromFileName(file.path),
+  };
+}
+
 function safePierrePatch(file: DiffFile): string {
   const oldName = safePierreFileName(file, "old");
   const newName = safePierreFileName(file, "new");
@@ -130,19 +152,23 @@ function safePierrePatch(file: DiffFile): string {
 }
 
 function synthesizePatch(file: DiffFile): string {
-  if (!file.hunks?.length) return "";
+  if (!file.hunks?.length && !file.patch) return "";
   const oldName = file.old_path || file.path;
   const newName = file.path;
   const oldPath = patchPath(`a/${oldName}`);
   const newPath = patchPath(`b/${newName}`);
+  const statusMetadata = file.status === "added" ? ["new file mode 100644"] : [];
   return [
     `diff --git ${oldPath} ${newPath}`,
+    ...statusMetadata,
     `--- ${file.status === "added" ? "/dev/null" : oldPath}`,
     `+++ ${file.status === "deleted" ? "/dev/null" : newPath}`,
-    ...file.hunks.flatMap((hunk) => [
-      `@@ -${hunk.old_start},${hunk.old_count} +${hunk.new_start},${hunk.new_count} @@${hunk.section ? ` ${hunk.section}` : ""}`,
-      ...hunk.lines.map(patchLine),
-    ]),
+    ...(file.hunks?.length
+      ? file.hunks.flatMap((hunk) => [
+          `@@ -${hunk.old_start},${hunk.old_count} +${hunk.new_start},${hunk.new_count} @@${hunk.section ? ` ${hunk.section}` : ""}`,
+          ...hunk.lines.map(patchLine),
+        ])
+      : file.patch.trimEnd().split("\n")),
     "",
   ].join("\n");
 }

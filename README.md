@@ -152,7 +152,7 @@ All fields are optional. Repos can be added in the config file or through the Se
 | `github_token_env` | `"MIDDLEMAN_GITHUB_TOKEN"` | Env var holding the default GitHub token |
 | `default_platform_host` | `"github.com"` | Host treated as implicit in repository UI labels |
 | `host` | `"127.0.0.1"` | Listen address |
-| `port` | `8091` | Listen port |
+| `port` | `8091` | Listen port, from 1 to 65535 |
 | `base_path` | `"/"` | URL prefix for reverse proxy deployments |
 | `data_dir` | `"~/.config/middleman"` | Directory for the SQLite database |
 | `activity.view_mode` | `"threaded"` | `"flat"` or `"threaded"` |

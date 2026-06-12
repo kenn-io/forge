@@ -55,7 +55,7 @@ func TestCollectProviderTokensInvokesGHWithHostnameForEnterprise(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.toml")
 	require.NoError(os.WriteFile(configPath, []byte(`
 host = "127.0.0.1"
-port = 0
+port = 8091
 
 [[repos]]
 platform = "github"

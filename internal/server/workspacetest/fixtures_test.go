@@ -91,6 +91,10 @@ func setupWorkspaceServerFixture(
 	srv := server.New(database, syncer, nil, basePath, cfg, server.ServerOptions{
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
+		HostCheck: server.HostCheckOptions{
+			Bind:    config.HostKey{Host: "127.0.0.1", Port: "8091"},
+			Allowed: []config.HostKey{{Host: "middleman.test", Port: ""}},
+		},
 	})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)

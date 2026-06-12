@@ -887,6 +887,7 @@ func streamTokenRotationConfigEvents(
 		ctx, http.MethodGet, httpServer.URL+"/api/v1/events", http.NoBody,
 	)
 	require.NoError(t, err)
+	setAcceptedHostForE2ETest(req)
 	resp, err := httpServer.Client().Do(req)
 	require.NoError(t, err)
 	stream := &tokenRotationConfigEventStream{

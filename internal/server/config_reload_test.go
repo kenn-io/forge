@@ -80,6 +80,7 @@ func streamConfigEvents(t *testing.T, srv *Server) *configEventStream {
 		ctx, http.MethodGet, ts.URL+"/api/v1/events", http.NoBody,
 	)
 	require.NoError(t, err)
+	setAcceptedHostForServerTest(req, srv)
 
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
@@ -298,6 +299,19 @@ sync_interval = "10m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`
+
+const validReloadConfigHostCheckPolicy = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+allowed_hosts = ["middleman.example"]
+trust_reverse_proxy = true
 
 [[repos]]
 owner = "acme"
@@ -627,6 +641,23 @@ func TestConfigReload_RestartRequiredOnStartupFieldChange(t *testing.T) {
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid)
 	assert.True(ev.RestartRequired, "sync_interval change should mark restart_required")
+}
+
+func TestConfigReload_RestartRequiredOnHostCheckPolicyChange(t *testing.T) {
+	assert := assert.New(t)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfigHostCheckPolicy)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid)
+	assert.True(ev.RestartRequired, "host-check policy change should mark restart_required")
 }
 
 func TestConfigReload_TokenSourceChangeForExistingHostUpdatesSource(t *testing.T) {

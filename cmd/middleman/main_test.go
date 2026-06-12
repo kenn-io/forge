@@ -679,6 +679,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	)
 
 	reposReq := httptest.NewRequest(http.MethodGet, "/api/v1/repos", nil)
+	reposReq.Host = "127.0.0.1:8091"
 	reposRR := httptest.NewRecorder()
 	srv.ServeHTTP(reposRR, reposReq)
 	require.Equal(http.StatusOK, reposRR.Code, reposRR.Body.String())
@@ -695,6 +696,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	})
 
 	settingsReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
+	settingsReq.Host = "127.0.0.1:8091"
 	settingsRR := httptest.NewRecorder()
 	srv.ServeHTTP(settingsRR, settingsReq)
 	require.Equal(http.StatusOK, settingsRR.Code, settingsRR.Body.String())

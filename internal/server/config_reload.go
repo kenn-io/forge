@@ -45,6 +45,8 @@ type startupConfigSnapshot struct {
 	BasePath            string
 	DataDir             string
 	SyncBudgetPerHour   int
+	AllowedHosts        []config.HostKey
+	TrustReverseProxy   bool
 	ProviderHosts       []tokenauth.Key
 	// TokenEnvNames is the boot-time baseline of provider token env
 	// names (msgvault excluded) used to accumulate runtime strip-env
@@ -67,6 +69,8 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		BasePath:            cfg.BasePath,
 		DataDir:             cfg.DataDir,
 		SyncBudgetPerHour:   cfg.SyncBudgetPerHour,
+		AllowedHosts:        startupAllowedHosts(cfg),
+		TrustReverseProxy:   cfg.TrustReverseProxy,
 		ProviderHosts:       startupProviderHosts(cfg),
 		Roborev:             cfg.Roborev,
 	}
@@ -78,6 +82,20 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 	snap.Shell.Command = slices.Clone(cfg.Shell.Command)
 	snap.TokenEnvNames = startupBoundTokenEnvNames(cfg)
 	return snap
+}
+
+func startupAllowedHosts(cfg *config.Config) []config.HostKey {
+	if cfg == nil {
+		return nil
+	}
+	allowed := cfg.ParsedAllowedHosts()
+	slices.SortFunc(allowed, func(a, b config.HostKey) int {
+		if cmp := strings.Compare(a.Host, b.Host); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Port, b.Port)
+	})
+	return allowed
 }
 
 func startupProviderHosts(cfg *config.Config) []tokenauth.Key {

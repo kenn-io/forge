@@ -77,6 +77,7 @@ func doDocsJSON(t *testing.T, srv *Server, method, path string, body any) *httpt
 		require.NoError(t, json.NewEncoder(&buf).Encode(body))
 	}
 	req := httptest.NewRequest(method, path, &buf)
+	setAcceptedHostForServerTest(req, srv)
 	req.RemoteAddr = "127.0.0.1:12345"
 	if method != http.MethodGet {
 		req.Header.Set("Content-Type", "application/json")
@@ -165,6 +166,7 @@ func TestDocsFolderAddRejectsNonLoopback(t *testing.T) {
 	srv, _, _ := setupPersistentDocsRouteServer(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders", bytes.NewReader([]byte(`{"path":"/tmp/whatever"}`)))
+	setAcceptedHostForServerTest(req, srv)
 	req.RemoteAddr = "203.0.113.7:54321"
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -355,6 +357,7 @@ func TestDocsBrowseEndpointRejectsNonLoopback(t *testing.T) {
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/docs/browse?path="+t.TempDir(), nil)
+	setAcceptedHostForServerTest(req, srv)
 	req.RemoteAddr = "203.0.113.7:54321"
 	rr := httptest.NewRecorder()
 
@@ -713,6 +716,7 @@ func TestDocsFileMutationsRejectNonLoopback(t *testing.T) {
 				require.NoError(json.NewEncoder(&buf).Encode(tc.body))
 			}
 			req := httptest.NewRequest(tc.method, tc.path, &buf)
+			setAcceptedHostForServerTest(req, srv)
 			req.RemoteAddr = "203.0.113.7:54321"
 			req.Header.Set("Content-Type", "application/json")
 			rr := httptest.NewRecorder()
@@ -779,6 +783,7 @@ func TestDocsMutationsRejectBodyTooLarge(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			setAcceptedHostForServerTest(req, srv)
 			req.RemoteAddr = "127.0.0.1:12345"
 			req.Header.Set("Content-Type", "application/json")
 			rr := httptest.NewRecorder()
@@ -803,6 +808,7 @@ func TestDocsFileWriteAllowsBodyBelowEditorLimit(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut,
 		"/api/v1/docs/folders/notes/file?path=notes/ideas.md",
 		bytes.NewReader(body))
+	setAcceptedHostForServerTest(req, srv)
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
@@ -837,6 +843,7 @@ func TestDocsReadEndpointsRejectNonLoopback(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			setAcceptedHostForServerTest(req, srv)
 			req.RemoteAddr = "203.0.113.7:54321"
 			rr := httptest.NewRecorder()
 

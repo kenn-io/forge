@@ -60,7 +60,7 @@ endpoint = %q
 	t.Cleanup(syncer.Stop)
 	return NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
-		ServerOptions{},
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
 }
 

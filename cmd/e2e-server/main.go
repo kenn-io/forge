@@ -1118,8 +1118,9 @@ func buildAppState(
 	srv := server.NewWithConfig(
 		database, syncer, diffRepo.Manager, assets, cfg, cfgPath,
 		server.ServerOptions{
-			Clones:      diffRepo.Manager,
-			WorktreeDir: e2eWorktreeDir,
+			Clones:                        diffRepo.Manager,
+			WorktreeDir:                   e2eWorktreeDir,
+			HostCheckAllowLoopbackAnyPort: true,
 		},
 	)
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

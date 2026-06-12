@@ -123,6 +123,7 @@ func doMsgvaultJSON(t *testing.T, srv *Server, method, path string, body any) *h
 		require.NoError(t, json.NewEncoder(&buf).Encode(body))
 	}
 	req := httptest.NewRequest(method, path, &buf)
+	setAcceptedHostForServerTest(req, srv)
 	req.RemoteAddr = "127.0.0.1:12345"
 	if method != http.MethodGet {
 		req.Header.Set("Content-Type", "application/json")
@@ -155,6 +156,7 @@ func doMsgvaultRawWithCSRF(
 ) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	setAcceptedHostForServerTest(req, srv)
 	req.RemoteAddr = remoteAddr
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
@@ -1656,6 +1658,7 @@ func TestMsgvaultConfigureDoesNotHoldConfigLockDuringCapabilityProbe(t *testing.
 	}
 	doConfigure := func(body []byte) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/msgvault/configure", bytes.NewReader(body))
+		setAcceptedHostForServerTest(req, srv)
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set(middlemanCSRFHeaderName, "1")
@@ -1734,6 +1737,7 @@ func TestMsgvaultConfigureDoesNotHoldConfigLockBehindConcurrentHealthProbe(t *te
 
 	go func() {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/msgvault/health", nil)
+		setAcceptedHostForServerTest(req, srv)
 		req.RemoteAddr = "127.0.0.1:12345"
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -1742,6 +1746,7 @@ func TestMsgvaultConfigureDoesNotHoldConfigLockBehindConcurrentHealthProbe(t *te
 	<-slowProbeStarted
 	go func() {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/msgvault/configure", bytes.NewReader(configureBody))
+		setAcceptedHostForServerTest(req, srv)
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set(middlemanCSRFHeaderName, "1")
@@ -1903,6 +1908,7 @@ func TestMsgvaultOpenAPIImageRoutesAndRequiredQueries(t *testing.T) {
 	srv := setupMsgvaultRouteServer(t, &config.Config{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil)
+	setAcceptedHostForServerTest(req, srv)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 

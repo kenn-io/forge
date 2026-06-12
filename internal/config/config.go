@@ -108,6 +108,17 @@ type GitHubAppConfig struct {
 	PrivateKeyPath      string `toml:"private_key_path" json:"private_key_path"`
 	InstallationID      int64  `toml:"installation_id,omitempty" json:"installation_id,omitempty"`
 	InstallationAccount string `toml:"installation_account,omitempty" json:"installation_account,omitempty"`
+	// RepositorySelection records whether the installation covers
+	// "all" repositories of the account or only "selected" ones, as
+	// reported by GitHub when the CLI recorded the installation. Empty
+	// on entries written before this field existed; coverage
+	// validation then only checks account ownership.
+	RepositorySelection string `toml:"repository_selection,omitempty" json:"repository_selection,omitempty"`
+	// SelectedRepos lists the full names (owner/name) an "Only select
+	// repositories" installation could reach when the CLI recorded it.
+	// Re-running "middleman-github-app install" refreshes the list
+	// after the selection changes on GitHub.
+	SelectedRepos []string `toml:"selected_repos,omitempty" json:"selected_repos,omitempty"`
 }
 
 func (r Repo) FullName() string {
@@ -1393,6 +1404,15 @@ func (c *Config) validateGitHubApps() error {
 					"to record it)", i,
 			)
 		}
+		app.RepositorySelection = strings.ToLower(strings.TrimSpace(app.RepositorySelection))
+		switch app.RepositorySelection {
+		case "", "all", "selected":
+		default:
+			return fmt.Errorf(
+				"config: github_apps[%d]: repository_selection must be \"all\" or "+
+					"\"selected\" (got %q)", i, app.RepositorySelection,
+			)
+		}
 		// One app per host: the token source chain is host-scoped, so a
 		// second app for the same host could never be selected.
 		if _, ok := seenHosts[host]; ok {
@@ -1426,6 +1446,9 @@ func (c *Config) validateGitHubAppCoverage() error {
 				continue
 			}
 			if strings.EqualFold(r.Owner, app.InstallationAccount) {
+				if err := validateSelectedRepoCoverage(i, r, app); err != nil {
+					return err
+				}
 				continue
 			}
 			// Do not suggest per-repo token overrides here: middleman
@@ -1443,6 +1466,45 @@ func (c *Config) validateGitHubAppCoverage() error {
 		}
 	}
 	return nil
+}
+
+// validateSelectedRepoCoverage rejects a same-account repo that an
+// "Only select repositories" installation cannot reach. The reachable
+// set is recorded by middleman-github-app at install time; account
+// ownership alone is not enough because the installation token only
+// reaches the chosen repos and everything else 404s during sync.
+// Entries without a recorded selection (written by older CLI builds)
+// are skipped — there is nothing trustworthy to compare against.
+func validateSelectedRepoCoverage(i int, r Repo, app GitHubAppConfig) error {
+	if !strings.EqualFold(app.RepositorySelection, "selected") {
+		return nil
+	}
+	remedy := fmt.Sprintf(
+		"Add it to the installation's repository access on %s (or switch the "+
+			"installation to \"All repositories\") and re-run "+
+			"\"middleman-github-app install\" to refresh the recorded selection",
+		app.Host,
+	)
+	if r.HasNameGlob() {
+		return fmt.Errorf(
+			"config: repos[%d]: %s/%s is a glob pattern, but the github app for %s is "+
+				"installed with \"Only select repositories\": globs expand to an open-ended "+
+				"set only an \"All repositories\" install can satisfy. %s",
+			i, r.Owner, r.Name, app.Host, remedy,
+		)
+	}
+	full := strings.ToLower(r.Owner + "/" + r.Name)
+	for _, name := range app.SelectedRepos {
+		if strings.ToLower(name) == full {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"config: repos[%d]: %s/%s is not in the \"Only select repositories\" "+
+			"installation recorded for the github app on %s, so its installation token "+
+			"would 404 during sync. %s",
+		i, r.Owner, r.Name, app.Host, remedy,
+	)
 }
 
 // GitHubAppForHost returns the configured GitHub App for host, if any.
@@ -2177,6 +2239,9 @@ func (c *Config) copyForSave() Config {
 	cfg.Platforms = slices.Clone(c.Platforms)
 	cfg.AllowedHosts = slices.Clone(c.AllowedHosts)
 	cfg.GitHubApps = slices.Clone(c.GitHubApps)
+	for i := range cfg.GitHubApps {
+		cfg.GitHubApps[i].SelectedRepos = slices.Clone(cfg.GitHubApps[i].SelectedRepos)
+	}
 	cfg.DocFolders = slices.Clone(c.DocFolders)
 	cfg.Agents = slices.Clone(c.Agents)
 	if cfg.SyncInterval == "" {

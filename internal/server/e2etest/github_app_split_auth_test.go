@@ -103,6 +103,15 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 				"html_url": "https://github.com/kenn-io/middleman/pull/7#issuecomment-99001"
 			}`)
 		})
+	mux.HandleFunc("PATCH /api/v3/repos/kenn-io/middleman/issues/7",
+		func(w http.ResponseWriter, r *http.Request) {
+			record("write:assignees", r)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{
+				"number": 7,
+				"assignees": [{"login": "octocat"}]
+			}`)
+		})
 	mux.HandleFunc("GET /api/v3/rate_limit", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, `{"resources":{"core":{"limit":5000,"remaining":4999,"reset":2000000000}}}`)
@@ -237,6 +246,18 @@ installation_account = "kenn-io"
 	require.NoError(err)
 	require.Equal(http.StatusCreated, commentResp.StatusCode, string(commentBody))
 
+	// Assignee mutations ride the same write credential: setting
+	// assignees must reach upstream with the PAT, never the app token.
+	assigneeResp := doServerJSON(
+		t, httpServer.Client(), http.MethodPut,
+		httpServer.URL+"/api/v1/pulls/gh/kenn-io/middleman/7/assignees",
+		map[string][]string{"assignees": {"octocat"}},
+	)
+	defer assigneeResp.Body.Close()
+	assigneeBody, err := io.ReadAll(assigneeResp.Body)
+	require.NoError(err)
+	require.Equal(http.StatusOK, assigneeResp.StatusCode, string(assigneeBody))
+
 	// The repo settings refresh resolved with the PAT, so the stored
 	// merge permission must reflect the user, not the read-only app.
 	dbRepo, err := database.GetRepoByOwnerName(t.Context(), "kenn-io", "middleman")
@@ -262,6 +283,8 @@ installation_account = "kenn-io"
 		"sync reads must use the minted installation token")
 	assert.Equal("Bearer user-pat-e2e", authByCall["write:comment"],
 		"mutations must use the user's PAT for attribution")
+	assert.Equal("Bearer user-pat-e2e", authByCall["write:assignees"],
+		"assignee mutations must use the user's PAT, not the app token")
 	assert.Equal("Bearer user-pat-e2e", authByCall["write:repo-viewer-overlay"],
 		"the viewer permission overlay must use the user's PAT")
 	assert.Equal("Bearer ghs_app_token_e2e", authByCall["read:repo-metadata"],

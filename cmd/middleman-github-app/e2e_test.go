@@ -449,8 +449,13 @@ func TestInstallAcceptsSelectedInstallCoveringConfiguredRepos(t *testing.T) {
 	cfg, err := config.Load(configPath)
 	require.NoError(err)
 	require.Len(cfg.GitHubApps, 1)
-	assert.NotZero(t, cfg.GitHubApps[0].InstallationID)
-	assert.Equal(t, "kenn-io", cfg.GitHubApps[0].InstallationAccount)
+	assert := assert.New(t)
+	assert.NotZero(cfg.GitHubApps[0].InstallationID)
+	assert.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
+	// The recorded selection lets config validation keep enforcing
+	// coverage when repos are added later.
+	assert.Equal("selected", cfg.GitHubApps[0].RepositorySelection)
+	assert.Equal([]string{"kenn-io/middleman"}, cfg.GitHubApps[0].SelectedRepos)
 }
 
 func TestCreateWithNestedRelativeConfigPath(t *testing.T) {

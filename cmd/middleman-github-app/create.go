@@ -410,11 +410,18 @@ func (env *appEnv) runInstallFlow(
 	}
 	// Account ownership is not enough for an "Only select repositories"
 	// install: the token reaches only the chosen repos, and anything
-	// else 404s during sync while the config looks healthy.
+	// else 404s during sync while the config looks healthy. The
+	// selection (and, for selected installs, the reachable repo list)
+	// is recorded in config so validation can keep enforcing coverage
+	// when repos are added later.
+	app.RepositorySelection = strings.ToLower(picked.RepositorySelection)
+	app.SelectedRepos = nil
 	if !strings.EqualFold(picked.RepositorySelection, "all") {
-		if err := env.verifySelectedInstallationCoverage(ctx, cfg, app, picked); err != nil {
+		reachable, err := env.verifySelectedInstallationCoverage(ctx, cfg, app, picked)
+		if err != nil {
 			return err
 		}
+		app.SelectedRepos = reachable
 	}
 	if err := updateAppInConfig(cfg, env.configPath, app); err != nil {
 		return fmt.Errorf("saving installation to config: %w", err)
@@ -442,23 +449,23 @@ func (env *appEnv) verifySelectedInstallationCoverage(
 	cfg *config.Config,
 	app config.GitHubAppConfig,
 	picked githubapp.Installation,
-) error {
+) ([]string, error) {
 	client := env.apiClient(app.Host)
 	jwt, err := appJWT(app, env.now())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	token, err := client.CreateInstallationToken(ctx, jwt, picked.ID)
 	if err != nil {
-		return fmt.Errorf("verifying selected-repository installation: %w", err)
+		return nil, fmt.Errorf("verifying selected-repository installation: %w", err)
 	}
 	names, err := client.ListInstallationRepositories(ctx, token.Token)
 	if err != nil {
-		return fmt.Errorf("verifying selected-repository installation: %w", err)
+		return nil, fmt.Errorf("verifying selected-repository installation: %w", err)
 	}
 	missing := missingSelectedRepos(cfg, app.Host, picked.Account.Login, names)
 	if len(missing) > 0 {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"the app was installed on %q with \"Only select repositories\", but the "+
 				"installation cannot reach %s; not recording it in config. Edit the "+
 				"installation's repository access on GitHub (or choose \"All "+
@@ -466,7 +473,7 @@ func (env *appEnv) verifySelectedInstallationCoverage(
 			picked.Account.Login, strings.Join(missing, ", "),
 		)
 	}
-	return nil
+	return names, nil
 }
 
 func reposNotCoveredByInstallation(

@@ -461,10 +461,10 @@ func (c *liveClient) ReplaceIssueAssignees(
 	if usernames == nil {
 		usernames = []string{}
 	}
-	issue, resp, err := c.gh.Issues.Edit(ctx, owner, repo, number, &gh.IssueRequest{
+	issue, resp, err := c.writeGH().Issues.Edit(ctx, owner, repo, number, &gh.IssueRequest{
 		Assignees: &usernames,
 	})
-	c.trackRate(resp)
+	c.trackWriteRate(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -476,10 +476,10 @@ func (c *liveClient) ReplaceIssueAssignees(
 func (c *liveClient) RequestPullRequestReviewers(
 	ctx context.Context, owner, repo string, number int, usernames []string,
 ) (*gh.PullRequest, error) {
-	pr, resp, err := c.gh.PullRequests.RequestReviewers(ctx, owner, repo, number, gh.ReviewersRequest{
+	pr, resp, err := c.writeGH().PullRequests.RequestReviewers(ctx, owner, repo, number, gh.ReviewersRequest{
 		Reviewers: usernames,
 	})
-	c.trackRate(resp)
+	c.trackWriteRate(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -491,10 +491,10 @@ func (c *liveClient) RequestPullRequestReviewers(
 func (c *liveClient) RemovePullRequestReviewers(
 	ctx context.Context, owner, repo string, number int, usernames []string,
 ) error {
-	resp, err := c.gh.PullRequests.RemoveReviewers(ctx, owner, repo, number, gh.ReviewersRequest{
+	resp, err := c.writeGH().PullRequests.RemoveReviewers(ctx, owner, repo, number, gh.ReviewersRequest{
 		Reviewers: usernames,
 	})
-	c.trackRate(resp)
+	c.trackWriteRate(resp)
 	return err
 }
 

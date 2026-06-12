@@ -20,11 +20,23 @@ func (c *Client) SetMergeRequestAssignees(
 	if err != nil {
 		return nil, err
 	}
+	// Retained assignees may be invisible to /users search even though
+	// the merge request itself reports them with IDs; seed the cache
+	// from the current assignee list so only new usernames need search.
+	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
+	if err != nil {
+		return nil, mapGitLabError("assignee_mutation", err)
+	}
+	for _, assignee := range mr.Assignees {
+		if assignee != nil {
+			c.cacheUserID(assignee.Username, assignee.ID)
+		}
+	}
 	ids, err := c.resolveUserIDs(ctx, usernames)
 	if err != nil {
 		return nil, err
 	}
-	mr, _, err := c.api.MergeRequests.UpdateMergeRequest(
+	updated, _, err := c.api.MergeRequests.UpdateMergeRequest(
 		pid,
 		int64(number),
 		&gitlab.UpdateMergeRequestOptions{AssigneeIDs: &ids},
@@ -33,7 +45,7 @@ func (c *Client) SetMergeRequestAssignees(
 	if err != nil {
 		return nil, mapGitLabError("assignee_mutation", err)
 	}
-	return basicUsernames(mr.Assignees), nil
+	return basicUsernames(updated.Assignees), nil
 }
 
 func (c *Client) SetIssueAssignees(
@@ -45,6 +57,17 @@ func (c *Client) SetIssueAssignees(
 	pid, _, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return nil, err
+	}
+	// Same retained-assignee seeding as the merge request path: the
+	// issue's own assignee list is the authoritative ID source.
+	current, _, err := c.api.Issues.GetIssue(pid, int64(number), nil, gitlab.WithContext(ctx))
+	if err != nil {
+		return nil, mapGitLabError("assignee_mutation", err)
+	}
+	for _, assignee := range current.Assignees {
+		if assignee != nil {
+			c.cacheUserID(assignee.Username, assignee.ID)
+		}
 	}
 	ids, err := c.resolveUserIDs(ctx, usernames)
 	if err != nil {

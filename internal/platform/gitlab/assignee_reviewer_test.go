@@ -29,11 +29,13 @@ func TestSetMergeRequestAssigneesResolvesAndCachesUserIDs(t *testing.T) {
 			switch r.URL.Query().Get("username") {
 			case "alice":
 				writeJSON(w, `[{"id": 5, "username": "alice"}]`)
-			case "bob":
-				writeJSON(w, `[{"id": 6, "username": "Bob"}]`)
+			// bob is deliberately invisible to /users search: his ID
+			// must come from the merge request's own assignee list.
 			default:
 				writeJSON(w, `[]`)
 			}
+		case r.URL.Path == "/api/v4/projects/42/merge_requests/7" && r.Method == http.MethodGet:
+			writeJSON(w, `{"id": 1001, "iid": 7, "state": "opened", "assignees": [{"id": 6, "username": "Bob"}]}`)
 		case r.URL.Path == "/api/v4/projects/42/merge_requests/7" && r.Method == http.MethodPut:
 			var body updateBody
 			_ = json.NewDecoder(r.Body).Decode(&body) // zero values fail the content assertions below
@@ -57,12 +59,14 @@ func TestSetMergeRequestAssigneesResolvesAndCachesUserIDs(t *testing.T) {
 	require.Len(updates, 1)
 	require.NotNil(updates[0].AssigneeIDs)
 	assert.Equal([]int64{5, 6}, *updates[0].AssigneeIDs)
-	assert.Equal(2, userLookups)
+	// Only alice needed search: bob's ID was seeded from the merge
+	// request's current assignee list.
+	assert.Equal(1, userLookups)
 
 	// A second mutation must reuse the cached user IDs.
 	_, err = client.SetMergeRequestAssignees(context.Background(), ref, 7, []string{"alice", "bob"})
 	require.NoError(err)
-	assert.Equal(2, userLookups)
+	assert.Equal(1, userLookups)
 }
 
 func TestSetIssueAssigneesUpdatesAssigneeIDs(t *testing.T) {
@@ -73,6 +77,8 @@ func TestSetIssueAssigneesUpdatesAssigneeIDs(t *testing.T) {
 		switch {
 		case r.URL.Path == "/api/v4/users":
 			writeJSON(w, `[{"id": 9, "username": "dana"}]`)
+		case r.URL.Path == "/api/v4/projects/42/issues/3" && r.Method == http.MethodGet:
+			writeJSON(w, `{"id": 2001, "iid": 3, "state": "opened", "assignees": []}`)
 		case r.URL.Path == "/api/v4/projects/42/issues/3" && r.Method == http.MethodPut:
 			_ = json.NewDecoder(r.Body).Decode(&update) // zero values fail the content assertions below
 			writeJSON(w, `{"id": 2001, "iid": 3, "state": "opened", "assignees": [{"id": 9, "username": "dana"}]}`)
@@ -203,11 +209,14 @@ func TestRequestMergeRequestReviewersSkipsUpdateWhenAlreadyRequested(t *testing.
 
 func TestLookupUserIDReturnsNotFoundForUnknownUsername(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v4/users" {
+		switch {
+		case r.URL.Path == "/api/v4/users":
 			writeJSON(w, `[]`)
-			return
+		case r.URL.Path == "/api/v4/projects/42/merge_requests/7" && r.Method == http.MethodGet:
+			writeJSON(w, `{"id": 1001, "iid": 7, "state": "opened", "assignees": []}`)
+		default:
+			http.NotFound(w, r)
 		}
-		http.NotFound(w, r)
 	}))
 	defer server.Close()
 

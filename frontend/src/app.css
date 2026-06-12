@@ -384,11 +384,10 @@ a:hover {
 }
 .mermaid-viewer__controls--nav {
   top: 50%;
-  grid-template-columns: repeat(3, 34px);
+  grid-template-columns: 34px;
   transform: translateY(-50%);
 }
-.mermaid-viewer__button,
-.mermaid-viewer__spacer {
+.mermaid-viewer__button {
   width: 34px;
   height: 34px;
 }
@@ -508,13 +507,12 @@ a:hover {
   }
   .mermaid-viewer__controls--top,
   .mermaid-viewer__controls--nav {
-    grid-template-columns: repeat(3, 30px);
+    grid-template-columns: 30px;
   }
   .mermaid-viewer__controls--top {
     grid-template-columns: repeat(2, 30px);
   }
-  .mermaid-viewer__button,
-  .mermaid-viewer__spacer {
+  .mermaid-viewer__button {
     width: 30px;
     height: 30px;
   }

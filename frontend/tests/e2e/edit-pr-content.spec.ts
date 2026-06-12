@@ -139,6 +139,8 @@ test("markdown mermaid fences render as diagrams", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Zoom in diagram" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Zoom out diagram" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy Mermaid source" })).toBeVisible();
+  await expect(page.locator(".markdown-body").getByRole("button", { name: "Reset diagram view" })).toBeVisible();
+  await expect(page.locator(".markdown-body").getByRole("button", { name: /Pan diagram/ })).toHaveCount(0);
 
   const diagramViewport = page.locator(".markdown-body .mermaid-viewer__viewport");
   const diagramPan = page.locator(".markdown-body .mermaid-viewer__pan");
@@ -150,8 +152,11 @@ test("markdown mermaid fences render as diagrams", async ({ page }) => {
     .not.toBe(initialTransform);
 
   await page.getByRole("button", { name: "Open diagram in expanded view" }).click();
-  await expect(page.getByRole("dialog", { name: "Expanded Mermaid diagram" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Close expanded diagram" })).toBeVisible();
+  const expandedDiagram = page.getByRole("dialog", { name: "Expanded Mermaid diagram" });
+  await expect(expandedDiagram).toBeVisible();
+  await expect(expandedDiagram.getByRole("button", { name: "Close expanded diagram" })).toBeVisible();
+  await expect(expandedDiagram.getByRole("button", { name: "Reset diagram view" })).toBeVisible();
+  await expect(expandedDiagram.getByRole("button", { name: /Pan diagram/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Expanded Mermaid diagram" })).toBeHidden();
 });

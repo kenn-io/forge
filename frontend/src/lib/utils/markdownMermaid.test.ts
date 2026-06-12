@@ -76,6 +76,12 @@ function clearMermaidThemeVars(): void {
   }
 }
 
+function expectNoDirectionalPanButtons(root: ParentNode): void {
+  for (const label of ["Pan diagram up", "Pan diagram right", "Pan diagram down", "Pan diagram left"]) {
+    expect(root.querySelector(`button[aria-label="${label}"]`)).toBeNull();
+  }
+}
+
 async function flushQueuedRender(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -361,7 +367,10 @@ describe("renderMarkdownMermaidDiagrams", () => {
     const pan = root.querySelector<HTMLElement>(".mermaid-viewer__pan");
     expect(pre?.classList.contains("mermaid-viewer")).toBe(true);
     expect(root.querySelector(".mermaid-viewer__viewport svg")).not.toBeNull();
-    expect(root.querySelectorAll(".mermaid-viewer__button")).toHaveLength(7);
+    expect(root.querySelectorAll(".mermaid-viewer__button")).toHaveLength(3);
+    expect(root.querySelectorAll(".mermaid-viewer__controls--nav .mermaid-viewer__button")).toHaveLength(1);
+    expect(root.querySelector('button[aria-label="Reset diagram view"]')).not.toBeNull();
+    expectNoDirectionalPanButtons(root);
     expect(root.querySelector('button[aria-label="Zoom in diagram"]')).toBeNull();
     expect(root.querySelector('button[aria-label="Zoom out diagram"]')).toBeNull();
     const expandButton = root.querySelector<HTMLButtonElement>('button[aria-label="Open diagram in expanded view"]');
@@ -377,9 +386,6 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(viewport?.dispatchEvent(wheelZoomIn)).toBe(false);
     expect(wheelZoomIn.defaultPrevented).toBe(true);
     expect(pan?.style.transform).toBe("translate(0px, 0px) scale(1.16)");
-
-    root.querySelector<HTMLButtonElement>('button[aria-label="Pan diagram right"]')?.click();
-    expect(pan?.style.transform).toBe("translate(80px, 0px) scale(1.16)");
 
     root.querySelector<HTMLButtonElement>('button[aria-label="Reset diagram view"]')?.click();
     expect(pan?.style.transform).toBe("translate(0px, 0px) scale(1)");
@@ -421,7 +427,9 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(overlay?.getAttribute("role")).toBe("dialog");
     expect(overlay?.getAttribute("aria-modal")).toBe("true");
     expect(overlay?.querySelector("svg")).not.toBeNull();
-    expect(overlay?.querySelectorAll(".mermaid-viewer__controls--nav .mermaid-viewer__button")).toHaveLength(5);
+    expect(overlay?.querySelectorAll(".mermaid-viewer__controls--nav .mermaid-viewer__button")).toHaveLength(1);
+    expect(overlay?.querySelector('button[aria-label="Reset diagram view"]')).not.toBeNull();
+    if (overlay) expectNoDirectionalPanButtons(overlay);
     expect(overlay?.querySelector('button[aria-label="Copy Mermaid source"]')).toBeNull();
     expect(overlay?.querySelector('button[aria-label="Zoom in diagram"]')).toBeNull();
 

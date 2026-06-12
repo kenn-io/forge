@@ -39,7 +39,6 @@ const MERMAID_VIEWER_SELECTOR = ".markdown-body pre.mermaid.mermaid-viewer, .doc
 const MERMAID_VIEWER_ATTACHED = "true";
 const MIN_SCALE = 0.4;
 const MAX_SCALE = 3;
-const PAN_STEP = 80;
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 const WHEEL_DELTA_LINE = 1;
 const WHEEL_DELTA_PAGE = 2;
@@ -349,16 +348,7 @@ function createPannableDiagramView(svg: SVGSVGElement): { controls: HTMLDivEleme
     updateTransform();
   };
 
-  const panBy = (deltaX: number, deltaY: number) => {
-    offsetX += deltaX;
-    offsetY += deltaY;
-    updateTransform();
-  };
-
-  const controls = createMermaidNavControls({
-    panBy,
-    resetView,
-  });
+  const controls = createMermaidResetControls(resetView);
 
   attachDragPanning(viewport, {
     onDrag(deltaX, deltaY) {
@@ -385,23 +375,10 @@ function createPannableDiagramView(svg: SVGSVGElement): { controls: HTMLDivEleme
   return { controls, viewport };
 }
 
-function createMermaidNavControls(actions: {
-  panBy: (deltaX: number, deltaY: number) => void;
-  resetView: () => void;
-}): HTMLDivElement {
+function createMermaidResetControls(resetView: () => void): HTMLDivElement {
   const navControls = document.createElement("div");
   navControls.className = "mermaid-viewer__controls mermaid-viewer__controls--nav";
-  navControls.append(
-    createMermaidSpacer(),
-    createMermaidButton("Pan diagram up", "↑", () => actions.panBy(0, -PAN_STEP)),
-    createMermaidSpacer(),
-    createMermaidButton("Pan diagram left", "←", () => actions.panBy(-PAN_STEP, 0)),
-    createMermaidButton("Reset diagram view", "⟳", actions.resetView),
-    createMermaidButton("Pan diagram right", "→", () => actions.panBy(PAN_STEP, 0)),
-    createMermaidSpacer(),
-    createMermaidButton("Pan diagram down", "↓", () => actions.panBy(0, PAN_STEP)),
-    createMermaidSpacer(),
-  );
+  navControls.append(createMermaidButton("Reset diagram view", "⟳", resetView));
   return navControls;
 }
 
@@ -470,13 +447,6 @@ function createMermaidButton(label: string, text: string, onClick: () => void | 
     void onClick();
   });
   return button;
-}
-
-function createMermaidSpacer(): HTMLSpanElement {
-  const spacer = document.createElement("span");
-  spacer.className = "mermaid-viewer__spacer";
-  spacer.setAttribute("aria-hidden", "true");
-  return spacer;
 }
 
 async function copyMermaidSource(source: string, button: HTMLButtonElement): Promise<void> {

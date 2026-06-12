@@ -30,6 +30,7 @@ const prA = {
   repo_owner: "acme",
   repo_name: "widgets",
   platform_host: "github.com",
+  platform_head_sha: "",
   worktree_links: [],
   MergeableState: "",
 };
@@ -55,6 +56,7 @@ const prSquashOnly = {
   Title: "Squash-only PR title",
   Body: "Body C",
   HeadBranch: "feature/c",
+  platform_head_sha: "fixture-head-sha-300",
   repo_name: "squash-only",
 };
 
@@ -135,6 +137,7 @@ function detailEnvelopePR(pr: typeof prA & { workspace?: { id: string } }): unkn
     repo: repoEnvelope(pr),
     repo_owner: pr.repo_owner,
     repo_name: pr.repo_name,
+    platform_head_sha: pr.platform_head_sha ?? "",
     detail_loaded: true,
     detail_fetched_at: "2026-04-01T12:00:00Z",
     worktree_links: pr.worktree_links,
@@ -595,6 +598,16 @@ test.describe("PR detail merge modal route reset", () => {
     ).toBeVisible();
     await expect(page.getByText("Create a merge commit")).toHaveCount(0);
     await expect(page.getByText("Rebase and merge")).toHaveCount(0);
+
+    // The merge must pin the head the detail view rendered so the server
+    // can reject the action when the head moved after review.
+    const mergeRequest = page.waitForRequest(
+      (req) => req.method() === "POST" && /\/merge$/.test(new URL(req.url()).pathname),
+    );
+    await page.locator(".modal-footer").getByRole("button", { name: "Squash and merge" }).click();
+    const request = await mergeRequest;
+    const body = request.postDataJSON() as { expected_head_sha?: string };
+    expect(body.expected_head_sha).toBe("fixture-head-sha-300");
   });
 });
 

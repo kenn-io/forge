@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
 
+  import { isProblem, problemConflictReason } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
@@ -24,16 +25,32 @@
     allowSquash: boolean;
     allowMerge: boolean;
     allowRebase: boolean;
+    /** Head commit the rendered detail showed; pinned on merge. */
+    expectedHeadSha?: string | undefined;
+    /** capabilities.mutation_head_binding for this repo's provider. */
+    requireHeadPin?: boolean;
     onclose: () => void;
     onmerged: () => void;
+    onheadconflict?: ((reason: "stale_state" | "head_unknown") => void) | undefined;
   }
 
   const {
     owner, name, number, provider, platformHost, repoPath, prTitle, prBody,
     prAuthor, prAuthorDisplayName,
     allowSquash, allowMerge, allowRebase,
-    onclose, onmerged,
+    expectedHeadSha, requireHeadPin = false,
+    onclose, onmerged, onheadconflict,
   }: Props = $props();
+
+  // Captured once when the modal opens: a background detail refresh
+  // must not silently rebind the pin to a head the user has not seen
+  // while the form is already on screen. If the head really moved, the
+  // server rejects this stale pin and the conflict flow takes over.
+  const pinnedHeadShaAtOpen = untrack(() => (expectedHeadSha ?? "").trim());
+
+  // A head-binding provider cannot merge without a pinned head; the user
+  // must wait for sync and re-review before merging.
+  const headPinMissing = untrack(() => requireHeadPin) && pinnedHeadShaAtOpen === "";
 
   type Method = "merge" | "squash" | "rebase";
   type MethodOption = { value: Method; label: string };
@@ -41,6 +58,7 @@
     commit_title: string;
     commit_message: string;
     method: Method;
+    expected_head_sha?: string;
   };
 
   function buildMethods(): MethodOption[] {
@@ -86,13 +104,17 @@
   let error = $state<string | null>(null);
 
   async function handleMerge(): Promise<void> {
+    if (headPinMissing) return;
     merging = true;
     error = null;
     try {
+      // Pin the merge to the head the user reviewed; the server rejects
+      // the request when the synced head has moved past it.
       const params: MergeParams = {
         commit_title: commitTitle,
         commit_message: commitMessage,
         method: selectedMethod,
+        ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
       };
       const ref = { provider, platformHost, owner, name, repoPath };
       const { error } = await client.POST(providerItemPath("pulls", ref, "/merge"), {
@@ -100,6 +122,15 @@
         body: params,
       });
       if (error) {
+        // Head-pinning conflicts close the modal: the user must
+        // re-review the refreshed detail before retrying, so an
+        // inline retry from this stale form would be wrong.
+        const reason = isProblem(error) ? problemConflictReason(error) : undefined;
+        if (reason === "stale_state" || reason === "head_unknown") {
+          onheadconflict?.(reason);
+          onclose();
+          return;
+        }
         throw new Error(error.detail ?? error.title ?? "failed to merge pull request");
       }
       onmerged();
@@ -204,6 +235,13 @@
       {/if}
     </div>
 
+    {#if headPinMissing}
+      <p class="head-pin-note">
+        The reviewed head commit has not been synced yet. Reload after the
+        next sync and re-review before merging.
+      </p>
+    {/if}
+
     <div class="modal-footer">
       <ActionButton
         class="btn btn--secondary"
@@ -217,7 +255,7 @@
       <ActionButton
         class="btn btn--primary btn--green"
         onclick={() => void handleMerge()}
-        disabled={merging}
+        disabled={merging || headPinMissing}
         tone="success"
         surface="solid"
       >
@@ -228,6 +266,12 @@
 </div>
 
 <style>
+  .head-pin-note {
+    margin: 0 0 var(--space-3, 12px);
+    color: var(--text-secondary, #888);
+    font-size: var(--font-size-sm);
+  }
+
   .modal-overlay {
     position: fixed;
     inset: 0;

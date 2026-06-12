@@ -509,19 +509,33 @@ func mapPlatformError(err error) huma.StatusError {
 	case platform.ErrCodeRateLimited:
 		return problemRateLimited(provider, host, pe.ResetAt)
 	case platform.ErrCodePermissionDenied:
-		d := map[string]any{}
-		if provider != "" {
-			d["provider"] = provider
-		}
-		if host != "" {
-			d["platformHost"] = host
-		}
+		d := platformErrorDetails(provider, host)
 		if len(d) == 0 {
 			d = nil
 		}
 		return problemForbidden(err.Error(), d)
 	case platform.ErrCodeNotFound:
 		return problemNotFound(CodeNotFound, err.Error(), nil)
+	// Both conflict flavors share wire code `conflict` and HTTP 409;
+	// details.reason is the stable discriminator clients branch on
+	// (stale_state: reload and re-review; conflict: the provider refuses
+	// the current state, re-reviewing won't help by itself).
+	case platform.ErrCodeStaleState:
+		d := platformErrorDetails(provider, host)
+		d["reason"] = "stale_state"
+		detail := "target changed since it was reviewed; refresh and retry"
+		// Surface provider side-effect context — an approval that
+		// could not be revoked, a review note already posted — instead
+		// of hiding it behind the generic re-review prompt.
+		if pe.Hint != "" {
+			d["context"] = pe.Hint
+			detail += "; " + pe.Hint
+		}
+		return problemConflict(CodeConflict, detail, d)
+	case platform.ErrCodeConflict:
+		d := platformErrorDetails(provider, host)
+		d["reason"] = "conflict"
+		return problemConflict(CodeConflict, err.Error(), d)
 	case platform.ErrCodeProviderNotConfigured,
 		platform.ErrCodeMissingToken,
 		platform.ErrCodeInvalidRepoRef,
@@ -530,6 +544,19 @@ func mapPlatformError(err error) huma.StatusError {
 	default:
 		return problemUpstream(err.Error(), provider, host)
 	}
+}
+
+// platformErrorDetails seeds a problem details map with provider
+// identity; callers add their extension members on top.
+func platformErrorDetails(provider, host string) map[string]any {
+	d := map[string]any{}
+	if provider != "" {
+		d["provider"] = provider
+	}
+	if host != "" {
+		d["platformHost"] = host
+	}
+	return d
 }
 
 // init replaces huma.NewError so any remaining huma.ErrorNxx callers

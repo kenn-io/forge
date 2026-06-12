@@ -79,6 +79,76 @@ func TestPublishDiffReviewDraftCreatesForgejoReview(t *testing.T) {
 	assert.Equal(submitted, result.SubmittedAt)
 }
 
+func TestPublishDiffReviewDraftApproveDeletesReviewWhenHeadMovesDuringSubmit(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	submitted := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
+	getPullCalls := 0
+	deletedReviewID := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/acme/widgets/pulls/42":
+			assert.Equal(http.MethodGet, r.Method)
+			getPullCalls++
+			head := "reviewed-head"
+			if getPullCalls > 1 {
+				head = "new-head"
+			}
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id": 42,
+				"head": map[string]any{
+					"sha": head,
+					"repo": map[string]any{
+						"id":        1,
+						"full_name": "acme/widgets",
+					},
+				},
+			}))
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews":
+			assert.Equal(http.MethodPost, r.Method)
+			var body struct {
+				Event    string `json:"event"`
+				CommitID string `json:"commit_id"`
+			}
+			require.NoError(json.NewDecoder(r.Body).Decode(&body))
+			assert.Equal("APPROVED", body.Event)
+			assert.Equal("reviewed-head", body.CommitID)
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id":           99,
+				"state":        "APPROVED",
+				"body":         "ship it",
+				"submitted_at": submitted.Format(time.RFC3339),
+				"user":         map[string]any{"login": "reviewer"},
+			}))
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews/99":
+			assert.Equal(http.MethodDelete, r.Method)
+			deletedReviewID = "99"
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	_, err = client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+		Owner: "acme",
+		Name:  "widgets",
+	}, 42, platform.PublishDiffReviewDraftInput{
+		Body:    "ship it",
+		Action:  platform.ReviewActionApprove,
+		HeadSHA: "reviewed-head",
+	})
+
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.Equal("99", deletedReviewID)
+	assert.Equal(2, getPullCalls)
+}
+
 func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

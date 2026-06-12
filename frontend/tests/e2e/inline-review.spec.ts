@@ -28,6 +28,7 @@ const baseCapabilities = {
   review_thread_resolution: true,
   read_review_threads: true,
   native_multiline_ranges: true,
+  mutation_head_binding: false,
   supported_review_actions: ["comment", "approve", "request_changes"],
 };
 

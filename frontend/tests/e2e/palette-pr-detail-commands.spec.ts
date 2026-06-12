@@ -26,7 +26,11 @@ test.describe("PR-detail palette commands", () => {
     await page.locator(".palette-input").fill("approve pr");
     await page.keyboard.press("Enter");
 
-    await approveRequest;
+    // The approve must pin the head the detail view rendered so the
+    // server can reject the action when the head moved after review.
+    const request = await approveRequest;
+    const body = request.postDataJSON() as { expected_head_sha?: string };
+    expect(body.expected_head_sha).toBe("42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42");
   });
 
   test("Approve PR is absent from the palette when the PR is closed", async ({ page }) => {
@@ -94,6 +98,7 @@ test.describe("PR-detail palette commands", () => {
                 review_thread_resolution: false,
                 read_review_threads: false,
                 native_multiline_ranges: false,
+                mutation_head_binding: false,
                 thread_reply: false,
                 thread_resolve: false,
                 supported_review_actions: [],
@@ -128,6 +133,7 @@ test.describe("PR-detail palette commands", () => {
               review_thread_resolution: false,
               read_review_threads: false,
               native_multiline_ranges: false,
+              mutation_head_binding: false,
               thread_reply: false,
               thread_resolve: false,
               supported_review_actions: [],

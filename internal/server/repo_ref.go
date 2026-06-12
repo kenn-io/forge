@@ -180,6 +180,7 @@ func providerCapabilitiesFromPlatform(caps platform.Capabilities) providerCapabi
 		ReviewThreadResolution: caps.ReviewThreadResolution,
 		ReadReviewThreads:      caps.ReadReviewThreads,
 		NativeMultilineRanges:  caps.NativeMultilineRanges,
+		MutationHeadBinding:    caps.MutationHeadBinding,
 		SupportedReviewActions: reviewActions,
 	}
 }

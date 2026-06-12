@@ -2,6 +2,7 @@ package gitealike
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -98,9 +99,9 @@ func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
 	require.NoError(err)
 	closedIssue, err := provider.SetIssueState(context.Background(), ref, 8, "closed")
 	require.NoError(err)
-	merged, err := provider.MergeMergeRequest(context.Background(), ref, 7, "title", "body", "squash")
+	merged, err := provider.MergeMergeRequest(context.Background(), ref, 7, "title", "body", "squash", "")
 	require.NoError(err)
-	review, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it")
+	review, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "")
 	require.NoError(err)
 	prTitle := "new title"
 	prBody := "new body"
@@ -360,11 +361,17 @@ type fakeTransport struct {
 	tags        [][]TagDTO
 	statuses    [][]StatusDTO
 	actionRuns  [][]ActionRunDTO
+	mergeOpts   MergeOptions
+	mergeErr    error
 	comment     CommentDTO
 	pr          PullRequestDTO
+	prSequence  []PullRequestDTO
 	issue       IssueDTO
 	review      ReviewDTO
 	merge       MergeResultDTO
+	deleteErr   error
+
+	deletedReviewIDs []int64
 
 	userRepoPages []int
 	orgRepoPages  []int
@@ -411,7 +418,12 @@ func (t *fakeTransport) ListOpenPullRequests(
 }
 
 func (t *fakeTransport) GetPullRequest(context.Context, platform.RepoRef, int) (PullRequestDTO, error) {
-	return PullRequestDTO{}, nil
+	if len(t.prSequence) > 0 {
+		pr := t.prSequence[0]
+		t.prSequence = t.prSequence[1:]
+		return pr, nil
+	}
+	return t.pr, nil
 }
 
 func (t *fakeTransport) ListPullRequestComments(context.Context, platform.RepoRef, int, PageOptions) ([]CommentDTO, Page, error) {
@@ -496,12 +508,22 @@ func (t *fakeTransport) EditPullRequest(_ context.Context, _ platform.RepoRef, _
 
 func (t *fakeTransport) MergePullRequest(_ context.Context, _ platform.RepoRef, _ int, opts MergeOptions) (MergeResultDTO, error) {
 	t.mutationCalls = append(t.mutationCalls, "merge:"+opts.Method)
+	t.mergeOpts = opts
+	if t.mergeErr != nil {
+		return MergeResultDTO{}, t.mergeErr
+	}
 	return t.merge, nil
 }
 
 func (t *fakeTransport) CreatePullReview(context.Context, platform.RepoRef, int, string) (ReviewDTO, error) {
 	t.mutationCalls = append(t.mutationCalls, "review")
 	return t.review, nil
+}
+
+func (t *fakeTransport) DeletePullReview(_ context.Context, _ platform.RepoRef, _ int, reviewID int64) error {
+	t.mutationCalls = append(t.mutationCalls, "delete_review")
+	t.deletedReviewIDs = append(t.deletedReviewIDs, reviewID)
+	return t.deleteErr
 }
 
 func pageFor[T any](pages [][]T, page int) ([]T, Page, error) {
@@ -513,4 +535,100 @@ func pageFor[T any](pages [][]T, page int) ([]T, Page, error) {
 		next = page + 1
 	}
 	return pages[page-1], Page{Next: next}, nil
+}
+
+func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
+	require := Require.New(t)
+	assert := Assert.New(t)
+	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
+
+	transport := &fakeTransport{merge: MergeResultDTO{Merged: true}}
+	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
+
+	_, err := provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+	require.NoError(err)
+	assert.Equal("reviewed-head", transport.mergeOpts.ExpectedHeadSHA,
+		"merge must send the reviewed head as head_commit_id")
+
+	transport.mergeErr = &HTTPError{StatusCode: 409, Message: "Head target does not match. Please try again."}
+	_, err = provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+
+	// The merge endpoint answers 409 for ordinary merge conflicts too;
+	// those must stay generic so the UI shows the provider message
+	// instead of a stale-head re-review flow.
+	transport.mergeErr = &HTTPError{StatusCode: 409, Message: "merge conflict detected"}
+	_, err = provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+	require.NotErrorIs(err, platform.ErrStaleState,
+		"a non-head-mismatch 409 must not classify as stale_state")
+	var conflictErr *HTTPError
+	require.ErrorAs(err, &conflictErr)
+	assert.Equal(409, conflictErr.StatusCode)
+}
+
+func TestProviderApproveRejectsStaleHeadBeforeReview(t *testing.T) {
+	require := Require.New(t)
+	assert := Assert.New(t)
+	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
+
+	transport := &fakeTransport{
+		pr: PullRequestDTO{Head: BranchDTO{SHA: "new-head"}},
+	}
+	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
+
+	_, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "reviewed-head")
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.NotContains(transport.mutationCalls, "review",
+		"stale approval must not reach the review API")
+}
+
+func TestProviderApproveDeletesReviewWhenHeadMovesDuringSubmit(t *testing.T) {
+	require := Require.New(t)
+	assert := Assert.New(t)
+	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
+
+	transport := &fakeTransport{
+		// Pre-check sees the reviewed head, post-check sees a push
+		// that landed while the review submitted.
+		prSequence: []PullRequestDTO{
+			{Head: BranchDTO{SHA: "reviewed-head"}},
+			{Head: BranchDTO{SHA: "new-head"}},
+		},
+		review: ReviewDTO{ID: 321},
+	}
+	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
+
+	_, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "reviewed-head")
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.Equal([]int64{321}, transport.deletedReviewIDs,
+		"approval landed on a moved head must be deleted")
+}
+
+func TestProviderApproveReportsFailedReviewDeletion(t *testing.T) {
+	require := Require.New(t)
+	assert := Assert.New(t)
+	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
+
+	transport := &fakeTransport{
+		prSequence: []PullRequestDTO{
+			{Head: BranchDTO{SHA: "reviewed-head"}},
+			{Head: BranchDTO{SHA: "new-head"}},
+		},
+		review:    ReviewDTO{ID: 321},
+		deleteErr: fmt.Errorf("forbidden"),
+	}
+	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
+
+	_, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "reviewed-head")
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.ErrorContains(err, "deletion failed",
+		"a standing approval on a moved head must be reported, not hidden")
 }

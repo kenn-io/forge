@@ -17,6 +17,14 @@ const (
 	ErrCodePermissionDenied      PlatformErrorCode = "permission_denied"
 	ErrCodeNotFound              PlatformErrorCode = "not_found"
 	ErrCodeRateLimited           PlatformErrorCode = "rate_limited"
+	// ErrCodeStaleState marks mutations rejected because the target moved
+	// past the state the caller acted on (for example an MR head SHA that
+	// advanced after review).
+	ErrCodeStaleState PlatformErrorCode = "stale_state"
+	// ErrCodeConflict marks provider conflicts that are not staleness:
+	// the request was understood but the target's current state refuses
+	// it (for example merging an unmergeable MR).
+	ErrCodeConflict PlatformErrorCode = "conflict"
 )
 
 var (
@@ -28,6 +36,8 @@ var (
 	ErrPermissionDenied      = &Error{Code: ErrCodePermissionDenied}
 	ErrNotFound              = &Error{Code: ErrCodeNotFound}
 	ErrRateLimited           = &Error{Code: ErrCodeRateLimited}
+	ErrStaleState            = &Error{Code: ErrCodeStaleState}
+	ErrConflict              = &Error{Code: ErrCodeConflict}
 )
 
 type Error struct {
@@ -38,7 +48,13 @@ type Error struct {
 	TokenEnv     string
 	Field        string
 	ResetAt      *time.Time
-	Err          error
+	// Hint carries client-safe side-effect context that must survive
+	// problem mapping — e.g. an approval that could not be revoked
+	// after the head moved, or a review note that was already posted
+	// before the failure. Err keeps the full chain for logs; Hint is
+	// what an API client needs to act on the side effect.
+	Hint string
+	Err  error
 }
 
 func (e *Error) Error() string {

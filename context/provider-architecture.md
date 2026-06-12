@@ -70,6 +70,84 @@ Rules:
 - Do not fake GitHub behavior for another provider. Add provider-specific
   normalization or explicit unsupported-capability handling instead.
 
+### GitLab Mutation Semantics
+
+GitLab declares the full mutation capability set, but several operations map
+onto different upstream semantics than GitHub/Forgejo/Gitea. Do not assume
+provider-equivalent behavior from the flags alone:
+
+- Merge methods: `squash` sets GitLab's squash flag; `merge` accepts under
+  the project's configured merge method — on fast-forward or semi-linear
+  projects that accept does not create a merge commit, so treat
+  `AllowMergeCommit` as "non-squash accept allowed", not as a per-request
+  merge-commit guarantee. `squash_option` bounds the squash flag in both
+  directions (`never` forbids squash; `always` forbids non-squash
+  accepts). `rebase` cannot be requested per merge (it is a project
+  setting) and returns a typed `unsupported_capability` error with
+  capability `merge_method_rebase`. Surfacing GitLab's `merge_method`
+  (merge/ff/rebase_merge) as a provider-accurate action label is follow-up
+  work; until then the generic method labels apply.
+- Head binding: merge and approve pass the locally synced head SHA — the
+  commit the user actually reviewed — so a source-branch push after review
+  is rejected upstream instead of acting on unreviewed code. The
+  `mutation_head_binding` capability marks providers that enforce this
+  (currently GitLab); others treat the expected head SHA as advisory. For
+  enforcing providers a missing local head SHA always fails closed with a
+  `409 conflict` and deliberately does not sync: persisting a fresh head
+  would let a retry from the same stale UI mutate a commit nobody
+  reviewed. The head populates through the normal review cycle (detail
+  view or periodic sync). The stored head is still only a cache, so every
+  response shape that embeds the MergeRequest row (list and detail alike)
+  exposes `platform_head_sha`, and merge/approve accept an optional
+  `expected_head_sha` that must match the stored head before the provider
+  is called. When supplied, the pin is also enforced at the provider,
+  with different strength for merges and approvals. Merge pins are
+  provider-gated wherever the API supports them: GitHub's `sha`,
+  GitLab's `sha`, and Gitea/Forgejo's `head_commit_id` all reject a
+  moved head upstream. Gitea/Forgejo answer 409 for unrelated merge
+  conflicts too, so only their distinctive head-mismatch message
+  ("head target does not match") classifies as `stale_state`; any
+  other 409 stays a generic conflict. Approval pins are provider-gated
+  only on GitLab, whose approvals API rejects a mismatched `sha`
+  atomically. GitHub/Gitea/Forgejo review commit ids record rather
+  than gate, so approvals there are pre-checked against the live
+  provider head before submission and verified again after it: if the
+  head moved while the review submitted, the approval is revoked
+  upstream (GitHub review dismissal, Gitea/Forgejo review deletion)
+  and the caller gets `stale_state` — the same reload-and-re-review
+  flow as a pre-check rejection. If revocation itself fails, the
+  typed error says the approval may still stand on the moved head. A
+  failed post-verification read keeps the approval: the pre-check
+  already passed, and failing an approval that exists upstream would
+  invite a duplicate retry.
+  `mutation_head_binding` additionally marks providers where the pin is
+  REQUIRED — omitted pins are rejected — and where approval itself is
+  provider-gated. The SPA captures the pin when a merge or approval form
+  opens, so a background refresh cannot silently rebind an open form to
+  a head the user has not seen. Conflict responses carry `details.reason`
+  (`stale_state`, `conflict`, or `head_unknown`) per
+  `context/error-handling.md`; only stale heads trigger a server-side
+  MR resync — `head_unknown` recovery is client-initiated. The SPA's PR
+  detail view echoes the rendered head on merge and approve, disables
+  head-bound actions preflight while no head is synced, and branches on
+  the conflict reasons: `stale_state` reloads the detail (a sync-enabled
+  load) and prompts a re-review, `head_unknown` reloads the same way and
+  keeps head-bound actions disabled until the response carries
+  `platform_head_sha`, and a generic `conflict` surfaces the provider
+  message in place.
+- Reviews: GitLab has no `request_changes` state. `SupportedReviewActions` is
+  comment/approve only, and publishing a request-changes review returns the
+  typed `unsupportedCapability` envelope (`review_action_request_changes`).
+- Approvals: the approvals API carries no body and returns approval state,
+  not a review object. A non-empty approve body is posted as a regular MR
+  note first, and the returned "review/approved" event is synthesized with an
+  empty body (the note syncs in as its own comment). If approval fails after
+  the note posted, the typed error says so; retrying repeats the comment
+  because GitLab rejects duplicate approvals by the same user.
+- Comment edits: GitLab's note responses do not include the discussion ID, so
+  edited events carry an empty `ThreadID`; the event upsert preserves the
+  stored `thread_id` when the incoming value is NULL.
+
 ## Label Capabilities
 
 Repository label editing is provider-neutral:

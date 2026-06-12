@@ -126,10 +126,14 @@ func gracefulShutdown(t *testing.T, srv *server.Server) {
 }
 
 type mockGH struct {
-	getRateLimitSnapshotFn func(context.Context) (*ghclient.RateLimitSnapshot, error)
-	getRepositoryFn        func(context.Context, string, string) (*gh.Repository, error)
-	listOpenPullRequestsFn func(context.Context, string, string) ([]*gh.PullRequest, error)
-	listReposByOwnerFn     func(context.Context, string) ([]*gh.Repository, error)
+	getRateLimitSnapshotFn     func(context.Context) (*ghclient.RateLimitSnapshot, error)
+	getRepositoryFn            func(context.Context, string, string) (*gh.Repository, error)
+	getPullRequestFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
+	listOpenPullRequestsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
+	listReposByOwnerFn         func(context.Context, string) ([]*gh.Repository, error)
+	mergePullRequestFn         func(context.Context, string, string, int, string, string, string, string) (*gh.PullRequestMergeResult, error)
+	createReviewWithCommentsFn func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
+	dismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
 }
 
 func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -153,7 +157,10 @@ func (m *mockGH) ListRepositoriesByOwner(ctx context.Context, owner string) ([]*
 	return nil, nil
 }
 
-func (m *mockGH) GetPullRequest(context.Context, string, string, int) (*gh.PullRequest, error) {
+func (m *mockGH) GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+	if m.getPullRequestFn != nil {
+		return m.getPullRequestFn(ctx, owner, repo, number)
+	}
 	return nil, nil
 }
 func (m *mockGH) GetUser(context.Context, string) (*gh.User, error) { return nil, nil }
@@ -236,21 +243,32 @@ func (m *mockGH) CreateReview(context.Context, string, string, int, string, stri
 	return nil, nil
 }
 func (m *mockGH) CreateReviewWithComments(
-	context.Context,
-	string,
-	string,
-	int,
-	string,
-	string,
-	string,
-	[]*gh.DraftReviewComment,
+	ctx context.Context,
+	owner, repo string,
+	number int,
+	event string,
+	body string,
+	commitID string,
+	comments []*gh.DraftReviewComment,
 ) (*gh.PullRequestReview, error) {
+	if m.createReviewWithCommentsFn != nil {
+		return m.createReviewWithCommentsFn(ctx, owner, repo, number, event, body, commitID, comments)
+	}
 	return nil, nil
 }
 func (m *mockGH) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }
-func (m *mockGH) MergePullRequest(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error) {
+func (m *mockGH) DismissReview(ctx context.Context, owner, repo string, number int, reviewID int64, message string) (*gh.PullRequestReview, error) {
+	if m.dismissReviewFn != nil {
+		return m.dismissReviewFn(ctx, owner, repo, number, reviewID, message)
+	}
+	return nil, nil
+}
+func (m *mockGH) MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method, expectedHeadSHA string) (*gh.PullRequestMergeResult, error) {
+	if m.mergePullRequestFn != nil {
+		return m.mergePullRequestFn(ctx, owner, repo, number, commitTitle, commitMessage, method, expectedHeadSHA)
+	}
 	return nil, nil
 }
 func (m *mockGH) EditPullRequest(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {

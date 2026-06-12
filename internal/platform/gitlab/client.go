@@ -205,6 +205,11 @@ func (c *Client) Capabilities() platform.Capabilities {
 		ReadReleases:           true,
 		ReadCI:                 true,
 		ReadLabels:             true,
+		CommentMutation:        true,
+		StateMutation:          true,
+		MergeMutation:          true,
+		ReviewMutation:         true,
+		IssueMutation:          true,
 		LabelMutation:          true,
 		AssigneeMutation:       true,
 		ReviewerMutation:       true,
@@ -214,6 +219,9 @@ func (c *Client) Capabilities() platform.Capabilities {
 		ReviewThreadResolution: true,
 		ReadReviewThreads:      true,
 		NativeMultilineRanges:  false,
+		MutationHeadBinding:    true,
+		// GitLab has no native "request changes" review state, so
+		// request_changes is intentionally absent.
 		SupportedReviewActions: []platform.ReviewAction{
 			platform.ReviewActionComment,
 			platform.ReviewActionApprove,
@@ -759,6 +767,8 @@ func mapGitLabError(capability string, err error) error {
 			code = platform.ErrCodePermissionDenied
 		case gitlabErr.HasStatusCode(http.StatusNotFound):
 			code = platform.ErrCodeNotFound
+		case gitlabErr.HasStatusCode(http.StatusConflict):
+			code = platform.ErrCodeConflict
 		case gitlabErr.HasStatusCode(http.StatusTooManyRequests):
 			code = platform.ErrCodeRateLimited
 		}
@@ -825,3 +835,13 @@ var _ platform.ThreadReplier = (*Client)(nil)
 var _ platform.ThreadResolver = (*Client)(nil)
 var _ platform.AssigneeMutator = (*Client)(nil)
 var _ platform.ReviewerMutator = (*Client)(nil)
+var _ platform.CommentMutator = (*Client)(nil)
+var _ platform.StateMutator = (*Client)(nil)
+var _ platform.MergeMutator = (*Client)(nil)
+var _ platform.IssueMutator = (*Client)(nil)
+var _ platform.ReviewMutator = (*Client)(nil)
+var _ platform.MergeRequestContentMutator = (*Client)(nil)
+var _ platform.IssueContentMutator = (*Client)(nil)
+var _ platform.DiffReviewDraftMutator = (*Client)(nil)
+var _ platform.DiffReviewThreadResolver = (*Client)(nil)
+var _ platform.MergeRequestReviewThreadReader = (*Client)(nil)

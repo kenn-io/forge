@@ -153,13 +153,14 @@
  */
 
 import type { PullRequest } from "../../api/types.js";
+import { isProblem, problemConflictReason } from "../../api/problems.js";
 import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
 import type { MiddlemanClient } from "../../types.js";
 import type { DetailStore } from "../../stores/detail.svelte.js";
 import type { PullsStore } from "../../stores/pulls.svelte.js";
 
 /** Subset of the loaded PR sufficient for canX/runX decisions. */
-export type PRDetailActionPR = Pick<PullRequest, "State" | "IsDraft" | "MergeableState">;
+export type PRDetailActionPR = Pick<PullRequest, "State" | "IsDraft" | "MergeableState" | "platform_head_sha">;
 
 /** Capabilities a viewer needs to invoke each PR-detail action. */
 export interface PRDetailViewerCan {
@@ -195,11 +196,32 @@ export interface PRDetailActionInput {
   stores: PRDetailActionStores;
   client: MiddlemanClient;
   /**
+   * True when the provider hard-binds mutations to the reviewed head
+   * (capabilities.mutation_head_binding). Head-bound actions are
+   * unavailable until the PR row carries platform_head_sha to pin.
+   */
+  requireHeadPin?: boolean;
+  /**
    * Approve mutation body. Empty string sends an approving review
    * with no comment (matching the existing button's behavior when
    * the user submits without typing into the textarea).
    */
   approveCommentBody?: string;
+  /**
+   * Head commit the rendered detail was reviewed at
+   * (detail.platform_head_sha). When set, head-bound mutations echo it
+   * as expected_head_sha so the server rejects the action with a 409
+   * conflict if a sync rebound the head between render and click.
+   */
+  expectedHeadSha?: string;
+  /**
+   * Invoked when the server rejects a head-bound mutation because the
+   * pinned head no longer matches (stale_state) or has never been
+   * synced (head_unknown). The owner of this callback is responsible
+   * for refreshing the detail and gating further head-bound actions;
+   * the runX closures only report the reason and rethrow.
+   */
+  onHeadConflict?: (reason: "stale_state" | "head_unknown") => void;
   /** Owned by PullDetail; runOpenMerge flips this to true. */
   setMergeModalOpen?: (open: boolean) => void;
   /**
@@ -232,18 +254,35 @@ function describeError(err: { detail?: string; title?: string } | undefined, fal
 // Approve PR ----------------------------------------------------------
 
 export function canApprovePR(input: PRDetailActionInput): boolean {
-  return input.pr.State === "open" && input.viewerCan.approve && !input.stale;
+  return (
+    input.pr.State === "open" &&
+    input.viewerCan.approve &&
+    !input.stale &&
+    (!input.requireHeadPin || !!input.pr.platform_head_sha)
+  );
 }
 
 export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
   if (!canApprovePR(input)) return;
   const { ref, number } = input;
   const body = (input.approveCommentBody ?? "").trim();
+  // Pin the approval to the head the user reviewed; the server rejects
+  // the request when the synced head has moved past it. Callers that
+  // build the input from the loaded detail pass expectedHeadSha; the
+  // pr row's platform_head_sha is the fallback for the rest.
+  const expectedHeadSha = (input.expectedHeadSha ?? input.pr.platform_head_sha ?? "").trim();
   const { error } = await input.client.POST(providerItemPath("pulls", ref, "/approve"), {
     params: { path: { ...providerRouteParams(ref), number } },
-    body: { body },
+    body: {
+      body,
+      ...(expectedHeadSha !== "" && { expected_head_sha: expectedHeadSha }),
+    },
   });
   if (error) {
+    const reason = isProblem(error) ? problemConflictReason(error) : undefined;
+    if (reason === "stale_state" || reason === "head_unknown") {
+      input.onHeadConflict?.(reason);
+    }
     const msg = describeError(error, "failed to approve pull request");
     input.onError?.(msg);
     throw new Error(msg);
@@ -265,7 +304,8 @@ export function canOpenMerge(input: PRDetailActionInput): boolean {
     input.repoSettings !== null &&
     input.repoSettings.viewerCanMerge &&
     !input.stale &&
-    !hasMergeConflicts(input.pr)
+    !hasMergeConflicts(input.pr) &&
+    (!input.requireHeadPin || !!input.pr.platform_head_sha)
   );
 }
 

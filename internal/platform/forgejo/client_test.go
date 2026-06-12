@@ -443,9 +443,9 @@ func TestClientMutationCapabilityUsesForgejoEndpoints(t *testing.T) {
 	prBody := "body"
 	_, err = client.EditMergeRequestContent(context.Background(), ref, 7, &prTitle, &prBody)
 	require.NoError(err)
-	_, err = client.MergeMergeRequest(context.Background(), ref, 7, "title", "message", "squash")
+	_, err = client.MergeMergeRequest(context.Background(), ref, 7, "title", "message", "squash", "")
 	require.NoError(err)
-	_, err = client.ApproveMergeRequest(context.Background(), ref, 7, "ship it")
+	_, err = client.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "")
 	require.NoError(err)
 
 	assert.Equal([]string{

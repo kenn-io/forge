@@ -80,8 +80,9 @@ func (c *Client) MergeMergeRequest(
 	commitTitle string,
 	commitMessage string,
 	method string,
+	expectedHeadSHA string,
 ) (platform.MergeResult, error) {
-	return c.provider.MergeMergeRequest(ctx, ref, number, commitTitle, commitMessage, method)
+	return c.provider.MergeMergeRequest(ctx, ref, number, commitTitle, commitMessage, method, expectedHeadSHA)
 }
 
 func (c *Client) ApproveMergeRequest(
@@ -89,8 +90,9 @@ func (c *Client) ApproveMergeRequest(
 	ref platform.RepoRef,
 	number int,
 	body string,
+	expectedHeadSHA string,
 ) (platform.MergeRequestEvent, error) {
-	return c.provider.ApproveMergeRequest(ctx, ref, number, body)
+	return c.provider.ApproveMergeRequest(ctx, ref, number, body, expectedHeadSHA)
 }
 
 func (c *Client) EditMergeRequestContent(
@@ -290,9 +292,10 @@ func (t *transport) MergePullRequest(
 	err := t.withRequestContext(ctx, func() error {
 		var err error
 		merged, resp, err = t.api.MergePullRequest(ref.Owner, ref.Name, int64(number), forgejosdk.MergePullRequestOption{
-			Style:   forgejoMergeStyle(opts.Method),
-			Title:   opts.CommitTitle,
-			Message: opts.CommitMessage,
+			Style:        forgejoMergeStyle(opts.Method),
+			Title:        opts.CommitTitle,
+			Message:      opts.CommitMessage,
+			HeadCommitId: opts.ExpectedHeadSHA,
 		})
 		return err
 	})
@@ -322,6 +325,24 @@ func (t *transport) CreatePullReview(
 		return gitealike.ReviewDTO{}, forgejoHTTPError(resp, err)
 	}
 	return convertReview(review), nil
+}
+
+func (t *transport) DeletePullReview(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	reviewID int64,
+) error {
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		resp, err = t.api.DeletePullReview(ref.Owner, ref.Name, int64(number), reviewID)
+		return err
+	})
+	if err != nil {
+		return forgejoHTTPError(resp, err)
+	}
+	return nil
 }
 
 func (t *transport) ReplaceIssueLabels(

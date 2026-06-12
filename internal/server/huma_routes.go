@@ -20,6 +20,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	gh "github.com/google/go-github/v84/github"
+	gitlabapi "gitlab.com/gitlab-org/api/client-go"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -333,6 +334,11 @@ type approvePRInput struct {
 	Number       int    `path:"number"`
 	Body         struct {
 		Body string `json:"body"`
+		// ExpectedHeadSHA is the head commit the client rendered when the
+		// user reviewed. When set, the mutation is rejected if the locally
+		// synced head differs, so a sync between render and click cannot
+		// rebind the action to an unreviewed commit.
+		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 	}
 }
 
@@ -353,6 +359,9 @@ type mergePRInput struct {
 		CommitTitle   string `json:"commit_title"`
 		CommitMessage string `json:"commit_message"`
 		Method        string `json:"method"`
+		// ExpectedHeadSHA: see approvePRInput. Optional client assertion
+		// of the reviewed head commit.
+		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 	}
 }
 
@@ -2356,10 +2365,55 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewMutation)
 	}
 
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, problemInternal("get pull request failed")
+	}
+	if mr == nil {
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+	}
+
+	// Bind the approval to the head commit the user reviewed locally so a
+	// source-branch push between review and approval is rejected instead
+	// of approving unreviewed code.
+	expectedHeadSHA, err := s.reviewedHeadSHA(repo, mr)
+	if err != nil {
+		return nil, err
+	}
+	// Head-binding providers require the client to pin the head it
+	// rendered: an omitted pin would silently bind to whatever the cache
+	// holds now, which may be newer than what the user reviewed.
+	if strings.TrimSpace(input.Body.ExpectedHeadSHA) == "" &&
+		s.capabilitiesForRepo(*repo).MutationHeadBinding {
+		return nil, problemValidation(
+			"body.expected_head_sha",
+			"required for this provider: echo the platform_head_sha you rendered",
+		)
+	}
+	if err := s.verifyClientReviewedHead(
+		repo, input.Number, input.Body.ExpectedHeadSHA, expectedHeadSHA,
+	); err != nil {
+		return nil, err
+	}
+
 	platformEvent, err := mutator.ApproveMergeRequest(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
+		expectedHeadSHA,
 	)
 	if err != nil {
+		if errors.Is(err, platform.ErrStaleState) {
+			// The MR head moved past the reviewed commit; refresh local
+			// state so the user re-reviews against the current head.
+			s.runBackground(func(bgCtx context.Context) {
+				if syncErr := s.syncer.SyncMROnProvider(
+					bgCtx,
+					repoProviderKind(*repo), repoProviderHost(*repo),
+					repo.Owner, repo.Name, input.Number,
+				); syncErr != nil {
+					slog.Warn("background sync after stale approval", "err", syncErr)
+				}
+			})
+		}
 		return nil, providerCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
@@ -2367,16 +2421,21 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 		)
 	}
 
-	ref := repoNumberPathRef{
-		owner:        repo.Owner,
-		name:         repo.Name,
-		number:       input.Number,
-		platformHost: repo.PlatformHost,
-	}
-	mrID, lookupErr := s.lookupMRID(ctx, ref)
-	if lookupErr == nil {
-		event := platform.DBMREvent(mrID, platformEvent)
-		_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
+	event := platform.DBMREvent(mr.ID, platformEvent)
+	_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
+
+	// Providers like GitLab store the approval body as a separate upstream
+	// comment that is not part of the returned event. Sync inline so the
+	// comment is visible in the next local detail load instead of waiting
+	// for the periodic sync.
+	if strings.TrimSpace(input.Body.Body) != "" && platformEvent.Body == "" {
+		if syncErr := s.syncer.SyncMROnProvider(
+			ctx,
+			repoProviderKind(*repo), repoProviderHost(*repo),
+			repo.Owner, repo.Name, input.Number,
+		); syncErr != nil {
+			slog.Warn("sync after approval with comment", "err", syncErr)
+		}
 	}
 
 	return &actionStatusOutput{Body: actionStatusBody{Status: "approved"}}, nil
@@ -2601,6 +2660,37 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, unsupportedCapabilityProblem(*repo, capabilityMergeMutation)
 	}
 
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, problemInternal("get pull request failed")
+	}
+	if mr == nil {
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+	}
+
+	// Bind the merge to the head commit the user reviewed locally so a
+	// source-branch push between review and merge is rejected upstream
+	// instead of merging unreviewed code.
+	expectedHeadSHA, err := s.reviewedHeadSHA(repo, mr)
+	if err != nil {
+		return nil, err
+	}
+	// Head-binding providers require the client to pin the head it
+	// rendered: an omitted pin would silently bind to whatever the cache
+	// holds now, which may be newer than what the user reviewed.
+	if strings.TrimSpace(input.Body.ExpectedHeadSHA) == "" &&
+		s.capabilitiesForRepo(*repo).MutationHeadBinding {
+		return nil, problemValidation(
+			"body.expected_head_sha",
+			"required for this provider: echo the platform_head_sha you rendered",
+		)
+	}
+	if err := s.verifyClientReviewedHead(
+		repo, input.Number, input.Body.ExpectedHeadSHA, expectedHeadSHA,
+	); err != nil {
+		return nil, err
+	}
+
 	result, err := mutator.MergeMergeRequest(
 		ctx,
 		platformRepoRefFromDB(*repo),
@@ -2608,6 +2698,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		input.Body.CommitTitle,
 		input.Body.CommitMessage,
 		input.Body.Method,
+		expectedHeadSHA,
 	)
 	if err != nil {
 		if status, message, ok := mergeHTTPErrorStatus(err); ok {
@@ -2619,16 +2710,28 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 				"err", err)
 
 			if status == http.StatusMethodNotAllowed || status == http.StatusConflict {
-				s.runBackground(func(bgCtx context.Context) {
-					if syncErr := s.syncer.SyncMROnProvider(
-						bgCtx,
-						repoProviderKind(*repo), repoProviderHost(*repo),
-						repo.Owner, repo.Name, input.Number,
-					); syncErr != nil {
-						slog.Warn("background sync after merge failure", "err", syncErr)
-					}
-				})
-				return nil, problemConflict(CodeConflict, message, nil)
+				reason := "conflict"
+				if errors.Is(err, platform.ErrStaleState) {
+					reason = "stale_state"
+				}
+				// Resync on stale heads (the user must re-review current
+				// state) and on providers without hard head binding (the
+				// refresh only improves the local mergeable view). For
+				// head-binding providers a generic-conflict resync would
+				// persist a newer head and let a retry from the same stale
+				// UI mutate a commit nobody reviewed.
+				if reason == "stale_state" || !s.capabilitiesForRepo(*repo).MutationHeadBinding {
+					s.runBackground(func(bgCtx context.Context) {
+						if syncErr := s.syncer.SyncMROnProvider(
+							bgCtx,
+							repoProviderKind(*repo), repoProviderHost(*repo),
+							repo.Owner, repo.Name, input.Number,
+						); syncErr != nil {
+							slog.Warn("background sync after merge failure", "err", syncErr)
+						}
+					})
+				}
+				return nil, problemConflict(CodeConflict, message, map[string]any{"reason": reason})
 			}
 
 			// Forward 4xx provider errors as-is so the user sees the real cause
@@ -2664,6 +2767,71 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	}, nil
 }
 
+// reviewedHeadSHA resolves the head commit a head-bound mutation should
+// be pinned to: the locally synced head, which is what the user reviewed.
+// Providers with MutationHeadBinding must not mutate unbound, so a row
+// with no head SHA (legacy or partial sync) always fails closed with a
+// conflict. Deliberately, this path never syncs the MR: persisting a
+// fresh head here would arm a retry from the same stale UI to mutate a
+// commit nobody reviewed. The head stays unknown until a normal review
+// cycle (detail view or periodic sync) populates it.
+func (s *Server) reviewedHeadSHA(
+	repo *db.Repo,
+	mr *db.MergeRequest,
+) (string, error) {
+	if mr.PlatformHeadSHA != "" {
+		return mr.PlatformHeadSHA, nil
+	}
+	if !s.capabilitiesForRepo(*repo).MutationHeadBinding {
+		return "", nil
+	}
+	return "", problemConflict(
+		CodeConflict,
+		"merge request head commit has not been synced; re-review it once the next sync completes",
+		map[string]any{"reason": "head_unknown"},
+	)
+}
+
+// verifyClientReviewedHead enforces the client's optional assertion of
+// the head commit it rendered. The locally stored head is only a cache —
+// any sync between render and click can move it — so when the client
+// supplies expected_head_sha it must match the head the mutation will
+// bind to, or the action is rejected before reaching the provider.
+func (s *Server) verifyClientReviewedHead(
+	repo *db.Repo,
+	number int,
+	clientSHA, boundSHA string,
+) error {
+	clientSHA = strings.TrimSpace(clientSHA)
+	if clientSHA == "" {
+		return nil
+	}
+	if boundSHA == "" {
+		return problemConflict(
+			CodeConflict,
+			"merge request head commit has not been synced; re-review it once the next sync completes",
+			map[string]any{"reason": "head_unknown"},
+		)
+	}
+	if clientSHA != boundSHA {
+		s.runBackground(func(bgCtx context.Context) {
+			if syncErr := s.syncer.SyncMROnProvider(
+				bgCtx,
+				repoProviderKind(*repo), repoProviderHost(*repo),
+				repo.Owner, repo.Name, number,
+			); syncErr != nil {
+				slog.Warn("background sync after stale client head", "err", syncErr)
+			}
+		})
+		return problemConflict(
+			CodeConflict,
+			"target changed since it was reviewed; refresh and retry",
+			map[string]any{"reason": "stale_state"},
+		)
+	}
+	return nil
+}
+
 func mergeHTTPErrorStatus(err error) (int, string, bool) {
 	var ghErr *gh.ErrorResponse
 	if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil {
@@ -2672,6 +2840,10 @@ func mergeHTTPErrorStatus(err error) (int, string, bool) {
 	var httpErr *gitealike.HTTPError
 	if errors.As(err, &httpErr) && httpErr != nil && httpErr.StatusCode != 0 {
 		return httpErr.StatusCode, httpErr.Error(), true
+	}
+	var gitlabErr *gitlabapi.ErrorResponse
+	if errors.As(err, &gitlabErr) && gitlabErr != nil && gitlabErr.Response != nil {
+		return gitlabErr.Response.StatusCode, gitlabErr.Message, true
 	}
 	return 0, "", false
 }

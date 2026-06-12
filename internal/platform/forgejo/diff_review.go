@@ -16,7 +16,7 @@ func (c *Client) PublishDiffReviewDraft(
 	number int,
 	input platform.PublishDiffReviewDraftInput,
 ) (*platform.PublishedDiffReview, error) {
-	return c.transport.PublishDiffReviewDraft(ctx, ref, number, input)
+	return c.transport.PublishDiffReviewDraft(ctx, c.host, ref, number, input)
 }
 
 func (c *Client) ListMergeRequestReviewThreads(
@@ -29,12 +29,13 @@ func (c *Client) ListMergeRequestReviewThreads(
 
 func (t *transport) PublishDiffReviewDraft(
 	ctx context.Context,
+	host string,
 	ref platform.RepoRef,
 	number int,
 	input platform.PublishDiffReviewDraftInput,
 ) (*platform.PublishedDiffReview, error) {
 	comments := make([]forgejosdk.CreatePullReviewComment, 0, len(input.Comments))
-	commitID := ""
+	commitID := input.HeadSHA
 	for _, comment := range input.Comments {
 		if commitID == "" {
 			commitID = comment.Range.CommitSHA
@@ -43,6 +44,15 @@ func (t *transport) PublishDiffReviewDraft(
 			}
 		}
 		comments = append(comments, forgejoReviewComments(comment)...)
+	}
+	if input.Action == platform.ReviewActionApprove && commitID != "" {
+		current, err := t.GetPullRequest(ctx, ref, number)
+		if err != nil {
+			return nil, err
+		}
+		if current.Head.SHA != "" && current.Head.SHA != commitID {
+			return nil, forgejoStaleApprovalError(host, nil)
+		}
 	}
 
 	var review *forgejosdk.PullReview
@@ -63,10 +73,57 @@ func (t *transport) PublishDiffReviewDraft(
 	if review == nil {
 		return nil, fmt.Errorf("forgejo create pull review returned nil review")
 	}
+	if input.Action == platform.ReviewActionApprove && commitID != "" {
+		if err := t.deleteReviewIfHeadMoved(ctx, host, ref, number, commitID, review.ID); err != nil {
+			return nil, err
+		}
+	}
 	return &platform.PublishedDiffReview{
 		ProviderReviewID: strconv.FormatInt(review.ID, 10),
 		SubmittedAt:      review.Submitted.UTC(),
 	}, nil
+}
+
+func (t *transport) deleteReviewIfHeadMoved(
+	ctx context.Context,
+	host string,
+	ref platform.RepoRef,
+	number int,
+	expectedHeadSHA string,
+	reviewID int64,
+) error {
+	current, err := t.GetPullRequest(ctx, ref, number)
+	if err != nil {
+		return nil
+	}
+	if current.Head.SHA == "" || current.Head.SHA == expectedHeadSHA {
+		return nil
+	}
+	if deleteErr := t.DeletePullReview(ctx, ref, number, reviewID); deleteErr != nil {
+		return forgejoStaleApprovalError(host, fmt.Errorf(
+			"approval %d may stand on a moved head: deletion failed: %w",
+			reviewID, deleteErr,
+		))
+	}
+	return forgejoStaleApprovalError(host, fmt.Errorf(
+		"head moved while the approval submitted; approval %d was deleted",
+		reviewID,
+	))
+}
+
+func forgejoStaleApprovalError(host string, err error) error {
+	hint := ""
+	if err != nil {
+		hint = err.Error()
+	}
+	return &platform.Error{
+		Code:         platform.ErrCodeStaleState,
+		Provider:     platform.KindForgejo,
+		PlatformHost: host,
+		Capability:   "approve_merge_request",
+		Hint:         hint,
+		Err:          err,
+	}
 }
 
 func (t *transport) ListMergeRequestReviewThreads(

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
@@ -1110,6 +1111,9 @@ func (p gitHubClientProvider) SetIssueState(
 	return platformgithub.NormalizeIssue(ref, ghIssue)
 }
 
+// MergeMergeRequest passes expectedHeadSHA as the GitHub merge sha
+// parameter: GitHub rejects the merge when the PR head moved past the
+// reviewed commit, and that rejection is classified as stale_state.
 func (p gitHubClientProvider) MergeMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1117,11 +1121,21 @@ func (p gitHubClientProvider) MergeMergeRequest(
 	commitTitle string,
 	commitMessage string,
 	method string,
+	expectedHeadSHA string,
 ) (platform.MergeResult, error) {
 	result, err := p.client.MergePullRequest(
-		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method,
+		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method, expectedHeadSHA,
 	)
 	if err != nil {
+		if expectedHeadSHA != "" && isGitHubHeadModified(err) {
+			return platform.MergeResult{}, &platform.Error{
+				Code:         platform.ErrCodeStaleState,
+				Provider:     platform.KindGitHub,
+				PlatformHost: p.host,
+				Capability:   "merge_merge_request",
+				Err:          err,
+			}
+		}
 		return platform.MergeResult{}, err
 	}
 	if result == nil {
@@ -1132,6 +1146,21 @@ func (p gitHubClientProvider) MergeMergeRequest(
 		SHA:     result.GetSHA(),
 		Message: result.GetMessage(),
 	}, nil
+}
+
+// isGitHubHeadModified reports whether a GitHub merge rejection is the
+// sha-mismatch refusal ("Head branch was modified. Review and try the
+// merge again.").
+func isGitHubHeadModified(err error) bool {
+	var ghErr *gh.ErrorResponse
+	if !errors.As(err, &ghErr) || ghErr == nil || ghErr.Response == nil {
+		return false
+	}
+	if ghErr.Response.StatusCode != http.StatusConflict &&
+		ghErr.Response.StatusCode != http.StatusMethodNotAllowed {
+		return false
+	}
+	return strings.Contains(strings.ToLower(ghErr.Message), "head branch was modified")
 }
 
 func (p gitHubClientProvider) ApproveWorkflow(
@@ -1323,20 +1352,94 @@ func githubRequestedReviewerLogins(pr *gh.PullRequest) []string {
 	return logins
 }
 
+// ApproveMergeRequest verifies the current PR head against
+// expectedHeadSHA before approving, and again after the review is
+// submitted: GitHub review commit ids associate rather than gate, so a
+// push that lands while the approval submits would otherwise count for
+// a head nobody reviewed. When the post-check sees a moved head the
+// approval is dismissed upstream and the caller gets stale_state.
 func (p gitHubClientProvider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 	body string,
+	expectedHeadSHA string,
 ) (platform.MergeRequestEvent, error) {
-	review, err := p.client.CreateReview(ctx, ref.Owner, ref.Name, number, "APPROVE", body)
+	if expectedHeadSHA != "" {
+		current, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
+		if err != nil {
+			return platform.MergeRequestEvent{}, err
+		}
+		if head := current.GetHead().GetSHA(); head != "" && head != expectedHeadSHA {
+			return platform.MergeRequestEvent{}, p.staleApprovalError(nil)
+		}
+	}
+	review, err := p.client.CreateReviewWithComments(
+		ctx, ref.Owner, ref.Name, number, "APPROVE", body, expectedHeadSHA, nil,
+	)
 	if err != nil {
 		return platform.MergeRequestEvent{}, err
 	}
 	if review == nil {
 		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review")
 	}
+	if expectedHeadSHA != "" {
+		if err := p.revokeApprovalIfHeadMoved(ctx, ref, number, expectedHeadSHA, review); err != nil {
+			return platform.MergeRequestEvent{}, err
+		}
+	}
 	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
+}
+
+// revokeApprovalIfHeadMoved closes the check-to-submit race on
+// approvals: if the PR head moved past the reviewed commit while the
+// review was submitting, the approval is dismissed upstream and the
+// caller gets stale_state. A failed verification read keeps the
+// approval — the pre-check already passed, and reporting an error for
+// an approval that exists upstream would invite a duplicate retry.
+func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	expectedHeadSHA string,
+	review *gh.PullRequestReview,
+) error {
+	current, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
+	if err != nil || current == nil {
+		return nil
+	}
+	head := current.GetHead().GetSHA()
+	if head == "" || head == expectedHeadSHA {
+		return nil
+	}
+	if _, dismissErr := p.client.DismissReview(
+		ctx, ref.Owner, ref.Name, number, review.GetID(),
+		"head moved past the reviewed commit while the approval submitted",
+	); dismissErr != nil {
+		return p.staleApprovalError(fmt.Errorf(
+			"approval %d may stand on a moved head: dismissal failed: %w",
+			review.GetID(), dismissErr,
+		))
+	}
+	return p.staleApprovalError(fmt.Errorf(
+		"head moved while the approval submitted; approval %d was dismissed",
+		review.GetID(),
+	))
+}
+
+func (p gitHubClientProvider) staleApprovalError(err error) error {
+	hint := ""
+	if err != nil {
+		hint = err.Error()
+	}
+	return &platform.Error{
+		Code:         platform.ErrCodeStaleState,
+		Provider:     platform.KindGitHub,
+		PlatformHost: p.host,
+		Capability:   "approve_merge_request",
+		Hint:         hint,
+		Err:          err,
+	}
 }
 
 func (p gitHubClientProvider) ListMergeRequestReviewThreads(
@@ -1475,6 +1578,16 @@ func (p gitHubClientProvider) PublishDiffReviewDraft(
 	for _, comment := range input.Comments {
 		comments = append(comments, githubDraftReviewComment(comment))
 	}
+	headSHA := githubReviewHeadSHA(input)
+	if input.Action == platform.ReviewActionApprove && headSHA != "" {
+		current, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
+		if err != nil {
+			return nil, err
+		}
+		if head := current.GetHead().GetSHA(); head != "" && head != headSHA {
+			return nil, p.staleApprovalError(nil)
+		}
+	}
 	review, err := p.client.CreateReviewWithComments(
 		ctx,
 		ref.Owner,
@@ -1482,7 +1595,7 @@ func (p gitHubClientProvider) PublishDiffReviewDraft(
 		number,
 		event,
 		input.Body,
-		githubReviewHeadSHA(input),
+		headSHA,
 		comments,
 	)
 	if err != nil {
@@ -1490,6 +1603,11 @@ func (p gitHubClientProvider) PublishDiffReviewDraft(
 	}
 	if review == nil {
 		return nil, fmt.Errorf("provider returned no review")
+	}
+	if input.Action == platform.ReviewActionApprove && headSHA != "" {
+		if err := p.revokeApprovalIfHeadMoved(ctx, ref, number, headSHA, review); err != nil {
+			return nil, err
+		}
 	}
 	submittedAt := review.GetSubmittedAt() // zero Timestamp when GitHub omits submitted_at
 	return &platform.PublishedDiffReview{

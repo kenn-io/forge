@@ -78,6 +78,11 @@ type StateMutator interface {
 }
 
 type MergeMutator interface {
+	// MergeMergeRequest merges the MR. expectedHeadSHA is the head commit
+	// the caller reviewed; providers that support head binding must reject
+	// the merge when the MR head has moved past it. An empty value skips
+	// the check. Providers whose API cannot bind the merge to a head
+	// commit treat it as advisory.
 	MergeMergeRequest(
 		ctx context.Context,
 		ref RepoRef,
@@ -85,6 +90,7 @@ type MergeMutator interface {
 		commitTitle string,
 		commitMessage string,
 		method string,
+		expectedHeadSHA string,
 	) (MergeResult, error)
 }
 
@@ -127,7 +133,18 @@ type ReviewerMutator interface {
 }
 
 type ReviewMutator interface {
-	ApproveMergeRequest(ctx context.Context, ref RepoRef, number int, body string) (MergeRequestEvent, error)
+	// ApproveMergeRequest approves the MR. expectedHeadSHA is the head
+	// commit the caller reviewed; providers that support head binding must
+	// reject the approval when the MR head has moved past it. An empty
+	// value skips the check. Providers whose API cannot bind the approval
+	// to a head commit treat it as advisory.
+	ApproveMergeRequest(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		body string,
+		expectedHeadSHA string,
+	) (MergeRequestEvent, error)
 }
 
 type ThreadReplier interface {

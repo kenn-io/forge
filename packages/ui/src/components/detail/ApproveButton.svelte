@@ -17,6 +17,12 @@
     repoPath: string;
     size?: "sm" | "md";
     disabled?: boolean;
+    /** Head commit the rendered detail showed; pinned on approve. */
+    expectedHeadSha?: string | undefined;
+    /** capabilities.mutation_head_binding for this repo's provider. */
+    requireHeadPin?: boolean;
+    onheadconflict?: ((reason: "stale_state" | "head_unknown") => void) | undefined;
+    oncompleted?: (() => void) | undefined;
   }
 
   const {
@@ -28,7 +34,20 @@
     repoPath,
     size = "md",
     disabled = false,
+    expectedHeadSha,
+    requireHeadPin = false,
+    onheadconflict,
+    oncompleted,
   }: Props = $props();
+
+  // A head-binding provider cannot approve without a pinned head; treat
+  // a missing synced head like a stale view.
+  const headPinMissing = $derived(requireHeadPin && !expectedHeadSha);
+
+  // Captured when the approval form opens: a background detail refresh
+  // must not silently rebind the pin while the form is on screen. A
+  // genuinely moved head is rejected by the server against this pin.
+  let pinAtOpen = $state("");
 
   let expanded = $state(false);
   let body = $state("");
@@ -36,15 +55,21 @@
   let error = $state<string | null>(null);
   let commentInput = $state<HTMLTextAreaElement | undefined>();
 
-  // Reset draft state on PR identity change so an open form with
-  // PR A's body cannot submit to PR B once the route transitions.
+  // Reset draft state on full provider-aware PR identity change so an
+  // open form with PR A's body or head pin cannot submit to PR B once
+  // the route transitions — owner/name/number alone can collide across
+  // providers, hosts, and nested repo paths.
   $effect(() => {
+    void provider;
+    void platformHost;
+    void repoPath;
     void owner;
     void name;
     void number;
     expanded = false;
     body = "";
     error = null;
+    pinAtOpen = "";
   });
 
   $effect(() => {
@@ -57,7 +82,10 @@
 
   function buildInput(): PRDetailActionInput {
     return {
-      pr: { State: "open", IsDraft: false, MergeableState: "" },
+      pr: {
+        State: "open", IsDraft: false, MergeableState: "",
+        platform_head_sha: pinAtOpen,
+      },
       ref: { provider, platformHost, owner, name, repoPath },
       number,
       viewerCan: {
@@ -66,20 +94,31 @@
       },
       repoSettings: null,
       stale: disabled,
+      requireHeadPin,
       stores: { detail, pulls },
       client,
       approveCommentBody: body,
+      ...(pinAtOpen !== "" && { expectedHeadSha: pinAtOpen }),
+      onHeadConflict: handleHeadConflict,
     };
   }
 
+  function handleHeadConflict(reason: "stale_state" | "head_unknown"): void {
+    expanded = false;
+    error = null;
+    pinAtOpen = "";
+    onheadconflict?.(reason);
+  }
+
   async function handleApprove(): Promise<void> {
-    if (disabled || submitting) return;
+    if (disabled || headPinMissing || submitting) return;
     submitting = true;
     error = null;
     try {
       await runApprovePR(buildInput());
       body = "";
       expanded = false;
+      oncompleted?.();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -91,14 +130,20 @@
 <div class={["approve-section", expanded && "approve-section--open"]}>
   <ActionButton
     class="btn btn--approve"
-    onclick={() => { if (!disabled && !submitting) expanded = !expanded; }}
-    disabled={disabled || submitting}
+    onclick={() => {
+      if (disabled || submitting) return;
+      if (!expanded) pinAtOpen = (expectedHeadSha ?? "").trim();
+      expanded = !expanded;
+    }}
+    disabled={disabled || headPinMissing || submitting}
     ariaExpanded={expanded}
     tone="success"
     surface="soft"
-    title={expanded
-      ? "Close the approval form"
-      : "Open the approval form to submit a code review on this pull request"}
+    title={headPinMissing
+      ? "The reviewed head commit has not been synced yet; approving is disabled until the next sync records it"
+      : expanded
+        ? "Close the approval form"
+        : "Open the approval form to submit a code review on this pull request"}
     label="Approve"
     shortLabel="Approve"
     {size}

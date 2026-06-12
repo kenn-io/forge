@@ -452,6 +452,135 @@ func TestUpsertMREventsWithThreadID(t *testing.T) {
 	assert.False(events[0].Resolved)
 }
 
+// Comment edits flow back through the upsert without a thread id because
+// provider note responses (GitLab) do not include the discussion id. The
+// stored thread id must survive such updates instead of detaching the
+// comment from its discussion until the next sync.
+func TestUpsertMREventsKeepsThreadIDWhenIncomingIsNil(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 1, "thread preservation", base)
+	platformID := int64(101)
+	threadID := "abc123def"
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &platformID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "original body",
+		CreatedAt:      base,
+		DedupeKey:      "note-101",
+		ThreadID:       &threadID,
+		PositionJSON:   `{"new_path":"main.go","new_line":42}`,
+		Resolvable:     true,
+		Resolved:       true,
+	}}))
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &platformID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "edited body",
+		CreatedAt:      base,
+		DedupeKey:      "note-101",
+	}}))
+
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("edited body", events[0].Body)
+	require.NotNil(events[0].ThreadID)
+	assert.Equal(threadID, *events[0].ThreadID)
+	assert.JSONEq(`{"new_path":"main.go","new_line":42}`, events[0].PositionJSON)
+	assert.True(events[0].Resolvable, "resolvable must survive a threadless update")
+	assert.True(events[0].Resolved, "resolved must survive a threadless update")
+
+	// Updates that do carry a thread id (sync) must still refresh the
+	// discussion metadata, including unresolving.
+	newThreadID := "def456abc"
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &platformID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "edited body",
+		CreatedAt:      base,
+		DedupeKey:      "note-101",
+		ThreadID:       &newThreadID,
+		Resolvable:     true,
+		Resolved:       false,
+	}}))
+
+	events, err = d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.NotNil(events[0].ThreadID)
+	assert.Equal(newThreadID, *events[0].ThreadID)
+	assert.Empty(events[0].PositionJSON)
+	assert.True(events[0].Resolvable)
+	assert.False(events[0].Resolved)
+}
+
+func TestUpsertIssueEventsKeepsThreadIDWhenIncomingIsNil(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	issueID, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     301,
+		Number:         2,
+		URL:            "https://gitlab.com/acme/widget/-/issues/2",
+		Title:          "issue thread preservation",
+		Author:         "alice",
+		State:          "open",
+		CreatedAt:      base,
+		UpdatedAt:      base,
+		LastActivityAt: base,
+	})
+	require.NoError(err)
+	platformID := int64(401)
+	threadID := "issue-thread-1"
+
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &platformID,
+		EventType:  "issue_comment",
+		Author:     "alice",
+		Body:       "original body",
+		CreatedAt:  base,
+		DedupeKey:  "issue-note-401",
+		ThreadID:   &threadID,
+	}}))
+
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &platformID,
+		EventType:  "issue_comment",
+		Author:     "alice",
+		Body:       "edited body",
+		CreatedAt:  base,
+		DedupeKey:  "issue-note-401",
+	}}))
+
+	events, err := d.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("edited body", events[0].Body)
+	require.NotNil(events[0].ThreadID)
+	assert.Equal(threadID, *events[0].ThreadID)
+}
+
 func TestUpsertIssueEventsUpdatesExistingEventBody(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

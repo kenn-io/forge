@@ -237,6 +237,8 @@ type approvePRHostInput struct {
 	Number       int    `path:"number"`
 	Body         struct {
 		Body string `json:"body"`
+		// ExpectedHeadSHA: see approvePRInput.
+		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 	}
 }
 
@@ -250,6 +252,8 @@ type mergePRHostInput struct {
 		CommitTitle   string `json:"commit_title"`
 		CommitMessage string `json:"commit_message"`
 		Method        string `json:"method"`
+		// ExpectedHeadSHA: see mergePRInput.
+		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 	}
 }
 

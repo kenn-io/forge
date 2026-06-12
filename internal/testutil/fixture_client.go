@@ -905,6 +905,12 @@ func (c *FixtureClient) CreateReviewWithComments(
 	return c.createReviewLocked(owner, repo, number, event, body)
 }
 
+func (c *FixtureClient) DismissReview(
+	_ context.Context, _, _ string, _ int, reviewID int64, _ string,
+) (*gh.PullRequestReview, error) {
+	return &gh.PullRequestReview{ID: &reviewID}, nil
+}
+
 func (c *FixtureClient) MarkPullRequestReadyForReview(
 	_ context.Context, owner, repo string, number int,
 ) (*gh.PullRequest, error) {
@@ -928,7 +934,7 @@ func (c *FixtureClient) MarkPullRequestReadyForReview(
 
 // MergePullRequest returns an error (mutations not supported).
 func (c *FixtureClient) MergePullRequest(
-	_ context.Context, owner, repo string, number int, _, _, _ string,
+	_ context.Context, owner, repo string, number int, _, _, _, _ string,
 ) (*gh.PullRequestMergeResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

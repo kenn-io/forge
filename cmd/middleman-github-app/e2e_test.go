@@ -354,13 +354,17 @@ func TestInstallRefusesInstallationThatMissesConfiguredRepos(t *testing.T) {
 
 	// Installing on an account that does not own kenn-io/middleman
 	// must not be recorded: the installation token cannot reach the
-	// repo, so sync would 404 while the config looks healthy.
-	env, _ = newTestEnv(t, fake, configPath)
+	// repo, so sync would 404 while the config looks healthy. The
+	// flow reports the uncovering installation and keeps waiting for
+	// one on the owning account instead of dead-ending.
+	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "someone-else")
-	err := runCLI([]string{"install", "--timeout", "10s"}, env)
+	err := runCLI([]string{"install", "--timeout", "1s"}, env)
 	require.Error(err)
-	require.ErrorContains(err, "kenn-io/middleman")
-	require.ErrorContains(err, "someone-else")
+	require.ErrorContains(err, "timed out")
+	require.Contains(out.String(), "someone-else")
+	require.Contains(out.String(), "kenn-io/middleman")
+	require.Contains(out.String(), "Still waiting for an installation on the owning account")
 
 	cfg, err := config.Load(configPath)
 	require.NoError(err)
@@ -554,6 +558,39 @@ name = "thing"
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
 	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
 	require.Contains(out.String(), "waiting for an installation on the right account")
+
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	require.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
+}
+
+func TestInstallSkipsPreexistingUncoveringInstallation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-preexist")
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+
+	// An unrecorded installation on an account that does not own the
+	// configured repos already exists before install runs. The poll
+	// must not grab it as "the first new installation" and dead-end at
+	// the coverage check; it ignores it and keeps waiting for the
+	// installation the browser flow creates on the owning account.
+	app, ok := fake.AppBySlug("middleman-preexist")
+	require.True(ok)
+	_, err := fake.Install(app.ID, "someone-else")
+	require.NoError(err)
+
+	env, out := newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
+	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.Contains(out.String(), "Ignoring installation")
+	require.Contains(out.String(), "someone-else")
 
 	cfg, err := config.Load(configPath)
 	require.NoError(err)

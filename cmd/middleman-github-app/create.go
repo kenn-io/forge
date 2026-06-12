@@ -430,10 +430,25 @@ func (env *appEnv) runInstallFlow(
 				return false, err
 			}
 			for _, install := range installs {
-				if _, ok := known[install.ID]; !ok {
-					picked = install
-					return true, nil
+				if _, ok := known[install.ID]; ok {
+					continue
 				}
+				// A pre-existing installation on an account that does
+				// not own the configured repos is not the one we are
+				// waiting for; report it once and keep polling so the
+				// user can install on the right account.
+				candidate := app
+				candidate.InstallationAccount = install.Account.Login
+				if uncovered := reposNotCoveredByInstallation(cfg, candidate); len(uncovered) > 0 {
+					fmt.Fprintf(env.stdout,
+						"Ignoring installation %d on %q: it cannot reach %s. Still waiting for an installation on the owning account.\n",
+						install.ID, install.Account.Login, strings.Join(uncovered, ", "),
+					)
+					known[install.ID] = struct{}{}
+					continue
+				}
+				picked = install
+				return true, nil
 			}
 			return false, nil
 		})

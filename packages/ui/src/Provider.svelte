@@ -213,6 +213,12 @@
           platformHost: ref.platformHost,
           repoPath: ref.repoPath,
         }),
+      onStalePublish: (ref, number) =>
+        detailStore.loadDetail(ref.owner, ref.name, number, {
+          provider: ref.provider,
+          platformHost: ref.platformHost,
+          repoPath: ref.repoPath,
+        }),
     });
 
     function hydrateSettings(

@@ -48,7 +48,7 @@ type MutationTransport interface {
 	EditIssue(ctx context.Context, ref platform.RepoRef, number int, opts IssueMutationOptions) (IssueDTO, error)
 	EditPullRequest(ctx context.Context, ref platform.RepoRef, number int, opts PullRequestMutationOptions) (PullRequestDTO, error)
 	MergePullRequest(ctx context.Context, ref platform.RepoRef, number int, opts MergeOptions) (MergeResultDTO, error)
-	CreatePullReview(ctx context.Context, ref platform.RepoRef, number int, body string) (ReviewDTO, error)
+	CreatePullReview(ctx context.Context, ref platform.RepoRef, number int, opts ReviewOptions) (ReviewDTO, error)
 	// DeletePullReview removes a submitted review. Gitea/Forgejo do
 	// not head-gate review submission, so an approval that lands
 	// after the PR head moved past the reviewed commit is backed out
@@ -250,6 +250,13 @@ type MergeOptions struct {
 	// ExpectedHeadSHA, when set, is sent as head_commit_id so the
 	// provider rejects the merge if the PR head moved past the
 	// reviewed commit.
+	ExpectedHeadSHA string
+}
+
+type ReviewOptions struct {
+	Body string
+	// ExpectedHeadSHA, when set, is sent as commit_id so the
+	// submitted approval records the exact PR head the reviewer saw.
 	ExpectedHeadSHA string
 }
 

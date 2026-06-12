@@ -15,7 +15,7 @@ interface MockDraftLoad {
 
 interface MockMutation {
   data?: { status?: string };
-  error?: { detail?: string; title?: string };
+  error?: { code?: string; detail?: string; title?: string; details?: Record<string, unknown> };
   response: { status: number; ok: boolean };
 }
 
@@ -140,6 +140,46 @@ describe("createDiffReviewDraftStore", () => {
     await store.publish("comment", "summary");
 
     expect(onPublished).not.toHaveBeenCalled();
+  });
+
+  it("reloads detail and draft after a stale publish conflict", async () => {
+    const client = mockClient({
+      GET: vi
+        .fn()
+        .mockResolvedValueOnce(
+          draftLoad({
+            comments: [{ id: "stale", body: "stale draft" }],
+          }),
+        )
+        .mockResolvedValueOnce(
+          draftLoad({
+            comments: [{ id: "fresh", body: "fresh draft" }],
+          }),
+        ),
+      POST: mockPost(
+        mutation({
+          error: {
+            code: "conflict",
+            detail: "review draft head is stale",
+            details: { reason: "stale_state" },
+          },
+          response: { status: 409, ok: false },
+        }),
+      ),
+    });
+    const onStalePublish = vi.fn();
+    const store = createDiffReviewDraftStore({ client, onStalePublish });
+    const ref = providerRef();
+
+    store.setContext(ref, 42, true);
+    await Promise.resolve();
+    const ok = await store.publish("approve", "summary");
+
+    expect(ok).toBe(false);
+    expect(onStalePublish).toHaveBeenCalledWith(ref, 42);
+    expect(client.GET).toHaveBeenCalledTimes(2);
+    expect(store.getComments()).toEqual([{ id: "fresh", body: "fresh draft" }]);
+    expect(store.getError()).toBe("review draft head is stale");
   });
 
   it("ignores draft loads from an older diff head", async () => {

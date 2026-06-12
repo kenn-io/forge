@@ -12049,6 +12049,7 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 		Capability:   "approve_merge_request",
 		Hint:         "approval 99 was removed after the head moved",
 	}
+	provider.mergeRequests[0].HeadSHA = "fresh-head"
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -12097,6 +12098,13 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 	assert.Equal("gitlab.example.com", details["platformHost"])
 	assert.Equal("approval 99 was removed after the head moved", details["context"])
 	require.Len(provider.publishedReviews, 1)
+	require.Eventually(func() bool {
+		synced, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+		if err != nil || synced == nil {
+			return false
+		}
+		return synced.PlatformHeadSHA == "fresh-head"
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing.T) {
@@ -12121,6 +12129,7 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 			Hint:         "summary note already posted before stale approval",
 		},
 	}
+	provider.mergeRequests[0].HeadSHA = "fresh-head"
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -12167,6 +12176,13 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 	assert.Equal(true, details["partialPublish"])
 	assert.EqualValues(0, details["publishedCommentCount"])
 	assert.Equal("summary note already posted before stale approval", details["context"])
+	require.Eventually(func() bool {
+		synced, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+		if err != nil || synced == nil {
+			return false
+		}
+		return synced.PlatformHeadSHA == "fresh-head"
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.T) {
@@ -14776,8 +14792,9 @@ func (t *apiTestGitealikeTransport) CreatePullReview(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-	body string,
+	opts gitealike.ReviewOptions,
 ) (gitealike.ReviewDTO, error) {
+	body := opts.Body
 	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("review:%d:%s", number, body))
 	if t.moveHeadAfterReview != "" {
 		if pr := t.findPull(number); pr != nil {

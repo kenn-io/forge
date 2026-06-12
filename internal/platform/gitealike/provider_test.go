@@ -362,6 +362,7 @@ type fakeTransport struct {
 	statuses    [][]StatusDTO
 	actionRuns  [][]ActionRunDTO
 	mergeOpts   MergeOptions
+	reviewOpts  ReviewOptions
 	mergeErr    error
 	comment     CommentDTO
 	pr          PullRequestDTO
@@ -515,8 +516,9 @@ func (t *fakeTransport) MergePullRequest(_ context.Context, _ platform.RepoRef, 
 	return t.merge, nil
 }
 
-func (t *fakeTransport) CreatePullReview(context.Context, platform.RepoRef, int, string) (ReviewDTO, error) {
+func (t *fakeTransport) CreatePullReview(_ context.Context, _ platform.RepoRef, _ int, opts ReviewOptions) (ReviewDTO, error) {
 	t.mutationCalls = append(t.mutationCalls, "review")
+	t.reviewOpts = opts
 	return t.review, nil
 }
 
@@ -584,6 +586,23 @@ func TestProviderApproveRejectsStaleHeadBeforeReview(t *testing.T) {
 	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
 	assert.NotContains(transport.mutationCalls, "review",
 		"stale approval must not reach the review API")
+}
+
+func TestProviderApprovePinsExpectedHeadInReview(t *testing.T) {
+	require := Require.New(t)
+	assert := Assert.New(t)
+	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
+
+	transport := &fakeTransport{
+		pr:     PullRequestDTO{Head: BranchDTO{SHA: "reviewed-head"}},
+		review: ReviewDTO{ID: 321},
+	}
+	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
+
+	_, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "reviewed-head")
+	require.NoError(err)
+	assert.Equal("ship it", transport.reviewOpts.Body)
+	assert.Equal("reviewed-head", transport.reviewOpts.ExpectedHeadSHA)
 }
 
 func TestProviderApproveDeletesReviewWhenHeadMovesDuringSubmit(t *testing.T) {

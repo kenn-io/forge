@@ -309,15 +309,16 @@ func (t *transport) CreatePullReview(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
-	body string,
+	opts gitealike.ReviewOptions,
 ) (gitealike.ReviewDTO, error) {
 	var review *giteasdk.PullReview
 	var resp *giteasdk.Response
 	err := t.withRequestContext(ctx, func() error {
 		var err error
 		review, resp, err = t.api.CreatePullReview(ref.Owner, ref.Name, int64(number), giteasdk.CreatePullReviewOptions{
-			State: giteasdk.ReviewStateApproved,
-			Body:  body,
+			State:    giteasdk.ReviewStateApproved,
+			Body:     opts.Body,
+			CommitID: opts.ExpectedHeadSHA,
 		})
 		return err
 	})

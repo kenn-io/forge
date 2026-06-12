@@ -1,5 +1,6 @@
 import type { MiddlemanClient } from "../types.js";
 import type { components } from "../api/generated/schema.js";
+import { isProblem, problemConflictReason } from "../api/problems.js";
 import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
 
 export type DiffReviewDraft = components["schemas"]["DiffReviewDraftResponse"];
@@ -9,6 +10,7 @@ export type DiffReviewLineRange = components["schemas"]["DiffReviewLineRange"];
 export interface DiffReviewDraftStoreOptions {
   client: MiddlemanClient;
   onPublished?: (ref: ProviderRouteRef, number: number) => Promise<void> | void;
+  onStalePublish?: (ref: ProviderRouteRef, number: number) => Promise<void> | void;
 }
 
 function apiErrorMessage(error: { detail?: string; title?: string } | undefined, fallback: string): string {
@@ -197,6 +199,18 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     }
   }
 
+  async function recoverAfterStalePublish(staleRef: ProviderRouteRef, staleNumber: number, key: string): Promise<void> {
+    try {
+      await opts.onStalePublish?.(staleRef, staleNumber);
+    } catch {
+      // The publish already failed with a stale-head conflict. Keep that
+      // original error visible if the recovery refresh also fails.
+    }
+    if (requestKey() === key) {
+      await loadDraft();
+    }
+  }
+
   async function createComment(body: string, range: DiffReviewLineRange): Promise<boolean> {
     if (!enabled || !ref) return false;
     const params = currentParams();
@@ -287,7 +301,15 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
         body: { action, body },
       });
       if (!response.ok) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+        const message = apiErrorMessage(error, `HTTP ${response.status}`);
+        if (isProblem(error) && problemConflictReason(error) === "stale_state" && isCurrent()) {
+          await recoverAfterStalePublish(publishedRef, publishedNumber, key);
+          if (requestKey() === key) {
+            storeError = message;
+          }
+          return false;
+        }
+        throw new Error(message);
       }
       const partial = data?.status === "partially_published";
       if (!isCurrent()) return true;

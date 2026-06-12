@@ -588,7 +588,10 @@ func (p *Provider) ApproveMergeRequest(
 			return platform.MergeRequestEvent{}, p.staleApprovalError(nil)
 		}
 	}
-	review, err := transport.CreatePullReview(ctx, ref, number, body)
+	review, err := transport.CreatePullReview(ctx, ref, number, ReviewOptions{
+		Body:            body,
+		ExpectedHeadSHA: expectedHeadSHA,
+	})
 	if err != nil {
 		return platform.MergeRequestEvent{}, p.mapError(err)
 	}

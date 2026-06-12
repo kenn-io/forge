@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -241,10 +242,16 @@ func (s *Server) publishDiffReviewDraft(
 			if capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadReviewThreads) {
 				_ = s.ingestDiffReviewThreads(ctx, *repo, *mr)
 			}
+			if errors.Is(partialErr, platform.ErrStaleState) {
+				s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
+			}
 			if mapped := diffReviewPartialPublishProblem(partialErr, *repo); mapped != nil {
 				return nil, mapped
 			}
 			return &actionStatusOutput{Body: actionStatusBody{Status: "partially_published"}}, nil
+		}
+		if errors.Is(err, platform.ErrStaleState) {
+			s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
 		}
 		return nil, providerCallProblemWithDetail(
 			err,
@@ -260,6 +267,18 @@ func (s *Server) publishDiffReviewDraft(
 		_ = s.ingestDiffReviewThreads(ctx, *repo, *mr)
 	}
 	return &actionStatusOutput{Body: actionStatusBody{Status: "published"}}, nil
+}
+
+func (s *Server) syncAfterStaleReviewDraftPublish(repo db.Repo, number int) {
+	s.runBackground(func(bgCtx context.Context) {
+		if syncErr := s.syncer.SyncMROnProvider(
+			bgCtx,
+			repoProviderKind(repo), repoProviderHost(repo),
+			repo.Owner, repo.Name, number,
+		); syncErr != nil {
+			slog.Warn("background sync after stale review draft publish", "err", syncErr)
+		}
+	})
 }
 
 func diffReviewPartialPublishProblem(

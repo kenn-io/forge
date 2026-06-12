@@ -514,6 +514,66 @@ func TestClientMutationCapabilityUsesGiteaEndpoints(t *testing.T) {
 	}, seen)
 }
 
+func TestClientApproveMergeRequestSendsCommitID(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	getPullCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("token gitea-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/repos/owner/repo/pulls/7":
+			getPullCalls++
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id":     30,
+				"number": 7,
+				"title":  "pr",
+				"state":  "open",
+				"user":   map[string]any{"login": "carol"},
+				"head": map[string]any{
+					"ref": "feature",
+					"sha": "reviewed-head",
+					"repo": map[string]any{
+						"id":        1,
+						"full_name": "owner/repo",
+					},
+				},
+				"base": map[string]any{"ref": "main", "sha": "def"},
+			}))
+		case "POST /api/v1/repos/owner/repo/pulls/7/reviews":
+			var body struct {
+				Body     string `json:"body"`
+				CommitID string `json:"commit_id"`
+			}
+			if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			assert.Equal("ship it", body.Body)
+			assert.Equal("reviewed-head", body.CommitID)
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id": 40, "state": "APPROVED", "body": "ship it", "user": map[string]any{"login": "dana"},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+
+	_, err = client.ApproveMergeRequest(
+		context.Background(),
+		platform.RepoRef{Owner: "owner", Name: "repo"},
+		7,
+		"ship it",
+		"reviewed-head",
+	)
+	require.NoError(err)
+	assert.Equal(2, getPullCalls)
+}
+
 func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

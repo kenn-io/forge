@@ -524,6 +524,7 @@ type mockClient struct {
 	createdReviewComments           []*gh.DraftReviewComment
 	dismissReviewErr                error
 	dismissedReviewID               int64
+	dismissedReviewMessage          string
 	dismissReviewCalls              atomic.Int32
 }
 
@@ -1300,11 +1301,12 @@ func (m *mockClient) MarkPullRequestReadyForReview(
 }
 
 func (m *mockClient) DismissReview(
-	_ context.Context, _, _ string, _ int, reviewID int64, _ string,
+	_ context.Context, _, _ string, _ int, reviewID int64, message string,
 ) (*gh.PullRequestReview, error) {
 	m.trackCall()
 	m.dismissReviewCalls.Add(1)
 	m.dismissedReviewID = reviewID
+	m.dismissedReviewMessage = message
 	if m.dismissReviewErr != nil {
 		return nil, m.dismissReviewErr
 	}
@@ -10579,6 +10581,9 @@ func TestGitHubProviderApproveDismissesWhenPostSubmitHeadCannotBeVerified(t *tes
 			assert.Equal(int32(1), mock.dismissReviewCalls.Load(),
 				"unverified post-submit approvals must be dismissed")
 			assert.Equal(int64(1), mock.dismissedReviewID)
+			assert.Equal("head_unverifiable", platformErr.Details["cause"])
+			assert.Contains(mock.dismissedReviewMessage, "could not be verified",
+				"the upstream audit message must state the real dismissal reason")
 		})
 	}
 }

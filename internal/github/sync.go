@@ -1441,9 +1441,16 @@ func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
 			review.GetID(), verifyErr,
 		)
 	}
+	// The dismissal message is upstream audit trail: it must state the
+	// real reason, which differs between a moved head and one that
+	// could not be verified.
+	dismissalReason := "head moved past the reviewed commit while the approval submitted"
+	if cause == "head_unverifiable" {
+		dismissalReason = "post-submit head could not be verified after the approval submitted"
+	}
 	if _, dismissErr := p.client.DismissReview(
 		ctx, ref.Owner, ref.Name, number, review.GetID(),
-		"head moved past the reviewed commit while the approval submitted",
+		dismissalReason,
 	); dismissErr != nil {
 		return p.staleApprovalError(
 			fmt.Errorf(

@@ -304,7 +304,19 @@ func TestGitHubAppNoUserCredentialGatesWritesE2E(t *testing.T) {
 	// candidate can resolve a token.
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
 
+	var writeMu sync.Mutex
+	var upstreamWrites []string
+
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v3/repos/kenn-io/middleman/issues/7/comments",
+		func(w http.ResponseWriter, r *http.Request) {
+			writeMu.Lock()
+			upstreamWrites = append(upstreamWrites, r.Method+" "+r.URL.Path)
+			writeMu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = fmt.Fprint(w, `{"id": 99001, "body": "from middleman"}`)
+		})
 	mux.HandleFunc("/api/v3/rate_limit", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, `{"resources":{"core":{"limit":12500,"remaining":12000,"reset":2000000000}}}`)
@@ -460,4 +472,11 @@ installation_account = "kenn-io"
 	require.NoError(err)
 	assert.GreaterOrEqual(commentResp.StatusCode, http.StatusBadRequest,
 		"mutation without a user credential must fail: %s", string(commentBody))
+
+	// Refusing means refusing before the wire: no write request may
+	// have reached GitHub, on any credential.
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	assert.Empty(upstreamWrites,
+		"no write request may reach GitHub when the user credential is absent")
 }

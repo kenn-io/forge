@@ -789,6 +789,13 @@
     const renderedHeadSha = detail.reviewed_head_sha ?? "";
     // TS cannot carry the !stores narrowing into the closure below.
     const appStores = stores;
+    // Per-operation availability from the detail payload (rate limits,
+    // missing write credential on GitHub App split hosts). An absent
+    // entry gates nothing so older payloads keep working.
+    const operations = detail.repo?.operations;
+    const operationAvailable = (
+      op: { available?: boolean } | undefined,
+    ): boolean => op === undefined || op.available === true;
     return {
       pr: {
         State: pr.State,
@@ -805,10 +812,14 @@
       },
       number: sel.number,
       viewerCan: {
-        approve: capabilities.review_mutation,
-        merge: capabilities.merge_mutation,
-        markReady: capabilities.ready_for_review,
-        approveWorkflows: workflowApprovalReady,
+        approve: capabilities.review_mutation
+          && operationAvailable(operations?.submit_review),
+        merge: capabilities.merge_mutation
+          && operationAvailable(operations?.merge_pr),
+        markReady: capabilities.ready_for_review
+          && operationAvailable(operations?.mark_ready_for_review),
+        approveWorkflows: workflowApprovalReady
+          && operationAvailable(operations?.approve_workflow),
       },
       // pr.merge is not registered, so repoSettings is not consulted.
       repoSettings: null,

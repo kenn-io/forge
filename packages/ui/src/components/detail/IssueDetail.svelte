@@ -381,6 +381,21 @@
   let stateSubmitting = $state(false);
   let stateError = $state<string | null>(null);
 
+  type OperationGate = { unavailable: boolean; reason: string };
+
+  // Collapses one server-reported operation availability into the
+  // disabled/tooltip pair the action buttons consume. An absent entry
+  // (older server, detail still loading) gates nothing — the
+  // capability checks around each button still apply.
+  function operationGate(
+    op: { available?: boolean; unavailable_reason?: string } | undefined,
+  ): OperationGate {
+    if (op === undefined || op.available === true) {
+      return { unavailable: false, reason: "" };
+    }
+    return { unavailable: true, reason: op.unavailable_reason ?? "" };
+  }
+
   async function handleStateChange(
     newState: "open" | "closed",
   ): Promise<void> {
@@ -1022,11 +1037,13 @@
           </ActionButton>
         {/if}
         {#if issue.State === "open" && capabilities.state_mutation}
+          {@const closeGate = operationGate(detail.repo?.operations?.close_issue)}
           <ActionButton
             class="btn--close"
-            disabled={stateSubmitting || staleIssue}
+            disabled={stateSubmitting || staleIssue || closeGate.unavailable}
+            title={closeGate.unavailable ? closeGate.reason : undefined}
             onclick={() => {
-              if (staleIssue) return;
+              if (staleIssue || closeGate.unavailable) return;
               handleStateChange("closed");
             }}
             tone="danger"
@@ -1038,11 +1055,13 @@
             <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
         {:else if capabilities.state_mutation}
+          {@const reopenGate = operationGate(detail.repo?.operations?.reopen_issue)}
           <ActionButton
             class="btn--reopen"
-            disabled={stateSubmitting || staleIssue}
+            disabled={stateSubmitting || staleIssue || reopenGate.unavailable}
+            title={reopenGate.unavailable ? reopenGate.reason : undefined}
             onclick={() => {
-              if (staleIssue) return;
+              if (staleIssue || reopenGate.unavailable) return;
               handleStateChange("open");
             }}
             tone="success"

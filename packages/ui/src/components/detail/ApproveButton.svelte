@@ -23,6 +23,8 @@
     requireHeadPin?: boolean;
     onheadconflict?: ((reason: "stale_state" | "head_unknown", context?: string) => void) | undefined;
     oncompleted?: (() => void) | undefined;
+    /** Tooltip override; pass the unavailable_reason when disabling. */
+    title?: string | undefined;
   }
 
   const {
@@ -38,6 +40,7 @@
     requireHeadPin = false,
     onheadconflict,
     oncompleted,
+    title = undefined,
   }: Props = $props();
 
   // A head-binding provider cannot approve without a pinned head; treat
@@ -145,7 +148,7 @@
       ? "The reviewed head commit has not been synced yet; approving is disabled until the next sync records it"
       : expanded
         ? "Close the approval form"
-        : "Open the approval form to submit a code review on this pull request"}
+        : title ?? "Open the approval form to submit a code review on this pull request"}
     label="Approve"
     shortLabel="Approve"
     {size}

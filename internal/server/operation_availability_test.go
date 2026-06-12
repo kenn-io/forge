@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -53,13 +54,13 @@ func TestDeriveOperationAvailability(t *testing.T) {
 	repoCannotMerge := db.Repo{ViewerCanMerge: false}
 
 	tests := []struct {
-		name        string
-		op          operationDescriptor
-		caps        providerCapabilitiesResponse
-		repo        db.Repo
-		rate        rateLimitAvailability
-		missingCred string
-		expected    OperationAvailability
+		name      string
+		op        operationDescriptor
+		caps      providerCapabilitiesResponse
+		repo      db.Repo
+		rate      rateLimitAvailability
+		writeCred writeCredentialGate
+		expected  OperationAvailability
 	}{
 		{
 			name:     "healthy merge_pr is available",
@@ -145,33 +146,39 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			},
 		},
 		{
-			name:        "missing write credential blocks every mutation",
-			op:          mergePR,
-			caps:        allCaps,
-			repo:        repoCanMerge,
-			missingCred: "No user credential for writes on github.com",
+			name: "missing write credential blocks every mutation",
+			op:   mergePR,
+			caps: allCaps,
+			repo: repoCanMerge,
+			writeCred: writeCredentialGate{
+				code:   availabilityCodeMissingWriteCredential,
+				reason: "No user credential for writes on github.com",
+			},
 			expected: OperationAvailability{
 				Code:              availabilityCodeMissingWriteCredential,
 				UnavailableReason: "No user credential for writes on github.com",
 			},
 		},
 		{
-			name:        "missing write credential takes precedence over viewer and rate gates",
-			op:          mergePR,
-			caps:        allCaps,
-			repo:        repoCannotMerge,
-			rate:        limitedRate,
-			missingCred: "No user credential for writes on github.com",
+			name: "write credential gate takes precedence over viewer and rate gates",
+			op:   mergePR,
+			caps: allCaps,
+			repo: repoCannotMerge,
+			rate: limitedRate,
+			writeCred: writeCredentialGate{
+				code:   availabilityCodeWriteCredentialError,
+				reason: "Resolving the write credential for github.com failed",
+			},
 			expected: OperationAvailability{
-				Code:              availabilityCodeMissingWriteCredential,
-				UnavailableReason: "No user credential for writes on github.com",
+				Code:              availabilityCodeWriteCredentialError,
+				UnavailableReason: "Resolving the write credential for github.com failed",
 			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := deriveOperationAvailability(tc.op, tc.caps, tc.repo, tc.rate, tc.missingCred)
+			got := deriveOperationAvailability(tc.op, tc.caps, tc.repo, tc.rate, tc.writeCred)
 			require.Equal(t, tc.expected, got)
 		})
 	}
@@ -424,43 +431,11 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 	// operation must report missing_write_credential instead of
 	// offering an action that would fail auth at request time.
 	t.Setenv("SPLIT_WRITE_CRED_PAT", "")
-	newSplitServer := func() *Server {
-		database := dbtest.Open(t)
-		syncer := ghclient.NewSyncer(
-			map[string]ghclient.Client{"github.com": &mockGH{}},
-			database, nil,
-			[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
-			time.Minute, nil, nil,
-		)
-		t.Cleanup(syncer.Stop)
-		set := tokenauth.NewSourceSet(tokenauth.Options{
-			GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
-				return "ghs_probe", time.Now().Add(time.Hour), nil
-			},
-		})
-		set.Upsert(tokenauth.Descriptor{
-			Key: tokenauth.Key{Platform: "github", Host: "github.com"},
-			Candidates: []tokenauth.Candidate{
-				{
-					Kind:           tokenauth.SourceKindGitHubApp,
-					Host:           "github.com",
-					FilePath:       "/keys/app.pem",
-					AppID:          7,
-					InstallationID: 11,
-				},
-				{Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT"},
-			},
-		})
-		srv := New(database, syncer, nil, "/", nil, ServerOptions{TokenSources: set})
-		t.Cleanup(func() { gracefulShutdown(t, srv) })
-		_, err := database.UpsertRepo(
-			t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
-		)
-		require.NoError(err)
-		return srv
-	}
+	t.Setenv("SPLIT_WRITE_CRED_PAT_NEW", "user-pat")
+	srv, set := newSplitTestServer(t, tokenauth.Candidate{
+		Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT",
+	})
 
-	srv := newSplitServer()
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
 	var resp repoResponse
@@ -473,16 +448,94 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 	assert.False(comment.Available, "every operation is a mutation; all must gate")
 	assert.Equal(availabilityCodeMissingWriteCredential, comment.Code)
 
-	// With a PAT behind the app the same chain resolves mutation auth
-	// and operations come back.
-	t.Setenv("SPLIT_WRITE_CRED_PAT", "user-pat")
-	srv = newSplitServer()
+	// A config reload that re-points the chain at a resolvable
+	// credential must take effect immediately: the probe cache is
+	// keyed by the canonical chain, not just the host, so the stale
+	// missing-credential verdict cannot outlive the chain it probed.
+	set.Upsert(splitTestDescriptor(tokenauth.Candidate{
+		Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT_NEW",
+	}))
 	rr = doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
 	resp = repoResponse{}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	assert.True(resp.Operations.MergePR.Available)
+	assert.True(resp.Operations.MergePR.Available,
+		"a re-pointed chain must bypass the cached verdict without waiting out the TTL")
 	assert.True(resp.Operations.AddComment.Available)
+}
+
+func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	// A resolver failure (unreadable token file, broken gh helper) is
+	// not a missing credential: the UI must not tell the user to
+	// configure a PAT when the real problem is a broken helper.
+	srv, _ := newSplitTestServer(t, tokenauth.Candidate{
+		Kind:     tokenauth.SourceKindFile,
+		FilePath: filepath.Join(t.TempDir(), "does-not-exist.token"),
+	})
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var resp repoResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	merge := resp.Operations.MergePR
+	assert.False(merge.Available)
+	assert.Equal(availabilityCodeWriteCredentialError, merge.Code,
+		"a resolver failure must not masquerade as a missing credential")
+	assert.Contains(merge.UnavailableReason, "github.com")
+	assert.NotContains(merge.UnavailableReason, "does-not-exist.token",
+		"the reason must stay redacted; no raw resolver error in the wire response")
+}
+
+// splitTestDescriptor builds the github.com chain of a split host:
+// an installed GitHub App candidate followed by the given user write
+// candidate.
+func splitTestDescriptor(writeCandidate tokenauth.Candidate) tokenauth.Descriptor {
+	return tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: "github", Host: "github.com"},
+		Candidates: []tokenauth.Candidate{
+			{
+				Kind:           tokenauth.SourceKindGitHubApp,
+				Host:           "github.com",
+				FilePath:       "/keys/app.pem",
+				AppID:          7,
+				InstallationID: 11,
+			},
+			writeCandidate,
+		},
+	}
+}
+
+// newSplitTestServer builds a Server whose github.com token chain is
+// a split chain (installed app + the given write candidate) so tests
+// can exercise mutation availability gating.
+func newSplitTestServer(
+	t *testing.T, writeCandidate tokenauth.Candidate,
+) (*Server, *tokenauth.SourceSet) {
+	t.Helper()
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "ghs_probe", time.Now().Add(time.Hour), nil
+		},
+	})
+	set.Upsert(splitTestDescriptor(writeCandidate))
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{TokenSources: set})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	_, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(t, err)
+	return srv, set
 }
 
 func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {

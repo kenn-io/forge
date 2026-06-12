@@ -26,6 +26,11 @@ type repoRefResponse struct {
 	Owner        string                       `json:"owner"`
 	Name         string                       `json:"name"`
 	Capabilities providerCapabilitiesResponse `json:"capabilities"`
+	// Operations is set on detail responses only (PR and issue
+	// detail), where action buttons and the keyboard palette gate
+	// mutations on per-operation availability. List rows omit it to
+	// keep payloads small.
+	Operations *RepoOperations `json:"operations,omitempty"`
 }
 
 func (s *Server) lookupRepoByRefInput(
@@ -101,6 +106,16 @@ func repoRefFromRepo(repo db.Repo) repoRefResponse {
 func (s *Server) repoRefFromRepo(repo db.Repo) repoRefResponse {
 	resp := repoRefFromRepo(repo)
 	resp.Capabilities = s.capabilitiesForRepo(repo)
+	return resp
+}
+
+// repoRefWithOperations is repoRefFromRepo plus the per-operation
+// mutation availability detail views need to gate their action
+// buttons and palette commands.
+func (s *Server) repoRefWithOperations(repo db.Repo) repoRefResponse {
+	resp := s.repoRefFromRepo(repo)
+	ops := s.repoOperations(repo)
+	resp.Operations = &ops
 	return resp
 }
 

@@ -16,6 +16,8 @@
     repoPath: string;
     size?: "sm" | "md";
     disabled?: boolean;
+    /** Tooltip; pass the unavailable_reason when disabling the action. */
+    title?: string | undefined;
     oncompleted?: () => void;
   }
 
@@ -28,6 +30,7 @@
     repoPath,
     size = "md",
     disabled = false,
+    title = undefined,
     oncompleted,
   }: Props = $props();
 
@@ -72,6 +75,7 @@
     disabled={submitting || disabled}
     tone="info"
     surface="soft"
+    {title}
     label={submitting ? "Publishing…" : "Ready for review"}
     shortLabel={submitting ? "Publishing…" : "Ready"}
     {size}

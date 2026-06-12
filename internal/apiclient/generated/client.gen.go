@@ -1753,6 +1753,7 @@ type RepoPreviewRow struct {
 type RepoRefResponse struct {
 	Capabilities ProviderCapabilitiesResponse `json:"capabilities"`
 	Name         string                       `json:"name"`
+	Operations   *RepoOperations              `json:"operations,omitempty"`
 	Owner        string                       `json:"owner"`
 	PlatformHost string                       `json:"platform_host"`
 	Provider     string                       `json:"provider"`

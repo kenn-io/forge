@@ -8,6 +8,7 @@
     DiffFile,
     KanbanStatus,
     Label,
+    OperationAvailability,
     ProviderCapabilities,
     PullRequest,
     RepoOperations,
@@ -627,6 +628,19 @@
     viewerCanMerge: boolean;
     operations?: RepoOperations;
   };
+
+  type OperationGate = { unavailable: boolean; reason: string };
+
+  // Collapses one server-reported operation availability into the
+  // disabled/tooltip pair the action buttons consume. An absent entry
+  // (older server, repo settings still loading) gates nothing — the
+  // capability checks around each button still apply.
+  function operationGate(op: OperationAvailability | undefined): OperationGate {
+    if (op === undefined || op.available) {
+      return { unavailable: false, reason: "" };
+    }
+    return { unavailable: true, reason: op.unavailable_reason ?? "" };
+  }
 
   let repoSettings = $state<RepoSettings | null>(null);
   let repoSettingsRequestID = 0;
@@ -1681,6 +1695,7 @@
       {#snippet primaryActionButtons()}
         {#if pr.State === "open"}
           {#if pr.IsDraft && capabilities.ready_for_review}
+            {@const readyGate = operationGate(repoSettings?.operations?.mark_ready_for_review)}
             <ReadyForReviewButton
               {owner}
               {name}
@@ -1689,11 +1704,13 @@
               {platformHost}
               {repoPath}
               size="sm"
-              disabled={stalePR}
+              disabled={stalePR || readyGate.unavailable}
+              title={readyGate.unavailable ? readyGate.reason : undefined}
               oncompleted={closeActionMenu}
             />
           {/if}
           {#if capabilities.review_mutation}
+            {@const approveGate = operationGate(repoSettings?.operations?.submit_review)}
             <ApproveButton
               {owner}
               {name}
@@ -1702,14 +1719,16 @@
               {platformHost}
               {repoPath}
               size="sm"
-              disabled={stalePR || headActionsBlocked}
+              disabled={stalePR || headActionsBlocked || approveGate.unavailable}
               expectedHeadSha={detailHeadSha}
               requireHeadPin={capabilities.mutation_head_binding}
+              title={approveGate.unavailable ? approveGate.reason : undefined}
               onheadconflict={handleHeadConflict}
               oncompleted={() => { headConflict = null; headConflictContext = null; }}
             />
           {/if}
           {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
+            {@const workflowGate = operationGate(repoSettings?.operations?.approve_workflow)}
             <ApproveWorkflowsButton
               {owner}
               {name}
@@ -1719,7 +1738,8 @@
               {repoPath}
               count={workflowApproval.count ?? 0}
               size="sm"
-              disabled={stalePR}
+              disabled={stalePR || workflowGate.unavailable}
+              title={workflowGate.unavailable ? workflowGate.reason : undefined}
               oncompleted={closeActionMenu}
             />
           {/if}
@@ -1759,11 +1779,13 @@
             </ActionButton>
           {/if}
           {#if capabilities.state_mutation}
+            {@const closeGate = operationGate(repoSettings?.operations?.close_pr)}
             <ActionButton
               class="btn--close"
-              disabled={stateSubmitting || stalePR}
+              disabled={stateSubmitting || stalePR || closeGate.unavailable}
+              title={closeGate.unavailable ? closeGate.reason : undefined}
               onclick={() => {
-                if (stalePR) return;
+                if (stalePR || closeGate.unavailable) return;
                 closeActionMenu();
                 handleStateChange("closed");
               }}
@@ -1778,11 +1800,13 @@
           {/if}
         {:else if pr.State === "closed"}
           {#if capabilities.state_mutation}
+            {@const reopenGate = operationGate(repoSettings?.operations?.reopen_pr)}
             <ActionButton
               class="btn--reopen"
-              disabled={stateSubmitting || stalePR}
+              disabled={stateSubmitting || stalePR || reopenGate.unavailable}
+              title={reopenGate.unavailable ? reopenGate.reason : undefined}
               onclick={() => {
-                if (stalePR) return;
+                if (stalePR || reopenGate.unavailable) return;
                 closeActionMenu();
                 handleStateChange("open");
               }}

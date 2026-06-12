@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/docs"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -1057,6 +1059,109 @@ installation_account = "acme"
 	assert.True(ev.Valid, "reload error: %s", ev.Error)
 	assert.True(ev.RestartRequired,
 		"github app split topology is startup-bound and must flag a restart")
+
+	// The in-memory config must mirror the file even though the new
+	// topology only takes effect after restart: the github-app CLI
+	// edits the file while the server runs, and a settings save from
+	// a stale view would silently drop the [[github_apps]] entry.
+	srv.cfgMu.Lock()
+	apps := slices.Clone(srv.cfg.GitHubApps)
+	srv.cfgMu.Unlock()
+	require.Len(apps, 1)
+	assert.Equal(int64(4242), apps[0].AppID)
+}
+
+// newReloadServerWithTokenSources mirrors startup: one source per
+// provider token plan, registered in a SourceSet the server reloads
+// against.
+func newReloadServerWithTokenSources(
+	t *testing.T, cfg *config.Config, cfgPath string,
+) (*Server, *tokenauth.SourceSet) {
+	t.Helper()
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	for _, plan := range cfg.ProviderTokenSources() {
+		set.Upsert(plan.Descriptor)
+	}
+	srv := NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{TokenSources: set},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	return srv, set
+}
+
+func TestConfigReloadFreezesGitHubChainOnSplitTopologyChange(t *testing.T) {
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
+
+	githubKey := tokenauth.Key{Platform: "github", Host: "github.com"}
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.pem"), []byte("pem"), 0o600))
+	withApp := validReloadConfig + `
+[[github_apps]]
+host = "github.com"
+app_id = 4242
+private_key_path = "app.pem"
+installation_id = 7
+installation_account = "acme"
+`
+	loadCfg := func(t *testing.T, name, content string) (*config.Config, string) {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+		cfg, err := config.Load(path)
+		require.NoError(t, err)
+		return cfg, path
+	}
+
+	t.Run("app added on reload keeps the boot PAT chain live", func(t *testing.T) {
+		assert := assert.New(t)
+		bootCfg, bootPath := loadCfg(t, "boot.toml", validReloadConfig)
+		srv, set := newReloadServerWithTokenSources(t, bootCfg, bootPath)
+		newCfg, _ := loadCfg(t, "new.toml", withApp)
+
+		// RestartRequired must fire, and the live chain must not flip
+		// reads onto the app token while write trackers are missing.
+		assert.True(srv.bootCfgSnapshot.restartRequiredFor(newCfg))
+		srv.updateTokenSourcesForReload(newCfg)
+		src, ok := set.Get(githubKey)
+		require.True(t, ok)
+		assert.False(src.Descriptor().HasActiveGitHubApp(),
+			"a reload that adds an app must not re-point reads before restart")
+	})
+
+	t.Run("app removed on reload keeps the boot app chain live", func(t *testing.T) {
+		assert := assert.New(t)
+		bootCfg, bootPath := loadCfg(t, "boot-app.toml", withApp)
+		srv, set := newReloadServerWithTokenSources(t, bootCfg, bootPath)
+		newCfg, _ := loadCfg(t, "new-no-app.toml", validReloadConfig)
+
+		assert.True(srv.bootCfgSnapshot.restartRequiredFor(newCfg),
+			"removing an app changes split topology and must flag a restart")
+		srv.updateTokenSourcesForReload(newCfg)
+		src, ok := set.Get(githubKey)
+		require.True(t, ok)
+		assert.True(src.Descriptor().HasActiveGitHubApp(),
+			"a reload that removes an app must not drop the chain the write trackers were built for")
+	})
+
+	t.Run("non-topology token change still hot-applies", func(t *testing.T) {
+		t.Setenv("MIDDLEMAN_NEW_GITHUB_TOKEN", "rotated")
+		bootCfg, bootPath := loadCfg(t, "boot-plain.toml", validReloadConfig)
+		srv, set := newReloadServerWithTokenSources(t, bootCfg, bootPath)
+		newCfg, _ := loadCfg(t, "new-env.toml", validReloadConfigChangedGitHubTokenEnv)
+
+		srv.updateTokenSourcesForReload(newCfg)
+		src, ok := set.Get(githubKey)
+		require.True(t, ok)
+		assert.Contains(t, src.Descriptor().SafeString(), "MIDDLEMAN_NEW_GITHUB_TOKEN",
+			"hosts whose split classification is unchanged must keep hot-reloading")
+	})
 }
 
 // Two providers share one host with the same credential chain — the only

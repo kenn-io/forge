@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -35,6 +36,7 @@ const (
 	availabilityCodeViewerCannotMerge      = "viewer_cannot_merge"
 	availabilityCodeRateLimited            = "rate_limited"
 	availabilityCodeMissingWriteCredential = "missing_write_credential"
+	availabilityCodeWriteCredentialError   = "write_credential_error"
 )
 
 // apiBucket identifies which API quota an operation consumes. GitHub
@@ -125,10 +127,10 @@ func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 		apiBucketREST:    s.mutationRateLimitedReason(repo, apiBucketREST),
 		apiBucketGraphQL: s.mutationRateLimitedReason(repo, apiBucketGraphQL),
 	}
-	missingWriteCredential := s.missingWriteCredentialReason(repo)
+	writeCred := s.writeCredentialGateForRepo(repo)
 	derive := func(op operationDescriptor) OperationAvailability {
 		return deriveOperationAvailability(
-			op, caps, repo, rates[op.bucket], missingWriteCredential,
+			op, caps, repo, rates[op.bucket], writeCred,
 		)
 	}
 	return RepoOperations{
@@ -153,7 +155,7 @@ func deriveOperationAvailability(
 	caps providerCapabilitiesResponse,
 	repo db.Repo,
 	rate rateLimitAvailability,
-	missingWriteCredential string,
+	writeCred writeCredentialGate,
 ) OperationAvailability {
 	for _, capability := range op.requiredCapabilities {
 		if !capabilityEnabled(caps, capability) {
@@ -164,10 +166,10 @@ func deriveOperationAvailability(
 			}
 		}
 	}
-	if missingWriteCredential != "" {
+	if writeCred.code != "" {
 		return OperationAvailability{
-			Code:              availabilityCodeMissingWriteCredential,
-			UnavailableReason: missingWriteCredential,
+			Code:              writeCred.code,
+			UnavailableReason: writeCred.reason,
 		}
 	}
 	if op.name == operationMergePR && !repo.ViewerCanMerge {
@@ -259,69 +261,146 @@ func (s *Server) rateLimitedReason(repo db.Repo, bucket apiBucket) rateLimitAvai
 // at runtime sees writes come back without restarting middleman.
 const writeCredentialProbeTTL = time.Minute
 
+// writeCredentialProbeErrorTTL caches resolver failures (as opposed
+// to a definitively missing credential) for a shorter window: a
+// transient gh CLI or filesystem error must not keep writes disabled
+// for the full TTL.
+const writeCredentialProbeErrorTTL = 15 * time.Second
+
 // writeCredentialProbeTimeout caps a single probe. The chain may shell
 // out to the gh CLI, and a hung helper must not stall list endpoints.
 const writeCredentialProbeTimeout = 5 * time.Second
 
+// writeCredentialGate says whether mutations against a host can
+// authenticate. An empty code means the mutation chain resolves a
+// token.
+type writeCredentialGate struct {
+	code   string
+	reason string
+}
+
 type writeCredentialProbe struct {
-	reason    string // empty when the mutation chain resolves a token
+	gate      writeCredentialGate
 	checkedAt time.Time
 }
 
-// missingWriteCredentialReason reports why mutations against repo's
-// host cannot authenticate, or "" when they can. Only split hosts can
-// be in this state: when a GitHub App serves sync reads, mutations
-// deliberately skip the app candidate so writes stay attributed to
-// the user, and a host configured with only the app would accept the
-// operation in the UI and then fail auth at request time. Probing the
-// mutation-marked chain surfaces that before the UI offers the
-// action. Shared-credential hosts are exempt — sync reads already
-// exercise the same credential mutations would use.
-func (s *Server) missingWriteCredentialReason(repo db.Repo) string {
+func (p writeCredentialProbe) fresh(now time.Time) bool {
+	ttl := writeCredentialProbeTTL
+	if p.gate.code == availabilityCodeWriteCredentialError {
+		ttl = writeCredentialProbeErrorTTL
+	}
+	return now.Sub(p.checkedAt) < ttl
+}
+
+// writeCredentialGateForRepo reports why mutations against repo's
+// host cannot authenticate, or the zero gate when they can. Only
+// split hosts can be in this state: when a GitHub App serves sync
+// reads, mutations deliberately skip the app candidate so writes stay
+// attributed to the user, and a host configured with only the app
+// would accept the operation in the UI and then fail auth at request
+// time. Probing the mutation-marked chain surfaces that before the UI
+// offers the action. Shared-credential hosts are exempt — sync reads
+// already exercise the same credential mutations would use.
+//
+// Results are cached per (host, canonical chain): a config reload
+// that re-points the host's credential chain misses the cache
+// immediately, while the TTL covers changes behind an unchanged chain
+// (a token file rewritten in place, a gh CLI login). Cold-cache
+// probes are single-flighted so concurrent list requests share one
+// resolution instead of each shelling out to the gh CLI.
+func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 	if s == nil || s.tokenSources == nil {
-		return ""
+		return writeCredentialGate{}
 	}
 	key := tokenauth.Key{
 		Platform: string(repoProviderKind(repo)),
 		Host:     repoProviderHost(repo),
 	}
 	src, ok := s.tokenSources.Get(key)
-	if !ok || src == nil || !src.Descriptor().HasActiveGitHubApp() {
-		return ""
+	if !ok || src == nil {
+		return writeCredentialGate{}
 	}
+	desc := src.Descriptor()
+	if !desc.HasActiveGitHubApp() {
+		return writeCredentialGate{}
+	}
+	cacheKey := key.String() + "\x00" + desc.CanonicalSourceString()
+
+	for {
+		s.writeCredProbeMu.Lock()
+		if probe, ok := s.writeCredProbes[cacheKey]; ok && probe.fresh(s.now()) {
+			s.writeCredProbeMu.Unlock()
+			return probe.gate
+		}
+		inFlight, ok := s.writeCredProbeInFlight[cacheKey]
+		if !ok {
+			break // lock still held; this request runs the probe
+		}
+		s.writeCredProbeMu.Unlock()
+		<-inFlight
+	}
+	done := make(chan struct{})
+	if s.writeCredProbeInFlight == nil {
+		s.writeCredProbeInFlight = make(map[string]chan struct{})
+	}
+	s.writeCredProbeInFlight[cacheKey] = done
+	s.writeCredProbeMu.Unlock()
+	defer func() {
+		s.writeCredProbeMu.Lock()
+		delete(s.writeCredProbeInFlight, cacheKey)
+		s.writeCredProbeMu.Unlock()
+		close(done)
+	}()
+
+	gate := s.probeWriteCredential(src, key.Host)
 
 	s.writeCredProbeMu.Lock()
-	if probe, ok := s.writeCredProbes[key.String()]; ok &&
-		s.now().Sub(probe.checkedAt) < writeCredentialProbeTTL {
-		s.writeCredProbeMu.Unlock()
-		return probe.reason
+	if s.writeCredProbes == nil {
+		s.writeCredProbes = make(map[string]writeCredentialProbe)
+	}
+	s.writeCredProbes[cacheKey] = writeCredentialProbe{
+		gate:      gate,
+		checkedAt: s.now(),
 	}
 	s.writeCredProbeMu.Unlock()
+	return gate
+}
 
+// probeWriteCredential resolves the mutation-marked chain once and
+// classifies the outcome. A definitively absent credential and a
+// resolver failure (gh CLI error, unreadable token file, timeout) get
+// distinct codes so the UI never tells the user to configure a PAT
+// when the real problem is a broken helper.
+func (s *Server) probeWriteCredential(
+	src tokenauth.Source, host string,
+) writeCredentialGate {
 	parent := s.bgCtx
 	if parent == nil {
 		parent = context.Background()
 	}
 	ctx, cancel := context.WithTimeout(parent, writeCredentialProbeTimeout)
 	defer cancel()
-	reason := ""
-	if _, err := src.Token(tokenauth.WithMutationAuth(ctx)); err != nil {
-		reason = fmt.Sprintf(
-			"No user credential for writes on %s: the GitHub App token only covers sync reads. Configure a PAT or gh CLI auth.",
-			key.Host,
-		)
+	_, err := src.Token(tokenauth.WithMutationAuth(ctx))
+	switch {
+	case err == nil:
+		return writeCredentialGate{}
+	case errors.Is(err, tokenauth.ErrMissingToken):
+		return writeCredentialGate{
+			code: availabilityCodeMissingWriteCredential,
+			reason: fmt.Sprintf(
+				"No user credential for writes on %s: the GitHub App token only covers sync reads. Configure a PAT or gh CLI auth.",
+				host,
+			),
+		}
+	default:
+		return writeCredentialGate{
+			code: availabilityCodeWriteCredentialError,
+			reason: fmt.Sprintf(
+				"Resolving the write credential for %s failed: the GitHub App token only covers sync reads. Check the configured token file or gh CLI auth and retry.",
+				host,
+			),
+		}
 	}
-
-	s.writeCredProbeMu.Lock()
-	if s.writeCredProbes == nil {
-		s.writeCredProbes = make(map[string]writeCredentialProbe)
-	}
-	s.writeCredProbes[key.String()] = writeCredentialProbe{
-		reason:    reason,
-		checkedAt: s.now(),
-	}
-	s.writeCredProbeMu.Unlock()
-	return reason
 }
 
 func formatRateLimit(host string, resetAt *time.Time) rateLimitAvailability {

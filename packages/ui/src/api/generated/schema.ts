@@ -4138,6 +4138,7 @@ export interface components {
         RepoRefResponse: {
             capabilities: components["schemas"]["ProviderCapabilitiesResponse"];
             name: string;
+            operations?: components["schemas"]["RepoOperations"];
             owner: string;
             platform_host: string;
             provider: string;

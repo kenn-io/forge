@@ -88,13 +88,17 @@ type PlatformConfig struct {
 // off the host's PAT.
 //
 // Scope decision: one app per GitHub host with one recorded
-// installation. The token source chain is host-scoped, and an
-// installation token only reaches repos owned by the installed
-// account, so repos on the host owned by other accounts must carry
-// their own repo-level token_env/token_file override; Validate
+// installation, and one active credential chain per host. An
+// installation token only reaches repos the installation covers, so
+// every same-host repo must be covered by that installation — Validate
 // enforces this so uncovered repos fail loudly at load instead of
-// 404ing during sync. An entry without an installation_id is dormant
-// and the PAT chain stays in effect.
+// 404ing during sync. There is no per-repo escape hatch: repo-level
+// token_env/token_file overrides are terminal credentials that cannot
+// be mixed with an app chain on the same host (the same-host conflict
+// check rejects that), so the remedies are installing the app on the
+// owning account, extending the installation's repository selection,
+// or removing the [[github_apps]] entry. An entry without an
+// installation_id is dormant and the PAT chain stays in effect.
 type GitHubAppConfig struct {
 	Host                string `toml:"host" json:"host"`
 	AppID               int64  `toml:"app_id" json:"app_id"`

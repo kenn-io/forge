@@ -11,7 +11,7 @@
     size?: Size;
     type?: "button" | "submit" | "reset";
     disabled?: boolean;
-    title?: string;
+    title?: string | undefined;
     ariaLabel?: string | undefined;
     label?: string;
     shortLabel?: string;

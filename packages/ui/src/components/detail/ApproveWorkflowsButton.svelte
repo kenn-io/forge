@@ -19,6 +19,8 @@
     count: number;
     size?: "sm" | "md";
     disabled?: boolean;
+    /** Tooltip override; pass the unavailable_reason when disabling. */
+    title?: string | undefined;
     oncompleted?: () => void;
   }
 
@@ -32,6 +34,7 @@
     count,
     size = "md",
     disabled = false,
+    title = undefined,
     oncompleted,
   }: Props = $props();
 
@@ -85,7 +88,7 @@
     disabled={submitting || disabled}
     tone="workflow"
     surface="soft"
-    title={tooltip}
+    title={title ?? tooltip}
     label={submitting ? "Approving workflows…" : label}
     shortLabel={submitting ? "Approving…" : shortLabel}
     {size}

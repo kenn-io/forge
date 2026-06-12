@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -370,6 +371,13 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	s.cfg.GitHubTokenEnv = newCfg.GitHubTokenEnv
 	s.cfg.Repos = slices.Clone(newCfg.Repos)
 	s.cfg.Platforms = slices.Clone(newCfg.Platforms)
+	// GitHubApps must mirror the file even though the credential
+	// topology it implies is startup-bound (restart_required is
+	// flagged separately): the middleman-github-app CLI edits the
+	// file while the server runs, and a later settings save from the
+	// stale in-memory view would silently drop the [[github_apps]]
+	// entry.
+	s.cfg.GitHubApps = slices.Clone(newCfg.GitHubApps)
 	s.cfg.Activity = newCfg.Activity
 	s.cfg.Terminal = newCfg.Terminal
 	s.cfg.Modes = cloneModeVisibility(newCfg.Modes)
@@ -443,7 +451,26 @@ func (s *Server) updateTokenSourcesForReload(cfg *config.Config) {
 	if s.tokenSources == nil || cfg == nil {
 		return
 	}
+	// Split-auth topology is startup-bound: write rate trackers and
+	// the dedicated write clients are wired in buildProviderStartup.
+	// If a reload adds or removes a GitHub App for a host, applying
+	// the new chain here would flip sync reads to or from the app
+	// token immediately while mutation gating still consults the
+	// boot-time tracker topology. Those hosts keep their boot chain
+	// until the restart the reload already flags as required.
+	frozenHosts := s.splitTopologyChangedHosts(cfg)
+	if len(frozenHosts) > 0 {
+		slog.Info(
+			"config reload: github app split topology changed; keeping boot credential chains until restart",
+			"hosts", slices.Sorted(maps.Keys(frozenHosts)),
+		)
+	}
 	updateIfKnown := func(desc tokenauth.Descriptor) {
+		if desc.Key.Platform == string(platform.KindGitHub) {
+			if _, frozen := frozenHosts[desc.Key.Host]; frozen {
+				return
+			}
+		}
 		if _, ok := s.tokenSources.Get(desc.Key); !ok {
 			return
 		}
@@ -459,6 +486,33 @@ func (s *Server) updateTokenSourcesForReload(cfg *config.Config) {
 	for _, desc := range cfg.CloneTokenDescriptors() {
 		updateIfKnown(desc)
 	}
+}
+
+// splitTopologyChangedHosts returns the GitHub hosts whose split-auth
+// classification under cfg differs from the boot snapshot — hosts
+// that would gain or lose an active GitHub App chain if the reload
+// were applied.
+func (s *Server) splitTopologyChangedHosts(cfg *config.Config) map[string]struct{} {
+	boot := make(map[string]struct{}, len(s.bootCfgSnapshot.GitHubAppSplitHosts))
+	for _, host := range s.bootCfgSnapshot.GitHubAppSplitHosts {
+		boot[host] = struct{}{}
+	}
+	next := make(map[string]struct{})
+	for _, host := range githubAppSplitHosts(cfg) {
+		next[host] = struct{}{}
+	}
+	changed := make(map[string]struct{})
+	for host := range next {
+		if _, ok := boot[host]; !ok {
+			changed[host] = struct{}{}
+		}
+	}
+	for host := range boot {
+		if _, ok := next[host]; !ok {
+			changed[host] = struct{}{}
+		}
+	}
+	return changed
 }
 
 func (s *Server) validateReloadProviderTokenSources(

@@ -562,4 +562,62 @@ describe("PullDetail approvals", () => {
     expect(button.disabled).toBe(true);
     expect(button.title).toBe("github.com rate-limited; retry at 14:35");
   });
+
+  it("disables ready-for-review with reason when its operation is unavailable", async () => {
+    // A GitHub App split host with no user write credential reports
+    // missing_write_credential on every mutation; non-merge actions
+    // must disable with the reason instead of failing at request time.
+    const detail = pullDetail();
+    detail.repo.capabilities.ready_for_review = true;
+    detail.merge_request.IsDraft = true;
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+      operations: {
+        mark_ready_for_review: {
+          available: false,
+          code: "missing_write_credential",
+          unavailable_reason: "No user credential for writes on github.com",
+        },
+      },
+    });
+
+    const button = await vi.waitFor(() => {
+      const found = screen.queryByRole("button", { name: /ready for review/i });
+      expect(found).not.toBeNull();
+      return found as HTMLButtonElement;
+    });
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("No user credential for writes on github.com");
+  });
+
+  it("disables approve with reason when submit_review is unavailable", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.review_mutation = true;
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+      operations: {
+        submit_review: {
+          available: false,
+          code: "missing_write_credential",
+          unavailable_reason: "No user credential for writes on github.com",
+        },
+      },
+    });
+
+    const button = await vi.waitFor(() => {
+      const found = screen.queryByRole("button", { name: /^approve$/i });
+      expect(found).not.toBeNull();
+      return found as HTMLButtonElement;
+    });
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("No user credential for writes on github.com");
+  });
 });

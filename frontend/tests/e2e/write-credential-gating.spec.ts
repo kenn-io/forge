@@ -34,10 +34,12 @@ const operations = {
 const providerCapabilities = {
   comment_mutation: true,
   issue_mutation: true,
+  label_mutation: true,
   merge_mutation: true,
   read_ci: true,
   read_comments: true,
   read_issues: true,
+  read_labels: true,
   read_merge_requests: true,
   read_releases: true,
   read_repositories: true,
@@ -144,12 +146,20 @@ async function mockRoutes(page: Page): Promise<void> {
 }
 
 test.describe("missing write credential gates non-merge mutations", () => {
-  test("ready-for-review and close are disabled with the reason and never hit the API", async ({ page }) => {
+  test("ready-for-review, close, comments, and labels are disabled with the reason and never hit the API", async ({
+    page,
+  }) => {
+    // Record every non-GET request under the provider-aware PR routes
+    // (e.g. /api/v1/pulls/github/acme/widgets/100/ready-for-review) so
+    // a regression that fires any mutation fails the test.
     const mutationCalls: string[] = [];
     page.on("request", (request) => {
       if (request.method() === "GET") return;
       const path = new URL(request.url()).pathname;
-      if (/\/pulls\/\d+\/(ready-for-review|github-state)$/.test(path)) {
+      // The detail store fires automatic background syncs
+      // (/sync, /sync/async); those are refresh triggers, not user
+      // mutations, so they are excluded from the recording.
+      if (/^\/api\/v1\/(pulls|issues|repo)\//.test(path) && !/\/sync(\/async)?$/.test(path)) {
         mutationCalls.push(`${request.method()} ${path}`);
       }
     });
@@ -167,6 +177,18 @@ test.describe("missing write credential gates non-merge mutations", () => {
     await expect(closeButton).toBeDisabled();
     await expect(closeButton).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
     await closeButton.click({ force: true });
+
+    // The comment composer surfaces the reason and refuses to submit.
+    const commentSubmit = page.locator(".comment-box .submit-btn");
+    await expect(commentSubmit).toBeDisabled();
+    await expect(page.locator(".comment-box .error-msg")).toContainText(MISSING_CREDENTIAL_REASON);
+
+    // The label editor cannot open.
+    const labelButton = page.locator(".btn--labels").first();
+    await expect(labelButton).toBeDisabled();
+    await expect(labelButton).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
+    await labelButton.click({ force: true });
+    await expect(page.locator(".label-editor-popover")).toHaveCount(0);
 
     expect(mutationCalls).toEqual([]);
   });

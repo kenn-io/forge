@@ -594,6 +594,33 @@ describe("PullDetail approvals", () => {
     expect(button.title).toBe("No user credential for writes on github.com");
   });
 
+  it("gates actions from the detail payload before repo settings resolve", async () => {
+    // The detail payload carries repo.operations as the primary
+    // source; the separate /repo settings request is only a fallback.
+    // Here the settings response has no operations at all, so only a
+    // payload-sourced gate can disable the button.
+    const detail = pullDetail();
+    detail.repo.capabilities.ready_for_review = true;
+    detail.merge_request.IsDraft = true;
+    detail.repo.operations = {
+      mark_ready_for_review: {
+        available: false,
+        code: "missing_write_credential",
+        unavailable_reason: "No user credential for writes on github.com",
+      },
+    } as unknown as PullDetail["repo"]["operations"];
+
+    renderPullDetail(detail);
+
+    const button = await vi.waitFor(() => {
+      const found = screen.queryByRole("button", { name: /ready for review/i });
+      expect(found).not.toBeNull();
+      return found as HTMLButtonElement;
+    });
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("No user credential for writes on github.com");
+  });
+
   it("disables approve with reason when submit_review is unavailable", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.review_mutation = true;

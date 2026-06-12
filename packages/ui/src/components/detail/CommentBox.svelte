@@ -24,6 +24,9 @@
     platformHost?: string | undefined;
     repoPath: string;
     disabled?: boolean;
+    /** Shown under the editor when the box is disabled for a reason
+     * the user can act on (e.g. missing write credential). */
+    disabledReason?: string | undefined;
   }
 
   const {
@@ -34,6 +37,7 @@
     platformHost,
     repoPath,
     disabled = false,
+    disabledReason = undefined,
   }: Props = $props();
 
   const currentDraftKey = $derived(
@@ -139,11 +143,15 @@
         class="submit-btn"
         onclick={() => void handleSubmit()}
         disabled={isEmpty || isPostingCurrent || disabled}
+        title={disabled && disabledReason !== undefined ? disabledReason : undefined}
       >
         {isPostingCurrent ? "Posting…" : "Comment"}
       </button>
     </div>
   {/key}
+  {#if disabled && disabledReason !== undefined}
+    <p class="error-msg">{disabledReason}</p>
+  {/if}
   {#if visibleError !== null}
     <p class="error-msg">{visibleError}</p>
   {/if}

@@ -10,6 +10,11 @@
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
+  import {
+    firstUnavailableGate,
+    hostWriteCredentialGate,
+    operationGate,
+  } from "./operation-gates.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
@@ -241,6 +246,7 @@
   }
 
   async function openLabelPicker(event?: MouseEvent): Promise<void> {
+    if (labelGate.unavailable) return;
     labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
       ?? labelPickerAnchor;
     if (event !== undefined && labelPickerOpen) {
@@ -301,7 +307,7 @@
   });
 
   async function toggleLabel(labelName: string): Promise<void> {
-    if (pendingLabel !== null) return;
+    if (pendingLabel !== null || labelGate.unavailable) return;
     const currentLabels = issues.getIssueDetail()?.issue.labels ?? [];
     pendingLabel = labelName;
     labelPickerError = null;
@@ -381,20 +387,16 @@
   let stateSubmitting = $state(false);
   let stateError = $state<string | null>(null);
 
-  type OperationGate = { unavailable: boolean; reason: string };
-
-  // Collapses one server-reported operation availability into the
-  // disabled/tooltip pair the action buttons consume. An absent entry
-  // (older server, detail still loading) gates nothing — the
-  // capability checks around each button still apply.
-  function operationGate(
-    op: { available?: boolean; unavailable_reason?: string } | undefined,
-  ): OperationGate {
-    if (op === undefined || op.available === true) {
-      return { unavailable: false, reason: "" };
-    }
-    return { unavailable: true, reason: op.unavailable_reason ?? "" };
-  }
+  // Per-operation mutation availability from the issue detail payload.
+  // Content edits (title, body, task-list toggles/reorder) have no
+  // dedicated operation key; they gate on the host-wide
+  // write-credential state shared by every provider write.
+  const repoOperations = $derived(issues.getIssueDetail()?.repo?.operations);
+  const addCommentGate = $derived(operationGate(repoOperations?.add_comment));
+  const labelGate = $derived(firstUnavailableGate(
+    repoOperations?.add_label, repoOperations?.remove_label,
+  ));
+  const writeCredentialBlock = $derived(hostWriteCredentialGate(repoOperations));
 
   async function handleStateChange(
     newState: "open" | "closed",
@@ -669,7 +671,7 @@
     if ((target as HTMLInputElement).type !== "checkbox") return;
     const raw = target.getAttribute("data-task-index");
     if (raw === null) return;
-    if (staleIssue || !currentCapabilities().state_mutation) {
+    if (staleIssue || !currentCapabilities().state_mutation || writeCredentialBlock.unavailable) {
       event.preventDefault();
       return;
     }
@@ -707,7 +709,7 @@
   }
 
   function onBodyDragStart(event: DragEvent): void {
-    if (staleIssue || !currentCapabilities().state_mutation) return;
+    if (staleIssue || !currentCapabilities().state_mutation || writeCredentialBlock.unavailable) return;
     const target = event.target as HTMLElement | null;
     if (!target?.classList?.contains("task-drag-handle")) return;
     const raw = target.getAttribute("data-task-index");
@@ -769,7 +771,7 @@
     const side = dropTargetSide;
     clearDragState(body);
     if (to === null || to === from) return;
-    if (staleIssue || !currentCapabilities().state_mutation) return;
+    if (staleIssue || !currentCapabilities().state_mutation || writeCredentialBlock.unavailable) return;
     const detail = issues.getIssueDetail();
     if (!detail) return;
     let target = to;
@@ -929,7 +931,8 @@
                 size="sm"
                 surface="soft"
                 tone="neutral"
-                disabled={staleIssue}
+                disabled={staleIssue || labelGate.unavailable}
+                title={labelGate.unavailable ? labelGate.reason : undefined}
                 onclick={openLabelPicker}
               >
                 <TagsIcon size="16" aria-hidden="true" />
@@ -999,7 +1002,7 @@
               ondragleave={onBodyDragLeave}
               ondrop={onBodyDrop}
               ondragend={onBodyDragEnd}
-            >{@html renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation })}</div>
+            >{@html renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !writeCredentialBlock.unavailable })}</div>
           </div>
         </div>
       {/if}
@@ -1037,7 +1040,7 @@
           </ActionButton>
         {/if}
         {#if issue.State === "open" && capabilities.state_mutation}
-          {@const closeGate = operationGate(detail.repo?.operations?.close_issue)}
+          {@const closeGate = operationGate(repoOperations?.close_issue)}
           <ActionButton
             class="btn--close"
             disabled={stateSubmitting || staleIssue || closeGate.unavailable}
@@ -1055,7 +1058,7 @@
             <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
         {:else if capabilities.state_mutation}
-          {@const reopenGate = operationGate(detail.repo?.operations?.reopen_issue)}
+          {@const reopenGate = operationGate(repoOperations?.reopen_issue)}
           <ActionButton
             class="btn--reopen"
             disabled={stateSubmitting || staleIssue || reopenGate.unavailable}
@@ -1107,7 +1110,8 @@
           provider={detail.repo.provider}
           platformHost={detail.platform_host}
           repoPath={detail.repo.repo_path}
-          disabled={staleIssue || !capabilities.comment_mutation}
+          disabled={staleIssue || !capabilities.comment_mutation || addCommentGate.unavailable}
+          disabledReason={addCommentGate.unavailable ? addCommentGate.reason : undefined}
         />
       </div>
 
@@ -1122,7 +1126,7 @@
             repoOwner={owner}
             repoName={name}
             {repoPath}
-            onEditComment={capabilities.comment_mutation && !staleIssue
+            onEditComment={capabilities.comment_mutation && !staleIssue && !writeCredentialBlock.unavailable
               ? editTimelineComment
               : undefined}
           />

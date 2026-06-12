@@ -8,7 +8,6 @@
     DiffFile,
     KanbanStatus,
     Label,
-    OperationAvailability,
     ProviderCapabilities,
     PullRequest,
     RepoOperations,
@@ -21,6 +20,11 @@
   import { renderMarkdown } from "../../utils/markdown.js";
   import { buildPullRequestFilesRoute } from "../../routes.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
+  import {
+    firstUnavailableGate,
+    hostWriteCredentialGate,
+    operationGate,
+  } from "./operation-gates.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
@@ -485,7 +489,7 @@
   }
 
   function startEditTitle(): void {
-    if (stalePR) return;
+    if (stalePR || writeCredentialBlock.unavailable) return;
     if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (!mr) return;
@@ -506,7 +510,7 @@
   }
 
   async function saveTitle(): Promise<void> {
-    if (stalePR) return;
+    if (stalePR || writeCredentialBlock.unavailable) return;
     if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     const trimmed = titleDraft.trim();
@@ -543,7 +547,7 @@
   let savingBody = $state(false);
 
   function startEditBody(): void {
-    if (stalePR) return;
+    if (stalePR || writeCredentialBlock.unavailable) return;
     if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (!mr) return;
@@ -557,7 +561,7 @@
   }
 
   async function saveBody(): Promise<void> {
-    if (stalePR) return;
+    if (stalePR || writeCredentialBlock.unavailable) return;
     if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (bodyDraft === mr?.Body) {
@@ -628,19 +632,6 @@
     viewerCanMerge: boolean;
     operations?: RepoOperations;
   };
-
-  type OperationGate = { unavailable: boolean; reason: string };
-
-  // Collapses one server-reported operation availability into the
-  // disabled/tooltip pair the action buttons consume. An absent entry
-  // (older server, repo settings still loading) gates nothing — the
-  // capability checks around each button still apply.
-  function operationGate(op: OperationAvailability | undefined): OperationGate {
-    if (op === undefined || op.available) {
-      return { unavailable: false, reason: "" };
-    }
-    return { unavailable: true, reason: op.unavailable_reason ?? "" };
-  }
 
   let repoSettings = $state<RepoSettings | null>(null);
   let repoSettingsRequestID = 0;
@@ -719,6 +710,23 @@
   const workflowApproval = $derived(
     detailStore.getDetail()?.workflow_approval,
   );
+
+  // Per-operation mutation availability. The detail payload is the
+  // primary source — it is present as soon as the PR loads, so gating
+  // never waits on the separate /repo settings request (which can
+  // still be in flight or have failed). The settings response is the
+  // fallback for older detail payloads without operations.
+  const repoOperations = $derived(
+    detailStore.getDetail()?.repo?.operations ?? repoSettings?.operations,
+  );
+  const addCommentGate = $derived(operationGate(repoOperations?.add_comment));
+  const labelGate = $derived(firstUnavailableGate(
+    repoOperations?.add_label, repoOperations?.remove_label,
+  ));
+  // Content edits (title, body, task-list toggles/reorder) have no
+  // dedicated operation key; they gate on the host-wide
+  // write-credential state shared by every provider write.
+  const writeCredentialBlock = $derived(hostWriteCredentialGate(repoOperations));
 
   const kanbanOptions: { value: KanbanStatus; label: string }[] = [
     { value: "new", label: "New" },
@@ -899,6 +907,7 @@
   }
 
   async function openLabelPicker(event?: MouseEvent): Promise<void> {
+    if (labelGate.unavailable) return;
     labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
       ?? visibleLabelPickerAnchor();
     const launchedFromActionMenu = Boolean(labelPickerAnchor?.closest(".actions-menu-popover"));
@@ -1128,7 +1137,7 @@
     if ((target as HTMLInputElement).type !== "checkbox") return;
     const raw = target.getAttribute("data-task-index");
     if (raw === null) return;
-    if (stalePR || !currentCapabilities().state_mutation) {
+    if (stalePR || !currentCapabilities().state_mutation || writeCredentialBlock.unavailable) {
       event.preventDefault();
       return;
     }
@@ -1259,7 +1268,7 @@
     const side = dropTargetSide;
     clearDragState(body);
     if (to === null || to === from) return;
-    if (stalePR || !currentCapabilities().state_mutation) return;
+    if (stalePR || !currentCapabilities().state_mutation || writeCredentialBlock.unavailable) return;
     const mr = currentPR();
     if (!mr) return;
     // "before X" with from < X means landing one slot earlier than X
@@ -1387,7 +1396,8 @@
                 size="sm"
                 surface="soft"
                 tone="neutral"
-                disabled={stalePR}
+                disabled={stalePR || labelGate.unavailable}
+                title={labelGate.unavailable ? labelGate.reason : undefined}
                 onclick={openLabelPicker}
               >
                 <TagsIcon size={iconSize} aria-hidden="true" />
@@ -1695,7 +1705,7 @@
       {#snippet primaryActionButtons()}
         {#if pr.State === "open"}
           {#if pr.IsDraft && capabilities.ready_for_review}
-            {@const readyGate = operationGate(repoSettings?.operations?.mark_ready_for_review)}
+            {@const readyGate = operationGate(repoOperations?.mark_ready_for_review)}
             <ReadyForReviewButton
               {owner}
               {name}
@@ -1710,7 +1720,7 @@
             />
           {/if}
           {#if capabilities.review_mutation}
-            {@const approveGate = operationGate(repoSettings?.operations?.submit_review)}
+            {@const approveGate = operationGate(repoOperations?.submit_review)}
             <ApproveButton
               {owner}
               {name}
@@ -1728,7 +1738,7 @@
             />
           {/if}
           {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
-            {@const workflowGate = operationGate(repoSettings?.operations?.approve_workflow)}
+            {@const workflowGate = operationGate(repoOperations?.approve_workflow)}
             <ApproveWorkflowsButton
               {owner}
               {name}
@@ -1743,7 +1753,7 @@
               oncompleted={closeActionMenu}
             />
           {/if}
-          {@const mergeOp = repoSettings?.operations?.merge_pr}
+          {@const mergeOp = repoOperations?.merge_pr}
           {@const mergeOpUnavailable = mergeOp !== undefined && !mergeOp.available}
           {#if repoSettings && (mergeOp !== undefined
               || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
@@ -1779,7 +1789,7 @@
             </ActionButton>
           {/if}
           {#if capabilities.state_mutation}
-            {@const closeGate = operationGate(repoSettings?.operations?.close_pr)}
+            {@const closeGate = operationGate(repoOperations?.close_pr)}
             <ActionButton
               class="btn--close"
               disabled={stateSubmitting || stalePR || closeGate.unavailable}
@@ -1800,7 +1810,7 @@
           {/if}
         {:else if pr.State === "closed"}
           {#if capabilities.state_mutation}
-            {@const reopenGate = operationGate(repoSettings?.operations?.reopen_pr)}
+            {@const reopenGate = operationGate(repoOperations?.reopen_pr)}
             <ActionButton
               class="btn--reopen"
               disabled={stateSubmitting || stalePR || reopenGate.unavailable}
@@ -2097,7 +2107,7 @@
               ondragleave={onBodyDragLeave}
               ondrop={onBodyDrop}
               ondragend={onBodyDragEnd}
-            >{@html renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation })}</div>
+            >{@html renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !writeCredentialBlock.unavailable })}</div>
           </div>
         {:else if capabilities.state_mutation && !stalePR}
           <button
@@ -2118,7 +2128,8 @@
           provider={detail.repo.provider}
           platformHost={detail.platform_host}
           repoPath={detail.repo.repo_path}
-          disabled={stalePR || !capabilities.comment_mutation}
+          disabled={stalePR || !capabilities.comment_mutation || addCommentGate.unavailable}
+          disabledReason={addCommentGate.unavailable ? addCommentGate.reason : undefined}
         />
       </div>
 
@@ -2141,11 +2152,11 @@
             repoName={name}
             {repoPath}
             {number}
-            canResolveReviewThreads={capabilities.review_thread_resolution}
-            canReplyToThreads={capabilities.thread_reply && !stalePR}
+            canResolveReviewThreads={capabilities.review_thread_resolution && !writeCredentialBlock.unavailable}
+            canReplyToThreads={capabilities.thread_reply && !stalePR && !writeCredentialBlock.unavailable}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
-            onEditComment={capabilities.comment_mutation && !stalePR
+            onEditComment={capabilities.comment_mutation && !stalePR && !writeCredentialBlock.unavailable
               ? editTimelineComment
               : undefined}
             {jumpToReviewThread}

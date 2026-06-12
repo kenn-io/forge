@@ -394,9 +394,15 @@
   // Clear modal/edit state on route change so PR A's open modal
   // can't reappear for PR B once `stalePR` clears.
   $effect(() => {
+    // Full provider-aware PR identity: the same owner/name/number can
+    // exist on another provider or host, and stale head-conflict state
+    // must not leak across that navigation either.
     void owner;
     void name;
     void number;
+    void provider;
+    void platformHost;
+    void repoPath;
     const keepStackExpanded = untrack(() => {
       const keepExpanded = keepStackExpandedOnRouteChange &&
         expandedPanel === "stack";

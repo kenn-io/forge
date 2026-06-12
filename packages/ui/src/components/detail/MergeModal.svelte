@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
 
-  import { isProblem, problemConflictReason } from "../../api/problems.js";
+  import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
@@ -31,7 +31,7 @@
     requireHeadPin?: boolean;
     onclose: () => void;
     onmerged: () => void;
-    onheadconflict?: ((reason: "stale_state" | "head_unknown") => void) | undefined;
+    onheadconflict?: ((reason: "stale_state" | "head_unknown", context?: string) => void) | undefined;
   }
 
   const {
@@ -127,7 +127,7 @@
         // inline retry from this stale form would be wrong.
         const reason = isProblem(error) ? problemConflictReason(error) : undefined;
         if (reason === "stale_state" || reason === "head_unknown") {
-          onheadconflict?.(reason);
+          onheadconflict?.(reason, isProblem(error) ? problemConflictContext(error) : undefined);
           onclose();
           return;
         }

@@ -21,7 +21,7 @@
     expectedHeadSha?: string | undefined;
     /** capabilities.mutation_head_binding for this repo's provider. */
     requireHeadPin?: boolean;
-    onheadconflict?: ((reason: "stale_state" | "head_unknown") => void) | undefined;
+    onheadconflict?: ((reason: "stale_state" | "head_unknown", context?: string) => void) | undefined;
     oncompleted?: (() => void) | undefined;
   }
 
@@ -103,11 +103,11 @@
     };
   }
 
-  function handleHeadConflict(reason: "stale_state" | "head_unknown"): void {
+  function handleHeadConflict(reason: "stale_state" | "head_unknown", context?: string): void {
     expanded = false;
     error = null;
     pinAtOpen = "";
-    onheadconflict?.(reason);
+    onheadconflict?.(reason, context);
   }
 
   async function handleApprove(): Promise<void> {

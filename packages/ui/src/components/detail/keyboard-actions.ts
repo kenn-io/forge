@@ -153,7 +153,7 @@
  */
 
 import type { PullRequest } from "../../api/types.js";
-import { isProblem, problemConflictReason } from "../../api/problems.js";
+import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
 import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
 import type { MiddlemanClient } from "../../types.js";
 import type { DetailStore } from "../../stores/detail.svelte.js";
@@ -221,7 +221,10 @@ export interface PRDetailActionInput {
    * for refreshing the detail and gating further head-bound actions;
    * the runX closures only report the reason and rethrow.
    */
-  onHeadConflict?: (reason: "stale_state" | "head_unknown") => void;
+  // context carries provider side-effect detail (details.context):
+  // an approval that could not be revoked, posted review text a
+  // retry would repeat. Present only when the server reported one.
+  onHeadConflict?: (reason: "stale_state" | "head_unknown", context?: string) => void;
   /** Owned by PullDetail; runOpenMerge flips this to true. */
   setMergeModalOpen?: (open: boolean) => void;
   /**
@@ -281,7 +284,8 @@ export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
   if (error) {
     const reason = isProblem(error) ? problemConflictReason(error) : undefined;
     if (reason === "stale_state" || reason === "head_unknown") {
-      input.onHeadConflict?.(reason);
+      const context = isProblem(error) ? problemConflictContext(error) : undefined;
+      input.onHeadConflict?.(reason, context);
     }
     const msg = describeError(error, "failed to approve pull request");
     input.onError?.(msg);

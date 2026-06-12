@@ -416,6 +416,7 @@
     });
     showMergeModal = false;
     headConflict = null;
+    headConflictContext = null;
     expandedPanel = keepStackExpanded ? "stack" : null;
     editingTitle = false;
     editingBody = false;
@@ -636,6 +637,11 @@
   // expected_head_sha; a 409 conflict with reason stale_state or
   // head_unknown lands here.
   let headConflict = $state<"stale_state" | "head_unknown" | null>(null);
+  // Provider side-effect context from the conflict response (an
+  // approval that could not be revoked, posted review text a retry
+  // would repeat); rendered with the stale banner so the consequence
+  // is not hidden behind the generic re-review prompt.
+  let headConflictContext = $state<string | null>(null);
   const detailHeadSha = $derived(
     detailStore.getDetail()?.platform_head_sha ?? "",
   );
@@ -657,8 +663,10 @@
 
   function handleHeadConflict(
     reason: "stale_state" | "head_unknown",
+    context?: string,
   ): void {
     headConflict = reason;
+    headConflictContext = context ?? null;
     showMergeModal = false;
     // loadDetail's default sync mode pulls fresh provider state, which
     // is what re-binds the head (stale_state) or populates a missing
@@ -1697,7 +1705,7 @@
               expectedHeadSha={detailHeadSha}
               requireHeadPin={capabilities.mutation_head_binding}
               onheadconflict={handleHeadConflict}
-              oncompleted={() => { headConflict = null; }}
+              oncompleted={() => { headConflict = null; headConflictContext = null; }}
             />
           {/if}
           {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
@@ -1873,6 +1881,9 @@
           {#if headConflict === "stale_state"}
             <span class="action-error action-error--state" role="status">
               The head commit changed since this pull request was reviewed. Re-review the latest changes before approving or merging.
+              {#if headConflictContext}
+                {" "}{headConflictContext}.
+              {/if}
             </span>
           {:else if headActionsBlocked}
             <span class="action-error action-error--state" role="status">
@@ -1979,6 +1990,7 @@
           onmerged={() => {
             showMergeModal = false;
             headConflict = null;
+            headConflictContext = null;
             void detailStore.loadDetail(owner, name, number, {
               provider,
               platformHost,

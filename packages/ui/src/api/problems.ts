@@ -84,6 +84,18 @@ export function problemConflictReason(problem: ProblemBody): ConflictReason | un
   return "conflict";
 }
 
+// problemConflictContext reads details.context from a conflict
+// problem: provider side-effect context that must reach the user — an
+// approval that could not be revoked, posted review text a retry would
+// repeat — per the stale-approval contract in context/error-handling.md.
+export function problemConflictContext(problem: ProblemBody): string | undefined {
+  if (problem.code !== ProblemCodes.conflict) {
+    return undefined;
+  }
+  const context = problem.details?.["context"];
+  return typeof context === "string" && context !== "" ? context : undefined;
+}
+
 // problemRetryAfter reads details.retryAfter from a rateLimited problem
 // and returns it parsed as a Date. Returns undefined when the field is
 // missing or not a valid RFC 3339 string.

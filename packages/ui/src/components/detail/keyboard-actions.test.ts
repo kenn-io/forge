@@ -147,14 +147,14 @@ function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
   };
 }
 
-function conflictProblem(reason: string) {
+function conflictProblem(reason: string, context?: string) {
   return {
     type: "about:blank",
     title: "Conflict",
     status: 409,
     detail: "target changed since it was reviewed; refresh and retry",
     code: "conflict",
-    details: { reason },
+    details: { reason, ...(context !== undefined && { context }) },
   };
 }
 
@@ -283,11 +283,24 @@ describe("runApprovePR", () => {
       await expect(
         runApprovePR(buildInput({ client, stores, expectedHeadSha: "abc123", onHeadConflict })),
       ).rejects.toThrow("target changed since it was reviewed; refresh and retry");
-      expect(onHeadConflict).toHaveBeenCalledWith(reason);
+      expect(onHeadConflict).toHaveBeenCalledWith(reason, undefined);
       // The conflict owner refreshes; the closure must not double-load.
       expect(stores.detail.loadDetail).not.toHaveBeenCalled();
       expect(stores.pulls.loadPulls).not.toHaveBeenCalled();
     }
+  });
+
+  it("forwards provider side-effect context to onHeadConflict", async () => {
+    const sideEffect = "approval 31 may stand on a moved head: dismissal failed";
+    const client = fakeClient();
+    client.POST.mockResolvedValueOnce({
+      data: undefined,
+      error: conflictProblem("stale_state", sideEffect),
+      response: new Response("{}", { status: 409 }),
+    });
+    const onHeadConflict = vi.fn();
+    await expect(runApprovePR(buildInput({ client, expectedHeadSha: "abc123", onHeadConflict }))).rejects.toThrow();
+    expect(onHeadConflict).toHaveBeenCalledWith("stale_state", sideEffect);
   });
 
   it("does not report generic conflicts via onHeadConflict", async () => {

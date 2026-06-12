@@ -15,7 +15,11 @@ const APPROVE_PATH = "**/api/v1/pulls/github/acme/widgets/42/approve";
 
 const STALE_PROMPT = "The head commit changed since this pull request was reviewed.";
 
-function conflictProblem(reason: string, detail: string): { status: number; contentType: string; body: string } {
+function conflictProblem(
+  reason: string,
+  detail: string,
+  context?: string,
+): { status: number; contentType: string; body: string } {
   return {
     status: 409,
     contentType: "application/problem+json",
@@ -25,7 +29,7 @@ function conflictProblem(reason: string, detail: string): { status: number; cont
       status: 409,
       detail,
       code: "conflict",
-      details: { reason },
+      details: { reason, ...(context !== undefined && { context }) },
     }),
   };
 }
@@ -167,6 +171,28 @@ test.describe("head-pinned merge and approve", () => {
     await expect(page.locator(".approve-popover")).toHaveCount(0);
     expect(approveBody).not.toBeNull();
     expect(approveBody!["expected_head_sha"]).toBe(REVIEWED_SHA);
+  });
+
+  test("stale approval renders the provider side-effect context", async ({ page }) => {
+    // A dismissal that failed leaves the approval standing on the
+    // moved head; the banner must say so instead of presenting the
+    // generic re-review prompt alone.
+    const sideEffect = "approval 31 may stand on a moved head: dismissal failed";
+    await page.route(APPROVE_PATH, async (route: Route) => {
+      await route.fulfill(
+        conflictProblem(
+          "stale_state",
+          `target changed since it was reviewed; refresh and retry; ${sideEffect}`,
+          sideEffect,
+        ),
+      );
+    });
+
+    await gotoPull42(page);
+    await submitApproval(page);
+
+    await expect(page.getByText(STALE_PROMPT)).toBeVisible();
+    await expect(page.getByText(sideEffect, { exact: false })).toBeVisible();
   });
 
   test("stale_state merge conflict closes the modal, refreshes, and prompts re-review", async ({ page }) => {

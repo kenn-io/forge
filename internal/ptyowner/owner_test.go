@@ -208,6 +208,43 @@ func TestOwnerNaturalExitRetentionHonorsCompletedPreExitAttachment(t *testing.T)
 	require.NoError(err)
 }
 
+func TestOwnerNaturalExitWaitsForPreExitAttachmentBeforePostExitAttach(t *testing.T) {
+	require := require.New(t)
+	o := &owner{
+		activeAttachments:       1,
+		activeAttachmentsAtExit: true,
+		exited:                  true,
+		stopRequested:           make(chan struct{}),
+		activeAttachmentsDone:   make(chan struct{}),
+		postExitAttachmentDone:  make(chan struct{}),
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+
+	go func() {
+		done <- o.waitAfterNaturalExit(ctx, make(chan error))
+	}()
+	close(o.postExitAttachmentDone)
+
+	select {
+	case err := <-done:
+		require.Failf(
+			"owner returned before pre-exit attachment completed",
+			"waitAfterNaturalExit returned %v", err,
+		)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(o.activeAttachmentsDone)
+	select {
+	case err := <-done:
+		require.NoError(err)
+	case <-time.After(time.Second):
+		require.Fail("owner did not return after pre-exit attachment completed")
+	}
+}
+
 func TestTerminalTitleParserTracksOSCSequences(t *testing.T) {
 	assert := Assert.New(t)
 	var parser terminalTitleParser

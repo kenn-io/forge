@@ -419,6 +419,76 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 	assert.Empty(checks[0].Conclusion)
 }
 
+func TestReadClientSeparatesDiscussionEventsFromReviewThreads(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	discussionsJSON := `[
+		{
+			"id": "discussion-1",
+			"notes": [
+				{
+					"id": 101,
+					"body": "inline note",
+					"system": false,
+					"author": {"username": "reviewer"},
+					"resolvable": true,
+					"resolved": false,
+					"created_at": "2026-05-10T12:00:00Z",
+					"updated_at": "2026-05-10T12:00:00Z",
+					"position": {
+						"base_sha": "base",
+						"start_sha": "base",
+						"head_sha": "head",
+						"position_type": "text",
+						"new_path": "src/main.go",
+						"new_line": 9
+					}
+				},
+				{
+					"id": 102,
+					"body": "discussion reply",
+					"system": false,
+					"author": {"username": "author"},
+					"resolvable": true,
+					"resolved": false,
+					"created_at": "2026-05-10T12:01:00Z",
+					"updated_at": "2026-05-10T12:01:00Z"
+				}
+			]
+		}
+	]`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/merge_requests/7/discussions":
+			writeJSON(w, discussionsJSON)
+		case "/api/v4/projects/42/merge_requests/7/commits":
+			writeJSON(w, `[]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", PlatformID: 42}
+
+	events, err := client.ListMergeRequestEvents(context.Background(), ref, 7)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("issue_comment", events[0].EventType)
+	assert.Equal("discussion reply", events[0].Body)
+	assert.Equal("discussion-1", events[0].ThreadID)
+
+	threads, err := client.ListMergeRequestReviewThreads(context.Background(), ref, 7)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Equal("discussion-1", threads[0].ProviderThreadID)
+	assert.Equal("101", threads[0].ProviderCommentID)
+	assert.Equal("inline note", threads[0].Body)
+	assert.Equal("src/main.go", threads[0].Range.Path)
+	assert.Equal(9, threads[0].Range.Line)
+}
+
 func TestListCIChecksReturnsEmptyWhenNoPipelineExists(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v4/projects/42/pipelines", r.URL.EscapedPath())

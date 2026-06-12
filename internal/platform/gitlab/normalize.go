@@ -331,6 +331,9 @@ func NormalizeMergeRequestDiscussions(
 				}
 				continue
 			}
+			if note.Position != nil {
+				continue
+			}
 			events = append(events, platform.MergeRequestEvent{
 				Repo:               repo,
 				PlatformID:         note.ID,

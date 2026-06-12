@@ -588,31 +588,24 @@ func TestNormalizeMergeRequestDiscussions(t *testing.T) {
 
 	events := NormalizeMergeRequestDiscussions(repo, 7, discussions)
 
-	// Should have 4 events (unrecognized system note filtered)
-	assert.Len(events, 4)
+	// Positioned diff notes are synced through review-thread reads, not timeline comments.
+	assert.Len(events, 3)
 
-	// First note from first discussion
+	// Reply from first discussion
 	assert.Equal("disc-abc123", events[0].ThreadID)
-	assert.Equal("reviewer", events[0].Author)
-	assert.Equal("needs fix on this line", events[0].Body)
+	assert.Equal("author", events[0].Author)
 	assert.True(events[0].Resolvable)
-	assert.False(events[0].Resolved)
-	assert.Contains(events[0].PositionJSON, "main.go")
-	assert.Contains(events[0].PositionJSON, "42")
+	assert.True(events[0].Resolved)
+	assert.Empty(events[0].PositionJSON)
 
-	// Second note from first discussion
-	assert.Equal("disc-abc123", events[1].ThreadID)
-	assert.Equal("author", events[1].Author)
-	assert.True(events[1].Resolved)
-
-	assert.Equal("merged", events[2].EventType)
-	assert.Equal("maintainer", events[2].Author)
-	assert.Equal("merged", events[2].Summary)
+	assert.Equal("merged", events[1].EventType)
+	assert.Equal("maintainer", events[1].Author)
+	assert.Equal("merged", events[1].Summary)
 
 	// User note from second discussion
-	assert.Equal("disc-def456", events[3].ThreadID)
-	assert.Equal("commenter", events[3].Author)
-	assert.False(events[3].Resolvable)
+	assert.Equal("disc-def456", events[2].ThreadID)
+	assert.Equal("commenter", events[2].Author)
+	assert.False(events[2].Resolvable)
 }
 
 func TestNormalizeIssueDiscussions(t *testing.T) {

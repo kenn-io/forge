@@ -192,6 +192,22 @@ func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
 	}
 }
 
+func TestOwnerNaturalExitRetentionHonorsCompletedPreExitAttachment(t *testing.T) {
+	require := require.New(t)
+	o := &owner{
+		stopRequested:          make(chan struct{}),
+		activeAttachmentsDone:  make(chan struct{}),
+		postExitAttachmentDone: make(chan struct{}),
+	}
+	close(o.activeAttachmentsDone)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	err := o.waitAfterNaturalExit(ctx, make(chan error))
+
+	require.NoError(err)
+}
+
 func TestTerminalTitleParserTracksOSCSequences(t *testing.T) {
 	assert := Assert.New(t)
 	var parser terminalTitleParser

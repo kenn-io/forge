@@ -213,13 +213,17 @@ test.describe("palette approve head conflict", () => {
   test("stale_state from a palette approval reloads the detail before retry", async ({ page }) => {
     await mockApi(page);
 
-    let detailLoads = 0;
-    await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route: Route) => {
-      if (route.request().method() !== "GET") {
+    // The conflict-owned reload is a sync-enabled loadDetail, which is
+    // the only caller of the synchronous POST .../sync endpoint —
+    // background auto-refresh uses /sync/async — so counting /sync
+    // POSTs cannot be satisfied by an unrelated background refresh.
+    let syncPosts = 0;
+    await page.route("**/api/v1/pulls/github/acme/widgets/42/sync", async (route: Route) => {
+      if (route.request().method() !== "POST") {
         await route.fallback();
         return;
       }
-      detailLoads += 1;
+      syncPosts += 1;
       await route.fallback();
     });
     await page.route(APPROVE_PATH, async (route: Route) => {
@@ -228,7 +232,9 @@ test.describe("palette approve head conflict", () => {
 
     await page.goto("/pulls/github/acme/widgets/42");
     await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
-    const loadsBeforeApprove = detailLoads;
+    // Route-driven loads use background sync mode and never hit this
+    // endpoint, so the count stays zero until the conflict-owned reload.
+    expect(syncPosts).toBe(0);
 
     const approveRequest = page.waitForRequest(
       (req) =>
@@ -244,7 +250,7 @@ test.describe("palette approve head conflict", () => {
     const body = request.postDataJSON() as { expected_head_sha?: string };
     expect(body.expected_head_sha).toBe(REVIEWED_SHA);
 
-    await expect.poll(() => detailLoads, { timeout: 5000 }).toBeGreaterThan(loadsBeforeApprove);
+    await expect.poll(() => syncPosts, { timeout: 5000 }).toBeGreaterThan(0);
   });
 });
 

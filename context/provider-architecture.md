@@ -132,10 +132,11 @@ provider-equivalent behavior from the flags alone:
   head, and the wire response carries `details.revocation`
   (`succeeded`/`failed`) plus `details.review_id` per
   `context/error-handling.md` so clients can tell a cleanly revoked
-  approval from one the user must remove manually. A failed
-  post-verification read keeps the approval: the pre-check already
-  passed, and failing an approval that exists upstream would invite a
-  duplicate retry.
+  approval from one the user must remove manually. The post-submit
+  verification fails closed: a head that cannot be read at all (error,
+  missing PR, empty SHA) is treated exactly like a moved head — the
+  approval is revoked, because an approval whose head cannot be proven
+  must not stand on potentially unreviewed code.
   `mutation_head_binding` additionally marks providers where the pin is
   REQUIRED — omitted pins are rejected — and where approval itself is
   provider-gated. The SPA captures the pin when a merge or approval form

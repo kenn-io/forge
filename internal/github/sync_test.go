@@ -1090,15 +1090,10 @@ func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
 	assert.Equal(12, comment.GetLine())
 }
 
-func TestGitHubProviderPublishDiffReviewDraftApproveRejectsStaleHeadBeforeReview(t *testing.T) {
+func TestGitHubProviderPublishDiffReviewDraftApproveUnsupported(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	head := "new-head"
-	mock := &mockClient{
-		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
-			return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
-		},
-	}
+	mock := &mockClient{}
 	provider := gitHubClientProvider{client: mock, host: "github.com"}
 
 	_, err := provider.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
@@ -1111,30 +1106,9 @@ func TestGitHubProviderPublishDiffReviewDraftApproveRejectsStaleHeadBeforeReview
 
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
-	assert.Empty(mock.createdReviewEvent, "stale draft approval must not reach the review API")
-}
-
-func TestGitHubProviderPublishDiffReviewDraftApproveDismissesWhenHeadMovesDuringSubmit(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	mock := &mockClient{getPullRequestFn: movingHeadFn("reviewed-head", "new-head")}
-	provider := gitHubClientProvider{client: mock, host: "github.com"}
-
-	_, err := provider.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
-		Owner: "acme",
-		Name:  "widget",
-	}, 7, platform.PublishDiffReviewDraftInput{
-		Action:  platform.ReviewActionApprove,
-		HeadSHA: "reviewed-head",
-	})
-
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
-	assert.Equal(int32(1), mock.dismissReviewCalls.Load(),
-		"draft approval landed on a moved head must be dismissed")
-	assert.Equal(int64(1), mock.dismissedReviewID)
+	assert.Equal(platform.ErrCodeUnsupportedCapability, platformErr.Code)
+	assert.Equal("approve_merge_request", platformErr.Capability)
+	assert.Empty(mock.createdReviewEvent, "unsupported approval must not reach the review API")
 }
 
 func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
@@ -1145,6 +1119,8 @@ func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
 	require.True(t, caps.ReadReviewThreads)
 	require.True(t, caps.ReviewDraftMutation)
 	require.False(t, caps.ReviewThreadResolution)
+	require.False(t, caps.ReviewMutation)
+	require.NotContains(t, caps.SupportedReviewActions, platform.ReviewActionApprove)
 }
 
 func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testing.T) {
@@ -10455,15 +10431,10 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	assert.Equal(4, callCount)
 }
 
-func TestGitHubProviderApproveRejectsStaleHeadBeforeReview(t *testing.T) {
+func TestGitHubProviderApproveUnsupported(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	head := "new-head"
-	mock := &mockClient{
-		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
-			return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
-		},
-	}
+	mock := &mockClient{}
 	provider := gitHubClientProvider{client: mock, host: "github.com"}
 
 	_, err := provider.ApproveMergeRequest(
@@ -10472,176 +10443,9 @@ func TestGitHubProviderApproveRejectsStaleHeadBeforeReview(t *testing.T) {
 	)
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
-	assert.Empty(mock.createdReviewEvent, "stale approval must not reach the review API")
-}
-
-func TestGitHubProviderApproveBindsReviewToReviewedHead(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	head := "reviewed-head"
-	mock := &mockClient{
-		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
-			return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
-		},
-	}
-	provider := gitHubClientProvider{client: mock, host: "github.com"}
-
-	event, err := provider.ApproveMergeRequest(
-		t.Context(), platform.RepoRef{Owner: "acme", Name: "widget"}, 7,
-		"ship it", "reviewed-head",
-	)
-	require.NoError(err)
-	assert.Equal("review", event.EventType)
-	assert.Equal("APPROVE", mock.createdReviewEvent)
-	assert.Equal("reviewed-head", mock.createdReviewCommitID)
-}
-
-// movingHeadFn returns a GetPullRequest stub whose head SHA advances
-// through heads on each call, simulating a push racing the approval.
-func movingHeadFn(heads ...string) func(context.Context, string, string, int) (*gh.PullRequest, error) {
-	calls := 0
-	return func(context.Context, string, string, int) (*gh.PullRequest, error) {
-		head := heads[len(heads)-1]
-		if calls < len(heads) {
-			head = heads[calls]
-		}
-		calls++
-		return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
-	}
-}
-
-func TestGitHubProviderApproveDismissesWhenHeadMovesDuringSubmit(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	mock := &mockClient{getPullRequestFn: movingHeadFn("reviewed-head", "new-head")}
-	provider := gitHubClientProvider{client: mock, host: "github.com"}
-
-	_, err := provider.ApproveMergeRequest(
-		t.Context(), platform.RepoRef{Owner: "acme", Name: "widget"}, 7,
-		"ship it", "reviewed-head",
-	)
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
-	assert.Equal(int32(1), mock.dismissReviewCalls.Load(),
-		"approval landed on a moved head must be dismissed")
-	assert.Equal(int64(1), mock.dismissedReviewID)
-	assert.ErrorContains(err, "review text remains visible",
-		"dismissal keeps the posted body visible; a blind retry would repeat it")
-}
-
-func TestGitHubProviderApproveDismissesWhenPostSubmitHeadCannotBeVerified(t *testing.T) {
-	tests := []struct {
-		name    string
-		current *gh.PullRequest
-		err     error
-	}{
-		{
-			name: "read error",
-			err:  errors.New("upstream unavailable"),
-		},
-		{
-			name:    "nil pull request",
-			current: nil,
-		},
-		{
-			name:    "empty head",
-			current: &gh.PullRequest{Head: &gh.PullRequestBranch{}},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
-			require := require.New(t)
-			calls := 0
-			mock := &mockClient{
-				getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
-					calls++
-					if calls == 1 {
-						head := "reviewed-head"
-						return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
-					}
-					return tt.current, tt.err
-				},
-			}
-			provider := gitHubClientProvider{client: mock, host: "github.com"}
-
-			_, err := provider.ApproveMergeRequest(
-				t.Context(), platform.RepoRef{Owner: "acme", Name: "widget"}, 7,
-				"ship it", "reviewed-head",
-			)
-
-			var platformErr *platform.Error
-			require.ErrorAs(err, &platformErr)
-			assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
-			require.NotNil(platformErr.Details)
-			assert.Equal("succeeded", platformErr.Details["revocation"])
-			assert.Equal("1", platformErr.Details["review_id"])
-			assert.Equal(int32(1), mock.dismissReviewCalls.Load(),
-				"unverified post-submit approvals must be dismissed")
-			assert.Equal(int64(1), mock.dismissedReviewID)
-			assert.Equal("head_unverifiable", platformErr.Details["cause"])
-			assert.Contains(mock.dismissedReviewMessage, "could not be verified",
-				"the upstream audit message must state the real dismissal reason")
-		})
-	}
-}
-
-// An approval review draft that submits before the stale head is
-// detected has its body and inline comments published atomically with
-// the review; dismissal removes only the approval state. The provider
-// must report a partial publish so the server clears the local draft
-// copies instead of arming a retry that reposts them.
-func TestGitHubProviderPublishApproveDraftReportsPartialOnMovedHead(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	mock := &mockClient{getPullRequestFn: movingHeadFn("reviewed-head", "new-head")}
-	provider := gitHubClientProvider{client: mock, host: "github.com"}
-
-	_, err := provider.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
-		Owner: "acme",
-		Name:  "widget",
-	}, 7, platform.PublishDiffReviewDraftInput{
-		Body:    "lgtm",
-		Action:  platform.ReviewActionApprove,
-		HeadSHA: "reviewed-head",
-		Comments: []platform.LocalDiffReviewDraftComment{{
-			ID:   41,
-			Body: "inline note",
-			Range: platform.DiffReviewLineRange{
-				Path: "src/main.go", Side: "right", Line: 12,
-				DiffHeadSHA: "reviewed-head",
-			},
-		}},
-	})
-
-	var partialErr *platform.DiffReviewPublishPartialError
-	require.ErrorAs(err, &partialErr,
-		"published review content must be reported as a partial publish")
-	assert.Equal([]int64{41}, partialErr.PublishedCommentIDs)
-	require.ErrorIs(err, platform.ErrStaleState)
-	assert.Equal(int32(1), mock.dismissReviewCalls.Load())
-}
-
-func TestGitHubProviderApproveReportsFailedDismissal(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	mock := &mockClient{
-		getPullRequestFn: movingHeadFn("reviewed-head", "new-head"),
-		dismissReviewErr: errOther,
-	}
-	provider := gitHubClientProvider{client: mock, host: "github.com"}
-
-	_, err := provider.ApproveMergeRequest(
-		t.Context(), platform.RepoRef{Owner: "acme", Name: "widget"}, 7,
-		"ship it", "reviewed-head",
-	)
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
-	assert.ErrorContains(err, "dismissal failed",
-		"a standing approval on a moved head must be reported, not hidden")
+	assert.Equal(platform.ErrCodeUnsupportedCapability, platformErr.Code)
+	assert.Equal("approve_merge_request", platformErr.Capability)
+	assert.Empty(mock.createdReviewEvent, "unsupported approval must not reach the review API")
 }
 
 func TestIsGitHubHeadModified(t *testing.T) {

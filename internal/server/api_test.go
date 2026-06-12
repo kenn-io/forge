@@ -5567,11 +5567,14 @@ func TestAPIEditIssueCommentRejectsNilProviderPayload(t *testing.T) {
 	assert.Equal("original body", events[0].Body)
 }
 
-func TestAPIApprovePRRejectsNilProviderPayload(t *testing.T) {
+func TestAPIApprovePRUnsupportedBeforeProviderCall(t *testing.T) {
 	require := require.New(t)
+	assert := Assert.New(t)
 
+	var providerCalled atomic.Bool
 	mock := &mockGH{
 		createReviewFn: func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error) {
+			providerCalled.Store(true)
 			return nil, nil
 		},
 	}
@@ -5588,7 +5591,11 @@ func TestAPIApprovePRRejectsNilProviderPayload(t *testing.T) {
 		generated.ApprovePullJSONRequestBody{ExpectedHeadSha: &expectedHeadSHA},
 	)
 	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
+	assertUnsupportedCapabilityProblem(
+		t, bytes.NewReader(resp.Body), "github", "github.com", "review_mutation",
+	)
+	assert.False(providerCalled.Load())
 
 	events, err := database.ListMREvents(t.Context(), mrID)
 	require.NoError(err)
@@ -13972,10 +13979,13 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 		},
 	)
 	require.NoError(err)
-	require.Equal(http.StatusOK, approveResp.StatusCode())
+	require.Equal(http.StatusConflict, approveResp.StatusCode(), string(approveResp.Body))
+	assertUnsupportedCapabilityProblem(
+		t, bytes.NewReader(approveResp.Body), "gitea", "gitea.test", "review_mutation",
+	)
 	mrEvents, err = database.ListMREvents(ctx, mrSeven.ID)
 	require.NoError(err)
-	assert.Len(mrEvents, 2)
+	assert.Len(mrEvents, 1)
 
 	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
@@ -14052,7 +14062,6 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 		"edit_pull_content:7:Edited kettle:Updated kettle body",
 		"create_comment:7:Looks good",
 		"edit_comment:900:Still good",
-		"review:7:approved",
 		"merge:7:squash",
 		"edit_pull:9:closed",
 		"create_issue:New issue",
@@ -14192,16 +14201,12 @@ func TestAPIGitealikePinnedMergeGenericConflictStaysConflict(t *testing.T) {
 		"an unrelated 409 must not present as a stale-head re-review flow")
 }
 
-func TestAPIGitealikeApproveDeletesReviewWhenHeadMoves(t *testing.T) {
+func TestAPIGitealikeApproveUnsupportedBeforeProviderCall(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	transport := &apiTestGitealikeTransport{}
 	client := setupGitealikeHeadPinServer(t, transport)
 
-	// Pre-check sees the reviewed head; the post-submit check sees a
-	// push that landed while the review submitted.
-	transport.headOverrides = []string{"abc123", "moved-head"}
-
 	pin := "abc123"
 	resp, err := client.HTTP.ApprovePullOnHostWithResponse(
 		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
@@ -14212,72 +14217,19 @@ func TestAPIGitealikeApproveDeletesReviewWhenHeadMoves(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp.StatusCode())
-	code, details := decodeGitealikeConflict(t, resp.Body)
-	assert.Equal("conflict", code)
-	require.NotNil(details)
-	assert.Equal("stale_state", details["reason"])
-	assert.Equal("succeeded", details["revocation"],
-		"the deleted approval must be reported as revoked")
-	assert.Equal("980", details["review_id"])
-	assert.Contains(transport.mutationCalls, "delete_review:7:980",
-		"the approval that landed on a moved head must be deleted upstream")
-}
-
-// When the moved-head approval cannot be deleted, the user is left
-// with an approval standing on unreviewed code: the 409 must say so
-// with stable members instead of presenting as a clean revocation.
-func TestAPIGitealikeApproveReportsFailedReviewDeletion(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	transport := &apiTestGitealikeTransport{
-		deleteReviewErr: &gitealike.HTTPError{StatusCode: 403, Message: "forbidden"},
-	}
-	client := setupGitealikeHeadPinServer(t, transport)
-
-	transport.headOverrides = []string{"abc123", "moved-head"}
-
-	pin := "abc123"
-	resp, err := client.HTTP.ApprovePullOnHostWithResponse(
-		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.ApprovePullOnHostJSONRequestBody{
-			Body:            "lgtm",
-			ExpectedHeadSha: &pin,
-		},
+	assertUnsupportedCapabilityProblem(
+		t, bytes.NewReader(resp.Body), "gitea", "gitea.test", "review_mutation",
 	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode())
-	var problem struct {
-		Code    string         `json:"code"`
-		Detail  string         `json:"detail"`
-		Details map[string]any `json:"details"`
-	}
-	require.NoError(json.Unmarshal(resp.Body, &problem))
-	assert.Equal("conflict", problem.Code)
-	require.NotNil(problem.Details)
-	assert.Equal("stale_state", problem.Details["reason"])
-	assert.Equal("failed", problem.Details["revocation"],
-		"a standing approval must not present as a clean revocation")
-	assert.Equal("980", problem.Details["review_id"])
-	deletionContext, _ := problem.Details["context"].(string)
-	assert.Contains(deletionContext, "deletion failed")
-	assert.Contains(problem.Detail, "deletion failed")
-	assert.Contains(transport.mutationCalls, "delete_review:7:980",
-		"the deletion must have been attempted")
+	assert.NotContains(transport.mutationCalls, "review:7:lgtm")
+	assert.NotContains(transport.mutationCalls, "delete_review:7:980")
 }
 
-// An approval whose post-submit head read comes back empty cannot be
-// proven to cover the reviewed commit: through the real route it must
-// fail closed — review deleted, 409 stale_state, and details.cause
-// telling the client the head was unverifiable rather than moved.
-func TestAPIGitealikeApproveFailsClosedWhenHeadUnverifiable(t *testing.T) {
+func TestAPIGitealikeApproveUnsupportedDoesNotReadRacingHead(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	transport := &apiTestGitealikeTransport{}
 	client := setupGitealikeHeadPinServer(t, transport)
-
-	// Pre-check sees the reviewed head; the post-submit read returns
-	// no head SHA at all.
-	transport.headOverrides = []string{"abc123", ""}
+	transport.headCalls = 0
 
 	pin := "abc123"
 	resp, err := client.HTTP.ApprovePullOnHostWithResponse(
@@ -14289,19 +14241,11 @@ func TestAPIGitealikeApproveFailsClosedWhenHeadUnverifiable(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp.StatusCode())
-	var problem struct {
-		Code    string         `json:"code"`
-		Details map[string]any `json:"details"`
-	}
-	require.NoError(json.Unmarshal(resp.Body, &problem))
-	assert.Equal("conflict", problem.Code)
-	require.NotNil(problem.Details)
-	assert.Equal("stale_state", problem.Details["reason"])
-	assert.Equal("succeeded", problem.Details["revocation"],
-		"the unprovable approval must be revoked, not left standing")
-	assert.Equal("head_unverifiable", problem.Details["cause"],
-		"clients must be able to tell an unverifiable head from a moved one")
-	assert.Contains(transport.mutationCalls, "delete_review:7:980")
+	assertUnsupportedCapabilityProblem(
+		t, bytes.NewReader(resp.Body), "gitea", "gitea.test", "review_mutation",
+	)
+	assert.Equal(0, transport.headCalls)
+	assert.Empty(transport.mutationCalls)
 }
 
 func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
@@ -14711,12 +14655,11 @@ func TestAPIGitealikeMergeHeadMismatchMapsToStaleState(t *testing.T) {
 	assert.Equal([]string{"abc123"}, transport.mergeHeadPins)
 }
 
-func TestAPIGitealikeApproveDeletesReviewWhenHeadMovesDuringSubmit(t *testing.T) {
+func TestAPIGitealikeApproveUnsupportedBeforeHeadRace(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := t.Context()
 	transport := newAPIGitealikeHeadPinTransport(t)
-	transport.moveHeadAfterReview = "new-head"
 	client, _ := setupAPIGitealikeHeadPinServer(t, transport)
 	expectedHeadSHA := "abc123"
 
@@ -14731,11 +14674,13 @@ func TestAPIGitealikeApproveDeletesReviewWhenHeadMovesDuringSubmit(t *testing.T)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
 	require.NotNil(resp.ApplicationproblemJSONDefault)
-	assert.Equal("conflict", string(resp.ApplicationproblemJSONDefault.Code))
+	assert.Equal("unsupportedCapability", string(resp.ApplicationproblemJSONDefault.Code))
 	require.NotNil(resp.ApplicationproblemJSONDefault.Details)
-	assert.Equal("stale_state", (*resp.ApplicationproblemJSONDefault.Details)["reason"])
-	assert.Contains(transport.mutationCalls, "review:7:approved")
-	assert.Contains(transport.mutationCalls, "delete_review:7:980")
+	assert.Equal("review_mutation", (*resp.ApplicationproblemJSONDefault.Details)["capability"])
+	assert.Equal("gitea", (*resp.ApplicationproblemJSONDefault.Details)["provider"])
+	assert.Equal("gitea.test", (*resp.ApplicationproblemJSONDefault.Details)["platformHost"])
+	assert.NotContains(transport.mutationCalls, "review:7:approved")
+	assert.NotContains(transport.mutationCalls, "delete_review:7:980")
 }
 
 type apiTestGitealikeTransport struct {
@@ -14753,9 +14698,7 @@ type apiTestGitealikeTransport struct {
 	mutationCalls  []string
 	mergeHeadPins  []string
 
-	moveHeadAfterReview string
-	lastMergeOpts       gitealike.MergeOptions
-	deleteReviewErr     error
+	lastMergeOpts gitealike.MergeOptions
 	// headOverrides, when non-empty, replaces the head SHA returned by
 	// successive GetPullRequest calls (the final entry repeats),
 	// simulating a push racing an in-flight mutation.
@@ -14802,12 +14745,12 @@ func (t *apiTestGitealikeTransport) GetPullRequest(
 ) (gitealike.PullRequestDTO, error) {
 	for _, pr := range t.pulls {
 		if pr.Index == number {
+			t.headCalls++
 			if len(t.headOverrides) > 0 {
-				i := t.headCalls
+				i := t.headCalls - 1
 				if i >= len(t.headOverrides) {
 					i = len(t.headOverrides) - 1
 				}
-				t.headCalls++
 				pr.Head.SHA = t.headOverrides[i]
 			}
 			return pr, nil
@@ -15066,38 +15009,6 @@ func (t *apiTestGitealikeTransport) MergePullRequest(
 	pr.MergedAt = &now
 	pr.Updated = now
 	return gitealike.MergeResultDTO{Merged: true, SHA: "merged-sha", Message: "merged"}, nil
-}
-
-func (t *apiTestGitealikeTransport) CreatePullReview(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-	opts gitealike.ReviewOptions,
-) (gitealike.ReviewDTO, error) {
-	body := opts.Body
-	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("review:%d:%s", number, body))
-	if t.moveHeadAfterReview != "" {
-		if pr := t.findPull(number); pr != nil {
-			pr.Head.SHA = t.moveHeadAfterReview
-		}
-	}
-	return gitealike.ReviewDTO{
-		ID:        980,
-		User:      gitealike.UserDTO{UserName: "reviewer"},
-		State:     "approved",
-		Body:      body,
-		Submitted: time.Now().UTC().Truncate(time.Second),
-	}, nil
-}
-
-func (t *apiTestGitealikeTransport) DeletePullReview(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-	reviewID int64,
-) error {
-	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("delete_review:%d:%d", number, reviewID))
-	return t.deleteReviewErr
 }
 
 func (t *apiTestGitealikeTransport) findPull(number int) *gitealike.PullRequestDTO {

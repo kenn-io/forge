@@ -256,7 +256,6 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		CommentMutation:       true,
 		StateMutation:         true,
 		MergeMutation:         true,
-		ReviewMutation:        true,
 		IssueMutation:         true,
 		LabelMutation:         true,
 		AssigneeMutation:      true,
@@ -267,7 +266,6 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		NativeMultilineRanges: false,
 		SupportedReviewActions: []platform.ReviewAction{
 			platform.ReviewActionComment,
-			platform.ReviewActionApprove,
 			platform.ReviewActionRequestChanges,
 		},
 	}, client.Capabilities())
@@ -447,8 +445,6 @@ func TestClientMutationCapabilityUsesForgejoEndpoints(t *testing.T) {
 	require.NoError(err)
 	_, err = client.MergeMergeRequest(context.Background(), ref, 7, "title", "message", "squash", "")
 	require.NoError(err)
-	_, err = client.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "")
-	require.NoError(err)
 
 	assert.Equal([]string{
 		"POST /api/v1/repos/owner/repo/issues/7/comments",
@@ -458,53 +454,16 @@ func TestClientMutationCapabilityUsesForgejoEndpoints(t *testing.T) {
 		"PATCH /api/v1/repos/owner/repo/pulls/7",
 		"PATCH /api/v1/repos/owner/repo/pulls/7",
 		"POST /api/v1/repos/owner/repo/pulls/7/merge",
-		"POST /api/v1/repos/owner/repo/pulls/7/reviews",
 	}, seen)
 }
 
-func TestClientApproveMergeRequestSendsCommitID(t *testing.T) {
+func TestClientApproveMergeRequestUnsupported(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)
-	getPullCalls := 0
+	var sawRequest bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal("token forgejo-token", r.Header.Get("Authorization"))
-		w.Header().Set("Content-Type", "application/json")
-		switch r.Method + " " + r.URL.Path {
-		case "GET /api/v1/repos/owner/repo/pulls/7":
-			getPullCalls++
-			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
-				"id":     30,
-				"number": 7,
-				"title":  "pr",
-				"state":  "open",
-				"user":   map[string]any{"login": "carol"},
-				"head": map[string]any{
-					"ref": "feature",
-					"sha": "reviewed-head",
-					"repo": map[string]any{
-						"id":        1,
-						"full_name": "owner/repo",
-					},
-				},
-				"base": map[string]any{"ref": "main", "sha": "def"},
-			}))
-		case "POST /api/v1/repos/owner/repo/pulls/7/reviews":
-			var body struct {
-				Body     string `json:"body"`
-				CommitID string `json:"commit_id"`
-			}
-			if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
-				return
-			}
-			assert.Equal("ship it", body.Body)
-			assert.Equal("reviewed-head", body.CommitID)
-			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
-				"id": 40, "state": "APPROVED", "body": "ship it", "user": map[string]any{"login": "dana"},
-			}))
-		default:
-			http.NotFound(w, r)
-		}
+		sawRequest = true
+		http.NotFound(w, r)
 	}))
 	defer server.Close()
 
@@ -518,8 +477,11 @@ func TestClientApproveMergeRequestSendsCommitID(t *testing.T) {
 		"ship it",
 		"reviewed-head",
 	)
-	require.NoError(err)
-	assert.Equal(2, getPullCalls)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeUnsupportedCapability, platformErr.Code)
+	assert.Equal("approve_merge_request", platformErr.Capability)
+	assert.False(sawRequest)
 }
 
 func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {

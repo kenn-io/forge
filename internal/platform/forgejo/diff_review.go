@@ -2,15 +2,12 @@ package forgejo
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
 	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func (c *Client) PublishDiffReviewDraft(
@@ -37,6 +34,9 @@ func (t *transport) PublishDiffReviewDraft(
 	number int,
 	input platform.PublishDiffReviewDraftInput,
 ) (*platform.PublishedDiffReview, error) {
+	if input.Action == platform.ReviewActionApprove {
+		return nil, platform.UnsupportedCapability(platform.KindForgejo, host, "approve_merge_request")
+	}
 	comments := make([]forgejosdk.CreatePullReviewComment, 0, len(input.Comments))
 	commitID := input.HeadSHA
 	for _, comment := range input.Comments {
@@ -48,16 +48,6 @@ func (t *transport) PublishDiffReviewDraft(
 		}
 		comments = append(comments, forgejoReviewComments(comment)...)
 	}
-	if input.Action == platform.ReviewActionApprove && commitID != "" {
-		current, err := t.GetPullRequest(ctx, ref, number)
-		if err != nil {
-			return nil, err
-		}
-		if current.Head.SHA != "" && current.Head.SHA != commitID {
-			return nil, forgejoStaleApprovalError(host, nil, nil)
-		}
-	}
-
 	var review *forgejosdk.PullReview
 	var resp *forgejosdk.Response
 	err := t.withRequestContext(ctx, func() error {
@@ -80,108 +70,7 @@ func (t *transport) PublishDiffReviewDraft(
 		ProviderReviewID: strconv.FormatInt(review.ID, 10),
 		SubmittedAt:      review.Submitted.UTC(),
 	}
-	if input.Action == platform.ReviewActionApprove && commitID != "" {
-		if err := t.deleteReviewIfHeadMoved(ctx, host, ref, number, commitID, review.ID); err != nil {
-			if forgejoPartialReviewPublish(input, err) {
-				return published, &platform.DiffReviewPublishPartialError{
-					Err:                 err,
-					PublishedCommentIDs: forgejoPublishedDraftCommentIDs(input.Comments),
-				}
-			}
-			return nil, err
-		}
-	}
 	return published, nil
-}
-
-func (t *transport) deleteReviewIfHeadMoved(
-	ctx context.Context,
-	host string,
-	ref platform.RepoRef,
-	number int,
-	expectedHeadSHA string,
-	reviewID int64,
-) error {
-	current, err := t.GetPullRequest(ctx, ref, number)
-	verifyErr := forgejoPostSubmitHeadVerificationError(current, err)
-	if verifyErr == nil && current.Head.SHA == expectedHeadSHA {
-		return nil
-	}
-	reviewIDValue := strconv.FormatInt(reviewID, 10)
-	cause := "moved_head"
-	if verifyErr != nil {
-		cause = "head_unverifiable"
-	}
-	failedRevocationMessage := fmt.Sprintf("approval %d may stand on a moved head", reviewID)
-	successfulRevocationMessage := fmt.Sprintf(
-		"head moved while the approval submitted; approval %d was deleted",
-		reviewID,
-	)
-	if verifyErr != nil {
-		failedRevocationMessage = fmt.Sprintf(
-			"approval %d may stand because post-submit head could not be verified: %v",
-			reviewID, verifyErr,
-		)
-		successfulRevocationMessage = fmt.Sprintf(
-			"approval %d was deleted because post-submit head could not be verified: %v",
-			reviewID, verifyErr,
-		)
-	}
-	if deleteErr := t.DeletePullReview(ctx, ref, number, reviewID); deleteErr != nil {
-		return forgejoStaleApprovalError(host, fmt.Errorf(
-			"%s: deletion failed: %w",
-			failedRevocationMessage, deleteErr,
-		), map[string]string{"revocation": "failed", "review_id": reviewIDValue, "cause": cause})
-	}
-	return forgejoStaleApprovalError(host, errors.New(successfulRevocationMessage),
-		map[string]string{"revocation": "succeeded", "review_id": reviewIDValue, "cause": cause})
-}
-
-func forgejoStaleApprovalError(host string, err error, details map[string]string) error {
-	hint := ""
-	if err != nil {
-		hint = err.Error()
-	}
-	return &platform.Error{
-		Code:         platform.ErrCodeStaleState,
-		Provider:     platform.KindForgejo,
-		PlatformHost: host,
-		Capability:   "approve_merge_request",
-		Hint:         hint,
-		Details:      details,
-		Err:          err,
-	}
-}
-
-func forgejoPostSubmitHeadVerificationError(current gitealike.PullRequestDTO, err error) error {
-	if err != nil {
-		return fmt.Errorf("read failed: %w", err)
-	}
-	if current.Head.SHA == "" {
-		return errors.New("provider returned no head sha")
-	}
-	return nil
-}
-
-func forgejoPartialReviewPublish(input platform.PublishDiffReviewDraftInput, err error) bool {
-	if strings.TrimSpace(input.Body) == "" && len(input.Comments) == 0 {
-		return false
-	}
-	var platformErr *platform.Error
-	if !errors.As(err, &platformErr) {
-		return false
-	}
-	return platformErr.Details["revocation"] == "failed"
-}
-
-func forgejoPublishedDraftCommentIDs(comments []platform.LocalDiffReviewDraftComment) []int64 {
-	ids := make([]int64, 0, len(comments))
-	for _, comment := range comments {
-		if comment.ID > 0 {
-			ids = append(ids, comment.ID)
-		}
-	}
-	return ids
 }
 
 func (t *transport) ListMergeRequestReviewThreads(
@@ -257,8 +146,6 @@ func (t *transport) listPullReviewComments(
 
 func forgejoReviewState(action platform.ReviewAction) forgejosdk.ReviewStateType {
 	switch action {
-	case platform.ReviewActionApprove:
-		return forgejosdk.ReviewStateApproved
 	case platform.ReviewActionRequestChanges:
 		return forgejosdk.ReviewStateRequestChanges
 	default:

@@ -656,7 +656,6 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		CommentMutation:       true,
 		StateMutation:         true,
 		MergeMutation:         true,
-		ReviewMutation:        true,
 		MutationHeadBinding:   true,
 		WorkflowApproval:      true,
 		ReadyForReview:        true,
@@ -670,7 +669,6 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		NativeMultilineRanges: true,
 		SupportedReviewActions: []platform.ReviewAction{
 			platform.ReviewActionComment,
-			platform.ReviewActionApprove,
 			platform.ReviewActionRequestChanges,
 		},
 	}
@@ -1353,12 +1351,8 @@ func githubRequestedReviewerLogins(pr *gh.PullRequest) []string {
 	return logins
 }
 
-// ApproveMergeRequest verifies the current PR head against
-// expectedHeadSHA before approving, and again after the review is
-// submitted: GitHub review commit ids associate rather than gate, so a
-// push that lands while the approval submits would otherwise count for
-// a head nobody reviewed. When the post-check sees a moved head the
-// approval is dismissed upstream and the caller gets stale_state.
+// ApproveMergeRequest is intentionally unsupported because GitHub approvals
+// cannot be submitted atomically against the expected pull request head.
 func (p gitHubClientProvider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1366,137 +1360,8 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 	body string,
 	expectedHeadSHA string,
 ) (platform.MergeRequestEvent, error) {
-	if expectedHeadSHA != "" {
-		current, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
-		if err != nil {
-			return platform.MergeRequestEvent{}, err
-		}
-		if head := current.GetHead().GetSHA(); head != "" && head != expectedHeadSHA {
-			return platform.MergeRequestEvent{}, p.staleApprovalError(nil, nil)
-		}
-	}
-	review, err := p.client.CreateReviewWithComments(
-		ctx, ref.Owner, ref.Name, number, "APPROVE", body, expectedHeadSHA, nil,
-	)
-	if err != nil {
-		return platform.MergeRequestEvent{}, err
-	}
-	if review == nil {
-		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review")
-	}
-	if expectedHeadSHA != "" {
-		if err := p.revokeApprovalIfHeadMoved(ctx, ref, number, expectedHeadSHA, review, body != ""); err != nil {
-			return platform.MergeRequestEvent{}, err
-		}
-	}
-	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
-}
-
-// revokeApprovalIfHeadMoved closes the check-to-submit race on
-// approvals: if the PR head moved past the reviewed commit while the
-// review was submitting, the approval is dismissed upstream and the
-// caller gets stale_state. Dismissal removes the approval state but
-// keeps the review and its text visible, so hadContent extends the
-// side-effect context: a retry would repeat the posted review text. A
-// failed or inconclusive verification is treated as stale: once the
-// approval exists upstream, success is only safe when the post-check
-// proves the head still matches the reviewed commit.
-func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	expectedHeadSHA string,
-	review *gh.PullRequestReview,
-	hadContent bool,
-) error {
-	current, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
-	verifyErr := githubPostSubmitHeadVerificationError(current, err)
-	head := ""
-	if current != nil {
-		head = current.GetHead().GetSHA()
-	}
-	if verifyErr == nil && head == expectedHeadSHA {
-		return nil
-	}
-	reviewID := strconv.FormatInt(review.GetID(), 10)
-	cause := "moved_head"
-	if verifyErr != nil {
-		cause = "head_unverifiable"
-	}
-	failedRevocationMessage := fmt.Sprintf(
-		"approval %d may stand on a moved head",
-		review.GetID(),
-	)
-	successfulRevocationMessage := fmt.Sprintf(
-		"head moved while the approval submitted; approval %d was dismissed",
-		review.GetID(),
-	)
-	if verifyErr != nil {
-		failedRevocationMessage = fmt.Sprintf(
-			"approval %d may stand because post-submit head could not be verified: %v",
-			review.GetID(), verifyErr,
-		)
-		successfulRevocationMessage = fmt.Sprintf(
-			"approval %d was dismissed because post-submit head could not be verified: %v",
-			review.GetID(), verifyErr,
-		)
-	}
-	// The dismissal message is upstream audit trail: it must state the
-	// real reason, which differs between a moved head and one that
-	// could not be verified.
-	dismissalReason := "head moved past the reviewed commit while the approval submitted"
-	if cause == "head_unverifiable" {
-		dismissalReason = "post-submit head could not be verified after the approval submitted"
-	}
-	if _, dismissErr := p.client.DismissReview(
-		ctx, ref.Owner, ref.Name, number, review.GetID(),
-		dismissalReason,
-	); dismissErr != nil {
-		return p.staleApprovalError(
-			fmt.Errorf(
-				"%s: dismissal failed: %w",
-				failedRevocationMessage, dismissErr,
-			),
-			map[string]string{"revocation": "failed", "review_id": reviewID, "cause": cause},
-		)
-	}
-	message := successfulRevocationMessage
-	if hadContent {
-		message += "; the posted review text remains visible upstream and retrying will repeat it"
-	}
-	return p.staleApprovalError(
-		errors.New(message),
-		map[string]string{"revocation": "succeeded", "review_id": reviewID, "cause": cause},
-	)
-}
-
-func githubPostSubmitHeadVerificationError(current *gh.PullRequest, err error) error {
-	if err != nil {
-		return fmt.Errorf("read failed: %w", err)
-	}
-	if current == nil {
-		return errors.New("provider returned no pull request")
-	}
-	if current.GetHead().GetSHA() == "" {
-		return errors.New("provider returned no head sha")
-	}
-	return nil
-}
-
-func (p gitHubClientProvider) staleApprovalError(err error, details map[string]string) error {
-	hint := ""
-	if err != nil {
-		hint = err.Error()
-	}
-	return &platform.Error{
-		Code:         platform.ErrCodeStaleState,
-		Provider:     platform.KindGitHub,
-		PlatformHost: p.host,
-		Capability:   "approve_merge_request",
-		Hint:         hint,
-		Details:      details,
-		Err:          err,
-	}
+	return platform.MergeRequestEvent{},
+		platform.UnsupportedCapability(platform.KindGitHub, p.host, "approve_merge_request")
 }
 
 func (p gitHubClientProvider) ListMergeRequestReviewThreads(
@@ -1627,6 +1492,9 @@ func (p gitHubClientProvider) PublishDiffReviewDraft(
 	number int,
 	input platform.PublishDiffReviewDraftInput,
 ) (*platform.PublishedDiffReview, error) {
+	if input.Action == platform.ReviewActionApprove {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "approve_merge_request")
+	}
 	event, err := githubReviewEvent(input.Action)
 	if err != nil {
 		return nil, err
@@ -1636,15 +1504,6 @@ func (p gitHubClientProvider) PublishDiffReviewDraft(
 		comments = append(comments, githubDraftReviewComment(comment))
 	}
 	headSHA := githubReviewHeadSHA(input)
-	if input.Action == platform.ReviewActionApprove && headSHA != "" {
-		current, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
-		if err != nil {
-			return nil, err
-		}
-		if head := current.GetHead().GetSHA(); head != "" && head != headSHA {
-			return nil, p.staleApprovalError(nil, nil)
-		}
-	}
 	review, err := p.client.CreateReviewWithComments(
 		ctx,
 		ref.Owner,
@@ -1661,30 +1520,6 @@ func (p gitHubClientProvider) PublishDiffReviewDraft(
 	if review == nil {
 		return nil, fmt.Errorf("provider returned no review")
 	}
-	if input.Action == platform.ReviewActionApprove && headSHA != "" {
-		hadContent := input.Body != "" || len(input.Comments) > 0
-		if err := p.revokeApprovalIfHeadMoved(ctx, ref, number, headSHA, review, hadContent); err != nil {
-			if !hadContent {
-				return nil, err
-			}
-			// The review submitted before the stale head was detected:
-			// GitHub publishes its body and inline comments atomically
-			// with the review, and dismissal removes only the approval
-			// state. Report a partial publish so the server clears the
-			// local draft copies instead of arming a retry that would
-			// repost them.
-			publishedCommentIDs := make([]int64, 0, len(input.Comments))
-			for _, comment := range input.Comments {
-				if comment.ID > 0 {
-					publishedCommentIDs = append(publishedCommentIDs, comment.ID)
-				}
-			}
-			return nil, &platform.DiffReviewPublishPartialError{
-				Err:                 err,
-				PublishedCommentIDs: publishedCommentIDs,
-			}
-		}
-	}
 	submittedAt := review.GetSubmittedAt() // zero Timestamp when GitHub omits submitted_at
 	return &platform.PublishedDiffReview{
 		ProviderReviewID: strconv.FormatInt(review.GetID(), 10),
@@ -1696,8 +1531,6 @@ func githubReviewEvent(action platform.ReviewAction) (string, error) {
 	switch action {
 	case platform.ReviewActionComment:
 		return "COMMENT", nil
-	case platform.ReviewActionApprove:
-		return "APPROVE", nil
 	case platform.ReviewActionRequestChanges:
 		return "REQUEST_CHANGES", nil
 	default:

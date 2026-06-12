@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"go.kenn.io/middleman/internal/platform"
@@ -79,7 +78,6 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		caps.CommentMutation = true
 		caps.StateMutation = true
 		caps.MergeMutation = true
-		caps.ReviewMutation = true
 		caps.IssueMutation = true
 		caps.MutationHeadBinding = true
 		caps.LabelMutation = hasLabels
@@ -563,13 +561,9 @@ func (p *Provider) MergeMergeRequest(
 	return platform.MergeResult{Merged: result.Merged, SHA: result.SHA, Message: result.Message}, nil
 }
 
-// ApproveMergeRequest verifies the current PR head against
-// expectedHeadSHA before approving, and again after the review is
-// submitted: Gitea/Forgejo review commit ids record rather than gate,
-// so a push that lands while the approval submits would otherwise
-// count for a head nobody reviewed. When the post-check sees a moved
-// head the approval is deleted upstream and the caller gets
-// stale_state.
+// ApproveMergeRequest is intentionally unsupported because Gitea-like
+// approvals cannot be submitted atomically against the expected pull request
+// head.
 func (p *Provider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -577,113 +571,8 @@ func (p *Provider) ApproveMergeRequest(
 	body string,
 	expectedHeadSHA string,
 ) (platform.MergeRequestEvent, error) {
-	transport, err := p.mutationTransport("review_mutation")
-	if err != nil {
-		return platform.MergeRequestEvent{}, err
-	}
-	if expectedHeadSHA != "" {
-		current, err := p.transport.GetPullRequest(ctx, ref, number)
-		if err != nil {
-			return platform.MergeRequestEvent{}, p.mapError(err)
-		}
-		if current.Head.SHA != "" && current.Head.SHA != expectedHeadSHA {
-			return platform.MergeRequestEvent{}, p.staleApprovalError(nil, nil)
-		}
-	}
-	review, err := transport.CreatePullReview(ctx, ref, number, ReviewOptions{
-		Body:            body,
-		ExpectedHeadSHA: expectedHeadSHA,
-	})
-	if err != nil {
-		return platform.MergeRequestEvent{}, p.mapError(err)
-	}
-	if expectedHeadSHA != "" {
-		if err := p.revokeApprovalIfHeadMoved(ctx, transport, ref, number, expectedHeadSHA, review.ID); err != nil {
-			return platform.MergeRequestEvent{}, err
-		}
-	}
-	return NormalizeMergeRequestEvents(p.kind, ref, number, nil, []ReviewDTO{review}, nil)[0], nil
-}
-
-// revokeApprovalIfHeadMoved closes the check-to-submit race on
-// approvals: if the PR head moved past the reviewed commit while the
-// review was submitting, the approval is deleted upstream and the
-// caller gets stale_state. A failed or inconclusive verification is
-// also treated as stale: once the approval exists upstream, success is
-// only safe when the post-check proves the head still matches the
-// reviewed commit.
-func (p *Provider) revokeApprovalIfHeadMoved(
-	ctx context.Context,
-	transport MutationTransport,
-	ref platform.RepoRef,
-	number int,
-	expectedHeadSHA string,
-	reviewID int64,
-) error {
-	current, err := p.transport.GetPullRequest(ctx, ref, number)
-	verifyErr := gitealikePostSubmitHeadVerificationError(current, err)
-	if verifyErr == nil && current.Head.SHA == expectedHeadSHA {
-		return nil
-	}
-	reviewIDValue := strconv.FormatInt(reviewID, 10)
-	cause := "moved_head"
-	if verifyErr != nil {
-		cause = "head_unverifiable"
-	}
-	failedRevocationMessage := fmt.Sprintf("approval %d may stand on a moved head", reviewID)
-	successfulRevocationMessage := fmt.Sprintf(
-		"head moved while the approval submitted; approval %d was deleted",
-		reviewID,
-	)
-	if verifyErr != nil {
-		failedRevocationMessage = fmt.Sprintf(
-			"approval %d may stand because post-submit head could not be verified: %v",
-			reviewID, verifyErr,
-		)
-		successfulRevocationMessage = fmt.Sprintf(
-			"approval %d was deleted because post-submit head could not be verified: %v",
-			reviewID, verifyErr,
-		)
-	}
-	if deleteErr := transport.DeletePullReview(ctx, ref, number, reviewID); deleteErr != nil {
-		return p.staleApprovalError(
-			fmt.Errorf(
-				"%s: deletion failed: %w",
-				failedRevocationMessage, deleteErr,
-			),
-			map[string]string{"revocation": "failed", "review_id": reviewIDValue, "cause": cause},
-		)
-	}
-	return p.staleApprovalError(
-		errors.New(successfulRevocationMessage),
-		map[string]string{"revocation": "succeeded", "review_id": reviewIDValue, "cause": cause},
-	)
-}
-
-func gitealikePostSubmitHeadVerificationError(current PullRequestDTO, err error) error {
-	if err != nil {
-		return fmt.Errorf("read failed: %w", err)
-	}
-	if current.Head.SHA == "" {
-		return errors.New("provider returned no head sha")
-	}
-	return nil
-}
-
-func (p *Provider) staleApprovalError(err error, details map[string]string) error {
-	hint := ""
-	if err != nil {
-		hint = err.Error()
-	}
-	return &platform.Error{
-		Code:         platform.ErrCodeStaleState,
-		Provider:     p.kind,
-		PlatformHost: p.host,
-		Capability:   "approve_merge_request",
-		Hint:         hint,
-		Details:      details,
-		Err:          err,
-	}
+	return platform.MergeRequestEvent{},
+		platform.UnsupportedCapability(p.kind, p.host, "approve_merge_request")
 }
 
 func (p *Provider) EditMergeRequestContent(

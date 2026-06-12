@@ -325,47 +325,6 @@ func (t *transport) MergePullRequest(
 	return gitealike.MergeResultDTO{Merged: merged}, nil
 }
 
-func (t *transport) CreatePullReview(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	opts gitealike.ReviewOptions,
-) (gitealike.ReviewDTO, error) {
-	var review *giteasdk.PullReview
-	var resp *giteasdk.Response
-	err := t.withRequestContext(ctx, func() error {
-		var err error
-		review, resp, err = t.api.CreatePullReview(ref.Owner, ref.Name, int64(number), giteasdk.CreatePullReviewOptions{
-			State:    giteasdk.ReviewStateApproved,
-			Body:     opts.Body,
-			CommitID: opts.ExpectedHeadSHA,
-		})
-		return err
-	})
-	if err != nil {
-		return gitealike.ReviewDTO{}, giteaHTTPError(resp, err)
-	}
-	return convertReview(review), nil
-}
-
-func (t *transport) DeletePullReview(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	reviewID int64,
-) error {
-	var resp *giteasdk.Response
-	err := t.withRequestContext(ctx, func() error {
-		var err error
-		resp, err = t.api.DeletePullReview(ref.Owner, ref.Name, int64(number), reviewID)
-		return err
-	})
-	if err != nil {
-		return giteaHTTPError(resp, err)
-	}
-	return nil
-}
-
 func (t *transport) ReplaceIssueLabels(
 	ctx context.Context,
 	ref platform.RepoRef,

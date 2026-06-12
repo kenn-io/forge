@@ -1,10 +1,9 @@
 package e2etest
 
-// Full-stack coverage for provider-enforced head pins on GitHub: the
-// HTTP API must hand the reviewed head to the provider client (merge
-// `sha`, review `commit_id`), map the provider's moved-head rejection
-// to a 409 conflict with reason stale_state, and back out an approval
-// that landed after the head moved.
+// Full-stack coverage for provider-enforced head pins on GitHub: the HTTP API
+// must hand the reviewed head to merge mutations, map the provider's moved-head
+// rejection to a 409 conflict with reason stale_state, and reject approval
+// paths before any non-atomic provider mutation runs.
 
 import (
 	"context"
@@ -76,27 +75,6 @@ func setupGitHubHeadPinServer(
 
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	return srv, database, repoID
-}
-
-// githubHeadSequenceFn returns a GetPullRequest stub whose head SHA
-// advances through heads on successive calls (later calls repeat the
-// final head), simulating a push racing an in-flight mutation.
-func githubHeadSequenceFn(
-	heads ...string,
-) func(context.Context, string, string, int) (*gh.PullRequest, error) {
-	var calls atomic.Int32
-	return func(context.Context, string, string, int) (*gh.PullRequest, error) {
-		i := int(calls.Add(1)) - 1
-		head := heads[len(heads)-1]
-		if i < len(heads) {
-			head = heads[i]
-		}
-		number := 7
-		return &gh.PullRequest{
-			Number: &number,
-			Head:   &gh.PullRequestBranch{SHA: &head},
-		}, nil
-	}
 }
 
 type conflictProblemBody struct {
@@ -230,36 +208,7 @@ func TestGitHubMergeGenericConflictKeepsConflictReason(t *testing.T) {
 		"an unrelated provider conflict must not present as staleness")
 }
 
-func TestGitHubApproveBindsReviewToReviewedHead(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	var recordedCommitID atomic.Value
-	mock := &mockGH{
-		getPullRequestFn: githubHeadSequenceFn("reviewed-sha"),
-		createReviewWithCommentsFn: func(
-			_ context.Context, _, _ string, _ int, event, body, commitID string,
-			_ []*gh.DraftReviewComment,
-		) (*gh.PullRequestReview, error) {
-			recordedCommitID.Store(commitID)
-			id := int64(31)
-			submitted := gh.Timestamp{Time: time.Now().UTC()}
-			return &gh.PullRequestReview{
-				ID: &id, State: &event, Body: &body, SubmittedAt: &submitted,
-			}, nil
-		},
-	}
-	srv, _, _ := setupGitHubHeadPinServer(t, mock)
-
-	rr := doJSONRequest(t, srv, http.MethodPost,
-		"/api/v1/pulls/github/acme/widget/7/approve",
-		json.RawMessage(`{"body":"lgtm","expected_head_sha":"reviewed-sha"}`),
-	)
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	assert.Equal("reviewed-sha", recordedCommitID.Load(),
-		"the reviewed head must reach the provider review call as commit_id")
-}
-
-func TestGitHubApproveRejectsMissingReviewedHeadPin(t *testing.T) {
+func TestGitHubApproveUnsupportedBeforeProviderCall(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	var providerCalled atomic.Bool
@@ -276,132 +225,29 @@ func TestGitHubApproveRejectsMissingReviewedHeadPin(t *testing.T) {
 
 	rr := doJSONRequest(t, srv, http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/7/approve",
-		json.RawMessage(`{"body":"lgtm"}`),
+		json.RawMessage(`{"body":"lgtm","expected_head_sha":"reviewed-sha"}`),
 	)
-	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-	var problem conflictProblemBody
-	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal("validationError", problem.Code)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	problem := decodeConflictProblemBody(t, json.NewDecoder(rr.Body))
+	assert.Equal("unsupportedCapability", problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal("body.expected_head_sha", problem.Details["field"])
+	assert.Equal("review_mutation", problem.Details["capability"])
+	assert.Equal("github", problem.Details["provider"])
+	assert.Equal("github.com", problem.Details["platformHost"])
 	assert.False(providerCalled.Load())
 }
 
-// When the approval lands on a moved head and the dismissal itself
-// fails, the 409 must tell the client the approval may still stand —
-// hiding that behind the generic re-review prompt would leave an
-// unreviewed approval in place silently.
-func TestGitHubApproveFailedDismissalSurfacesContext(t *testing.T) {
+func TestGitHubReviewDraftApproveUnsupportedBeforeProviderCall(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
+	var providerCalled atomic.Bool
 	mock := &mockGH{
-		getPullRequestFn: githubHeadSequenceFn("reviewed-sha", "new-sha"),
 		createReviewWithCommentsFn: func(
-			_ context.Context, _, _ string, _ int, event, body, _ string,
+			_ context.Context, _, _ string, _ int, _, _, _ string,
 			_ []*gh.DraftReviewComment,
 		) (*gh.PullRequestReview, error) {
-			id := int64(31)
-			submitted := gh.Timestamp{Time: time.Now().UTC()}
-			return &gh.PullRequestReview{
-				ID: &id, State: &event, Body: &body, SubmittedAt: &submitted,
-			}, nil
-		},
-		dismissReviewFn: func(
-			_ context.Context, _, _ string, _ int, _ int64, _ string,
-		) (*gh.PullRequestReview, error) {
-			return nil, &gh.ErrorResponse{
-				Response: &http.Response{StatusCode: http.StatusForbidden},
-				Message:  "Must have admin rights to dismiss a review",
-			}
-		},
-	}
-	srv, _, _ := setupGitHubHeadPinServer(t, mock)
-
-	rr := doJSONRequest(t, srv, http.MethodPost,
-		"/api/v1/pulls/github/acme/widget/7/approve",
-		json.RawMessage(`{"body":"lgtm","expected_head_sha":"reviewed-sha"}`),
-	)
-	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	problem := decodeConflictProblemBody(t, json.NewDecoder(rr.Body))
-	assert.Equal("conflict", problem.Code)
-	require.NotNil(problem.Details)
-	assert.Equal("stale_state", problem.Details["reason"])
-	sideEffect, _ := problem.Details["context"].(string)
-	assert.Contains(sideEffect, "dismissal failed",
-		"a standing approval on a moved head must be reported to the client")
-	assert.Contains(problem.Detail, "dismissal failed")
-	assert.Equal("failed", problem.Details["revocation"],
-		"clients must be able to branch on the revocation outcome without parsing prose")
-	assert.Equal("31", problem.Details["review_id"])
-}
-
-func TestGitHubApproveDismissedWhenHeadMovesDuringSubmit(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	var dismissedID atomic.Int64
-	mock := &mockGH{
-		// Pre-check sees the reviewed head; the post-submit check sees
-		// a push that landed while the review submitted.
-		getPullRequestFn: githubHeadSequenceFn("reviewed-sha", "new-sha"),
-		createReviewWithCommentsFn: func(
-			_ context.Context, _, _ string, _ int, event, body, _ string,
-			_ []*gh.DraftReviewComment,
-		) (*gh.PullRequestReview, error) {
-			id := int64(31)
-			submitted := gh.Timestamp{Time: time.Now().UTC()}
-			return &gh.PullRequestReview{
-				ID: &id, State: &event, Body: &body, SubmittedAt: &submitted,
-			}, nil
-		},
-		dismissReviewFn: func(
-			_ context.Context, _, _ string, _ int, reviewID int64, _ string,
-		) (*gh.PullRequestReview, error) {
-			dismissedID.Store(reviewID)
-			return &gh.PullRequestReview{ID: &reviewID}, nil
-		},
-	}
-	srv, _, _ := setupGitHubHeadPinServer(t, mock)
-
-	rr := doJSONRequest(t, srv, http.MethodPost,
-		"/api/v1/pulls/github/acme/widget/7/approve",
-		json.RawMessage(`{"body":"lgtm","expected_head_sha":"reviewed-sha"}`),
-	)
-	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	code, details := decodeConflictProblem(t, json.NewDecoder(rr.Body))
-	assert.Equal("conflict", code)
-	require.NotNil(details)
-	assert.Equal("stale_state", details["reason"])
-	sideEffect, _ := details["context"].(string)
-	assert.Contains(sideEffect, "posted review text remains visible upstream")
-	assert.Equal("succeeded", details["revocation"],
-		"a clean dismissal must be distinguishable from one that left the approval standing")
-	assert.Equal(int64(31), dismissedID.Load(),
-		"the approval that landed on a moved head must be dismissed upstream")
-}
-
-func TestGitHubReviewDraftPartialStaleApprovalCleansPublishedComment(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	var dismissedID atomic.Int64
-	var submittedCommentCount atomic.Int32
-	mock := &mockGH{
-		getPullRequestFn: githubHeadSequenceFn("reviewed-sha", "new-sha"),
-		createReviewWithCommentsFn: func(
-			_ context.Context, _, _ string, _ int, event, body, _ string,
-			comments []*gh.DraftReviewComment,
-		) (*gh.PullRequestReview, error) {
-			submittedCommentCount.Store(int32(len(comments)))
-			id := int64(31)
-			submitted := gh.Timestamp{Time: time.Now().UTC()}
-			return &gh.PullRequestReview{
-				ID: &id, State: &event, Body: &body, SubmittedAt: &submitted,
-			}, nil
-		},
-		dismissReviewFn: func(
-			_ context.Context, _, _ string, _ int, reviewID int64, _ string,
-		) (*gh.PullRequestReview, error) {
-			dismissedID.Store(reviewID)
-			return &gh.PullRequestReview{ID: &reviewID}, nil
+			providerCalled.Store(true)
+			return &gh.PullRequestReview{}, nil
 		},
 	}
 	srv, database, repoID := setupGitHubHeadPinServer(t, mock)
@@ -431,91 +277,11 @@ func TestGitHubReviewDraftPartialStaleApprovalCleansPublishedComment(t *testing.
 	)
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	problem := decodeConflictProblemBody(t, json.NewDecoder(rr.Body))
-	assert.Equal("conflict", problem.Code)
+	assert.Equal("unsupportedCapability", problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal("stale_state", problem.Details["reason"])
-	assert.Equal(true, problem.Details["partialPublish"])
-	assert.EqualValues(1, problem.Details["publishedCommentCount"])
-	sideEffect, _ := problem.Details["context"].(string)
-	assert.Contains(sideEffect, "posted review text remains visible upstream")
-	assert.Contains(sideEffect, "retrying will repeat it")
-	assert.Equal("succeeded", problem.Details["revocation"],
-		"the stale partial response must keep the revocation members")
-	assert.Equal("31", problem.Details["review_id"])
-	assert.Equal("moved_head", problem.Details["cause"])
-	assert.Equal(int32(1), submittedCommentCount.Load())
-	assert.Equal(int64(31), dismissedID.Load(),
-		"the approval that landed on a moved head must be dismissed upstream")
+	assert.Equal("review_action_approve", problem.Details["capability"])
+	assert.False(providerCalled.Load())
 	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
-	assert.Nil(storedDraft, "published local draft comment should be removed after partial publish")
-}
-
-// When the draft published content AND the dismissal fails, the 409
-// stale envelope wins over a partially_published success: it must
-// carry revocation "failed" with the review id so the user knows
-// manual cleanup is required, while the published local draft copies
-// are still cleared.
-func TestGitHubReviewDraftPartialFailedDismissalKeepsRevocationSignal(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	mock := &mockGH{
-		getPullRequestFn: githubHeadSequenceFn("reviewed-sha", "new-sha"),
-		createReviewWithCommentsFn: func(
-			_ context.Context, _, _ string, _ int, event, body, _ string,
-			_ []*gh.DraftReviewComment,
-		) (*gh.PullRequestReview, error) {
-			id := int64(31)
-			submitted := gh.Timestamp{Time: time.Now().UTC()}
-			return &gh.PullRequestReview{
-				ID: &id, State: &event, Body: &body, SubmittedAt: &submitted,
-			}, nil
-		},
-		dismissReviewFn: func(
-			_ context.Context, _, _ string, _ int, _ int64, _ string,
-		) (*gh.PullRequestReview, error) {
-			return nil, &gh.ErrorResponse{
-				Response: &http.Response{StatusCode: http.StatusForbidden},
-				Message:  "Must have admin rights to dismiss a review",
-			}
-		},
-	}
-	srv, database, repoID := setupGitHubHeadPinServer(t, mock)
-	ctx := t.Context()
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	draft, err := database.GetOrCreateMRReviewDraft(ctx, mr.ID)
-	require.NoError(err)
-	line := 42
-	_, err = database.CreateMRReviewDraftComment(ctx, draft.ID, db.MRReviewDraftCommentInput{
-		Body: "ready to approve",
-		Range: db.ReviewLineRange{
-			Path:        "internal/server/e2etest/github_head_pin_test.go",
-			Side:        "right",
-			Line:        42,
-			NewLine:     &line,
-			LineType:    "add",
-			DiffHeadSHA: "reviewed-sha",
-		},
-	})
-	require.NoError(err)
-
-	rr := doJSONRequest(t, srv, http.MethodPost,
-		"/api/v1/pulls/github/acme/widget/7/review-draft/publish",
-		json.RawMessage(`{"action":"approve","body":"summary note"}`),
-	)
-	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	problem := decodeConflictProblemBody(t, json.NewDecoder(rr.Body))
-	assert.Equal("conflict", problem.Code)
-	require.NotNil(problem.Details)
-	assert.Equal("stale_state", problem.Details["reason"])
-	assert.Equal(true, problem.Details["partialPublish"])
-	assert.Equal("failed", problem.Details["revocation"],
-		"a standing approval must reach the wire as revocation failed")
-	assert.Equal("31", problem.Details["review_id"])
-	assert.Equal("moved_head", problem.Details["cause"])
-	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
-	require.NoError(err)
-	assert.Nil(storedDraft, "published local draft comment should be removed even when revocation fails")
+	require.NotNil(storedDraft, "unsupported approve must preserve the local draft")
 }

@@ -1298,6 +1298,53 @@ describe("kata workspace store", () => {
     expect(store.eventCursor).toBe(99);
   });
 
+  test("a mutation refresh supersedes a stale detail reload from an older event refresh", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap();
+    await store.selectIssue("issue-pay-rent");
+
+    // The remote event's own detail reload stalls; it was issued before
+    // the mutation below, so its payload predates the mutation.
+    const staleDetail = deferred<KataTaskDetail>();
+    api.mocks.issue.mockImplementationOnce(
+      (_uid: string, opts?: { signal?: AbortSignal }) =>
+        new Promise<KataTaskDetail>((resolve, reject) => {
+          opts?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+          void staleDetail.promise.then(resolve);
+        }),
+    );
+    const remote = store.applyRemoteEvent({ ...events[0]!, event_id: 99 });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The post-mutation refresh must fetch this fresh detail; the stale
+    // reload above must not be allowed to overwrite it afterwards.
+    api.mocks.issue.mockImplementation(async (uid: string) => ({
+      ...detailFor(uid),
+      comments: [
+        {
+          id: 1,
+          issue_id: issues[0]!.id,
+          body: "Payment is scheduled.",
+          author: "fixture-user",
+          created_at: fetchedAt,
+        },
+      ],
+      etag: '"rev-2"',
+    }));
+    await store.addComment("issue-pay-rent", "fixture-user", "Payment is scheduled.");
+
+    staleDetail.resolve(detailFor("issue-pay-rent"));
+    await remote;
+
+    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
+    expect(store.selectedIssue?.comments.map((comment) => comment.body)).toEqual(["Payment is scheduled."]);
+    expect(store.selectedIssue?.etag).toBe('"rev-2"');
+  });
+
   test("a selection completed during a remote-event view refresh is not reverted", async () => {
     const api = createFakeKataTaskAPI();
     const store = createKataWorkspaceStore({ api });

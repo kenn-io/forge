@@ -116,8 +116,10 @@ type GitHubAppConfig struct {
 	RepositorySelection string `toml:"repository_selection,omitempty" json:"repository_selection,omitempty"`
 	// SelectedRepos lists the full names (owner/name) an "Only select
 	// repositories" installation could reach when the CLI recorded it.
-	// Re-running "middleman-github-app install" refreshes the list
-	// after the selection changes on GitHub.
+	// This is a snapshot: middleman does not detect selection changes
+	// made on GitHub afterwards — an out-of-band narrowing surfaces as
+	// sync 404s until "middleman-github-app install" is re-run to
+	// refresh the recorded list.
 	SelectedRepos []string `toml:"selected_repos,omitempty" json:"selected_repos,omitempty"`
 }
 

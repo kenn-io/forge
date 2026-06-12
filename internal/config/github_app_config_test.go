@@ -300,6 +300,23 @@ repository_selection = "some"
 `,
 			wantErr: "repository_selection must be",
 		},
+		{
+			name: "whitespace and case in repository_selection cannot bypass the selected check",
+			toml: `
+[[repos]]
+owner = "kenn-io"
+name = "added-later"
+
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+installation_id = 9
+installation_account = "kenn-io"
+repository_selection = " Selected "
+selected_repos = ["kenn-io/middleman"]
+`,
+			wantErr: "kenn-io/added-later is not in the \"Only select repositories\" installation",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

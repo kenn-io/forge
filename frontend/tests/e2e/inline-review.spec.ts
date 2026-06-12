@@ -516,11 +516,13 @@ test("a loaded draft becomes unpublishable when submit_review flips unavailable"
   // Override the detail route (last registered wins) so the test can
   // flip submit_review availability between loads.
   let submitReviewOp: Record<string, unknown> | undefined;
+  let detailGets = 0;
   await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {
     if (route.request().method() !== "GET") {
       await route.fallback();
       return;
     }
+    detailGets += 1;
     const operations = submitReviewOp !== undefined ? { submit_review: submitReviewOp } : undefined;
     await fulfillJson(route, pullDetail(false, baseCapabilities, "github", "github.com", operations));
   });
@@ -531,15 +533,21 @@ test("a loaded draft becomes unpublishable when submit_review flips unavailable"
   await expect(page.getByText("1 draft comment")).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish review" })).toBeVisible();
 
-  // Phase 2: the host's review budget is exhausted; on the next load
-  // the same draft must not be publishable and the reason is shown.
+  // Phase 2: the host's review budget is exhausted. Switching tabs is
+  // an in-app (SPA) navigation — no document reload, the client-side
+  // draft store keeps the loaded draft — and remounting the
+  // conversation pane refetches the detail payload with the flipped
+  // availability.
   submitReviewOp = {
     available: false,
     code: "rate_limited",
     unavailable_reason: rateLimitedReason,
     retry_at: "2026-03-30T14:35:00Z",
   };
-  await page.reload();
+  const getsBeforeFlip = detailGets;
+  await page.getByRole("button", { name: "Conversation" }).click();
+  await expect.poll(() => detailGets).toBeGreaterThan(getsBeforeFlip);
+  await page.getByRole("button", { name: "Files changed" }).click();
   await expect(page.locator(".file-content").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish review" })).toHaveCount(0);
   await expect(page.locator(".review-warning")).toContainText(rateLimitedReason);

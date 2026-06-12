@@ -112,6 +112,38 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 				"assignees": [{"login": "octocat"}]
 			}`)
 		})
+	// The reviewer diff reads the current set with the read client and
+	// then adds/removes with the write client; the fake reports one
+	// pre-existing reviewer so a single set call exercises both paths.
+	mux.HandleFunc("GET /api/v3/repos/kenn-io/middleman/pulls/7",
+		func(w http.ResponseWriter, r *http.Request) {
+			record("read:pull", r)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{
+				"number": 7,
+				"state": "open",
+				"requested_reviewers": [{"login": "old-reviewer"}]
+			}`)
+		})
+	mux.HandleFunc("POST /api/v3/repos/kenn-io/middleman/pulls/7/requested_reviewers",
+		func(w http.ResponseWriter, r *http.Request) {
+			record("write:reviewers-add", r)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = fmt.Fprint(w, `{
+				"number": 7,
+				"requested_reviewers": [{"login": "old-reviewer"}, {"login": "new-reviewer"}]
+			}`)
+		})
+	mux.HandleFunc("DELETE /api/v3/repos/kenn-io/middleman/pulls/7/requested_reviewers",
+		func(w http.ResponseWriter, r *http.Request) {
+			record("write:reviewers-remove", r)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{
+				"number": 7,
+				"requested_reviewers": [{"login": "new-reviewer"}]
+			}`)
+		})
 	mux.HandleFunc("GET /api/v3/rate_limit", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, `{"resources":{"core":{"limit":5000,"remaining":4999,"reset":2000000000}}}`)
@@ -258,6 +290,19 @@ installation_account = "kenn-io"
 	require.NoError(err)
 	require.Equal(http.StatusOK, assigneeResp.StatusCode, string(assigneeBody))
 
+	// Reviewer mutations diff against the provider's current set, so
+	// one request exercises both the add (POST) and remove (DELETE)
+	// write paths.
+	reviewerResp := doServerJSON(
+		t, httpServer.Client(), http.MethodPut,
+		httpServer.URL+"/api/v1/pulls/gh/kenn-io/middleman/7/reviewers",
+		map[string][]string{"reviewers": {"new-reviewer"}},
+	)
+	defer reviewerResp.Body.Close()
+	reviewerBody, err := io.ReadAll(reviewerResp.Body)
+	require.NoError(err)
+	require.Equal(http.StatusOK, reviewerResp.StatusCode, string(reviewerBody))
+
 	// The repo settings refresh resolved with the PAT, so the stored
 	// merge permission must reflect the user, not the read-only app.
 	dbRepo, err := database.GetRepoByOwnerName(t.Context(), "kenn-io", "middleman")
@@ -285,6 +330,10 @@ installation_account = "kenn-io"
 		"mutations must use the user's PAT for attribution")
 	assert.Equal("Bearer user-pat-e2e", authByCall["write:assignees"],
 		"assignee mutations must use the user's PAT, not the app token")
+	assert.Equal("Bearer user-pat-e2e", authByCall["write:reviewers-add"],
+		"reviewer requests must use the user's PAT, not the app token")
+	assert.Equal("Bearer user-pat-e2e", authByCall["write:reviewers-remove"],
+		"reviewer removals must use the user's PAT, not the app token")
 	assert.Equal("Bearer user-pat-e2e", authByCall["write:repo-viewer-overlay"],
 		"the viewer permission overlay must use the user's PAT")
 	assert.Equal("Bearer ghs_app_token_e2e", authByCall["read:repo-metadata"],

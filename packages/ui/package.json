@@ -118,31 +118,31 @@
     "typecheck": "cd ../.. && vp check packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-fmt --no-lint --no-error-on-unmatched-pattern && vp run -w svelte-check:ui"
   },
   "dependencies": {
-    "@lucide/svelte": "1.3.0",
+    "@lucide/svelte": "1.17.0",
     "@pierre/diffs": "1.2.7",
     "@pierre/trees": "1.0.0-beta.4",
-    "@tiptap/core": "3.22.3",
-    "@tiptap/extension-document": "3.22.3",
-    "@tiptap/extension-hard-break": "3.22.3",
-    "@tiptap/extension-paragraph": "3.22.3",
-    "@tiptap/extension-placeholder": "3.22.3",
-    "@tiptap/extension-text": "3.22.3",
-    "@tiptap/pm": "3.22.3",
-    "@tiptap/suggestion": "3.22.3",
-    "dompurify": "3.4.0",
-    "marked": "17.0.5",
+    "@tiptap/core": "3.26.0",
+    "@tiptap/extension-document": "3.26.0",
+    "@tiptap/extension-hard-break": "3.26.0",
+    "@tiptap/extension-paragraph": "3.26.0",
+    "@tiptap/extension-placeholder": "3.26.0",
+    "@tiptap/extension-text": "3.26.0",
+    "@tiptap/pm": "3.26.0",
+    "@tiptap/suggestion": "3.26.0",
+    "dompurify": "3.4.8",
+    "marked": "17.0.6",
     "openapi-fetch": "^0.17.0",
     "prosemirror-state": "^1.4.4",
     "svelte-tiptap": "3.0.1"
   },
   "devDependencies": {
-    "@testing-library/svelte": "5.2.8",
+    "@testing-library/svelte": "5.3.1",
     "@tsconfig/svelte": "^5.0.0",
     "@types/node": "^24.9.2",
     "openapi-fetch": "^0.17.0",
     "svelte": "^5.55.7",
-    "svelte-check": "4.4.5",
-    "vite-plus": "0.1.22"
+    "svelte-check": "4.6.0",
+    "vite-plus": "0.1.24"
   },
   "peerDependencies": {
     "svelte": "^5.55.7"

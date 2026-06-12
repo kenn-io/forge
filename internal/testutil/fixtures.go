@@ -40,7 +40,11 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// --- Pull Requests ---
 
-	const widgetsPR1HeadSHA = "1111111111111111111111111111111111111111"
+	const (
+		widgetsPR1HeadSHA = "1111111111111111111111111111111111111111"
+		widgetsPR7HeadSHA = "7777777777777777777777777777777777777777"
+		toolsPR1HeadSHA   = "2001200120012001200120012001200120012001"
+	)
 	buildDuration := int64(90)
 	lintDuration := int64(45)
 	testDuration := int64(120)
@@ -104,6 +108,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		Body:              w1Body,
 		HeadBranch:        "feature/caching",
 		BaseBranch:        "main",
+		PlatformHeadSHA:   widgetsPR1HeadSHA,
 		Additions:         240,
 		Deletions:         30,
 		CommentCount:      3,
@@ -307,6 +312,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		State:             "open",
 		HeadBranch:        "dependabot/npm_and_yarn/lodash-4.17.21",
 		BaseBranch:        "main",
+		PlatformHeadSHA:   widgetsPR7HeadSHA,
 		Additions:         1,
 		Deletions:         1,
 		CreatedAt:         w7Created,
@@ -330,6 +336,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		State:             "open",
 		HeadBranch:        "feature/cli-flags",
 		BaseBranch:        "main",
+		PlatformHeadSHA:   toolsPR1HeadSHA,
 		Additions:         180,
 		Deletions:         20,
 		CreatedAt:         t1Created,
@@ -881,10 +888,10 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			setPRLocked(setPRBody(setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA), w1Body)),
 			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)), 55, 12),
 			setPRStats(buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", w6Created, now.Add(-12*time.Hour)), 150, 40),
-			setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)), 1, 1),
+			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)), 1, 1), widgetsPR7HeadSHA),
 		},
 		"acme/tools": {
-			setPRStats(buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)), 180, 20),
+			setPRHeadSHA(setPRStats(buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)), 180, 20), toolsPR1HeadSHA),
 			buildToolsStackFixturePR(0),
 			buildToolsStackFixturePR(1),
 			buildToolsStackFixturePR(2),
@@ -899,10 +906,10 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			setPRStats(buildGHPR("acme", "widgets", 1004, 4, "Refactor storage backend", "alice", "merged", false, "", now.Add(-30*24*time.Hour), w4Merged), 420, 310),
 			setPRStats(buildGHPR("acme", "widgets", 1005, 5, "Experimental new API", "bob", "closed", false, "", now.Add(-15*24*time.Hour), w5Closed), 900, 0),
 			setPRStats(buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", w6Created, now.Add(-12*time.Hour)), 150, 40),
-			setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)), 1, 1),
+			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)), 1, 1), widgetsPR7HeadSHA),
 		},
 		"acme/tools": {
-			setPRStats(buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)), 180, 20),
+			setPRHeadSHA(setPRStats(buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)), 180, 20), toolsPR1HeadSHA),
 			setPRStats(buildGHPR("acme", "tools", 2002, 2, "Initial project setup", "alice", "merged", false, "", now.Add(-62*24*time.Hour), t2Merged), 500, 0),
 			buildToolsStackFixturePR(0),
 			buildToolsStackFixturePR(1),

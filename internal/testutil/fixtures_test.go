@@ -166,3 +166,42 @@ func TestSeedFixtures_FixtureClient(t *testing.T) {
 	require.NotNil(issue)
 	assert.Equal("closed", issue.GetState())
 }
+
+func TestSeedFixtures_MergeTargetsHaveReviewedHeads(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d, result := OpenFixtureTestDB(t)
+	ctx := t.Context()
+
+	targets := []struct {
+		owner  string
+		repo   string
+		number int
+	}{
+		{owner: "acme", repo: "widgets", number: 1},
+		{owner: "acme", repo: "widgets", number: 7},
+		{owner: "acme", repo: "tools", number: 1},
+	}
+
+	fc := result.FixtureClient()
+	for _, target := range targets {
+		t.Run(target.repo, func(t *testing.T) {
+			repo, err := d.GetRepoByIdentity(
+				ctx,
+				db.GitHubRepoIdentity("github.com", target.owner, target.repo),
+			)
+			require.NoError(err)
+			require.NotNil(repo)
+
+			mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, target.number)
+			require.NoError(err)
+			require.NotNil(mr)
+			assert.NotEmpty(mr.PlatformHeadSHA)
+
+			pr, err := fc.GetPullRequest(ctx, target.owner, target.repo, target.number)
+			require.NoError(err)
+			require.NotNil(pr)
+			assert.Equal(mr.PlatformHeadSHA, pr.GetHead().GetSHA())
+		})
+	}
+}

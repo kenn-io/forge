@@ -277,6 +277,11 @@ func (c *FixtureClient) ReplaceIssueLabels(
 	return slices.Clone(labels), nil
 }
 
+// fixtureRejectedUsername is refused by assignee and reviewer
+// mutations, mirroring how providers reject usernames that do not
+// exist. E2E tests use it to exercise failed-save error handling.
+const fixtureRejectedUsername = "ghost"
+
 // ReplaceIssueAssignees replaces the assignee set on the seeded issue or
 // pull request with the given number, mirroring GitHub's issues API
 // which covers both item kinds.
@@ -285,6 +290,10 @@ func (c *FixtureClient) ReplaceIssueAssignees(
 ) (*gh.Issue, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if slices.Contains(usernames, fixtureRejectedUsername) {
+		return nil, fmt.Errorf("%w: user %q", errFixtureNotFound, fixtureRejectedUsername)
+	}
 
 	users := make([]*gh.User, 0, len(usernames))
 	for _, username := range usernames {
@@ -333,6 +342,9 @@ func (c *FixtureClient) ReplaceIssueAssignees(
 func (c *FixtureClient) RequestPullRequestReviewers(
 	_ context.Context, owner, repo string, number int, usernames []string,
 ) (*gh.PullRequest, error) {
+	if slices.Contains(usernames, fixtureRejectedUsername) {
+		return nil, fmt.Errorf("%w: user %q", errFixtureNotFound, fixtureRejectedUsername)
+	}
 	return c.mutateRequestedReviewers(owner, repo, number, func(current []*gh.User) []*gh.User {
 		next := slices.Clone(current)
 		for _, username := range usernames {

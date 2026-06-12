@@ -139,6 +139,48 @@ test.describe("assignee and reviewer editing", () => {
     }
   });
 
+  test("a failed save stays visible after a later successful candidate search", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      await page.getByRole("button", { name: "Edit assignees" }).click();
+      await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeVisible();
+
+      // The fixture provider rejects the user "ghost", like a real
+      // provider rejecting a username that does not exist.
+      const ghostQueryResponse = page.waitForResponse(
+        (response) => response.url().includes("/comment-autocomplete") && response.url().includes("q=ghost"),
+      );
+      await page.getByLabel("Filter users").fill("ghost");
+      expect((await ghostQueryResponse).status()).toBe(200);
+
+      const failedUpdate = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/1/assignees`,
+      );
+      await page.getByRole("menuitemcheckbox", { name: /add .ghost./i }).click();
+      expect((await failedUpdate).status()).toBeGreaterThanOrEqual(400);
+      await expect(page.getByRole("alert")).toBeVisible();
+
+      // A subsequent successful candidate search must not clear the
+      // mutation error: the save still has not happened.
+      const retryQueryResponse = page.waitForResponse(
+        (response) => response.url().includes("/comment-autocomplete") && response.url().includes("q=bo"),
+      );
+      await page.getByLabel("Filter users").fill("bo");
+      expect((await retryQueryResponse).status()).toBe(200);
+      await expect(page.getByRole("menuitemcheckbox", { name: /bob/i })).toBeVisible();
+      await expect(page.getByRole("alert")).toBeVisible();
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("issue detail edits assignees", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

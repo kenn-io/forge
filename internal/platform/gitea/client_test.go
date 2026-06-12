@@ -244,21 +244,22 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 	assert.Equal(platform.KindGitea, client.Platform())
 	assert.Equal("gitea.test", client.Host())
 	assert.Equal(platform.Capabilities{
-		ReadRepositories:  true,
-		ReadMergeRequests: true,
-		ReadIssues:        true,
-		ReadComments:      true,
-		ReadReleases:      true,
-		ReadCI:            true,
-		ReadLabels:        true,
-		CommentMutation:   true,
-		StateMutation:     true,
-		MergeMutation:     true,
-		ReviewMutation:    true,
-		IssueMutation:     true,
-		LabelMutation:     true,
-		AssigneeMutation:  true,
-		ReviewerMutation:  true,
+		ReadRepositories:    true,
+		ReadMergeRequests:   true,
+		ReadIssues:          true,
+		ReadComments:        true,
+		ReadReleases:        true,
+		ReadCI:              true,
+		ReadLabels:          true,
+		CommentMutation:     true,
+		StateMutation:       true,
+		MergeMutation:       true,
+		ReviewMutation:      true,
+		IssueMutation:       true,
+		LabelMutation:       true,
+		AssigneeMutation:    true,
+		ReviewerMutation:    true,
+		MutationHeadBinding: true,
 	}, client.Capabilities())
 }
 

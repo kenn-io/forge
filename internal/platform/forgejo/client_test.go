@@ -260,6 +260,7 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		LabelMutation:         true,
 		AssigneeMutation:      true,
 		ReviewerMutation:      true,
+		MutationHeadBinding:   true,
 		ReviewDraftMutation:   true,
 		ReadReviewThreads:     true,
 		NativeMultilineRanges: false,

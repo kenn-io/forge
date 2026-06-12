@@ -70,6 +70,7 @@ func (c *Client) PublishDiffReviewDraft(
 		}
 	}
 	publishedAny := publishedAnyDraft
+	publishedSummary := false
 	if body := strings.TrimSpace(input.Body); body != "" {
 		if _, _, err := c.api.Notes.CreateMergeRequestNote(
 			pid,
@@ -80,6 +81,7 @@ func (c *Client) PublishDiffReviewDraft(
 			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, mapGitLabError("create_merge_request_note", err))
 		}
 		publishedAny = true
+		publishedSummary = true
 	}
 	if input.Action == platform.ReviewActionApprove {
 		sha := reviewHeadSHA(input)
@@ -93,7 +95,14 @@ func (c *Client) PublishDiffReviewDraft(
 			gitlab.WithContext(ctx),
 		)
 		if err != nil {
-			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, mapGitLabMutationError("approve_merge_request", sha, err))
+			mappedErr := mapGitLabMutationError("approve_merge_request", sha, err)
+			var platformErr *platform.Error
+			if publishedSummary &&
+				errors.As(mappedErr, &platformErr) &&
+				platformErr.Code == platform.ErrCodeStaleState {
+				platformErr.Hint = "the review summary was already posted; retrying will repeat it"
+			}
+			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, mappedErr)
 		}
 	}
 	return &platform.PublishedDiffReview{SubmittedAt: submittedAt}, nil

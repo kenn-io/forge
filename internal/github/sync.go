@@ -657,6 +657,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		StateMutation:         true,
 		MergeMutation:         true,
 		ReviewMutation:        true,
+		MutationHeadBinding:   true,
 		WorkflowApproval:      true,
 		ReadyForReview:        true,
 		IssueMutation:         true,

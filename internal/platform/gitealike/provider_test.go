@@ -34,18 +34,19 @@ func TestProviderCapabilitiesEnableProvenMutations(t *testing.T) {
 	)
 
 	Assert.Equal(t, platform.Capabilities{
-		ReadRepositories:  true,
-		ReadMergeRequests: true,
-		ReadIssues:        true,
-		ReadComments:      true,
-		ReadReleases:      true,
-		ReadCI:            true,
-		CommentMutation:   true,
-		StateMutation:     true,
-		MergeMutation:     true,
-		ReviewMutation:    true,
-		IssueMutation:     true,
-		AssigneeMutation:  true,
+		ReadRepositories:    true,
+		ReadMergeRequests:   true,
+		ReadIssues:          true,
+		ReadComments:        true,
+		ReadReleases:        true,
+		ReadCI:              true,
+		CommentMutation:     true,
+		StateMutation:       true,
+		MergeMutation:       true,
+		ReviewMutation:      true,
+		IssueMutation:       true,
+		AssigneeMutation:    true,
+		MutationHeadBinding: true,
 		// ReviewerMutation stays false: fakeTransport does not
 		// implement ReviewRequestTransport.
 	}, provider.Capabilities())

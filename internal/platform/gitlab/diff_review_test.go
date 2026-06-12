@@ -225,6 +225,55 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialStaleErrorWhenApproveHeadMove
 	assert.False(result.SubmittedAt.IsZero())
 }
 
+func TestGitLabPublishDiffReviewDraftReportsSummaryPostedWhenApproveHeadMoves(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	var summaryCreated bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/notes":
+			assert.Equal(http.MethodPost, r.Method)
+			summaryCreated = true
+			writeJSON(w, `{"id": 77, "body": "summary"}`)
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/approve":
+			assert.Equal(http.MethodPost, r.Method)
+			var body struct {
+				SHA string `json:"sha"`
+			}
+			if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			assert.Equal("old-head", body.SHA)
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"message": "SHA does not match HEAD of source branch"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+		RepoPath: "group/project",
+	}, 7, platform.PublishDiffReviewDraftInput{
+		Action:  platform.ReviewActionApprove,
+		Body:    "summary",
+		HeadSHA: "old-head",
+	})
+
+	require.Error(err)
+	require.NotNil(result)
+	var partialErr *platform.DiffReviewPublishPartialError
+	require.ErrorAs(err, &partialErr)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.Equal("the review summary was already posted; retrying will repeat it", platformErr.Hint)
+	assert.True(summaryCreated)
+}
+
 func TestGitLabPublishDiffReviewDraftUsesHeadSHAForSummaryApproval(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

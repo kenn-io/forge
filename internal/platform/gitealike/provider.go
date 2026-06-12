@@ -80,6 +80,7 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		caps.MergeMutation = true
 		caps.ReviewMutation = true
 		caps.IssueMutation = true
+		caps.MutationHeadBinding = true
 		caps.LabelMutation = hasLabels
 		caps.AssigneeMutation = true
 		if _, ok := p.transport.(ReviewRequestTransport); ok {

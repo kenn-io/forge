@@ -149,6 +149,33 @@ func TestGitHubMergePassesReviewedHeadPinToProvider(t *testing.T) {
 	assert.Equal("merged", string(mr.State))
 }
 
+func TestGitHubMergeRejectsMissingReviewedHeadPin(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var providerCalled atomic.Bool
+	mock := &mockGH{
+		mergePullRequestFn: func(
+			_ context.Context, _, _ string, _ int, _, _, _, _ string,
+		) (*gh.PullRequestMergeResult, error) {
+			providerCalled.Store(true)
+			return &gh.PullRequestMergeResult{}, nil
+		},
+	}
+	srv, _, _ := setupGitHubHeadPinServer(t, mock)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge",
+		json.RawMessage(`{"method":"merge","commit_title":"t","commit_message":"m"}`),
+	)
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	var problem conflictProblemBody
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("validationError", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("body.expected_head_sha", problem.Details["field"])
+	assert.False(providerCalled.Load())
+}
+
 func TestGitHubMergeMovedHeadRejectionMapsToStaleState(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -230,6 +257,34 @@ func TestGitHubApproveBindsReviewToReviewedHead(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.Equal("reviewed-sha", recordedCommitID.Load(),
 		"the reviewed head must reach the provider review call as commit_id")
+}
+
+func TestGitHubApproveRejectsMissingReviewedHeadPin(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var providerCalled atomic.Bool
+	mock := &mockGH{
+		createReviewWithCommentsFn: func(
+			_ context.Context, _, _ string, _ int, _, _, _ string,
+			_ []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			providerCalled.Store(true)
+			return &gh.PullRequestReview{}, nil
+		},
+	}
+	srv, _, _ := setupGitHubHeadPinServer(t, mock)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/approve",
+		json.RawMessage(`{"body":"lgtm"}`),
+	)
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	var problem conflictProblemBody
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("validationError", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("body.expected_head_sha", problem.Details["field"])
+	assert.False(providerCalled.Load())
 }
 
 // When the approval lands on a moved head and the dismissal itself

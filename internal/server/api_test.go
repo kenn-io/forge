@@ -1178,15 +1178,17 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 	}
 
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
-			CommitTitle:   "title",
-			CommitMessage: "msg",
-			Method:        "squash",
+			CommitTitle:     "title",
+			CommitMessage:   "msg",
+			Method:          "squash",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
@@ -1207,15 +1209,17 @@ func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
 	}
 
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
-			CommitTitle:   "title",
-			CommitMessage: "msg",
-			Method:        "squash",
+			CommitTitle:     "title",
+			CommitMessage:   "msg",
+			Method:          "squash",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
@@ -1233,15 +1237,17 @@ func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
 	}
 
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
-			CommitTitle:   "title",
-			CommitMessage: "msg",
-			Method:        "squash",
+			CommitTitle:     "title",
+			CommitMessage:   "msg",
+			Method:          "squash",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
@@ -1262,15 +1268,17 @@ func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
 	}
 
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
-			CommitTitle:   "title",
-			CommitMessage: "msg",
-			Method:        "squash",
+			CommitTitle:     "title",
+			CommitMessage:   "msg",
+			Method:          "squash",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
@@ -1291,15 +1299,17 @@ func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
 	}
 
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
-			CommitTitle:   "title",
-			CommitMessage: "msg",
-			Method:        "squash",
+			CommitTitle:     "title",
+			CommitMessage:   "msg",
+			Method:          "squash",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
@@ -1320,15 +1330,17 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 	}
 
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
-			CommitTitle:   "title",
-			CommitMessage: "msg",
-			Method:        "squash",
+			CommitTitle:     "title",
+			CommitMessage:   "msg",
+			Method:          "squash",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
@@ -1363,15 +1375,17 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 	}
 
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
-			CommitTitle:   "title",
-			CommitMessage: "msg",
-			Method:        "squash",
+			CommitTitle:     "title",
+			CommitMessage:   "msg",
+			Method:          "squash",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
@@ -1395,15 +1409,17 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 	srv, database := setupTestServer(t)
 	handlerNow := testEDTTime(8, 30)
 	setTestServerNow(t, srv, handlerNow)
-	seedPR(t, database, "acme", "widget", 1)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 		generated.MergePRInputBody{
-			CommitTitle:   "title",
-			CommitMessage: "msg",
-			Method:        "squash",
+			CommitTitle:     "title",
+			CommitMessage:   "msg",
+			Method:          "squash",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
@@ -5560,7 +5576,8 @@ func TestAPIApprovePRRejectsNilProviderPayload(t *testing.T) {
 		},
 	}
 	srv, database := setupTestServerWithMock(t, mock)
-	mrID := seedPR(t, database, "acme", "widget", 1)
+	expectedHeadSHA := "reviewed-sha"
+	mrID := seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ApprovePullWithResponse(
@@ -5568,7 +5585,7 @@ func TestAPIApprovePRRejectsNilProviderPayload(t *testing.T) {
 		"acme",
 		"widget",
 		1,
-		generated.ApprovePullJSONRequestBody{},
+		generated.ApprovePullJSONRequestBody{ExpectedHeadSha: &expectedHeadSHA},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -5596,7 +5613,8 @@ func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 		},
 	}
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(
@@ -5605,7 +5623,8 @@ func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 		"widget",
 		1,
 		generated.MergePullJSONRequestBody{
-			Method: "squash",
+			Method:          "squash",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
@@ -13943,10 +13962,14 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	require.NoError(err)
 	require.Len(mrEvents, 1)
 	assert.Equal("Still good", mrEvents[0].Body)
+	expectedHeadSHA := mrSeven.PlatformHeadSHA
 
 	approveResp, err := client.HTTP.ApprovePullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.ApprovePullOnHostJSONRequestBody{Body: "approved"},
+		generated.ApprovePullOnHostJSONRequestBody{
+			Body:            "approved",
+			ExpectedHeadSha: &expectedHeadSHA,
+		},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, approveResp.StatusCode())
@@ -13957,9 +13980,10 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
 		generated.MergePullOnHostJSONRequestBody{
-			Method:        "squash",
-			CommitTitle:   "Merge kettle",
-			CommitMessage: "Merge Gitea MR",
+			Method:          "squash",
+			CommitTitle:     "Merge kettle",
+			CommitMessage:   "Merge Gitea MR",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
@@ -14291,25 +14315,23 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NotNil(repo)
+	expectedHeadSHA := requireMR(t, database, repo.ID, 7).PlatformHeadSHA
 	assert.Equal("dirty", requireMR(t, database, repo.ID, 7).MergeableState)
-	transport.pulls[0].Title = "Refreshed kettle after conflict"
 
 	resp, err := client.HTTP.MergePullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
 		generated.MergePullOnHostJSONRequestBody{
-			Method:        "squash",
-			CommitTitle:   "Merge kettle",
-			CommitMessage: "Merge Gitea MR",
+			Method:          "squash",
+			CommitTitle:     "Merge kettle",
+			CommitMessage:   "Merge Gitea MR",
+			ExpectedHeadSha: &expectedHeadSHA,
 		},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
 	assert.Contains(string(resp.Body), "pull request is out of date")
 	assert.Contains(transport.mutationCalls, "merge:7:squash")
-	require.Eventually(func() bool {
-		mr := requireMR(t, database, repo.ID, 7)
-		return mr.State == "open" && mr.Title == "Refreshed kettle after conflict"
-	}, time.Second, 10*time.Millisecond)
+	assert.Equal("Add kettle", requireMR(t, database, repo.ID, 7).Title)
 }
 
 func setupAPIGitealikeHeadPinServer(

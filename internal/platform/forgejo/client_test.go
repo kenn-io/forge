@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -584,4 +585,58 @@ func TestClientMergeRejectionSurfacesProviderStatusAndMessage(t *testing.T) {
 	require.ErrorAs(err, &httpErr)
 	assert.Equal(http.StatusConflict, httpErr.StatusCode)
 	assert.Contains(httpErr.Error(), "merge conflict detected")
+}
+
+// Two merges on the same client share one rejection capture slot; the
+// clear/request/read sequence is serialized inside the request
+// section, so concurrent rejected merges must each surface their own
+// status, message, and stale classification without cross-talk.
+func TestClientConcurrentMergeRejectionsDoNotCrossTalk(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/owner/repo/pulls/7/merge":
+			w.WriteHeader(http.StatusConflict)
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{"message": "head out of date"}))
+		case "/api/v1/repos/owner/repo/pulls/8/merge":
+			w.WriteHeader(http.StatusConflict)
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{"message": "merge conflict on 8"}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient("codeberg.test", testTokenSource("forgejo-token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	ref := platform.RepoRef{Owner: "owner", Name: "repo"}
+
+	var wg sync.WaitGroup
+	var errStale, errGeneric error
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, errStale = client.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "merge", "reviewed-head")
+	}()
+	go func() {
+		defer wg.Done()
+		_, errGeneric = client.MergeMergeRequest(context.Background(), ref, 8, "t", "m", "merge", "reviewed-head")
+	}()
+	wg.Wait()
+
+	require.ErrorIs(errStale, platform.ErrStaleState,
+		"the head-mismatch rejection must keep its stale classification under concurrency")
+	require.NotErrorIs(errGeneric, platform.ErrStaleState,
+		"the unrelated conflict must not pick up the other call's classification")
+	var httpErr *gitealike.HTTPError
+	require.ErrorAs(errGeneric, &httpErr)
+	assert.Equal(http.StatusConflict, httpErr.StatusCode)
+	assert.Contains(httpErr.Error(), "merge conflict on 8",
+		"each call must surface its own provider message")
 }

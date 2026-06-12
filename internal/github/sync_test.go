@@ -10525,6 +10525,44 @@ func TestGitHubProviderApproveDismissesWhenHeadMovesDuringSubmit(t *testing.T) {
 	assert.Equal(int32(1), mock.dismissReviewCalls.Load(),
 		"approval landed on a moved head must be dismissed")
 	assert.Equal(int64(1), mock.dismissedReviewID)
+	assert.ErrorContains(err, "review text remains visible",
+		"dismissal keeps the posted body visible; a blind retry would repeat it")
+}
+
+// An approval review draft that submits before the stale head is
+// detected has its body and inline comments published atomically with
+// the review; dismissal removes only the approval state. The provider
+// must report a partial publish so the server clears the local draft
+// copies instead of arming a retry that reposts them.
+func TestGitHubProviderPublishApproveDraftReportsPartialOnMovedHead(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	mock := &mockClient{getPullRequestFn: movingHeadFn("reviewed-head", "new-head")}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+	_, err := provider.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
+		Owner: "acme",
+		Name:  "widget",
+	}, 7, platform.PublishDiffReviewDraftInput{
+		Body:    "lgtm",
+		Action:  platform.ReviewActionApprove,
+		HeadSHA: "reviewed-head",
+		Comments: []platform.LocalDiffReviewDraftComment{{
+			ID:   41,
+			Body: "inline note",
+			Range: platform.DiffReviewLineRange{
+				Path: "src/main.go", Side: "right", Line: 12,
+				DiffHeadSHA: "reviewed-head",
+			},
+		}},
+	})
+
+	var partialErr *platform.DiffReviewPublishPartialError
+	require.ErrorAs(err, &partialErr,
+		"published review content must be reported as a partial publish")
+	assert.Equal([]int64{41}, partialErr.PublishedCommentIDs)
+	require.ErrorIs(err, platform.ErrStaleState)
+	assert.Equal(int32(1), mock.dismissReviewCalls.Load())
 }
 
 func TestGitHubProviderApproveReportsFailedDismissal(t *testing.T) {

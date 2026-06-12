@@ -1,0 +1,481 @@
+[
+  {
+    "ID": 2,
+    "Platform": "github",
+    "PlatformHost": "github.com",
+    "Owner": "acme",
+    "Name": "tools",
+    "LastSyncStartedAt": null,
+    "LastSyncCompletedAt": null,
+    "LastSyncError": "",
+    "AllowSquashMerge": true,
+    "AllowMergeCommit": true,
+    "AllowRebaseMerge": true,
+    "ViewerCanMerge": true,
+    "BackfillPRPage": 0,
+    "BackfillPRComplete": false,
+    "BackfillPRCompletedAt": null,
+    "BackfillIssuePage": 0,
+    "BackfillIssueComplete": false,
+    "BackfillIssueCompletedAt": null,
+    "CreatedAt": "2026-06-12T14:27:43Z",
+    "capabilities": {
+      "read_repositories": true,
+      "read_merge_requests": true,
+      "read_issues": true,
+      "read_comments": true,
+      "read_releases": true,
+      "read_ci": true,
+      "read_labels": true,
+      "comment_mutation": true,
+      "state_mutation": true,
+      "merge_mutation": true,
+      "review_mutation": true,
+      "workflow_approval": true,
+      "ready_for_review": true,
+      "issue_mutation": true,
+      "label_mutation": true,
+      "assignee_mutation": true,
+      "reviewer_mutation": true,
+      "thread_reply": true,
+      "thread_resolve": false,
+      "review_draft_mutation": true,
+      "review_thread_resolution": false,
+      "read_review_threads": true,
+      "native_multiline_ranges": true,
+      "supported_review_actions": ["comment", "approve", "request_changes"]
+    },
+    "operations": {
+      "merge_pr": {
+        "available": true
+      },
+      "close_pr": {
+        "available": true
+      },
+      "reopen_pr": {
+        "available": true
+      },
+      "mark_ready_for_review": {
+        "available": true
+      },
+      "submit_review": {
+        "available": true
+      },
+      "add_comment": {
+        "available": true
+      },
+      "add_label": {
+        "available": true
+      },
+      "remove_label": {
+        "available": true
+      },
+      "set_assignees": {
+        "available": true
+      },
+      "set_reviewers": {
+        "available": true
+      },
+      "close_issue": {
+        "available": true
+      },
+      "reopen_issue": {
+        "available": true
+      },
+      "approve_workflow": {
+        "available": true
+      }
+    }
+  },
+  {
+    "ID": 1,
+    "Platform": "github",
+    "PlatformHost": "github.com",
+    "Owner": "acme",
+    "Name": "widgets",
+    "LastSyncStartedAt": null,
+    "LastSyncCompletedAt": null,
+    "LastSyncError": "",
+    "AllowSquashMerge": true,
+    "AllowMergeCommit": true,
+    "AllowRebaseMerge": true,
+    "ViewerCanMerge": true,
+    "BackfillPRPage": 0,
+    "BackfillPRComplete": false,
+    "BackfillPRCompletedAt": null,
+    "BackfillIssuePage": 0,
+    "BackfillIssueComplete": false,
+    "BackfillIssueCompletedAt": null,
+    "CreatedAt": "2026-06-12T14:27:43Z",
+    "capabilities": {
+      "read_repositories": true,
+      "read_merge_requests": true,
+      "read_issues": true,
+      "read_comments": true,
+      "read_releases": true,
+      "read_ci": true,
+      "read_labels": true,
+      "comment_mutation": true,
+      "state_mutation": true,
+      "merge_mutation": true,
+      "review_mutation": true,
+      "workflow_approval": true,
+      "ready_for_review": true,
+      "issue_mutation": true,
+      "label_mutation": true,
+      "assignee_mutation": true,
+      "reviewer_mutation": true,
+      "thread_reply": true,
+      "thread_resolve": false,
+      "review_draft_mutation": true,
+      "review_thread_resolution": false,
+      "read_review_threads": true,
+      "native_multiline_ranges": true,
+      "supported_review_actions": ["comment", "approve", "request_changes"]
+    },
+    "operations": {
+      "merge_pr": {
+        "available": true
+      },
+      "close_pr": {
+        "available": true
+      },
+      "reopen_pr": {
+        "available": true
+      },
+      "mark_ready_for_review": {
+        "available": true
+      },
+      "submit_review": {
+        "available": true
+      },
+      "add_comment": {
+        "available": true
+      },
+      "add_label": {
+        "available": true
+      },
+      "remove_label": {
+        "available": true
+      },
+      "set_assignees": {
+        "available": true
+      },
+      "set_reviewers": {
+        "available": true
+      },
+      "close_issue": {
+        "available": true
+      },
+      "reopen_issue": {
+        "available": true
+      },
+      "approve_workflow": {
+        "available": true
+      }
+    }
+  },
+  {
+    "ID": 4,
+    "Platform": "gitlab",
+    "PlatformHost": "gitlab.example.com",
+    "Owner": "group",
+    "Name": "project",
+    "LastSyncStartedAt": null,
+    "LastSyncCompletedAt": null,
+    "LastSyncError": "",
+    "AllowSquashMerge": true,
+    "AllowMergeCommit": true,
+    "AllowRebaseMerge": true,
+    "ViewerCanMerge": true,
+    "BackfillPRPage": 0,
+    "BackfillPRComplete": false,
+    "BackfillPRCompletedAt": null,
+    "BackfillIssuePage": 0,
+    "BackfillIssueComplete": false,
+    "BackfillIssueCompletedAt": null,
+    "CreatedAt": "2026-06-12T14:27:44Z",
+    "capabilities": {
+      "read_repositories": false,
+      "read_merge_requests": false,
+      "read_issues": true,
+      "read_comments": true,
+      "read_releases": false,
+      "read_ci": false,
+      "read_labels": false,
+      "comment_mutation": false,
+      "state_mutation": false,
+      "merge_mutation": false,
+      "review_mutation": false,
+      "workflow_approval": false,
+      "ready_for_review": false,
+      "issue_mutation": false,
+      "label_mutation": false,
+      "assignee_mutation": false,
+      "reviewer_mutation": false,
+      "thread_reply": false,
+      "thread_resolve": false,
+      "review_draft_mutation": false,
+      "review_thread_resolution": false,
+      "read_review_threads": false,
+      "native_multiline_ranges": false,
+      "supported_review_actions": []
+    },
+    "operations": {
+      "merge_pr": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support merge_mutation",
+        "required_capability": "merge_mutation"
+      },
+      "close_pr": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support state_mutation",
+        "required_capability": "state_mutation"
+      },
+      "reopen_pr": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support state_mutation",
+        "required_capability": "state_mutation"
+      },
+      "mark_ready_for_review": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support ready_for_review",
+        "required_capability": "ready_for_review"
+      },
+      "submit_review": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support review_mutation",
+        "required_capability": "review_mutation"
+      },
+      "add_comment": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support comment_mutation",
+        "required_capability": "comment_mutation"
+      },
+      "add_label": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support read_labels",
+        "required_capability": "read_labels"
+      },
+      "remove_label": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support read_labels",
+        "required_capability": "read_labels"
+      },
+      "set_assignees": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support assignee_mutation",
+        "required_capability": "assignee_mutation"
+      },
+      "set_reviewers": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support reviewer_mutation",
+        "required_capability": "reviewer_mutation"
+      },
+      "close_issue": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support issue_mutation",
+        "required_capability": "issue_mutation"
+      },
+      "reopen_issue": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support issue_mutation",
+        "required_capability": "issue_mutation"
+      },
+      "approve_workflow": {
+        "available": false,
+        "code": "unsupported_capability",
+        "unavailable_reason": "Provider does not support workflow_approval",
+        "required_capability": "workflow_approval"
+      }
+    }
+  },
+  {
+    "ID": 5,
+    "Platform": "github",
+    "PlatformHost": "github.com",
+    "Owner": "roborev-dev",
+    "Name": "middleman",
+    "LastSyncStartedAt": null,
+    "LastSyncCompletedAt": null,
+    "LastSyncError": "",
+    "AllowSquashMerge": true,
+    "AllowMergeCommit": true,
+    "AllowRebaseMerge": true,
+    "ViewerCanMerge": true,
+    "BackfillPRPage": 0,
+    "BackfillPRComplete": false,
+    "BackfillPRCompletedAt": null,
+    "BackfillIssuePage": 0,
+    "BackfillIssueComplete": false,
+    "BackfillIssueCompletedAt": null,
+    "CreatedAt": "2026-06-12T14:27:45Z",
+    "capabilities": {
+      "read_repositories": true,
+      "read_merge_requests": true,
+      "read_issues": true,
+      "read_comments": true,
+      "read_releases": true,
+      "read_ci": true,
+      "read_labels": true,
+      "comment_mutation": true,
+      "state_mutation": true,
+      "merge_mutation": true,
+      "review_mutation": true,
+      "workflow_approval": true,
+      "ready_for_review": true,
+      "issue_mutation": true,
+      "label_mutation": true,
+      "assignee_mutation": true,
+      "reviewer_mutation": true,
+      "thread_reply": true,
+      "thread_resolve": false,
+      "review_draft_mutation": true,
+      "review_thread_resolution": false,
+      "read_review_threads": true,
+      "native_multiline_ranges": true,
+      "supported_review_actions": ["comment", "approve", "request_changes"]
+    },
+    "operations": {
+      "merge_pr": {
+        "available": true
+      },
+      "close_pr": {
+        "available": true
+      },
+      "reopen_pr": {
+        "available": true
+      },
+      "mark_ready_for_review": {
+        "available": true
+      },
+      "submit_review": {
+        "available": true
+      },
+      "add_comment": {
+        "available": true
+      },
+      "add_label": {
+        "available": true
+      },
+      "remove_label": {
+        "available": true
+      },
+      "set_assignees": {
+        "available": true
+      },
+      "set_reviewers": {
+        "available": true
+      },
+      "close_issue": {
+        "available": true
+      },
+      "reopen_issue": {
+        "available": true
+      },
+      "approve_workflow": {
+        "available": true
+      }
+    }
+  },
+  {
+    "ID": 6,
+    "Platform": "github",
+    "PlatformHost": "github.com",
+    "Owner": "roborev-dev",
+    "Name": "worker",
+    "LastSyncStartedAt": null,
+    "LastSyncCompletedAt": null,
+    "LastSyncError": "",
+    "AllowSquashMerge": true,
+    "AllowMergeCommit": true,
+    "AllowRebaseMerge": true,
+    "ViewerCanMerge": true,
+    "BackfillPRPage": 0,
+    "BackfillPRComplete": false,
+    "BackfillPRCompletedAt": null,
+    "BackfillIssuePage": 0,
+    "BackfillIssueComplete": false,
+    "BackfillIssueCompletedAt": null,
+    "CreatedAt": "2026-06-12T14:27:45Z",
+    "capabilities": {
+      "read_repositories": true,
+      "read_merge_requests": true,
+      "read_issues": true,
+      "read_comments": true,
+      "read_releases": true,
+      "read_ci": true,
+      "read_labels": true,
+      "comment_mutation": true,
+      "state_mutation": true,
+      "merge_mutation": true,
+      "review_mutation": true,
+      "workflow_approval": true,
+      "ready_for_review": true,
+      "issue_mutation": true,
+      "label_mutation": true,
+      "assignee_mutation": true,
+      "reviewer_mutation": true,
+      "thread_reply": true,
+      "thread_resolve": false,
+      "review_draft_mutation": true,
+      "review_thread_resolution": false,
+      "read_review_threads": true,
+      "native_multiline_ranges": true,
+      "supported_review_actions": ["comment", "approve", "request_changes"]
+    },
+    "operations": {
+      "merge_pr": {
+        "available": true
+      },
+      "close_pr": {
+        "available": true
+      },
+      "reopen_pr": {
+        "available": true
+      },
+      "mark_ready_for_review": {
+        "available": true
+      },
+      "submit_review": {
+        "available": true
+      },
+      "add_comment": {
+        "available": true
+      },
+      "add_label": {
+        "available": true
+      },
+      "remove_label": {
+        "available": true
+      },
+      "set_assignees": {
+        "available": true
+      },
+      "set_reviewers": {
+        "available": true
+      },
+      "close_issue": {
+        "available": true
+      },
+      "reopen_issue": {
+        "available": true
+      },
+      "approve_workflow": {
+        "available": true
+      }
+    }
+  }
+]

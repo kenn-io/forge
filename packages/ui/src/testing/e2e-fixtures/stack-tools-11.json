@@ -1,0 +1,45 @@
+{
+  "stack_id": 1,
+  "stack_name": "auth",
+  "position": 2,
+  "size": 3,
+  "health": "blocked",
+  "members": [
+    {
+      "number": 10,
+      "title": "Auth: extract token refresh helper",
+      "state": "open",
+      "ci_status": "success",
+      "review_decision": "APPROVED",
+      "mergeable_state": "dirty",
+      "position": 1,
+      "is_draft": false,
+      "base_branch": "main",
+      "blocked_by": null
+    },
+    {
+      "number": 11,
+      "title": "Auth: add retry with backoff",
+      "state": "open",
+      "ci_status": "success",
+      "review_decision": "",
+      "mergeable_state": "dirty",
+      "position": 2,
+      "is_draft": false,
+      "base_branch": "feat/auth-base",
+      "blocked_by": 10
+    },
+    {
+      "number": 12,
+      "title": "Auth: error handling UI",
+      "state": "open",
+      "ci_status": "pending",
+      "review_decision": "",
+      "mergeable_state": "dirty",
+      "position": 3,
+      "is_draft": false,
+      "base_branch": "feat/auth-retry",
+      "blocked_by": 10
+    }
+  ]
+}

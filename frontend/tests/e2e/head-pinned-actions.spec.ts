@@ -14,7 +14,6 @@ const MERGE_PATH = "**/api/v1/pulls/github/acme/widgets/42/merge";
 const APPROVE_PATH = "**/api/v1/pulls/github/acme/widgets/42/approve";
 
 const STALE_PROMPT = "The head commit changed since this pull request was reviewed.";
-const UNKNOWN_PROMPT = "The head commit has not been synced yet.";
 
 function conflictProblem(reason: string, detail: string): { status: number; contentType: string; body: string } {
   return {

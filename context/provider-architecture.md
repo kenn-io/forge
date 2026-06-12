@@ -100,12 +100,26 @@ provider-equivalent behavior from the flags alone:
   response shape that embeds the MergeRequest row (list and detail alike)
   exposes `platform_head_sha`, and merge/approve accept an optional
   `expected_head_sha` that must match the stored head before the provider
-  is called. When supplied, the pin is also enforced at the provider:
-  merges send it as GitHub's `sha`, GitLab's `sha`, and Gitea/Forgejo's
-  `head_commit_id`, all of which reject a moved head upstream; approvals
-  are hard-bound on GitLab and pre-checked against the live provider
-  head on GitHub/Gitea/Forgejo (whose review commit ids record rather
-  than gate, leaving a small check-to-submit window).
+  is called. When supplied, the pin is also enforced at the provider,
+  with different strength for merges and approvals. Merge pins are
+  provider-gated wherever the API supports them: GitHub's `sha`,
+  GitLab's `sha`, and Gitea/Forgejo's `head_commit_id` all reject a
+  moved head upstream. Gitea/Forgejo answer 409 for unrelated merge
+  conflicts too, so only their distinctive head-mismatch message
+  ("head target does not match") classifies as `stale_state`; any
+  other 409 stays a generic conflict. Approval pins are provider-gated
+  only on GitLab, whose approvals API rejects a mismatched `sha`
+  atomically. GitHub/Gitea/Forgejo review commit ids record rather
+  than gate, so approvals there are pre-checked against the live
+  provider head before submission and verified again after it: if the
+  head moved while the review submitted, the approval is revoked
+  upstream (GitHub review dismissal, Gitea/Forgejo review deletion)
+  and the caller gets `stale_state` — the same reload-and-re-review
+  flow as a pre-check rejection. If revocation itself fails, the
+  typed error says the approval may still stand on the moved head. A
+  failed post-verification read keeps the approval: the pre-check
+  already passed, and failing an approval that exists upstream would
+  invite a duplicate retry.
   `mutation_head_binding` additionally marks providers where the pin is
   REQUIRED — omitted pins are rejected — and where approval itself is
   provider-gated. The SPA captures the pin when a merge or approval form

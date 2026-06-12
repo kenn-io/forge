@@ -30,6 +30,7 @@ const prA = {
   repo_owner: "acme",
   repo_name: "widgets",
   platform_host: "github.com",
+  platform_head_sha: "",
   worktree_links: [],
   MergeableState: "",
 };

@@ -122,6 +122,10 @@ type Client interface {
 		commitID string,
 		comments []*gh.DraftReviewComment,
 	) (*gh.PullRequestReview, error)
+	// DismissReview revokes a submitted review. Approvals are not
+	// head-gated by GitHub, so a head that moves while an approval
+	// submits is backed out through dismissal.
+	DismissReview(ctx context.Context, owner, repo string, number int, reviewID int64, message string) (*gh.PullRequestReview, error)
 	MarkPullRequestReadyForReview(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
 	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method, expectedHeadSHA string) (*gh.PullRequestMergeResult, error)
 	EditPullRequest(ctx context.Context, owner, repo string, number int, opts EditPullRequestOpts) (*gh.PullRequest, error)
@@ -1935,6 +1939,22 @@ func (c *liveClient) CreateReviewWithComments(
 	if err != nil {
 		return nil, fmt.Errorf(
 			"creating review on %s/%s#%d: %w", owner, repo, number, err,
+		)
+	}
+	return review, nil
+}
+
+func (c *liveClient) DismissReview(
+	ctx context.Context, owner, repo string, number int, reviewID int64, message string,
+) (*gh.PullRequestReview, error) {
+	review, resp, err := c.gh.PullRequests.DismissReview(
+		ctx, owner, repo, number, reviewID,
+		&gh.PullRequestReviewDismissalRequest{Message: &message},
+	)
+	c.trackRate(resp)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"dismissing review %d on %s/%s#%d: %w", reviewID, owner, repo, number, err,
 		)
 	}
 	return review, nil

@@ -289,6 +289,24 @@ func (t *transport) CreatePullReview(
 	return convertReview(review), nil
 }
 
+func (t *transport) DeletePullReview(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	reviewID int64,
+) error {
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		resp, err = t.api.DeletePullReview(ref.Owner, ref.Name, int64(number), reviewID)
+		return err
+	})
+	if err != nil {
+		return forgejoHTTPError(resp, err)
+	}
+	return nil
+}
+
 func (t *transport) ReplaceIssueLabels(
 	ctx context.Context,
 	ref platform.RepoRef,

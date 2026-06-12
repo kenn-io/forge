@@ -55,15 +55,21 @@
   let error = $state<string | null>(null);
   let commentInput = $state<HTMLTextAreaElement | undefined>();
 
-  // Reset draft state on PR identity change so an open form with
-  // PR A's body cannot submit to PR B once the route transitions.
+  // Reset draft state on full provider-aware PR identity change so an
+  // open form with PR A's body or head pin cannot submit to PR B once
+  // the route transitions — owner/name/number alone can collide across
+  // providers, hosts, and nested repo paths.
   $effect(() => {
+    void provider;
+    void platformHost;
+    void repoPath;
     void owner;
     void name;
     void number;
     expanded = false;
     body = "";
     error = null;
+    pinAtOpen = "";
   });
 
   $effect(() => {

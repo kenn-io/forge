@@ -193,6 +193,7 @@ type mockGH struct {
 	createIssueFn              func(context.Context, string, string, string, string) (*gh.Issue, error)
 	getUserFn                  func(context.Context, string) (*gh.User, error)
 	markReadyForReviewFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
+	dismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
 	editPullRequestFn          func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
 	editIssueFn                func(context.Context, string, string, int, string) (*gh.Issue, error)
 	editIssueContentFn         func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
@@ -524,6 +525,15 @@ func (m *mockGH) CreateReviewWithComments(
 		return m.createReviewWithCommentsFn(ctx, owner, repo, number, event, body, commitID, comments)
 	}
 	return m.CreateReview(ctx, owner, repo, number, event, body)
+}
+
+func (m *mockGH) DismissReview(
+	ctx context.Context, owner, repo string, number int, reviewID int64, message string,
+) (*gh.PullRequestReview, error) {
+	if m.dismissReviewFn != nil {
+		return m.dismissReviewFn(ctx, owner, repo, number, reviewID, message)
+	}
+	return &gh.PullRequestReview{ID: &reviewID}, nil
 }
 
 func (m *mockGH) MarkPullRequestReadyForReview(
@@ -14470,6 +14480,16 @@ func (t *apiTestGitealikeTransport) CreatePullReview(
 		Body:      body,
 		Submitted: time.Now().UTC().Truncate(time.Second),
 	}, nil
+}
+
+func (t *apiTestGitealikeTransport) DeletePullReview(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+	reviewID int64,
+) error {
+	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("delete_review:%d:%d", number, reviewID))
+	return nil
 }
 
 func (t *apiTestGitealikeTransport) findPull(number int) *gitealike.PullRequestDTO {

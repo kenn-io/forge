@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"go.kenn.io/middleman/internal/platform"
 )
@@ -557,9 +558,12 @@ func (p *Provider) MergeMergeRequest(
 }
 
 // ApproveMergeRequest verifies the current PR head against
-// expectedHeadSHA before approving: Gitea/Forgejo review commit ids
-// record rather than gate, so the guard is a pre-check (a small race
-// window remains between the check and the review submission).
+// expectedHeadSHA before approving, and again after the review is
+// submitted: Gitea/Forgejo review commit ids record rather than gate,
+// so a push that lands while the approval submits would otherwise
+// count for a head nobody reviewed. When the post-check sees a moved
+// head the approval is deleted upstream and the caller gets
+// stale_state.
 func (p *Provider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -577,19 +581,62 @@ func (p *Provider) ApproveMergeRequest(
 			return platform.MergeRequestEvent{}, p.mapError(err)
 		}
 		if current.Head.SHA != "" && current.Head.SHA != expectedHeadSHA {
-			return platform.MergeRequestEvent{}, &platform.Error{
-				Code:         platform.ErrCodeStaleState,
-				Provider:     p.kind,
-				PlatformHost: p.host,
-				Capability:   "approve_merge_request",
-			}
+			return platform.MergeRequestEvent{}, p.staleApprovalError(nil)
 		}
 	}
 	review, err := transport.CreatePullReview(ctx, ref, number, body)
 	if err != nil {
 		return platform.MergeRequestEvent{}, p.mapError(err)
 	}
+	if expectedHeadSHA != "" {
+		if err := p.revokeApprovalIfHeadMoved(ctx, transport, ref, number, expectedHeadSHA, review.ID); err != nil {
+			return platform.MergeRequestEvent{}, err
+		}
+	}
 	return NormalizeMergeRequestEvents(p.kind, ref, number, nil, []ReviewDTO{review}, nil)[0], nil
+}
+
+// revokeApprovalIfHeadMoved closes the check-to-submit race on
+// approvals: if the PR head moved past the reviewed commit while the
+// review was submitting, the approval is deleted upstream and the
+// caller gets stale_state. A failed verification read keeps the
+// approval — the pre-check already passed, and reporting an error for
+// an approval that exists upstream would invite a duplicate retry.
+func (p *Provider) revokeApprovalIfHeadMoved(
+	ctx context.Context,
+	transport MutationTransport,
+	ref platform.RepoRef,
+	number int,
+	expectedHeadSHA string,
+	reviewID int64,
+) error {
+	current, err := p.transport.GetPullRequest(ctx, ref, number)
+	if err != nil {
+		return nil
+	}
+	if current.Head.SHA == "" || current.Head.SHA == expectedHeadSHA {
+		return nil
+	}
+	if deleteErr := transport.DeletePullReview(ctx, ref, number, reviewID); deleteErr != nil {
+		return p.staleApprovalError(fmt.Errorf(
+			"approval %d may stand on a moved head: deletion failed: %w",
+			reviewID, deleteErr,
+		))
+	}
+	return p.staleApprovalError(fmt.Errorf(
+		"head moved while the approval submitted; approval %d was deleted",
+		reviewID,
+	))
+}
+
+func (p *Provider) staleApprovalError(err error) error {
+	return &platform.Error{
+		Code:         platform.ErrCodeStaleState,
+		Provider:     p.kind,
+		PlatformHost: p.host,
+		Capability:   "approve_merge_request",
+		Err:          err,
+	}
 }
 
 func (p *Provider) EditMergeRequestContent(
@@ -663,12 +710,23 @@ func (p *Provider) mutationTransport(capability string) (MutationTransport, erro
 	return transport, nil
 }
 
+// headMismatchPhrase is the message Gitea and Forgejo return when a
+// merge's head_commit_id no longer matches the PR head (the
+// IsErrSHADoesNotMatch branch of their merge endpoints). Both SDKs
+// surface the response body's message field as the error text.
+const headMismatchPhrase = "head target does not match"
+
 // isHeadMismatchConflict reports whether a transport error is the
 // Gitea/Forgejo 409 returned when head_commit_id no longer matches the
-// PR head.
+// PR head. The merge endpoints also answer 409 for ordinary merge
+// conflicts and out-of-date pushes, so the status alone is not enough:
+// only the head-mismatch message classifies as stale.
 func isHeadMismatchConflict(err error) bool {
 	var httpErr *HTTPError
-	return errors.As(err, &httpErr) && httpErr != nil && httpErr.StatusCode == 409
+	if !errors.As(err, &httpErr) || httpErr == nil || httpErr.StatusCode != 409 {
+		return false
+	}
+	return strings.Contains(strings.ToLower(httpErr.Error()), headMismatchPhrase)
 }
 
 func (p *Provider) mapError(err error) error {

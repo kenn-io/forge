@@ -777,6 +777,12 @@ func (c *FixtureClient) CreateReviewWithComments(
 	return c.createReviewLocked(owner, repo, number, event, body)
 }
 
+func (c *FixtureClient) DismissReview(
+	_ context.Context, _, _ string, _ int, reviewID int64, _ string,
+) (*gh.PullRequestReview, error) {
+	return &gh.PullRequestReview{ID: &reviewID}, nil
+}
+
 func (c *FixtureClient) MarkPullRequestReadyForReview(
 	_ context.Context, owner, repo string, number int,
 ) (*gh.PullRequest, error) {

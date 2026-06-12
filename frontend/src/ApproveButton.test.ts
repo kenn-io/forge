@@ -125,6 +125,37 @@ describe("ApproveButton tooltips", () => {
     });
   });
 
+  it("drops the captured head pin when only the provider identity changes", async () => {
+    const { rerender } = render(ApproveButton, {
+      props: { ...defaultProps, expectedHeadSha: "github-pin" },
+    });
+
+    const trigger = screen.getByRole("button", { name: /^approve$/i });
+    await fireEvent.click(trigger);
+    expect(screen.getByRole("dialog", { name: "Approve pull request" })).toBeTruthy();
+
+    // Same owner/name/number on a different provider+host+repoPath:
+    // the open form and its captured pin must not survive the route.
+    await rerender({
+      ...defaultProps,
+      provider: "gitea",
+      platformHost: "gitea.example.com",
+      repoPath: "acme/widget",
+      expectedHeadSha: "gitea-pin",
+    });
+
+    expect(screen.queryByRole("dialog", { name: "Approve pull request" })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    await fireEvent.click(screen.getByTitle("Submit an approving code review on this pull request"));
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledTimes(1);
+    });
+    const [, init] = mockPost.mock.calls[0] as [string, { body: { expected_head_sha?: string } }];
+    expect(init.body.expected_head_sha).toBe("gitea-pin");
+  });
+
   it("collapses and clears the draft when the PR identity changes", async () => {
     const { rerender } = renderApproveButton();
 

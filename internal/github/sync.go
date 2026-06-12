@@ -1208,9 +1208,11 @@ func (p gitHubClientProvider) setIssueLikeLabels(
 }
 
 // ApproveMergeRequest verifies the current PR head against
-// expectedHeadSHA before approving: GitHub review commit ids associate
-// rather than gate, so the guard is a pre-check (a small race window
-// remains between the check and the review submission).
+// expectedHeadSHA before approving, and again after the review is
+// submitted: GitHub review commit ids associate rather than gate, so a
+// push that lands while the approval submits would otherwise count for
+// a head nobody reviewed. When the post-check sees a moved head the
+// approval is dismissed upstream and the caller gets stale_state.
 func (p gitHubClientProvider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1224,12 +1226,7 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 			return platform.MergeRequestEvent{}, err
 		}
 		if head := current.GetHead().GetSHA(); head != "" && head != expectedHeadSHA {
-			return platform.MergeRequestEvent{}, &platform.Error{
-				Code:         platform.ErrCodeStaleState,
-				Provider:     platform.KindGitHub,
-				PlatformHost: p.host,
-				Capability:   "approve_merge_request",
-			}
+			return platform.MergeRequestEvent{}, p.staleApprovalError(nil)
 		}
 	}
 	review, err := p.client.CreateReviewWithComments(
@@ -1241,7 +1238,58 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 	if review == nil {
 		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review")
 	}
+	if expectedHeadSHA != "" {
+		if err := p.revokeApprovalIfHeadMoved(ctx, ref, number, expectedHeadSHA, review); err != nil {
+			return platform.MergeRequestEvent{}, err
+		}
+	}
 	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
+}
+
+// revokeApprovalIfHeadMoved closes the check-to-submit race on
+// approvals: if the PR head moved past the reviewed commit while the
+// review was submitting, the approval is dismissed upstream and the
+// caller gets stale_state. A failed verification read keeps the
+// approval — the pre-check already passed, and reporting an error for
+// an approval that exists upstream would invite a duplicate retry.
+func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	expectedHeadSHA string,
+	review *gh.PullRequestReview,
+) error {
+	current, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
+	if err != nil || current == nil {
+		return nil
+	}
+	head := current.GetHead().GetSHA()
+	if head == "" || head == expectedHeadSHA {
+		return nil
+	}
+	if _, dismissErr := p.client.DismissReview(
+		ctx, ref.Owner, ref.Name, number, review.GetID(),
+		"head moved past the reviewed commit while the approval submitted",
+	); dismissErr != nil {
+		return p.staleApprovalError(fmt.Errorf(
+			"approval %d may stand on a moved head: dismissal failed: %w",
+			review.GetID(), dismissErr,
+		))
+	}
+	return p.staleApprovalError(fmt.Errorf(
+		"head moved while the approval submitted; approval %d was dismissed",
+		review.GetID(),
+	))
+}
+
+func (p gitHubClientProvider) staleApprovalError(err error) error {
+	return &platform.Error{
+		Code:         platform.ErrCodeStaleState,
+		Provider:     platform.KindGitHub,
+		PlatformHost: p.host,
+		Capability:   "approve_merge_request",
+		Err:          err,
+	}
 }
 
 func (p gitHubClientProvider) ListMergeRequestReviewThreads(

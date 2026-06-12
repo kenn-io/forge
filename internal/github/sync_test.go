@@ -522,6 +522,9 @@ type mockClient struct {
 	createdReviewBody               string
 	createdReviewCommitID           string
 	createdReviewComments           []*gh.DraftReviewComment
+	dismissReviewErr                error
+	dismissedReviewID               int64
+	dismissReviewCalls              atomic.Int32
 }
 
 type rateLimitSnapshotMockClient struct {
@@ -1247,6 +1250,18 @@ func (m *mockClient) MarkPullRequestReadyForReview(
 	m.trackCall()
 	draft := false
 	return &gh.PullRequest{Number: &number, Draft: &draft}, nil
+}
+
+func (m *mockClient) DismissReview(
+	_ context.Context, _, _ string, _ int, reviewID int64, _ string,
+) (*gh.PullRequestReview, error) {
+	m.trackCall()
+	m.dismissReviewCalls.Add(1)
+	m.dismissedReviewID = reviewID
+	if m.dismissReviewErr != nil {
+		return nil, m.dismissReviewErr
+	}
+	return &gh.PullRequestReview{ID: &reviewID}, nil
 }
 
 func (m *mockClient) MergePullRequest(
@@ -10351,6 +10366,58 @@ func TestGitHubProviderApproveBindsReviewToReviewedHead(t *testing.T) {
 	assert.Equal("review", event.EventType)
 	assert.Equal("APPROVE", mock.createdReviewEvent)
 	assert.Equal("reviewed-head", mock.createdReviewCommitID)
+}
+
+// movingHeadFn returns a GetPullRequest stub whose head SHA advances
+// through heads on each call, simulating a push racing the approval.
+func movingHeadFn(heads ...string) func(context.Context, string, string, int) (*gh.PullRequest, error) {
+	calls := 0
+	return func(context.Context, string, string, int) (*gh.PullRequest, error) {
+		head := heads[len(heads)-1]
+		if calls < len(heads) {
+			head = heads[calls]
+		}
+		calls++
+		return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
+	}
+}
+
+func TestGitHubProviderApproveDismissesWhenHeadMovesDuringSubmit(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	mock := &mockClient{getPullRequestFn: movingHeadFn("reviewed-head", "new-head")}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+	_, err := provider.ApproveMergeRequest(
+		t.Context(), platform.RepoRef{Owner: "acme", Name: "widget"}, 7,
+		"ship it", "reviewed-head",
+	)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.Equal(int32(1), mock.dismissReviewCalls.Load(),
+		"approval landed on a moved head must be dismissed")
+	assert.Equal(int64(1), mock.dismissedReviewID)
+}
+
+func TestGitHubProviderApproveReportsFailedDismissal(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	mock := &mockClient{
+		getPullRequestFn: movingHeadFn("reviewed-head", "new-head"),
+		dismissReviewErr: errOther,
+	}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+	_, err := provider.ApproveMergeRequest(
+		t.Context(), platform.RepoRef{Owner: "acme", Name: "widget"}, 7,
+		"ship it", "reviewed-head",
+	)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.ErrorContains(err, "dismissal failed",
+		"a standing approval on a moved head must be reported, not hidden")
 }
 
 func TestIsGitHubHeadModified(t *testing.T) {

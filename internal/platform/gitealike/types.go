@@ -49,6 +49,11 @@ type MutationTransport interface {
 	EditPullRequest(ctx context.Context, ref platform.RepoRef, number int, opts PullRequestMutationOptions) (PullRequestDTO, error)
 	MergePullRequest(ctx context.Context, ref platform.RepoRef, number int, opts MergeOptions) (MergeResultDTO, error)
 	CreatePullReview(ctx context.Context, ref platform.RepoRef, number int, body string) (ReviewDTO, error)
+	// DeletePullReview removes a submitted review. Gitea/Forgejo do
+	// not head-gate review submission, so an approval that lands
+	// after the PR head moved past the reviewed commit is backed out
+	// through deletion.
+	DeletePullReview(ctx context.Context, ref platform.RepoRef, number int, reviewID int64) error
 }
 
 type ActionsTransport interface {

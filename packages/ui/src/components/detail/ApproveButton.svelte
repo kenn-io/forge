@@ -44,6 +44,11 @@
   // a missing synced head like a stale view.
   const headPinMissing = $derived(requireHeadPin && !expectedHeadSha);
 
+  // Captured when the approval form opens: a background detail refresh
+  // must not silently rebind the pin while the form is on screen. A
+  // genuinely moved head is rejected by the server against this pin.
+  let pinAtOpen = $state("");
+
   let expanded = $state(false);
   let body = $state("");
   let submitting = $state(false);
@@ -73,7 +78,7 @@
     return {
       pr: {
         State: "open", IsDraft: false, MergeableState: "",
-        platform_head_sha: expectedHeadSha ?? "",
+        platform_head_sha: pinAtOpen,
       },
       ref: { provider, platformHost, owner, name, repoPath },
       number,
@@ -87,7 +92,7 @@
       stores: { detail, pulls },
       client,
       approveCommentBody: body,
-      ...(expectedHeadSha !== undefined && { expectedHeadSha }),
+      ...(pinAtOpen !== "" && { expectedHeadSha: pinAtOpen }),
       ...(onheadconflict !== undefined && { onHeadConflict: onheadconflict }),
     };
   }
@@ -112,7 +117,11 @@
 <div class={["approve-section", expanded && "approve-section--open"]}>
   <ActionButton
     class="btn btn--approve"
-    onclick={() => { if (!disabled && !submitting) expanded = !expanded; }}
+    onclick={() => {
+      if (disabled || submitting) return;
+      if (!expanded) pinAtOpen = (expectedHeadSha ?? "").trim();
+      expanded = !expanded;
+    }}
     disabled={disabled || headPinMissing || submitting}
     ariaExpanded={expanded}
     tone="success"

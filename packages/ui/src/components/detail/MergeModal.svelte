@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
 
   import { isProblem, problemConflictReason } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
@@ -42,9 +42,15 @@
     onclose, onmerged, onheadconflict,
   }: Props = $props();
 
+  // Captured once when the modal opens: a background detail refresh
+  // must not silently rebind the pin to a head the user has not seen
+  // while the form is already on screen. If the head really moved, the
+  // server rejects this stale pin and the conflict flow takes over.
+  const pinnedHeadShaAtOpen = untrack(() => (expectedHeadSha ?? "").trim());
+
   // A head-binding provider cannot merge without a pinned head; the user
   // must wait for sync and re-review before merging.
-  const headPinMissing = $derived(requireHeadPin && !expectedHeadSha);
+  const headPinMissing = untrack(() => requireHeadPin) && pinnedHeadShaAtOpen === "";
 
   type Method = "merge" | "squash" | "rebase";
   type MethodOption = { value: Method; label: string };
@@ -104,12 +110,11 @@
     try {
       // Pin the merge to the head the user reviewed; the server rejects
       // the request when the synced head has moved past it.
-      const pinnedHeadSha = (expectedHeadSha ?? "").trim();
       const params: MergeParams = {
         commit_title: commitTitle,
         commit_message: commitMessage,
         method: selectedMethod,
-        ...(pinnedHeadSha !== "" && { expected_head_sha: pinnedHeadSha }),
+        ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
       };
       const ref = { provider, platformHost, owner, name, repoPath };
       const { error } = await client.POST(providerItemPath("pulls", ref, "/merge"), {

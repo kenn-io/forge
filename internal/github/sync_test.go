@@ -1250,7 +1250,7 @@ func (m *mockClient) MarkPullRequestReadyForReview(
 }
 
 func (m *mockClient) MergePullRequest(
-	_ context.Context, _, _ string, _ int, _, _, _ string,
+	_ context.Context, _, _ string, _ int, _, _, _, _ string,
 ) (*gh.PullRequestMergeResult, error) {
 	m.trackCall()
 	merged := true
@@ -10310,3 +10310,62 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(4, callCount)
 }
+
+func TestGitHubProviderApproveRejectsStaleHeadBeforeReview(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	head := "new-head"
+	mock := &mockClient{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
+		},
+	}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+	_, err := provider.ApproveMergeRequest(
+		t.Context(), platform.RepoRef{Owner: "acme", Name: "widget"}, 7,
+		"ship it", "reviewed-head",
+	)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.Empty(mock.createdReviewEvent, "stale approval must not reach the review API")
+}
+
+func TestGitHubProviderApproveBindsReviewToReviewedHead(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	head := "reviewed-head"
+	mock := &mockClient{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
+		},
+	}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+	event, err := provider.ApproveMergeRequest(
+		t.Context(), platform.RepoRef{Owner: "acme", Name: "widget"}, 7,
+		"ship it", "reviewed-head",
+	)
+	require.NoError(err)
+	assert.Equal("review", event.EventType)
+	assert.Equal("APPROVE", mock.createdReviewEvent)
+	assert.Equal("reviewed-head", mock.createdReviewCommitID)
+}
+
+func TestIsGitHubHeadModified(t *testing.T) {
+	assert := Assert.New(t)
+	mismatch := func(status int, message string) error {
+		return &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: status},
+			Message:  message,
+		}
+	}
+	assert.True(isGitHubHeadModified(mismatch(405, "Head branch was modified. Review and try the merge again.")))
+	assert.True(isGitHubHeadModified(mismatch(409, "Head branch was modified.")))
+	assert.False(isGitHubHeadModified(mismatch(405, "Pull Request is not mergeable")))
+	assert.False(isGitHubHeadModified(mismatch(422, "Head branch was modified.")))
+	assert.False(isGitHubHeadModified(errOther))
+}
+
+var errOther = fmt.Errorf("transport down")

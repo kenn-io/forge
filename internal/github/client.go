@@ -123,7 +123,7 @@ type Client interface {
 		comments []*gh.DraftReviewComment,
 	) (*gh.PullRequestReview, error)
 	MarkPullRequestReadyForReview(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
-	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method string) (*gh.PullRequestMergeResult, error)
+	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method, expectedHeadSHA string) (*gh.PullRequestMergeResult, error)
 	EditPullRequest(ctx context.Context, owner, repo string, number int, opts EditPullRequestOpts) (*gh.PullRequest, error)
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
 	EditIssueContent(ctx context.Context, owner, repo string, number int, title *string, body *string) (*gh.Issue, error)
@@ -2069,11 +2069,14 @@ func (c *liveClient) MarkPullRequestReadyForReview(
 
 func (c *liveClient) MergePullRequest(
 	ctx context.Context, owner, repo string, number int,
-	commitTitle, commitMessage, method string,
+	commitTitle, commitMessage, method, expectedHeadSHA string,
 ) (*gh.PullRequestMergeResult, error) {
 	opts := &gh.PullRequestOptions{
 		CommitTitle: commitTitle,
 		MergeMethod: method,
+		// When set, GitHub rejects the merge with 405 "Head branch was
+		// modified" if the PR head moved past the reviewed commit.
+		SHA: expectedHeadSHA,
 	}
 	result, resp, err := c.gh.PullRequests.Merge(
 		ctx, owner, repo, number, commitMessage, opts,

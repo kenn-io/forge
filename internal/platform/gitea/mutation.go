@@ -254,9 +254,10 @@ func (t *transport) MergePullRequest(
 	err := t.withRequestContext(ctx, func() error {
 		var err error
 		merged, resp, err = t.api.MergePullRequest(ref.Owner, ref.Name, int64(number), giteasdk.MergePullRequestOption{
-			Style:   giteaMergeStyle(opts.Method),
-			Title:   opts.CommitTitle,
-			Message: opts.CommitMessage,
+			Style:        giteaMergeStyle(opts.Method),
+			Title:        opts.CommitTitle,
+			Message:      opts.CommitMessage,
+			HeadCommitId: opts.ExpectedHeadSHA,
 		})
 		return err
 	})

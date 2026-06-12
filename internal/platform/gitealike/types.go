@@ -222,6 +222,10 @@ type MergeOptions struct {
 	CommitTitle   string
 	CommitMessage string
 	Method        string
+	// ExpectedHeadSHA, when set, is sent as head_commit_id so the
+	// provider rejects the merge if the PR head moved past the
+	// reviewed commit.
+	ExpectedHeadSHA string
 }
 
 type MergeResultDTO struct {

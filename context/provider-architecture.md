@@ -100,11 +100,17 @@ provider-equivalent behavior from the flags alone:
   response shape that embeds the MergeRequest row (list and detail alike)
   exposes `platform_head_sha`, and merge/approve accept an optional
   `expected_head_sha` that must match the stored head before the provider
-  is called. The end-to-end strength of that pin is capability-scoped: on
-  `mutation_head_binding` providers the same SHA is also enforced by the
-  provider API, closing the pre-check-to-call race; on other providers
-  the pin only guards against local cache movement until provider-side
-  binding lands there. Conflict responses carry `details.reason`
+  is called. When supplied, the pin is also enforced at the provider:
+  merges send it as GitHub's `sha`, GitLab's `sha`, and Gitea/Forgejo's
+  `head_commit_id`, all of which reject a moved head upstream; approvals
+  are hard-bound on GitLab and pre-checked against the live provider
+  head on GitHub/Gitea/Forgejo (whose review commit ids record rather
+  than gate, leaving a small check-to-submit window).
+  `mutation_head_binding` additionally marks providers where the pin is
+  REQUIRED — omitted pins are rejected — and where approval itself is
+  provider-gated. The SPA captures the pin when a merge or approval form
+  opens, so a background refresh cannot silently rebind an open form to
+  a head the user has not seen. Conflict responses carry `details.reason`
   (`stale_state`, `conflict`, or `head_unknown`) per
   `context/error-handling.md`; only stale heads trigger a server-side
   MR resync — `head_unknown` recovery is client-initiated. The SPA's PR

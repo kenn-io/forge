@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
@@ -1076,9 +1077,9 @@ func (p gitHubClientProvider) SetIssueState(
 	return platformgithub.NormalizeIssue(ref, ghIssue)
 }
 
-// MergeMergeRequest ignores expectedHeadSHA: the GitHub merge API accepts
-// a sha parameter, but the internal client does not thread it yet, so
-// head binding is advisory here.
+// MergeMergeRequest passes expectedHeadSHA as the GitHub merge sha
+// parameter: GitHub rejects the merge when the PR head moved past the
+// reviewed commit, and that rejection is classified as stale_state.
 func (p gitHubClientProvider) MergeMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1086,12 +1087,21 @@ func (p gitHubClientProvider) MergeMergeRequest(
 	commitTitle string,
 	commitMessage string,
 	method string,
-	_ string,
+	expectedHeadSHA string,
 ) (platform.MergeResult, error) {
 	result, err := p.client.MergePullRequest(
-		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method,
+		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method, expectedHeadSHA,
 	)
 	if err != nil {
+		if expectedHeadSHA != "" && isGitHubHeadModified(err) {
+			return platform.MergeResult{}, &platform.Error{
+				Code:         platform.ErrCodeStaleState,
+				Provider:     platform.KindGitHub,
+				PlatformHost: p.host,
+				Capability:   "merge_merge_request",
+				Err:          err,
+			}
+		}
 		return platform.MergeResult{}, err
 	}
 	if result == nil {
@@ -1102,6 +1112,21 @@ func (p gitHubClientProvider) MergeMergeRequest(
 		SHA:     result.GetSHA(),
 		Message: result.GetMessage(),
 	}, nil
+}
+
+// isGitHubHeadModified reports whether a GitHub merge rejection is the
+// sha-mismatch refusal ("Head branch was modified. Review and try the
+// merge again.").
+func isGitHubHeadModified(err error) bool {
+	var ghErr *gh.ErrorResponse
+	if !errors.As(err, &ghErr) || ghErr == nil || ghErr.Response == nil {
+		return false
+	}
+	if ghErr.Response.StatusCode != http.StatusConflict &&
+		ghErr.Response.StatusCode != http.StatusMethodNotAllowed {
+		return false
+	}
+	return strings.Contains(strings.ToLower(ghErr.Message), "head branch was modified")
 }
 
 func (p gitHubClientProvider) ApproveWorkflow(
@@ -1182,16 +1207,34 @@ func (p gitHubClientProvider) setIssueLikeLabels(
 	return platformgithub.NormalizeLabels(ref, labels), nil
 }
 
-// ApproveMergeRequest ignores expectedHeadSHA: GitHub review commit ids
-// associate rather than gate, so head binding is advisory here.
+// ApproveMergeRequest verifies the current PR head against
+// expectedHeadSHA before approving: GitHub review commit ids associate
+// rather than gate, so the guard is a pre-check (a small race window
+// remains between the check and the review submission).
 func (p gitHubClientProvider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 	body string,
-	_ string,
+	expectedHeadSHA string,
 ) (platform.MergeRequestEvent, error) {
-	review, err := p.client.CreateReview(ctx, ref.Owner, ref.Name, number, "APPROVE", body)
+	if expectedHeadSHA != "" {
+		current, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
+		if err != nil {
+			return platform.MergeRequestEvent{}, err
+		}
+		if head := current.GetHead().GetSHA(); head != "" && head != expectedHeadSHA {
+			return platform.MergeRequestEvent{}, &platform.Error{
+				Code:         platform.ErrCodeStaleState,
+				Provider:     platform.KindGitHub,
+				PlatformHost: p.host,
+				Capability:   "approve_merge_request",
+			}
+		}
+	}
+	review, err := p.client.CreateReviewWithComments(
+		ctx, ref.Owner, ref.Name, number, "APPROVE", body, expectedHeadSHA, nil,
+	)
 	if err != nil {
 		return platform.MergeRequestEvent{}, err
 	}

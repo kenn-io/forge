@@ -518,9 +518,10 @@ func (p *Provider) SetIssueState(
 	return NormalizeIssue(ref, issue), nil
 }
 
-// MergeMergeRequest ignores expectedHeadSHA: the Gitea/Forgejo merge API
-// has a head_commit_id field, but the shared transport does not thread it
-// yet, so head binding is advisory here.
+// MergeMergeRequest sends expectedHeadSHA as the Gitea/Forgejo merge
+// head_commit_id: the provider rejects the merge when the PR head moved
+// past the reviewed commit, and that rejection is classified as
+// stale_state.
 func (p *Provider) MergeMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -528,36 +529,61 @@ func (p *Provider) MergeMergeRequest(
 	commitTitle string,
 	commitMessage string,
 	method string,
-	_ string,
+	expectedHeadSHA string,
 ) (platform.MergeResult, error) {
 	transport, err := p.mutationTransport("merge_mutation")
 	if err != nil {
 		return platform.MergeResult{}, err
 	}
 	result, err := transport.MergePullRequest(ctx, ref, number, MergeOptions{
-		CommitTitle:   commitTitle,
-		CommitMessage: commitMessage,
-		Method:        method,
+		CommitTitle:     commitTitle,
+		CommitMessage:   commitMessage,
+		Method:          method,
+		ExpectedHeadSHA: expectedHeadSHA,
 	})
 	if err != nil {
+		if expectedHeadSHA != "" && isHeadMismatchConflict(err) {
+			return platform.MergeResult{}, &platform.Error{
+				Code:         platform.ErrCodeStaleState,
+				Provider:     p.kind,
+				PlatformHost: p.host,
+				Capability:   "merge_merge_request",
+				Err:          err,
+			}
+		}
 		return platform.MergeResult{}, p.mapError(err)
 	}
 	return platform.MergeResult{Merged: result.Merged, SHA: result.SHA, Message: result.Message}, nil
 }
 
-// ApproveMergeRequest ignores expectedHeadSHA: Gitea/Forgejo reviews can
-// carry a commit id, but the shared transport does not thread it yet, so
-// head binding is advisory here.
+// ApproveMergeRequest verifies the current PR head against
+// expectedHeadSHA before approving: Gitea/Forgejo review commit ids
+// record rather than gate, so the guard is a pre-check (a small race
+// window remains between the check and the review submission).
 func (p *Provider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 	body string,
-	_ string,
+	expectedHeadSHA string,
 ) (platform.MergeRequestEvent, error) {
 	transport, err := p.mutationTransport("review_mutation")
 	if err != nil {
 		return platform.MergeRequestEvent{}, err
+	}
+	if expectedHeadSHA != "" {
+		current, err := p.transport.GetPullRequest(ctx, ref, number)
+		if err != nil {
+			return platform.MergeRequestEvent{}, p.mapError(err)
+		}
+		if current.Head.SHA != "" && current.Head.SHA != expectedHeadSHA {
+			return platform.MergeRequestEvent{}, &platform.Error{
+				Code:         platform.ErrCodeStaleState,
+				Provider:     p.kind,
+				PlatformHost: p.host,
+				Capability:   "approve_merge_request",
+			}
+		}
 	}
 	review, err := transport.CreatePullReview(ctx, ref, number, body)
 	if err != nil {
@@ -635,6 +661,14 @@ func (p *Provider) mutationTransport(capability string) (MutationTransport, erro
 		return nil, platform.UnsupportedCapability(p.kind, p.host, capability)
 	}
 	return transport, nil
+}
+
+// isHeadMismatchConflict reports whether a transport error is the
+// Gitea/Forgejo 409 returned when head_commit_id no longer matches the
+// PR head.
+func isHeadMismatchConflict(err error) bool {
+	var httpErr *HTTPError
+	return errors.As(err, &httpErr) && httpErr != nil && httpErr.StatusCode == 409
 }
 
 func (p *Provider) mapError(err error) error {

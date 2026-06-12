@@ -538,7 +538,7 @@ func (m *mockGH) MarkPullRequestReadyForReview(
 
 func (m *mockGH) MergePullRequest(
 	ctx context.Context, owner, repo string, number int,
-	commitTitle, commitMessage, method string,
+	commitTitle, commitMessage, method, _ string,
 ) (*gh.PullRequestMergeResult, error) {
 	if m.mergePullRequestFn != nil {
 		return m.mergePullRequestFn(ctx, owner, repo, number, commitTitle, commitMessage, method)

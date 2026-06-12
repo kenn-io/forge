@@ -144,7 +144,7 @@ func (m *mockClient) CreateReviewWithComments(
 func (m *mockClient) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }
-func (m *mockClient) MergePullRequest(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error) {
+func (m *mockClient) MergePullRequest(context.Context, string, string, int, string, string, string, string) (*gh.PullRequestMergeResult, error) {
 	return nil, nil
 }
 func (m *mockClient) EditPullRequest(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {

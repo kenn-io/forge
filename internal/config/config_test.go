@@ -1965,6 +1965,33 @@ name = "ibis"
 	assert.Empty(cfg2.Repos[1].TokenEnv)
 }
 
+func TestSaveRoundTripHostCheckSettings(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, `
+allowed_hosts = ["proxy.local:8091", "middleman.example"]
+trust_reverse_proxy = true
+
+[[repos]]
+owner = "apache"
+name = "arrow"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(cfg.Save(savePath))
+
+	cfg2, err := Load(savePath)
+	require.NoError(err)
+	assert.Equal([]string{"proxy.local:8091", "middleman.example"}, cfg2.AllowedHosts)
+	assert.True(cfg2.TrustReverseProxy)
+	assert.Equal(
+		[]HostKey{{Host: "proxy.local", Port: "8091"}, {Host: "middleman.example", Port: ""}},
+		cfg2.ParsedAllowedHosts(),
+	)
+}
+
 func TestSaveWritesPrivateFileMode(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -3325,4 +3352,86 @@ func TestGitHubTokenInvokesGHWithGithubComHostname(t *testing.T) {
 	argv := readFakeGHArgv(t, argvPath)
 	require.Len(t, argv, 1)
 	Assert.Equal(t, "auth token --hostname github.com", argv[0])
+}
+
+func TestLoadAllowedHostsDefault(t *testing.T) {
+	assert := Assert.New(t)
+	cfg, err := Load(writeConfig(t, `host = "127.0.0.1"
+port = 8091
+`))
+	require.NoError(t, err)
+	assert.Empty(cfg.AllowedHosts)
+	assert.Empty(cfg.ParsedAllowedHosts())
+	assert.False(cfg.TrustReverseProxy)
+	assert.Equal(
+		HostKey{Host: "127.0.0.1", Port: "8091"},
+		cfg.BindHostKey(),
+	)
+}
+
+func TestLoadRejectsZeroPort(t *testing.T) {
+	_, err := Load(writeConfig(t, `host = "127.0.0.1"
+port = 0
+`))
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "invalid port 0")
+}
+
+func TestLoadAllowedHostsParsesAndCanonicalises(t *testing.T) {
+	assert := Assert.New(t)
+	cfg, err := Load(writeConfig(t, `host = "127.0.0.1"
+port = 8091
+allowed_hosts = ["mm.local:8091", "MM.Example.Com", "[::1]:8443"]
+trust_reverse_proxy = true
+`))
+	require.NoError(t, err)
+	assert.Equal(
+		[]HostKey{
+			{Host: "mm.local", Port: "8091"},
+			{Host: "mm.example.com", Port: ""},
+			{Host: "[::1]", Port: "8443"},
+		},
+		cfg.ParsedAllowedHosts(),
+	)
+	assert.True(cfg.TrustReverseProxy)
+}
+
+func TestLoadAllowedHostsRejectsBadEntry(t *testing.T) {
+	cases := []struct {
+		name  string
+		entry string
+	}{
+		{name: "unbracketed ipv6", entry: "::1:8091"},
+		{name: "port only", entry: ":8091"},
+		{name: "empty", entry: ""},
+		{name: "port out of range", entry: "mm.local:99999"},
+		{name: "bracketed ipv4", entry: "[127.0.0.1]:8091"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfig(t, fmt.Sprintf(`host = "127.0.0.1"
+port = 8091
+allowed_hosts = [%q]
+`, tc.entry))
+			_, err := Load(path)
+			require.Error(t, err)
+			Assert.Contains(t, err.Error(), "allowed_hosts")
+		})
+	}
+}
+
+func TestParsedAllowedHostsDefensiveCopy(t *testing.T) {
+	assert := Assert.New(t)
+	cfg, err := Load(writeConfig(t, `host = "127.0.0.1"
+port = 8091
+allowed_hosts = ["mm.local:8091"]
+`))
+	require.NoError(t, err)
+	got := cfg.ParsedAllowedHosts()
+	got[0] = HostKey{Host: "tampered", Port: "1"}
+	again := cfg.ParsedAllowedHosts()
+	assert.Equal(
+		[]HostKey{{Host: "mm.local", Port: "8091"}},
+		again,
+	)
 }

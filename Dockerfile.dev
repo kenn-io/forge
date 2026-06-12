@@ -9,7 +9,7 @@ RUN case "$TARGETARCH" in \
       arm64) BUN_ARCH=aarch64 ;; \
       *) echo "unsupported arch: $TARGETARCH" && exit 1 ;; \
     esac \
-    && curl -fsSL -o /tmp/bun.zip "https://github.com/oven-sh/bun/releases/download/bun-v1.3.11/bun-linux-${BUN_ARCH}.zip" \
+    && curl -fsSL -o /tmp/bun.zip "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-${BUN_ARCH}.zip" \
     && unzip -q /tmp/bun.zip -d /tmp/bun \
     && mv /tmp/bun/bun-linux-${BUN_ARCH}/bun /usr/local/bin/bun \
     && chmod +x /usr/local/bin/bun \

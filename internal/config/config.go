@@ -634,27 +634,47 @@ type Shell struct {
 }
 
 type Config struct {
-	SyncInterval              string           `toml:"sync_interval"`
-	GitHubTokenEnv            string           `toml:"github_token_env"`
-	DefaultPlatformHost       string           `toml:"default_platform_host"`
-	Host                      string           `toml:"host"`
-	Port                      int              `toml:"port"`
-	BasePath                  string           `toml:"base_path"`
-	DataDir                   string           `toml:"data_dir"`
-	SyncBudgetPerHour         int              `toml:"sync_budget_per_hour"`
-	SSEBufferSize             int              `toml:"sse_buffer_size"`
-	IssueWorkspaceBranchStyle string           `toml:"issue_workspace_branch_style"`
-	Repos                     []Repo           `toml:"repos"`
-	Platforms                 []PlatformConfig `toml:"platforms"`
-	Activity                  Activity         `toml:"activity"`
-	Terminal                  Terminal         `toml:"terminal"`
-	Modes                     ModeVisibility   `toml:"modes"`
-	Agents                    []Agent          `toml:"agents"`
-	DocFolders                []DocFolder      `toml:"doc_folders"`
-	Roborev                   Roborev          `toml:"roborev"`
-	Msgvault                  *Msgvault        `toml:"msgvault"`
-	Tmux                      Tmux             `toml:"tmux"`
-	Shell                     Shell            `toml:"shell"`
+	SyncInterval              string `toml:"sync_interval"`
+	GitHubTokenEnv            string `toml:"github_token_env"`
+	DefaultPlatformHost       string `toml:"default_platform_host"`
+	Host                      string `toml:"host"`
+	Port                      int    `toml:"port"`
+	BasePath                  string `toml:"base_path"`
+	DataDir                   string `toml:"data_dir"`
+	SyncBudgetPerHour         int    `toml:"sync_budget_per_hour"`
+	SSEBufferSize             int    `toml:"sse_buffer_size"`
+	IssueWorkspaceBranchStyle string `toml:"issue_workspace_branch_style"`
+	// AllowedHosts is an exact-match allowlist of Host header values
+	// beyond the bind address that the Host validation middleware
+	// should accept. Loopback synonyms (127.0.0.1 / localhost /
+	// [::1]) at the bind port are auto-accepted and do not need to
+	// be listed.
+	AllowedHosts []string `toml:"allowed_hosts"`
+	// TrustReverseProxy enables honoring X-Forwarded-Host and
+	// Forwarded RFC 7239 host= for the Public Host validation step.
+	// The raw Host header must still pass the allowed_hosts gate
+	// before any forwarded header is read.
+	TrustReverseProxy bool             `toml:"trust_reverse_proxy"`
+	Repos             []Repo           `toml:"repos"`
+	Platforms         []PlatformConfig `toml:"platforms"`
+	Activity          Activity         `toml:"activity"`
+	Terminal          Terminal         `toml:"terminal"`
+	Modes             ModeVisibility   `toml:"modes"`
+	Agents            []Agent          `toml:"agents"`
+	DocFolders        []DocFolder      `toml:"doc_folders"`
+	Roborev           Roborev          `toml:"roborev"`
+	Msgvault          *Msgvault        `toml:"msgvault"`
+	Tmux              Tmux             `toml:"tmux"`
+	Shell             Shell            `toml:"shell"`
+
+	// parsedAllowedHosts is the canonicalised form of AllowedHosts,
+	// populated by Validate so the server constructor does not have
+	// to re-parse on every request setup. Defensive copy via
+	// ParsedAllowedHosts.
+	parsedAllowedHosts []HostKey
+	// parsedBindKey is the canonical (Host, Port) key for the bind
+	// address, populated by Validate.
+	parsedBindKey HostKey
 }
 
 // SSEBufferSizeOrDefault returns the configured SSE replay ring size,
@@ -1045,8 +1065,23 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config: host %q is not loopback; only loopback addresses are supported", c.Host)
 	}
 
-	if c.Port < 0 || c.Port > 65535 {
+	if c.Port < 1 || c.Port > 65535 {
 		return fmt.Errorf("config: invalid port %d", c.Port)
+	}
+
+	bindKey, err := ParseHostKey(net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	if err != nil {
+		return fmt.Errorf("config: invalid host %q: %w", c.Host, err)
+	}
+	c.parsedBindKey = bindKey
+
+	c.parsedAllowedHosts = c.parsedAllowedHosts[:0]
+	for _, entry := range c.AllowedHosts {
+		key, err := ParseHostKey(entry)
+		if err != nil {
+			return fmt.Errorf("config: invalid allowed_hosts entry %q: %w", entry, err)
+		}
+		c.parsedAllowedHosts = append(c.parsedAllowedHosts, key)
 	}
 
 	if c.SyncBudgetPerHour != 0 && c.SyncBudgetPerHour < 50 {
@@ -1762,6 +1797,20 @@ func (c *Config) ListenAddr() string {
 	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
 
+// BindHostKey returns the canonical (Host, Port) key for the bind
+// address, populated by Validate. The zero HostKey is returned for
+// configs that were not validated (e.g. test literals that omit
+// Host/Port); callers should use HostKey.Valid() to gate behavior.
+func (c *Config) BindHostKey() HostKey {
+	return c.parsedBindKey
+}
+
+// ParsedAllowedHosts returns the canonicalised allowlist, populated
+// by Validate. The returned slice is a defensive copy.
+func (c *Config) ParsedAllowedHosts() []HostKey {
+	return append([]HostKey(nil), c.parsedAllowedHosts...)
+}
+
 func (c *Config) DBPath() string {
 	return filepath.Join(c.DataDir, "middleman.db")
 }
@@ -1852,6 +1901,8 @@ type configFile struct {
 	BasePath                  string           `toml:"base_path,omitempty"`
 	DataDir                   string           `toml:"data_dir,omitempty"`
 	IssueWorkspaceBranchStyle string           `toml:"issue_workspace_branch_style,omitempty"`
+	AllowedHosts              []string         `toml:"allowed_hosts,omitempty"`
+	TrustReverseProxy         bool             `toml:"trust_reverse_proxy,omitempty"`
 	Repos                     []Repo           `toml:"repos"`
 	Platforms                 []PlatformConfig `toml:"platforms,omitempty"`
 	Activity                  Activity         `toml:"activity"`
@@ -1877,6 +1928,8 @@ func (c *Config) Save(path string) error {
 		DefaultPlatformHost: cfg.DefaultPlatformHost,
 		Host:                cfg.Host,
 		Port:                cfg.Port,
+		AllowedHosts:        slices.Clone(cfg.AllowedHosts),
+		TrustReverseProxy:   cfg.TrustReverseProxy,
 		Repos:               reposForSave(cfg.Repos),
 		Platforms:           cfg.Platforms,
 		Activity:            cfg.Activity,
@@ -1958,6 +2011,7 @@ func (c *Config) copyForSave() Config {
 	cfg := *c
 	cfg.Repos = slices.Clone(c.Repos)
 	cfg.Platforms = slices.Clone(c.Platforms)
+	cfg.AllowedHosts = slices.Clone(c.AllowedHosts)
 	cfg.DocFolders = slices.Clone(c.DocFolders)
 	cfg.Agents = slices.Clone(c.Agents)
 	if cfg.SyncInterval == "" {

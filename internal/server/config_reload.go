@@ -45,6 +45,8 @@ type startupConfigSnapshot struct {
 	BasePath            string
 	DataDir             string
 	SyncBudgetPerHour   int
+	AllowedHosts        []config.HostKey
+	TrustReverseProxy   bool
 	ProviderHosts       []tokenauth.Key
 	// TokenEnvNames is the boot-time baseline of provider token env
 	// names (msgvault excluded) used to accumulate runtime strip-env
@@ -67,6 +69,8 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		BasePath:            cfg.BasePath,
 		DataDir:             cfg.DataDir,
 		SyncBudgetPerHour:   cfg.SyncBudgetPerHour,
+		AllowedHosts:        startupAllowedHosts(cfg),
+		TrustReverseProxy:   cfg.TrustReverseProxy,
 		ProviderHosts:       startupProviderHosts(cfg),
 		Roborev:             cfg.Roborev,
 	}
@@ -78,6 +82,20 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 	snap.Shell.Command = slices.Clone(cfg.Shell.Command)
 	snap.TokenEnvNames = startupBoundTokenEnvNames(cfg)
 	return snap
+}
+
+func startupAllowedHosts(cfg *config.Config) []config.HostKey {
+	if cfg == nil {
+		return nil
+	}
+	allowed := cfg.ParsedAllowedHosts()
+	slices.SortFunc(allowed, func(a, b config.HostKey) int {
+		if cmp := strings.Compare(a.Host, b.Host); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Port, b.Port)
+	})
+	return allowed
 }
 
 func startupProviderHosts(cfg *config.Config) []tokenauth.Key {
@@ -291,8 +309,14 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	// Resolve the new repo set against the boot-time registry. Repos
 	// whose (platform, host) the registry never learned about cannot
 	// reach a client without a restart; skip those for SetRepos but
-	// keep them in s.cfg so the UI mirrors the file.
-	previous := s.syncer.TrackedRepos()
+	// keep them in s.cfg so the UI mirrors the file. A server built
+	// without a syncer (embedded or test setups) still hot-reloads the
+	// non-sync surfaces below, so the syncer is nil-guarded rather than
+	// treated as a reload failure.
+	var previous []ghclient.RepoRef
+	if s.syncer != nil {
+		previous = s.syncer.TrackedRepos()
+	}
 	resolved, skipped := s.resolveReposForReload(ctx, newCfg.Repos, previous)
 	if len(skipped) > 0 {
 		slog.Info(
@@ -324,11 +348,13 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		s.msgvault.applyConfig(newCfg)
 	}
 
-	s.syncer.SetRepos(resolved)
-	s.syncer.SetBranchActivityLimits(
-		newCfg.BranchActivityRetention(),
-		newCfg.Activity.DefaultBranchMaxCommits,
-	)
+	if s.syncer != nil {
+		s.syncer.SetRepos(resolved)
+		s.syncer.SetBranchActivityLimits(
+			newCfg.BranchActivityRetention(),
+			newCfg.Activity.DefaultBranchMaxCommits,
+		)
+	}
 
 	s.refreshRuntimeTargetsLocked()
 	if s.runtime != nil {

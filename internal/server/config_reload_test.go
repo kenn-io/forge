@@ -80,6 +80,7 @@ func streamConfigEvents(t *testing.T, srv *Server) *configEventStream {
 		ctx, http.MethodGet, ts.URL+"/api/v1/events", http.NoBody,
 	)
 	require.NoError(t, err)
+	setAcceptedHostForServerTest(req, srv)
 
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
@@ -304,6 +305,19 @@ owner = "acme"
 name = "widget"
 `
 
+const validReloadConfigHostCheckPolicy = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+allowed_hosts = ["middleman.example"]
+trust_reverse_proxy = true
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`
+
 const invalidReloadConfig = `
 sync_interval = "5m"
 host = "not-an-ip"
@@ -338,6 +352,41 @@ func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid, "expected valid reload")
+	assert.Empty(ev.Error)
+	assert.False(ev.RestartRequired)
+
+	srv.cfgMu.Lock()
+	gotActivity := srv.cfg.Activity
+	srv.cfgMu.Unlock()
+	assert.Equal("flat", gotActivity.ViewMode)
+	assert.Equal("30d", gotActivity.TimeRange)
+}
+
+// A server constructed without a syncer (Server.New permits nil; embedded
+// and docs/msgvault-only setups use it) must hot-reload non-sync surfaces
+// instead of panicking in the watcher goroutine. Regression test for a nil
+// TrackedRepos dereference that crashed the whole test binary in CI.
+func TestConfigReload_NilSyncerAppliesHotReloadWithoutPanic(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	writeConfigToml(t, cfgPath, validReloadConfig)
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	srv := NewWithConfig(
+		openTestDB(t), nil, nil, nil, cfg, cfgPath, ServerOptions{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfigChangedActivity)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid, "expected valid reload on a syncer-less server")
 	assert.Empty(ev.Error)
 	assert.False(ev.RestartRequired)
 
@@ -627,6 +676,23 @@ func TestConfigReload_RestartRequiredOnStartupFieldChange(t *testing.T) {
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid)
 	assert.True(ev.RestartRequired, "sync_interval change should mark restart_required")
+}
+
+func TestConfigReload_RestartRequiredOnHostCheckPolicyChange(t *testing.T) {
+	assert := assert.New(t)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfigHostCheckPolicy)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid)
+	assert.True(ev.RestartRequired, "host-check policy change should mark restart_required")
 }
 
 func TestConfigReload_TokenSourceChangeForExistingHostUpdatesSource(t *testing.T) {

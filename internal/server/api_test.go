@@ -18492,6 +18492,13 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	}
 	options.Clones = clones
 	options.WorktreeDir = worktreeDir
+	options.HostCheckAllowLoopbackAnyPort = true
+	if !options.HostCheck.Valid() {
+		options.HostCheck = HostCheckOptions{
+			Bind:    config.HostKey{Host: "127.0.0.1", Port: "8091"},
+			Allowed: []config.HostKey{{Host: "middleman.test", Port: ""}},
+		}
+	}
 	srv := New(database, syncer, nil, basePath, cfg, options)
 	t.Cleanup(func() { cleanupWorkspaceServerFixtureTmuxSessions(t, dir) })
 	// Cleanup callbacks run LIFO. Drain the server first so async
@@ -21502,7 +21509,7 @@ func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	req := httptest.NewRequest(
+	req := newWorkspaceFixtureRequest(
 		http.MethodGet,
 		"/api/v1/workspaces/"+ws.Id+"/diff?base=origin",
 		nil,
@@ -21767,11 +21774,7 @@ func requestWorkspaceFilesPath(
 ) generated.FilesResponse {
 	t.Helper()
 
-	req := httptest.NewRequest(
-		http.MethodGet,
-		query,
-		nil,
-	)
+	req := newWorkspaceFixtureRequest(http.MethodGet, query, nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	resp := rr.Result()
@@ -21790,7 +21793,7 @@ func requestWorkspaceCommits(
 ) commitsResponse {
 	t.Helper()
 
-	req := httptest.NewRequest(
+	req := newWorkspaceFixtureRequest(
 		http.MethodGet,
 		"/api/v1/workspaces/"+workspaceID+"/commits",
 		nil,
@@ -21842,11 +21845,7 @@ func requestWorkspaceDiffPath(
 ) generated.DiffResponse {
 	t.Helper()
 
-	req := httptest.NewRequest(
-		http.MethodGet,
-		query,
-		nil,
-	)
+	req := newWorkspaceFixtureRequest(http.MethodGet, query, nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	resp := rr.Result()
@@ -21869,7 +21868,7 @@ func requestWorkspaceDiffForPath(
 
 	query := "/api/v1/workspaces/" + workspaceID +
 		"/diff?base=" + base + "&path=" + url.QueryEscape(path)
-	req := httptest.NewRequest(
+	req := newWorkspaceFixtureRequest(
 		http.MethodGet,
 		query,
 		nil,
@@ -21883,6 +21882,16 @@ func requestWorkspaceDiffForPath(
 	var body generated.DiffResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	return body
+}
+
+func newWorkspaceFixtureRequest(
+	method string,
+	target string,
+	body io.Reader,
+) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	req.Host = "middleman.test"
+	return req
 }
 
 func requireWorkspaceDiffFile(

@@ -211,6 +211,40 @@ test.describe("assignee and reviewer editing", () => {
     }
   });
 
+  test("an outside press dismisses the picker and pickers never stack", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      await page.getByRole("button", { name: "Edit assignees" }).click();
+      await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeVisible();
+
+      // Clicking anywhere outside the chip and panel dismisses it.
+      await page.locator(".pull-detail .detail-title").click();
+      await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeHidden();
+
+      // Opening the reviewers picker while assignees is open swaps
+      // them; the two panels must never be on screen together.
+      await page.getByRole("button", { name: "Edit assignees" }).click();
+      await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeVisible();
+      await page.getByRole("button", { name: "Edit reviewers" }).click();
+      await expect(page.getByRole("dialog", { name: "Edit reviewers" })).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeHidden();
+
+      // Keyboard activation fires no mousedown, so the swap must not
+      // depend on the document-mousedown dismissal path.
+      await page.getByRole("button", { name: "Edit assignees" }).press("Enter");
+      await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "Edit reviewers" })).toBeHidden();
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("issue detail edits assignees", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

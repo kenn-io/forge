@@ -35,6 +35,7 @@ func TestNewReturnsWorkingHandler(t *testing.T) {
 	defer inst.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/middleman/", nil)
+	req.Host = "127.0.0.1:8091"
 	rr := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(rr, req)
 
@@ -74,6 +75,7 @@ func TestNewEmbeddedBootstrapGlobals(t *testing.T) {
 	defer inst.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/middleman/", nil)
+	req.Host = "127.0.0.1:8091"
 	rr := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(rr, req)
 
@@ -139,6 +141,7 @@ func TestEmbedConfigFullFlow(t *testing.T) {
 	defer inst.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/app/", nil)
+	req.Host = "127.0.0.1:8091"
 	rr := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(rr, req)
 
@@ -176,6 +179,7 @@ func TestNoEmbedConfigStandaloneMode(t *testing.T) {
 	defer inst.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "127.0.0.1:8091"
 	rr := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(rr, req)
 

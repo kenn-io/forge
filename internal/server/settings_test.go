@@ -68,7 +68,7 @@ func setupTestServerWithConfigContent(
 	t.Cleanup(syncer.Stop)
 	srv := NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
-		ServerOptions{},
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
 	return srv, database, cfgPath
 }
@@ -102,7 +102,7 @@ func setupTestServerWithConfigProviders(
 	t.Cleanup(syncer.Stop)
 	srv := NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
-		ServerOptions{},
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
 	return srv, database, cfgPath
 }
@@ -295,6 +295,13 @@ func doJSON(
 		require.NoError(t, json.NewEncoder(&buf).Encode(body))
 	}
 	req := httptest.NewRequest(method, path, &buf)
+	// httptest.NewRequest defaults the Host to "example.com" via the
+	// "/path" URL; tests built on doJSON use either the cfg=nil
+	// test-friendly default (loopback IP at any port is allowed)
+	// or a validated cfg whose bind is 127.0.0.1:8091. Sending the
+	// bind value here keeps both paths happy through the Host
+	// validation middleware without per-test churn.
+	req.Host = "127.0.0.1:8091"
 	if method != http.MethodGet {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -1349,6 +1356,7 @@ name = "*"
 			http.MethodPost,
 			"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 		)
+		req.Host = "127.0.0.1:8091"
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -2176,6 +2184,7 @@ name = "widget"
 	go func() {
 		// Inline request avoids testify assertions inside this goroutine.
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/repos/bulk", bytes.NewReader(bulkBody.Bytes()))
+		req.Host = "127.0.0.1:8091"
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)

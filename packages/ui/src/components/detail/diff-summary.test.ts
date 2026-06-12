@@ -34,7 +34,7 @@ describe("diff summary categorization", () => {
         ...file("bun.lock", 1, 1),
         is_generated: false,
       }),
-    ).toBe("other");
+    ).toBe("code");
   });
 
   it("puts documentation and planning paths into plans/docs", () => {
@@ -65,9 +65,9 @@ describe("diff summary categorization", () => {
 
     expect(summary.plansDocs).toEqual({ additions: 10, deletions: 2 });
     expect(summary.generated).toEqual({ additions: 5, deletions: 1 });
-    expect(summary.code).toEqual({ additions: 30, deletions: 4 });
+    expect(summary.code).toEqual({ additions: 31, deletions: 5 });
     expect(summary.tests).toEqual({ additions: 20, deletions: 8 });
-    expect(summary.other).toEqual({ additions: 1, deletions: 1 });
+    expect(summary.other).toEqual({ additions: 0, deletions: 0 });
     expect(summary.total).toEqual({ additions: 66, deletions: 16 });
   });
 });

@@ -2539,9 +2539,9 @@ test.describe("diff view (git-backed)", () => {
         name: "Filter changed files",
       });
       await expect(categoryFilter.getByRole("button", { name: "Plans/docs (2)" })).toBeVisible();
-      await expect(categoryFilter.getByRole("button", { name: "Code (2)" })).toBeVisible();
+      await expect(categoryFilter.getByRole("button", { name: "Code (3)" })).toBeVisible();
       await expect(categoryFilter.getByRole("button", { name: "Tests (1)" })).toBeVisible();
-      await expect(categoryFilter.getByRole("button", { name: "Other (1)" })).toBeVisible();
+      await expect(categoryFilter.getByRole("button", { name: "Other (0)" })).toBeVisible();
       await expect(categoryFilter.getByRole("button", { name: "All (6)" })).toHaveAttribute("aria-pressed", "true");
 
       await categoryFilter.getByRole("button", { name: "Tests (1)" }).click();

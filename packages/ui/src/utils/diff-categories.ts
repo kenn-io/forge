@@ -4,6 +4,7 @@ export type DiffFileCategory = "plansDocs" | "generated" | "code" | "tests" | "o
 export type DiffFileCategoryFilter = DiffFileCategory | "all";
 export type DiffFileCategoryCounts = Record<DiffFileCategoryFilter, number>;
 type CategorizableDiffFile = Pick<DiffFile, "path"> & {
+  is_binary?: boolean;
   is_generated?: boolean;
 };
 
@@ -18,41 +19,6 @@ export const diffFileCategoryOptions: {
   { value: "generated", label: "Generated" },
   { value: "all", label: "All" },
 ];
-
-const codeExtensions = new Set([
-  ".bash",
-  ".c",
-  ".cc",
-  ".cpp",
-  ".cs",
-  ".css",
-  ".go",
-  ".gql",
-  ".graphql",
-  ".h",
-  ".hpp",
-  ".html",
-  ".java",
-  ".js",
-  ".jsx",
-  ".kt",
-  ".kts",
-  ".less",
-  ".php",
-  ".py",
-  ".rb",
-  ".rs",
-  ".sass",
-  ".scss",
-  ".sh",
-  ".sql",
-  ".svelte",
-  ".swift",
-  ".ts",
-  ".tsx",
-  ".vue",
-  ".zsh",
-]);
 
 const docsExtensions = new Set([".adoc", ".md", ".mdx", ".rst", ".txt"]);
 
@@ -132,14 +98,15 @@ export function categorizeDiffFile(file: string | CategorizableDiffFile): DiffFi
   const parts = pathParts(path);
   const base = basename(path);
   const ext = extension(path);
+  const binaryMetadata = typeof file === "string" ? false : file.is_binary;
   const generatedMetadata = typeof file === "string" ? undefined : file.is_generated;
 
   if (generatedMetadata === true) return "generated";
   if (generatedMetadata !== false && hasGeneratedSignal(base)) return "generated";
+  if (binaryMetadata === true) return "other";
   if (hasTestSignal(parts, base)) return "tests";
   if (hasDocsSignal(parts, base, ext)) return "plansDocs";
-  if (codeExtensions.has(ext)) return "code";
-  return "other";
+  return "code";
 }
 
 export function filterDiffFilesByCategory(files: DiffFile[], filter: DiffFileCategoryFilter): DiffFile[] {

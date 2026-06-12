@@ -81,7 +81,17 @@ type ServerOptions struct {
 	PtyOwnerInProcess                  bool
 	Telemetry                          telemetry.Client
 	TokenSources                       *tokenauth.SourceSet
-	msgvaultRemoteImageDeps            *msgvaultRemoteImageDeps
+	// HostCheck overrides the Host validation middleware options.
+	// When Valid(), the override wins over any cfg-derived options.
+	// Used by wire-level tests that want to control the bind /
+	// allowed_hosts / trust_reverse_proxy independently of a full
+	// config.Config.
+	HostCheck HostCheckOptions
+	// HostCheckAllowLoopbackAnyPort relaxes literal loopback Host
+	// port matching after HostCheck/cfg options have been selected.
+	// Use this for httptest-style listeners on ephemeral ports.
+	HostCheckAllowLoopbackAnyPort bool
+	msgvaultRemoteImageDeps       *msgvaultRemoteImageDeps
 }
 
 type shutdownDeadline struct {
@@ -166,6 +176,7 @@ type Server struct {
 	options                ServerOptions
 	allowedHostMu          sync.RWMutex
 	allowedHosts           map[string]struct{}
+	hostOpts               HostCheckOptions
 	version                string
 	now                    func() time.Time
 	handler                http.Handler
@@ -508,6 +519,128 @@ func NewWithConfig(
 	)
 }
 
+// hostCheckTestFallbackBindHost / Port define the bind used when
+// server.New is called with cfg=nil AND no explicit
+// ServerOptions.HostCheck. These match the defaults that come out
+// of config.Load, so existing same-package tests work without
+// per-test churn.
+const (
+	hostCheckTestFallbackBindHost = "127.0.0.1"
+	hostCheckTestFallbackBindPort = "8091"
+)
+
+// testFallbackAllowedHosts is the allowlist applied alongside the
+// fallback bind. httptest.NewRequest defaults the Host to
+// "example.com" and the apitest helpers use "middleman.test"; both
+// must be accepted so the dozens of test helpers that pass
+// cfg=nil work unchanged.
+func testFallbackAllowedHosts() []config.HostKey {
+	return []config.HostKey{
+		{Host: "example.com", Port: ""},
+		{Host: "middleman.test", Port: ""},
+	}
+}
+
+// allowUnvalidatedConfigHostCheckFallbackForTests is false in
+// production. Same-package tests set it from _test.go so legacy
+// partial config literals can exercise unrelated server behavior
+// without manufacturing a full validated config.
+var allowUnvalidatedConfigHostCheckFallbackForTests bool
+
+// resolveHostCheckOptions applies the precedence rule:
+// caller override > cfg-derived options > cfg=nil test-friendly
+// fallback. For non-nil configs that bypassed config.Load, derive
+// the bind and allowlist from the provided config fields so
+// production callers do not silently inherit hard-coded host
+// defaults.
+func resolveHostCheckOptions(
+	cfg *config.Config,
+	override HostCheckOptions,
+	allowLoopbackAnyPort bool,
+) HostCheckOptions {
+	opts, err := pickHostCheckOptions(cfg, override)
+	if err != nil {
+		panic(err)
+	}
+	if allowLoopbackAnyPort {
+		opts.AllowLoopbackAnyPort = true
+	}
+	return opts
+}
+
+func pickHostCheckOptions(cfg *config.Config, override HostCheckOptions) (HostCheckOptions, error) {
+	if override.Valid() {
+		return override, nil
+	}
+	if cfg != nil {
+		if k := cfg.BindHostKey(); k.Valid() {
+			return HostCheckOptions{
+				Bind:              k,
+				Allowed:           cfg.ParsedAllowedHosts(),
+				TrustReverseProxy: cfg.TrustReverseProxy,
+			}, nil
+		}
+		opts, err := deriveHostCheckOptionsFromConfig(cfg)
+		if err == nil {
+			return opts, nil
+		}
+		if !allowUnvalidatedConfigHostCheckFallbackForTests {
+			return HostCheckOptions{}, fmt.Errorf("server: config did not provide valid Host check options: %w", err)
+		}
+		return fallbackHostCheckOptions(), nil
+	}
+	slog.Warn(
+		"server.New used without a cfg or explicit ServerOptions.HostCheck; using httptest-compatible Host defaults. Production callers must pass a validated config or explicit HostCheck options.",
+	)
+	return fallbackHostCheckOptions(), nil
+}
+
+func deriveHostCheckOptionsFromConfig(cfg *config.Config) (HostCheckOptions, error) {
+	if strings.TrimSpace(cfg.Host) == "" {
+		return HostCheckOptions{}, errors.New("host is empty")
+	}
+	if ip := net.ParseIP(cfg.Host); ip == nil {
+		return HostCheckOptions{}, fmt.Errorf("config: invalid host %q", cfg.Host)
+	} else if !ip.IsLoopback() {
+		return HostCheckOptions{}, fmt.Errorf(
+			"config: host %q is not loopback; only loopback addresses are supported",
+			cfg.Host,
+		)
+	}
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return HostCheckOptions{}, fmt.Errorf("port %d is outside 1-65535", cfg.Port)
+	}
+	bind, err := config.ParseHostKey(net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port)))
+	if err != nil {
+		return HostCheckOptions{}, fmt.Errorf("bind host %q: %w", cfg.ListenAddr(), err)
+	}
+	allowed := make([]config.HostKey, 0, len(cfg.AllowedHosts))
+	for _, entry := range cfg.AllowedHosts {
+		key, err := config.ParseHostKey(entry)
+		if err != nil {
+			return HostCheckOptions{}, fmt.Errorf("allowed_hosts entry %q: %w", entry, err)
+		}
+		allowed = append(allowed, key)
+	}
+	return HostCheckOptions{
+		Bind:              bind,
+		Allowed:           allowed,
+		TrustReverseProxy: cfg.TrustReverseProxy,
+	}, nil
+}
+
+func fallbackHostCheckOptions() HostCheckOptions {
+	return HostCheckOptions{
+		Bind: config.HostKey{
+			Host: hostCheckTestFallbackBindHost,
+			Port: hostCheckTestFallbackBindPort,
+		},
+		Allowed:              testFallbackAllowedHosts(),
+		TrustReverseProxy:    false,
+		AllowLoopbackAnyPort: true,
+	}
+}
+
 func newServer(
 	database *db.DB,
 	syncer *ghclient.Syncer,
@@ -522,6 +655,12 @@ func newServer(
 
 	bgBaseCtx, bgCancel := context.WithCancel(context.Background())
 	bgDeadline := &shutdownDeadline{}
+	hostOpts := resolveHostCheckOptions(
+		cfg,
+		options.HostCheck,
+		options.HostCheckAllowLoopbackAnyPort,
+	)
+
 	s := &Server{
 		db:                     database,
 		basePath:               basePath,
@@ -534,6 +673,7 @@ func newServer(
 		bootCfgSnapshot:        snapshotStartupConfig(cfg),
 		runtimeStripEnvVars:    initialRuntimeStripEnvNames(cfg),
 		options:                options,
+		hostOpts:               hostOpts,
 		now:                    time.Now,
 		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		tmuxActivity:           newTmuxActivityTracker(nil),
@@ -553,6 +693,12 @@ func newServer(
 	}
 	s.docsRegistry = docs.NewRegistry(docFolders)
 	warnDocFolderDaemonBindings(docFolders)
+
+	if hostOpts.TrustReverseProxy && len(hostOpts.Allowed) == 0 {
+		slog.Warn(
+			"trust_reverse_proxy is enabled but allowed_hosts is empty; only loopback Hosts will be accepted",
+		)
+	}
 
 	// (*Config).TmuxCommand handles a nil receiver and returns the
 	// default ["tmux"]. Compute once so the workspace, runtime, and
@@ -879,6 +1025,9 @@ func scriptSafe(s string) string {
 
 // ServeHTTP implements http.Handler so Server can be used directly.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !checkHost(w, r, s.hostOpts) {
+		return
+	}
 	start := time.Now()
 	slog.Debug(
 		"http request started",
@@ -965,23 +1114,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) checkHost(w http.ResponseWriter, r *http.Request) bool {
 	s.allowedHostMu.RLock()
-	allowedHosts := s.allowedHosts
-	if len(allowedHosts) == 0 {
-		s.allowedHostMu.RUnlock()
+	enabled := len(s.allowedHosts) > 0
+	s.allowedHostMu.RUnlock()
+	if !enabled {
 		return true
 	}
-	_, ok := allowedHosts[strings.ToLower(r.Host)]
-	s.allowedHostMu.RUnlock()
-	if ok {
-		if authorityIsLoopbackHost(r.Host) && !isLoopbackRemoteAddr(r.RemoteAddr) {
-			writeProblemResponse(w, newProblem(
-				http.StatusForbidden,
-				CodeForbidden,
-				"host is not allowed",
-				map[string]any{"reason": "hostNotAllowed"},
-			))
-			return false
-		}
+	if !authorityIsLoopbackHost(r.Host) || isLoopbackRemoteAddr(r.RemoteAddr) {
 		return true
 	}
 	writeProblemResponse(w, newProblem(

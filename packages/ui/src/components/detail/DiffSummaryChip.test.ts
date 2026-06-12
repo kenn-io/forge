@@ -64,16 +64,15 @@ describe("DiffSummaryChip", () => {
     const labels = Array.from(popover.querySelectorAll(".diff-summary-row > span:first-child")).map(
       (label) => label.textContent,
     );
-    expect(labels).toEqual(["Plans/docs", "Code", "Tests", "Other", "Generated"]);
+    expect(labels).toEqual(["Plans/docs", "Code", "Tests", "Generated"]);
     expect(screen.getByText("Plans/docs")).toBeTruthy();
     expect(screen.queryByText("Total")).toBeNull();
     expect(rowText(popover, "Plans/docs")).toBe("Plans/docs +10 −2");
     expect(screen.getByText("Code")).toBeTruthy();
-    expect(rowText(popover, "Code")).toBe("Code +40 −6");
+    expect(rowText(popover, "Code")).toBe("Code +41 −7");
     expect(screen.getByText("Tests")).toBeTruthy();
     expect(rowText(popover, "Tests")).toBe("Tests +20 −8");
-    expect(screen.getByText("Other")).toBeTruthy();
-    expect(rowText(popover, "Other")).toBe("Other +1 −1");
+    expect(screen.queryByText("Other")).toBeNull();
     expect(screen.getByText("Generated")).toBeTruthy();
     expect(rowText(popover, "Generated")).toBe("Generated +3 −3");
     expect(loadFiles).toHaveBeenCalledTimes(1);

@@ -35,6 +35,7 @@ func doServerJSON(
 		t.Context(), method, rawURL, reader,
 	)
 	require.NoError(t, err)
+	setAcceptedHostForE2ETest(req)
 	if method != http.MethodGet {
 		req.Header.Set("Content-Type", "application/json")
 	}

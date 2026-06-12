@@ -14,7 +14,7 @@
     "test:e2e": "bun run --cwd frontend test:e2e"
   },
   "devDependencies": {
-    "vite-plus": "0.1.22"
+    "vite-plus": "0.1.24"
   },
   "packageManager": "bun@1.3.14"
 }

@@ -123,10 +123,12 @@ func TestServeRejectsRebindingHost(t *testing.T) {
 	defer resp.Body.Close()
 
 	require.Equal(http.StatusForbidden, resp.StatusCode)
-	var body ProblemError
+	var body struct {
+		Error string `json:"error"`
+	}
 	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
-	assert.Equal(CodeForbidden, body.Code)
-	assert.Equal("hostNotAllowed", body.Details["reason"])
+	assert.Contains(body.Error, "allowed_hosts")
+	assert.Contains(body.Error, "trust_reverse_proxy")
 }
 
 func TestServeAllowsBoundLoopbackHost(t *testing.T) {
@@ -167,9 +169,9 @@ func TestServeHTTPRejectsLoopbackHostFromNonLoopbackPeer(t *testing.T) {
 	srv := newTestServer(t)
 	srv.allowedHostMu.Lock()
 	srv.allowedHosts = map[string]struct{}{
-		"127.0.0.1:8091":    {},
-		"localhost:8091":    {},
-		"messages.lan:8091": {},
+		"127.0.0.1:8091": {},
+		"localhost:8091": {},
+		"middleman.test": {},
 	}
 	srv.allowedHostMu.Unlock()
 
@@ -204,8 +206,8 @@ func TestServeHTTPRejectsLoopbackHostFromNonLoopbackPeer(t *testing.T) {
 			want:       http.StatusForbidden,
 		},
 		{
-			name:       "allowed lan host from remote client",
-			host:       "messages.lan:8091",
+			name:       "allowed non-loopback host from remote client",
+			host:       "middleman.test",
 			remoteAddr: "192.0.2.10:4444",
 			want:       http.StatusOK,
 		},

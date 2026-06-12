@@ -755,6 +755,10 @@ export class KataWorkspaceStore {
 
   private async refreshCurrentView(preferredUID?: string | null): Promise<boolean> {
     const requestID = ++this.viewRequestID;
+    // Selection epoch at refresh start: any selection or clear that lands
+    // while the view fetch below is in flight bumps detailRequestID,
+    // which makes the preferredUID captured by the caller stale.
+    const selectionEpoch = this.detailRequestID;
     let nextView: KataCurrentView;
     let issues: KataTaskSummary[];
     if (shouldRefreshViaSearch(this.searchFilters, this.currentView.name)) {
@@ -796,7 +800,24 @@ export class KataWorkspaceStore {
       issues = selectableViewIssues(view.groups);
     }
     this.currentView = nextView;
-    const nextSelectedUID = preferredUID === undefined ? (issues[0]?.uid ?? null) : preferredUID;
+    let resolvedUID = preferredUID;
+    if (this.detailRequestID !== selectionEpoch) {
+      // The selection changed while the view fetch was in flight, so the
+      // preferredUID the caller captured is stale. If the newer selection
+      // is still loading, leave the pane to it: reloading here would
+      // abort that load and silently discard a row the user just clicked.
+      // The epoch gate matters — an in-flight load from before this
+      // refresh (e.g. an older refresh's own detail reload) must instead
+      // be superseded below, or its pre-refresh payload would later
+      // overwrite the refreshed detail and ETag state.
+      if (this.detailAbort !== null) {
+        return true;
+      }
+      // The newer selection (or clear) already completed; re-resolve so
+      // the stale preferredUID cannot revert it.
+      resolvedUID = this.pendingSelectionUID ?? this.selectedIssue?.issue.uid ?? null;
+    }
+    const nextSelectedUID = resolvedUID === undefined ? (issues[0]?.uid ?? null) : resolvedUID;
     return await this.loadSelectedIssue(nextSelectedUID, requestID, ++this.detailRequestID);
   }
 

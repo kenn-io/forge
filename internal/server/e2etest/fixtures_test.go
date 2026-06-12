@@ -27,7 +27,9 @@ func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+	})
 	return srv, database
 }
 
@@ -49,7 +51,12 @@ func setupTestServerWithSSEBufferSize(
 		BasePath:      "/",
 		SSEBufferSize: size,
 	}
-	srv := server.New(database, syncer, nil, "/", cfg, server.ServerOptions{})
+	srv := server.New(database, syncer, nil, "/", cfg, server.ServerOptions{
+		HostCheck: server.HostCheckOptions{
+			Bind:                 config.HostKey{Host: "127.0.0.1", Port: "8091"},
+			AllowLoopbackAnyPort: true,
+		},
+	})
 	return srv, database, cfg
 }
 
@@ -62,7 +69,9 @@ func setupWithBasePath(t *testing.T, basePath string, _ any) *server.Server {
 		database, nil, nil, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	return server.New(database, syncer, nil, basePath, nil, server.ServerOptions{})
+	return server.New(database, syncer, nil, basePath, nil, server.ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+	})
 }
 
 func setupTestServerWithConfig(t *testing.T) (*server.Server, *db.DB, string) {
@@ -113,7 +122,9 @@ func setupTestServerWithConfigContentAndSyncer(
 	t.Cleanup(syncer.Stop)
 
 	srv := server.NewWithConfig(
-		database, syncer, nil, nil, cfg, cfgPath, server.ServerOptions{},
+		database, syncer, nil, nil, cfg, cfgPath, server.ServerOptions{
+			HostCheckAllowLoopbackAnyPort: true,
+		},
 	)
 	return srv, database, cfgPath, syncer
 }

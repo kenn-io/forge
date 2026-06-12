@@ -395,7 +395,7 @@ func startSyncCooldownE2EServerWithSyncer(
 
 	srv := server.NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
-		server.ServerOptions{},
+		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

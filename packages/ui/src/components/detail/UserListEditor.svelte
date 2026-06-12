@@ -1,3 +1,12 @@
+<script module lang="ts">
+  // All editor instances share one open-picker slot so at most one
+  // picker exists across the app. The document-mousedown dismissal
+  // below only sees pointer presses; keyboard or assistive-tech
+  // activation of another chip reaches togglePicker without any
+  // mousedown, and this slot is what closes the previous picker then.
+  let closeOpenEditor: (() => void) | null = null;
+</script>
+
 <script lang="ts">
   import { tick, type Snippet } from "svelte";
   import PlusIcon from "@lucide/svelte/icons/plus";
@@ -56,6 +65,7 @@
   let queryDebounce: ReturnType<typeof setTimeout> | null = null;
 
   function closePicker(): void {
+    if (closeOpenEditor === closePicker) closeOpenEditor = null;
     open = false;
     pendingUser = null;
     candidatesError = null;
@@ -118,12 +128,24 @@
     });
   }
 
+  function onDocumentMousedown(event: MouseEvent): void {
+    // Dismiss on any press outside the chip and panel. Pressing
+    // another editor's chip lands here too, so opening one picker
+    // closes any other before its own toggle runs.
+    if (!open) return;
+    const target = event.target as Node;
+    if (anchorEl?.contains(target) || popoverEl?.contains(target)) return;
+    closePicker();
+  }
+
   async function togglePicker(event?: MouseEvent): Promise<void> {
     if (open) {
       closePicker();
       return;
     }
     autofocusFilter = event !== undefined && !(window.matchMedia?.("(pointer: coarse)").matches ?? false);
+    closeOpenEditor?.();
+    closeOpenEditor = closePicker;
     open = true;
     candidatesError = null;
     mutationError = null;
@@ -190,6 +212,8 @@
     };
   });
 </script>
+
+<svelte:document onmousedown={onDocumentMousedown} />
 
 {#if users.length > 0 || canEdit}
   <span class="user-list-editor" bind:this={anchorEl} data-user-list-editor={editorId}>

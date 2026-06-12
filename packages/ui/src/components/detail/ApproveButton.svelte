@@ -120,7 +120,9 @@
       expanded = false;
       oncompleted?.();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (expanded) {
+        error = err instanceof Error ? err.message : String(err);
+      }
     } finally {
       submitting = false;
     }

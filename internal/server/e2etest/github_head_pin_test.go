@@ -371,8 +371,78 @@ func TestGitHubApproveDismissedWhenHeadMovesDuringSubmit(t *testing.T) {
 	assert.Equal("conflict", code)
 	require.NotNil(details)
 	assert.Equal("stale_state", details["reason"])
+	sideEffect, _ := details["context"].(string)
+	assert.Contains(sideEffect, "posted review text remains visible upstream")
 	assert.Equal("succeeded", details["revocation"],
 		"a clean dismissal must be distinguishable from one that left the approval standing")
 	assert.Equal(int64(31), dismissedID.Load(),
 		"the approval that landed on a moved head must be dismissed upstream")
+}
+
+func TestGitHubReviewDraftPartialStaleApprovalCleansPublishedComment(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var dismissedID atomic.Int64
+	var submittedCommentCount atomic.Int32
+	mock := &mockGH{
+		getPullRequestFn: githubHeadSequenceFn("reviewed-sha", "new-sha"),
+		createReviewWithCommentsFn: func(
+			_ context.Context, _, _ string, _ int, event, body, _ string,
+			comments []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			submittedCommentCount.Store(int32(len(comments)))
+			id := int64(31)
+			submitted := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequestReview{
+				ID: &id, State: &event, Body: &body, SubmittedAt: &submitted,
+			}, nil
+		},
+		dismissReviewFn: func(
+			_ context.Context, _, _ string, _ int, reviewID int64, _ string,
+		) (*gh.PullRequestReview, error) {
+			dismissedID.Store(reviewID)
+			return &gh.PullRequestReview{ID: &reviewID}, nil
+		},
+	}
+	srv, database, repoID := setupGitHubHeadPinServer(t, mock)
+	ctx := t.Context()
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	draft, err := database.GetOrCreateMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	line := 42
+	_, err = database.CreateMRReviewDraftComment(ctx, draft.ID, db.MRReviewDraftCommentInput{
+		Body: "ready to approve",
+		Range: db.ReviewLineRange{
+			Path:        "internal/server/e2etest/github_head_pin_test.go",
+			Side:        "right",
+			Line:        42,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "reviewed-sha",
+		},
+	})
+	require.NoError(err)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/review-draft/publish",
+		json.RawMessage(`{"action":"approve","body":"summary note"}`),
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	problem := decodeConflictProblemBody(t, json.NewDecoder(rr.Body))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
+	assert.Equal(true, problem.Details["partialPublish"])
+	assert.EqualValues(1, problem.Details["publishedCommentCount"])
+	sideEffect, _ := problem.Details["context"].(string)
+	assert.Contains(sideEffect, "posted review text remains visible upstream")
+	assert.Contains(sideEffect, "retrying will repeat it")
+	assert.Equal(int32(1), submittedCommentCount.Load())
+	assert.Equal(int64(31), dismissedID.Load(),
+		"the approval that landed on a moved head must be dismissed upstream")
+	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	assert.Nil(storedDraft, "published local draft comment should be removed after partial publish")
 }

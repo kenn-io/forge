@@ -132,13 +132,28 @@ func setupGitLabMutationServer(
 			writeGitLabJSON(w, `[]`)
 		case path == "/api/v4/projects/4242/pipelines" && r.Method == http.MethodGet:
 			writeGitLabJSON(w, `[]`)
-		case path == "/api/v4/projects/4242/merge_requests/7/notes" && r.Method == http.MethodPost:
+		case (path == "/api/v4/projects/4242/merge_requests/7/notes" ||
+			path == "/api/v4/projects/acme%2Fwidget/merge_requests/7/notes") &&
+			r.Method == http.MethodPost:
 			writeGitLabJSON(w, `{
 				"id": 9100,
 				"body": "from e2e",
 				"author": {"username": "ada"},
 				"created_at": "2026-06-01T10:00:00Z"
 			}`)
+		case (path == "/api/v4/projects/4242/merge_requests/7/draft_notes" ||
+			path == "/api/v4/projects/acme%2Fwidget/merge_requests/7/draft_notes") &&
+			r.Method == http.MethodPost:
+			writeGitLabJSON(w, `{
+				"id": 55,
+				"note": "draft note",
+				"author": {"username": "ada"},
+				"created_at": "2026-06-01T10:00:00Z"
+			}`)
+		case (path == "/api/v4/projects/4242/merge_requests/7/draft_notes/55/publish" ||
+			path == "/api/v4/projects/acme%2Fwidget/merge_requests/7/draft_notes/55/publish") &&
+			r.Method == http.MethodPut:
+			writeGitLabJSON(w, `{}`)
 		case path == "/api/v4/projects/4242/merge_requests/7/notes/9001" && r.Method == http.MethodPut:
 			writeGitLabJSON(w, `{
 				"id": 9001,
@@ -172,12 +187,29 @@ func setupGitLabMutationServer(
 				"id": 7001, "iid": 7, "title": "Test MR",
 				"description": "Updated MR body", "state": "opened"
 			}`)
-		case path == "/api/v4/projects/4242/merge_requests/7/approve" && r.Method == http.MethodPost:
+		case (path == "/api/v4/projects/4242/merge_requests/7/approve" ||
+			path == "/api/v4/projects/acme%2Fwidget/merge_requests/7/approve") &&
+			r.Method == http.MethodPost:
 			// Magic note marker for tests that need the approval to go
 			// stale only after the note posted (a push landing between
 			// the pre-check and the approvals call).
-			if note, ok := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes"); ok &&
-				strings.Contains(note.Body, "force-stale-after-note") {
+			note, noteOK := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
+			if !noteOK {
+				note, noteOK = recorder.find(http.MethodPost, "/api/v4/projects/acme%2Fwidget/merge_requests/7/notes")
+			}
+			if noteOK && strings.Contains(note.Body, "force-stale-after-note") {
+				w.WriteHeader(http.StatusConflict)
+				writeGitLabJSON(w, `{"message": "SHA does not match HEAD of source branch"}`)
+				return
+			}
+			_, draftPublished := recorder.find(http.MethodPut, "/api/v4/projects/4242/merge_requests/7/draft_notes/55/publish")
+			if !draftPublished {
+				_, draftPublished = recorder.find(
+					http.MethodPut,
+					"/api/v4/projects/acme%2Fwidget/merge_requests/7/draft_notes/55/publish",
+				)
+			}
+			if draftPublished {
 				w.WriteHeader(http.StatusConflict)
 				writeGitLabJSON(w, `{"message": "SHA does not match HEAD of source branch"}`)
 				return
@@ -718,6 +750,68 @@ func TestGitLabMutationStaleApproveAfterNoteSurfacesContext(t *testing.T) {
 
 	_, noted := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
 	assert.True(noted, "this scenario posts the note before the approval fails")
+}
+
+func TestGitLabMutationReviewDraftPartialStaleApproveCleansPublishedComment(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, recorder, repoID := setupGitLabMutationServer(t)
+	ctx := t.Context()
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	draft, err := database.GetOrCreateMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	line := 42
+	_, err = database.CreateMRReviewDraftComment(ctx, draft.ID, db.MRReviewDraftCommentInput{
+		Body: "ready to approve",
+		Range: db.ReviewLineRange{
+			Path:        "internal/server/e2etest/gitlab_mutations_test.go",
+			Side:        "right",
+			Line:        42,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "head-sha",
+		},
+	})
+	require.NoError(err)
+
+	rr := doGitLabJSON(t, srv, http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/review-draft/publish",
+		`{"action":"approve","body":"summary note"}`,
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem struct {
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
+	assert.Equal(true, problem.Details["partialPublish"])
+	assert.EqualValues(1, problem.Details["publishedCommentCount"])
+	assert.Equal("the review summary was already posted; retrying will repeat it", problem.Details["context"])
+
+	_, created := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/draft_notes")
+	if !created {
+		_, created = recorder.find(http.MethodPost, "/api/v4/projects/acme%2Fwidget/merge_requests/7/draft_notes")
+	}
+	assert.True(created, "draft comment was not sent to GitLab")
+	_, published := recorder.find(http.MethodPut, "/api/v4/projects/4242/merge_requests/7/draft_notes/55/publish")
+	if !published {
+		_, published = recorder.find(http.MethodPut, "/api/v4/projects/acme%2Fwidget/merge_requests/7/draft_notes/55/publish")
+	}
+	assert.True(published, "draft comment was not published before the stale approval")
+	_, approved := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/approve")
+	if !approved {
+		_, approved = recorder.find(http.MethodPost, "/api/v4/projects/acme%2Fwidget/merge_requests/7/approve")
+	}
+	assert.True(approved, "stale approval path should still reach the sha-bound approvals API after publishing")
+	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	assert.Nil(storedDraft, "published local draft comment should be removed after partial publish")
 }
 
 // A body-less stale approval has no note to protect, so it relies solely

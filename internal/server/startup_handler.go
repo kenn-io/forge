@@ -42,7 +42,8 @@ func (h *SwitchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type startupHandler struct {
 	hostOpts     HostCheckOptions
 	allowedHosts map[string]struct{}
-	handler      http.Handler
+	basePath     string
+	spa          http.Handler
 }
 
 // NewStartupHandler returns a minimal handler for the window between listener
@@ -64,37 +65,18 @@ func NewStartupHandler(
 		options.HostCheckAllowLoopbackAnyPort,
 	)
 
-	inner := http.NewServeMux()
-	inner.HandleFunc("/livez", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
-	})
-	inner.HandleFunc("/healthz", writeStartupUnavailable)
-	inner.HandleFunc("/api/", writeStartupUnavailable)
-	inner.HandleFunc("/api", writeStartupUnavailable)
-	inner.HandleFunc("/ws/", writeStartupUnavailable)
-	inner.HandleFunc("/ws", writeStartupUnavailable)
+	var spa http.Handler
 	if frontend != nil {
-		inner.Handle("/", newSPAAssetHandler(frontend, basePath, func() string {
+		spa = newSPAAssetHandler(frontend, basePath, func() string {
 			return startupBootstrapScript(basePath)
-		}))
-	} else {
-		inner.HandleFunc("/", writeStartupUnavailable)
-	}
-
-	var handler http.Handler = inner
-	if basePath != "/" {
-		outer := http.NewServeMux()
-		prefix := strings.TrimSuffix(basePath, "/")
-		outer.Handle("/healthz", inner)
-		outer.Handle("/livez", inner)
-		outer.Handle(basePath, http.StripPrefix(prefix, inner))
-		handler = outer
+		})
 	}
 
 	return &startupHandler{
 		hostOpts:     hostOpts,
 		allowedHosts: allowedHostsForListener(ln),
-		handler:      handler,
+		basePath:     basePath,
+		spa:          spa,
 	}
 }
 
@@ -119,5 +101,52 @@ func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !checkListenerHost(w, r, h.allowedHosts) {
 		return
 	}
-	h.handler.ServeHTTP(w, r)
+	h.serve(w, r)
+}
+
+func (h *startupHandler) serve(w http.ResponseWriter, r *http.Request) {
+	if h.basePath == "/" {
+		h.serveInner(w, r)
+		return
+	}
+
+	switch r.URL.Path {
+	case "/healthz", "/livez":
+		h.serveInner(w, r)
+		return
+	}
+
+	prefix := strings.TrimSuffix(h.basePath, "/")
+	if r.URL.Path == prefix {
+		http.Redirect(w, r, prefix+"/", http.StatusMovedPermanently)
+		return
+	}
+	if !strings.HasPrefix(r.URL.Path, h.basePath) {
+		http.NotFound(w, r)
+		return
+	}
+
+	stripped := r.Clone(r.Context())
+	stripped.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+	if r.URL.RawPath != "" {
+		stripped.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, prefix)
+	}
+	h.serveInner(w, stripped)
+}
+
+func (h *startupHandler) serveInner(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.URL.Path == "/livez":
+		writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
+	case r.URL.Path == "/healthz",
+		r.URL.Path == "/api",
+		strings.HasPrefix(r.URL.Path, "/api/"),
+		r.URL.Path == "/ws",
+		strings.HasPrefix(r.URL.Path, "/ws/"):
+		writeStartupUnavailable(w, r)
+	case h.spa != nil:
+		h.spa.ServeHTTP(w, r)
+	default:
+		writeStartupUnavailable(w, r)
+	}
 }

@@ -42,8 +42,7 @@ func newSPAAssetHandler(
 	}
 
 	fileServer := http.FileServerFS(frontend)
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			http.NotFound(w, r)
 			return
@@ -73,5 +72,4 @@ func newSPAAssetHandler(
 		}
 		serveIndex(w)
 	})
-	return mux
 }

@@ -111,3 +111,49 @@ func TestStartupHandlerUsesHostValidation(t *testing.T) {
 
 	Assert.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
 }
+
+func TestStartupHandlerHonorsBasePath(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<!DOCTYPE html><html><head><script src="/assets/index.js"></script></head><body>app</body></html>`),
+		},
+	}
+	cfg := &config.Config{
+		Host:     "127.0.0.1",
+		Port:     8091,
+		BasePath: "/middleman/",
+	}
+	handler := NewStartupHandler(
+		frontend,
+		cfg,
+		ServerOptions{},
+		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/middleman/", nil)
+	req.Host = "127.0.0.1:8091"
+	req.RemoteAddr = "127.0.0.1:1234"
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert := Assert.New(t)
+	assert.Equal(http.StatusOK, rr.Code)
+	assert.Contains(rr.Body.String(), `window.__BASE_PATH__="/middleman/"`)
+	assert.Contains(rr.Body.String(), `src="/middleman/assets/index.js"`)
+
+	apiReq := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/settings", nil)
+	apiReq.Host = "127.0.0.1:8091"
+	apiReq.RemoteAddr = "127.0.0.1:1234"
+	apiRR := httptest.NewRecorder()
+	handler.ServeHTTP(apiRR, apiReq)
+
+	assert.Equal(http.StatusServiceUnavailable, apiRR.Code)
+
+	bareReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
+	bareReq.Host = "127.0.0.1:8091"
+	bareReq.RemoteAddr = "127.0.0.1:1234"
+	bareRR := httptest.NewRecorder()
+	handler.ServeHTTP(bareRR, bareReq)
+
+	assert.Equal(http.StatusNotFound, bareRR.Code)
+}

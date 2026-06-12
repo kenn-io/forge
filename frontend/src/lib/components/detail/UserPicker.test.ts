@@ -55,6 +55,55 @@ describe("UserPicker", () => {
     expect(screen.getAllByRole("menuitemcheckbox")).toHaveLength(2);
   });
 
+  it("notifies query changes so callers can fetch matching candidates", async () => {
+    const onQuery = vi.fn();
+    render(UserPicker, {
+      props: {
+        title: "Edit assignees",
+        candidates: ["alice"],
+        selected: [],
+        onquery: onQuery,
+        ontoggle: vi.fn(),
+        onclose: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Filter users"), {
+      target: { value: "  zed " },
+    });
+
+    expect(onQuery).toHaveBeenCalledWith("zed");
+  });
+
+  it("offers an exact-username entry when the query matches no candidate", async () => {
+    const onToggle = vi.fn();
+    render(UserPicker, {
+      props: {
+        title: "Edit assignees",
+        candidates: ["alice"],
+        selected: ["bob"],
+        ontoggle: onToggle,
+        onclose: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Filter users"), {
+      target: { value: "zed" },
+    });
+    await fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /add .zed./i }));
+    expect(onToggle).toHaveBeenCalledWith("zed");
+
+    // An exact match (even differing in case) suppresses the entry row.
+    await fireEvent.input(screen.getByLabelText("Filter users"), {
+      target: { value: "Alice" },
+    });
+    expect(screen.queryByRole("menuitemcheckbox", { name: /add .Alice./i })).toBeNull();
+    await fireEvent.input(screen.getByLabelText("Filter users"), {
+      target: { value: "bob" },
+    });
+    expect(screen.queryByRole("menuitemcheckbox", { name: /add .bob./i })).toBeNull();
+  });
+
   it("emits the toggled username", async () => {
     const onToggle = vi.fn();
     render(UserPicker, {

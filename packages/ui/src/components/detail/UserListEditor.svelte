@@ -12,7 +12,10 @@
     disabled?: boolean;
     /// Extra context appended to the chip tooltip, e.g. provider caveats.
     tooltipNote?: string;
-    loadCandidates: () => Promise<string[]>;
+    /// Returns candidate usernames matching the filter query. Called
+    /// with "" when the picker opens and again as the user types, so
+    /// candidates beyond the first page stay reachable by searching.
+    loadCandidates: (query: string) => Promise<string[]>;
     onchange: (next: string[]) => Promise<unknown>;
     icon?: Snippet;
   }
@@ -44,10 +47,46 @@
     return tooltipNote ? `${base}\n${tooltipNote}` : base;
   });
 
+  let candidateFetchSeq = 0;
+  let queryDebounce: ReturnType<typeof setTimeout> | null = null;
+
   function closePicker(): void {
     open = false;
     pendingUser = null;
     pickerError = null;
+    if (queryDebounce !== null) {
+      clearTimeout(queryDebounce);
+      queryDebounce = null;
+    }
+  }
+
+  async function fetchCandidates(query: string): Promise<void> {
+    const seq = ++candidateFetchSeq;
+    candidatesLoading = true;
+    try {
+      const next = await loadCandidates(query);
+      if (seq !== candidateFetchSeq) return;
+      candidates = next;
+      void tick().then(() => {
+        if (open) positionPicker();
+      });
+    } catch (err) {
+      if (seq === candidateFetchSeq) {
+        pickerError = err instanceof Error ? err.message : String(err);
+      }
+    } finally {
+      if (seq === candidateFetchSeq) {
+        candidatesLoading = false;
+      }
+    }
+  }
+
+  function onPickerQuery(query: string): void {
+    if (queryDebounce !== null) clearTimeout(queryDebounce);
+    queryDebounce = setTimeout(() => {
+      queryDebounce = null;
+      void fetchCandidates(query);
+    }, 200);
   }
 
   function positionPicker(): void {
@@ -77,19 +116,9 @@
     autofocusFilter = event !== undefined && !(window.matchMedia?.("(pointer: coarse)").matches ?? false);
     open = true;
     pickerError = null;
-    candidatesLoading = true;
     await tick();
     positionPicker();
-    try {
-      candidates = await loadCandidates();
-      void tick().then(() => {
-        if (open) positionPicker();
-      });
-    } catch (err) {
-      pickerError = err instanceof Error ? err.message : String(err);
-    } finally {
-      candidatesLoading = false;
-    }
+    await fetchCandidates("");
   }
 
   async function toggleUser(username: string): Promise<void> {
@@ -183,6 +212,7 @@
         {pendingUser}
         error={pickerError}
         {autofocusFilter}
+        onquery={onPickerQuery}
         ontoggle={toggleUser}
         onclear={clearUsers}
         onclose={closePicker}

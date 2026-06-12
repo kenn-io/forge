@@ -85,6 +85,40 @@ test.describe("assignee and reviewer editing", () => {
     }
   });
 
+  test("pull detail searches candidates server-side and assigns a typed username", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      await page.getByRole("button", { name: "Edit assignees" }).click();
+      await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeVisible();
+
+      // Typing requeries the autocomplete endpoint with the filter so
+      // candidates beyond the first page stay reachable.
+      const queryResponse = page.waitForResponse(
+        (response) => response.url().includes("/comment-autocomplete") && response.url().includes("q=zed"),
+      );
+      await page.getByLabel("Filter users").fill("zed");
+      expect((await queryResponse).status()).toBe(200);
+
+      // No synced user matches, so the picker offers exact-username
+      // entry; the provider accepts it and the chip reflects it.
+      const updateResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/1/assignees`,
+      );
+      await page.getByRole("menuitemcheckbox", { name: /add .zed./i }).click();
+      expect((await updateResponse).status()).toBe(200);
+      await expect(page.locator("[data-user-list-editor='assignees']", { hasText: "zed" })).toBeVisible();
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("issue detail edits assignees", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

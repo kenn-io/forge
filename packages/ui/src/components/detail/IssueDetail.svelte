@@ -329,13 +329,13 @@
     }
   }
 
-  async function loadUserCandidates(): Promise<string[]> {
+  async function loadUserCandidates(query: string): Promise<string[]> {
     const { data, error } = await client.GET(
       providerRepoPath(routeRef, "/comment-autocomplete"),
       {
         params: {
           path: providerRouteParams(routeRef),
-          query: { trigger: "@", limit: 25 },
+          query: { trigger: "@", q: query, limit: 25 },
         },
       },
     );

@@ -12,6 +12,9 @@
     pendingUser?: string | null;
     error?: string | null;
     autofocusFilter?: boolean;
+    /// Notified as the filter text changes so the caller can fetch
+    /// candidates matching the query from the server.
+    onquery?: (query: string) => void;
     ontoggle: (username: string) => void | Promise<void>;
     onclear?: () => void | Promise<void>;
     onclose: () => void;
@@ -25,6 +28,7 @@
     pendingUser = null,
     error = null,
     autofocusFilter = false,
+    onquery = undefined,
     ontoggle,
     onclear = undefined,
     onclose,
@@ -52,6 +56,17 @@
     const needle = query.trim().toLowerCase();
     if (needle === "") return users;
     return users.filter((name) => name.toLowerCase().includes(needle));
+  });
+  // The candidate source is synced history, so it cannot know every
+  // valid provider username. Typing a name that matches no listed user
+  // offers an exact-username entry; the provider rejects names that do
+  // not exist.
+  const freeEntryUser = $derived.by(() => {
+    const trimmed = query.trim();
+    if (trimmed === "") return null;
+    const key = trimmed.toLowerCase();
+    const listed = [...selected, ...candidates].some((name) => name.toLowerCase() === key);
+    return listed ? null : trimmed;
   });
 
   function clearSelectedUsers(): void {
@@ -95,6 +110,7 @@
     <input
       bind:this={filterInput}
       bind:value={query}
+      oninput={() => onquery?.(query.trim())}
       type="search"
       placeholder="Filter users"
       aria-label="Filter users"
@@ -127,8 +143,28 @@
         </span>
       </button>
     {:else}
-      <div class="user-picker__empty">{loading ? "Loading users…" : "No users found"}</div>
+      {#if !freeEntryUser}
+        <div class="user-picker__empty">{loading ? "Loading users…" : "No users found"}</div>
+      {/if}
     {/each}
+    {#if freeEntryUser}
+      <button
+        type="button"
+        class="user-picker__row user-picker__row--free-entry"
+        role="menuitemcheckbox"
+        aria-checked="false"
+        disabled={pendingUser !== null}
+        onclick={() => ontoggle(freeEntryUser)}
+      >
+        <span class="user-picker__avatar" aria-hidden="true">@</span>
+        <span class="user-picker__name">Add “{freeEntryUser}”</span>
+        <span class="user-picker__status">
+          {#if pendingUser === freeEntryUser}
+            <span class="user-picker__pending">Saving…</span>
+          {/if}
+        </span>
+      </button>
+    {/if}
   </div>
 </div>
 
@@ -268,6 +304,14 @@
 
   .user-picker__row--selected {
     background: color-mix(in srgb, var(--accent-blue) 7%, transparent);
+  }
+
+  .user-picker__row--free-entry {
+    color: var(--accent-blue);
+  }
+
+  .user-picker__row--free-entry .user-picker__avatar {
+    color: var(--accent-blue);
   }
 
   .user-picker__row:disabled {

@@ -825,7 +825,13 @@ func validateOriginRemoteURL(
 		)
 	}
 	if !originRemoteSchemeAllowed(remoteURL) {
-		return fmt.Errorf("origin remote scheme is not allowed: %s", remoteURL)
+		// Never include the raw remote URL: it can embed credentials
+		// (http://oauth2:token@host/...) and this error is persisted as
+		// workspace error state and returned through the API.
+		return fmt.Errorf(
+			"origin remote scheme %q is not allowed (host %q)",
+			remoteURLScheme(remoteURL), gitremote.RemoteHost(remoteURL),
+		)
 	}
 	if err := gitremote.ValidateRemoteIdentity(gitremote.Identity{
 		Host:  platformHost,
@@ -835,6 +841,16 @@ func validateOriginRemoteURL(
 		return fmt.Errorf("origin remote does not match repository: %w", err)
 	}
 	return nil
+}
+
+// remoteURLScheme returns only the scheme prefix of a remote URL. The rest
+// of the URL stays out of error messages because it can embed credentials.
+func remoteURLScheme(remoteURL string) string {
+	scheme, _, ok := strings.Cut(remoteURL, "://")
+	if !ok {
+		return ""
+	}
+	return strings.ToLower(scheme)
 }
 
 func originRemoteSchemeAllowed(remoteURL string) bool {

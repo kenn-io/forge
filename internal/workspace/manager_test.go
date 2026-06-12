@@ -648,11 +648,25 @@ func TestValidateWorktreeBasePathRejectsUnsafeOriginSchemes(t *testing.T) {
 	require := require.New(t)
 
 	tests := []struct {
-		name      string
-		remoteURL string
+		name       string
+		remoteURL  string
+		wantScheme string
 	}{
-		{name: "git protocol", remoteURL: "git://github.com/acme/widget.git"},
-		{name: "plain http", remoteURL: "http://github.com/acme/widget.git"},
+		{
+			name:       "git protocol",
+			remoteURL:  "git://github.com/acme/widget.git",
+			wantScheme: "git",
+		},
+		{
+			name:       "plain http",
+			remoteURL:  "http://github.com/acme/widget.git",
+			wantScheme: "http",
+		},
+		{
+			name:       "http with embedded credentials",
+			remoteURL:  "http://oauth2:secret-token@github.com/acme/widget.git",
+			wantScheme: "http",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -667,7 +681,17 @@ func TestValidateWorktreeBasePathRejectsUnsafeOriginSchemes(t *testing.T) {
 
 			require.Empty(got)
 			require.Error(err)
-			assert.Contains(err.Error(), "origin remote scheme is not allowed")
+			assert.Contains(
+				err.Error(),
+				fmt.Sprintf(
+					"origin remote scheme %q is not allowed (host %q)",
+					tt.wantScheme, "github.com",
+				),
+			)
+			// The validation error is persisted as workspace error state and
+			// served through the API, so credentials must never appear.
+			assert.NotContains(err.Error(), "secret-token")
+			assert.NotContains(err.Error(), tt.remoteURL)
 		})
 	}
 }

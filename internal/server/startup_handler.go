@@ -79,12 +79,19 @@ func NewStartupHandler(
 		basePath:     basePath,
 		frontend:     frontend,
 		fileServer:   fileServer,
-		startupPage:  []byte(startupPageHTML()),
+		startupPage:  []byte(startupPageHTML(startupReadinessPath(basePath))),
 	}
 }
 
-func startupPageHTML() string {
-	healthPath, _ := json.Marshal("/healthz")
+func startupReadinessPath(basePath string) string {
+	if basePath == "/" {
+		return "/healthz"
+	}
+	return strings.TrimSuffix(basePath, "/") + "/healthz"
+}
+
+func startupPageHTML(readinessPath string) string {
+	healthPath, _ := json.Marshal(readinessPath)
 	return `<!DOCTYPE html><html><head><meta charset="utf-8">` +
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
 		`<title>middleman is starting</title><style>` +

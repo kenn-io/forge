@@ -415,23 +415,52 @@ func run(opts serve.Options) error {
 	var database *db.DB
 	var srv *server.Server
 	var syncer *ghclient.Syncer
+	var telemetryReporter *telemetry.Reporter
+	var profilerSrv *profiler.Server
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(
 			context.Background(), 10*time.Second,
 		)
 		defer cancel()
-		if srv != nil {
-			if err := srv.Shutdown(shutdownCtx); err != nil {
-				slog.Warn("server shutdown", "err", err)
-			}
-		} else if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-			slog.Warn("startup server shutdown", "err", err)
-		}
-		if syncer != nil {
-			syncer.Stop()
-		}
-		if database != nil {
-			database.Close()
+		for _, shutdownErr := range runMainShutdown(
+			shutdownCtx,
+			mainShutdownCallbacks{
+				ShutdownPrimaryHTTP: func(ctx context.Context) error {
+					if srv != nil {
+						return srv.Shutdown(ctx)
+					}
+					return httpSrv.Shutdown(ctx)
+				},
+				StopSyncer: func() {
+					if syncer != nil {
+						syncer.Stop()
+					}
+				},
+				ShutdownProfiler: func(context.Context) error {
+					if profilerSrv != nil {
+						profilerCtx, profilerCancel := context.WithTimeout(
+							context.Background(), 5*time.Second,
+						)
+						defer profilerCancel()
+						return profilerSrv.Shutdown(profilerCtx)
+					}
+					return nil
+				},
+				CloseTelemetry: func() error {
+					if telemetryReporter != nil {
+						return telemetryReporter.Close()
+					}
+					return nil
+				},
+				CloseDatabase: func() error {
+					if database != nil {
+						return database.Close()
+					}
+					return nil
+				},
+			},
+		) {
+			slog.Warn(shutdownErr.message, "err", shutdownErr.err)
 		}
 	}()
 
@@ -484,16 +513,11 @@ func run(opts serve.Options) error {
 	)
 	syncer.SetFetchers(startup.fetchers)
 
-	telemetryReporter := telemetry.NewReporterOrDisabled(telemetry.Options{
+	telemetryReporter = telemetry.NewReporterOrDisabled(telemetry.Options{
 		Database: database,
 		Version:  version,
 		Commit:   commit,
 	})
-	defer func() {
-		if err := telemetryReporter.Close(); err != nil {
-			slog.Warn("close telemetry", "err", err)
-		}
-	}()
 	if telemetryReporter.Enabled() {
 		if err := telemetryReporter.Capture("daemon_active", map[string]any{
 			"repo_count": len(repos),
@@ -539,7 +563,7 @@ func run(opts serve.Options) error {
 	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	syncer.Start(ctx)
 
-	profilerSrv, err := profiler.Start(opts.ProfilerAddr)
+	profilerSrv, err = profiler.Start(opts.ProfilerAddr)
 	if err != nil {
 		return err
 	}
@@ -552,15 +576,6 @@ func run(opts serve.Options) error {
 			"starting profiler listener",
 			"addr", profilerAddr,
 		)
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(
-				context.Background(), 5*time.Second,
-			)
-			defer cancel()
-			if err := profilerSrv.Shutdown(shutdownCtx); err != nil {
-				slog.Warn("profiler shutdown", "err", err)
-			}
-		}()
 	}
 
 	displayVersion := version
@@ -580,6 +595,62 @@ func run(opts serve.Options) error {
 	case err := <-errCh:
 		return fmt.Errorf("server: %w", err)
 	}
+}
+
+type mainShutdownCallbacks struct {
+	ShutdownPrimaryHTTP func(context.Context) error
+	StopSyncer          func()
+	ShutdownProfiler    func(context.Context) error
+	CloseTelemetry      func() error
+	CloseDatabase       func() error
+}
+
+type mainShutdownError struct {
+	message string
+	err     error
+}
+
+func runMainShutdown(
+	ctx context.Context,
+	callbacks mainShutdownCallbacks,
+) []mainShutdownError {
+	var errs []mainShutdownError
+	if callbacks.ShutdownPrimaryHTTP != nil {
+		if err := callbacks.ShutdownPrimaryHTTP(ctx); err != nil {
+			errs = append(errs, mainShutdownError{
+				message: "server shutdown",
+				err:     err,
+			})
+		}
+	}
+	if callbacks.StopSyncer != nil {
+		callbacks.StopSyncer()
+	}
+	if callbacks.ShutdownProfiler != nil {
+		if err := callbacks.ShutdownProfiler(ctx); err != nil {
+			errs = append(errs, mainShutdownError{
+				message: "profiler shutdown",
+				err:     err,
+			})
+		}
+	}
+	if callbacks.CloseTelemetry != nil {
+		if err := callbacks.CloseTelemetry(); err != nil {
+			errs = append(errs, mainShutdownError{
+				message: "close telemetry",
+				err:     err,
+			})
+		}
+	}
+	if callbacks.CloseDatabase != nil {
+		if err := callbacks.CloseDatabase(); err != nil {
+			errs = append(errs, mainShutdownError{
+				message: "close database",
+				err:     err,
+			})
+		}
+	}
+	return errs
 }
 
 func profilerSrvDone(srv *profiler.Server) <-chan error {

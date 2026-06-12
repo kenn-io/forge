@@ -148,8 +148,16 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 	assert := Assert.New(t)
 	assert.Equal(http.StatusOK, rr.Code)
 	assert.Contains(rr.Body.String(), "middleman is starting")
-	assert.Contains(rr.Body.String(), `const middlemanReadyPath="/healthz";`)
+	assert.Contains(rr.Body.String(), `const middlemanReadyPath="/middleman/healthz";`)
 	assert.NotContains(rr.Body.String(), `src="/middleman/assets/index.js"`)
+
+	healthReq := httptest.NewRequest(http.MethodGet, "/middleman/healthz", nil)
+	healthReq.Host = "127.0.0.1:8091"
+	healthReq.RemoteAddr = "127.0.0.1:1234"
+	healthRR := httptest.NewRecorder()
+	handler.ServeHTTP(healthRR, healthReq)
+
+	assert.Equal(http.StatusServiceUnavailable, healthRR.Code)
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/settings", nil)
 	apiReq.Host = "127.0.0.1:8091"

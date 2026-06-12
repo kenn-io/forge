@@ -157,6 +157,44 @@ func TestWriteRuntimeMetadataRejectsNonTCPListener(t *testing.T) {
 	Assert.Contains(t, err.Error(), "non-TCP")
 }
 
+func TestRunMainShutdownClosesPrimaryHTTPBeforeAncillaryServices(t *testing.T) {
+	var order []string
+	record := func(name string) {
+		order = append(order, name)
+	}
+
+	errs := runMainShutdown(t.Context(), mainShutdownCallbacks{
+		ShutdownPrimaryHTTP: func(context.Context) error {
+			record("primary-http")
+			return nil
+		},
+		StopSyncer: func() {
+			record("syncer")
+		},
+		ShutdownProfiler: func(context.Context) error {
+			record("profiler")
+			return nil
+		},
+		CloseTelemetry: func() error {
+			record("telemetry")
+			return nil
+		},
+		CloseDatabase: func() error {
+			record("database")
+			return nil
+		},
+	})
+
+	Assert.Empty(t, errs)
+	Assert.Equal(t, []string{
+		"primary-http",
+		"syncer",
+		"profiler",
+		"telemetry",
+		"database",
+	}, order)
+}
+
 func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	assert := Assert.New(t)
 	cfg := &config.Config{

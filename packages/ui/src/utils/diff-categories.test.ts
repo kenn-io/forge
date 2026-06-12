@@ -31,8 +31,18 @@ describe("diff file categorization", () => {
     expect(categorizeDiffFile(file("Makefile"))).toBe("code");
   });
 
-  it("keeps binary files outside the code bucket", () => {
+  it("treats lockfiles as generated", () => {
+    expect(categorizeDiffFile(file("flake.lock"))).toBe("generated");
+    expect(categorizeDiffFile(file("pixi.lock"))).toBe("generated");
+    expect(categorizeDiffFile(file("pnpm-lock.yaml"))).toBe("generated");
+    expect(categorizeDiffFile(file("package-lock.json"))).toBe("generated");
+    expect(categorizeDiffFile(binaryFile("flake.lock"))).toBe("generated");
+  });
+
+  it("keeps non-generated binary files outside the code bucket", () => {
     expect(categorizeDiffFile(binaryFile("assets/logo.png"))).toBe("other");
+    expect(categorizeDiffFile(binaryFile("docs/logo.png"))).toBe("other");
+    expect(categorizeDiffFile(binaryFile("tests/fixtures/screenshot.png"))).toBe("other");
     expect(categorizeDiffFile(binaryFile("release/middleman.tar.gz"))).toBe("other");
   });
 });

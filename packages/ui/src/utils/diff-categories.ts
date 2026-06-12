@@ -103,9 +103,9 @@ export function categorizeDiffFile(file: string | CategorizableDiffFile): DiffFi
 
   if (generatedMetadata === true) return "generated";
   if (generatedMetadata !== false && hasGeneratedSignal(base)) return "generated";
+  if (binaryMetadata === true) return "other";
   if (hasTestSignal(parts, base)) return "tests";
   if (hasDocsSignal(parts, base, ext)) return "plansDocs";
-  if (binaryMetadata === true) return "other";
   return "code";
 }
 

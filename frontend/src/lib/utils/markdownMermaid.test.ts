@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { getStackDepth, getTopFrame, resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
 import {
   initMarkdownMermaidRendering,
   renderMarkdownMermaidDiagrams,
@@ -83,10 +84,12 @@ async function flushQueuedRender(): Promise<void> {
 
 describe("renderMarkdownMermaidDiagrams", () => {
   beforeEach(() => {
+    resetModalStack();
     installMermaidThemeVars("light");
   });
 
   afterEach(() => {
+    resetModalStack();
     clearMermaidThemeVars();
     document.documentElement.classList.remove("dark");
     document.querySelectorAll(".mermaid-viewer-lightbox").forEach((node) => node.remove());
@@ -432,6 +435,38 @@ describe("renderMarkdownMermaidDiagrams", () => {
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(document.querySelector(".mermaid-viewer-lightbox")).toBeNull();
+  });
+
+  test("blocks global shortcuts while the expanded diagram overlay is open", async () => {
+    const root = document.createElement("div");
+    root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
+    const mermaid = mermaidLoader(async ({ nodes }) => {
+      renderSvgInto(nodes);
+    });
+    const loader = vi.fn(async () => mermaid);
+    const windowShortcut = vi.fn();
+    window.addEventListener("keydown", windowShortcut);
+
+    try {
+      await renderMarkdownMermaidDiagrams(root, loader);
+      root.querySelector<HTMLButtonElement>('button[aria-label="Open diagram in expanded view"]')?.click();
+
+      const overlay = document.querySelector<HTMLElement>(".mermaid-viewer-lightbox");
+      const closeButton = overlay?.querySelector<HTMLButtonElement>('button[aria-label="Close expanded diagram"]');
+      expect(getTopFrame()?.frameId).toBe("mermaid-lightbox");
+      expect(getStackDepth()).toBe(1);
+
+      closeButton?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "1" }));
+      expect(windowShortcut).not.toHaveBeenCalled();
+
+      const escape = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" });
+      closeButton?.dispatchEvent(escape);
+      expect(escape.defaultPrevented).toBe(true);
+      expect(document.querySelector(".mermaid-viewer-lightbox")).toBeNull();
+      expect(getStackDepth()).toBe(0);
+    } finally {
+      window.removeEventListener("keydown", windowShortcut);
+    }
   });
 
   test("rerenders diagrams when the app theme changes", async () => {

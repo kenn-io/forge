@@ -1,3 +1,5 @@
+import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
+
 export interface MarkdownMermaidAPI {
   initialize: (config: MarkdownMermaidConfig) => void;
   run: (config: { nodes: ArrayLike<HTMLElement>; suppressErrors: true }) => Promise<unknown>;
@@ -424,7 +426,9 @@ function openMermaidLightbox(svg: SVGSVGElement): void {
   overlay.append(panel);
 
   const restoreFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const popModalFrame = pushModalFrame("mermaid-lightbox", []);
   const onKeyDown = (event: KeyboardEvent) => {
+    event.stopPropagation();
     if (event.key === "Escape") {
       event.preventDefault();
       closeLightbox();
@@ -434,6 +438,7 @@ function openMermaidLightbox(svg: SVGSVGElement): void {
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) closeLightbox();
   });
+  overlay.addEventListener("keydown", onKeyDown);
 
   document.addEventListener("keydown", onKeyDown);
   document.body.append(overlay);
@@ -441,7 +446,9 @@ function openMermaidLightbox(svg: SVGSVGElement): void {
   closeButton.focus({ preventScroll: true });
 
   function closeLightbox(): void {
+    overlay.removeEventListener("keydown", onKeyDown);
     document.removeEventListener("keydown", onKeyDown);
+    popModalFrame();
     overlay.remove();
     if (closeActiveMermaidLightbox === closeLightbox) {
       closeActiveMermaidLightbox = null;

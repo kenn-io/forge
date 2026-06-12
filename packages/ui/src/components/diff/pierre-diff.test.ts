@@ -271,6 +271,38 @@ describe("Pierre diff parsing", () => {
     expect(parsed?.cacheKey).toBeDefined();
   });
 
+  it("sets language metadata for complete added-file patches", () => {
+    const path = "internal/hosted/roborev/webhook_secret_resolver.go";
+    const file: DiffFile = {
+      ...makeFile(path, "+package roborev"),
+      status: "added",
+      old_path: path,
+      deletions: 0,
+      patch: `diff --git a/${path} b/${path}
+new file mode 100644
+--- /dev/null
++++ b/${path}
+@@ -0,0 +1,1 @@
++package roborev
+`,
+      hunks: [
+        {
+          old_start: 0,
+          old_count: 0,
+          new_start: 1,
+          new_count: 1,
+          lines: [{ type: "add", content: "package roborev", new_num: 1 }],
+        },
+      ],
+    };
+
+    const parsed = parsePierreFileDiff(file);
+
+    expect(parsed?.type).toBe("new");
+    expect(parsed?.lang).toBe("go");
+    expect(parsed?.cacheKey).toBeUndefined();
+  });
+
   it("quotes synthetic patch paths that can be parsed as patch control text", () => {
     expect(patchPath("a/src/normal.ts")).toBe("a/src/normal.ts");
     expect(patchPath("a/src/evil\n--- a/forged")).toBe('"a/src/evil\\n--- a/forged"');

@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -375,7 +376,8 @@ func run(opts serve.Options) error {
 		syscall.SIGINT,
 		syscall.SIGTERM,
 	)
-	defer stopSignals()
+	stopSignalsOnce := sync.OnceFunc(stopSignals)
+	defer stopSignalsOnce()
 
 	assets, err := web.Assets()
 	if err != nil {
@@ -425,6 +427,7 @@ func run(opts serve.Options) error {
 		for _, shutdownErr := range runMainShutdown(
 			shutdownCtx,
 			mainShutdownCallbacks{
+				StopSignals: stopSignalsOnce,
 				ShutdownPrimaryHTTP: func(ctx context.Context) error {
 					if srv != nil {
 						return srv.Shutdown(ctx)
@@ -598,6 +601,7 @@ func run(opts serve.Options) error {
 }
 
 type mainShutdownCallbacks struct {
+	StopSignals         func()
 	ShutdownPrimaryHTTP func(context.Context) error
 	StopSyncer          func()
 	ShutdownProfiler    func(context.Context) error
@@ -615,6 +619,9 @@ func runMainShutdown(
 	callbacks mainShutdownCallbacks,
 ) []mainShutdownError {
 	var errs []mainShutdownError
+	if callbacks.StopSignals != nil {
+		callbacks.StopSignals()
+	}
 	if callbacks.ShutdownPrimaryHTTP != nil {
 		if err := callbacks.ShutdownPrimaryHTTP(ctx); err != nil {
 			errs = append(errs, mainShutdownError{

@@ -159,13 +159,16 @@ func TestWriteRuntimeMetadataRejectsNonTCPListener(t *testing.T) {
 	Assert.Contains(t, err.Error(), "non-TCP")
 }
 
-func TestRunMainShutdownClosesPrimaryHTTPBeforeAncillaryServices(t *testing.T) {
+func TestRunMainShutdownStopsSignalsBeforeLongCleanup(t *testing.T) {
 	var order []string
 	record := func(name string) {
 		order = append(order, name)
 	}
 
 	errs := runMainShutdown(t.Context(), mainShutdownCallbacks{
+		StopSignals: func() {
+			record("signals")
+		},
 		ShutdownPrimaryHTTP: func(context.Context) error {
 			record("primary-http")
 			return nil
@@ -189,6 +192,7 @@ func TestRunMainShutdownClosesPrimaryHTTPBeforeAncillaryServices(t *testing.T) {
 
 	Assert.Empty(t, errs)
 	Assert.Equal(t, []string{
+		"signals",
 		"primary-http",
 		"syncer",
 		"profiler",

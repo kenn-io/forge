@@ -1112,15 +1112,16 @@ func TestGitHubProviderPublishDiffReviewDraftApproveUnsupported(t *testing.T) {
 }
 
 func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
+	require := require.New(t)
 	provider := gitHubClientProvider{client: &mockClient{}, host: "github.com"}
 
 	caps := provider.Capabilities()
 
-	require.True(t, caps.ReadReviewThreads)
-	require.True(t, caps.ReviewDraftMutation)
-	require.False(t, caps.ReviewThreadResolution)
-	require.False(t, caps.ReviewMutation)
-	require.NotContains(t, caps.SupportedReviewActions, platform.ReviewActionApprove)
+	require.True(caps.ReadReviewThreads)
+	require.True(caps.ReviewDraftMutation)
+	require.False(caps.ReviewThreadResolution)
+	require.False(caps.ReviewMutation)
+	require.NotContains(caps.SupportedReviewActions, platform.ReviewActionApprove)
 }
 
 func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testing.T) {

@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/ratelimit"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 // Operation names. These string literals are the JSON field names
@@ -29,9 +31,10 @@ const (
 
 // Availability codes returned to clients. Empty code means available.
 const (
-	availabilityCodeUnsupportedCapability = "unsupported_capability"
-	availabilityCodeViewerCannotMerge     = "viewer_cannot_merge"
-	availabilityCodeRateLimited           = "rate_limited"
+	availabilityCodeUnsupportedCapability  = "unsupported_capability"
+	availabilityCodeViewerCannotMerge      = "viewer_cannot_merge"
+	availabilityCodeRateLimited            = "rate_limited"
+	availabilityCodeMissingWriteCredential = "missing_write_credential"
 )
 
 // apiBucket identifies which API quota an operation consumes. GitHub
@@ -122,8 +125,11 @@ func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 		apiBucketREST:    s.mutationRateLimitedReason(repo, apiBucketREST),
 		apiBucketGraphQL: s.mutationRateLimitedReason(repo, apiBucketGraphQL),
 	}
+	missingWriteCredential := s.missingWriteCredentialReason(repo)
 	derive := func(op operationDescriptor) OperationAvailability {
-		return deriveOperationAvailability(op, caps, repo, rates[op.bucket])
+		return deriveOperationAvailability(
+			op, caps, repo, rates[op.bucket], missingWriteCredential,
+		)
 	}
 	return RepoOperations{
 		MergePR:            derive(descMergePR),
@@ -147,6 +153,7 @@ func deriveOperationAvailability(
 	caps providerCapabilitiesResponse,
 	repo db.Repo,
 	rate rateLimitAvailability,
+	missingWriteCredential string,
 ) OperationAvailability {
 	for _, capability := range op.requiredCapabilities {
 		if !capabilityEnabled(caps, capability) {
@@ -155,6 +162,12 @@ func deriveOperationAvailability(
 				UnavailableReason:  fmt.Sprintf("Provider does not support %s", capability),
 				RequiredCapability: capability,
 			}
+		}
+	}
+	if missingWriteCredential != "" {
+		return OperationAvailability{
+			Code:              availabilityCodeMissingWriteCredential,
+			UnavailableReason: missingWriteCredential,
 		}
 	}
 	if op.name == operationMergePR && !repo.ViewerCanMerge {
@@ -237,6 +250,78 @@ func (s *Server) rateLimitedReason(repo db.Repo, bucket apiBucket) rateLimitAvai
 		return formatRateLimit(host, rt.ResetAt())
 	}
 	return rateLimitAvailability{}
+}
+
+// writeCredentialProbeTTL bounds how often availability computation
+// re-resolves a split host's mutation credential chain. Within the
+// TTL the cached verdict answers; afterwards the next request probes
+// again, so a user who signs in with the gh CLI or fills a token file
+// at runtime sees writes come back without restarting middleman.
+const writeCredentialProbeTTL = time.Minute
+
+// writeCredentialProbeTimeout caps a single probe. The chain may shell
+// out to the gh CLI, and a hung helper must not stall list endpoints.
+const writeCredentialProbeTimeout = 5 * time.Second
+
+type writeCredentialProbe struct {
+	reason    string // empty when the mutation chain resolves a token
+	checkedAt time.Time
+}
+
+// missingWriteCredentialReason reports why mutations against repo's
+// host cannot authenticate, or "" when they can. Only split hosts can
+// be in this state: when a GitHub App serves sync reads, mutations
+// deliberately skip the app candidate so writes stay attributed to
+// the user, and a host configured with only the app would accept the
+// operation in the UI and then fail auth at request time. Probing the
+// mutation-marked chain surfaces that before the UI offers the
+// action. Shared-credential hosts are exempt — sync reads already
+// exercise the same credential mutations would use.
+func (s *Server) missingWriteCredentialReason(repo db.Repo) string {
+	if s == nil || s.tokenSources == nil {
+		return ""
+	}
+	key := tokenauth.Key{
+		Platform: string(repoProviderKind(repo)),
+		Host:     repoProviderHost(repo),
+	}
+	src, ok := s.tokenSources.Get(key)
+	if !ok || src == nil || !src.Descriptor().HasActiveGitHubApp() {
+		return ""
+	}
+
+	s.writeCredProbeMu.Lock()
+	if probe, ok := s.writeCredProbes[key.String()]; ok &&
+		s.now().Sub(probe.checkedAt) < writeCredentialProbeTTL {
+		s.writeCredProbeMu.Unlock()
+		return probe.reason
+	}
+	s.writeCredProbeMu.Unlock()
+
+	parent := s.bgCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, writeCredentialProbeTimeout)
+	defer cancel()
+	reason := ""
+	if _, err := src.Token(tokenauth.WithMutationAuth(ctx)); err != nil {
+		reason = fmt.Sprintf(
+			"No user credential for writes on %s: the GitHub App token only covers sync reads. Configure a PAT or gh CLI auth.",
+			key.Host,
+		)
+	}
+
+	s.writeCredProbeMu.Lock()
+	if s.writeCredProbes == nil {
+		s.writeCredProbes = make(map[string]writeCredentialProbe)
+	}
+	s.writeCredProbes[key.String()] = writeCredentialProbe{
+		reason:    reason,
+		checkedAt: s.now(),
+	}
+	s.writeCredProbeMu.Unlock()
+	return reason
 }
 
 func formatRateLimit(host string, resetAt *time.Time) rateLimitAvailability {

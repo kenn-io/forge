@@ -2,6 +2,7 @@ package e2etest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -243,6 +244,18 @@ installation_account = "kenn-io"
 	assert.True(dbRepo.ViewerCanMerge,
 		"viewer_can_merge must come from the PAT-visible permissions, not the app's")
 
+	// The PAT is present, so mutation availability must not flag a
+	// missing write credential.
+	opsResp := doServerJSON(
+		t, httpServer.Client(), http.MethodGet,
+		httpServer.URL+"/api/v1/repo/github/kenn-io/middleman", nil,
+	)
+	defer opsResp.Body.Close()
+	require.Equal(http.StatusOK, opsResp.StatusCode)
+	ops := decodeRepoOperations(t, opsResp.Body)
+	assert.True(ops["add_comment"].Available,
+		"a split host with a PAT behind the app keeps writes available")
+
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal("Bearer ghs_app_token_e2e", authByCall["read:list-pulls"],
@@ -259,4 +272,192 @@ installation_account = "kenn-io"
 		}
 		assert.Equal("Bearer ghs_app_token_e2e", auth, "call %s", name)
 	}
+}
+
+// repoOperationWire is the client-observed availability shape for one
+// operation in the repo response.
+type repoOperationWire struct {
+	Available         bool   `json:"available"`
+	Code              string `json:"code"`
+	UnavailableReason string `json:"unavailable_reason"`
+}
+
+func decodeRepoOperations(t *testing.T, body io.Reader) map[string]repoOperationWire {
+	t.Helper()
+	var resp struct {
+		Operations map[string]repoOperationWire `json:"operations"`
+	}
+	require.NoError(t, json.NewDecoder(body).Decode(&resp))
+	return resp.Operations
+}
+
+// TestGitHubAppNoUserCredentialGatesWritesE2E pins the failure mode
+// the split design creates: a host can sync with only the GitHub App
+// installed, but mutations skip the app candidate (writes stay
+// attributed to the user), so with no PAT or gh credential behind the
+// app every write must be reported unavailable up front and the
+// mutation endpoint must refuse rather than write as the app bot.
+func TestGitHubAppNoUserCredentialGatesWritesE2E(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	// The configured PAT env var is present but empty: only the app
+	// candidate can resolve a token.
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/rate_limit", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"resources":{"core":{"limit":12500,"remaining":12000,"reset":2000000000}}}`)
+	})
+	mux.HandleFunc("GET /api/v3/repos/kenn-io/middleman",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{
+				"id": 4242001,
+				"name": "middleman",
+				"full_name": "kenn-io/middleman",
+				"owner": {"login": "kenn-io"},
+				"default_branch": "main",
+				"html_url": "https://github.com/kenn-io/middleman",
+				"clone_url": "https://github.com/kenn-io/middleman.git"
+			}`)
+		})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `[]`)
+	})
+	fakeGitHub := httptest.NewServer(mux)
+	t.Cleanup(fakeGitHub.Close)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "kenn-io"
+name = "middleman"
+
+[[github_apps]]
+host = "github.com"
+app_id = 4242
+private_key_path = "app.pem"
+installation_id = 11
+installation_account = "kenn-io"
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	sourceSet := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "ghs_app_only_e2e", time.Now().Add(time.Hour), nil
+		},
+	})
+	var source tokenauth.Source
+	for _, plan := range cfg.ProviderTokenSources() {
+		src := sourceSet.Upsert(plan.Descriptor)
+		if _, err := src.Token(t.Context()); err != nil {
+			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
+				continue
+			}
+			require.NoError(err)
+		}
+		if plan.Descriptor.Key == (tokenauth.Key{Platform: "github", Host: "github.com"}) {
+			source = src
+		}
+	}
+	require.NotNil(source, "the app candidate alone must keep the host's read chain alive")
+
+	client, err := ghclient.NewClient(
+		source, "github.com", nil, nil,
+		ghclient.WithBaseURLForTesting(fakeGitHub.URL),
+	)
+	require.NoError(err)
+	registry, err := ghclient.NewProviderRegistry(
+		map[string]ghclient.Client{"github.com": client},
+	)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	ref := ghclient.RepoRef{
+		Platform:           platform.KindGitHub,
+		Owner:              "kenn-io",
+		Name:               "middleman",
+		RepoPath:           "kenn-io/middleman",
+		PlatformHost:       "github.com",
+		PlatformRepoID:     4242001,
+		PlatformExternalID: "4242001",
+		DefaultBranch:      "main",
+	}
+	repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(platform.RepoRef{
+		Platform:           platform.KindGitHub,
+		Host:               "github.com",
+		Owner:              "kenn-io",
+		Name:               "middleman",
+		RepoPath:           "kenn-io/middleman",
+		PlatformID:         4242001,
+		PlatformExternalID: "4242001",
+		DefaultBranch:      "main",
+	}))
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     7001,
+		Number:         7,
+		URL:            "https://github.com/kenn-io/middleman/pull/7",
+		Title:          "App-only host PR",
+		Author:         "ada",
+		State:          "open",
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		LastActivityAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := server.NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		server.ServerOptions{TokenSources: sourceSet},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	httpServer := httptest.NewServer(srv)
+	t.Cleanup(httpServer.Close)
+
+	// Reads still work: sync completes on the app token alone.
+	status, body := postJSON(t, httpServer.Client(), httpServer.URL+"/api/v1/sync", nil)
+	require.Equal(http.StatusAccepted, status, body)
+	waitForRepoSynced(t, database, "kenn-io", "middleman", nil)
+
+	// Availability must say up front that writes cannot authenticate.
+	opsResp := doServerJSON(
+		t, httpServer.Client(), http.MethodGet,
+		httpServer.URL+"/api/v1/repo/github/kenn-io/middleman", nil,
+	)
+	defer opsResp.Body.Close()
+	require.Equal(http.StatusOK, opsResp.StatusCode)
+	ops := decodeRepoOperations(t, opsResp.Body)
+	for _, name := range []string{"merge_pr", "add_comment", "mark_ready_for_review"} {
+		op, ok := ops[name]
+		require.True(ok, "operation %s missing from repo response", name)
+		assert.False(op.Available, "operation %s must gate without a write credential", name)
+		assert.Equal("missing_write_credential", op.Code, "operation %s", name)
+		assert.Contains(op.UnavailableReason, "github.com", "operation %s", name)
+	}
+
+	// The mutation endpoint must refuse instead of writing as the bot.
+	commentResp := doServerJSON(
+		t, httpServer.Client(), http.MethodPost,
+		httpServer.URL+"/api/v1/pulls/gh/kenn-io/middleman/7/comments",
+		map[string]string{"body": "from middleman"},
+	)
+	defer commentResp.Body.Close()
+	commentBody, err := io.ReadAll(commentResp.Body)
+	require.NoError(err)
+	assert.GreaterOrEqual(commentResp.StatusCode, http.StatusBadRequest,
+		"mutation without a user credential must fail: %s", string(commentBody))
 }

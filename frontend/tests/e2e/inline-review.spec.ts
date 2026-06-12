@@ -459,6 +459,14 @@ test("unavailable operations disable inline review authoring and thread replies"
     code: "missing_write_credential",
     unavailable_reason: "No user credential for writes on github.com",
   };
+  const replyCalls: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "GET") return;
+    const path = new URL(request.url()).pathname;
+    if (/\/reply$/.test(path) || path.includes("/discussions/")) {
+      replyCalls.push(`${request.method()} ${path}`);
+    }
+  });
   await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", diffResponse, undefined, {
     operations: { submit_review: unavailableOp, reply_review_thread: unavailableOp },
   });
@@ -467,12 +475,19 @@ test("unavailable operations disable inline review authoring and thread replies"
   await expect(page.locator(".file-content").first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Comment on new line/ })).toHaveCount(0);
   await expect(page.getByPlaceholder("Leave a comment")).toHaveCount(0);
+  // The existing review thread renders read-only: no reply composer
+  // or reply affordance, and no reply request can fire.
+  await expect(page.locator(".inline-review-thread").first()).toBeVisible();
+  await expect(page.getByPlaceholder("Reply to thread")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Reply/ })).toHaveCount(0);
+  expect(replyCalls).toEqual([]);
 });
 
-test("an existing draft cannot publish while submit_review is unavailable", async ({ page }) => {
-  // The riskiest Files-tab path: a draft authored earlier must not be
-  // publishable once submit_review becomes unavailable (here a REST
-  // rate limit), and the user sees why instead of a vanished tray.
+test("a loaded draft becomes unpublishable when submit_review flips unavailable", async ({ page }) => {
+  // The riskiest Files-tab path: a draft that is already loaded and
+  // publishable must lose its publish affordance once submit_review
+  // becomes unavailable (here a REST rate limit), with the reason
+  // shown and no publish request possible.
   const rateLimitedReason = "github.com rate-limited; retry at 14:35";
   const publishCalls: string[] = [];
   page.on("request", (request) => {
@@ -483,14 +498,6 @@ test("an existing draft cannot publish while submit_review is unavailable", asyn
     }
   });
   await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", diffResponse, undefined, {
-    operations: {
-      submit_review: {
-        available: false,
-        code: "rate_limited",
-        unavailable_reason: rateLimitedReason,
-        retry_at: "2026-03-30T14:35:00Z",
-      },
-    },
     initialDraftComments: [
       {
         id: "draft-1",
@@ -506,8 +513,33 @@ test("an existing draft cannot publish while submit_review is unavailable", asyn
       },
     ],
   });
+  // Override the detail route (last registered wins) so the test can
+  // flip submit_review availability between loads.
+  let submitReviewOp: Record<string, unknown> | undefined;
+  await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    const operations = submitReviewOp !== undefined ? { submit_review: submitReviewOp } : undefined;
+    await fulfillJson(route, pullDetail(false, baseCapabilities, "github", "github.com", operations));
+  });
 
+  // Phase 1: submit_review available — the seeded draft loads and is
+  // publishable.
   await page.goto("/pulls/github/acme/widgets/42/files");
+  await expect(page.getByText("1 draft comment")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Publish review" })).toBeVisible();
+
+  // Phase 2: the host's review budget is exhausted; on the next load
+  // the same draft must not be publishable and the reason is shown.
+  submitReviewOp = {
+    available: false,
+    code: "rate_limited",
+    unavailable_reason: rateLimitedReason,
+    retry_at: "2026-03-30T14:35:00Z",
+  };
+  await page.reload();
   await expect(page.locator(".file-content").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish review" })).toHaveCount(0);
   await expect(page.locator(".review-warning")).toContainText(rateLimitedReason);

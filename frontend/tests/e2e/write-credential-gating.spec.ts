@@ -33,9 +33,13 @@ const operations = {
   update_content: unavailable,
   reply_review_thread: unavailable,
   resolve_review_thread: unavailable,
+  set_assignees: unavailable,
+  set_reviewers: unavailable,
 };
 
 const providerCapabilities = {
+  assignee_mutation: true,
+  reviewer_mutation: true,
   comment_mutation: true,
   issue_mutation: true,
   label_mutation: true,
@@ -260,6 +264,18 @@ test.describe("missing write credential gates non-merge mutations", () => {
     // comment renders without an edit affordance.
     await expect(page.getByText("An existing comment")).toBeVisible();
     await expect(page.getByRole("button", { name: "Edit comment" })).toHaveCount(0);
+
+    // Assignee and reviewer editors gate on set_assignees and
+    // set_reviewers: the chips disable with the reason and the picker
+    // cannot open.
+    const assigneeChip = page.locator('[data-user-list-editor="assignees"] button').first();
+    await expect(assigneeChip).toBeDisabled();
+    await expect(assigneeChip).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
+    await assigneeChip.click({ force: true });
+    await expect(page.locator(".user-list-editor__popover")).toHaveCount(0);
+    const reviewerChip = page.locator('[data-user-list-editor="reviewers"] button').first();
+    await expect(reviewerChip).toBeDisabled();
+    await expect(reviewerChip).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
 
     expect(mutationCalls).toEqual([]);
   });

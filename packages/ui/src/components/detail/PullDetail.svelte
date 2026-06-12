@@ -720,6 +720,8 @@
   const labelGate = $derived(firstUnavailableGate(
     repoOperations?.add_label, repoOperations?.remove_label,
   ));
+  const assigneeGate = $derived(operationGate(repoOperations?.set_assignees));
+  const reviewerGate = $derived(operationGate(repoOperations?.set_reviewers));
   // Content edits (title, body, task-list toggles/reorder) and the
   // review-thread affordances are first-class operations, so rate
   // limits gate them just like credential failures.
@@ -1601,7 +1603,8 @@
           label="Assignees"
           users={prAssignees}
           canEdit={capabilities.assignee_mutation}
-          disabled={stalePR}
+          disabled={stalePR || assigneeGate.unavailable}
+          disabledReason={assigneeGate.unavailable ? assigneeGate.reason : undefined}
           loadCandidates={loadUserCandidates}
           onchange={(next) => detailStore.setPullAssignees(owner, name, number, next)}
         >
@@ -1613,7 +1616,8 @@
           label="Reviewers"
           users={prReviewers}
           canEdit={capabilities.reviewer_mutation}
-          disabled={stalePR}
+          disabled={stalePR || reviewerGate.unavailable}
+          disabledReason={reviewerGate.unavailable ? reviewerGate.reason : undefined}
           tooltipNote="User review requests only; team requests are not shown"
           loadCandidates={loadUserCandidates}
           onchange={(next) => detailStore.setPullReviewers(owner, name, number, next)}

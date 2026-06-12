@@ -19,6 +19,10 @@
     users: string[];
     canEdit?: boolean;
     disabled?: boolean;
+    /// Shown as the chip tooltip while disabled — the actionable
+    /// reason (missing write credential, rate limit) the server
+    /// reported for this operation.
+    disabledReason?: string | undefined;
     /// Extra context appended to the chip tooltip, e.g. provider caveats.
     tooltipNote?: string;
     /// Returns candidate usernames matching the filter query. Called
@@ -34,6 +38,7 @@
     users,
     canEdit = false,
     disabled = false,
+    disabledReason = undefined,
     tooltipNote = undefined,
     loadCandidates,
     onchange,
@@ -57,6 +62,7 @@
 
   const editorId = $derived(label.toLowerCase().replace(/\s+/g, "-"));
   const chipTitle = $derived.by(() => {
+    if (disabled && disabledReason !== undefined) return disabledReason;
     const base = users.length > 0 ? `${label}: ${users.join(", ")}` : `Add ${label.toLowerCase()}`;
     return tooltipNote ? `${base}\n${tooltipNote}` : base;
   });

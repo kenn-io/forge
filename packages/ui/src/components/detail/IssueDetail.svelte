@@ -391,6 +391,7 @@
   const labelGate = $derived(firstUnavailableGate(
     repoOperations?.add_label, repoOperations?.remove_label,
   ));
+  const assigneeGate = $derived(operationGate(repoOperations?.set_assignees));
   // Body task-list writes are content edits with their own operation
   // key, so rate limits gate them just like credential failures.
   const contentGate = $derived(operationGate(repoOperations?.update_content));
@@ -899,7 +900,8 @@
             label="Assignees"
             users={issue.assignees ?? []}
             canEdit={capabilities.assignee_mutation}
-            disabled={staleIssue}
+            disabled={staleIssue || assigneeGate.unavailable}
+            disabledReason={assigneeGate.unavailable ? assigneeGate.reason : undefined}
             loadCandidates={loadUserCandidates}
             onchange={(next) => issues.setIssueAssignees(owner, name, number, next)}
           >

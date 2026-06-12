@@ -104,6 +104,33 @@ describe("UserPicker", () => {
     expect(screen.queryByRole("menuitemcheckbox", { name: /add .bob./i })).toBeNull();
   });
 
+  it("withholds the exact-username entry until candidates reflect the typed query", async () => {
+    const { rerender } = render(UserPicker, {
+      props: {
+        title: "Edit assignees",
+        candidates: ["alice"],
+        // The candidate list still reflects the previous query, so a
+        // canonical-casing match for the new query may be in flight.
+        candidatesQuery: "",
+        selected: [],
+        ontoggle: vi.fn(),
+        onclose: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Filter users"), {
+      target: { value: "zed" },
+    });
+    expect(screen.queryByRole("menuitemcheckbox", { name: /add .zed./i })).toBeNull();
+
+    await rerender({ candidates: ["zedmaster"], candidatesQuery: "zed" });
+    expect(screen.getByRole("menuitemcheckbox", { name: /add .zed./i })).toBeTruthy();
+
+    // A server result with canonical casing suppresses the entry row.
+    await rerender({ candidates: ["Zed"], candidatesQuery: "zed" });
+    expect(screen.queryByRole("menuitemcheckbox", { name: /add .zed./i })).toBeNull();
+  });
+
   it("emits the toggled username", async () => {
     const onToggle = vi.fn();
     render(UserPicker, {

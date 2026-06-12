@@ -114,6 +114,26 @@ test.describe("assignee and reviewer editing", () => {
       await page.getByRole("menuitemcheckbox", { name: /add .zed./i }).click();
       expect((await updateResponse).status()).toBe(200);
       await expect(page.locator("[data-user-list-editor='assignees']", { hasText: "zed" })).toBeVisible();
+      await page.getByRole("button", { name: "Close user picker" }).click();
+
+      // Reviewer free-entry goes through the request/remove mutation
+      // path, not the assignee replace-set path, so cover it too.
+      await page.getByRole("button", { name: "Edit reviewers" }).click();
+      await expect(page.getByRole("dialog", { name: "Edit reviewers" })).toBeVisible();
+      const reviewerQueryResponse = page.waitForResponse(
+        (response) => response.url().includes("/comment-autocomplete") && response.url().includes("q=quill"),
+      );
+      await page.getByLabel("Filter users").fill("quill");
+      expect((await reviewerQueryResponse).status()).toBe(200);
+
+      const reviewerUpdateResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/1/reviewers`,
+      );
+      await page.getByRole("menuitemcheckbox", { name: /add .quill./i }).click();
+      expect((await reviewerUpdateResponse).status()).toBe(200);
+      await expect(page.locator("[data-user-list-editor='reviewers']", { hasText: "quill" })).toBeVisible();
     } finally {
       await isolatedServer?.stop();
     }

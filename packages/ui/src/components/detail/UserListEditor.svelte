@@ -33,6 +33,7 @@
 
   let open = $state(false);
   let candidates = $state<string[]>([]);
+  let candidatesQuery = $state("");
   let candidatesLoading = $state(false);
   let pendingUser = $state<string | null>(null);
   let pickerError = $state<string | null>(null);
@@ -67,6 +68,10 @@
       const next = await loadCandidates(query);
       if (seq !== candidateFetchSeq) return;
       candidates = next;
+      candidatesQuery = query;
+      // A fresh successful fetch supersedes any error a previous
+      // request left behind.
+      pickerError = null;
       void tick().then(() => {
         if (open) positionPicker();
       });
@@ -209,6 +214,7 @@
         {candidates}
         selected={users}
         loading={candidatesLoading}
+        {candidatesQuery}
         {pendingUser}
         error={pickerError}
         {autofocusFilter}

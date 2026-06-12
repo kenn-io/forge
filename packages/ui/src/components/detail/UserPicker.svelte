@@ -12,6 +12,11 @@
     pendingUser?: string | null;
     error?: string | null;
     autofocusFilter?: boolean;
+    /// The query the current candidates were fetched for. When set,
+    /// the exact-username entry row is withheld until the candidate
+    /// list reflects the typed query, so a stale list cannot offer a
+    /// name the server is about to return with canonical casing.
+    candidatesQuery?: string;
     /// Notified as the filter text changes so the caller can fetch
     /// candidates matching the query from the server.
     onquery?: (query: string) => void;
@@ -28,6 +33,7 @@
     pendingUser = null,
     error = null,
     autofocusFilter = false,
+    candidatesQuery = undefined,
     onquery = undefined,
     ontoggle,
     onclear = undefined,
@@ -64,6 +70,8 @@
   const freeEntryUser = $derived.by(() => {
     const trimmed = query.trim();
     if (trimmed === "") return null;
+    if (loading) return null;
+    if (candidatesQuery !== undefined && candidatesQuery !== trimmed) return null;
     const key = trimmed.toLowerCase();
     const listed = [...selected, ...candidates].some((name) => name.toLowerCase() === key);
     return listed ? null : trimmed;

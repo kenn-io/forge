@@ -151,9 +151,13 @@ func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {
 
 	// A normal periodic sync discovers the MR; the detail sync — the
 	// same one a detail view or post-conflict reload performs — fills
-	// diff_refs and records the reviewed snapshot.
+	// diff_refs and records the reviewed snapshot. A SECOND list sync
+	// then runs: the GitLab list payload omits diff_refs, so a naive
+	// upsert would blank platform_base_sha and invalidate the snapshot
+	// (the exact regression that re-armed 409 head_unknown).
 	syncer.RunOnce(ctx)
 	require.NoError(syncer.SyncMROnProvider(ctx, platform.KindGitLab, "gitlab.com", "acme", "widget", 7))
+	syncer.RunOnce(ctx)
 
 	repoRow, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -167,6 +171,8 @@ func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {
 	require.NotNil(mr)
 	assert.Equal(headSHA, mr.DiffHeadSHA,
 		"a normal sync must record the reviewed diff snapshot for GitLab")
+	assert.Equal(baseSHA, mr.PlatformBaseSHA,
+		"a later list sync must not blank the detail-populated base SHA")
 
 	var detail struct {
 		ReviewedHeadSHA string `json:"reviewed_head_sha"`

@@ -4061,6 +4061,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
+		preservePlatformBaseSHAIfOmitted(normalized, existing)
 		preserveReviewDecisionIfOmitted(normalized, existing)
 		preserveMergeableStateIfOmitted(normalized, existing)
 		needsCIDetailRefresh = preserveCIStateIfOmitted(normalized, existing)
@@ -4166,6 +4167,7 @@ func (s *Syncer) indexUpsertMR(
 	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
+		preservePlatformBaseSHAIfOmitted(normalized, existing)
 		preserveReviewDecisionIfOmitted(normalized, existing)
 		preserveMergeableStateIfOmitted(normalized, existing)
 		needsCIDetailRefresh = preserveCIStateIfOmitted(normalized, existing)
@@ -7453,6 +7455,30 @@ func (s *Syncer) syncMRForRepo(
 		return diffErr
 	}
 	return nil
+}
+
+// preservePlatformBaseSHAIfOmitted keeps the stored base SHA when the
+// list endpoint omits it but the head is unchanged. GitLab list
+// payloads carry no diff_refs, so a bare list-driven upsert would
+// blank the base SHA that a prior detail sync recorded — invalidating
+// the reviewed diff snapshot (diff_base_sha != platform_base_sha) and
+// dropping reviewed_head_sha back to 409 head_unknown.
+func preservePlatformBaseSHAIfOmitted(
+	normalized *db.MergeRequest,
+	existing *db.MergeRequest,
+) {
+	if normalized == nil || existing == nil {
+		return
+	}
+	if normalized.PlatformBaseSHA != "" || existing.PlatformBaseSHA == "" {
+		return
+	}
+	if normalized.PlatformHeadSHA == "" ||
+		existing.PlatformHeadSHA == "" ||
+		normalized.PlatformHeadSHA != existing.PlatformHeadSHA {
+		return
+	}
+	normalized.PlatformBaseSHA = existing.PlatformBaseSHA
 }
 
 func preserveMergeableStateIfOmitted(

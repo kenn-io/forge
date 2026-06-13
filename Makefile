@@ -110,20 +110,20 @@ frontend-check: frontend-deps
 	$(VITE_PLUS_BIN) run frontend-check
 
 # Prevent production frontend code from bypassing generated API clients
-frontend-api-client-check:
-	node scripts/lint-api-urls.mjs
+frontend-api-client-check: frontend-deps
+	$(VITE_PLUS_BIN) exec -- node scripts/lint-api-urls.mjs
 
 # Ensure frontend font sizes use design tokens
-font-size-token-check:
-	node scripts/check-font-size-tokens.ts
+font-size-token-check: frontend-deps
+	$(VITE_PLUS_BIN) exec -- node scripts/check-font-size-tokens.ts
 
 # Prevent application HTTP routes from bypassing Huma registration
 huma-route-check:
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/nohttpmux ./...
 
 # Run lightweight script regression tests
-script-tests:
-	node --test scripts/*.test.mjs scripts/*.test.ts
+script-tests: frontend-deps
+	$(VITE_PLUS_BIN) exec -- node --test scripts/*.test.mjs scripts/*.test.ts
 
 # Run lightweight generated-client/Huma guardrails
 guardrail-check: frontend-api-client-check font-size-token-check huma-route-check script-tests

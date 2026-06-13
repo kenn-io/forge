@@ -17,6 +17,12 @@ export default defineConfig({
     "*": "vp check --fix",
   },
   fmt: {
+    ignorePatterns: [
+      "frontend/dist/**",
+      "frontend/test-results/**",
+      "packages/ui/src/api/generated/**",
+      "packages/ui/src/api/roborev/generated/**",
+    ],
     printWidth: 120,
     sortImports: false,
   },

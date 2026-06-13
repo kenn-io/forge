@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
@@ -22,8 +22,7 @@ const DEFAULT_SCAN_PATHS = ["frontend/dist/assets"];
 // root-absolute path (starts with a single "/", excluding "//" protocol-
 // relative URLs), and the base is import.meta.url. Bundlers minify the base to
 // forms like ``+import.meta.url, so allow a short gap before import.meta.url.
-const ABSOLUTE_IMPORT_META_URL =
-  /new URL\(\s*(["'`])(\/[^/][^"'`]*)\1\s*,\s*[^,)]{0,40}import\.meta\.url/g;
+const ABSOLUTE_IMPORT_META_URL = /new URL\(\s*(["'`])(\/[^/][^"'`]*)\1\s*,\s*[^,)]{0,40}import\.meta\.url/g;
 
 function toPosix(path) {
   return path.split(sep).join("/");
@@ -36,16 +35,11 @@ async function collectJsFiles(path) {
   if (!info.isDirectory()) return [];
 
   const entries = await readdir(path, { withFileTypes: true });
-  const nested = await Promise.all(
-    entries.map((entry) => collectJsFiles(resolve(path, entry.name))),
-  );
+  const nested = await Promise.all(entries.map((entry) => collectJsFiles(resolve(path, entry.name))));
   return nested.flat();
 }
 
-export async function findAbsoluteAssetUrls({
-  root = process.cwd(),
-  paths = DEFAULT_SCAN_PATHS,
-} = {}) {
+export async function findAbsoluteAssetUrls({ root = process.cwd(), paths = DEFAULT_SCAN_PATHS } = {}) {
   const rootPath = resolve(root);
   const scanPaths = paths.map((path) => resolve(rootPath, path));
   const files = (await Promise.all(scanPaths.map(collectJsFiles))).flat();
@@ -91,7 +85,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: bun scripts/check-asset-base-paths.mjs [--root DIR] [PATH...]
+  console.log(`Usage: node scripts/check-asset-base-paths.mjs [--root DIR] [PATH...]
 
 Fail the build when a bundled asset URL uses an absolute root path with
 import.meta.url (e.g. new URL("/assets/x.js", import.meta.url)). Such URLs

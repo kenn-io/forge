@@ -26,18 +26,18 @@ resolve_go_bin() {
   exit 127
 }
 
-resolve_bun_bin() {
-  if command -v bun >/dev/null 2>&1; then
-    command -v bun
+resolve_node_bin() {
+  if command -v node >/dev/null 2>&1; then
+    command -v node
     return
   fi
 
-  printf '%s\n' "bun runtime not found" >&2
+  printf '%s\n' "node runtime not found" >&2
   exit 127
 }
 
 GO_BIN="$(resolve_go_bin)"
-BUN_BIN="$(resolve_bun_bin)"
+NODE_BIN="$(resolve_node_bin)"
 exe_suffix=""
 
 if [ "$("$GO_BIN" env GOOS)" = "windows" ]; then
@@ -107,7 +107,7 @@ generate_api_artifacts() {
     tmp_schema="$(mktemp "$state_dir/frontend-schema.XXXXXX")"
     (
       cd frontend
-      "$BUN_BIN" x openapi-typescript openapi/openapi.yaml --enum-values -o "../$tmp_schema"
+      "$NODE_BIN" ./node_modules/openapi-typescript/bin/cli.js openapi/openapi.yaml --enum-values -o "../$tmp_schema"
     )
     write_if_changed "$frontend_schema" "$tmp_schema" >/dev/null 2>&1 || true
     generate_frontend_client

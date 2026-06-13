@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, relative, resolve, sep } from "node:path";
@@ -162,7 +162,7 @@ function parseArgs(argv: string[]): ParsedArgs {
 }
 
 function printHelp(): void {
-  console.log(`Usage: bun scripts/check-font-size-tokens.ts [--root DIR] [PATH...]
+  console.log(`Usage: node scripts/check-font-size-tokens.ts [--root DIR] [PATH...]
 
 Detect raw frontend font-size lengths. Production styles should use
 --font-size-* design tokens, with 0.9em allowed for relative small text.

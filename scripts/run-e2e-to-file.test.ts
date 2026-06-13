@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { planE2ERuns } from "../frontend/scripts/e2e-run-plan";
+import { planE2ERuns } from "../frontend/scripts/e2e-run-plan.ts";
 
 test("plans isolated default browser project runs", () => {
   assert.deepEqual(planE2ERuns([]), [["--project=chromium"], ["--project=firefox"]]);

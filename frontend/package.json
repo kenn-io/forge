@@ -8,7 +8,7 @@
     "dev": "vp dev",
     "build": "vp build --logLevel warn",
     "preview": "vp preview",
-    "check": "cd .. && vp fmt --check frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1 && vp lint frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1 && cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "check": "cd .. && vp fmt --check frontend --no-error-on-unmatched-pattern --threads=1 && vp lint frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1 && cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "lint": "vp lint . --no-error-on-unmatched-pattern",
     "lint:fix": "vp lint . --fix --no-error-on-unmatched-pattern",
     "typecheck": "cd .. && vp lint frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1 && cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",

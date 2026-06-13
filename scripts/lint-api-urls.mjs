@@ -1,35 +1,22 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const API_MARKER = "/api/v1";
-const SOURCE_EXTENSIONS = new Set([
-  ".js",
-  ".jsx",
-  ".svelte",
-  ".ts",
-  ".tsx",
-]);
+const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".svelte", ".ts", ".tsx"]);
 
-const DEFAULT_SCAN_PATHS = [
-  "frontend/src",
-  "packages/ui/src",
-];
+const DEFAULT_SCAN_PATHS = ["frontend/src", "packages/ui/src"];
 
-const GENERATED_CLIENT_RUNTIME_FILES = new Set([
-  "frontend/src/lib/api/runtime.ts",
-]);
+const GENERATED_CLIENT_RUNTIME_FILES = new Set(["frontend/src/lib/api/runtime.ts"]);
 
 function toPosix(path) {
   return path.split(sep).join("/");
 }
 
 function hasSourceExtension(path) {
-  return [...SOURCE_EXTENSIONS].some((ext) =>
-    path.endsWith(ext),
-  );
+  return [...SOURCE_EXTENSIONS].some((ext) => path.endsWith(ext));
 }
 
 function isExcludedPath(posixPath) {
@@ -52,11 +39,7 @@ function isExcludedPath(posixPath) {
 
 function isCommentOnly(line) {
   const trimmed = line.trim();
-  return (
-    trimmed.startsWith("//") ||
-    trimmed.startsWith("*") ||
-    trimmed.startsWith("/*")
-  );
+  return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
 }
 
 function contextFor(lines, index, radius = 5) {
@@ -71,20 +54,14 @@ function isAllowedStreamingTransport(line, context) {
   }
 
   if (
-    (context.includes("WebSocket") ||
-      context.includes("buildWsUrl")) &&
+    (context.includes("WebSocket") || context.includes("buildWsUrl")) &&
     context.includes("/terminal") &&
     line.includes("/api/v1/workspaces/")
   ) {
     return true;
   }
 
-  if (
-    context.includes("fetch") &&
-    /ndjson/i.test(context) &&
-    line.includes("/api/v1/") &&
-    /\/logs?\b/.test(context)
-  ) {
+  if (context.includes("fetch") && /ndjson/i.test(context) && line.includes("/api/v1/") && /\/logs?\b/.test(context)) {
     return true;
   }
 
@@ -93,12 +70,7 @@ function isAllowedStreamingTransport(line, context) {
 
 function isApiBasePathOnly(line, column) {
   const next = line[column + API_MARKER.length];
-  return (
-    next === undefined ||
-    next === "`" ||
-    next === "'" ||
-    next === '"'
-  );
+  return next === undefined || next === "`" || next === "'" || next === '"';
 }
 
 async function collectFiles(path) {
@@ -131,10 +103,7 @@ async function collectFiles(path) {
   return files.flat();
 }
 
-export async function lintApiUrls({
-  root = process.cwd(),
-  paths = DEFAULT_SCAN_PATHS,
-} = {}) {
+export async function lintApiUrls({ root = process.cwd(), paths = DEFAULT_SCAN_PATHS } = {}) {
   const rootPath = resolve(root);
   const scanPaths = paths.map((path) => resolve(rootPath, path));
   const files = (await Promise.all(scanPaths.map(collectFiles))).flat();
@@ -197,7 +166,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: bun scripts/lint-api-urls.mjs [--root DIR] [PATH...]
+  console.log(`Usage: node scripts/lint-api-urls.mjs [--root DIR] [PATH...]
 
 Detect hardcoded Middleman /api/v1 URLs in production frontend TypeScript
 and Svelte code. Test files, generated code, and scoped streaming
@@ -218,9 +187,7 @@ async function main() {
   }
 
   for (const finding of findings) {
-    console.error(
-      `${finding.file}:${finding.line}:${finding.column}: ${finding.message}`,
-    );
+    console.error(`${finding.file}:${finding.line}:${finding.column}: ${finding.message}`);
   }
   process.exitCode = 1;
 }

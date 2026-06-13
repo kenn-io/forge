@@ -38,7 +38,7 @@ trap 'FAILED=1' ERR
 if [ "${SKIP_BUILD:-}" != "1" ]; then
   echo "--- build frontend ---"
   cd "$REPO_ROOT" && bun install --frozen-lockfile
-  cd "$REPO_ROOT/frontend" && ../node_modules/.bin/vp build --logLevel warn
+  cd "$REPO_ROOT/frontend" && node ../node_modules/vite-plus/bin/vp build --logLevel warn
   rm -rf "$REPO_ROOT/internal/web/dist"
   cp -r "$REPO_ROOT/frontend/dist" "$REPO_ROOT/internal/web/dist"
 
@@ -66,13 +66,13 @@ cd "$REPO_ROOT/tests/integration" && \
 
 # 5. Install Playwright browsers if needed
 echo "--- install playwright ---"
-cd "$REPO_ROOT/frontend" && bunx playwright install --with-deps chromium
+cd "$REPO_ROOT/frontend" && node node_modules/.bin/playwright install --with-deps chromium
 
 # 6. Run tests — pass env file path so helpers can read it
 echo "--- run tests ---"
 cd "$REPO_ROOT/frontend"
 ROBOREV_ENDPOINT="http://127.0.0.1:$ROBOREV_PORT" \
 ROBOREV_ENV_FILE="$ENV_FILE" \
-  bun run playwright test \
+  node node_modules/.bin/playwright test \
   --config=playwright-e2e.config.ts \
   --project=roborev

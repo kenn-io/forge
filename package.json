@@ -7,10 +7,10 @@
   ],
   "type": "module",
   "scripts": {
-    "check": "vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1 && vp lint frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1 && (cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings) && (cd packages/ui && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)",
+    "check": "vp fmt --check frontend packages/ui --no-error-on-unmatched-pattern --threads=1 && vp lint frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1 && (cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings) && (cd packages/ui && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)",
     "demo-workspace": "vp run middleman-frontend#demo-workspace",
-    "fmt": "vp fmt frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1",
-    "fmt:check": "vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1",
+    "fmt": "vp fmt frontend packages/ui --no-error-on-unmatched-pattern --threads=1",
+    "fmt:check": "vp fmt --check frontend packages/ui --no-error-on-unmatched-pattern --threads=1",
     "test:e2e": "vp run middleman-frontend#test:e2e"
   },
   "devDependencies": {

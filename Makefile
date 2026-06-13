@@ -90,7 +90,7 @@ vite-plus-install:
 # Build frontend SPA and copy into embed directory
 frontend: frontend-deps vite-plus-install
 	cd frontend && vp build --logLevel warn
-	bun scripts/check-asset-base-paths.mjs
+	node scripts/check-asset-base-paths.mjs
 	rm -rf internal/web/dist
 	cp -r frontend/dist internal/web/dist
 	printf 'ok\n' > internal/web/dist/stub.html
@@ -105,7 +105,7 @@ frontend-dev-bun: frontend-deps vite-plus-install
 
 # Run TypeScript/Svelte lint and type checks
 frontend-check: frontend-deps vite-plus-install
-	vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
+	vp fmt --check frontend packages/ui --no-error-on-unmatched-pattern --threads=1
 	vp lint frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
 	@sleep 2
 	cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
@@ -114,11 +114,11 @@ frontend-check: frontend-deps vite-plus-install
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check:
-	bun scripts/lint-api-urls.mjs
+	node scripts/lint-api-urls.mjs
 
 # Ensure frontend font sizes use design tokens
 font-size-token-check:
-	bun scripts/check-font-size-tokens.ts
+	node scripts/check-font-size-tokens.ts
 
 # Prevent application HTTP routes from bypassing Huma registration
 huma-route-check:
@@ -126,7 +126,7 @@ huma-route-check:
 
 # Run lightweight script regression tests
 script-tests:
-	bun test scripts/*.test.mjs scripts/*.test.ts
+	node --test scripts/*.test.mjs scripts/*.test.ts
 
 # Run lightweight generated-client/Huma guardrails
 guardrail-check: frontend-api-client-check font-size-token-check huma-route-check script-tests
@@ -137,7 +137,7 @@ api-generate:
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
 	mkdir -p internal/apiclient/spec
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out "$$tmp" -version 3.0 -format json; if [ -f internal/apiclient/spec/openapi.json ] && cmp -s "$$tmp" internal/apiclient/spec/openapi.json; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/spec/openapi.json; fi; trap - EXIT
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; (cd frontend && bun ./node_modules/openapi-typescript/bin/cli.js openapi/openapi.yaml --enum-values -o "$$tmp"); if [ -f packages/ui/src/api/generated/schema.ts ] && cmp -s "$$tmp" packages/ui/src/api/generated/schema.ts; then rm "$$tmp"; else mv "$$tmp" packages/ui/src/api/generated/schema.ts; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node frontend/node_modules/openapi-typescript/bin/cli.js frontend/openapi/openapi.yaml --enum-values -o "$$tmp"; if [ -f packages/ui/src/api/generated/schema.ts ] && cmp -s "$$tmp" packages/ui/src/api/generated/schema.ts; then rm "$$tmp"; else mv "$$tmp" packages/ui/src/api/generated/schema.ts; fi; trap - EXIT
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; printf '%s\n' \
 		'/**' \
 		' * This file was auto-generated from frontend/openapi/openapi.yaml.' \
@@ -155,7 +155,7 @@ api-generate:
 
 # Regenerate roborev TypeScript client types from checked-in OpenAPI spec
 roborev-api-generate:
-	cd packages/ui && bunx openapi-typescript src/api/roborev/openapi.json -o src/api/roborev/generated/schema.ts
+	node frontend/node_modules/openapi-typescript/bin/cli.js packages/ui/src/api/roborev/openapi.json -o packages/ui/src/api/roborev/generated/schema.ts
 	@echo "Roborev API types generated"
 
 # Ensure air is installed for backend live reload

@@ -345,11 +345,27 @@ exit 0
 	assert.NotContains(newSession, "-e")
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
-	assert.Contains(newSessionText, "__middleman_env_file=")
-	assert.Contains(newSessionText, "exec env -i")
-	assert.Contains(newSessionText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
-	assert.Contains(newSessionText, shellquote.Join(agent.Command[0]))
 	assert.NotContains(newSessionText, "argv-visible-value")
+
+	// The pane bootstrap lives in the handoff script file; the argv
+	// only carries the dialect-neutral launch token.
+	paneToken := ""
+	for _, arg := range newSession {
+		if strings.HasPrefix(arg, "exec /bin/sh ") {
+			paneToken = arg
+		}
+	}
+	require.NotEmpty(paneToken)
+	scriptPath, err := shellquoteSplitSingle(strings.TrimPrefix(paneToken, "exec /bin/sh "))
+	require.NoError(err)
+	scriptBytes, err := os.ReadFile(scriptPath)
+	require.NoError(err)
+	script := string(scriptBytes)
+	assert.Contains(script, "__middleman_env_file=")
+	assert.Contains(script, "exec env -i")
+	assert.Contains(script, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
+	assert.Contains(script, shellquote.Join(agent.Command[0]))
+	assert.NotContains(script, "argv-visible-value")
 }
 
 func TestManagerLaunchCommandResolvesTmuxBeforeEmbeddingScript(t *testing.T) {
@@ -514,19 +530,8 @@ exit 0
 	newSessionText := strings.Join(newSession, "\n")
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
-	assert.Contains(newSessionText, "exec env -i")
-	assert.Contains(newSessionText, shellquote.Join(os.Args[0]))
-	assert.Contains(
-		newSessionText,
-		"XDG_RUNTIME_DIR=\"${XDG_RUNTIME_DIR-}\"",
-	)
-	assert.Contains(
-		newSessionText,
-		"MIDDLEMAN_TEST_CUSTOM_SHELL_ENV=\"${MIDDLEMAN_TEST_CUSTOM_SHELL_ENV-}\"",
-	)
 	assert.Contains(newSession, "-E")
 	assert.NotContains(newSession, "-e")
-	assert.Contains(newSessionText, "__middleman_env_file=")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "-t")
@@ -535,6 +540,28 @@ exit 0
 	assert.Contains(newSession, "middleman:test-owner")
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "custom-visible-value")
+
+	// The pane bootstrap lives in the handoff script file; the argv
+	// only carries the dialect-neutral launch token.
+	paneToken := ""
+	for _, arg := range newSession {
+		if strings.HasPrefix(arg, "exec /bin/sh ") {
+			paneToken = arg
+		}
+	}
+	require.NotEmpty(paneToken)
+	scriptPath, err := shellquoteSplitSingle(strings.TrimPrefix(paneToken, "exec /bin/sh "))
+	require.NoError(err)
+	scriptBytes, err := os.ReadFile(scriptPath)
+	require.NoError(err)
+	script := string(scriptBytes)
+	assert.Contains(script, "exec env -i")
+	assert.Contains(script, shellquote.Join(os.Args[0]))
+	assert.Contains(script, "XDG_RUNTIME_DIR=\"${XDG_RUNTIME_DIR-}\"")
+	assert.Contains(script, "MIDDLEMAN_TEST_CUSTOM_SHELL_ENV=\"${MIDDLEMAN_TEST_CUSTOM_SHELL_ENV-}\"")
+	assert.Contains(script, "__middleman_env_file=")
+	assert.NotContains(script, "argv-visible-value")
+	assert.NotContains(script, "custom-visible-value")
 	assert.Len(mgr.ListSessions("ws:alpha"), 1)
 }
 

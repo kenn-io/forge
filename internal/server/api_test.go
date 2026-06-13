@@ -14154,6 +14154,129 @@ func decodeGitealikeConflict(t *testing.T, body []byte) (string, map[string]any)
 	return problem.Code, problem.Details
 }
 
+// setupGitealikeCloneFixture builds a local git history (base commit
+// on main, head commit on feature) plus a bare clone usable as the
+// sync remote, so a normal provider sync can compute the reviewed diff
+// snapshot without any seeded SHAs.
+func setupGitealikeCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string) {
+	t.Helper()
+	require := require.New(t)
+	dir := t.TempDir()
+	work := filepath.Join(dir, "work")
+	require.NoError(os.MkdirAll(work, 0o755))
+	// gitcmd.New() strips inherited GIT_DIR/GIT_WORK_TREE: under the
+	// pre-commit hook git exports them into test children, and a bare
+	// procutil git here would re-init and reconfigure the HOST repo
+	// instead of the temp fixture.
+	run := func(args ...string) string {
+		out, stderr, err := gitcmd.New().Run(t.Context(), work, nil, args...)
+		require.NoError(err, "git %v: %s%s", args, out, stderr)
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "fixture@example.invalid")
+	run("config", "user.name", "Fixture")
+	require.NoError(os.WriteFile(filepath.Join(work, "a.txt"), []byte("base\n"), 0o644))
+	run("add", "a.txt")
+	run("commit", "-m", "base")
+	baseSHA = run("rev-parse", "HEAD")
+	run("checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(work, "b.txt"), []byte("head\n"), 0o644))
+	run("add", "b.txt")
+	run("commit", "-m", "head")
+	headSHA = run("rev-parse", "HEAD")
+	cloneURL = filepath.Join(dir, "origin.git")
+	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, "clone", "--bare", work, cloneURL)
+	require.NoError(err, "%s%s", out, stderr)
+	return cloneURL, baseSHA, headSHA
+}
+
+// A plain provider sync must produce the reviewed head snapshot on its
+// own: head-binding providers gate merge/approve on DiffHeadSHA, so a
+// sync path that never writes it would leave every head-bound action
+// permanently rejected with 409 head_unknown.
+func TestAPIGitealikeNormalSyncEnablesHeadBoundMutations(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	cloneURL, baseSHA, headSHA := setupGitealikeCloneFixture(t)
+
+	base := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
+	transport := &apiTestGitealikeTransport{
+		repo: gitealike.RepositoryDTO{
+			ID:            101,
+			Owner:         gitealike.UserDTO{UserName: "tea"},
+			Name:          "kettle",
+			FullName:      "tea/kettle",
+			HTMLURL:       "https://gitea.test/tea/kettle",
+			CloneURL:      cloneURL,
+			DefaultBranch: "main",
+			Created:       base,
+			Updated:       base,
+		},
+		pulls: []gitealike.PullRequestDTO{{
+			ID:      201,
+			Index:   7,
+			HTMLURL: "https://gitea.test/tea/kettle/pulls/7",
+			Title:   "Add kettle",
+			User:    gitealike.UserDTO{UserName: "alice"},
+			State:   "open",
+			Head:    gitealike.BranchDTO{Ref: "feature", SHA: headSHA},
+			Base:    gitealike.BranchDTO{Ref: "main", SHA: baseSHA},
+			Created: base,
+			Updated: base,
+		}},
+	}
+
+	provider := gitealike.NewProvider(
+		platform.KindGitea, "gitea.test", transport, gitealike.WithMutations(),
+	)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, clones,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindGitea,
+			PlatformHost: "gitea.test",
+			Owner:        "tea",
+			Name:         "kettle",
+			RepoPath:     "tea/kettle",
+			CloneURL:     cloneURL,
+		}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	syncer.RunOnce(ctx)
+	client := setupTestClient(t, srv)
+
+	detail, err := client.HTTP.GetPullOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detail.StatusCode())
+	require.NotNil(detail.JSON200)
+	assert.Equal(headSHA, detail.JSON200.ReviewedHeadSha,
+		"a normal sync must expose the reviewed head for head-bound actions")
+
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.MergePullOnHostJSONRequestBody{
+			Method:          "squash",
+			CommitTitle:     "t",
+			CommitMessage:   "m",
+			ExpectedHeadSha: &headSHA,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, mergeResp.StatusCode(), string(mergeResp.Body))
+	assert.Equal(headSHA, transport.lastMergeOpts.ExpectedHeadSHA,
+		"the sync-derived reviewed head must reach the provider as the pin")
+}
+
 func TestAPIGitealikePinnedMergeHeadMismatchIsStale(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -20260,6 +20383,36 @@ exit 0
 	assert.Equal(time.UTC, session.CreatedAt.Location())
 }
 
+// tmuxPaneScriptContent extracts the pane handoff script content from a
+// recorded new-session argv: the pane command is a single
+// "exec /bin/sh '<path>'" token whose script file holds the real
+// bootstrap (env handoff and exec of the target command).
+func tmuxPaneScriptContent(t *testing.T, newSession []string) string {
+	t.Helper()
+	content, ok := tmuxPaneScriptContentIfAny(newSession)
+	require.True(t, ok, "new-session argv carries no readable pane script token")
+	return content
+}
+
+func tmuxPaneScriptContentIfAny(newSession []string) (string, bool) {
+	for _, arg := range newSession {
+		rest, ok := strings.CutPrefix(arg, "exec /bin/sh ")
+		if !ok {
+			continue
+		}
+		words, err := shellquote.Split(rest)
+		if err != nil || len(words) != 1 {
+			return "", false
+		}
+		content, err := os.ReadFile(words[0])
+		if err != nil {
+			return "", false
+		}
+		return string(content), true
+	}
+	return "", false
+}
+
 func TestWorkspaceRuntimeLaunchAgentCreatesProbeableTmuxSessionE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -20335,9 +20488,11 @@ exit 0
 	var newSession []string
 	require.Eventually(func() bool {
 		for _, argv := range readTmuxRecord(t, record) {
-			if len(argv) > 0 &&
-				argv[0] == "new-session" &&
-				strings.Contains(strings.Join(argv, "\n"), agentPath) {
+			if len(argv) == 0 || argv[0] != "new-session" {
+				continue
+			}
+			if script, ok := tmuxPaneScriptContentIfAny(argv); ok &&
+				strings.Contains(script, agentPath) {
 				newSession = argv
 				return true
 			}
@@ -20350,8 +20505,9 @@ exit 0
 	assert.True(isRuntimeTmuxSessionNameForWorkspace(ws.Id, session))
 	assert.Contains(newSession, "-d")
 	assert.Contains(newSession, "-c")
-	assert.Contains(strings.Join(newSession, "\n"), agentPath)
-	assert.Contains(strings.Join(newSession, "\n"), "--flag")
+	paneScript := tmuxPaneScriptContent(t, newSession)
+	assert.Contains(paneScript, agentPath)
+	assert.Contains(paneScript, "--flag")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "-t")
@@ -20695,9 +20851,15 @@ func findRuntimeTmuxNewSessionName(
 	commandPath string,
 ) (string, bool) {
 	for _, argv := range argvs {
-		if len(argv) == 0 ||
-			argv[0] != "new-session" ||
-			!strings.Contains(strings.Join(argv, "\n"), commandPath) {
+		if len(argv) == 0 || argv[0] != "new-session" {
+			continue
+		}
+		// The target command lives in the pane handoff script, which a
+		// failed launch already cleaned up; match on the script when it
+		// is still readable, and otherwise fall back to the runtime
+		// session-name pattern (setup sessions use a different shape).
+		if script, ok := tmuxPaneScriptContentIfAny(argv); ok &&
+			!strings.Contains(script, commandPath) {
 			continue
 		}
 		name, ok := argAfter(argv, "-s")

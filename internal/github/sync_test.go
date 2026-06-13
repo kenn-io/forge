@@ -2396,6 +2396,7 @@ func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
 		repoID,
 		incoming,
+		false,
 	)
 	require.NoError(err)
 
@@ -2451,6 +2452,7 @@ func TestIndexUpsertMergeRequestPreservesCachedCIForSameHead(t *testing.T) {
 			UpdatedAt:      now.Add(time.Minute),
 			LastActivityAt: now.Add(time.Minute),
 		},
+		false,
 	)
 	require.NoError(err)
 
@@ -2506,6 +2508,7 @@ func TestIndexUpsertMergeRequestPreservesReviewDecisionWhenOmitted(t *testing.T)
 			UpdatedAt:      now.Add(time.Minute),
 			LastActivityAt: now.Add(time.Minute),
 		},
+		false,
 	)
 	require.NoError(err)
 

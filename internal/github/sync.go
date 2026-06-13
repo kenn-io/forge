@@ -3946,7 +3946,7 @@ func (s *Syncer) syncMergeRequestsFromList(
 	var hadItemFailure bool
 	progress := newMergeRequestSyncProgressLogger(repo, "provider", len(mrs))
 	for i, mr := range mrs {
-		if err := s.indexUpsertMergeRequest(ctx, repo, repoID, mr); err != nil {
+		if err := s.indexUpsertMergeRequest(ctx, repo, repoID, mr, cloneFetchOK); err != nil {
 			slog.Error("index upsert MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", mr.Number,
@@ -4043,6 +4043,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 	repo RepoRef,
 	repoID int64,
 	mr platform.MergeRequest,
+	cloneFetchOK bool,
 ) error {
 	normalized := platform.DBMergeRequest(repoID, mr)
 
@@ -4103,6 +4104,20 @@ func (s *Syncer) indexUpsertMergeRequest(
 			"ensure kanban state for MR #%d: %w",
 			mr.Number, err,
 		)
+	}
+
+	// Record the reviewed diff snapshot so head-binding providers can
+	// pin mutations after a plain list sync — without it the head
+	// stays unreviewable and head-bound actions 409 with head_unknown.
+	// Non-fatal like the bulk GitHub path: a missed snapshot only
+	// delays head-bound actions until the next successful sync.
+	if s.clones != nil && cloneFetchOK {
+		if err := s.syncProviderMRDiff(ctx, repo, repoID, mr.Number, normalized); err != nil {
+			slog.Warn("provider diff snapshot failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", mr.Number, "err", err,
+			)
+		}
 	}
 
 	if existing != nil &&
@@ -7395,6 +7410,13 @@ func (s *Syncer) syncMRForRepo(
 			_ = s.updateMRDetailFetchedByRepoID(ctx, repoID, number, pending)
 		}
 	} else {
+		// Record the reviewed diff snapshot for non-GitHub providers
+		// too: head-binding providers refuse merge/approve until
+		// DiffHeadSHA matches the platform head, so a sync that never
+		// writes it would leave head-bound actions permanently
+		// disabled with 409 head_unknown.
+		diffErr = s.syncProviderMRDiff(ctx, repo, repoID, number, normalized)
+
 		pending := false
 		_, pending, err = s.syncProviderMRDetailExtras(
 			ctx, mrReader, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
@@ -7520,6 +7542,49 @@ func (s *Syncer) syncMRDiff(
 
 	if normalized.PlatformHeadSHA == "" || normalized.PlatformBaseSHA == "" {
 		return nil
+	}
+	mb, err := s.clones.MergeBase(ctx, host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+	if err != nil {
+		return &DiffSyncError{
+			Code: DiffSyncCodeMergeBaseFailed,
+			Err:  fmt.Errorf("merge-base for #%d: %w", number, err),
+		}
+	}
+	if err := s.db.UpdateDiffSHAs(ctx, repoID, number, normalized.PlatformHeadSHA, normalized.PlatformBaseSHA, mb); err != nil {
+		return &DiffSyncError{
+			Code: DiffSyncCodeInternal,
+			Err:  fmt.Errorf("update diff SHAs for #%d: %w", number, err),
+		}
+	}
+	return nil
+}
+
+// syncProviderMRDiff records the reviewed diff snapshot for a
+// non-GitHub MR: the locally verified head/base SHAs plus merge-base.
+// Head-binding providers gate merge/approve on this snapshot matching
+// the platform head, so it must be written by the same sync that
+// refreshed the MR row. Only open MRs are snapshotted — head pins are
+// meaningless once merged/closed, and the merged-MR merge-base repair
+// logic is GitHub-specific.
+func (s *Syncer) syncProviderMRDiff(
+	ctx context.Context, repo RepoRef, repoID int64, number int,
+	normalized *db.MergeRequest,
+) error {
+	if s.clones == nil {
+		return nil
+	}
+	if normalized.State != db.MergeRequestStateOpen {
+		return nil
+	}
+	if normalized.PlatformHeadSHA == "" || normalized.PlatformBaseSHA == "" {
+		return nil
+	}
+	host := repoHost(repo)
+	if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+		return &DiffSyncError{
+			Code: DiffSyncCodeCloneUnavailable,
+			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
+		}
 	}
 	mb, err := s.clones.MergeBase(ctx, host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
 	if err != nil {

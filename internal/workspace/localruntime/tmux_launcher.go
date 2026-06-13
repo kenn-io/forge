@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 
@@ -220,26 +221,84 @@ func (e tmuxCommandError) Unwrap() error {
 	return e.err
 }
 
+// newSessionPaneCommand writes the pane handoff as an executable
+// POSIX script file and returns a single short launch token,
+// `exec /bin/sh '<script>'`. tmux runs a lone shell-command argument
+// through the user's default shell, so the token must parse
+// identically under POSIX shells and fish — which multi-statement
+// inline scripts (and naive `/bin/sh -c` argv, which tmux flattens
+// without quoting) do not. The leading exec keeps the pane a single
+// process so PTY EOF reaches attach clients as soon as the command
+// exits.
 func (l tmuxLauncher) newSessionPaneCommand() (string, func(), error) {
-	path, err := writeTmuxPaneEnvironment(l.Pane.commandEnv, l.Pane.keys)
+	envPath, err := writeTmuxPaneEnvironment(l.Pane.commandEnv, l.Pane.keys)
 	if err != nil {
 		return "", nil, fmt.Errorf("write tmux pane environment: %w", err)
 	}
-	cleanup := func() {
-		_ = os.Remove(path)
+	scriptPath, err := writeTmuxPaneScript(envPath, l.Pane.paneCommand)
+	if err != nil {
+		_ = os.Remove(envPath)
+		return "", nil, fmt.Errorf("write tmux pane script: %w", err)
 	}
-	return strings.Join([]string{
-		"__middleman_env_file=" + shellCommand([]string{path}),
-		`__middleman_cleanup_env_file() { rm -f "$__middleman_env_file"; }`,
-		`trap __middleman_cleanup_env_file EXIT`,
+	cleanup := func() {
+		_ = os.Remove(envPath)
+		_ = os.Remove(scriptPath)
+	}
+	return "exec /bin/sh " + shellCommand([]string{scriptPath}), cleanup, nil
+}
+
+// writeTmuxPaneScript writes the pane handoff script: source the env
+// file, remove both handoff files, then exec the pane command. Cleanup
+// uses an absolute rm resolved from the server's PATH — the pane
+// inherits the workspace CWD, so a PATH-resolved rm could execute a
+// binary shipped inside a malicious repository.
+func writeTmuxPaneScript(envPath, paneCommand string) (string, error) {
+	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "middleman-tmux-pane-*")
+	if err != nil {
+		return "", err
+	}
+	scriptPath := file.Name()
+	fail := func(err error) (string, error) {
+		_ = file.Close()
+		_ = os.Remove(scriptPath)
+		return "", err
+	}
+	if err := file.Chmod(0o600); err != nil {
+		return fail(err)
+	}
+	content := strings.Join([]string{
+		"__middleman_env_file=" + shellCommand([]string{envPath}),
+		"__middleman_script_file=" + shellCommand([]string{scriptPath}),
+		`__middleman_cleanup_files() { ` + trustedRmPath() + ` -f "$__middleman_env_file" "$__middleman_script_file"; }`,
+		`trap __middleman_cleanup_files EXIT`,
 		`if [ ! -r "$__middleman_env_file" ]; then exit 127; fi`,
 		`. "$__middleman_env_file"`,
-		`__middleman_cleanup_env_file`,
+		`__middleman_cleanup_files`,
 		`trap - EXIT`,
-		`unset -f __middleman_cleanup_env_file`,
-		`unset __middleman_env_file`,
-		l.Pane.paneCommand,
-	}, "\n"), cleanup, nil
+		`unset -f __middleman_cleanup_files`,
+		`unset __middleman_env_file __middleman_script_file`,
+		paneCommand,
+		"",
+	}, "\n")
+	if _, err := file.WriteString(content); err != nil {
+		return fail(err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(scriptPath)
+		return "", err
+	}
+	return scriptPath, nil
+}
+
+// trustedRmPath resolves rm on the server's own PATH at script
+// generation time, falling back to /bin/rm. Hosts without /bin/rm
+// (NixOS) resolve their store path here; the quoted absolute path is
+// what the pane script embeds.
+func trustedRmPath() string {
+	if path, err := exec.LookPath("rm"); err == nil {
+		return shellCommand([]string{path})
+	}
+	return "/bin/rm"
 }
 
 func writeTmuxPaneEnvironment(env []string, keys []string) (string, error) {
@@ -310,7 +369,11 @@ func (l tmuxLauncher) newSessionCommand(paneCommand string) []string {
 	if l.CWD != "" {
 		command = append(command, "-c", l.CWD)
 	}
-	command = append(command, "/bin/sh", "-c", paneCommand)
+	// paneCommand is a single dialect-neutral token (see
+	// newSessionPaneCommand); tmux hands a lone shell-command argument
+	// to the user's default shell, where `exec /bin/sh '<script>'`
+	// parses identically under POSIX shells and fish.
+	command = append(command, paneCommand)
 	if l.OwnerMarker != "" {
 		command = append(
 			command,

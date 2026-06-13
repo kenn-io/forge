@@ -9,6 +9,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
+
+	// gitsafe's init() strips inherited GIT_DIR/GIT_WORK_TREE from the
+	// test process. Every server-side test binary that builds git
+	// fixtures already imports dbtest for its SQLite setup, so routing
+	// the scrub through this regular import protects every fixture
+	// (SetupDiffRepo, the provider clone fixtures, ...) from
+	// re-initializing the host repo under the pre-commit hook — no
+	// per-package guard import needed.
+	_ "go.kenn.io/middleman/internal/testutil/gitsafe"
 )
 
 var templateCache = &templateState{}

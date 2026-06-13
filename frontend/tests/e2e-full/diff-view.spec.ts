@@ -322,6 +322,29 @@ const hunklessTextDiff: DiffResult = withServerDiffData({
   ],
 });
 
+const emptyAddedFileDiff: DiffResult = withServerDiffData({
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "fixtures/.gitkeep",
+      old_path: "fixtures/.gitkeep",
+      status: "added",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 0,
+      deletions: 0,
+      patch: [
+        "diff --git a/fixtures/.gitkeep b/fixtures/.gitkeep",
+        "new file mode 100644",
+        "index 0000000..e69de29",
+        "",
+      ].join("\n"),
+      hunks: [],
+    },
+  ],
+});
+
 const oversizedSparseDiff: DiffResult = withServerDiffData({
   stale: false,
   whitespace_only_count: 0,
@@ -1880,6 +1903,21 @@ test.describe("diff view", () => {
     const file = page.locator('[data-file-path="internal/server/config.go"]');
     await expect(file.getByText("No textual changes")).toBeVisible();
     await expect(file.getByRole("status")).toHaveCount(0);
+  });
+
+  test("empty added files with no hunk lines show empty state", async ({ page }) => {
+    await mockDiffApi(page, emptyAddedFileDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await expect(treeFileItem(page, "fixtures/.gitkeep")).toHaveAttribute("data-item-git-status", "added");
+    const file = page.locator('[data-file-path="fixtures/.gitkeep"]');
+    await expect(file.getByText("No textual changes")).toBeVisible();
+    await expect(file.getByRole("status")).toHaveCount(0);
+    await expectPierreDiffCount(file, diffAdditionsSelector, 0);
+    await expectPierreDiffCount(file, diffDeletionsSelector, 0);
+    await expectPierreDiffCount(file, diffContextSelector, 0);
   });
 
   test("oversized sparse hunks render without demand context expansion", async ({ page }) => {

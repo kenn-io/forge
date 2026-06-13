@@ -11,6 +11,7 @@ import (
 
 	shellquote "github.com/kballard/go-shellquote"
 	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/workspace/panebootstrap"
 )
 
 type tmuxEnvPolicy struct {
@@ -18,9 +19,9 @@ type tmuxEnvPolicy struct {
 }
 
 type tmuxPaneEnvironment struct {
-	keys        []string
-	paneCommand string
-	commandEnv  []string
+	keys       []string
+	command    []string
+	commandEnv []string
 }
 
 var (
@@ -35,18 +36,36 @@ func (p tmuxEnvPolicy) paneEnvironment(
 ) tmuxPaneEnvironment {
 	env := p.environment(baseEnv, extraStripVars)
 	envWithTerm := append(slices.Clone(env), "TERM=xterm-256color")
-	keys := tmuxEnvironmentKeys(envWithTerm)
-	parts := make([]string, 0, len(keys)+4)
-	parts = append(parts, "exec", "env", "-i")
-	for _, key := range keys {
-		parts = append(parts, key+"=\"${"+key+"-}\"")
-	}
-	parts = append(parts, shellCommand(command))
 	return tmuxPaneEnvironment{
-		keys:        keys,
-		paneCommand: strings.Join(parts, " "),
-		commandEnv:  envWithTerm,
+		keys:       tmuxEnvironmentKeys(envWithTerm),
+		command:    slices.Clone(command),
+		commandEnv: envWithTerm,
 	}
+}
+
+// handoffEnv returns the KEY=VALUE entries the pane runs under, reproducing
+// the old `exec env -i KEY="${KEY-}" ...` dance: only the policy's
+// preserved, shell-identifier keys, with last-wins values from commandEnv
+// (so the appended TERM=xterm-256color overrides any inherited TERM). The
+// pane bootstrap applies these as the process environment via env -i
+// semantics; commandEnv itself is left intact for tmux subprocess argv.
+func (e tmuxPaneEnvironment) handoffEnv() []string {
+	values := make(map[string]string, len(e.commandEnv))
+	for _, kv := range e.commandEnv {
+		eq := strings.IndexByte(kv, '=')
+		if eq <= 0 {
+			continue
+		}
+		values[kv[:eq]] = kv[eq+1:]
+	}
+	out := make([]string, 0, len(e.keys))
+	for _, key := range e.keys {
+		if !isShellIdentifier(key) {
+			continue
+		}
+		out = append(out, key+"="+values[key])
+	}
+	return out
 }
 
 func (p tmuxEnvPolicy) keys(extraStripVars []string) []string {
@@ -220,73 +239,40 @@ func (e tmuxCommandError) Unwrap() error {
 	return e.err
 }
 
+// newSessionPaneCommand writes the pane's env and argv to a 0600 handoff
+// file and returns a single dialect-neutral launch token,
+// `exec '<exe>' __tmux-pane-bootstrap '<handoff>'`, plus a cleanup that
+// removes the file if the session is never created. tmux runs a lone
+// shell-command argument through the user's default shell, so the token
+// must parse identically under POSIX shells and fish; this one is just
+// three quoted words, and the leading exec keeps the pane a single process
+// so PTY EOF reaches attach clients the instant the command exits. The exe
+// re-execs middleman itself into panebootstrap, which applies the handoff
+// env (env -i semantics) and execs the real command with no shell in the
+// chain — see internal/workspace/panebootstrap for why any /bin/sh hop
+// breaks pane teardown on macOS.
+//
+// Caveat: tmux still interposes the user's default-shell to run this token,
+// so a host whose SHELL is /bin/sh re-enters the slow path. That is not
+// fixable while tmux runs window commands through default-shell; the common
+// case (zsh, bash 5, fish) is unaffected because the shell exec's away
+// before the bootstrap runs.
 func (l tmuxLauncher) newSessionPaneCommand() (string, func(), error) {
-	path, err := writeTmuxPaneEnvironment(l.Pane.commandEnv, l.Pane.keys)
+	exe, err := os.Executable()
 	if err != nil {
-		return "", nil, fmt.Errorf("write tmux pane environment: %w", err)
+		return "", nil, fmt.Errorf("resolve middleman executable: %w", err)
+	}
+	path, err := panebootstrap.WriteHandoff(
+		tmuxPaneEnvironmentTempDir(), l.Pane.handoffEnv(), l.Pane.command,
+	)
+	if err != nil {
+		return "", nil, fmt.Errorf("write tmux pane handoff: %w", err)
 	}
 	cleanup := func() {
 		_ = os.Remove(path)
 	}
-	return strings.Join([]string{
-		"__middleman_env_file=" + shellCommand([]string{path}),
-		`__middleman_cleanup_env_file() { /bin/rm -f "$__middleman_env_file"; }`,
-		`trap __middleman_cleanup_env_file EXIT`,
-		`if [ ! -r "$__middleman_env_file" ]; then exit 127; fi`,
-		`. "$__middleman_env_file"`,
-		`__middleman_cleanup_env_file`,
-		`trap - EXIT`,
-		`unset -f __middleman_cleanup_env_file`,
-		`unset __middleman_env_file`,
-		l.Pane.paneCommand,
-	}, "\n"), cleanup, nil
-}
-
-func writeTmuxPaneEnvironment(env []string, keys []string) (string, error) {
-	values := make(map[string]string, len(env))
-	for _, kv := range env {
-		eq := strings.IndexByte(kv, '=')
-		if eq <= 0 {
-			continue
-		}
-		values[kv[:eq]] = kv[eq+1:]
-	}
-
-	var content strings.Builder
-	for _, key := range keys {
-		if !isShellIdentifier(key) {
-			continue
-		}
-		content.WriteString("export ")
-		content.WriteString(key)
-		content.WriteByte('=')
-		content.WriteString(shellCommand([]string{values[key]}))
-		content.WriteByte('\n')
-	}
-
-	// This short-lived handoff keeps preserved values out of tmux argv. The
-	// file is 0600 and cleaned on tmux launch failure and pane shell exit, but
-	// it is not intended to be a same-user sandbox boundary.
-	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "middleman-tmux-env-*")
-	if err != nil {
-		return "", err
-	}
-	path := file.Name()
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		return "", err
-	}
-	if _, err := file.WriteString(content.String()); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		return "", err
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
-		return "", err
-	}
-	return path, nil
+	token := "exec " + shellCommand([]string{exe, panebootstrap.Subcommand, path})
+	return token, cleanup, nil
 }
 
 func tmuxPaneEnvironmentTempDir() string {
@@ -310,6 +296,10 @@ func (l tmuxLauncher) newSessionCommand(paneCommand string) []string {
 	if l.CWD != "" {
 		command = append(command, "-c", l.CWD)
 	}
+	// paneCommand is a single dialect-neutral token (see
+	// newSessionPaneCommand); tmux hands a lone shell-command argument
+	// to the user's default shell, where `exec /bin/sh '<script>'`
+	// parses identically under POSIX shells and fish.
 	command = append(command, paneCommand)
 	if l.OwnerMarker != "" {
 		command = append(

@@ -8,12 +8,31 @@ import (
 	"strings"
 	"testing"
 
+	shellquote "github.com/kballard/go-shellquote"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/workspace/panebootstrap"
 )
+
+// readPaneHandoff parses the pane launch token,
+// `exec '<exe>' __tmux-pane-bootstrap '<handoff>'`, asserts its shape, and
+// returns the env and argv recorded in the handoff file.
+func readPaneHandoff(t *testing.T, token string) (env, argv []string) {
+	t.Helper()
+	rest, ok := strings.CutPrefix(token, "exec ")
+	require.True(t, ok, "pane token must start with exec: %q", token)
+	words, err := shellquote.Split(rest)
+	require.NoError(t, err)
+	require.Len(t, words, 3, "pane token: %q", token)
+	require.Equal(t, panebootstrap.Subcommand, words[1])
+	env, argv, err = panebootstrap.ReadHandoff(words[2])
+	require.NoError(t, err)
+	return env, argv
+}
 
 func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert := Assert.New(t)
+	requireT := require.New(t)
 	t.Setenv("XDG_RUNTIME_DIR", "argv-visible-value")
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "secret-value")
 
@@ -28,10 +47,10 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 		OwnerMarker: "middleman:test-owner",
 	}
 
-	paneCommand, cleanup, err := launcher.newSessionPaneCommand()
-	require.NoError(t, err)
+	token, cleanup, err := launcher.newSessionPaneCommand()
+	requireT.NoError(err)
 	t.Cleanup(cleanup)
-	newSession := launcher.newSessionCommand(paneCommand)
+	newSession := launcher.newSessionCommand(token)
 	newSessionText := strings.Join(newSession, "\n")
 
 	assert.Equal("new-session", newSession[1])
@@ -39,21 +58,31 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert.NotContains(newSession, "-e")
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
-	assert.Contains(newSessionText, "exec env -i")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "@middleman_owner")
 	assert.Contains(newSession, "middleman:test-owner")
-	assert.Contains(newSessionText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
-	assert.Contains(newSessionText, "__middleman_env_file=")
-	assert.Contains(newSessionText, "trap __middleman_cleanup_env_file EXIT")
-	assert.Contains(newSessionText, "trap - EXIT")
+
+	// Preserved env values live in the handoff file, never in tmux argv.
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "secret-value")
+
+	// The pane command must be one dialect-neutral token: tmux hands a
+	// lone shell-command argument to the user's default shell, so anything
+	// but a single quoted-words token breaks on fish hosts.
+	assert.Contains(newSession, token)
+	assert.True(strings.HasPrefix(token, "exec "), token)
+
+	env, argv := readPaneHandoff(t, token)
+	assert.Equal([]string{"/bin/sh", "-lc", "sleep 10"}, argv)
+	// The agent policy preserves XDG_RUNTIME_DIR but strips the token.
+	assert.Contains(env, "XDG_RUNTIME_DIR=argv-visible-value")
+	assert.NotContains(strings.Join(env, "\n"), "secret-value")
 }
 
 func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {
 	assert := Assert.New(t)
+	requireT := require.New(t)
 	t.Setenv("MIDDLEMAN_TEST_CUSTOM_SHELL_ENV", "custom-visible-value")
 
 	shellKeys := tmuxShellEnvPolicy.keys(nil)
@@ -62,14 +91,23 @@ func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {
 	assert.Contains(shellKeys, "MIDDLEMAN_TEST_CUSTOM_SHELL_ENV")
 	assert.NotContains(agentKeys, "MIDDLEMAN_TEST_CUSTOM_SHELL_ENV")
 
-	paneCommand := tmuxShellEnvPolicy.paneEnvironment(
+	paneEnv := tmuxShellEnvPolicy.paneEnvironment(
 		os.Environ(), []string{"/bin/sh"}, nil,
-	).paneCommand
-	assert.Contains(
-		paneCommand,
-		`MIDDLEMAN_TEST_CUSTOM_SHELL_ENV="${MIDDLEMAN_TEST_CUSTOM_SHELL_ENV-}"`,
 	)
-	assert.NotContains(paneCommand, "custom-visible-value")
+	launcher := tmuxLauncher{
+		TmuxCommand: []string{"/usr/bin/tmux"},
+		Session:     "middleman-test",
+		Pane:        paneEnv,
+	}
+	token, cleanup, err := launcher.newSessionPaneCommand()
+	requireT.NoError(err)
+	t.Cleanup(cleanup)
+
+	// The shell policy carries the custom value in the handoff env; it
+	// never appears in the tmux launch token.
+	env, _ := readPaneHandoff(t, token)
+	assert.Contains(env, "MIDDLEMAN_TEST_CUSTOM_SHELL_ENV=custom-visible-value")
+	assert.NotContains(token, "custom-visible-value")
 }
 
 func TestTmuxLauncherRejectsUnownedExistingSession(t *testing.T) {
@@ -99,8 +137,8 @@ exit 0
 		TmuxCommand: []string{tmuxPath},
 		Session:     "middleman-test",
 		Pane: tmuxPaneEnvironment{
-			paneCommand: "exec /bin/sh",
-			keys:        []string{"PATH", "TERM"},
+			command: []string{"/bin/sh"},
+			keys:    []string{"PATH", "TERM"},
 			commandEnv: append(
 				os.Environ(),
 				"TMUX_RECORD="+record,
@@ -124,8 +162,7 @@ exit 0
 		"attach-session", "-t", "middleman-test",
 	})
 	assert.NotContains(records, []string{
-		"new-session", "-e", "PATH", "-e", "TERM",
-		"-d", "-s", "middleman-test", "exec /bin/sh",
+		"new-session", "-E", "-d", "-s", "middleman-test",
 	})
 }
 

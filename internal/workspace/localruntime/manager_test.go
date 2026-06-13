@@ -23,9 +23,14 @@ import (
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
+	"go.kenn.io/middleman/internal/workspace/panebootstrap"
 )
 
 func TestMain(m *testing.M) {
+	// Real-tmux tests in this package launch panes that re-exec this test
+	// binary as the pane bootstrap; exec the handoff command and never
+	// return before the suite (or the helper check) runs.
+	panebootstrap.ExecIfRequested()
 	if os.Getenv("MIDDLEMAN_LOCALRUNTIME_HELPER") == "1" {
 		os.Exit(m.Run())
 	}
@@ -345,11 +350,21 @@ exit 0
 	assert.NotContains(newSession, "-e")
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
-	assert.Contains(newSessionText, "__middleman_env_file=")
-	assert.Contains(newSessionText, "exec env -i")
-	assert.Contains(newSessionText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
-	assert.Contains(newSessionText, shellquote.Join(agent.Command[0]))
 	assert.NotContains(newSessionText, "argv-visible-value")
+
+	// The pane bootstrap reads env and argv from the 0600 handoff file;
+	// the tmux argv only carries the dialect-neutral launch token, so the
+	// preserved value never reaches tmux state.
+	paneToken := ""
+	for _, arg := range newSession {
+		if strings.Contains(arg, panebootstrap.Subcommand) {
+			paneToken = arg
+		}
+	}
+	require.NotEmpty(paneToken)
+	env, argv := readPaneHandoff(t, paneToken)
+	assert.Contains(argv, agent.Command[0])
+	assert.Contains(env, "XDG_RUNTIME_DIR=argv-visible-value")
 }
 
 func TestManagerLaunchCommandResolvesTmuxBeforeEmbeddingScript(t *testing.T) {
@@ -514,19 +529,8 @@ exit 0
 	newSessionText := strings.Join(newSession, "\n")
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
-	assert.Contains(newSessionText, "exec env -i")
-	assert.Contains(newSessionText, shellquote.Join(os.Args[0]))
-	assert.Contains(
-		newSessionText,
-		"XDG_RUNTIME_DIR=\"${XDG_RUNTIME_DIR-}\"",
-	)
-	assert.Contains(
-		newSessionText,
-		"MIDDLEMAN_TEST_CUSTOM_SHELL_ENV=\"${MIDDLEMAN_TEST_CUSTOM_SHELL_ENV-}\"",
-	)
 	assert.Contains(newSession, "-E")
 	assert.NotContains(newSession, "-e")
-	assert.Contains(newSessionText, "__middleman_env_file=")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "-t")
@@ -535,6 +539,20 @@ exit 0
 	assert.Contains(newSession, "middleman:test-owner")
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "custom-visible-value")
+
+	// The pane bootstrap reads env and argv from the 0600 handoff file;
+	// the tmux argv only carries the dialect-neutral launch token.
+	paneToken := ""
+	for _, arg := range newSession {
+		if strings.Contains(arg, panebootstrap.Subcommand) {
+			paneToken = arg
+		}
+	}
+	require.NotEmpty(paneToken)
+	env, argv := readPaneHandoff(t, paneToken)
+	assert.Contains(argv, os.Args[0])
+	assert.Contains(env, "XDG_RUNTIME_DIR=argv-visible-value")
+	assert.Contains(env, "MIDDLEMAN_TEST_CUSTOM_SHELL_ENV=custom-visible-value")
 	assert.Len(mgr.ListSessions("ws:alpha"), 1)
 }
 
@@ -933,20 +951,19 @@ func TestManagerLaunchCommandDoesNotEmbedEnvForWrappedAgent(t *testing.T) {
 	resolvedShell, err := resolveExecutable("sh")
 	require.NoError(t, err)
 
-	paneCommand := tmuxAgentEnvPolicy.paneEnvironment(
+	paneEnv := tmuxAgentEnvPolicy.paneEnvironment(
 		os.Environ(), []string{resolvedShell, "-c", "echo ok"}, nil,
-	).paneCommand
-	assert.Contains(paneCommand, "exec ")
-	assert.Contains(paneCommand, "env -i")
-	assert.Contains(paneCommand, shellquote.Join(resolvedShell))
-	assert.Contains(
-		paneCommand,
-		"XDG_RUNTIME_DIR=\"${XDG_RUNTIME_DIR-}\"",
 	)
-	assert.NotContains(paneCommand, "TERM=xterm-256color")
-	assert.NotContains(paneCommand, "secret-token")
-	assert.NotContains(paneCommand, "context7-secret")
-	assert.NotContains(paneCommand, "not-carried")
+
+	// The pane argv is exactly the command; no env is folded into it, so
+	// nothing reaches tmux state. Preserved keys live in the handoff env
+	// (the 0600 file the bootstrap reads), and secrets are stripped.
+	assert.Equal([]string{resolvedShell, "-c", "echo ok"}, paneEnv.command)
+	env := paneEnv.handoffEnv()
+	joined := strings.Join(env, "\n")
+	assert.Contains(env, "XDG_RUNTIME_DIR=not-carried")
+	assert.NotContains(joined, "secret-token")
+	assert.NotContains(joined, "context7-secret")
 }
 
 func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T) {
@@ -1004,13 +1021,10 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 		[]string{"/bin/sh", "-c", printCommand},
 		[]string{"MIDDLEMAN_STRIPPED_ENV"},
 	)
-	paneCommand := paneEnv.paneCommand
-	require.NotContains(paneCommand, "client-visible-value")
-	require.NotContains(paneCommand, "client-secret")
-	require.NotContains(paneCommand, "client-stripped")
-	require.NotContains(paneCommand, "server-visible-value")
-	require.NotContains(paneCommand, "server-secret")
-	require.NotContains(paneCommand, "server-stripped")
+	// End-to-end through real tmux: the pane re-execs this test binary as
+	// the bootstrap (see TestMain), which applies the handoff env and execs
+	// printCommand. The output check below proves the pane saw the client
+	// env (not the seed/server env) with secrets stripped.
 
 	tmuxCommand := []string{tmuxPath, "-f", "/dev/null", "-S", socket}
 	_, err = tmuxLauncher{

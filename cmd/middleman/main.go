@@ -34,6 +34,7 @@ import (
 	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/web"
+	"go.kenn.io/middleman/internal/workspace/panebootstrap"
 )
 
 type splitLogHandler struct {
@@ -86,6 +87,11 @@ var (
 var runServer = run
 
 func main() {
+	// If tmux launched us as a pane bootstrap, exec the real command and
+	// never return. Must precede configureLogging (no log files in a pane)
+	// and any flag parsing.
+	panebootstrap.ExecIfRequested()
+
 	closeLog, err := configureLogging(os.Stderr)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "configure logging: %v\n", err)

@@ -58,6 +58,7 @@ import (
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/middleman/internal/workspace/panebootstrap"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -66,6 +67,10 @@ const serverRuntimeHelperMarker = "middleman-runtime-helper"
 var ptyE2ESemaphore = semaphore.NewWeighted(1)
 
 func TestMain(m *testing.M) {
+	// Real-tmux e2e tests launch panes that re-exec this test binary as
+	// the pane bootstrap; exec the handoff command and never return before
+	// the suite (or the helper-process check) runs.
+	panebootstrap.ExecIfRequested()
 	if isServerHelperProcess() {
 		os.Exit(m.Run())
 	}

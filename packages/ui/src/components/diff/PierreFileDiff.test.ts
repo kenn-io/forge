@@ -183,6 +183,17 @@ function makeFile(): DiffFile {
   };
 }
 
+function makePatchOnlyFile(): DiffFile {
+  return {
+    ...makeFile(),
+    status: "added",
+    old_path: "",
+    deletions: 0,
+    patch: "@@ -0,0 +1,1 @@\n+export const patchOnly = true;\n",
+    hunks: [],
+  };
+}
+
 describe("PierreFileDiff", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -217,6 +228,20 @@ describe("PierreFileDiff", () => {
     await waitFor(() => {
       expect(pierre.renderCount()).toBe(2);
     });
+  });
+
+  it("renders patch text even when structured hunks are absent", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+
+    render(PierreFileDiff, {
+      props: { file: makePatchOnlyFile() },
+    });
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+    });
+
+    expect(document.querySelector(".empty-textual-diff")).toBeNull();
   });
 
   it("replays context expansion after a deferred full-context render", async () => {

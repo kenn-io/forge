@@ -115,7 +115,6 @@
   const renderFile = $derived(file ? diffFileWithPatch(file) : emptyFile);
   const fileKey = $derived(`${renderFile.path}\0${renderFile.old_path}\0${renderFile.patch}`);
   const fileHunks = $derived(renderFile.hunks ?? []);
-  const emptyTextualDiff = $derived(!renderFile.patch.trim() || fileHunks.length === 0);
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
     return parsePierreFileDiff(renderFile, {
       // Pierre marks patch-only diffs as partial and hides expansion controls.
@@ -124,6 +123,7 @@
       enableDemandContextExpansion: Boolean(loadFileText) && hasCollapsedContext(renderFile),
     });
   });
+  const emptyTextualDiff = $derived(!renderFile.patch.trim() || !pierreFile);
 
   const pierreOptions = $derived.by<FileDiffOptions<unknown>>(() => ({
     diffStyle: viewMode,

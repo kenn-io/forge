@@ -27,7 +27,7 @@ VITE_PLUS_BIN := node ./node_modules/vite-plus/bin/vp
 VITE_PLUS_FRONTEND_BIN := node ../node_modules/vite-plus/bin/vp
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
-        rust-pty-manager rust-test vite-plus-install frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
+        rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
         frontend-api-client-check font-size-token-check huma-route-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
 
@@ -80,6 +80,9 @@ install: build-release
 frontend-deps:
 	bun install
 
+check-vite-plus-bin:
+	@test -f node_modules/vite-plus/bin/vp || { echo "vite-plus is not installed; run make frontend-deps" >&2; exit 1; }
+
 # Install the global Vite+ launcher when it is not already on PATH.
 vite-plus-install:
 	@if command -v vp >/dev/null 2>&1; then \
@@ -110,11 +113,11 @@ frontend-check: frontend-deps
 	$(VITE_PLUS_BIN) run frontend-check
 
 # Prevent production frontend code from bypassing generated API clients
-frontend-api-client-check: frontend-deps
+frontend-api-client-check: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node scripts/lint-api-urls.mjs
 
 # Ensure frontend font sizes use design tokens
-font-size-token-check: frontend-deps
+font-size-token-check: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node scripts/check-font-size-tokens.ts
 
 # Prevent application HTTP routes from bypassing Huma registration
@@ -122,11 +125,11 @@ huma-route-check:
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/nohttpmux ./...
 
 # Run lightweight script regression tests
-script-tests: frontend-deps
+script-tests: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node --test scripts/*.test.mjs scripts/*.test.ts
 
 # Run lightweight generated-client/Huma guardrails
-guardrail-check: frontend-api-client-check font-size-token-check huma-route-check script-tests
+guardrail-check: frontend-deps frontend-api-client-check font-size-token-check huma-route-check script-tests
 
 
 # Regenerate the checked-in OpenAPI document and generated clients

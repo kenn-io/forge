@@ -1199,6 +1199,44 @@ test.describe("diff view", () => {
     await expectPierreDiffCount(addedFile, diffContextSelector, 0);
   });
 
+  test("hunk-only added-file patches render when structured hunks are absent", async ({ page }) => {
+    const hunkOnlyLines = [
+      "export function fromPatchOnly(): string {",
+      "  return 'rendered from patch';",
+      "}",
+      "export const padded = true \t",
+    ];
+    const patchOnlyAddedDiff: DiffResult = {
+      ...smallDiff,
+      files: smallDiff.files.map((file) =>
+        file.path === "frontend/src/lib/utils/format.ts"
+          ? {
+              ...file,
+              additions: hunkOnlyLines.length,
+              patch: [`@@ -0,0 +1,${hunkOnlyLines.length} @@`, ...hunkOnlyLines.map((line) => `+${line}`), ""].join(
+                "\n",
+              ),
+              hunks: [],
+            }
+          : file,
+      ),
+    };
+    await mockDiffApi(page, patchOnlyAddedDiff);
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const addedFile = page.locator('[data-file-path="frontend/src/lib/utils/format.ts"]');
+    await clickTreeFileItem(page, "frontend/src/lib/utils/format.ts");
+    await addedFile.scrollIntoViewIfNeeded();
+    await expect(addedFile.getByText("No textual changes")).toHaveCount(0);
+    await expectPierreDiffFirstText(addedFile, diffAdditionsSelector, "fromPatchOnly");
+    await expectPierreDiffVisibleExactText(addedFile, diffAdditionsSelector, "export const padded = true \t");
+    await expectPierreDiffCount(addedFile, diffAdditionsSelector, hunkOnlyLines.length);
+    await expectPierreDiffCount(addedFile, diffDeletionsSelector, 0);
+    await expectPierreDiffCount(addedFile, diffContextSelector, 0);
+  });
+
   test("complete added Go file patches render through the syntax-enabled browser path", async ({ page }) => {
     await page.addInitScript(() => {
       (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight = true;

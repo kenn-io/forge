@@ -3,9 +3,9 @@
 // These cases exercise the RepoTypeahead component contract (rendered rows,
 // emitted onchange values, and persistence through the real filter store)
 // against the same repo set the seeded e2e server exposes: the configured
-// repos come from src/lib/testing/e2e-fixtures/settings.json and the synced
-// repos from src/lib/testing/e2e-fixtures/repos.json, fed through the same
-// two inputs the app uses (the settings store and the /repos API fetch).
+// repos come from GET /api/v1/settings and the synced repos from GET
+// /api/v1/repos, both fetched live from the seeded server and fed through the
+// same two inputs the app uses (the settings store and the /repos API fetch).
 //
 // The original Playwright assertions about which issue list items remain
 // visible after filtering are intentionally dropped here: list filtering is
@@ -14,17 +14,23 @@
 // stays in Playwright because it depends on the browser's native
 // mousedown -> focus default action, which jsdom does not perform.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
 
 import type { ConfigRepo, Repo } from "@middleman/ui/api/types";
 import { createSettingsStore } from "@middleman/ui/stores/settings";
 import { client } from "../api/runtime.js";
 import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
-import settingsFixture from "../testing/e2e-fixtures/settings.json";
-import reposFixture from "../testing/e2e-fixtures/repos.json";
+import { seedGet } from "../testing/seedClient.js";
 import RepoTypeahead from "./RepoTypeahead.svelte";
 
 let settingsStore: ReturnType<typeof createSettingsStore>;
+let configuredRepos: ConfigRepo[];
+let fetchedRepos: Repo[];
+
+beforeAll(async () => {
+  configuredRepos = (await seedGet<{ repos: ConfigRepo[] }>("/api/v1/settings")).repos;
+  fetchedRepos = await seedGet<Repo[]>("/api/v1/repos");
+});
 
 vi.mock("@middleman/ui", () => ({
   getStores: () => ({
@@ -39,9 +45,6 @@ vi.mock("../api/runtime.js", () => ({
 }));
 
 const getRepos = client.GET as unknown as Mock<() => Promise<{ data: Repo[]; error: undefined }>>;
-
-const configuredRepos = settingsFixture.repos as ConfigRepo[];
-const fetchedRepos = reposFixture as unknown as Repo[];
 
 function checkboxOf(option: HTMLElement): HTMLInputElement {
   const box = option.querySelector("input[type='checkbox']");

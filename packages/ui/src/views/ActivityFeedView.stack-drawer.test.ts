@@ -26,18 +26,30 @@ import {
   UI_CONFIG_KEY,
 } from "../context.js";
 import { createDetailStore } from "../stores/detail.svelte.js";
-import activityJson from "../testing/e2e-fixtures/activity.json";
-import stackTools10Json from "../testing/e2e-fixtures/stack-tools-10.json";
-import stackTools11Json from "../testing/e2e-fixtures/stack-tools-11.json";
-import toolsPull11Json from "../testing/e2e-fixtures/pull-tools-11.json";
+import { seedGet } from "../testing/seedClient.js";
 import type { MiddlemanClient } from "../types.js";
 import ActivityFeedView from "./ActivityFeedView.svelte";
 
-const toolsPull11 = toolsPull11Json as unknown as PullDetail;
+let toolsPull11: PullDetail;
+let stackTools11: unknown;
+let stackTools10: unknown;
+let tools11Activity: ActivityItem;
 
-// The seeded server's GET response for tools#10 (no standalone fixture was
-// captured): same repo/capabilities envelope as tools#11 with the #10 member
-// identity from the captured stack fixtures and its stack at position 1.
+beforeAll(async () => {
+  toolsPull11 = await seedGet<PullDetail>("/api/v1/pulls/github/acme/tools/11");
+  stackTools11 = await seedGet("/api/v1/pulls/github/acme/tools/11/stack");
+  stackTools10 = await seedGet("/api/v1/pulls/github/acme/tools/10/stack");
+  const activity = await seedGet<{ items: ActivityItem[] }>("/api/v1/activity?since=2020-01-01T00:00:00Z");
+  const found = activity.items.find((item) => item.id === "pr:11");
+  if (!found) {
+    throw new Error("activity seed missing the acme/tools#11 new_pr item");
+  }
+  tools11Activity = found;
+});
+
+// The seeded server's GET response for tools#10 (we only fetch tools#11's
+// detail): same repo/capabilities envelope as tools#11 with the #10 member
+// identity from the live stack response and its stack at position 1.
 function toolsPull10(): PullDetail {
   const detail = structuredClone(toolsPull11);
   detail.merge_request.Number = 10;
@@ -45,14 +57,8 @@ function toolsPull10(): PullDetail {
   detail.merge_request.URL = "https://github.com/acme/tools/pull/10";
   detail.merge_request.HeadBranch = "feat/auth-base";
   detail.merge_request.BaseBranch = "main";
-  detail.stack = structuredClone(stackTools10Json) as PullDetail["stack"];
+  detail.stack = structuredClone(stackTools10) as PullDetail["stack"];
   return detail;
-}
-
-const activityItems = (activityJson as { items: ActivityItem[] }).items;
-const tools11Activity = activityItems.find((item) => item.id === "pr:11");
-if (!tools11Activity) {
-  throw new Error("activity fixture missing the acme/tools#11 new_pr item");
 }
 
 // jsdom lacks ResizeObserver (dimension bindings) and the Web Animations API
@@ -132,8 +138,8 @@ function fakeClient(): MiddlemanClient {
         return { error: { title: "not found", detail: `pull ${number}` } };
       }
       if (path === "/pulls/{provider}/{owner}/{name}/{number}/stack") {
-        if (number === 11) return { data: structuredClone(stackTools11Json) };
-        if (number === 10) return { data: structuredClone(stackTools10Json) };
+        if (number === 11) return { data: structuredClone(stackTools11) };
+        if (number === 10) return { data: structuredClone(stackTools10) };
         return { error: { title: "not found", detail: `stack ${number}` } };
       }
       if (path === "/repo/{provider}/{owner}/{name}") {
@@ -200,7 +206,7 @@ function renderActivityFeedView() {
       [
         STORES_KEY,
         {
-          activity: activityStoreMock([structuredClone(tools11Activity!)]),
+          activity: activityStoreMock([structuredClone(tools11Activity)]),
           detail,
           pulls: { loadPulls: vi.fn() },
           settings: {

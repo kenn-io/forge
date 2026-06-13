@@ -4,7 +4,7 @@
 // IssueList is rendered with fresh store instances reading the same
 // localStorage — the component-test equivalent of navigating to /issues.
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { Issue, PullRequest } from "../../api/types.js";
 import { ACTIONS_KEY, HOST_STATE_KEY, NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../../context.js";
@@ -12,17 +12,21 @@ import { createCollapsedReposStore } from "../../stores/collapsedRepos.svelte.js
 import { createGroupingStore } from "../../stores/grouping.svelte.js";
 import { createIssuesStore } from "../../stores/issues.svelte.js";
 import { createPullsStore } from "../../stores/pulls.svelte.js";
-import issuesFixtureJson from "../../testing/e2e-fixtures/issues.json";
-import pullsFixtureJson from "../../testing/e2e-fixtures/pulls.json";
+import { seedGet } from "../../testing/seedClient.js";
 import type { MiddlemanClient } from "../../types.js";
 import IssueList from "./IssueList.svelte";
 import PullList from "./PullList.svelte";
 
-// Seed data (captured from the real seeded e2e Go server):
+// Seed data (fetched live from the seeded e2e Go server):
 // 8 open PRs and 5 open issues across acme/widgets, acme/tools, and a
 // GitLab group/project.
-const pullsFixture = pullsFixtureJson as unknown as PullRequest[];
-const issuesFixture = issuesFixtureJson as unknown as Issue[];
+let pullsFixture: PullRequest[];
+let issuesFixture: Issue[];
+
+beforeAll(async () => {
+  pullsFixture = await seedGet<PullRequest[]>("/api/v1/pulls");
+  issuesFixture = await seedGet<Issue[]>("/api/v1/issues");
+});
 
 function fakeClient(): MiddlemanClient {
   return {

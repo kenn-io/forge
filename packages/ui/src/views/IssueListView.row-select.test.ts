@@ -8,21 +8,26 @@
 // modeled by rerendering with the issues store's real selection, exactly
 // like App.svelte's `stores?.issues.getSelectedIssue()` lookup.
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { Issue } from "../api/types.js";
+import type { Issue, IssueDetail } from "../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY, UI_CONFIG_KEY } from "../context.js";
 import { createCollapsedReposStore } from "../stores/collapsedRepos.svelte.js";
 import { createGroupingStore } from "../stores/grouping.svelte.js";
 import { createIssuesStore } from "../stores/issues.svelte.js";
-import issueDetailFixtureJson from "../testing/e2e-fixtures/issue-widgets-10.json";
-import issuesFixtureJson from "../testing/e2e-fixtures/issues.json";
+import { seedGet } from "../testing/seedClient.js";
 import type { MiddlemanClient } from "../types.js";
 import IssueListView from "./IssueListView.svelte";
 
-// Seed data (captured from the real seeded e2e Go server): 5 open issues,
+// Seed data (fetched live from the seeded e2e Go server): 5 open issues,
 // the first being acme/widgets#10 "Widget rendering broken on Safari".
-const issuesFixture = issuesFixtureJson as unknown as Issue[];
+let issuesFixture: Issue[];
+let issueDetailFixture: IssueDetail;
+
+beforeAll(async () => {
+  issuesFixture = await seedGet<Issue[]>("/api/v1/issues");
+  issueDetailFixture = await seedGet<IssueDetail>("/api/v1/issues/github/acme/widgets/10");
+});
 
 type PathParams = { provider?: string; owner?: string; name?: string; number?: number };
 
@@ -35,7 +40,7 @@ function fakeClient(): MiddlemanClient {
       if (path === "/issues/{provider}/{owner}/{name}/{number}") {
         const p = opts?.params?.path ?? {};
         if (p.provider === "github" && p.owner === "acme" && p.name === "widgets" && p.number === 10) {
-          return { data: structuredClone(issueDetailFixtureJson) };
+          return { data: structuredClone(issueDetailFixture) };
         }
         return { error: { title: "unexpected issue detail request", detail: JSON.stringify(p) } };
       }

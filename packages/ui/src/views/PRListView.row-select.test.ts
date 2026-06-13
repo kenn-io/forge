@@ -8,9 +8,9 @@
 // is modeled by rerendering with the pulls store's real selection, exactly
 // like App.svelte's `stores?.pulls.getSelectedPR()` fallback.
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { PullRequest } from "../api/types.js";
+import type { PullDetail, PullRequest } from "../api/types.js";
 import {
   ACTIONS_KEY,
   API_CLIENT_KEY,
@@ -24,14 +24,19 @@ import { createCollapsedReposStore } from "../stores/collapsedRepos.svelte.js";
 import { createDetailStore } from "../stores/detail.svelte.js";
 import { createGroupingStore } from "../stores/grouping.svelte.js";
 import { createPullsStore } from "../stores/pulls.svelte.js";
-import pullDetailFixtureJson from "../testing/e2e-fixtures/pull-widgets-1.json";
-import pullsFixtureJson from "../testing/e2e-fixtures/pulls.json";
+import { seedGet } from "../testing/seedClient.js";
 import type { MiddlemanClient } from "../types.js";
 import PRListView from "./PRListView.svelte";
 
-// Seed data (captured from the real seeded e2e Go server): 8 open PRs, the
+// Seed data (fetched live from the seeded e2e Go server): 8 open PRs, the
 // most recently active being acme/widgets#1 "Add widget caching layer".
-const pullsFixture = pullsFixtureJson as unknown as PullRequest[];
+let pullsFixture: PullRequest[];
+let pullDetailFixture: PullDetail;
+
+beforeAll(async () => {
+  pullsFixture = await seedGet<PullRequest[]>("/api/v1/pulls");
+  pullDetailFixture = await seedGet<PullDetail>("/api/v1/pulls/github/acme/widgets/1");
+});
 
 type PathParams = { provider?: string; owner?: string; name?: string; number?: number };
 
@@ -44,7 +49,7 @@ function fakeClient(): MiddlemanClient {
       if (path === "/pulls/{provider}/{owner}/{name}/{number}") {
         const p = opts?.params?.path ?? {};
         if (p.provider === "github" && p.owner === "acme" && p.name === "widgets" && p.number === 1) {
-          return { data: structuredClone(pullDetailFixtureJson) };
+          return { data: structuredClone(pullDetailFixture) };
         }
         return { error: { title: "unexpected pull detail request", detail: JSON.stringify(p) } };
       }

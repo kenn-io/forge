@@ -1,16 +1,20 @@
 // Vitest component conversion of the PR-detail case from
 // frontend/tests/e2e-full/provider-capabilities.spec.ts: a locked GitHub pull
 // request shows the "Locked" chip in the chips row because GitHub is a
-// provider that supports locking. Uses the acme/widgets#1 detail fixture
-// captured from the seeded e2e Go server (IsLocked: true).
+// provider that supports locking. Uses the acme/widgets#1 detail fetched live
+// from the seeded e2e Go server (IsLocked: true).
 import { cleanup, render, within } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { PullDetail } from "../../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
-import widgetsPull1Json from "../../testing/e2e-fixtures/pull-widgets-1.json";
+import { seedGet } from "../../testing/seedClient.js";
 import PullDetailComponent from "./PullDetail.svelte";
 
-const widgetsPull1 = widgetsPull1Json as unknown as PullDetail;
+let widgetsPull1: PullDetail;
+
+beforeAll(async () => {
+  widgetsPull1 = await seedGet<PullDetail>("/api/v1/pulls/github/acme/widgets/1");
+});
 
 function renderPullDetail(detail: PullDetail) {
   const detailStore = {

@@ -1,22 +1,26 @@
 // Vitest component conversion of the GitLab read-only issue case from
 // frontend/tests/e2e-full/provider-capabilities.spec.ts. Renders IssueDetail
-// from the gitlab.example.com group/project#11 fixture captured from the
+// from the gitlab.example.com group/project#11 detail fetched live from the
 // seeded e2e Go server (capabilities: comment_mutation false, read_issues and
 // read_comments true) and asserts the timeline hides edit controls while
 // keeping the read-only copy affordance.
 //
 // The original spec also asserted the raw /api/v1 capabilities JSON returned
 // by the Go server; that sub-assertion is dropped here — the backend contract
-// is owned by the Go API tests, and this fixture was captured from that same
-// seeded server response.
+// is owned by the Go API tests, and this data is fetched from that same seeded
+// server response.
 import { cleanup, render, screen, within } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { IssueDetail as IssueDetailResponse } from "../../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
-import issueGitlab11Json from "../../testing/e2e-fixtures/issue-gitlab-11.json";
+import { seedGet } from "../../testing/seedClient.js";
 import IssueDetailComponent from "./IssueDetail.svelte";
 
-const issueGitlab11 = issueGitlab11Json as unknown as IssueDetailResponse;
+let issueGitlab11: IssueDetailResponse;
+
+beforeAll(async () => {
+  issueGitlab11 = await seedGet<IssueDetailResponse>("/api/v1/host/gitlab.example.com/issues/gl/group/project/11");
+});
 
 function renderIssueDetail(detail: IssueDetailResponse) {
   const issuesStore = {

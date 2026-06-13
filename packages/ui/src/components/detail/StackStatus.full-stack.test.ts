@@ -1,9 +1,9 @@
 // Vitest component conversion of the first two cases of
-// frontend/tests/e2e-full/stack-status.spec.ts, using the acme/tools auth
-// stack fixtures captured from the seeded e2e Go server:
-// - pull-tools-11.json: MergeRequestDetailResponse whose `stack` field holds
-//   the 3-member auth stack (#10/#11/#12, all mergeable_state "dirty").
-// - stack-tools-11.json / stack-tools-10.json: GET /pulls/.../stack responses.
+// frontend/tests/e2e-full/stack-status.spec.ts, driving the acme/tools auth
+// stack data fetched live from the seeded e2e Go server (see seedClient):
+// - GET /pulls/github/acme/tools/11: MergeRequestDetailResponse whose `stack`
+//   field holds the 3-member auth stack (#10/#11/#12, all mergeable "dirty").
+// - GET /pulls/github/acme/tools/{11,10}/stack: the full-stack responses.
 //
 // Case 2 ("stack member navigation preserves the focus route") is converted
 // as a 3-part contract mapping (browser URL assertions cannot run in jsdom):
@@ -13,20 +13,26 @@
 // (b) buildFocusPullRequestRoute — the builder App.svelte's
 //     handleResponsiveStackMemberNavigate feeds to navigate() under focus
 //     presentation — yields /focus/pulls/github/acme/tools/10 for that ref.
-// (c) rendering StackStatus for #10 from stack-tools-10.json shows the
+// (c) rendering StackStatus for #10 from its /stack response shows the
 //     "current 1/3" summary the e2e asserted after navigation.
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { PullDetail } from "../../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
 import { buildFocusPullRequestRoute, buildPullRequestRoute } from "../../routes.js";
-import stackTools10Json from "../../testing/e2e-fixtures/stack-tools-10.json";
-import stackTools11Json from "../../testing/e2e-fixtures/stack-tools-11.json";
-import toolsPull11Json from "../../testing/e2e-fixtures/pull-tools-11.json";
+import { seedGet } from "../../testing/seedClient.js";
 import PullDetailComponent from "./PullDetail.svelte";
 import StackStatus from "./StackStatus.svelte";
 
-const toolsPull11 = toolsPull11Json as unknown as PullDetail;
+let toolsPull11: PullDetail;
+let stackTools11: unknown;
+let stackTools10: unknown;
+
+beforeAll(async () => {
+  toolsPull11 = await seedGet<PullDetail>("/api/v1/pulls/github/acme/tools/11");
+  stackTools11 = await seedGet("/api/v1/pulls/github/acme/tools/11/stack");
+  stackTools10 = await seedGet("/api/v1/pulls/github/acme/tools/10/stack");
+});
 
 const toolsRef = {
   provider: "github",
@@ -157,7 +163,7 @@ describe("StackStatus full-stack rendering", () => {
 
   it("hands member navigation to onmembernavigate and skips default routing when handled", async () => {
     const onmembernavigate = vi.fn(() => true);
-    const { navigate } = renderStackStatus(11, structuredClone(stackTools11Json), { onmembernavigate });
+    const { navigate } = renderStackStatus(11, structuredClone(stackTools11), { onmembernavigate });
 
     await fireEvent.click(screen.getByRole("button", { name: "#10 Auth: extract token refresh helper" }));
 
@@ -175,7 +181,7 @@ describe("StackStatus full-stack rendering", () => {
   });
 
   it("falls back to the canonical pull route when no member-navigate handler is given", async () => {
-    const { navigate } = renderStackStatus(11, structuredClone(stackTools11Json));
+    const { navigate } = renderStackStatus(11, structuredClone(stackTools11));
 
     await fireEvent.click(screen.getByRole("button", { name: "#10 Auth: extract token refresh helper" }));
 
@@ -194,7 +200,7 @@ describe("StackStatus full-stack rendering", () => {
   });
 
   it("shows the downstack member as current 1/3 after navigating to #10", () => {
-    renderStackStatus(10, structuredClone(stackTools10Json));
+    renderStackStatus(10, structuredClone(stackTools10));
 
     const panel = document.querySelector<HTMLElement>(".stack-panel");
     expect(panel).not.toBeNull();

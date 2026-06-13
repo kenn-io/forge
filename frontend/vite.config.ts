@@ -254,6 +254,7 @@ const config = {
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    globalSetup: ["./src/lib/testing/seedServer.globalSetup.ts"],
     include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)", "../packages/ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
     exclude: ["tests/e2e/**", "tests/e2e-full/**", "node_modules/**"],
   },

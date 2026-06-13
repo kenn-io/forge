@@ -3,14 +3,12 @@
 // localStorage persistence, and the filtered EventTimeline) against detail
 // fixtures captured from the seeded e2e Go server, so filter interactions,
 // force-push ordering, and persistence are exercised exactly as a user sees
-// them — only the detail store's network fetch is replaced by the fixture.
+// them — only the detail store's network fetch is replaced by live seed data.
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullDetail } from "../../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
-import toolsPull2Json from "../../testing/e2e-fixtures/pull-tools-2.json";
-import widgetsPull1Json from "../../testing/e2e-fixtures/pull-widgets-1.json";
-import widgetsPull2Json from "../../testing/e2e-fixtures/pull-widgets-2.json";
+import { seedGet } from "../../testing/seedClient.js";
 import PullDetailComponent from "./PullDetail.svelte";
 
 const storageKey = "middleman-pr-timeline-filter";
@@ -65,9 +63,15 @@ afterAll(() => {
   }
 });
 
-const widgetsPull1 = widgetsPull1Json as unknown as PullDetail;
-const widgetsPull2 = widgetsPull2Json as unknown as PullDetail;
-const toolsPull2 = toolsPull2Json as unknown as PullDetail;
+let widgetsPull1: PullDetail;
+let widgetsPull2: PullDetail;
+let toolsPull2: PullDetail;
+
+beforeAll(async () => {
+  widgetsPull1 = await seedGet<PullDetail>("/api/v1/pulls/github/acme/widgets/1");
+  widgetsPull2 = await seedGet<PullDetail>("/api/v1/pulls/github/acme/widgets/2");
+  toolsPull2 = await seedGet<PullDetail>("/api/v1/pulls/github/acme/tools/2");
+});
 
 function renderPullDetail(fixture: PullDetail) {
   const detail = structuredClone(fixture);

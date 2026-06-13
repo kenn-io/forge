@@ -5,17 +5,21 @@
 // frontend/src/lib/stores/keyboard/actions.ts), and the traversal order is
 // computed here in the pulls store via getDisplayOrderPRs() with the real
 // grouping store wired in — so this is the layer that owns the behavior.
-import { beforeEach, describe, expect, it } from "vite-plus/test";
+import { beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import type { PullRequest } from "../api/types.js";
-import pullsFixtureJson from "../testing/e2e-fixtures/pulls.json";
+import { seedGet } from "../testing/seedClient.js";
 import type { MiddlemanClient } from "../types.js";
 import { createGroupingStore } from "./grouping.svelte.js";
 import { createPullsStore } from "./pulls.svelte.js";
 
 // Seed data (captured from the real seeded e2e Go server). Flat (fixture)
 // order interleaves repos by recency; grouped order clusters by repo.
-const pullsFixture = pullsFixtureJson as unknown as PullRequest[];
+let pullsFixture: PullRequest[];
+
+beforeAll(async () => {
+  pullsFixture = await seedGet<PullRequest[]>("/api/v1/pulls");
+});
 
 const flatOrder = [
   "acme/widgets#1",

@@ -3,20 +3,24 @@
 // fake MiddlemanClient serving the seeded e2e fixture data, so collapse state,
 // localStorage persistence, and grouping behavior are exercised for real.
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { PullRequest } from "../../api/types.js";
 import { ACTIONS_KEY, HOST_STATE_KEY, NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../../context.js";
 import { createCollapsedReposStore } from "../../stores/collapsedRepos.svelte.js";
 import { createGroupingStore } from "../../stores/grouping.svelte.js";
 import { createPullsStore } from "../../stores/pulls.svelte.js";
-import pullsFixtureJson from "../../testing/e2e-fixtures/pulls.json";
+import { seedGet } from "../../testing/seedClient.js";
 import type { MiddlemanClient } from "../../types.js";
 import PullList from "./PullList.svelte";
 
-// Seed data (captured from the real seeded e2e Go server):
+// Seed data (fetched live from the seeded e2e Go server):
 // 8 open PRs -> acme/widgets #1, #2, #6, #7 and acme/tools #1, #10, #11, #12.
-const pullsFixture = pullsFixtureJson as unknown as PullRequest[];
+let pullsFixture: PullRequest[];
+
+beforeAll(async () => {
+  pullsFixture = await seedGet<PullRequest[]>("/api/v1/pulls");
+});
 
 function fakeClient(): MiddlemanClient {
   return {

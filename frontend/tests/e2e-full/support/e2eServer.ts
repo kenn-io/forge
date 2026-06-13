@@ -108,7 +108,7 @@ type BuildOutcome =
 
 async function tryBuildFrontend(frontendDir: string): Promise<BuildOutcome> {
   return await new Promise<BuildOutcome>((resolve) => {
-    const build = spawn("bun", ["run", "build"], {
+    const build = spawn(process.execPath, ["../node_modules/vite-plus/bin/vp", "build", "--logLevel", "warn"], {
       cwd: frontendDir,
       stdio: "inherit",
       env: process.env,
@@ -154,19 +154,19 @@ export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promis
     if (outcome.kind === "ok") {
       frontendMtime = await newestMtimeUnder(frontendDist);
     } else if (outcome.kind === "build-failed") {
-      // Real build failure (bun ran but vite/svelte rejected the
+      // Real build failure (the Vite+ launcher ran but vite/svelte rejected the
       // sources). Falling back here would silently run e2e against
       // stale dist while the working tree is broken.
       throw new Error(`frontend build failed with exit code ${outcome.exitCode ?? "null"}`);
     } else if (frontendMtime === null) {
       throw new Error(
-        `bun is unavailable (${outcome.cause.code ?? outcome.cause.message}) ` +
-          `and no existing dist at ${frontendIndex}; install bun or ` +
+        `Vite+ is unavailable (${outcome.cause.code ?? outcome.cause.message}) ` +
+          `and no existing dist at ${frontendIndex}; install frontend dependencies or ` +
           `pre-build the frontend before running e2e tests`,
       );
     } else {
       console.warn(
-        `[e2e] bun is unavailable (${outcome.cause.code ?? outcome.cause.message}); ` +
+        `[e2e] Vite+ is unavailable (${outcome.cause.code ?? outcome.cause.message}); ` +
           `using existing ${frontendDist}`,
       );
     }

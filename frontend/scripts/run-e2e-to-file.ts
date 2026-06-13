@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { mkdir, open, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 
-import { planE2ERuns } from "./e2e-run-plan";
+import { planE2ERuns } from "./e2e-run-plan.ts";
 
 const outputFile = process.env.MIDDLEMAN_E2E_OUTPUT_FILE ?? "../tmp/e2e.log";
 const displayFile = isAbsolute(outputFile) ? outputFile : resolve(outputFile);
@@ -19,8 +19,13 @@ await mkdir(dirname(outputFile), { recursive: true });
 
 const logFile = await open(outputFile, constants.O_CREAT | constants.O_TRUNC | constants.O_WRONLY, 0o666);
 await logFile.write(
-  `[${timestamp()}] bun run test:e2e\n` +
-    runs.map((args) => `argv: ${JSON.stringify(["playwright", ...basePlaywrightArgs, ...args])}`).join("\n") +
+  `[${timestamp()}] node ./scripts/run-e2e-to-file.ts\n` +
+    runs
+      .map(
+        (args) =>
+          `argv: ${JSON.stringify([process.execPath, "node_modules/.bin/playwright", ...basePlaywrightArgs, ...args])}`,
+      )
+      .join("\n") +
     "\n\n",
 );
 
@@ -29,8 +34,8 @@ try {
   status = 0;
   for (const args of runs) {
     const playwrightArgs = [...basePlaywrightArgs, ...args];
-    await logFile.write(`[${timestamp()}] playwright ${playwrightArgs.join(" ")}\n\n`);
-    const child = spawn("playwright", playwrightArgs, {
+    await logFile.write(`[${timestamp()}] node node_modules/.bin/playwright ${playwrightArgs.join(" ")}\n\n`);
+    const child = spawn(process.execPath, ["node_modules/.bin/playwright", ...playwrightArgs], {
       stdio: ["ignore", logFile.fd, logFile.fd],
     });
 
@@ -38,7 +43,9 @@ try {
       child.on("error", reject);
       child.on("close", (code) => resolve(code ?? 1));
     });
-    await logFile.write(`\n[${timestamp()}] exit ${runStatus}: playwright ${playwrightArgs.join(" ")}\n\n`);
+    await logFile.write(
+      `\n[${timestamp()}] exit ${runStatus}: node node_modules/.bin/playwright ${playwrightArgs.join(" ")}\n\n`,
+    );
     if (runStatus !== 0) {
       status = runStatus;
     }

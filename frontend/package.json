@@ -13,9 +13,9 @@
     "lint:fix": "vp lint . --fix --no-error-on-unmatched-pattern",
     "typecheck": "cd .. && vp lint frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1 && cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vp test run",
-    "test:e2e": "bun ./scripts/run-e2e-to-file.ts",
-    "test:e2e:mock": "playwright test --config=playwright.config.ts",
-    "demo-workspace": "playwright test --config tests/demo/playwright-demo.config.ts"
+    "test:e2e": "node ./scripts/run-e2e-to-file.ts",
+    "test:e2e:mock": "node node_modules/.bin/playwright test --config=playwright.config.ts",
+    "demo-workspace": "node node_modules/.bin/playwright test --config tests/demo/playwright-demo.config.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.2",
@@ -50,6 +50,16 @@
     "svelte": "5.56.2",
     "vite": "8.0.16",
     "vite-plus": "0.1.24"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "onFail": "download"
+    },
+    "runtime": {
+      "name": "node",
+      "onFail": "download"
+    }
   },
   "packageManager": "bun@1.3.11"
 }

@@ -22,7 +22,7 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	fi)
 DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
-VITE_PLUS_VERSION := 0.1.22
+VITE_PLUS_VERSION := 0.1.24
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
@@ -218,7 +218,7 @@ race-times: ensure-embed-dir
 # Run full-stack E2E tests (Playwright against real Go server, excludes roborev)
 test-e2e: frontend
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
-	cd frontend && bun run playwright test --config=playwright-e2e.config.ts --project=chromium
+	vp run middleman-frontend#test:e2e --project=chromium
 
 # Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF, ROBOREV_PORT configurable)
 test-e2e-roborev:

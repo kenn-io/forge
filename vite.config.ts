@@ -4,11 +4,11 @@ export default defineConfig({
   run: {
     tasks: {
       "svelte-check:frontend": {
-        command: "vp exec svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+        command: "vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
         cwd: "frontend",
       },
       "svelte-check:ui": {
-        command: "vp exec svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+        command: "vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
         cwd: "packages/ui",
       },
     },

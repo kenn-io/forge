@@ -22,9 +22,10 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	fi)
 DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
+VITE_PLUS_VERSION := 0.1.22
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
-        rust-pty-manager rust-test frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
+        rust-pty-manager rust-test vite-plus-install frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
         frontend-api-client-check font-size-token-check huma-route-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
 
@@ -77,9 +78,18 @@ install: build-release
 frontend-deps:
 	bun install
 
+# Install the global Vite+ launcher when it is not already on PATH.
+vite-plus-install:
+	@if command -v vp >/dev/null 2>&1; then \
+		vp --version | head -n 1; \
+	else \
+		echo "vp not found; installing vite-plus@$(VITE_PLUS_VERSION) with Bun"; \
+		bun install -g vite-plus@$(VITE_PLUS_VERSION); \
+	fi
+
 # Build frontend SPA and copy into embed directory
-frontend: frontend-deps
-	cd frontend && ../node_modules/.bin/vp build --logLevel warn
+frontend: frontend-deps vite-plus-install
+	cd frontend && vp build --logLevel warn
 	bun scripts/check-asset-base-paths.mjs
 	rm -rf internal/web/dist
 	cp -r frontend/dist internal/web/dist
@@ -90,15 +100,17 @@ frontend-dev:
 	./scripts/frontend-dev.sh $(ARGS)
 
 # Run Vite+ dev server after installing dependencies with Bun (use alongside `make dev`)
-frontend-dev-bun: frontend-deps
-	cd frontend && ../node_modules/.bin/vp dev
+frontend-dev-bun: frontend-deps vite-plus-install
+	cd frontend && vp dev
 
 # Run TypeScript/Svelte lint and type checks
-frontend-check: frontend-deps
-	node node_modules/vite-plus/bin/vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
-	node node_modules/vite-plus/bin/vp lint frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
-	cd frontend && node ../node_modules/svelte-check/bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
-	cd packages/ui && node ../../node_modules/svelte-check/bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+frontend-check: frontend-deps vite-plus-install
+	vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
+	vp lint frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
+	@sleep 2
+	cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+	@sleep 2
+	cd packages/ui && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check:
@@ -292,6 +304,7 @@ help:
 	@echo "  dev-ephemeral  - Run backend and frontend dev servers on free ports with copied DB state and status JSON"
 	@echo "  dev-ephemeral-stop - Stop the default ephemeral dev stack, or use STATUS=/path/to/dev-ephemeral.json"
 	@echo "  frontend-deps  - Install Bun workspace dependencies for frontend and packages/ui"
+	@echo "  vite-plus-install - Install global Vite+ launcher with Bun when vp is missing"
 	@echo "  frontend       - Build frontend SPA with Vite+"
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors MIDDLEMAN_CONFIG)"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite+ dev server (honors MIDDLEMAN_CONFIG)"

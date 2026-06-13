@@ -1,13 +1,10 @@
-import { cleanup, render } from "@testing-library/svelte";
-import { tick } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-
 // Converted from frontend/tests/e2e-full/app-startup.spec.ts.
 //
 // runAppStartup's race against SETTINGS_STARTUP_TIMEOUT_MS is unit-tested
 // in src/lib/utils/appStartup.test.ts. This test covers the App-level
 // wiring the e2e proved: App.svelte hands the real getSettings to the
-// REAL runAppStartup (not mocked here, unlike App.test.ts), shows its
+// REAL runAppStartup (the appShellInstantStartupMock preset is NOT
+// imported here, unlike the other App.*.test.ts suites), shows its
 // loading state while settings stall, and once the 8s timeout fires it
 // flips appReady, renders the default view, and the post-onReady loaders
 // on the provider stores run.
@@ -17,6 +14,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 // loadPulls/loadIssues/startPolling/events.connect; loadActivity is
 // triggered by the repo-change $effect and by the activity view itself
 // (stubbed here), so this test asserts the loaders startup actually owns.
+import { cleanup, render } from "@testing-library/svelte";
+import { tick } from "svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import "./lib/testing/appShellMocks.js";
+import { createAppTarget, installBrowserGlobals } from "./lib/testing/appShellMocks.js";
+import { providerCalls, resetProviderCalls } from "./lib/testing/appProviderConfiguredStores.js";
 
 const settingsApi = vi.hoisted(() => ({
   calls: 0,
@@ -53,104 +56,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
 vi.mock("./lib/components/layout/AppHeader.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
-vi.mock("./lib/components/layout/StatusBar.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/keyboard/Palette.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/keyboard/Cheatsheet.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/repositories/RepoSummaryPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/settings/SettingsPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/terminal/WorkspaceTerminalView.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/terminal/WorkspaceEmbedShell.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/design-system/DesignSystemPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/features/kata/KataFeature.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/FlashBanner.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-
-vi.mock("./lib/api/kata/daemons.js", () => ({
-  fetchKataDaemons: vi.fn(async () => []),
-}));
-vi.mock("./lib/api/kata/taskClient.js", () => ({
-  createKataTaskAPI: () => ({}),
-}));
-vi.mock("./lib/api/docs/api.js", () => ({
-  createDocsAPI: () => ({}),
-}));
-vi.mock("./lib/api/messages/api.js", () => ({
-  createMessagesAPI: () => ({
-    capabilities: vi.fn(() =>
-      Promise.resolve({
-        configured: true,
-        ok: true,
-        features: {},
-      }),
-    ),
-  }),
-}));
-vi.mock("./lib/api/messages/visibility.js", () => ({
-  shouldShowMessagesMode: () => true,
-}));
-vi.mock("./lib/messages/kataMessageLinker.js", () => ({
-  createMessageIssueLinker: () => ({
-    linkMessage: vi.fn(),
-  }),
-}));
-
-// jsdom reports zero-width containers, which would classify the layout
-// as narrow and swap to the phone shell. The e2e ran at a desktop
-// viewport; pin the container to wide so `.app-main` is the surface.
-vi.mock("./lib/stores/container.svelte.js", () => ({
-  initContainerObserver: () => () => {},
-  getContainerSize: () => "wide" as const,
-  isNarrow: () => false,
-}));
-
-import { providerCalls, resetProviderCalls } from "./lib/testing/appProviderConfiguredStores.js";
-
-function installBrowserGlobals() {
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  }));
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe = vi.fn();
-      unobserve = vi.fn();
-      disconnect = vi.fn();
-    },
-  );
-}
-
-function createAppTarget() {
-  const target = document.createElement("div");
-  target.id = "app";
-  document.body.appendChild(target);
-  return target;
-}
 
 function mainLoadingState(): Element | null {
   return document.querySelector(".app-main .loading-state");

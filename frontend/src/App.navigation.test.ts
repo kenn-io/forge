@@ -5,9 +5,13 @@
 //
 // Unlike App.test.ts this suite keeps the REAL AppHeader (and real router and
 // keyboard dispatch) so .view-tab clicks and the Settings button drive actual
-// navigation; only the data-heavy views/features are stubbed.
+// navigation; only the data-heavy views/features are stubbed. Shell-invariant
+// module mocks come from the appShellMocks preset.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import "./lib/testing/appShellMocks.js";
+import "./lib/testing/appShellInstantStartupMock.js";
+import { createAppTarget, installBrowserGlobals } from "./lib/testing/appShellMocks.js";
 
 vi.mock("@middleman/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@middleman/ui")>();
@@ -37,123 +41,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
     }),
   };
 });
-
-// jsdom layout reports clientWidth 0, which the container observer would
-// classify as "narrow" and collapse the header tabs into a dropdown. Pin
-// the wide desktop header the Playwright spec exercised.
-vi.mock("./lib/stores/container.svelte.js", () => ({
-  initContainerObserver: () => () => {},
-  getContainerSize: () => "wide",
-  isNarrow: () => false,
-}));
-
-// RepoTypeahead (inside the real AppHeader) fetches repos on mount.
-vi.mock("./lib/api/runtime.js", () => ({
-  client: {
-    GET: vi.fn(async () => ({ data: [], error: undefined })),
-  },
-  apiErrorMessage: () => "",
-}));
-
-vi.mock("./lib/components/layout/StatusBar.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/keyboard/Palette.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/keyboard/Cheatsheet.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/repositories/RepoSummaryPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/settings/SettingsPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppSettingsPageStub.svelte")).default,
-}));
-vi.mock("./lib/components/terminal/WorkspaceTerminalView.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/terminal/WorkspaceEmbedShell.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/design-system/DesignSystemPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/features/kata/KataFeature.svelte", async () => ({
-  default: (await import("./lib/features/kata/KataWorkspaceTestStub.svelte")).default,
-}));
-vi.mock("./lib/features/docs/DocsFeature.svelte", async () => ({
-  default: (await import("./lib/testing/AppDocsFeatureMock.svelte")).default,
-}));
-vi.mock("./lib/features/messages/MessagesFeature.svelte", async () => ({
-  default: (await import("./lib/testing/AppMessagesFeatureMock.svelte")).default,
-}));
-vi.mock("./lib/components/FlashBanner.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-
-vi.mock("./lib/api/kata/daemons.js", () => ({
-  fetchKataDaemons: vi.fn(async () => []),
-}));
-vi.mock("./lib/api/kata/taskClient.js", () => ({
-  createKataTaskAPI: () => ({}),
-}));
-vi.mock("./lib/api/docs/api.js", () => ({
-  createDocsAPI: () => ({}),
-}));
-vi.mock("./lib/api/messages/api.js", () => ({
-  createMessagesAPI: () => ({
-    capabilities: vi.fn(() =>
-      Promise.resolve({
-        configured: true,
-        ok: true,
-        features: {},
-      }),
-    ),
-  }),
-}));
-vi.mock("./lib/api/messages/visibility.js", () => ({
-  shouldShowMessagesMode: () => true,
-}));
-vi.mock("./lib/messages/kataMessageLinker.js", () => ({
-  createMessageIssueLinker: () => ({
-    linkMessage: vi.fn(),
-  }),
-}));
-vi.mock("./lib/utils/appStartup.js", () => ({
-  runAppStartup: ({ onReady }: { onReady: () => void }) => {
-    queueMicrotask(onReady);
-    return vi.fn();
-  },
-}));
-
-function installBrowserGlobals() {
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  }));
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe = vi.fn();
-      unobserve = vi.fn();
-      disconnect = vi.fn();
-    },
-  );
-}
-
-function createAppTarget() {
-  const target = document.createElement("div");
-  target.id = "app";
-  document.body.appendChild(target);
-  return target;
-}
 
 function currentPath(): string {
   return window.location.pathname + window.location.search;

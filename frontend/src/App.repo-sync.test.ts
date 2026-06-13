@@ -1,7 +1,3 @@
-import { cleanup, render, waitFor } from "@testing-library/svelte";
-import { tick } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-
 // Converted from frontend/tests/e2e-full/link-navigation-repo-sync.spec.ts.
 //
 // Regression coverage: deep-linking to a PR or issue used to leave the
@@ -13,11 +9,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 // test (the $effect calling syncGlobalRepoWithRoute) is real App code,
 // and the AppHeader (with the real RepoTypeahead dropdown) renders
 // unmocked so the .typeahead-value assertions match the e2e spec.
+// Shell-invariant module mocks come from the appShellMocks preset.
 //
 // Dropped from the spec: the sidebar `.repo-header__name` count/text
 // sub-assertion. The sidebar list is a stubbed PRListView here and its
 // repo filtering happens server-side; the repo filter value those lists
 // receive is exactly getGlobalRepo(), which is asserted directly.
+import { cleanup, render, waitFor } from "@testing-library/svelte";
+import { tick } from "svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import "./lib/testing/appShellMocks.js";
+import "./lib/testing/appShellInstantStartupMock.js";
+import { createAppTarget, installBrowserGlobals } from "./lib/testing/appShellMocks.js";
 
 vi.mock("@middleman/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@middleman/ui")>();
@@ -41,121 +44,9 @@ vi.mock("@middleman/ui", async (importOriginal) => {
   };
 });
 
-vi.mock("./lib/components/layout/StatusBar.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/keyboard/Palette.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/keyboard/Cheatsheet.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/repositories/RepoSummaryPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/settings/SettingsPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/terminal/WorkspaceTerminalView.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/terminal/WorkspaceEmbedShell.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/design-system/DesignSystemPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/features/kata/KataFeature.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/components/FlashBanner.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-
-vi.mock("./lib/api/kata/daemons.js", () => ({
-  fetchKataDaemons: vi.fn(async () => []),
-}));
-vi.mock("./lib/api/kata/taskClient.js", () => ({
-  createKataTaskAPI: () => ({}),
-}));
-vi.mock("./lib/api/docs/api.js", () => ({
-  createDocsAPI: () => ({}),
-}));
-vi.mock("./lib/api/messages/api.js", () => ({
-  createMessagesAPI: () => ({
-    capabilities: vi.fn(() =>
-      Promise.resolve({
-        configured: true,
-        ok: true,
-        features: {},
-      }),
-    ),
-  }),
-}));
-vi.mock("./lib/api/messages/visibility.js", () => ({
-  shouldShowMessagesMode: () => true,
-}));
-vi.mock("./lib/messages/kataMessageLinker.js", () => ({
-  createMessageIssueLinker: () => ({
-    linkMessage: vi.fn(),
-  }),
-}));
-vi.mock("./lib/utils/appStartup.js", () => ({
-  runAppStartup: ({ onReady }: { onReady: () => void }) => {
-    queueMicrotask(onReady);
-    return vi.fn();
-  },
-}));
-
-// jsdom reports zero-width containers, which would classify the layout
-// as narrow and swap in the phone-style focus presentation (no header).
-// The e2e spec ran at a desktop viewport, so pin the container to wide.
-vi.mock("./lib/stores/container.svelte.js", () => ({
-  initContainerObserver: () => () => {},
-  getContainerSize: () => "wide" as const,
-  isNarrow: () => false,
-}));
-
-// Keep RepoTypeahead's /repos fetch off the network; the dropdown's
-// options come from the configured repos on the settings store mock.
-vi.mock("./lib/api/runtime.js", () => ({
-  client: {
-    GET: vi.fn(async () => ({ data: [], error: undefined })),
-  },
-  apiErrorMessage: () => "",
-}));
-
 import { getGlobalRepo, setGlobalRepo } from "./lib/stores/filter.svelte.ts";
 
 const STORAGE_KEY = "middleman-filter-repo";
-
-function installBrowserGlobals() {
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  }));
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe = vi.fn();
-      unobserve = vi.fn();
-      disconnect = vi.fn();
-    },
-  );
-}
-
-function createAppTarget() {
-  const target = document.createElement("div");
-  target.id = "app";
-  document.body.appendChild(target);
-  return target;
-}
 
 function typeaheadValue(): string | undefined {
   const values = document.querySelectorAll(".typeahead-value");

@@ -830,6 +830,67 @@ func TestGitLabMutationReviewDraftPartialStaleApproveCleansPublishedComment(t *t
 	assert.Nil(storedDraft, "published local draft comment should be removed after partial publish")
 }
 
+// A review-draft APPROVE publish is head-bound on GitLab: when the
+// reviewed diff snapshot is stale because the base SHA moved while the
+// head stayed the same, the per-comment head check still matches, so
+// the publish must instead clear the same reviewedHeadSHA gate as
+// /approve and /merge and fail closed before any provider draft note
+// or approval is sent.
+func TestGitLabReviewDraftApproveRejectsStaleBaseSnapshot(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, recorder, repoID := setupGitLabMutationServer(t)
+	ctx := t.Context()
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	draft, err := database.GetOrCreateMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	line := 42
+	_, err = database.CreateMRReviewDraftComment(ctx, draft.ID, db.MRReviewDraftCommentInput{
+		Body: "ready to approve",
+		Range: db.ReviewLineRange{
+			Path:        "internal/server/e2etest/gitlab_mutations_test.go",
+			Side:        "right",
+			Line:        42,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "head-sha",
+		},
+	})
+	require.NoError(err)
+
+	// Move the platform base SHA past the reviewed snapshot while the
+	// head stays "head-sha": diffSnapshotStale is now true even though
+	// every draft comment's DiffHeadSHA still equals the head.
+	require.NoError(database.UpdatePlatformSHAs(ctx, repoID, 7, "head-sha", "base-sha-moved"))
+
+	rr := doGitLabJSON(t, srv, http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/review-draft/publish",
+		`{"action":"approve","body":"summary note"}`,
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem struct {
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"],
+		"a moved base SHA must reject the approve publish as stale")
+
+	// Nothing should have reached the provider: no draft note created,
+	// no approval submitted.
+	_, draftAt4242 := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/draft_notes")
+	_, draftAtPath := recorder.find(http.MethodPost, "/api/v4/projects/acme%2Fwidget/merge_requests/7/draft_notes")
+	assert.False(draftAt4242 || draftAtPath, "stale approve publish must not create draft notes")
+	_, approveAt4242 := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/approve")
+	_, approveAtPath := recorder.find(http.MethodPost, "/api/v4/projects/acme%2Fwidget/merge_requests/7/approve")
+	assert.False(approveAt4242 || approveAtPath, "stale approve publish must not approve")
+}
+
 // A body-less stale approval has no note to protect, so it relies solely
 // on GitLab's sha-bound rejection: the approval request must carry the
 // stale stored head, surface as a stale_state conflict, persist nothing

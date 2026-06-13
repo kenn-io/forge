@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -107,8 +107,18 @@ type BuildOutcome =
   | { kind: "build-failed"; exitCode: number | null };
 
 async function tryBuildFrontend(frontendDir: string): Promise<BuildOutcome> {
+  const vitePlusBin = path.resolve(frontendDir, "../node_modules/vite-plus/bin/vp");
+  try {
+    await access(vitePlusBin);
+  } catch (err) {
+    return {
+      kind: "missing-tool",
+      cause: err as NodeJS.ErrnoException,
+    };
+  }
+
   return await new Promise<BuildOutcome>((resolve) => {
-    const build = spawn(process.execPath, ["../node_modules/vite-plus/bin/vp", "build", "--logLevel", "warn"], {
+    const build = spawn(process.execPath, [vitePlusBin, "build", "--logLevel", "warn"], {
       cwd: frontendDir,
       stdio: "inherit",
       env: process.env,

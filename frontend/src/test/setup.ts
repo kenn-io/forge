@@ -32,3 +32,10 @@ if (typeof globalThis.localStorage === "undefined" || typeof globalThis.localSto
     value: storage,
   });
 }
+
+if (typeof document !== "undefined" && typeof document.elementFromPoint !== "function") {
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: () => null,
+  });
+}

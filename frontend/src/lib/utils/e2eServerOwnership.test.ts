@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { copyFileSync, linkSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import os from "node:os";
@@ -11,75 +11,12 @@ const { stopE2EServer } = e2eServerModule;
 
 const originalEnv = { ...process.env };
 
-function writeFakeBun(binDir: string, frontendDir: string, body: string, windowsBody?: string): void {
-  if (process.platform === "win32") {
-    const bunPath = path.join(binDir, "bun.exe");
-    try {
-      linkSync(process.execPath, bunPath);
-    } catch {
-      copyFileSync(process.execPath, bunPath);
-    }
-    writeFileSync(path.join(frontendDir, "run"), windowsBody ?? body, {
-      flag: "wx",
-    });
-    return;
-  }
-  writeFileSync(path.join(binDir, "bun"), body, {
-    mode: 0o755,
+function writeFakeVitePlus(rootDir: string, body: string): void {
+  const vitePlusBin = path.join(rootDir, "node_modules", "vite-plus", "bin");
+  mkdirSync(vitePlusBin, { recursive: true });
+  writeFileSync(path.join(vitePlusBin, "vp"), body, {
     flag: "wx",
   });
-}
-
-function prependExecutablePath(binDir: string): () => void {
-  const previousPATH = process.env.PATH;
-  const previousPath = process.env.Path;
-  const currentPath = previousPATH ?? previousPath ?? "";
-  const nextPath = `${binDir}${path.delimiter}${currentPath}`;
-
-  process.env.PATH = nextPath;
-  if (process.platform === "win32") {
-    process.env.Path = nextPath;
-  }
-
-  return () => {
-    if (previousPATH === undefined) {
-      delete process.env.PATH;
-    } else {
-      process.env.PATH = previousPATH;
-    }
-    if (process.platform === "win32") {
-      if (previousPath === undefined) {
-        delete process.env.Path;
-      } else {
-        process.env.Path = previousPath;
-      }
-    }
-  };
-}
-
-function clearExecutablePath(): () => void {
-  const previousPATH = process.env.PATH;
-  const previousPath = process.env.Path;
-
-  process.env.PATH = "";
-  if (process.platform === "win32") {
-    process.env.Path = "";
-  }
-
-  return () => {
-    if (previousPATH === undefined) {
-      delete process.env.PATH;
-    } else {
-      process.env.PATH = previousPATH;
-    }
-    if (process.platform === "win32") {
-      if (previousPath === undefined) {
-        delete process.env.Path;
-      } else {
-        process.env.Path = previousPath;
-      }
-    }
-  };
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -259,21 +196,17 @@ describe("ensureEmbeddedFrontend", () => {
     }
 
     const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
-    const binDir = path.join(dir, "bin");
     const frontendDir = path.join(dir, "frontend");
     const frontendSrc = path.join(frontendDir, "src");
     const frontendDist = path.join(frontendDir, "dist");
     const embeddedDist = path.join(dir, "internal", "web", "dist");
 
-    mkdirSync(binDir, { recursive: true });
     mkdirSync(frontendSrc, { recursive: true });
     mkdirSync(frontendDist, { recursive: true });
     mkdirSync(embeddedDist, { recursive: true });
 
-    writeFakeBun(
-      binDir,
-      frontendDir,
-      "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p dist\nprintf '<html><body>rebuilt</body></html>' > dist/index.html\n",
+    writeFakeVitePlus(
+      dir,
       "const { mkdirSync, writeFileSync } = require('node:fs');\nmkdirSync('dist', { recursive: true });\nwriteFileSync('dist/index.html', '<html><body>rebuilt</body></html>');\n",
     );
 
@@ -294,16 +227,11 @@ describe("ensureEmbeddedFrontend", () => {
     utimesSync(embeddedIndex, oldTime, oldTime);
     utimesSync(sourceFile, newTime, newTime);
 
-    const restorePath = prependExecutablePath(binDir);
-    try {
-      await ensureEmbeddedFrontend(dir);
-      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>rebuilt</body>");
-    } finally {
-      restorePath();
-    }
+    await ensureEmbeddedFrontend(dir);
+    await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>rebuilt</body>");
   });
 
-  it("throws when bun runs but the build fails", async () => {
+  it("throws when Vite+ runs but the build fails", async () => {
     const ensureEmbeddedFrontend = (
       e2eServerModule as {
         ensureEmbeddedFrontend?: (rootDir?: string) => Promise<void>;
@@ -316,25 +244,18 @@ describe("ensureEmbeddedFrontend", () => {
     }
 
     const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
-    const binDir = path.join(dir, "bin");
     const frontendDir = path.join(dir, "frontend");
     const frontendSrc = path.join(frontendDir, "src");
     const frontendDist = path.join(frontendDir, "dist");
     const embeddedDist = path.join(dir, "internal", "web", "dist");
 
-    mkdirSync(binDir, { recursive: true });
     mkdirSync(frontendSrc, { recursive: true });
     mkdirSync(frontendDist, { recursive: true });
     mkdirSync(embeddedDist, { recursive: true });
 
-    // Fake bun that fails the build (mimics a real build error). The
+    // Fake Vite+ that fails the build (mimics a real build error). The
     // existing dist must not be silently reused in this case.
-    writeFakeBun(
-      binDir,
-      frontendDir,
-      "#!/usr/bin/env bash\necho 'simulated build error' >&2\nexit 1\n",
-      "console.error('simulated build error');\nprocess.exit(1);\n",
-    );
+    writeFakeVitePlus(dir, "console.error('simulated build error');\nprocess.exit(1);\n");
 
     const frontendIndex = path.join(frontendDist, "index.html");
     const embeddedIndex = path.join(embeddedDist, "index.html");
@@ -353,15 +274,10 @@ describe("ensureEmbeddedFrontend", () => {
     utimesSync(embeddedIndex, oldTime, oldTime);
     utimesSync(sourceFile, newTime, newTime);
 
-    const restorePath = prependExecutablePath(binDir);
-    try {
-      await expect(ensureEmbeddedFrontend(dir)).rejects.toThrow(/frontend build failed/);
-    } finally {
-      restorePath();
-    }
+    await expect(ensureEmbeddedFrontend(dir)).rejects.toThrow(/frontend build failed/);
   });
 
-  it("falls back to existing dist when bun is unavailable", async () => {
+  it("falls back to existing dist when Vite+ is unavailable", async () => {
     const ensureEmbeddedFrontend = (
       e2eServerModule as {
         ensureEmbeddedFrontend?: (rootDir?: string) => Promise<void>;
@@ -396,17 +312,15 @@ describe("ensureEmbeddedFrontend", () => {
     utimesSync(frontendIndex, oldTime, oldTime);
     utimesSync(sourceFile, newTime, newTime);
 
-    // Empty PATH so the spawned `bun` triggers ENOENT (missing tool).
-    // No embedded index exists yet, so the fallback path must still
-    // copy the (stale) frontend dist into the embedded location.
-    const restorePath = clearExecutablePath();
+    // No fake Vite+ launcher exists, so the fallback path must still copy
+    // the (stale) frontend dist into the embedded location.
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       await ensureEmbeddedFrontend(dir);
       await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>existing dist</body>");
       expect(warnSpy).toHaveBeenCalled();
     } finally {
-      restorePath();
+      warnSpy.mockRestore();
     }
   });
 });

@@ -12,6 +12,9 @@ test("Firefox receives compact scrollbar styling for app scroll panes", async ({
   await page.goto("/settings");
 
   await expect(page.locator(".settings-page")).toBeVisible();
+  await expect(page.locator(".settings-page").evaluate((pane) => pane.scrollHeight > pane.clientHeight)).resolves.toBe(
+    true,
+  );
   await expect(
     page.evaluate(() => {
       const settingsPane = document.querySelector(".settings-page");

@@ -101,7 +101,7 @@ frontend: frontend-deps
 frontend-dev:
 	./scripts/frontend-dev.sh $(ARGS)
 
-# Run Vite+ dev server after installing dependencies with Bun (use alongside `make dev`)
+# Run Vite+ dev server after installing dependencies with Bun; Node launches Vite+ (use alongside `make dev`)
 frontend-dev-bun: frontend-deps
 	cd frontend && $(VITE_PLUS_FRONTEND_BIN) dev
 

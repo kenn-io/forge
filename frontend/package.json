@@ -5,14 +5,14 @@
   "license": "Elastic-2.0",
   "type": "module",
   "scripts": {
-    "dev": "vp dev",
-    "build": "vp build --logLevel warn",
-    "preview": "vp preview",
-    "check": "cd .. && vp fmt --check frontend --no-error-on-unmatched-pattern --threads=1 && vp lint frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1 && cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
-    "lint": "vp lint . --no-error-on-unmatched-pattern",
-    "lint:fix": "vp lint . --fix --no-error-on-unmatched-pattern",
-    "typecheck": "cd .. && vp lint frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1 && cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
-    "test": "vp test run",
+    "dev": "node ../node_modules/vite-plus/bin/vp dev",
+    "build": "node ../node_modules/vite-plus/bin/vp build --logLevel warn",
+    "preview": "node ../node_modules/vite-plus/bin/vp preview",
+    "check": "cd .. && node node_modules/vite-plus/bin/vp run frontend-package-check",
+    "lint": "node ../node_modules/vite-plus/bin/vp lint . --no-error-on-unmatched-pattern",
+    "lint:fix": "node ../node_modules/vite-plus/bin/vp lint . --fix --no-error-on-unmatched-pattern",
+    "typecheck": "cd .. && node node_modules/vite-plus/bin/vp lint frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1 && cd frontend && node ../node_modules/vite-plus/bin/vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "test": "node ../node_modules/vite-plus/bin/vp test run",
     "test:e2e": "node ./scripts/run-e2e-to-file.ts",
     "test:e2e:mock": "node node_modules/.bin/playwright test --config=playwright.config.ts",
     "demo-workspace": "node node_modules/.bin/playwright test --config tests/demo/playwright-demo.config.ts"
@@ -58,6 +58,7 @@
     },
     "runtime": {
       "name": "node",
+      "version": ">=24.0.0",
       "onFail": "download"
     }
   },

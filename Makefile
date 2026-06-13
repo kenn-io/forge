@@ -23,6 +23,8 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 VITE_PLUS_VERSION := 0.1.24
+VITE_PLUS_BIN := node ./node_modules/vite-plus/bin/vp
+VITE_PLUS_FRONTEND_BIN := node ../node_modules/vite-plus/bin/vp
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
@@ -88,8 +90,8 @@ vite-plus-install:
 	fi
 
 # Build frontend SPA and copy into embed directory
-frontend: frontend-deps vite-plus-install
-	cd frontend && vp build --logLevel warn
+frontend: frontend-deps
+	cd frontend && $(VITE_PLUS_FRONTEND_BIN) build --logLevel warn
 	node scripts/check-asset-base-paths.mjs
 	rm -rf internal/web/dist
 	cp -r frontend/dist internal/web/dist
@@ -100,17 +102,12 @@ frontend-dev:
 	./scripts/frontend-dev.sh $(ARGS)
 
 # Run Vite+ dev server after installing dependencies with Bun (use alongside `make dev`)
-frontend-dev-bun: frontend-deps vite-plus-install
-	cd frontend && vp dev
+frontend-dev-bun: frontend-deps
+	cd frontend && $(VITE_PLUS_FRONTEND_BIN) dev
 
 # Run TypeScript/Svelte lint and type checks
-frontend-check: frontend-deps vite-plus-install
-	vp fmt --check frontend packages/ui --no-error-on-unmatched-pattern --threads=1
-	vp lint frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
-	@sleep 2
-	cd frontend && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
-	@sleep 2
-	cd packages/ui && vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+frontend-check: frontend-deps
+	$(VITE_PLUS_BIN) run frontend-check
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check:
@@ -133,7 +130,7 @@ guardrail-check: frontend-api-client-check font-size-token-check huma-route-chec
 
 
 # Regenerate the checked-in OpenAPI document and generated clients
-api-generate:
+api-generate: frontend-deps
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
 	mkdir -p internal/apiclient/spec
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out "$$tmp" -version 3.0 -format json; if [ -f internal/apiclient/spec/openapi.json ] && cmp -s "$$tmp" internal/apiclient/spec/openapi.json; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/spec/openapi.json; fi; trap - EXIT
@@ -154,7 +151,7 @@ api-generate:
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; (cd internal/apiclient/generated && GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go tool oapi-codegen --config config.yaml -o "$$tmp" ../spec/openapi.json); if [ -f internal/apiclient/generated/client.gen.go ] && cmp -s "$$tmp" internal/apiclient/generated/client.gen.go; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/generated/client.gen.go; fi; trap - EXIT
 
 # Regenerate roborev TypeScript client types from checked-in OpenAPI spec
-roborev-api-generate:
+roborev-api-generate: frontend-deps
 	node frontend/node_modules/openapi-typescript/bin/cli.js packages/ui/src/api/roborev/openapi.json -o packages/ui/src/api/roborev/generated/schema.ts
 	@echo "Roborev API types generated"
 
@@ -218,7 +215,7 @@ race-times: ensure-embed-dir
 # Run full-stack E2E tests (Playwright against real Go server, excludes roborev)
 test-e2e: frontend
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
-	vp run middleman-frontend#test:e2e --project=chromium
+	$(VITE_PLUS_BIN) run middleman-frontend#test:e2e --project=chromium
 
 # Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF, ROBOREV_PORT configurable)
 test-e2e-roborev:

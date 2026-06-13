@@ -1,20 +1,46 @@
 import { defineConfig } from "vite-plus";
 
+const rootVP = "node node_modules/vite-plus/bin/vp";
+const frontendVP = "node ../node_modules/vite-plus/bin/vp";
+const uiVP = "node ../../node_modules/vite-plus/bin/vp";
+
 export default defineConfig({
   run: {
     tasks: {
+      "frontend-check": {
+        command: `${rootVP} run frontend-fmt && ${rootVP} run frontend-lint && ${rootVP} run svelte-check:frontend && ${rootVP} run svelte-check:ui`,
+        cache: false,
+      },
+      "frontend-fmt": {
+        command: `${rootVP} fmt --check frontend packages/ui --no-error-on-unmatched-pattern --threads=1`,
+        cache: false,
+      },
+      "frontend-lint": {
+        command: `${rootVP} lint frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1`,
+        cache: false,
+      },
+      "frontend-package-check": {
+        command: `${rootVP} fmt --check frontend --no-error-on-unmatched-pattern --threads=1 && ${rootVP} lint frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1 && ${rootVP} run svelte-check:frontend`,
+        cache: false,
+      },
       "svelte-check:frontend": {
-        command: "vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+        command: `${frontendVP} exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings`,
+        cache: false,
         cwd: "frontend",
       },
       "svelte-check:ui": {
-        command: "vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+        command: `${uiVP} exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings`,
+        cache: false,
         cwd: "packages/ui",
+      },
+      "ui-package-check": {
+        command: `${rootVP} fmt --check packages/ui --no-error-on-unmatched-pattern --threads=1 && ${rootVP} lint packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1 && ${rootVP} run svelte-check:ui`,
+        cache: false,
       },
     },
   },
   staged: {
-    "*": "vp check --fix",
+    "*": `${rootVP} check --fix`,
   },
   fmt: {
     ignorePatterns: [

@@ -130,7 +130,15 @@ func NormalizeDetailedMergeRequest(repo platform.RepoRef, mr *gitlab.MergeReques
 	if mr == nil {
 		return platform.MergeRequest{}
 	}
-	return normalizeMergeRequest(repo, &mr.BasicMergeRequest, pipelineInfo(mr), detailedMRWorkInProgress(mr))
+	out := normalizeMergeRequest(repo, &mr.BasicMergeRequest, pipelineInfo(mr), detailedMRWorkInProgress(mr))
+	// Only the detail payload carries diff_refs. BaseSHA feeds the
+	// reviewed diff snapshot (merge-base + head pin); without it
+	// head-bound mutations stay disabled with 409 head_unknown.
+	if out.HeadSHA == "" {
+		out.HeadSHA = mr.DiffRefs.HeadSha
+	}
+	out.BaseSHA = mr.DiffRefs.BaseSha
+	return out
 }
 
 func detailedMRWorkInProgress(mr *gitlab.MergeRequest) bool {

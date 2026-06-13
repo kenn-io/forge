@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -293,9 +294,12 @@ func writeTmuxPaneScript(envPath, paneCommand string) (string, error) {
 // trustedRmPath resolves rm on the server's own PATH at script
 // generation time, falling back to /bin/rm. Hosts without /bin/rm
 // (NixOS) resolve their store path here; the quoted absolute path is
-// what the pane script embeds.
+// what the pane script embeds. The invariant is that the embedded
+// cleanup command is ABSOLUTE: the pane starts in the workspace CWD,
+// so any relative resolution (a relative PATH entry, or LookPath's
+// ErrDot result) could execute a repository-controlled rm.
 func trustedRmPath() string {
-	if path, err := exec.LookPath("rm"); err == nil {
+	if path, err := exec.LookPath("rm"); err == nil && filepath.IsAbs(path) {
 		return shellCommand([]string{path})
 	}
 	return "/bin/rm"

@@ -109,6 +109,26 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert.Contains(string(envBytes), "export XDG_RUNTIME_DIR=argv-visible-value")
 }
 
+// The embedded cleanup command must stay absolute even when PATH
+// resolution is hostile: the pane starts in the workspace CWD, so a
+// relative rm resolution could execute a repository-controlled binary.
+func TestTrustedRmPathStaysAbsoluteUnderHostilePath(t *testing.T) {
+	assert := Assert.New(t)
+	requireT := require.New(t)
+	dir := t.TempDir()
+	requireT.NoError(os.WriteFile(filepath.Join(dir, "rm"), []byte("#!/bin/sh\n"), 0o755))
+	t.Chdir(dir)
+	t.Setenv("PATH", ".")
+
+	got := trustedRmPath()
+
+	words, err := shellquote.Split(got)
+	requireT.NoError(err)
+	requireT.Len(words, 1)
+	assert.True(filepath.IsAbs(words[0]),
+		"cleanup rm must be absolute, got %q", got)
+}
+
 func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {
 	assert := Assert.New(t)
 	t.Setenv("MIDDLEMAN_TEST_CUSTOM_SHELL_ENV", "custom-visible-value")

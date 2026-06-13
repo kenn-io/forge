@@ -4109,10 +4109,17 @@ func (s *Syncer) indexUpsertMergeRequest(
 	// Record the reviewed diff snapshot so head-binding providers can
 	// pin mutations after a plain list sync — without it the head
 	// stays unreviewable and head-bound actions 409 with head_unknown.
-	// Non-fatal like the bulk GitHub path: a missed snapshot only
-	// delays head-bound actions until the next successful sync.
-	if s.clones != nil && cloneFetchOK {
-		if err := s.syncProviderMRDiff(ctx, repo, repoID, mr.Number, normalized); err != nil {
+	// Skipped when the stored snapshot already covers this head/base
+	// pair: recomputing the merge-base for every open MR on every
+	// cycle would add unbounded git work to large repos. Non-fatal
+	// like the bulk GitHub path: a missed snapshot only delays
+	// head-bound actions until the next successful sync.
+	snapshotCurrent := existing != nil &&
+		existing.DiffHeadSHA == normalized.PlatformHeadSHA &&
+		existing.DiffBaseSHA == normalized.PlatformBaseSHA &&
+		existing.MergeBaseSHA != ""
+	if s.clones != nil && cloneFetchOK && !snapshotCurrent {
+		if err := s.syncProviderMRDiff(ctx, repo, repoID, mr.Number, normalized, false); err != nil {
 			slog.Warn("provider diff snapshot failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", mr.Number, "err", err,
@@ -7415,7 +7422,7 @@ func (s *Syncer) syncMRForRepo(
 		// DiffHeadSHA matches the platform head, so a sync that never
 		// writes it would leave head-bound actions permanently
 		// disabled with 409 head_unknown.
-		diffErr = s.syncProviderMRDiff(ctx, repo, repoID, number, normalized)
+		diffErr = s.syncProviderMRDiff(ctx, repo, repoID, number, normalized, true)
 
 		pending := false
 		_, pending, err = s.syncProviderMRDetailExtras(
@@ -7568,7 +7575,7 @@ func (s *Syncer) syncMRDiff(
 // logic is GitHub-specific.
 func (s *Syncer) syncProviderMRDiff(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
-	normalized *db.MergeRequest,
+	normalized *db.MergeRequest, ensureClone bool,
 ) error {
 	if s.clones == nil {
 		return nil
@@ -7580,10 +7587,16 @@ func (s *Syncer) syncProviderMRDiff(
 		return nil
 	}
 	host := repoHost(repo)
-	if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
-		return &DiffSyncError{
-			Code: DiffSyncCodeCloneUnavailable,
-			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
+	// List sync already fetched the repo clone once for this cycle;
+	// refetching per MR would turn one repo sync into N network
+	// round-trips. Per-MR detail syncs have no prior fetch and pass
+	// ensureClone.
+	if ensureClone {
+		if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+			return &DiffSyncError{
+				Code: DiffSyncCodeCloneUnavailable,
+				Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
+			}
 		}
 	}
 	mb, err := s.clones.MergeBase(ctx, host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)

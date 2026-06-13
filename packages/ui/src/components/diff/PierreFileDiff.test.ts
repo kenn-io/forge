@@ -76,6 +76,7 @@ const pierre = (() => {
       },
     ],
   };
+  let parsedMetadata = metadata;
   class FileDiff {
     constructor(options?: FileDiffOptions<unknown>) {
       lastOptions = options;
@@ -111,8 +112,8 @@ const pierre = (() => {
     lastOptions: () => lastOptions,
     lastVirtualizer: () => lastVirtualizer,
     metadata,
-    parsePatchFiles: () => [{ files: [metadata] }],
-    processFile: () => metadata,
+    parsePatchFiles: () => [{ files: [parsedMetadata] }],
+    processFile: () => parsedMetadata,
     renderDiff,
     renderCount: () => counts.render,
     reset: () => {
@@ -125,6 +126,10 @@ const pierre = (() => {
       renderResults = [];
       lastOptions = undefined;
       lastVirtualizer = undefined;
+      parsedMetadata = metadata;
+    },
+    setMetadata: (next: typeof metadata) => {
+      parsedMetadata = next;
     },
     setRenderResults: (results: boolean[]) => {
       renderResults = [...results];
@@ -194,6 +199,25 @@ function makePatchOnlyFile(): DiffFile {
   };
 }
 
+function makeMetadataOnlyFile(): DiffFile {
+  return {
+    ...makeFile(),
+    path: "src/new.ts",
+    old_path: "src/old.ts",
+    status: "renamed",
+    additions: 0,
+    deletions: 0,
+    patch: [
+      "diff --git a/src/old.ts b/src/new.ts",
+      "similarity index 100%",
+      "rename from src/old.ts",
+      "rename to src/new.ts",
+      "",
+    ].join("\n"),
+    hunks: [],
+  };
+}
+
 describe("PierreFileDiff", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -242,6 +266,26 @@ describe("PierreFileDiff", () => {
     });
 
     expect(document.querySelector(".empty-textual-diff")).toBeNull();
+  });
+
+  it("shows the empty textual state for metadata-only patches", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    pierre.setMetadata({
+      ...pierre.metadata,
+      additionLines: [],
+      deletionLines: [],
+      hunks: [],
+    });
+
+    render(PierreFileDiff, {
+      props: { file: makeMetadataOnlyFile() },
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector(".empty-textual-diff")).not.toBeNull();
+    });
+
+    expect(pierre.renderCount()).toBe(0);
   });
 
   it("replays context expansion after a deferred full-context render", async () => {

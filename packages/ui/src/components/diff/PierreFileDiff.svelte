@@ -123,7 +123,13 @@
       enableDemandContextExpansion: Boolean(loadFileText) && hasCollapsedContext(renderFile),
     });
   });
-  const emptyTextualDiff = $derived(!renderFile.patch.trim() || !pierreFile);
+  const hasRenderablePierreDiff = $derived(
+    Boolean(
+      pierreFile &&
+        (pierreFile.hunks.length > 0 || pierreFile.additionLines.length > 0 || pierreFile.deletionLines.length > 0),
+    ),
+  );
+  const emptyTextualDiff = $derived(!renderFile.patch.trim() || !hasRenderablePierreDiff);
 
   const pierreOptions = $derived.by<FileDiffOptions<unknown>>(() => ({
     diffStyle: viewMode,

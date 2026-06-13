@@ -129,7 +129,8 @@ script-tests: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node --test scripts/*.test.mjs scripts/*.test.ts
 
 # Run lightweight generated-client/Huma guardrails
-guardrail-check: frontend-deps frontend-api-client-check font-size-token-check huma-route-check script-tests
+guardrail-check: frontend-deps
+	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check script-tests
 
 
 # Regenerate the checked-in OpenAPI document and generated clients

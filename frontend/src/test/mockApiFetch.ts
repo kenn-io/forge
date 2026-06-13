@@ -1,8 +1,14 @@
-// Fetch-boundary mock of the middleman REST API for jsdom component tests.
-// Ported from tests/e2e/support/mockApi.ts so Vitest tests exercise the same
-// fixture data the Playwright mock suite used. Tests stub globalThis.fetch
-// with the returned fetch; unhandled paths get a JSON 404, matching the
-// Playwright mock's behavior of letting optional endpoints fail softly.
+// Shared mock of the middleman REST API: one set of fixtures and one
+// /api/v1 route matcher consumed by two thin adapters so the suites cannot
+// drift apart:
+//
+//   - createMockApiFetch: fetch adapter for jsdom component tests (tests
+//     stub globalThis.fetch with it);
+//   - createMockApiHandler: transport-neutral core, also wrapped by the
+//     Playwright page.route adapter in tests/e2e/support/mockApi.ts.
+//
+// This module must stay free of @playwright/test imports. Unhandled paths
+// get a JSON 404 so optional endpoints fail softly in both suites.
 
 const defaultProviderCapabilities = {
   read_repositories: true,
@@ -211,6 +217,36 @@ const repos = [
   },
 ];
 
+// Twelve repos with open PRs on only a few of them, so switching the summary
+// page filter between "All" (2-digit count) and "Has PRs" (1-digit count)
+// exercises the results-label digit change.
+const repoSummaries = Array.from({ length: 12 }, (_, i) => {
+  const name = `repo-${String(i + 1).padStart(2, "0")}`;
+  return {
+    owner: "acme",
+    name,
+    platform_host: "github.com",
+    repo: {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name,
+      repo_path: `acme/${name}`,
+    },
+    cached_pr_count: i < 4 ? 3 : 0,
+    open_pr_count: i < 4 ? 3 : 0,
+    draft_pr_count: 0,
+    cached_issue_count: i < 3 ? 2 : 0,
+    open_issue_count: i < 3 ? 2 : 0,
+    most_recent_activity_at: "2026-03-30T12:00:00Z",
+    last_sync_completed_at: "2026-03-30T14:00:30Z",
+    last_sync_started_at: "2026-03-30T14:00:00Z",
+    last_sync_error: "",
+    active_authors: [],
+    recent_issues: [],
+  };
+});
+
 const syncStatus = {
   running: false,
   last_run_at: "2026-03-30T14:00:30Z",
@@ -364,18 +400,26 @@ export interface MockRequest {
  */
 export type MockRouteOverride = (req: MockRequest) => Response | null | undefined;
 
+export interface MockApiHandler {
+  /** Resolve one request against overrides, then the default fixtures. */
+  handle: (req: MockRequest) => Response;
+  /** Every request seen by this handler, in order. */
+  requests: MockRequest[];
+}
+
 export interface MockApiHandle {
   fetch: typeof globalThis.fetch;
   /** Every request the app issued, in order. */
   requests: MockRequest[];
 }
 
-export function createMockApiFetch(overrides: MockRouteOverride[] = []): MockApiHandle {
+export function createMockApiHandler(overrides: MockRouteOverride[] = []): MockApiHandler {
   // Deep-clone so mutations (e.g. PATCH) don't leak between tests.
   const localPulls: typeof pulls = JSON.parse(JSON.stringify(pulls));
   const requests: MockRequest[] = [];
 
   function handle(req: MockRequest): Response {
+    requests.push(req);
     for (const override of overrides) {
       const res = override(req);
       if (res) return res;
@@ -539,8 +583,35 @@ export function createMockApiFetch(overrides: MockRouteOverride[] = []): MockApi
       });
     }
 
+    const syncIssueMatch = pathname.match(/^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)\/sync$/);
+    if (method === "POST" && syncIssueMatch) {
+      const issueOwner = syncIssueMatch[1];
+      const issueName = syncIssueMatch[2];
+      const issueNumber = parseInt(syncIssueMatch[3]!, 10);
+      const issue = issues.find(
+        (candidate) =>
+          candidate.repo_owner === issueOwner && candidate.repo_name === issueName && candidate.Number === issueNumber,
+      );
+      if (!issue) {
+        return jsonResponse({ title: "Not found" }, 404);
+      }
+      return jsonResponse({
+        issue,
+        events: [],
+        platform_host: issue.platform_host,
+        repo_owner: issue.repo_owner,
+        repo_name: issue.repo_name,
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+      });
+    }
+
     if (method === "GET" && pathname === "/api/v1/repos") {
       return jsonResponse(repos);
+    }
+
+    if (method === "GET" && pathname === "/api/v1/repos/summary") {
+      return jsonResponse(repoSummaries);
     }
 
     const singleRepoMatch = pathname.match(/^\/api\/v1\/repos\/([^/]+)\/([^/]+)$/);
@@ -587,19 +658,38 @@ export function createMockApiFetch(overrides: MockRouteOverride[] = []): MockApi
       return jsonResponse(undefined, 202);
     }
 
+    const patchPrMatch = pathname.match(/^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/);
+    if (method === "PATCH" && patchPrMatch) {
+      const prOwner = patchPrMatch[1];
+      const prName = patchPrMatch[2];
+      const prNumber = parseInt(patchPrMatch[3]!, 10);
+      const pr = localPulls.find((p) => p.repo_owner === prOwner && p.repo_name === prName && p.Number === prNumber);
+      if (!pr) {
+        return jsonResponse({ title: "Not found" }, 404);
+      }
+      const reqBody = JSON.parse(req.bodyText || "{}");
+      if (reqBody.title !== undefined) pr.Title = reqBody.title;
+      if (reqBody.body !== undefined) pr.Body = reqBody.body;
+      return jsonResponse(pullDetailResponse(pr));
+    }
+
     return jsonResponse({ error: `Unhandled ${method} ${pathname}` }, 404);
   }
 
+  return { handle, requests };
+}
+
+export function createMockApiFetch(overrides: MockRouteOverride[] = []): MockApiHandle {
+  const handler = createMockApiHandler(overrides);
+
   const mockFetch: typeof globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
-    const req: MockRequest = {
+    return handler.handle({
       method: request.method.toUpperCase(),
       url: new URL(request.url),
       bodyText: request.method === "GET" || request.method === "HEAD" ? "" : await request.text(),
-    };
-    requests.push(req);
-    return handle(req);
+    });
   };
 
-  return { fetch: mockFetch, requests };
+  return { fetch: mockFetch, requests: handler.requests };
 }

@@ -14,7 +14,8 @@ test("Firefox receives compact scrollbar styling for app scroll panes", async ({
   await expect(page.locator(".settings-page")).toBeVisible();
   await expect(
     page.evaluate(() => {
-      const rootRules = Array.from(document.styleSheets)
+      const settingsPane = document.querySelector(".settings-page");
+      const appRules = Array.from(document.styleSheets)
         .flatMap((sheet) => {
           try {
             return Array.from(sheet.cssRules);
@@ -22,10 +23,13 @@ test("Firefox receives compact scrollbar styling for app scroll panes", async ({
             return [];
           }
         })
-        .filter((rule): rule is CSSStyleRule => "selectorText" in rule && rule.selectorText === ":root");
+        .filter((rule): rule is CSSStyleRule => "selectorText" in rule);
 
-      return rootRules.some(
-        (rule) => rule.style.scrollbarWidth === "thin" && rule.style.scrollbarColor.includes("transparent"),
+      return appRules.some(
+        (rule) =>
+          settingsPane?.matches(rule.selectorText) === true &&
+          rule.style.scrollbarWidth === "thin" &&
+          rule.style.scrollbarColor.includes("transparent"),
       );
     }),
   ).resolves.toBe(true);

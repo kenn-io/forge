@@ -7,6 +7,11 @@
   padding: 0;
 }
 
+* {
+  scrollbar-color: var(--border-default) transparent;
+  scrollbar-width: thin;
+}
+
 /* Light theme */
 :root {
   --bg-primary: #f5f6f8;
@@ -114,8 +119,6 @@
   --mermaid-note-border: #d4a72c;
 
   color-scheme: light;
-  scrollbar-color: var(--border-default) transparent;
-  scrollbar-width: thin;
 }
 
 /* Dark theme */

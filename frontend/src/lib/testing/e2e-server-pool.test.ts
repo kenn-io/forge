@@ -5,16 +5,7 @@
 // module against a REAL Go test server (cmd/e2e-server), exercising the
 // lease -> stop -> re-lease reset cycle across option combinations.
 //
-// PLAYWRIGHT_E2E_FRONTEND_READY=1 makes ensureEmbeddedFrontend() a no-op so
-// the pool does not rebuild/copy the frontend dist before spawning. This test
-// only exercises API endpoints (/api/v1/repos, /api/v1/settings), so the
-// embedded SPA bundle is irrelevant; the server serves a placeholder index
-// with status 200 when the real bundle is absent, which satisfies the pool's
-// reachability probe. The flag must be set before the first spawn, hence at
-// module top.
-process.env.PLAYWRIGHT_E2E_FRONTEND_READY = "1";
-
-import { afterAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { startIsolatedE2EServerWithOptions } from "../../../tests/e2e-full/support/e2eServer";
 
 type RepoRow = { Owner: string; Name: string };
@@ -33,6 +24,21 @@ async function fetchModes(baseURL: string): Promise<Record<string, boolean>> {
 }
 
 describe("isolated e2e server pool", () => {
+  // PLAYWRIGHT_E2E_FRONTEND_READY=1 makes ensureEmbeddedFrontend() a no-op
+  // so the pool does not rebuild/copy the frontend dist before spawning.
+  // This test only exercises API endpoints (/api/v1/repos, /api/v1/settings),
+  // so the embedded SPA bundle is irrelevant; the server serves a placeholder
+  // index with status 200 when the real bundle is absent, which satisfies the
+  // pool's reachability probe. The flag is only read at spawn time, so
+  // setting it in beforeAll is early enough; vi.stubEnv auto-restores it so
+  // it cannot leak into other test files sharing this worker process.
+  beforeAll(() => {
+    vi.stubEnv("PLAYWRIGHT_E2E_FRONTEND_READY", "1");
+  });
+  afterAll(() => {
+    vi.unstubAllEnvs();
+  });
+
   // The pooled `go run` child handle keeps this worker's event loop alive,
   // which makes the full-suite Vitest close hit its 10s force-close timeout.
   // stop() has release semantics (the process stays pooled for reuse), so

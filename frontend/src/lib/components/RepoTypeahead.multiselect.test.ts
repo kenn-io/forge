@@ -65,7 +65,7 @@ describe("RepoTypeahead multi-select (e2e fixture repo set)", () => {
     cleanup();
   });
 
-  it("repository selector filters dashboard lists by multiple selected repos", async () => {
+  it("persists multiple selected repos and summarizes the selection", async () => {
     // Mirror AppHeader's wiring: onchange feeds the real filter store (which
     // persists to localStorage) and `selected` reflects it back.
     const emitted: (string | undefined)[] = [];

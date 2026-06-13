@@ -7,13 +7,14 @@
   ],
   "type": "module",
   "scripts": {
-    "check": "vp check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern && (cd frontend && NODE_OPTIONS=--max-old-space-size=1024 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings) && (cd packages/ui && NODE_OPTIONS=--max-old-space-size=512 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)",
+    "check": "node node_modules/vite-plus/bin/vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1 && node node_modules/vite-plus/bin/vp lint frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1 && (cd frontend && node ../node_modules/svelte-check/bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings) && (cd packages/ui && node ../../node_modules/svelte-check/bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)",
     "demo-workspace": "bun run --cwd frontend demo-workspace",
-    "fmt": "vp fmt frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
-    "fmt:check": "vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
+    "fmt": "node node_modules/vite-plus/bin/vp fmt frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1",
+    "fmt:check": "node node_modules/vite-plus/bin/vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1",
     "test:e2e": "bun run --cwd frontend test:e2e"
   },
   "devDependencies": {
+    "svelte-check": "4.6.0",
     "vite-plus": "0.1.24"
   },
   "packageManager": "bun@1.3.14"

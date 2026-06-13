@@ -560,6 +560,22 @@ async function expectPierreDiffVisibleText(file: ReturnType<Page["locator"]>, se
     .toBe(true);
 }
 
+async function expectPierreDiffVisibleExactText(file: ReturnType<Page["locator"]>, selector: string, text: string) {
+  await expect
+    .poll(async () => {
+      return await file.locator(".pierre-diff").evaluate((host, selector) => {
+        return Array.from(host.shadowRoot?.querySelectorAll(selector) ?? [])
+          .filter((element): element is HTMLElement => {
+            if (!(element instanceof HTMLElement)) return false;
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          })
+          .map((element) => element.textContent ?? "");
+      }, selector);
+    })
+    .toContain(text);
+}
+
 async function expectRenderedNonBlankRows(file: ReturnType<Page["locator"]>, textFragment: string) {
   await expect
     .poll(async () => {
@@ -1130,24 +1146,40 @@ test.describe("diff view", () => {
   });
 
   test("hunk-only added-file patches render added file content", async ({ page }) => {
+    const hunkOnlyLines = [
+      "export function formatDate(d: Date): string {",
+      "  const year = d.getFullYear();",
+      "  const month = String(d.getMonth() + 1).padStart(2, '0');",
+      "  const day = String(d.getDate()).padStart(2, '0');",
+      "  return `${year}-${month}-${day}`;",
+      "}",
+      "",
+      "export function formatNumber(n: number): string {",
+      "export const padded = true \t",
+    ];
     const hunkOnlyAddedDiff: DiffResult = {
       ...smallDiff,
       files: smallDiff.files.map((file) =>
         file.path === "frontend/src/lib/utils/format.ts"
           ? {
               ...file,
-              patch: [
-                "@@ -0,0 +1,8 @@",
-                "+export function formatDate(d: Date): string {",
-                "+  const year = d.getFullYear();",
-                "+  const month = String(d.getMonth() + 1).padStart(2, '0');",
-                "+  const day = String(d.getDate()).padStart(2, '0');",
-                "+  return `${year}-${month}-${day}`;",
-                "+}",
-                "+",
-                "+export function formatNumber(n: number): string {",
-                "",
-              ].join("\n"),
+              additions: hunkOnlyLines.length,
+              patch: [`@@ -0,0 +1,${hunkOnlyLines.length} @@`, ...hunkOnlyLines.map((line) => `+${line}`), ""].join(
+                "\n",
+              ),
+              hunks: [
+                {
+                  old_start: 0,
+                  old_count: 0,
+                  new_start: 1,
+                  new_count: hunkOnlyLines.length,
+                  lines: hunkOnlyLines.map((content, index) => ({
+                    type: "add" as const,
+                    content,
+                    new_num: index + 1,
+                  })),
+                },
+              ],
             }
           : file,
       ),
@@ -1158,8 +1190,11 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
 
     const addedFile = page.locator('[data-file-path="frontend/src/lib/utils/format.ts"]');
+    await clickTreeFileItem(page, "frontend/src/lib/utils/format.ts");
     await addedFile.scrollIntoViewIfNeeded();
     await expectPierreDiffFirstText(addedFile, diffAdditionsSelector, "export function");
+    await expectPierreDiffVisibleExactText(addedFile, diffAdditionsSelector, "export const padded = true \t");
+    await expectPierreDiffCount(addedFile, diffAdditionsSelector, hunkOnlyLines.length);
     await expectPierreDiffCount(addedFile, diffDeletionsSelector, 0);
     await expectPierreDiffCount(addedFile, diffContextSelector, 0);
   });

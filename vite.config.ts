@@ -4,13 +4,11 @@ export default defineConfig({
   run: {
     tasks: {
       "svelte-check:frontend": {
-        command:
-          "NODE_OPTIONS=--max-old-space-size=1024 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+        command: "vp exec svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
         cwd: "frontend",
       },
       "svelte-check:ui": {
-        command:
-          "NODE_OPTIONS=--max-old-space-size=512 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+        command: "vp exec svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
         cwd: "packages/ui",
       },
     },

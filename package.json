@@ -7,10 +7,10 @@
   ],
   "type": "module",
   "scripts": {
-    "check": "NODE_OPTIONS=--max-old-space-size=256 vp check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern && (cd frontend && NODE_OPTIONS=--max-old-space-size=1024 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings) && (cd packages/ui && NODE_OPTIONS=--max-old-space-size=512 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)",
+    "check": "vp check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern && (cd frontend && NODE_OPTIONS=--max-old-space-size=1024 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings) && (cd packages/ui && NODE_OPTIONS=--max-old-space-size=512 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)",
     "demo-workspace": "bun run --cwd frontend demo-workspace",
-    "fmt": "NODE_OPTIONS=--max-old-space-size=256 vp fmt frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
-    "fmt:check": "NODE_OPTIONS=--max-old-space-size=256 vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
+    "fmt": "vp fmt frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
+    "fmt:check": "vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
     "test:e2e": "bun run --cwd frontend test:e2e"
   },
   "devDependencies": {

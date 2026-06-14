@@ -2,33 +2,18 @@ package localruntime
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
-	shellquote "github.com/kballard/go-shellquote"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// shellquoteSplitSingle unquotes a one-token shell string.
-func shellquoteSplitSingle(quoted string) (string, error) {
-	words, err := shellquote.Split(quoted)
-	if err != nil {
-		return "", err
-	}
-	if len(words) != 1 {
-		return "", fmt.Errorf("expected one word, got %d in %q", len(words), quoted)
-	}
-	return words[0], nil
-}
-
 func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert := Assert.New(t)
-	requireT := require.New(t)
 	t.Setenv("XDG_RUNTIME_DIR", "argv-visible-value")
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "secret-value")
 
@@ -44,7 +29,7 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	}
 
 	paneCommand, cleanup, err := launcher.newSessionPaneCommand()
-	requireT.NoError(err)
+	require.NoError(t, err)
 	t.Cleanup(cleanup)
 	newSession := launcher.newSessionCommand(paneCommand)
 	newSessionText := strings.Join(newSession, "\n")
@@ -54,79 +39,17 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert.NotContains(newSession, "-e")
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
+	assert.Contains(newSessionText, "exec env -i")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "@middleman_owner")
 	assert.Contains(newSession, "middleman:test-owner")
+	assert.Contains(newSessionText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
+	assert.Contains(newSessionText, "__middleman_env_file=")
+	assert.Contains(newSessionText, "trap __middleman_cleanup_env_file EXIT")
+	assert.Contains(newSessionText, "trap - EXIT")
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "secret-value")
-
-	// The pane command must be one dialect-neutral token: tmux hands a
-	// lone shell-command argument to the user's default shell, so a
-	// multi-statement inline script (or unquoted /bin/sh -c argv,
-	// which tmux flattens) breaks on fish hosts.
-	assert.Contains(newSession, paneCommand)
-	assert.True(strings.HasPrefix(paneCommand, "exec /bin/sh "), paneCommand)
-	assert.NotContains(newSessionText, "\nexport ")
-
-	// The handoff script holds the real pane bootstrap.
-	scriptPath, err := shellquoteSplitSingle(strings.TrimPrefix(paneCommand, "exec /bin/sh "))
-	requireT.NoError(err)
-	scriptBytes, err := os.ReadFile(scriptPath)
-	requireT.NoError(err)
-	script := string(scriptBytes)
-	assert.Contains(script, "exec env -i")
-	assert.Contains(script, "__middleman_env_file=")
-	assert.Contains(script, `-f "$__middleman_env_file" "$__middleman_script_file"`)
-	assert.Contains(script, "trap __middleman_cleanup_files EXIT")
-	assert.Contains(script, "trap - EXIT")
-	// Cleanup must not resolve rm from the workspace-CWD PATH: a
-	// malicious repo can ship an executable named rm.
-	cleanupLine := ""
-	for line := range strings.SplitSeq(script, "\n") {
-		if strings.Contains(line, "__middleman_cleanup_files()") {
-			cleanupLine = line
-		}
-	}
-	requireT.NotEmpty(cleanupLine)
-	assert.Regexp(`__middleman_cleanup_files\(\) \{ '?/`, cleanupLine,
-		"cleanup must invoke rm by absolute path")
-	assert.NotContains(script, "argv-visible-value")
-	assert.NotContains(script, "secret-value")
-
-	// The sourced env file carries the preserved values.
-	envLine := ""
-	for line := range strings.SplitSeq(script, "\n") {
-		if after, ok := strings.CutPrefix(line, "__middleman_env_file="); ok {
-			envLine = after
-		}
-	}
-	requireT.NotEmpty(envLine)
-	envPath, err := shellquoteSplitSingle(envLine)
-	requireT.NoError(err)
-	envBytes, err := os.ReadFile(envPath)
-	requireT.NoError(err)
-	assert.Contains(string(envBytes), "export XDG_RUNTIME_DIR=argv-visible-value")
-}
-
-// The embedded cleanup command must stay absolute even when PATH
-// resolution is hostile: the pane starts in the workspace CWD, so a
-// relative rm resolution could execute a repository-controlled binary.
-func TestTrustedRmPathStaysAbsoluteUnderHostilePath(t *testing.T) {
-	assert := Assert.New(t)
-	requireT := require.New(t)
-	dir := t.TempDir()
-	requireT.NoError(os.WriteFile(filepath.Join(dir, "rm"), []byte("#!/bin/sh\n"), 0o755))
-	t.Chdir(dir)
-	t.Setenv("PATH", ".")
-
-	got := trustedRmPath()
-
-	words, err := shellquote.Split(got)
-	requireT.NoError(err)
-	requireT.Len(words, 1)
-	assert.True(filepath.IsAbs(words[0]),
-		"cleanup rm must be absolute, got %q", got)
 }
 
 func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {

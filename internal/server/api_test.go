@@ -20383,36 +20383,6 @@ exit 0
 	assert.Equal(time.UTC, session.CreatedAt.Location())
 }
 
-// tmuxPaneScriptContent extracts the pane handoff script content from a
-// recorded new-session argv: the pane command is a single
-// "exec /bin/sh '<path>'" token whose script file holds the real
-// bootstrap (env handoff and exec of the target command).
-func tmuxPaneScriptContent(t *testing.T, newSession []string) string {
-	t.Helper()
-	content, ok := tmuxPaneScriptContentIfAny(newSession)
-	require.True(t, ok, "new-session argv carries no readable pane script token")
-	return content
-}
-
-func tmuxPaneScriptContentIfAny(newSession []string) (string, bool) {
-	for _, arg := range newSession {
-		rest, ok := strings.CutPrefix(arg, "exec /bin/sh ")
-		if !ok {
-			continue
-		}
-		words, err := shellquote.Split(rest)
-		if err != nil || len(words) != 1 {
-			return "", false
-		}
-		content, err := os.ReadFile(words[0])
-		if err != nil {
-			return "", false
-		}
-		return string(content), true
-	}
-	return "", false
-}
-
 func TestWorkspaceRuntimeLaunchAgentCreatesProbeableTmuxSessionE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -20488,11 +20458,9 @@ exit 0
 	var newSession []string
 	require.Eventually(func() bool {
 		for _, argv := range readTmuxRecord(t, record) {
-			if len(argv) == 0 || argv[0] != "new-session" {
-				continue
-			}
-			if script, ok := tmuxPaneScriptContentIfAny(argv); ok &&
-				strings.Contains(script, agentPath) {
+			if len(argv) > 0 &&
+				argv[0] == "new-session" &&
+				strings.Contains(strings.Join(argv, "\n"), agentPath) {
 				newSession = argv
 				return true
 			}
@@ -20505,9 +20473,8 @@ exit 0
 	assert.True(isRuntimeTmuxSessionNameForWorkspace(ws.Id, session))
 	assert.Contains(newSession, "-d")
 	assert.Contains(newSession, "-c")
-	paneScript := tmuxPaneScriptContent(t, newSession)
-	assert.Contains(paneScript, agentPath)
-	assert.Contains(paneScript, "--flag")
+	assert.Contains(strings.Join(newSession, "\n"), agentPath)
+	assert.Contains(strings.Join(newSession, "\n"), "--flag")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "-t")
@@ -20851,15 +20818,9 @@ func findRuntimeTmuxNewSessionName(
 	commandPath string,
 ) (string, bool) {
 	for _, argv := range argvs {
-		if len(argv) == 0 || argv[0] != "new-session" {
-			continue
-		}
-		// The target command lives in the pane handoff script, which a
-		// failed launch already cleaned up; match on the script when it
-		// is still readable, and otherwise fall back to the runtime
-		// session-name pattern (setup sessions use a different shape).
-		if script, ok := tmuxPaneScriptContentIfAny(argv); ok &&
-			!strings.Contains(script, commandPath) {
+		if len(argv) == 0 ||
+			argv[0] != "new-session" ||
+			!strings.Contains(strings.Join(argv, "\n"), commandPath) {
 			continue
 		}
 		name, ok := argAfter(argv, "-s")

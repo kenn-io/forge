@@ -145,14 +145,8 @@ function parseProviderNumberedPath(
 ): NumberedItemRef | undefined {
   if (parts.length < start + 4) return undefined;
   const provider = decodeRouteSegment(parts[start] ?? "")?.trim();
-  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(
-    /^\/+|\/+$/g,
-    "",
-  );
-  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(
-    /^\/+|\/+$/g,
-    "",
-  );
+  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(/^\/+|\/+$/g, "");
+  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(/^\/+|\/+$/g, "");
   const numberText = decodeRouteSegment(parts[start + 3] ?? "");
   if (!provider || !owner || !name || !numberText) return undefined;
 
@@ -234,8 +228,7 @@ function parseInboxFilters(search: string): InboxRouteFilters | undefined {
 
 export function buildInboxRoute(filters: InboxRouteFilters = {}): string {
   const sp = new URLSearchParams();
-  if (filters.state && filters.state !== "unread")
-    sp.set("state", filters.state);
+  if (filters.state && filters.state !== "unread") sp.set("state", filters.state);
   for (const reason of filters.reason ?? []) {
     if (reason) sp.append("reason", reason);
   }
@@ -282,11 +275,7 @@ function parseRoute(fullPath: string): Route {
     const pull = parseHostProviderNumberedPath(parts, "pulls", 1);
     const isPullFiles = parts[parts.length - 1] === "files";
     const focusPullLength = parts[1] === "host" ? 8 : 6;
-    if (
-      pull &&
-      (parts.length === focusPullLength ||
-        (isPullFiles && parts.length === focusPullLength + 1))
-    ) {
+    if (pull && (parts.length === focusPullLength || (isPullFiles && parts.length === focusPullLength + 1))) {
       return {
         page: "focus",
         itemType: "pr",
@@ -784,8 +773,7 @@ export function setView(v: View): void {
 
 export function getTab(): Tab {
   if (route.page === "pulls" || route.page === "mobile-pulls") return "pulls";
-  if (route.page === "issues" || route.page === "mobile-issues")
-    return "issues";
+  if (route.page === "issues" || route.page === "mobile-issues") return "issues";
   return "pulls";
 }
 

@@ -13,7 +13,14 @@ import { createDocsFixture } from "./support/docsFixture";
 // a process spawned after the env is set can inherit — pooled
 // servers cannot.
 async function startIsolatedE2EServer() {
-  return startIsolatedE2EServerWithOptions({ visibleImportedModes: true, freshProcess: true });
+  // Kata tests exercise the kata sidebar's own "Inbox" system view.
+  // Keep the notification inbox feature off so its header "Inbox" tab
+  // does not collide with kata's button under role queries.
+  return startIsolatedE2EServerWithOptions({
+    visibleImportedModes: true,
+    notificationsEnabled: false,
+    freshProcess: true,
+  });
 }
 
 async function startDefaultIsolatedE2EServer() {

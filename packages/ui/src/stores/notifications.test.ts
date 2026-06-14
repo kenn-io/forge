@@ -81,7 +81,8 @@ describe("createNotificationsStore", () => {
 
   it("marks only selected visible notifications as done", async () => {
     const refreshedSummary = { ...summary(), total_active: 1, unread: 1, done: 1 };
-    const get = vi.fn()
+    const get = vi
+      .fn()
       .mockResolvedValueOnce({
         data: { items: [notification(1), notification(2)], summary: summary() },
       })
@@ -102,16 +103,19 @@ describe("createNotificationsStore", () => {
   });
 
   it("surfaces background sync failures discovered while polling", async () => {
-    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation((
-      (handler: TimerHandler, _timeout?: number, ...args: unknown[]) => {
-        queueMicrotask(() => {
-          if (typeof handler === "function") handler(...args);
-        });
-        return 0 as ReturnType<typeof setTimeout>;
-      }
-    ) as typeof setTimeout);
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      handler: TimerHandler,
+      _timeout?: number,
+      ...args: unknown[]
+    ) => {
+      queueMicrotask(() => {
+        if (typeof handler === "function") handler(...args);
+      });
+      return 0 as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
     try {
-      const get = vi.fn()
+      const get = vi
+        .fn()
         .mockResolvedValueOnce({
           data: {
             items: [],
@@ -140,15 +144,17 @@ describe("createNotificationsStore", () => {
 
   it("reloads immediately and polls after triggering inbox sync", async () => {
     const delays: number[] = [];
-    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation((
-      (handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-        delays.push(Number(timeout ?? 0));
-        queueMicrotask(() => {
-          if (typeof handler === "function") handler(...args);
-        });
-        return 0 as ReturnType<typeof setTimeout>;
-      }
-    ) as typeof setTimeout);
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...args: unknown[]
+    ) => {
+      delays.push(Number(timeout ?? 0));
+      queueMicrotask(() => {
+        if (typeof handler === "function") handler(...args);
+      });
+      return 0 as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
     try {
       const get = vi.fn().mockResolvedValue({
         data: { items: [notification(1)], summary: summary() },

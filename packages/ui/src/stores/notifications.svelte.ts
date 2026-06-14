@@ -14,10 +14,7 @@ export interface NotificationsStoreOptions {
   getGlobalRepo?: () => string | undefined;
 }
 
-function apiErrorMessage(
-  error: { detail?: string; title?: string },
-  fallback: string,
-): string {
+function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
   return error.detail ?? error.title ?? fallback;
 }
 
@@ -42,9 +39,7 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function createNotificationsStore(
-  opts: NotificationsStoreOptions,
-) {
+export function createNotificationsStore(opts: NotificationsStoreOptions) {
   const apiClient = opts.client;
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
 
@@ -63,21 +58,51 @@ export function createNotificationsStore(
   let selectedIDs = $state<Set<number>>(new Set());
   let requestVersion = 0;
 
-  function getNotifications(): NotificationItem[] { return items; }
-  function getSummary(): NotificationSummary { return summary; }
-  function getSyncStatus(): NotificationSyncStatus { return syncStatus; }
-  function isSyncRunning(): boolean { return syncStatus.running; }
-  function isLoading(): boolean { return loading; }
-  function isActionInFlight(): boolean { return actionInFlight; }
-  function getError(): string | null { return storeError; }
-  function getStateFilter(): NotificationState { return stateFilter; }
-  function getReasonFilter(): string[] { return reasonFilter; }
-  function getTypeFilter(): string[] { return typeFilter; }
-  function getRepoFilter(): string | undefined { return repoFilter; }
-  function getSearchQuery(): string | undefined { return searchQuery; }
-  function getSort(): NotificationSort { return sort; }
-  function getSelectedIDs(): Set<number> { return selectedIDs; }
-  function getSelectedCount(): number { return selectedIDs.size; }
+  function getNotifications(): NotificationItem[] {
+    return items;
+  }
+  function getSummary(): NotificationSummary {
+    return summary;
+  }
+  function getSyncStatus(): NotificationSyncStatus {
+    return syncStatus;
+  }
+  function isSyncRunning(): boolean {
+    return syncStatus.running;
+  }
+  function isLoading(): boolean {
+    return loading;
+  }
+  function isActionInFlight(): boolean {
+    return actionInFlight;
+  }
+  function getError(): string | null {
+    return storeError;
+  }
+  function getStateFilter(): NotificationState {
+    return stateFilter;
+  }
+  function getReasonFilter(): string[] {
+    return reasonFilter;
+  }
+  function getTypeFilter(): string[] {
+    return typeFilter;
+  }
+  function getRepoFilter(): string | undefined {
+    return repoFilter;
+  }
+  function getSearchQuery(): string | undefined {
+    return searchQuery;
+  }
+  function getSort(): NotificationSort {
+    return sort;
+  }
+  function getSelectedIDs(): Set<number> {
+    return selectedIDs;
+  }
+  function getSelectedCount(): number {
+    return selectedIDs.size;
+  }
 
   function setStateFilter(next: NotificationState): void {
     stateFilter = next;
@@ -112,7 +137,9 @@ export function createNotificationsStore(
   function selectVisible(): void {
     selectedIDs = new Set(items.map((item) => item.id));
   }
-  function clearSelection(): void { selectedIDs = new Set(); }
+  function clearSelection(): void {
+    selectedIDs = new Set();
+  }
 
   function buildParams(): NotificationParams {
     const params: NotificationParams = {
@@ -133,10 +160,7 @@ export function createNotificationsStore(
     loading = true;
     storeError = null;
     try {
-      const { data, error: requestError } = await apiClient.GET(
-        "/notifications",
-        { params: { query: buildParams() } },
-      );
+      const { data, error: requestError } = await apiClient.GET("/notifications", { params: { query: buildParams() } });
       if (requestError) {
         throw new Error(apiErrorMessage(requestError, "failed to load inbox"));
       }
@@ -149,9 +173,7 @@ export function createNotificationsStore(
           storeError = syncStatus.last_error;
         }
       }
-      selectedIDs = new Set(
-        [...selectedIDs].filter((id) => items.some((item) => item.id === id)),
-      );
+      selectedIDs = new Set([...selectedIDs].filter((id) => items.some((item) => item.id === id)));
     } catch (err) {
       if (version !== requestVersion) return;
       storeError = err instanceof Error ? err.message : String(err);
@@ -198,10 +220,9 @@ export function createNotificationsStore(
     const previousFinishedAt = syncStatus.last_finished_at ?? "";
     syncStatus = { ...syncStatus, running: true, last_error: "" };
     try {
-      const { error: requestError } = await apiClient.POST(
-        "/notifications/sync",
-        { headers: { "Content-Type": "application/json" } },
-      );
+      const { error: requestError } = await apiClient.POST("/notifications/sync", {
+        headers: { "Content-Type": "application/json" },
+      });
       if (requestError) {
         throw new Error(apiErrorMessage(requestError, "failed to sync inbox"));
       }

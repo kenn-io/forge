@@ -45,32 +45,44 @@ describe("notificationDestination", () => {
   });
 
   it("routes enterprise PR notifications through provider-shaped detail URLs", () => {
-    expect(notificationDestination(notification({
-      platform_host: "ghe.example.com",
-      web_url: "https://ghe.example.com/acme/widget/pull/1",
-    }))).toEqual({
+    expect(
+      notificationDestination(
+        notification({
+          platform_host: "ghe.example.com",
+          web_url: "https://ghe.example.com/acme/widget/pull/1",
+        }),
+      ),
+    ).toEqual({
       kind: "internal",
       path: "/host/ghe.example.com/pulls/github/acme/widget/1",
     });
   });
 
   it("routes enterprise issue notifications through provider-shaped detail URLs", () => {
-    expect(notificationDestination(notification({
-      platform_host: "ghe.example.com",
-      web_url: "https://ghe.example.com/acme/widget/issues/2",
-      item_number: 2,
-      item_type: "issue",
-    }))).toEqual({
+    expect(
+      notificationDestination(
+        notification({
+          platform_host: "ghe.example.com",
+          web_url: "https://ghe.example.com/acme/widget/issues/2",
+          item_number: 2,
+          item_type: "issue",
+        }),
+      ),
+    ).toEqual({
       kind: "internal",
       path: "/host/ghe.example.com/issues/github/acme/widget/2",
     });
   });
 
   it("does not guess provider when notification provider is blank", () => {
-    expect(notificationDestination(notification({
-      provider: "",
-      web_url: "https://github.com/acme/widget/pull/1",
-    }))).toEqual({
+    expect(
+      notificationDestination(
+        notification({
+          provider: "",
+          web_url: "https://github.com/acme/widget/pull/1",
+        }),
+      ),
+    ).toEqual({
       kind: "external",
       url: "https://github.com/acme/widget/pull/1",
     });

@@ -334,41 +334,6 @@
             onclick={() => navigateTab("workspaces")}
           >Workspaces</button>
         {/if}
-=======
-        <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
-          Activity
-        </button>
-        {#if settings.notificationsEnabled()}
-          <button class="view-tab" class:active={getPage() === "inbox"} onclick={() => navigateTab("inbox")}>
-            Inbox
-          </button>
-        {/if}
-        <button class="view-tab" class:active={getPage() === "repos"} onclick={() => navigateTab("repos")}>
-          Repos
-        </button>
-        <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigateTab("pulls")}>
-          PRs
-        </button>
-        <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigateTab("issues")}>
-          Issues
-        </button>
-        <button class="view-tab" class:active={getView() === "board"} onclick={() => navigateTab("board")}>
-          Board
-        </button>
-        <button class="view-tab"
-          class:active={getPage() === "reviews"}
-          onclick={() => navigateTab("reviews")}>
-          Reviews
-          {#if stores.roborevDaemon && !stores.roborevDaemon.isAvailable()}
-            <span class="daemon-indicator" title="Daemon unavailable"></span>
-          {/if}
-        </button>
-        <button
-          class="view-tab"
-          class:active={getPage() === "workspaces" || getPage() === "terminal"}
-          onclick={() => navigateTab("workspaces")}
-        >Workspaces</button>
->>>>>>> cf1666382 (feat: add provider-neutral notification inbox triage)
       </div>
     {/if}
   </nav>

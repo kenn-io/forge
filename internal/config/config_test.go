@@ -1625,7 +1625,7 @@ func TestLoadKeepsExistingGitHubURLInference(t *testing.T) {
 	assert := Assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
-name = "https://go.kenn.io/middleman.git"
+name = "https://github.com/wesm/middleman.git"
 `)
 
 	cfg, err := Load(path)

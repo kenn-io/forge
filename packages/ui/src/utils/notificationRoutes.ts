@@ -1,9 +1,7 @@
 import type { NotificationItem } from "../api/types.js";
 import { buildRoutedItemRoute } from "../routes.js";
 
-export type NotificationDestination =
-  | { kind: "internal"; path: string }
-  | { kind: "external"; url: string };
+export type NotificationDestination = { kind: "internal"; path: string } | { kind: "external"; url: string };
 
 function routedItemDestination(item: NotificationItem): NotificationDestination | null {
   if (!item.item_number || (item.item_type !== "pr" && item.item_type !== "issue")) return null;
@@ -24,8 +22,6 @@ function routedItemDestination(item: NotificationItem): NotificationDestination 
   };
 }
 
-export function notificationDestination(
-  item: NotificationItem,
-): NotificationDestination | null {
+export function notificationDestination(item: NotificationItem): NotificationDestination | null {
   return routedItemDestination(item) ?? (item.web_url ? { kind: "external", url: item.web_url } : null);
 }

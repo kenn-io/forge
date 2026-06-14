@@ -37,9 +37,9 @@ test.describe("inbox", () => {
       await expect(page.getByRole("button", { name: /Support config file loading/ })).toBeVisible();
       await expect(page.getByRole("button", { name: /Add widget caching layer/ })).toBeHidden();
 
-      const typeOptions = await page.getByLabel("Notification type").evaluate((select) =>
-        Array.from((select as HTMLSelectElement).options).map((option) => option.value)
-      );
+      const typeOptions = await page
+        .getByLabel("Notification type")
+        .evaluate((select) => Array.from((select as HTMLSelectElement).options).map((option) => option.value));
       expect(typeOptions).toEqual(["", "pr", "issue", "release", "commit", "other"]);
       await page.getByLabel("Notification reason").selectOption("");
       await page.getByLabel("Notification type").selectOption("pr");
@@ -53,7 +53,9 @@ test.describe("inbox", () => {
       await expect(page.getByRole("button", { name: /Support config file loading/ })).toBeVisible();
       await expect(page.getByRole("button", { name: /Add widget caching layer/ })).toBeHidden();
 
-      await page.goto(`${server.info.base_url}/inbox?state=unread&reason=mention&type=issue&repo=github.com%2Facme%2Ftools&q=tools&sort=repo`);
+      await page.goto(
+        `${server.info.base_url}/inbox?state=unread&reason=mention&type=issue&repo=github.com%2Facme%2Ftools&q=tools&sort=repo`,
+      );
       await expect(page.getByLabel("Notification reason")).toHaveValue("mention");
       await expect(page.getByLabel("Notification type")).toHaveValue("issue");
       await expect(page.getByLabel("Notification repository")).toHaveValue("github.com/acme/tools");
@@ -67,8 +69,8 @@ test.describe("inbox", () => {
 
       const addSyncedNotification = await page.request.post(`${server.info.base_url}/__e2e/notifications/add-synced`);
       expect(addSyncedNotification.status()).toBe(204);
-      const syncResponse = page.waitForResponse((response) =>
-        response.request().method() === "POST" && response.url().endsWith("/api/v1/notifications/sync")
+      const syncResponse = page.waitForResponse(
+        (response) => response.request().method() === "POST" && response.url().endsWith("/api/v1/notifications/sync"),
       );
       await page.getByRole("button", { name: "Sync notifications" }).click();
       expect((await syncResponse).status()).toBe(202);

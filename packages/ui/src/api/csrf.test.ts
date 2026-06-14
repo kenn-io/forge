@@ -116,10 +116,12 @@ describe("csrfFetch", () => {
     });
 
     const fetch = csrfFetch(inner);
-    await fetch(new Request("https://middleman.test/api/v1/ready", {
-      method: "POST",
-      body: JSON.stringify({ ready: true }),
-    }));
+    await fetch(
+      new Request("https://middleman.test/api/v1/ready", {
+        method: "POST",
+        body: JSON.stringify({ ready: true }),
+      }),
+    );
 
     expect(request?.headers.get("Content-Type")).toBe("application/json");
     await expect(request?.json()).resolves.toEqual({ ready: true });

@@ -92,10 +92,7 @@ function compiledStyle(source: string, selector: string): CSSStyleDeclaration {
 
 type MediaChangeCallback = (event: MediaQueryListEvent) => void;
 
-function mockMatchMedia(
-  matches: boolean,
-  listeners?: MediaChangeCallback[],
-): void {
+function mockMatchMedia(matches: boolean, listeners?: MediaChangeCallback[]): void {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     writable: true,
@@ -105,11 +102,9 @@ function mockMatchMedia(
       onchange: null,
       addListener: vi.fn(),
       removeListener: vi.fn(),
-      addEventListener: vi
-        .fn()
-        .mockImplementation((_event: string, cb: MediaChangeCallback) => {
-          listeners?.push(cb);
-        }),
+      addEventListener: vi.fn().mockImplementation((_event: string, cb: MediaChangeCallback) => {
+        listeners?.push(cb);
+      }),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })),
@@ -548,9 +543,7 @@ describe("AppHeader", () => {
 
   it("opens selected Activity PR in PRs tab with files tab preserved", async () => {
     initTheme();
-    navigate(
-      "/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files",
-    );
+    navigate("/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files");
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "PRs" }));
@@ -560,9 +553,7 @@ describe("AppHeader", () => {
 
   it("opens selected Activity issue in Issues tab with platform host preserved", async () => {
     initTheme();
-    navigate(
-      "/?selected=issue:10&provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets",
-    );
+    navigate("/?selected=issue:10&provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets");
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "Issues" }));
@@ -618,9 +609,7 @@ describe("AppHeader", () => {
 
   it("opens Issues list when Activity selection is a PR", async () => {
     initTheme();
-    navigate(
-      "/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files",
-    );
+    navigate("/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files");
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "Issues" }));

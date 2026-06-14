@@ -995,7 +995,7 @@ func EnsureDefault(path string) error {
 	defer os.Remove(tmpPath)
 
 	const defaultConfig = `# middleman configuration
-# See https://go.kenn.io/middleman for documentation.
+# See https://github.com/wesm/middleman for documentation.
 
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
@@ -2479,18 +2479,6 @@ type configFile struct {
 	Shell                     Shell             `toml:"shell,omitempty"`
 	Fleet                     Fleet             `toml:"fleet,omitempty"`
 	API                       API               `toml:"api,omitempty"`
-}
-
-func (n *Notifications) applyDefaults() {
-	if n.SyncInterval == "" {
-		n.SyncInterval = defaultNotificationSyncInterval
-	}
-	if n.PropagationInterval == "" {
-		n.PropagationInterval = defaultNotificationPropagationInterval
-	}
-	if n.BatchSize == 0 {
-		n.BatchSize = 25
-	}
 }
 
 // Save writes the current config to the given path.

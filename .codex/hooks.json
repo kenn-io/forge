@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/hooks/context-sync-stop.sh\" stop",
+            "timeout": 30,
+            "statusMessage": "Checking context-sync state"
+          }
+        ]
+      }
+    ]
+  }
+}

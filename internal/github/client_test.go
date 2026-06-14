@@ -17,6 +17,8 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 // Compile-time assertion that liveClient satisfies Client.
@@ -396,6 +398,75 @@ func TestListRepositoriesByOwnerUsesAuthenticatedEndpointForViewer(t *testing.T)
 	require.Equal([]string{
 		"/api/v3/user",
 		"/api/v3/user/repos?affiliation=owner&per_page=100",
+	}, paths)
+}
+
+func TestListRepositoriesByOwnerUsesInstallationReposWithAppToken(t *testing.T) {
+	require := require.New(t)
+	var paths []string
+	var installationEndpointUsed bool
+	var publicUserEndpointUsed bool
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/user", func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.String())
+		http.Error(w, "installation tokens cannot use /user", http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/api/v3/installation/repositories", func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.String())
+		installationEndpointUsed = true
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"repositories": []map[string]any{
+				{
+					"name":     "private-repo",
+					"private":  true,
+					"fork":     false,
+					"owner":    map[string]string{"login": "mariusvniekerk"},
+					"archived": false,
+				},
+				{
+					"name":     "org-repo",
+					"private":  true,
+					"fork":     false,
+					"owner":    map[string]string{"login": "kenn-io"},
+					"archived": false,
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v3/users/mariusvniekerk/repos", func(w http.ResponseWriter, r *http.Request) {
+		publicUserEndpointUsed = true
+		http.Error(w, "unexpected endpoint", http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	c := &liveClient{
+		gh: ghClient,
+		source: tokenauth.NewManagedSource(tokenauth.Descriptor{
+			Candidates: []tokenauth.Candidate{{
+				Kind:           tokenauth.SourceKindGitHubApp,
+				Host:           "github.com",
+				AppID:          123,
+				InstallationID: 456,
+			}},
+		}, tokenauth.Options{}),
+	}
+
+	repos, err := c.ListRepositoriesByOwner(t.Context(), "mariusvniekerk")
+	require.NoError(err)
+	require.Len(repos, 1)
+	require.Equal("private-repo", repos[0].GetName())
+	require.True(repos[0].GetPrivate())
+	require.True(installationEndpointUsed)
+	require.False(publicUserEndpointUsed)
+	require.Equal([]string{
+		"/api/v3/installation/repositories?per_page=100",
 	}, paths)
 }
 

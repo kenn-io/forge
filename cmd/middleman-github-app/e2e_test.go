@@ -734,6 +734,36 @@ func TestDeleteRemovesConfigAndKeyAfterBrowserDeletion(t *testing.T) {
 	assert.Contains(out.String(), "Deleted app")
 }
 
+func TestDeletePreservesExternalPrivateKeyPath(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-byo-delete")
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	generatedKeyPath := cfg.GitHubApps[0].PrivateKeyPath
+	keyPEM, err := os.ReadFile(generatedKeyPath)
+	require.NoError(err)
+	externalKeyPath := filepath.Join(t.TempDir(), "shared-byo-app.pem")
+	require.NoError(os.WriteFile(externalKeyPath, keyPEM, 0o600))
+	cfg.GitHubApps[0].PrivateKeyPath = externalKeyPath
+	require.NoError(cfg.Save(configPath))
+
+	env, out := newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
+	require.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
+
+	cfg, err = config.Load(configPath)
+	require.NoError(err)
+	assert := assert.New(t)
+	assert.Empty(cfg.GitHubApps)
+	assert.FileExists(externalKeyPath)
+	assert.Contains(out.String(), "Preserved external private key")
+}
+
 func TestCreateNoBrowserPrintsManifestURL(t *testing.T) {
 	t.Parallel()
 	fake := githubapptest.NewFake()

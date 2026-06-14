@@ -7,8 +7,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"time"
 
+	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/githubapp"
 )
 
@@ -180,13 +183,33 @@ func runDelete(args []string, env *appEnv) error {
 	if err := removeAppFromConfig(cfg, env.configPath, app.Host); err != nil {
 		return err
 	}
-	if err := os.Remove(app.PrivateKeyPath); err != nil && !os.IsNotExist(err) {
-		fmt.Fprintf(env.stdout, "could not remove private key %s: %v\n", app.PrivateKeyPath, err)
+	if appPrivateKeyOwnedByCLI(env.configPath, app) {
+		if err := os.Remove(app.PrivateKeyPath); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(env.stdout, "could not remove private key %s: %v\n", app.PrivateKeyPath, err)
+		} else {
+			fmt.Fprintf(env.stdout, "Removed private key %s\n", app.PrivateKeyPath)
+		}
 	} else {
-		fmt.Fprintf(env.stdout, "Removed private key %s\n", app.PrivateKeyPath)
+		fmt.Fprintf(env.stdout, "Preserved external private key %s\n", app.PrivateKeyPath)
 	}
 	fmt.Fprintf(env.stdout, "Deleted app %q for host %s from config.\n", app.Slug, app.Host)
 	return nil
+}
+
+func appPrivateKeyOwnedByCLI(configPath string, app config.GitHubAppConfig) bool {
+	configDir, err := filepath.Abs(filepath.Dir(configPath))
+	if err != nil {
+		return false
+	}
+	keyPath, err := filepath.Abs(app.PrivateKeyPath)
+	if err != nil {
+		return false
+	}
+	if filepath.Dir(keyPath) != configDir {
+		return false
+	}
+	name := "github-app-" + strings.ReplaceAll(app.Host, ":", "_") + "-" + app.Slug + ".pem"
+	return filepath.Base(keyPath) == name
 }
 
 func runOpen(args []string, env *appEnv) error {

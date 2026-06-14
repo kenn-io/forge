@@ -1089,6 +1089,32 @@ func (c *liveClient) ListOpenIssues(
 func (c *liveClient) ListRepositoriesByOwner(
 	ctx context.Context, owner string,
 ) ([]*gh.Repository, error) {
+	if c.splitAuthActive() {
+		repos, err := collectPages(
+			ctx,
+			func(opts *gh.ListOptions) ([]*gh.Repository, *gh.Response, error) {
+				result, resp, err := c.gh.Apps.ListRepos(ctx, opts)
+				if err != nil {
+					return nil, resp, err
+				}
+				return result.Repositories, resp, nil
+			},
+			c.trackRate,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"listing installation repositories for %s: %w", owner, err,
+			)
+		}
+		filtered := repos[:0]
+		for _, repo := range repos {
+			if strings.EqualFold(repo.GetOwner().GetLogin(), owner) {
+				filtered = append(filtered, repo)
+			}
+		}
+		return filtered, nil
+	}
+
 	viewerLogin, viewerErr := c.authenticatedLogin(ctx)
 	if viewerErr == nil && strings.EqualFold(owner, viewerLogin) {
 		repos, err := collectPages(

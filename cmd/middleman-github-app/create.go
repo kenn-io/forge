@@ -354,6 +354,11 @@ func (env *appEnv) runInstallFlow(
 	timeout time.Duration,
 ) error {
 	client := env.apiClient(app.Host)
+	var err error
+	app, err = env.refreshAppMetadata(ctx, client, app)
+	if err != nil {
+		return err
+	}
 	// A recorded installation makes "install" a refresh: re-verify the
 	// existing installation and re-record its repository selection
 	// (config validation points users here when the recorded snapshot
@@ -497,6 +502,25 @@ func (env *appEnv) runInstallFlow(
 		picked.Account.Login, picked.ID, app.Host,
 	)
 	return nil
+}
+
+func (env *appEnv) refreshAppMetadata(
+	ctx context.Context,
+	client *githubapp.Client,
+	app config.GitHubAppConfig,
+) (config.GitHubAppConfig, error) {
+	jwt, err := appJWT(app, env.now())
+	if err != nil {
+		return app, err
+	}
+	live, err := client.GetApp(ctx, jwt)
+	if err != nil {
+		return app, fmt.Errorf("refreshing GitHub App metadata: %w", err)
+	}
+	app.Slug = live.Slug
+	app.Owner = live.Owner.Login
+	app.OwnerType = live.Owner.Type
+	return app, nil
 }
 
 // reposNotCoveredByInstallation lists configured github repos on the

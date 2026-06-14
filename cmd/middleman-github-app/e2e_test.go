@@ -341,6 +341,53 @@ token_env = "KENN_IO_TOKEN"
 	assert.NotZero(t, cfg.GitHubApps[0].InstallationID)
 }
 
+func TestInstallHydratesMinimalAppMetadataBeforeOpeningInstallURL(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-minimal")
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+
+	cfg, err := config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	cfg.GitHubApps[0].Slug = ""
+	cfg.GitHubApps[0].Owner = ""
+	cfg.GitHubApps[0].OwnerType = ""
+	require.NoError(cfg.Save(configPath))
+
+	var opened string
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = func(target string) error {
+		opened = target
+		if !strings.Contains(target, "/apps/middleman-minimal/installations/new") {
+			return fmt.Errorf("unexpected install URL: %s", target)
+		}
+		app, ok := fake.AppBySlug("middleman-minimal")
+		if !ok {
+			return fmt.Errorf("missing fake app middleman-minimal")
+		}
+		_, err := fake.Install(app.ID, "kenn-io")
+		return err
+	}
+	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.Contains(opened, "/apps/middleman-minimal/installations/new")
+
+	cfg, err = config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	assert := assert.New(t)
+	assert.Equal("middleman-minimal", cfg.GitHubApps[0].Slug)
+	assert.Equal("fake-owner", cfg.GitHubApps[0].Owner)
+	assert.Equal("User", cfg.GitHubApps[0].OwnerType)
+	assert.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
+	assert.NotZero(cfg.GitHubApps[0].InstallationID)
+}
+
 func TestInstallRefusesInstallationThatMissesConfiguredRepos(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

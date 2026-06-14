@@ -117,7 +117,12 @@ make vet        # go vet
 
 ### End-to-End Tests
 
-**E2E tests are non-negotiable.** Every major feature, bug fix, and refactor must include e2e tests that exercise the full stack (HTTP API with real SQLite). Even small changes merit e2e coverage when they touch API behavior, data flow between layers, or anything a user would notice if it broke. When in doubt, write the e2e test — the cost of a missing one is always higher than the cost of writing it.
+**Full-stack coverage is non-negotiable; the test lane is not.** Every major feature, bug fix, and refactor must be covered by a test that exercises the real behavior — for backend changes that means the full stack (HTTP API with real SQLite), and for frontend changes it means the real app shell, stores, and components, not stubs. Even small changes merit coverage when they touch API behavior, data flow between layers, or anything a user would notice if it broke. When in doubt, write the test — the cost of a missing one is always higher than the cost of writing it.
+
+Pick the cheapest lane that still exercises the real behavior:
+
+- A test belongs in **Playwright** (`frontend/tests/e2e/`, `frontend/tests/e2e-full/`) only when it genuinely needs real-browser rendering or layout machinery: screenshots/video, `getBoundingClientRect`-driven assertions, real scrolling/sticky/overflow geometry, container queries, drag-and-drop with real pointer coordinates, viewport/device emulation, canvas/xterm, or real computed CSS pixel values.
+- Everything else belongs in the fast **Vitest + jsdom** lane (`vp test`): keyboard dispatch, focus (`document.activeElement` works in jsdom), store-driven rendering, text/visibility assertions, fetch-request-shape assertions, `localStorage` persistence, and hash/`pushState` routing. Mounting the whole app or relying on routing is not a reason to stay in Playwright — mount the real `App.svelte` via `src/test/appHarness.ts` and mock the API at the fetch boundary with `src/test/mockApiFetch.ts` (the same fixtures back the Playwright `page.route` adapter, so the two lanes cannot drift). Assert observable behavior, never your own mocks.
 
 ### Test Guidelines
 
@@ -168,7 +173,7 @@ make vet        # go vet
 - Use conventional commit messages whose subject explains the reason or user-visible outcome, not just the mechanical change. Good subjects answer "why does this commit exist?" (for example, `fix: restore workspace activity for launched agents`), while vague mechanics such as `fix: run agents under tmux` are not acceptable on their own
 - Commit bodies must add any important context about the bug, regression, constraint, or tradeoff that motivated the change; do not rely on the diff to explain intent
 - Run tests before committing when applicable
-- Before pushing any frontend change, you must have run the full affected Playwright e2e suite locally after the final frontend/test edit; focused component tests, type checks, and CI-only verification are not enough.
+- Before pushing any frontend change, you must have run the full affected suite locally after the final frontend/test edit — the full `vp test` Vitest run, plus the full affected Playwright e2e suite whenever the change touches Playwright specs or the shared mock fixtures they rely on; type checks and CI-only verification are not enough.
 - Never push new workstreams unless explicitly asked. When addressing review feedback or CI failures on an existing PR, an agent may push after the fix is implemented and relevant local validation has run.
 
 ## Pull Requests

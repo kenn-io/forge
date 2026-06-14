@@ -31,6 +31,7 @@ const capabilities = {
   review_thread_resolution: false,
   read_review_threads: false,
   native_multiline_ranges: false,
+  mutation_head_binding: false,
   thread_reply: false,
   thread_resolve: false,
   supported_review_actions: [],
@@ -140,12 +141,18 @@ describe("PR-detail palette commands", () => {
 
     // The action wires through the same closure the detail-pane approve
     // button uses; observable effect is the approve POST on the wire.
-    await waitFor(() => {
-      const approvePost = app.api.requests.find(
+    const approvePost = await waitFor(() => {
+      const post = app.api.requests.find(
         (req) => req.method === "POST" && req.url.pathname === "/api/v1/pulls/github/acme/widgets/42/approve",
       );
-      expect(approvePost).toBeTruthy();
+      expect(post).toBeTruthy();
+      return post!;
     });
+
+    // The approve must pin the head the detail view rendered so the server
+    // can reject the action when the head moved after review.
+    const body = JSON.parse(approvePost.bodyText || "{}") as { expected_head_sha?: string };
+    expect(body.expected_head_sha).toBe("42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42");
   });
 
   it("Approve PR is absent from the palette when the PR is closed", async () => {

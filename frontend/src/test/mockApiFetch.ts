@@ -30,6 +30,7 @@ const defaultProviderCapabilities = {
   review_thread_resolution: false,
   read_review_threads: false,
   native_multiline_ranges: false,
+  mutation_head_binding: false,
   thread_reply: false,
   thread_resolve: false,
   supported_review_actions: [],
@@ -92,6 +93,7 @@ const pulls = [
     repo_owner: "acme",
     repo_name: "widgets",
     platform_host: "github.com",
+    platform_head_sha: "42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42",
     repo: repoRef("acme", "widgets", "github.com"),
     worktree_links: [],
   },
@@ -124,6 +126,7 @@ const pulls = [
     repo_owner: "acme",
     repo_name: "widgets",
     platform_host: "example.com",
+    platform_head_sha: "84bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb84",
     repo: repoRef("acme", "widgets", "example.com"),
     worktree_links: [],
   },
@@ -156,6 +159,7 @@ const pulls = [
     repo_owner: "acme",
     repo_name: "widgets",
     platform_host: "github.com",
+    platform_head_sha: "55cccccccccccccccccccccccccccccccccccc55",
     repo: repoRef("acme", "widgets", "github.com"),
     worktree_links: [
       {
@@ -381,6 +385,8 @@ function pullDetailResponse(pr: (typeof pulls)[number]) {
     repo_owner: pr.repo_owner,
     repo_name: pr.repo_name,
     platform_host: pr.platform_host,
+    platform_head_sha: pr.platform_head_sha ?? "",
+    reviewed_head_sha: pr.platform_head_sha ?? "",
     detail_loaded: true,
     detail_fetched_at: "2026-03-30T14:00:00Z",
     worktree_links: pr.worktree_links,
@@ -679,14 +685,30 @@ export function createMockApiHandler(overrides: MockRouteOverride[] = []): MockA
   return { handle, requests };
 }
 
+// Root-level liveness endpoints the app shell polls during startup
+// (waitUntilBackendReady) before it mounts any view. The Playwright lane
+// gets these from the Vite dev server's healthcheck plugin and never routes
+// them through the mock (page.route only intercepts /api/v1); the jsdom lane
+// stubs fetch wholesale, so the adapter must answer them or startup spins on
+// "Loading" forever.
+const READINESS_PATHS = new Set(["/healthz", "/livez"]);
+
 export function createMockApiFetch(overrides: MockRouteOverride[] = []): MockApiHandle {
   const handler = createMockApiHandler(overrides);
 
   const mockFetch: typeof globalThis.fetch = async (input, init) => {
-    const request = new Request(input, init);
+    // jsdom runs on undici, where `new Request("/relative")` throws because
+    // there is no document base — but the app shell fetches readiness and
+    // other paths relatively. Resolve against window.location the way a
+    // browser would before building the Request.
+    const request = input instanceof Request ? input : new Request(new URL(String(input), window.location.href), init);
+    const url = new URL(request.url);
+    if (READINESS_PATHS.has(url.pathname)) {
+      return jsonResponse({ status: "ok" });
+    }
     return handler.handle({
       method: request.method.toUpperCase(),
-      url: new URL(request.url),
+      url,
       bodyText: request.method === "GET" || request.method === "HEAD" ? "" : await request.text(),
     });
   };

@@ -156,7 +156,7 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	require.NoError(err)
 	_, err = c.CreateIssueComment(t.Context(), "acme", "widgets", 5, "lgtm")
 	require.NoError(err)
-	_, err = c.MergePullRequest(t.Context(), "acme", "widgets", 5, "t", "m", "squash")
+	_, err = c.MergePullRequest(t.Context(), "acme", "widgets", 5, "t", "m", "squash", "head-sha")
 	require.NoError(err)
 	_, err = c.MarkPullRequestReadyForReview(t.Context(), "acme", "widgets", 5)
 	require.NoError(err)

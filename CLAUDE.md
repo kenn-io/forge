@@ -119,8 +119,8 @@ make vet        # go vet
 
 Coverage of real behavior is non-negotiable; the lane is chosen to avoid the one expensive cost — the **browser**, not the Go backend. Two independent axes:
 
-- **Browser only when you must.** Reserve Playwright for real rendering/layout: screenshots/video, `getBoundingClientRect`, scroll/sticky/overflow geometry, container queries, pointer drag, viewport emulation, canvas/xterm, computed CSS pixels. Everything else runs in **Vitest + jsdom** (`vp test`) — mount the real `App.svelte` via `src/test/appHarness.ts`. Mounting the whole app or using routing is not a reason to stay in Playwright.
-- **Real Go backend by default; mocking is the exception.** Backend-dependent behavior (sync, persistence, capabilities, normalization, wire shape) must hit real Go (`tests/e2e-full/` or `internal/server/` Go tests) — don't assert backend-computed values through a hand-written fixture. Mock the API (`src/test/mockApiFetch.ts`, never fork the Playwright copy) only for the rare scenario the seeded server can't produce.
+- **Browser only when you must.** Reserve Playwright for real rendering/layout: screenshots/video, `getBoundingClientRect`, scroll/sticky/overflow geometry, container queries, pointer drag, viewport emulation, canvas/xterm, computed CSS pixels. Everything else runs in **Vitest + jsdom** (`vp test`) — mount the real `App.svelte` via `frontend/src/test/appHarness.ts`. Mounting the whole app or using routing is not a reason to stay in Playwright.
+- **Real Go backend by default; mocking is the exception.** Backend-dependent behavior (sync, persistence, capabilities, normalization, wire shape) must hit real Go (`frontend/tests/e2e-full/` or `internal/server/` Go tests) — don't assert backend-computed values through a hand-written fixture. Mock the API (`frontend/src/test/mockApiFetch.ts`, never fork the Playwright copy) only for the rare scenario the seeded server can't produce.
 
 ### Test Guidelines
 

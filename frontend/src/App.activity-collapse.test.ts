@@ -1,7 +1,5 @@
-// Converted from tests/e2e/activity-collapse.spec.ts and
-// tests/e2e-full/activity-collapse.spec.ts: threaded activity collapse
-// behavior exercised through the real app shell with the API mocked at the
-// fetch boundary.
+// Threaded activity collapse behavior exercised through the real app shell
+// with the API mocked at the fetch boundary.
 
 import { cleanup, screen, waitFor } from "@testing-library/svelte";
 import { fireEvent } from "@testing-library/svelte";
@@ -173,9 +171,8 @@ describe("threaded activity collapse", () => {
     await waitFor(() => expect(eventRows()).toHaveLength(initialCount));
   });
 
-  // Folded from tests/e2e-full/activity-collapse.spec.ts: the server seeds
-  // flat view mode there, so the test switches to Threaded through the View
-  // dropdown before exercising the collapse controls.
+  // Starting from flat view mode, the test switches to Threaded through the
+  // View dropdown before exercising the collapse controls.
   it("switches to threaded via the View dropdown, then collapse/expand all", async () => {
     await mountApp("/", {
       overrides: [activitySettings("flat"), activityItems(defaultEvents)],

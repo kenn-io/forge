@@ -1,7 +1,6 @@
-// Converted from tests/e2e/palette-focus-trap.spec.ts: Tab and Shift+Tab
-// must keep focus inside the open palette. The trap is programmatic (the
-// dialog's keydown handler moves focus and prevents default), so jsdom
-// exercises the same code path a browser does.
+// Tab and Shift+Tab must keep focus inside the open palette. The trap is
+// programmatic (the dialog's keydown handler moves focus and prevents
+// default), so jsdom exercises the same code path a browser does.
 
 import { cleanup, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";

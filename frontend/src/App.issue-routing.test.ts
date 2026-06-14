@@ -1,8 +1,7 @@
-// Converted from tests/e2e/issue-routing.spec.ts: issue detail routes must
-// preserve the platform host in detail requests (direct load and popstate),
-// and the detail meta row renders assignees. The app is mounted for real
-// with fetch mocked at the network boundary so the asserted host is the one
-// the app actually sent.
+// Issue detail routes must preserve the platform host in detail requests
+// (direct load and popstate), and the detail meta row renders assignees.
+// The app is mounted for real with fetch mocked at the network boundary so
+// the asserted host is the one the app actually sent.
 
 import { cleanup, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";

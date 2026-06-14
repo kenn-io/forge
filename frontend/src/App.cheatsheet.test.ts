@@ -1,6 +1,6 @@
-// Converted from tests/e2e/cheatsheet.spec.ts: the ? shortcut opens the
-// cheatsheet through the app shell's global keydown handler, view-scoped
-// shortcuts appear under "On this view", and Escape closes it.
+// The ? shortcut opens the cheatsheet through the app shell's global
+// keydown handler, view-scoped shortcuts appear under "On this view", and
+// Escape closes it.
 
 import { cleanup, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";

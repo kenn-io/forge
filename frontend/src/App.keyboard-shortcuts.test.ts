@@ -1,7 +1,6 @@
-// Converted from tests/e2e/keyboard-shortcuts-migration.spec.ts: global
-// shortcuts migrated to the keyboard registry — j/k list navigation, the
-// Cmd+[ sidebar toggle, and the routes where Cmd+[ is reserved (consumed
-// without toggling) because no sidebar target exists.
+// Global shortcuts served by the keyboard registry — j/k list navigation,
+// the Cmd+[ sidebar toggle, and the routes where Cmd+[ is reserved
+// (consumed without toggling) because no sidebar target exists.
 
 import { cleanup, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";

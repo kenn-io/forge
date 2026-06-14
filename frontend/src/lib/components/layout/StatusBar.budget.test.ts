@@ -1,7 +1,5 @@
-// Converted from tests/e2e/budget-display.spec.ts and
-// tests/e2e-full/budget-display.spec.ts: budget bars and popover in the
-// status bar, rendered through the real app shell with rate-limit data
-// mocked at the fetch boundary.
+// Budget bars and popover in the status bar, rendered through the real app
+// shell with rate-limit data mocked at the fetch boundary.
 //
 // Color expectations are asserted on the inline style values the components
 // set (`var(--budget-red)`), not on computed rgb pixels: jsdom does not
@@ -125,9 +123,8 @@ describe("budget display", () => {
     expect(bars.textContent).toContain("42 req/hr");
   });
 
-  // Folds tests/e2e-full/budget-display.spec.ts "popover shows per-host
-  // breakdown": the popover dialog exposes REST req, GraphQL pts, and the
-  // middleman budget spend from the same payload.
+  // The popover dialog exposes REST req, GraphQL pts, and the middleman
+  // budget spend from the same payload.
   it("clicking budget area opens popover with per-host breakdown", async () => {
     const bars = await mountStatusBar();
     const popover = await openPopover(bars);

@@ -1,6 +1,6 @@
-// Converted from tests/e2e/palette-commands.spec.ts: palette open/close
-// wiring and command dispatch through the real app shell's global keydown
-// handler, with the API mocked at the fetch boundary.
+// Palette open/close wiring and command dispatch through the real app
+// shell's global keydown handler, with the API mocked at the fetch
+// boundary.
 
 import { cleanup, screen, waitFor } from "@testing-library/svelte";
 import { fireEvent } from "@testing-library/svelte";

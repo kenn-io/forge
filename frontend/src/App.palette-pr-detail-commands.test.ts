@@ -1,4 +1,3 @@
-// Converted from tests/e2e/palette-pr-detail-commands.spec.ts: the
 // PR-detail palette commands (`pr.approve`, `pr.ready`,
 // `pr.approveWorkflows`). The merge palette command is intentionally not
 // registered (the trigger lives in PullDetail.svelte's local component

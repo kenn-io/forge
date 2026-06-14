@@ -1,6 +1,6 @@
-// Converted from tests/e2e/activity-thread-runs.spec.ts: same-author event
-// runs collapse into a single summary row in threaded activity, rendered
-// through the real app shell with the API mocked at the fetch boundary.
+// Same-author event runs collapse into a single summary row in threaded
+// activity, rendered through the real app shell with the API mocked at the
+// fetch boundary.
 
 import { cleanup, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";

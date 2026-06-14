@@ -4097,6 +4097,7 @@ export interface components {
             reopen_pr: components["schemas"]["OperationAvailability"];
             reply_review_thread: components["schemas"]["OperationAvailability"];
             resolve_review_thread: components["schemas"]["OperationAvailability"];
+            review_draft: components["schemas"]["OperationAvailability"];
             set_assignees: components["schemas"]["OperationAvailability"];
             set_reviewers: components["schemas"]["OperationAvailability"];
             submit_review: components["schemas"]["OperationAvailability"];

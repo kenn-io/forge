@@ -20,21 +20,22 @@ import (
 
 func TestDeriveOperationAvailability(t *testing.T) {
 	allCaps := providerCapabilitiesResponse{
-		ReadRepositories:  true,
-		ReadMergeRequests: true,
-		ReadIssues:        true,
-		ReadComments:      true,
-		ReadReleases:      true,
-		ReadCI:            true,
-		ReadLabels:        true,
-		CommentMutation:   true,
-		StateMutation:     true,
-		MergeMutation:     true,
-		ReviewMutation:    true,
-		WorkflowApproval:  true,
-		ReadyForReview:    true,
-		IssueMutation:     true,
-		LabelMutation:     true,
+		ReadRepositories:    true,
+		ReadMergeRequests:   true,
+		ReadIssues:          true,
+		ReadComments:        true,
+		ReadReleases:        true,
+		ReadCI:              true,
+		ReadLabels:          true,
+		CommentMutation:     true,
+		StateMutation:       true,
+		MergeMutation:       true,
+		ReviewMutation:      true,
+		ReviewDraftMutation: true,
+		WorkflowApproval:    true,
+		ReadyForReview:      true,
+		IssueMutation:       true,
+		LabelMutation:       true,
 	}
 	mergePR := operationDescriptor{
 		name:                 operationMergePR,
@@ -115,6 +116,18 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			op:       operationDescriptor{name: operationClosePR, requiredCapabilities: []string{capabilityStateMutation}},
 			caps:     allCaps,
 			repo:     repoCannotMerge,
+			expected: OperationAvailability{Available: true},
+		},
+		{
+			name: "review draft operation uses draft capability without requiring submitted reviews",
+			op:   descReviewDraft,
+			caps: func() providerCapabilitiesResponse {
+				c := allCaps
+				c.ReviewMutation = false
+				c.ReviewDraftMutation = true
+				return c
+			}(),
+			repo:     repoCanMerge,
 			expected: OperationAvailability{Available: true},
 		},
 		{
@@ -218,6 +231,7 @@ func TestRepoOperationsWireShape(t *testing.T) {
 		"reopen_pr",
 		"mark_ready_for_review",
 		"submit_review",
+		"review_draft",
 		"add_comment",
 		"edit_comment",
 		"add_label",

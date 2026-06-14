@@ -41,15 +41,15 @@
     onScrollTopChange,
   }: Props = $props();
 
-  const submitReviewGate = $derived(operationGate(operations?.submit_review));
+  const reviewDraftGate = $derived(operationGate(operations?.review_draft));
   const replyThreadGate = $derived(operationGate(operations?.reply_review_thread));
   // When the provider supports review authoring but the operation is
   // unavailable (missing write credential, rate limit), the authoring
   // affordances disappear — surface why instead of leaving the user
   // guessing.
   const reviewUnavailableReason = $derived(
-    (capabilities?.review_draft_mutation ?? false) && submitReviewGate.unavailable
-      ? submitReviewGate.reason
+    (capabilities?.review_draft_mutation ?? false) && reviewDraftGate.unavailable
+      ? reviewDraftGate.reason
       : undefined,
   );
 
@@ -191,7 +191,7 @@
         {diffHeadSHA}
         {reviewThreads}
         reviewDraftMutation={(capabilities?.review_draft_mutation ?? false)
-          && !submitReviewGate.unavailable}
+          && !reviewDraftGate.unavailable}
         canReplyToThreads={(capabilities?.thread_reply ?? false)
           && !replyThreadGate.unavailable}
         {reviewUnavailableReason}

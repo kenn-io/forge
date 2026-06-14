@@ -3564,6 +3564,8 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         resolve_review_thread:
           $ref: "#/components/schemas/OperationAvailability"
+        review_draft:
+          $ref: "#/components/schemas/OperationAvailability"
         set_assignees:
           $ref: "#/components/schemas/OperationAvailability"
         set_reviewers:
@@ -3578,6 +3580,7 @@ components:
         - reopen_pr
         - mark_ready_for_review
         - submit_review
+        - review_draft
         - add_comment
         - edit_comment
         - add_label

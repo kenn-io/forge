@@ -236,7 +236,7 @@ race-times: ensure-embed-dir
 test-e2e: frontend
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
 	$(VITE_PLUS_BIN) run middleman-frontend#test:e2e --project=chromium
-	cd packages/github-app-ui && $(VITE_PLUS_PACKAGE_BIN) test:e2e
+	cd packages/github-app-ui && $(VITE_PLUS_PACKAGE_BIN) build --logLevel warn && node node_modules/.bin/playwright test
 
 # Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF, ROBOREV_PORT configurable)
 test-e2e-roborev:

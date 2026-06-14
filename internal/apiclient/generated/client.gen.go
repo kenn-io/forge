@@ -1712,6 +1712,7 @@ type RepoOperations struct {
 	ReopenPr            OperationAvailability `json:"reopen_pr"`
 	ReplyReviewThread   OperationAvailability `json:"reply_review_thread"`
 	ResolveReviewThread OperationAvailability `json:"resolve_review_thread"`
+	ReviewDraft         OperationAvailability `json:"review_draft"`
 	SetAssignees        OperationAvailability `json:"set_assignees"`
 	SetReviewers        OperationAvailability `json:"set_reviewers"`
 	SubmitReview        OperationAvailability `json:"submit_review"`

@@ -30,6 +30,24 @@ type notificationThreadGetter interface {
 	GetNotificationThread(context.Context, string) (NotificationThread, error)
 }
 
+// notificationThreadGetterFor resolves the optional thread-refetch
+// capability used by the reopen-on-remote-activity check. The GitHub
+// provider exposes it on its inner REST client; other providers may
+// implement it directly once their notification support lands.
+func notificationThreadGetterFor(client notificationClient) (notificationThreadGetter, bool) {
+	if getter, ok := client.(notificationThreadGetter); ok {
+		return getter, true
+	}
+	if legacy, ok := client.(interface{ GitHubClient() Client }); ok {
+		if inner := legacy.GitHubClient(); inner != nil {
+			if getter, ok := inner.(notificationThreadGetter); ok {
+				return getter, true
+			}
+		}
+	}
+	return nil, false
+}
+
 func (s *Syncer) RunNotificationSync(ctx context.Context) error {
 	if !s.BeginNotificationSync() {
 		return nil
@@ -93,24 +111,35 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
+// notificationClient is the provider surface the notification sync
+// engine needs: list threads and propagate read acks. Providers gate
+// support through Capabilities().ReadNotifications and
+// NotificationMutation; non-supporting providers ship stubs that
+// return unsupported_capability errors until filled in.
+type notificationClient interface {
+	platform.NotificationReader
+	platform.NotificationMutator
+}
+
 type notificationHostClient struct {
 	platform platform.Kind
 	host     string
-	client   Client
+	client   notificationClient
 }
 
 func (s *Syncer) notificationClients() []notificationHostClient {
 	providers := s.clients.Providers()
 	clients := make([]notificationHostClient, 0, len(providers))
 	for _, provider := range providers {
-		if provider.Platform() != platform.KindGitHub {
+		caps := provider.Capabilities()
+		if !caps.ReadNotifications || !caps.NotificationMutation {
 			continue
 		}
-		legacy, ok := provider.(interface{ GitHubClient() Client })
-		if !ok || legacy.GitHubClient() == nil {
+		client, ok := provider.(notificationClient)
+		if !ok {
 			continue
 		}
-		clients = append(clients, notificationHostClient{platform: provider.Platform(), host: normalizedPlatformHost(provider.Host()), client: legacy.GitHubClient()})
+		clients = append(clients, notificationHostClient{platform: provider.Platform(), host: normalizedPlatformHost(provider.Host()), client: client})
 	}
 	sort.Slice(clients, func(i, j int) bool {
 		if clients[i].platform != clients[j].platform {
@@ -121,15 +150,23 @@ func (s *Syncer) notificationClients() []notificationHostClient {
 	return clients
 }
 
-func (s *Syncer) notificationClientForHost(kind platform.Kind, host string) (Client, bool) {
-	client, err := s.clientFor(RepoRef{Platform: kind, PlatformHost: normalizedPlatformHost(host)})
-	if err != nil || client == nil {
+func (s *Syncer) notificationClientForHost(kind platform.Kind, host string) (notificationClient, bool) {
+	provider, err := s.clients.Provider(kind, normalizedPlatformHost(host))
+	if err != nil {
+		return nil, false
+	}
+	caps := provider.Capabilities()
+	if !caps.ReadNotifications || !caps.NotificationMutation {
+		return nil, false
+	}
+	client, ok := provider.(notificationClient)
+	if !ok {
 		return nil, false
 	}
 	return client, true
 }
 
-func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kind, host string, client Client, tracked map[string]RepoRef) error {
+func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kind, host string, client notificationClient, tracked map[string]RepoRef) error {
 	startedAt := time.Now().UTC()
 	platformName := string(kind)
 	trackedReposKey := notificationTrackedReposKey(platformName, host, tracked)
@@ -184,7 +221,7 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 	}
 }
 
-func listParticipatingNotificationIDs(ctx context.Context, host string, client Client, since *time.Time) (map[string]bool, error) {
+func listParticipatingNotificationIDs(ctx context.Context, host string, client notificationClient, since *time.Time) (map[string]bool, error) {
 	participating := map[string]bool{}
 	page := 1
 	for {
@@ -289,16 +326,16 @@ func notificationToDB(host string, repo RepoRef, thread NotificationThread, sync
 	}
 }
 
-func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, host string, batchSize int) error {
+func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platform.Kind, host string, batchSize int) error {
 	if batchSize <= 0 {
 		batchSize = 25
 	}
 	host = normalizedPlatformHost(host)
-	client, ok := s.notificationClientForHost(platform.KindGitHub, host)
+	client, ok := s.notificationClientForHost(kind, host)
 	if !ok {
-		return fmt.Errorf("github client for host %s not configured", host)
+		return fmt.Errorf("%s notification client for host %s not configured", kind, host)
 	}
-	queued, err := s.db.ListQueuedNotificationAcks(ctx, string(platform.KindGitHub), host, batchSize, time.Now().UTC())
+	queued, err := s.db.ListQueuedNotificationAcks(ctx, string(kind), host, batchSize, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -319,7 +356,7 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, host string
 		}
 		if err := client.MarkNotificationThreadRead(ctx, notification.PlatformNotificationID); err != nil {
 			if nextAttemptAt, ok := notificationReadRateLimitNextAttempt(err, time.Now().UTC()); ok {
-				if recordErr := s.db.DeferQueuedNotificationAcks(ctx, string(platform.KindGitHub), host, nextAttemptAt, "rate_limited"); recordErr != nil {
+				if recordErr := s.db.DeferQueuedNotificationAcks(ctx, string(kind), host, nextAttemptAt, "rate_limited"); recordErr != nil {
 					return recordErr
 				}
 				return fmt.Errorf("notification read propagation rate limited for host %s: %w", host, err)
@@ -348,8 +385,8 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, host string
 	return nil
 }
 
-func (s *Syncer) reopenIfNotificationThreadAdvanced(ctx context.Context, host string, client Client, notification db.Notification) (bool, error) {
-	getter, ok := client.(notificationThreadGetter)
+func (s *Syncer) reopenIfNotificationThreadAdvanced(ctx context.Context, host string, client notificationClient, notification db.Notification) (bool, error) {
+	getter, ok := notificationThreadGetterFor(client)
 	if !ok {
 		return false, nil
 	}
@@ -403,7 +440,7 @@ func notificationReadRateLimitNextAttempt(err error, now time.Time) (time.Time, 
 func (s *Syncer) ProcessQueuedNotificationReadsForAllHosts(ctx context.Context, batchSize int) error {
 	var errs []error
 	for _, entry := range s.notificationClients() {
-		if err := s.ProcessQueuedNotificationReads(ctx, entry.host, batchSize); err != nil {
+		if err := s.ProcessQueuedNotificationReads(ctx, entry.platform, entry.host, batchSize); err != nil {
 			errs = append(errs, err)
 		}
 	}

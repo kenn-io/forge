@@ -761,6 +761,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadReleases:          true,
 		ReadCI:                true,
 		ReadLabels:            labels,
+		ReadNotifications:     true,
 		CommentMutation:       true,
 		StateMutation:         true,
 		MergeMutation:         true,
@@ -772,6 +773,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		LabelMutation:         labels,
 		AssigneeMutation:      assignees,
 		ReviewerMutation:      reviewers,
+		NotificationMutation:  true,
 		ThreadReply:           true,
 		ReviewDraftMutation:   true,
 		ReadReviewThreads:     true,
@@ -786,6 +788,20 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 
 func (p gitHubClientProvider) GitHubClient() Client {
 	return p.client
+}
+
+func (p gitHubClientProvider) ListNotifications(
+	ctx context.Context,
+	opts platform.NotificationListOptions,
+) ([]platform.NotificationThread, bool, error) {
+	return p.client.ListNotifications(ctx, opts)
+}
+
+func (p gitHubClientProvider) MarkNotificationThreadRead(
+	ctx context.Context,
+	threadID string,
+) error {
+	return p.client.MarkNotificationThreadRead(ctx, threadID)
 }
 
 func (p gitHubClientProvider) GetRepository(

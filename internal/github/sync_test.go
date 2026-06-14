@@ -1927,7 +1927,7 @@ func TestProcessQueuedNotificationReadsStopsRetryMetadataAtMaxAttempts(t *testin
 	}}
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil)
 
-	require.NoError(syncer.ProcessQueuedNotificationReads(t.Context(), "github.com", 10))
+	require.NoError(syncer.ProcessQueuedNotificationReads(t.Context(), platform.KindGitHub, "github.com", 10))
 
 	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all"})
 	require.NoError(err)
@@ -1984,7 +1984,7 @@ func TestProcessQueuedNotificationReadsPausesOnRateLimitWithoutConsumingAttempts
 	}}
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil)
 
-	err = syncer.ProcessQueuedNotificationReads(t.Context(), "github.com", 10)
+	err = syncer.ProcessQueuedNotificationReads(t.Context(), platform.KindGitHub, "github.com", 10)
 	require.Error(err)
 
 	items, err = d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"})
@@ -2068,7 +2068,7 @@ func TestProcessQueuedNotificationReadsReopensRemoteActivityAfterPatchRace(t *te
 	}
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil)
 
-	require.NoError(syncer.ProcessQueuedNotificationReads(t.Context(), "github.com", 10))
+	require.NoError(syncer.ProcessQueuedNotificationReads(t.Context(), platform.KindGitHub, "github.com", 10))
 
 	unread, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "unread"})
 	require.NoError(err)

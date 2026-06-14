@@ -144,6 +144,37 @@ func (r *Registry) TagReader(kind Kind, host string) (TagReader, error) {
 	return reader, nil
 }
 
+// NotificationReader returns the provider's notification lister.
+// Unlike the pure interface-assertion accessors, this also checks the
+// declared capability: providers ship stub notification methods (to
+// be filled in per provider later), so the Capabilities flag — not
+// interface satisfaction — is the source of truth.
+func (r *Registry) NotificationReader(kind Kind, host string) (NotificationReader, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, ok := provider.(NotificationReader)
+	if !ok || !provider.Capabilities().ReadNotifications {
+		return nil, UnsupportedCapability(kind, host, "read_notifications")
+	}
+	return reader, nil
+}
+
+func (r *Registry) NotificationMutator(kind Kind, host string) (NotificationMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	mutator, ok := provider.(NotificationMutator)
+	if !ok || !provider.Capabilities().NotificationMutation {
+		return nil, UnsupportedCapability(kind, host, "notification_mutation")
+	}
+	return mutator, nil
+}
+
 func (r *Registry) CIReader(kind Kind, host string) (CIReader, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

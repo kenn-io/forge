@@ -244,3 +244,75 @@ func TestZeroValueRegistryCanRegisterProvider(t *testing.T) {
 	assert.Equal(KindGitLab, got.Platform())
 	assert.Equal("gitlab.com", got.Host())
 }
+
+type testNotificationProvider struct {
+	testProvider
+}
+
+func (p testNotificationProvider) ListNotifications(
+	context.Context, NotificationListOptions,
+) ([]NotificationThread, bool, error) {
+	return nil, false, nil
+}
+
+func (p testNotificationProvider) MarkNotificationThreadRead(
+	context.Context, string,
+) error {
+	return nil
+}
+
+func TestRegistryFindsNotificationReaderAndMutator(t *testing.T) {
+	require := require.New(t)
+
+	registry, err := NewRegistry(testNotificationProvider{
+		testProvider: testProvider{
+			kind: KindGitHub,
+			host: "github.com",
+			caps: Capabilities{
+				ReadNotifications:    true,
+				NotificationMutation: true,
+			},
+		},
+	})
+	require.NoError(err)
+
+	reader, err := registry.NotificationReader(KindGitHub, "github.com")
+	require.NoError(err)
+	threads, hasNext, err := reader.ListNotifications(
+		context.Background(), NotificationListOptions{},
+	)
+	require.NoError(err)
+	assert := assert.New(t)
+	assert.Empty(threads)
+	assert.False(hasNext)
+
+	mutator, err := registry.NotificationMutator(KindGitHub, "github.com")
+	require.NoError(err)
+	assert.NoError(mutator.MarkNotificationThreadRead(context.Background(), "1"))
+}
+
+// Providers ship stub notification methods before real support lands,
+// so the registry must gate on the declared capability rather than
+// interface satisfaction alone.
+func TestRegistryReturnsUnsupportedCapabilityForStubNotificationProvider(t *testing.T) {
+	registry, err := NewRegistry(testNotificationProvider{
+		testProvider: testProvider{
+			kind: KindGitLab,
+			host: "gitlab.com",
+			caps: Capabilities{},
+		},
+	})
+	require.NoError(t, err)
+
+	_, err = registry.NotificationReader(KindGitLab, "gitlab.com")
+	var platformErr *Error
+	require.ErrorAs(t, err, &platformErr)
+	require.ErrorIs(t, err, ErrUnsupportedCapability)
+	assert := assert.New(t)
+	assert.Equal("read_notifications", platformErr.Capability)
+
+	_, err = registry.NotificationMutator(KindGitLab, "gitlab.com")
+	require.ErrorAs(t, err, &platformErr)
+	require.ErrorIs(t, err, ErrUnsupportedCapability)
+	assert.Equal("notification_mutation", platformErr.Capability)
+}

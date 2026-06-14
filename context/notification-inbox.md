@@ -110,7 +110,9 @@ Provider-neutral storage fields:
 
 Rules:
 
-- GitHub remains only implemented notification provider today.
+- GitHub remains only implemented notification provider today. Provider support is declared through `ReadNotifications`/`NotificationMutation` in `platform.Capabilities`; the sync engine selects providers by those flags, never by hard-coded platform kind.
+- GitLab and the gitealike (Forgejo/Gitea) providers ship notification stubs that return typed `unsupported_capability` errors until real support lands. Implementing a provider means replacing its stub bodies (GitLab: to-do items API; gitealike: `/notifications` endpoints on the transport) and flipping the two capability flags.
+- The registry's `NotificationReader`/`NotificationMutator` accessors gate on the declared capability flags, not interface satisfaction, because stubs satisfy the interfaces.
 - Propagation workers must revalidate queued generation before calling provider.
 - Stale queued work must not mark newer provider activity read.
 - After successful propagation, stale GitHub sync payloads with `unread=true` and `source_updated_at <= source_ack_generation_at` must preserve local read state.

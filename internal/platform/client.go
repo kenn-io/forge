@@ -208,3 +208,19 @@ type IssueContentMutator interface {
 		body *string,
 	) (Issue, error)
 }
+
+// NotificationReader lists the authenticated user's notification
+// threads for a host. The second return reports whether more pages
+// remain.
+type NotificationReader interface {
+	ListNotifications(
+		ctx context.Context,
+		opts NotificationListOptions,
+	) ([]NotificationThread, bool, error)
+}
+
+// NotificationMutator acknowledges notification threads upstream
+// (mark-as-read propagation from the local inbox).
+type NotificationMutator interface {
+	MarkNotificationThreadRead(ctx context.Context, threadID string) error
+}

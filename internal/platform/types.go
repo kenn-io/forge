@@ -195,6 +195,32 @@ type Tag struct {
 	URL                string
 }
 
+type NotificationListOptions struct {
+	Since         *time.Time
+	All           bool
+	Participating bool
+	Page          int
+}
+
+type NotificationThread struct {
+	ID                      string
+	RepoOwner               string
+	RepoName                string
+	SubjectType             string
+	SubjectTitle            string
+	SubjectURL              string
+	SubjectLatestCommentURL string
+	WebURL                  string
+	ItemNumber              *int
+	ItemType                string
+	ItemAuthor              string
+	Reason                  string
+	Unread                  bool
+	Participating           bool
+	UpdatedAt               time.Time
+	LastReadAt              *time.Time
+}
+
 type CICheck struct {
 	Repo               RepoRef
 	PlatformID         int64
@@ -300,6 +326,7 @@ type Capabilities struct {
 	ReadReleases      bool
 	ReadCI            bool
 	ReadLabels        bool
+	ReadNotifications bool
 	CommentMutation   bool
 	// StateMutation means the provider can PATCH the item itself:
 	// open/close state transitions AND title/body/content updates.
@@ -317,6 +344,7 @@ type Capabilities struct {
 	LabelMutation          bool
 	AssigneeMutation       bool
 	ReviewerMutation       bool
+	NotificationMutation   bool
 	ThreadReply            bool
 	ThreadResolve          bool
 	ReviewDraftMutation    bool

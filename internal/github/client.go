@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -79,31 +80,14 @@ type PullRequestReviewThreadComment struct {
 	UpdatedAt        time.Time
 }
 
-type NotificationListOptions struct {
-	Since         *time.Time
-	All           bool
-	Participating bool
-	Page          int
-}
+// Notification list options and threads are provider-neutral types;
+// the aliases keep this package's Client interface and its many
+// implementations/mocks in their historical shape while letting the
+// platform registry treat GitHub as one NotificationReader among the
+// providers.
+type NotificationListOptions = platform.NotificationListOptions
 
-type NotificationThread struct {
-	ID                      string
-	RepoOwner               string
-	RepoName                string
-	SubjectType             string
-	SubjectTitle            string
-	SubjectURL              string
-	SubjectLatestCommentURL string
-	WebURL                  string
-	ItemNumber              *int
-	ItemType                string
-	ItemAuthor              string
-	Reason                  string
-	Unread                  bool
-	Participating           bool
-	UpdatedAt               time.Time
-	LastReadAt              *time.Time
-}
+type NotificationThread = platform.NotificationThread
 
 // EditPullRequestOpts holds optional fields for editing a pull request.
 // Nil pointer fields are omitted from the GitHub API call.

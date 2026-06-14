@@ -352,6 +352,213 @@ installation_account = "kenn-io"
 	}
 }
 
+func TestGitHubAppGlobDiscoveryUsesInstallationRepositoriesE2E(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "user-pat-e2e")
+
+	var mu sync.Mutex
+	authByCall := map[string]string{}
+	var unexpected []string
+	record := func(name string, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if strings.HasPrefix(name, "unexpected:") {
+			unexpected = append(unexpected, r.Method+" "+r.URL.Path)
+			return
+		}
+		if _, ok := authByCall[name]; !ok {
+			authByCall[name] = r.Header.Get("Authorization")
+		}
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v3/user", func(w http.ResponseWriter, r *http.Request) {
+		record("unexpected:user", r)
+		http.Error(w, "installation token path must not identify a viewer", http.StatusInternalServerError)
+	})
+	mux.HandleFunc("GET /api/v3/orgs/mariusvniekerk/repos", func(w http.ResponseWriter, r *http.Request) {
+		record("unexpected:org-repos", r)
+		http.Error(w, "installation token path must not probe org repositories", http.StatusInternalServerError)
+	})
+	mux.HandleFunc("GET /api/v3/users/mariusvniekerk/repos", func(w http.ResponseWriter, r *http.Request) {
+		record("unexpected:user-repos", r)
+		http.Error(w, "installation token path must not fall back to public user repositories", http.StatusInternalServerError)
+	})
+	mux.HandleFunc("GET /api/v3/installation/repositories", func(w http.ResponseWriter, r *http.Request) {
+		record("read:installation-repos", r)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{
+			"repositories": [
+				{
+					"id": 99001,
+					"node_id": "R_private",
+					"name": "private-repo",
+					"full_name": "mariusvniekerk/private-repo",
+					"private": true,
+					"owner": {"login": "mariusvniekerk"},
+					"default_branch": "main",
+					"html_url": "https://github.com/mariusvniekerk/private-repo",
+					"clone_url": "https://github.com/mariusvniekerk/private-repo.git"
+				},
+				{
+					"id": 99002,
+					"node_id": "R_org",
+					"name": "private-repo",
+					"full_name": "kenn-io/private-repo",
+					"private": true,
+					"owner": {"login": "kenn-io"},
+					"default_branch": "main"
+				}
+			]
+		}`)
+	})
+	mux.HandleFunc("GET /api/v3/repos/mariusvniekerk/private-repo",
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") == "Bearer user-pat-e2e" {
+				record("write:repo-viewer-overlay", r)
+			} else {
+				record("read:repo-metadata", r)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{
+				"id": 99001,
+				"node_id": "R_private",
+				"name": "private-repo",
+				"full_name": "mariusvniekerk/private-repo",
+				"private": true,
+				"owner": {"login": "mariusvniekerk"},
+				"default_branch": "main",
+				"html_url": "https://github.com/mariusvniekerk/private-repo",
+				"clone_url": "https://github.com/mariusvniekerk/private-repo.git",
+				"permissions": {"push": true}
+			}`)
+		})
+	mux.HandleFunc("GET /api/v3/repos/mariusvniekerk/private-repo/pulls",
+		func(w http.ResponseWriter, r *http.Request) {
+			record("read:list-pulls", r)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `[{
+				"id": 88001,
+				"node_id": "PR_private",
+				"number": 7,
+				"title": "Private app-discovered PR",
+				"state": "open",
+				"html_url": "https://github.com/mariusvniekerk/private-repo/pull/7",
+				"user": {"login": "ada"},
+				"created_at": "2026-06-14T17:00:00Z",
+				"updated_at": "2026-06-14T17:01:00Z",
+				"head": {"ref": "feature", "sha": "abc123", "repo": {"full_name": "mariusvniekerk/private-repo"}},
+				"base": {"ref": "main", "sha": "def456", "repo": {"full_name": "mariusvniekerk/private-repo"}}
+			}]`)
+		})
+	mux.HandleFunc("GET /api/v3/rate_limit", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"resources":{"core":{"limit":5000,"remaining":4999,"reset":2000000000}}}`)
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		record("read:other "+r.Method+" "+r.URL.Path, r)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `[]`)
+	})
+	fakeGitHub := httptest.NewServer(mux)
+	t.Cleanup(fakeGitHub.Close)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "mariusvniekerk"
+name = "private-*"
+
+[[github_apps]]
+host = "github.com"
+app_id = 4242
+private_key_path = "app.pem"
+installation_id = 11
+installation_account = "mariusvniekerk"
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	sourceSet := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "ghs_app_token_e2e", time.Now().Add(time.Hour), nil
+		},
+	})
+	var source tokenauth.Source
+	for _, plan := range cfg.ProviderTokenSources() {
+		src := sourceSet.Upsert(plan.Descriptor)
+		if _, err := src.Token(t.Context()); err != nil {
+			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
+				continue
+			}
+			require.NoError(err)
+		}
+		if plan.Descriptor.Key == (tokenauth.Key{Platform: "github", Host: "github.com"}) {
+			source = src
+		}
+	}
+	require.NotNil(source)
+
+	client, err := ghclient.NewClient(
+		source, "github.com", nil, nil,
+		ghclient.WithBaseURLForTesting(fakeGitHub.URL),
+	)
+	require.NoError(err)
+	clients := map[string]ghclient.Client{"github.com": client}
+	resolved := ghclient.ResolveConfiguredRepos(t.Context(), clients, cfg.Repos)
+	require.Empty(resolved.Warnings)
+	require.Len(resolved.Expanded, 1)
+	require.Equal("mariusvniekerk", resolved.Expanded[0].Owner)
+	require.Equal("private-repo", resolved.Expanded[0].Name)
+
+	registry, err := ghclient.NewProviderRegistry(clients)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, resolved.Expanded, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := server.NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	httpServer := httptest.NewServer(srv)
+	t.Cleanup(httpServer.Close)
+
+	status, body := postJSON(t, httpServer.Client(), httpServer.URL+"/api/v1/sync", nil)
+	require.Equal(http.StatusAccepted, status, body)
+	waitForRepoSynced(t, database, "mariusvniekerk", "private-repo", nil)
+
+	reposResp := doServerJSON(
+		t, httpServer.Client(), http.MethodGet,
+		httpServer.URL+"/api/v1/repos", nil,
+	)
+	defer reposResp.Body.Close()
+	require.Equal(http.StatusOK, reposResp.StatusCode)
+	var repos []struct {
+		Owner string `json:"owner"`
+		Name  string `json:"name"`
+	}
+	require.NoError(json.NewDecoder(reposResp.Body).Decode(&repos))
+	require.Len(repos, 1)
+	assert.Equal("mariusvniekerk", repos[0].Owner)
+	assert.Equal("private-repo", repos[0].Name)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Empty(unexpected)
+	assert.Equal("Bearer ghs_app_token_e2e", authByCall["read:installation-repos"])
+	assert.Equal("Bearer ghs_app_token_e2e", authByCall["read:list-pulls"])
+}
+
 // repoOperationWire is the client-observed availability shape for one
 // operation in the repo response.
 type repoOperationWire struct {

@@ -77,6 +77,7 @@ func TestAdaptComment(t *testing.T) {
 	gql := gqlComment{
 		DatabaseId: 100,
 		Body:       "LGTM",
+		URL:        "https://github.com/acme/widgets/issues/7#issuecomment-100",
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
@@ -86,6 +87,7 @@ func TestAdaptComment(t *testing.T) {
 
 	assert.Equal(int64(100), c.GetID())
 	assert.Equal("LGTM", c.GetBody())
+	assert.Equal("https://github.com/acme/widgets/issues/7#issuecomment-100", c.GetHTMLURL())
 	assert.Equal("bob", c.GetUser().GetLogin())
 }
 

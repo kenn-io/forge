@@ -283,6 +283,7 @@ type MergeRequestReviewThread struct {
 	ProviderCommentID string
 	Body              string
 	AuthorLogin       string
+	DirectURL         string
 	Range             DiffReviewLineRange
 	Resolved          bool
 	CreatedAt         time.Time

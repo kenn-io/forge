@@ -201,6 +201,7 @@ func forgejoReviewThread(
 		ProviderCommentID: strconv.FormatInt(comment.ID, 10),
 		Body:              comment.Body,
 		AuthorLogin:       convertUser(comment.Reviewer).UserName,
+		DirectURL:         comment.HTMLURL,
 		Range: platform.DiffReviewLineRange{
 			Path:        comment.Path,
 			Side:        side,

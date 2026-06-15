@@ -127,6 +127,7 @@ func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
 				"id":                     101,
 				"body":                   "inline note",
+				"html_url":               "https://codeberg.test/acme/widgets/pulls/42#issuecomment-101",
 				"user":                   map[string]any{"login": "reviewer"},
 				"pull_request_review_id": 99,
 				"path":                   "src/main.go",
@@ -154,6 +155,7 @@ func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 	assert.Equal("99", threads[0].ProviderReviewID)
 	assert.Equal("inline note", threads[0].Body)
 	assert.Equal("reviewer", threads[0].AuthorLogin)
+	assert.Equal("https://codeberg.test/acme/widgets/pulls/42#issuecomment-101", threads[0].DirectURL)
 	assert.Equal("right", threads[0].Range.Side)
 	assert.Equal(7, threads[0].Range.Line)
 	assert.Equal("head-sha", threads[0].Range.CommitSHA)

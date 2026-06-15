@@ -661,6 +661,7 @@ func TestGitLabListMergeRequestReviewThreadsReadsDiscussions(t *testing.T) {
 	client := newTestClient(t, server.URL)
 	threads, err := client.ListMergeRequestReviewThreads(context.Background(), platform.RepoRef{
 		RepoPath: "group/project",
+		WebURL:   server.URL + "/group/project",
 	}, 7)
 
 	require.NoError(err)
@@ -669,6 +670,7 @@ func TestGitLabListMergeRequestReviewThreadsReadsDiscussions(t *testing.T) {
 	assert.Equal("101", threads[0].ProviderCommentID)
 	assert.Equal("inline note", threads[0].Body)
 	assert.Equal("reviewer", threads[0].AuthorLogin)
+	assert.Equal(server.URL+"/group/project/-/merge_requests/7#note_101", threads[0].DirectURL)
 	assert.True(threads[0].Resolved)
 	assert.Equal("src/main.go", threads[0].Range.Path)
 	assert.Equal("right", threads[0].Range.Side)

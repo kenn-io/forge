@@ -124,6 +124,7 @@ type gqlComment struct {
 	DatabaseId int64
 	Author     struct{ Login string }
 	Body       string
+	URL        string `graphql:"url"`
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
@@ -498,6 +499,7 @@ func adaptComment(gql *gqlComment) *gh.IssueComment {
 	return &gh.IssueComment{
 		ID:        new(gql.DatabaseId),
 		Body:      new(gql.Body),
+		HTMLURL:   new(gql.URL),
 		User:      &gh.User{Login: new(gql.Author.Login)},
 		CreatedAt: &created,
 		UpdatedAt: &updated,

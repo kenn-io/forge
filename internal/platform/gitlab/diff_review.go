@@ -156,8 +156,9 @@ func (c *Client) ListMergeRequestReviewThreads(
 		if err != nil {
 			return nil, c.mapGitLabError("list_merge_request_discussions", err)
 		}
+		parentURL := gitLabMergeRequestURL(ref, number)
 		for _, discussion := range discussions {
-			out = append(out, gitlabReviewThreads(discussion)...)
+			out = append(out, gitlabReviewThreads(parentURL, discussion)...)
 		}
 		if resp == nil || resp.NextPage == 0 {
 			return out, nil
@@ -223,7 +224,7 @@ func gitlabLinePosition(side string, line int) *gitlab.LinePositionOptions {
 	return next
 }
 
-func gitlabReviewThreads(discussion *gitlab.Discussion) []platform.MergeRequestReviewThread {
+func gitlabReviewThreads(parentURL string, discussion *gitlab.Discussion) []platform.MergeRequestReviewThread {
 	if discussion == nil {
 		return nil
 	}
@@ -231,12 +232,12 @@ func gitlabReviewThreads(discussion *gitlab.Discussion) []platform.MergeRequestR
 		if note == nil || note.System || note.Position == nil {
 			continue
 		}
-		return []platform.MergeRequestReviewThread{gitlabReviewThread(discussion.ID, note)}
+		return []platform.MergeRequestReviewThread{gitlabReviewThread(parentURL, discussion.ID, note)}
 	}
 	return nil
 }
 
-func gitlabReviewThread(discussionID string, note *gitlab.Note) platform.MergeRequestReviewThread {
+func gitlabReviewThread(parentURL string, discussionID string, note *gitlab.Note) platform.MergeRequestReviewThread {
 	lineRange := gitlabReviewLineRange(note.Position)
 	resolvedAt := (*time.Time)(nil)
 	if note.Resolved && note.UpdatedAt != nil {
@@ -256,6 +257,7 @@ func gitlabReviewThread(discussionID string, note *gitlab.Note) platform.MergeRe
 		ProviderCommentID: strconv.FormatInt(note.ID, 10),
 		Body:              note.Body,
 		AuthorLogin:       note.Author.Username,
+		DirectURL:         noteDirectURL(parentURL, note.ID),
 		Range:             lineRange,
 		Resolved:          note.Resolved,
 		CreatedAt:         createdAt,

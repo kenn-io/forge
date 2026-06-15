@@ -1145,6 +1145,7 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 				ReviewDatabaseID: 201,
 				Body:             "inline note",
 				AuthorLogin:      "reviewer",
+				URL:              "https://github.com/acme/widget/pull/7#discussion_r101",
 				CommitID:         "head-sha",
 				OriginalCommitID: "original-sha",
 				CreatedAt:        createdAt,
@@ -1177,6 +1178,7 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 	assert.Equal("101", thread.ProviderCommentID)
 	assert.Equal("inline note", thread.Body)
 	assert.Equal("reviewer", thread.AuthorLogin)
+	assert.Equal("https://github.com/acme/widget/pull/7#discussion_r101", thread.DirectURL)
 	assert.True(thread.Resolved)
 	assert.Equal(createdAt, thread.CreatedAt)
 	assert.Equal(updatedAt, thread.UpdatedAt)
@@ -4056,6 +4058,7 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 			ProviderCommentID: "comment-42",
 			Body:              "synced inline note",
 			AuthorLogin:       "reviewer",
+			DirectURL:         "https://codeberg.org/acme/widgets/pulls/42#issuecomment-comment-42",
 			Range: platform.DiffReviewLineRange{
 				Path:        "src/main.go",
 				Side:        "right",
@@ -4091,6 +4094,7 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	require.Len(events, 1)
 	assert.Equal("review_comment", events[0].EventType)
 	assert.Equal("comment-42", events[0].PlatformExternalID)
+	assert.Equal("https://codeberg.org/acme/widgets/pulls/42#issuecomment-comment-42", events[0].DirectURL)
 	require.NotNil(events[0].ThreadID)
 	assert.Equal("thread-42", *events[0].ThreadID)
 
@@ -4137,6 +4141,7 @@ func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {
 	line := 12
 	commentID := int64(101)
 	reviewID := int64(201)
+	commentURL := "https://github.com/acme/widgets/pull/42#discussion_r101"
 	mock := &mockClient{
 		singlePR: &gh.PullRequest{
 			ID:      &prID,
@@ -4175,6 +4180,7 @@ func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {
 				ReviewDatabaseID: reviewID,
 				Body:             "inline note",
 				AuthorLogin:      "reviewer",
+				URL:              commentURL,
 				CommitID:         headSHA,
 				CreatedAt:        now,
 				UpdatedAt:        now,
@@ -4224,6 +4230,7 @@ func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {
 	assert.Equal("review_comment", events[1].EventType)
 	assert.Equal("101", events[1].PlatformExternalID)
 	assert.Equal("inline note", events[1].Body)
+	assert.Equal(commentURL, events[1].DirectURL)
 	require.NotNil(events[1].ThreadID)
 	assert.Equal("PRRT_1", *events[1].ThreadID)
 }
@@ -8235,6 +8242,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	commentID := int64(9101)
 	commentAuthor := "reviewer"
 	commentBody := "bulk PR comment"
+	commentURL := "https://github.com/owner/repo/pull/1#issuecomment-9101"
 	commentTime := gh.Timestamp{Time: now.Add(2 * time.Minute)}
 
 	commentTotal := 1
@@ -8250,6 +8258,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 		Comments: []*gh.IssueComment{{
 			ID:        &commentID,
 			Body:      &commentBody,
+			HTMLURL:   &commentURL,
 			User:      &gh.User{Login: &commentAuthor},
 			CreatedAt: &commentTime,
 			UpdatedAt: &commentTime,
@@ -8271,6 +8280,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	events, err := d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	require.Len(events, 1)
+	assert.Equal(commentURL, events[0].DirectURL)
 
 	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
 		PR:               buildOpenPR(1, secondUpdatedAt),
@@ -8739,6 +8749,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 	commentID := int64(9202)
 	commentAuthor := "reviewer"
 	commentBody := "bulk issue comment"
+	commentURL := "https://github.com/owner/repo/issues/9#issuecomment-9202"
 	commentTime := gh.Timestamp{Time: now.Add(2 * time.Minute)}
 	commentTotal := 1
 
@@ -8764,6 +8775,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 		Comments: []*gh.IssueComment{{
 			ID:        &commentID,
 			Body:      &commentBody,
+			HTMLURL:   &commentURL,
 			User:      &gh.User{Login: &commentAuthor},
 			CreatedAt: &commentTime,
 			UpdatedAt: &commentTime,
@@ -8782,6 +8794,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 	events, err := d.ListIssueEvents(ctx, issue.ID)
 	require.NoError(err)
 	require.Len(events, 1)
+	assert.Equal(commentURL, events[0].DirectURL)
 
 	zeroComments := 0
 	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{

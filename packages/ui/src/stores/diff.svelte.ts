@@ -464,13 +464,13 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   }
 
   function diffQuery(): {
-    whitespace?: string;
+    whitespace?: "hide";
     commit?: string;
     from?: string;
     to?: string;
   } {
     return {
-      ...(hideWhitespace && { whitespace: "hide" }),
+      ...(hideWhitespace && { whitespace: "hide" as const }),
       ...(scope.kind === "commit" && { commit: scope.sha }),
       ...(scope.kind === "range" && {
         from: scope.fromSha,
@@ -569,7 +569,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   function workspaceDiffQuery(base: WorkspaceDiffBase): {
     base: WorkspaceDiffBase;
-    whitespace?: string;
+    whitespace?: "hide";
     commit?: string;
     from?: string;
     to?: string;
@@ -744,6 +744,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentName = "";
     currentNumber = 0;
     currentCommitSHA = "";
+    clearFilePreviewCache();
     if (workspaceScopeChanged) {
       resetDiffScopeState();
     }

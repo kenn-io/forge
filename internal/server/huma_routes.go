@@ -493,10 +493,10 @@ type getWorkspaceDiffInput struct {
 
 type getWorkspaceFilePreviewInput struct {
 	ID         string `path:"id"`
-	Base       string `query:"base"       doc:"Diff base: head, pushed, or merge-target"`
-	Whitespace string `query:"whitespace" doc:"Set to hide to ignore whitespace-only changes"`
+	Base       string `query:"base"       enum:"head,pushed,merge-target" doc:"Diff base: head, pushed, or merge-target"`
+	Whitespace string `query:"whitespace" enum:"hide"                     doc:"Set to hide to ignore whitespace-only changes"`
 	Path       string `query:"path"       doc:"Changed file path to preview"`
-	Side       string `query:"side" doc:"Optional diff side to read for context expansion"`
+	Side       string `query:"side"       enum:"old,new"                  doc:"Optional diff side to read for context expansion"`
 	Commit     string `query:"commit" doc:"Scope to a single commit SHA"`
 	From       string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
 	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`

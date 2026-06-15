@@ -11211,6 +11211,10 @@ paths:
           name: base
           schema:
             description: "Diff base: head, pushed, or merge-target"
+            enum:
+              - head
+              - pushed
+              - merge-target
             type: string
         - description: Set to hide to ignore whitespace-only changes
           explode: false
@@ -11218,6 +11222,8 @@ paths:
           name: whitespace
           schema:
             description: Set to hide to ignore whitespace-only changes
+            enum:
+              - hide
             type: string
         - description: Changed file path to preview
           explode: false
@@ -11232,6 +11238,9 @@ paths:
           name: side
           schema:
             description: Optional diff side to read for context expansion
+            enum:
+              - old
+              - new
             type: string
         - description: Scope to a single commit SHA
           explode: false

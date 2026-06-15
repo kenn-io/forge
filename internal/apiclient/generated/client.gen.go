@@ -311,6 +311,60 @@ func (e ResolveRepoItemParamsItemType) Valid() bool {
 	}
 }
 
+// Defines values for GetWorkspaceFilePreviewParamsBase.
+const (
+	Head        GetWorkspaceFilePreviewParamsBase = "head"
+	MergeTarget GetWorkspaceFilePreviewParamsBase = "merge-target"
+	Pushed      GetWorkspaceFilePreviewParamsBase = "pushed"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkspaceFilePreviewParamsBase enum.
+func (e GetWorkspaceFilePreviewParamsBase) Valid() bool {
+	switch e {
+	case Head:
+		return true
+	case MergeTarget:
+		return true
+	case Pushed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetWorkspaceFilePreviewParamsWhitespace.
+const (
+	Hide GetWorkspaceFilePreviewParamsWhitespace = "hide"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkspaceFilePreviewParamsWhitespace enum.
+func (e GetWorkspaceFilePreviewParamsWhitespace) Valid() bool {
+	switch e {
+	case Hide:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetWorkspaceFilePreviewParamsSide.
+const (
+	New GetWorkspaceFilePreviewParamsSide = "new"
+	Old GetWorkspaceFilePreviewParamsSide = "old"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkspaceFilePreviewParamsSide enum.
+func (e GetWorkspaceFilePreviewParamsSide) Valid() bool {
+	switch e {
+	case New:
+		return true
+	case Old:
+		return true
+	default:
+		return false
+	}
+}
+
 // ActionStatusBody defines model for ActionStatusBody.
 type ActionStatusBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -2405,16 +2459,16 @@ type GetWorkspaceDiffParams struct {
 // GetWorkspaceFilePreviewParams defines parameters for GetWorkspaceFilePreview.
 type GetWorkspaceFilePreviewParams struct {
 	// Base Diff base: head, pushed, or merge-target
-	Base *string `form:"base,omitempty" json:"base,omitempty"`
+	Base *GetWorkspaceFilePreviewParamsBase `form:"base,omitempty" json:"base,omitempty"`
 
 	// Whitespace Set to hide to ignore whitespace-only changes
-	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+	Whitespace *GetWorkspaceFilePreviewParamsWhitespace `form:"whitespace,omitempty" json:"whitespace,omitempty"`
 
 	// Path Changed file path to preview
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
 
 	// Side Optional diff side to read for context expansion
-	Side *string `form:"side,omitempty" json:"side,omitempty"`
+	Side *GetWorkspaceFilePreviewParamsSide `form:"side,omitempty" json:"side,omitempty"`
 
 	// Commit Scope to a single commit SHA
 	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
@@ -2425,6 +2479,15 @@ type GetWorkspaceFilePreviewParams struct {
 	// To End SHA for range diff (inclusive)
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
+
+// GetWorkspaceFilePreviewParamsBase defines parameters for GetWorkspaceFilePreview.
+type GetWorkspaceFilePreviewParamsBase string
+
+// GetWorkspaceFilePreviewParamsWhitespace defines parameters for GetWorkspaceFilePreview.
+type GetWorkspaceFilePreviewParamsWhitespace string
+
+// GetWorkspaceFilePreviewParamsSide defines parameters for GetWorkspaceFilePreview.
+type GetWorkspaceFilePreviewParamsSide string
 
 // GetWorkspaceFilesParams defines parameters for GetWorkspaceFiles.
 type GetWorkspaceFilesParams struct {

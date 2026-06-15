@@ -2,7 +2,10 @@ import { expect, test, type Locator, type Page, type Request } from "@playwright
 import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
-type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
+type DiffFixtureFile = Omit<DiffFile, "patch"> & {
+  patch?: string;
+  preserveHunkCounts?: boolean;
+};
 type DiffFixture = Omit<DiffResult, "files"> & {
   files: DiffFixtureFile[];
 };
@@ -909,6 +912,7 @@ function patchForFile(file: DiffFixtureFile): string {
 }
 
 function normalizeFixtureFile(file: DiffFixtureFile): DiffFixtureFile {
+  if (file.preserveHunkCounts) return file;
   return {
     ...file,
     hunks: file.hunks.map((hunk) => ({
@@ -2135,6 +2139,7 @@ test.describe("diff view", () => {
         {
           path: "src/components/detail/PullDetail.svelte",
           old_path: "src/components/detail/PullDetail.svelte",
+          preserveHunkCounts: true,
           status: "modified",
           is_binary: false,
           is_whitespace_only: false,
@@ -2143,9 +2148,9 @@ test.describe("diff view", () => {
           hunks: [
             {
               old_start: 949,
-              old_count: 6,
+              old_count: 48,
               new_start: 949,
-              new_count: 7,
+              new_count: 49,
               lines: [
                 {
                   type: "context",

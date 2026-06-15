@@ -90,6 +90,10 @@ async function expandedContextStats(file: Locator): Promise<{ blank: number; tex
   });
 }
 
+async function pierreDiffText(file: Locator): Promise<string> {
+  return await file.locator(".pierre-diff").evaluate((host) => host.shadowRoot?.textContent ?? "");
+}
+
 test.describe("workspace tab persistence", () => {
   test.describe.configure({
     mode: "serial",
@@ -471,6 +475,67 @@ test.describe("workspace tab persistence", () => {
         .toEqual({
           blank: 0,
           hasMiddleLine: true,
+        });
+
+      const refreshedLines = [...changedLines];
+      refreshedLines[49] = "workspace refreshed hidden line 50";
+      await writeFile(join(worktreePath, "expand-context.ts"), `${refreshedLines.join("\n")}\n`);
+
+      const refreshResponse = page.waitForResponse((response) => {
+        return (
+          response.request().method() === "POST" &&
+          response.url().includes(`/api/v1/workspaces/${workspace.id}/refresh`)
+        );
+      });
+      await page.getByRole("button", { name: "Refresh workspace details" }).click();
+      expect((await refreshResponse).ok()).toBe(true);
+      await expect
+        .poll(async () => (await pierreDiffText(file)).includes("workspace refreshed hidden line 50"))
+        .toBe(true);
+
+      const refreshedPreviewResponses = Promise.all([
+        page.waitForResponse((response) => {
+          const url = response.url();
+          return (
+            response.request().method() === "GET" &&
+            url.includes(`/api/v1/workspaces/${workspace.id}/file-preview`) &&
+            url.includes("path=expand-context.ts") &&
+            url.includes("side=old")
+          );
+        }),
+        page.waitForResponse((response) => {
+          const url = response.url();
+          return (
+            response.request().method() === "GET" &&
+            url.includes(`/api/v1/workspaces/${workspace.id}/file-preview`) &&
+            url.includes("path=expand-context.ts") &&
+            url.includes("side=new")
+          );
+        }),
+      ]);
+      await expect
+        .poll(async () => {
+          return await file.locator(".pierre-diff").evaluate((host) => {
+            return host.shadowRoot?.querySelectorAll("[data-separator][data-expand-index]").length ?? 0;
+          });
+        })
+        .toBeGreaterThanOrEqual(3);
+      await clickPierreExpander(file, 1);
+      const refreshedResponses = await refreshedPreviewResponses;
+      expect(refreshedResponses.every((response) => response.ok())).toBe(true);
+      await expect
+        .poll(async () => {
+          const stats = await expandedContextStats(file);
+          return {
+            blank: stats.blank,
+            hasStaleHiddenLine: stats.texts.some((text) => text.includes("workspace hidden line 50")),
+            hasUnchangedContext: stats.texts.some((text) => text.includes("workspace hidden line 40")),
+          };
+        })
+        .toEqual({
+          blank: 0,
+          hasStaleHiddenLine: false,
+          hasUnchangedContext: true,
         });
     } finally {
       await api?.dispose();

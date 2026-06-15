@@ -10228,13 +10228,13 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Diff base: head, pushed, or merge-target */
-                base?: string;
+                base?: "head" | "pushed" | "merge-target";
                 /** @description Set to hide to ignore whitespace-only changes */
-                whitespace?: string;
+                whitespace?: "hide";
                 /** @description Changed file path to preview */
                 path?: string;
                 /** @description Optional diff side to read for context expansion */
-                side?: string;
+                side?: "old" | "new";
                 /** @description Scope to a single commit SHA */
                 commit?: string;
                 /** @description Start SHA for range diff (inclusive) */
@@ -10519,6 +10519,9 @@ export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetPar
 export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const pathsWorkspacesIdFilePreviewGetParametersQueryBaseValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["base"]> = ["head", "pushed", "merge-target"];
+export const pathsWorkspacesIdFilePreviewGetParametersQueryWhitespaceValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["whitespace"]> = ["hide"];
+export const pathsWorkspacesIdFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const activityTime_rangeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Activity"]["time_range"]> = ["24h", "7d", "30d", "90d"];
 export const activityView_modeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Activity"]["view_mode"]> = ["flat", "threaded"];
 export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];

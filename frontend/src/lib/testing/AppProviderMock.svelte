@@ -22,6 +22,11 @@
     events: {
       disconnect: noop,
     },
+    // stopFullAppShell stops sync polling on teardown; the mock store must
+    // expose it or onDestroy throws once the shell has started.
+    sync: {
+      stopPolling: noop,
+    },
     pulls: {
       getSelectedPR: () => null,
       loadPulls: noop,

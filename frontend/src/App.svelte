@@ -171,6 +171,11 @@
 
   function stopFullAppShell() {
     fullShellStores?.events.disconnect();
+    // runAppStartup begins sync polling once the shell is ready; its cancel
+    // only aborts in-flight startup, so the interval must be stopped here or
+    // it keeps firing after teardown (leaking across embed-route navigation
+    // and, in jsdom tests, hitting whichever fetch stub is current).
+    fullShellStores?.sync.stopPolling();
     cleanupFullAppShell?.();
     cleanupFullAppShell = undefined;
     fullShellStores = undefined;

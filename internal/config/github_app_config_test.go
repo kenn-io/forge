@@ -23,6 +23,7 @@ owner_type = "User"
 private_key_path = "github-app-middleman-abc.pem"
 installation_id = 99
 installation_account = "kenn-io"
+repository_selection = "all"
 `
 
 func TestLoadGitHubApps(t *testing.T) {
@@ -129,6 +130,7 @@ app_id = 1
 private_key_path = "a.pem"
 installation_id = 9
 installation_account = "kenn-io"
+repository_selection = "all"
 `,
 		},
 		{
@@ -143,6 +145,7 @@ app_id = 1
 private_key_path = "a.pem"
 installation_id = 9
 installation_account = "Kenn-IO"
+repository_selection = "all"
 `,
 		},
 		{
@@ -161,6 +164,7 @@ app_id = 1
 private_key_path = "a.pem"
 installation_id = 9
 installation_account = "kenn-io"
+repository_selection = "all"
 `,
 			wantErr: "otherorg/thing is not covered by the github app",
 		},
@@ -177,6 +181,7 @@ app_id = 1
 private_key_path = "a.pem"
 installation_id = 9
 installation_account = "kenn-io"
+repository_selection = "all"
 `,
 		},
 		{
@@ -205,6 +210,7 @@ app_id = 1
 private_key_path = "a.pem"
 installation_id = 9
 installation_account = "kenn-io"
+repository_selection = "all"
 `,
 		},
 		{
@@ -277,7 +283,7 @@ repository_selection = "all"
 `,
 		},
 		{
-			name: "legacy entry without a recorded selection only checks ownership",
+			name: "installed app without recorded selection fails",
 			toml: `
 [[repos]]
 owner = "kenn-io"
@@ -289,6 +295,7 @@ private_key_path = "a.pem"
 installation_id = 9
 installation_account = "kenn-io"
 `,
+			wantErr: "repository_selection is required",
 		},
 		{
 			name: "invalid repository_selection value fails",
@@ -352,28 +359,30 @@ selected_repos = ["kenn-io/middleman"]
 	require.NoError(err, "the repair loader exists exactly for this failure")
 	require.Len(cfg.GitHubApps, 1)
 
-	missingInstallAccount := `
-[[github_apps]]
-app_id = 1
-private_key_path = "a.pem"
-installation_id = 9
-`
-	_, err = Load(writeConfig(t, missingInstallAccount))
-	require.Error(err, "the strict loader must reject incomplete installation metadata")
-	require.ErrorContains(err, "installation_account is required")
-	cfg, err = LoadForGitHubAppRepair(writeConfig(t, missingInstallAccount))
-	require.NoError(err, "the repair loader must let install refresh the account")
-	require.Len(cfg.GitHubApps, 1)
-	Assert.Equal(t, int64(9), cfg.GitHubApps[0].InstallationID)
-	Assert.Empty(t, cfg.GitHubApps[0].InstallationAccount)
-
 	// Every other validation rule still applies.
 	_, err = LoadForGitHubAppRepair(writeConfig(t, `
 [[github_apps]]
 app_id = 0
 private_key_path = "a.pem"
 `))
-	Assert.ErrorContains(t, err, "app_id must be a positive integer")
+	require.ErrorContains(err, "app_id must be a positive integer")
+
+	_, err = LoadForGitHubAppRepair(writeConfig(t, `
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+installation_id = 9
+`))
+	require.ErrorContains(err, "installation_account is required")
+
+	_, err = LoadForGitHubAppRepair(writeConfig(t, `
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+installation_id = 9
+installation_account = "kenn-io"
+`))
+	require.ErrorContains(err, "repository_selection is required")
 }
 
 func TestGitHubAppMixedOverrideAndCoveredReposRejected(t *testing.T) {
@@ -397,6 +406,7 @@ app_id = 4321
 private_key_path = "app.pem"
 installation_id = 99
 installation_account = "kenn-io"
+repository_selection = "all"
 `))
 	require.Error(t, err)
 	Assert.ErrorContains(t, err, "conflicting token source")
@@ -427,6 +437,7 @@ app_id = 4321
 private_key_path = "app.pem"
 installation_id = 99
 installation_account = "kenn-io"
+repository_selection = "all"
 `))
 	require.NoError(t, err)
 
@@ -466,6 +477,7 @@ app_id = 4321
 private_key_path = "app.pem"
 installation_id = 99
 installation_account = "other-org"
+repository_selection = "all"
 `))
 	require.NoError(t, err)
 
@@ -493,6 +505,7 @@ app_id = 4321
 private_key_path = "app.pem"
 installation_id = 99
 installation_account = "kenn-io"
+repository_selection = "all"
 `))
 	require.NoError(t, err)
 

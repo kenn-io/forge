@@ -110,9 +110,7 @@ type GitHubAppConfig struct {
 	InstallationAccount string `toml:"installation_account,omitempty" json:"installation_account,omitempty"`
 	// RepositorySelection records whether the installation covers
 	// "all" repositories of the account or only "selected" ones, as
-	// reported by GitHub when the CLI recorded the installation. Empty
-	// on entries written before this field existed; coverage
-	// validation then only checks account ownership.
+	// reported by GitHub when the CLI recorded the installation.
 	RepositorySelection string `toml:"repository_selection,omitempty" json:"repository_selection,omitempty"`
 	// SelectedRepos lists the full names (owner/name) an "Only select
 	// repositories" installation could reach when the CLI recorded it.
@@ -934,7 +932,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return cfg, cfg.validate(validationOptions{})
+	return cfg, cfg.validate(false)
 }
 
 // load reads and normalizes path without running validation; Load and
@@ -1019,17 +1017,16 @@ func load(path string) (*Config, error) {
 }
 
 // LoadForGitHubAppRepair loads path with GitHub App installation
-// repair checks relaxed. The middleman-github-app CLI uses it so a
-// config that is invalid only because the recorded installation no
-// longer covers the configured repos, or because older/minimal config
-// lacks the installation account, can still be loaded to repair exactly
-// that; every other validation rule still applies.
+// coverage validation skipped. The middleman-github-app CLI uses it so
+// a config that is invalid only because the recorded installation no
+// longer covers the configured repos can still be loaded to repair
+// exactly that; every other validation rule still applies.
 func LoadForGitHubAppRepair(path string) (*Config, error) {
 	cfg, err := load(path)
 	if err != nil {
 		return nil, err
 	}
-	return cfg, cfg.validate(validationOptions{githubAppRepair: true})
+	return cfg, cfg.validate(true)
 }
 
 func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
@@ -1045,16 +1042,12 @@ func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
 }
 
 func (c *Config) Validate() error {
-	return c.validate(validationOptions{})
+	return c.validate(false)
 }
 
-type validationOptions struct {
-	githubAppRepair bool
-}
-
-// validate runs every config rule; githubAppRepair relaxes only the
-// GitHub App installation checks that the CLI can refresh and persist.
-func (c *Config) validate(opts validationOptions) error {
+// validate runs every config rule; skipAppCoverage relaxes only the
+// GitHub App installation coverage check for the CLI's repair path.
+func (c *Config) validate(skipAppCoverage bool) error {
 	var err error
 	c.DefaultPlatformHost, err = normalizePlatformHost(
 		defaultPlatform, c.DefaultPlatformHost,
@@ -1082,7 +1075,7 @@ func (c *Config) validate(opts validationOptions) error {
 	if err := c.validatePlatforms(); err != nil {
 		return err
 	}
-	if err := c.validateGitHubApps(opts.githubAppRepair); err != nil {
+	if err := c.validateGitHubApps(); err != nil {
 		return err
 	}
 	if err := c.canonicalizeDocFolders(); err != nil {
@@ -1116,7 +1109,7 @@ func (c *Config) validate(opts validationOptions) error {
 		seen[key] = display
 	}
 
-	if !opts.githubAppRepair {
+	if !skipAppCoverage {
 		if err := c.validateGitHubAppCoverage(); err != nil {
 			return err
 		}
@@ -1408,7 +1401,7 @@ func (c *Config) validatePlatforms() error {
 	return nil
 }
 
-func (c *Config) validateGitHubApps(allowRepairableInstallationMetadata bool) error {
+func (c *Config) validateGitHubApps() error {
 	seenHosts := make(map[string]struct{}, len(c.GitHubApps))
 	for i := range c.GitHubApps {
 		app := &c.GitHubApps[i]
@@ -1435,13 +1428,10 @@ func (c *Config) validateGitHubApps(allowRepairableInstallationMetadata bool) er
 		// An installation without its account would activate the app
 		// token source while silently skipping installation coverage
 		// validation, so miscovered repos would only fail at sync time.
-		if app.InstallationID != 0 &&
-			app.InstallationAccount == "" &&
-			!allowRepairableInstallationMetadata {
+		if app.InstallationID != 0 && app.InstallationAccount == "" {
 			return fmt.Errorf(
 				"config: github_apps[%d]: installation_account is required when "+
-					"installation_id is set (re-run \"middleman-github-app install\" "+
-					"to record it)", i,
+					"installation_id is set", i,
 			)
 		}
 		app.RepositorySelection = strings.ToLower(strings.TrimSpace(app.RepositorySelection))
@@ -1451,6 +1441,12 @@ func (c *Config) validateGitHubApps(allowRepairableInstallationMetadata bool) er
 			return fmt.Errorf(
 				"config: github_apps[%d]: repository_selection must be \"all\" or "+
 					"\"selected\" (got %q)", i, app.RepositorySelection,
+			)
+		}
+		if app.InstallationID != 0 && app.RepositorySelection == "" {
+			return fmt.Errorf(
+				"config: github_apps[%d]: repository_selection is required when "+
+					"installation_id is set", i,
 			)
 		}
 		// One app per host: the token source chain is host-scoped, so a
@@ -1513,8 +1509,6 @@ func (c *Config) validateGitHubAppCoverage() error {
 // set is recorded by middleman-github-app at install time; account
 // ownership alone is not enough because the installation token only
 // reaches the chosen repos and everything else 404s during sync.
-// Entries without a recorded selection (written by older CLI builds)
-// are skipped — there is nothing trustworthy to compare against.
 func validateSelectedRepoCoverage(i int, r Repo, app GitHubAppConfig) error {
 	if !strings.EqualFold(app.RepositorySelection, "selected") {
 		return nil

@@ -21422,6 +21422,48 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	assert.Equal(int64(1), pushedDiff.WhitespaceOnlyCount)
 }
 
+func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+
+	path := "preview.go"
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, path),
+		[]byte("package preview\n\nfunc value() string {\n\treturn \"base\"\n}\n"),
+		0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "add preview fixture")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, path),
+		[]byte("package preview\n\nfunc value() string {\n\treturn \"worktree\"\n}\n"),
+		0o644,
+	))
+
+	oldPreview := requestWorkspaceFilePreview(t, srv, ws.Id, "head", path, "old")
+	oldDecoded, err := base64.StdEncoding.DecodeString(oldPreview.Content)
+	require.NoError(err)
+	newPreview := requestWorkspaceFilePreview(t, srv, ws.Id, "head", path, "new")
+	newDecoded, err := base64.StdEncoding.DecodeString(newPreview.Content)
+	require.NoError(err)
+
+	assert.Equal(path, oldPreview.Path)
+	assert.Equal(path, newPreview.Path)
+	assert.Contains(string(oldDecoded), `return "base"`)
+	assert.NotContains(string(oldDecoded), `return "worktree"`)
+	assert.Contains(string(newDecoded), `return "worktree"`)
+	assert.NotContains(string(newDecoded), `return "base"`)
+}
+
 func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
 	t.Parallel()
 
@@ -22003,6 +22045,34 @@ func requestWorkspaceDiffPath(
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var body generated.DiffResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	return body
+}
+
+func requestWorkspaceFilePreview(
+	t *testing.T,
+	srv *Server,
+	workspaceID string,
+	base string,
+	path string,
+	side string,
+) filePreviewResponse {
+	t.Helper()
+
+	query := "/api/v1/workspaces/" + workspaceID +
+		"/file-preview?base=" + url.QueryEscape(base) +
+		"&path=" + url.QueryEscape(path)
+	if side != "" {
+		query += "&side=" + url.QueryEscape(side)
+	}
+	req := newWorkspaceFixtureRequest(http.MethodGet, query, nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	resp := rr.Result()
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body filePreviewResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	return body
 }

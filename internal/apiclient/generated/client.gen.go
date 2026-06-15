@@ -2402,6 +2402,30 @@ type GetWorkspaceDiffParams struct {
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// GetWorkspaceFilePreviewParams defines parameters for GetWorkspaceFilePreview.
+type GetWorkspaceFilePreviewParams struct {
+	// Base Diff base: head, pushed, or merge-target
+	Base *string `form:"base,omitempty" json:"base,omitempty"`
+
+	// Whitespace Set to hide to ignore whitespace-only changes
+	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+
+	// Path Changed file path to preview
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+
+	// Side Optional diff side to read for context expansion
+	Side *string `form:"side,omitempty" json:"side,omitempty"`
+
+	// Commit Scope to a single commit SHA
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
+
+	// From Start SHA for range diff (inclusive)
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To End SHA for range diff (inclusive)
+	To *string `form:"to,omitempty" json:"to,omitempty"`
+}
+
 // GetWorkspaceFilesParams defines parameters for GetWorkspaceFiles.
 type GetWorkspaceFilesParams struct {
 	// Base Diff base: head, pushed, or merge-target
@@ -3298,6 +3322,9 @@ type ClientInterface interface {
 
 	// GetWorkspaceDiff request
 	GetWorkspaceDiff(ctx context.Context, id string, params *GetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspaceFilePreview request
+	GetWorkspaceFilePreview(ctx context.Context, id string, params *GetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetWorkspaceFiles request
 	GetWorkspaceFiles(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6003,6 +6030,18 @@ func (c *Client) GetWorkspaceCommits(ctx context.Context, id string, reqEditors 
 
 func (c *Client) GetWorkspaceDiff(ctx context.Context, id string, params *GetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspaceDiffRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkspaceFilePreview(ctx context.Context, id string, params *GetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspaceFilePreviewRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -16024,6 +16063,139 @@ func NewGetWorkspaceDiffRequest(server string, id string, params *GetWorkspaceDi
 	return req, nil
 }
 
+// NewGetWorkspaceFilePreviewRequest generates requests for GetWorkspaceFilePreview
+func NewGetWorkspaceFilePreviewRequest(server string, id string, params *GetWorkspaceFilePreviewParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/file-preview", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Base != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "base", *params.Base, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Side != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "side", *params.Side, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Commit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetWorkspaceFilesRequest generates requests for GetWorkspaceFiles
 func NewGetWorkspaceFilesRequest(server string, id string, params *GetWorkspaceFilesParams) (*http.Request, error) {
 	var err error
@@ -17024,6 +17196,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspaceDiffWithResponse request
 	GetWorkspaceDiffWithResponse(ctx context.Context, id string, params *GetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*GetWorkspaceDiffResponse, error)
+
+	// GetWorkspaceFilePreviewWithResponse request
+	GetWorkspaceFilePreviewWithResponse(ctx context.Context, id string, params *GetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*GetWorkspaceFilePreviewResponse, error)
 
 	// GetWorkspaceFilesWithResponse request
 	GetWorkspaceFilesWithResponse(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*GetWorkspaceFilesResponse, error)
@@ -20681,6 +20856,29 @@ func (r GetWorkspaceDiffResponse) StatusCode() int {
 	return 0
 }
 
+type GetWorkspaceFilePreviewResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FilePreviewResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspaceFilePreviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspaceFilePreviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetWorkspaceFilesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -22782,6 +22980,15 @@ func (c *ClientWithResponses) GetWorkspaceDiffWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseGetWorkspaceDiffResponse(rsp)
+}
+
+// GetWorkspaceFilePreviewWithResponse request returning *GetWorkspaceFilePreviewResponse
+func (c *ClientWithResponses) GetWorkspaceFilePreviewWithResponse(ctx context.Context, id string, params *GetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*GetWorkspaceFilePreviewResponse, error) {
+	rsp, err := c.GetWorkspaceFilePreview(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspaceFilePreviewResponse(rsp)
 }
 
 // GetWorkspaceFilesWithResponse request returning *GetWorkspaceFilesResponse
@@ -27904,6 +28111,39 @@ func ParseGetWorkspaceDiffResponse(rsp *http.Response) (*GetWorkspaceDiffRespons
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest DiffResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspaceFilePreviewResponse parses an HTTP response from a GetWorkspaceFilePreviewWithResponse call
+func ParseGetWorkspaceFilePreviewResponse(rsp *http.Response) (*GetWorkspaceFilePreviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspaceFilePreviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FilePreviewResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

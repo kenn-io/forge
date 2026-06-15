@@ -497,6 +497,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     path: string,
     side?: "old" | "new",
   ): Promise<FilePreview> {
+    if (currentWorkspaceID) {
+      return loadWorkspaceFilePreview(path, side);
+    }
+
     const ref = currentRouteRef();
     const key = `${ref.provider}:${ref.platformHost ?? ""}:${ref.repoPath}#${number}:${scopeCacheKey()}:${path}:${side ?? "preview"}`;
     const cached = filePreviewCache.get(key);
@@ -514,6 +518,37 @@ export function createDiffStore(opts?: DiffStoreOptions) {
               from: scope.fromSha,
               to: scope.toSha,
             }),
+          },
+        },
+      });
+      if (!data) {
+        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+      }
+      return data as FilePreview;
+    })();
+
+    filePreviewCache.set(key, request);
+    try {
+      return await request;
+    } catch (err) {
+      filePreviewCache.delete(key);
+      throw err;
+    }
+  }
+
+  async function loadWorkspaceFilePreview(path: string, side?: "old" | "new"): Promise<FilePreview> {
+    const key = `workspace:${currentWorkspaceID}:${currentWorkspaceBase}:${scopeCacheKey()}:${path}:${side ?? "preview"}`;
+    const cached = filePreviewCache.get(key);
+    if (cached) return cached;
+
+    const request = (async () => {
+      const { data, error, response } = await apiClient.GET("/workspaces/{id}/file-preview", {
+        params: {
+          path: { id: currentWorkspaceID },
+          query: {
+            ...workspaceDiffQuery(currentWorkspaceBase),
+            path,
+            ...(side && { side }),
           },
         },
       });

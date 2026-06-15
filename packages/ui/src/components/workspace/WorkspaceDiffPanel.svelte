@@ -102,7 +102,7 @@
         keyboardActive={false}
         pageKeyboardActive={active}
         richPreviewEnabled={false}
-        contextExpansionEnabled={false}
+        contextExpansionEnabled
         reviewMode="disabled"
       />
     </div>

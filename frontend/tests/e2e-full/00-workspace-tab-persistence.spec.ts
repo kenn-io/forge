@@ -5,7 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
+import { expect, request as playwrightRequest, test, type APIRequestContext, type Locator } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 type WorkspaceStatusResponse = {
@@ -24,6 +24,10 @@ function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   } catch {
     return false;
   }
+}
+
+function runGit(worktreePath: string, args: string[]): void {
+  execFileSync("git", args, { cwd: worktreePath, stdio: "ignore" });
 }
 
 async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string): Promise<void> {
@@ -51,6 +55,39 @@ async function createIssueWorkspace(api: APIRequestContext, issueNumber: number)
   const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
   await waitForWorkspaceReady(api, createdWorkspace.id);
   return createdWorkspace;
+}
+
+async function clickPierreExpander(file: Locator, separatorIndex: number): Promise<void> {
+  const expander = file
+    .locator(".pierre-diff [data-separator][data-expand-index]")
+    .filter({ visible: true })
+    .nth(separatorIndex)
+    .locator("[data-expand-button]")
+    .filter({ visible: true })
+    .first();
+  await expect(expander).toBeVisible();
+  await expander.evaluate((button: HTMLElement) => {
+    button.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        shiftKey: true,
+      }),
+    );
+  });
+}
+
+async function expandedContextStats(file: Locator): Promise<{ blank: number; texts: string[] }> {
+  return await file.locator(".pierre-diff").evaluate((host) => {
+    const rows = Array.from(
+      host.shadowRoot?.querySelectorAll("[data-content] [data-line-type='context-expanded']") ?? [],
+    ).map((element) => element.textContent?.trim() ?? "");
+    return {
+      blank: rows.filter((text) => text.length === 0).length,
+      texts: rows.filter((text) => text.length > 0),
+    };
+  });
 }
 
 test.describe("workspace tab persistence", () => {
@@ -348,6 +385,93 @@ test.describe("workspace tab persistence", () => {
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
       await expect(workflow.getByRole("tab", { name: "Shell" })).toHaveAttribute("aria-selected", "true");
       await expect(alphaDiffFile).toBeVisible();
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("workspace diff context expansion renders text from the real preview API", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+    await page.setViewportSize({ width: 1400, height: 860 });
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const workspace = await createIssueWorkspace(api, 12);
+      const workspaceResponse = await api.get(`/api/v1/workspaces/${workspace.id}`);
+      expect(workspaceResponse.ok()).toBe(true);
+      const workspaceDetail = (await workspaceResponse.json()) as WorkspaceStatusResponse;
+      expect(workspaceDetail.worktree_path).toBeTruthy();
+      const worktreePath = workspaceDetail.worktree_path!;
+
+      runGit(worktreePath, ["config", "user.email", "test@test.com"]);
+      runGit(worktreePath, ["config", "user.name", "Test"]);
+      const baseLines = Array.from({ length: 120 }, (_, index) => `workspace hidden line ${index + 1}`);
+      await writeFile(join(worktreePath, "expand-context.ts"), `${baseLines.join("\n")}\n`);
+      runGit(worktreePath, ["add", "expand-context.ts"]);
+      runGit(worktreePath, ["commit", "-m", "add expandable context fixture"]);
+      const changedLines = [...baseLines];
+      changedLines[9] = "workspace changed line 10";
+      changedLines[89] = "workspace changed line 90";
+      await writeFile(join(worktreePath, "expand-context.ts"), `${changedLines.join("\n")}\n`);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      await page.locator(".seg-control .seg-btn", { hasText: "Diff" }).click();
+      const previewResponses = Promise.all([
+        page.waitForResponse((response) => {
+          const url = response.url();
+          return (
+            response.request().method() === "GET" &&
+            url.includes(`/api/v1/workspaces/${workspace.id}/file-preview`) &&
+            url.includes("path=expand-context.ts") &&
+            url.includes("side=old")
+          );
+        }),
+        page.waitForResponse((response) => {
+          const url = response.url();
+          return (
+            response.request().method() === "GET" &&
+            url.includes(`/api/v1/workspaces/${workspace.id}/file-preview`) &&
+            url.includes("path=expand-context.ts") &&
+            url.includes("side=new")
+          );
+        }),
+      ]);
+
+      const file = page.locator('.right-sidebar .diff-file[data-file-path="expand-context.ts"]');
+      await expect(file).toBeVisible();
+      await expect
+        .poll(async () => {
+          return await file.locator(".pierre-diff").evaluate((host) => {
+            return host.shadowRoot?.querySelectorAll("[data-separator][data-expand-index]").length ?? 0;
+          });
+        })
+        .toBeGreaterThanOrEqual(2);
+      await clickPierreExpander(file, 1);
+      const responses = await previewResponses;
+      expect(responses.every((response) => response.ok())).toBe(true);
+
+      await expect
+        .poll(async () => {
+          const stats = await expandedContextStats(file);
+          return {
+            blank: stats.blank,
+            hasMiddleLine: stats.texts.some((text) => text.includes("workspace hidden line 50")),
+          };
+        })
+        .toEqual({
+          blank: 0,
+          hasMiddleLine: true,
+        });
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

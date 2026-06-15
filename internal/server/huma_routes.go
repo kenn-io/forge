@@ -491,6 +491,17 @@ type getWorkspaceDiffInput struct {
 	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`
 }
 
+type getWorkspaceFilePreviewInput struct {
+	ID         string `path:"id"`
+	Base       string `query:"base"       doc:"Diff base: head, pushed, or merge-target"`
+	Whitespace string `query:"whitespace" doc:"Set to hide to ignore whitespace-only changes"`
+	Path       string `query:"path"       doc:"Changed file path to preview"`
+	Side       string `query:"side" doc:"Optional diff side to read for context expansion"`
+	Commit     string `query:"commit" doc:"Scope to a single commit SHA"`
+	From       string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
+	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`
+}
+
 type getWorkspaceCommitsInput struct {
 	ID string `path:"id"`
 }
@@ -541,6 +552,7 @@ type listWorkspacesOutput = bodyOutput[listWorkspacesOutputBody]
 type getWorkspaceOutput = bodyOutput[workspaceResponse]
 
 type getWorkspaceDiffOutput = bodyOutput[diffResponse]
+type getWorkspaceFilePreviewOutput = bodyOutput[filePreviewResponse]
 type getWorkspaceFilesOutput = bodyOutput[filesResponse]
 type getWorkspaceCommitsOutput = bodyOutput[commitsResponse]
 
@@ -727,6 +739,8 @@ func (s *Server) registerAPI(api huma.API) {
 		documentOperation("get-workspace-commits", "Get workspace commits", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/diff", s.getWorkspaceDiff,
 		documentOperation("get-workspace-diff", "Get workspace diff", "Workspaces"))
+	huma.Get(api, "/workspaces/{id}/file-preview", s.getWorkspaceFilePreview,
+		documentOperation("get-workspace-file-preview", "Get workspace file preview", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/files", s.getWorkspaceFiles,
 		documentOperation("get-workspace-files", "Get workspace files", "Workspaces"))
 	huma.Register(api, huma.Operation{
@@ -5037,6 +5051,61 @@ func (s *Server) getWorkspaceDiff(
 	}}, nil
 }
 
+func (s *Server) getWorkspaceFilePreview(
+	ctx context.Context,
+	input *getWorkspaceFilePreviewInput,
+) (*getWorkspaceFilePreviewOutput, error) {
+	if strings.TrimSpace(input.Path) == "" {
+		return nil, problemValidation("query.path", "path is required")
+	}
+	side := strings.TrimSpace(input.Side)
+	if side != "" && side != "old" && side != "new" {
+		return nil, problemValidation("query.side", "side must be old or new")
+	}
+
+	req, err := s.workspaceDiffRequest(ctx, input.ID, input.Base)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyWorkspaceDiffScope(
+		ctx, &req, input.Commit, input.From, input.To,
+	); err != nil {
+		return nil, err
+	}
+
+	hideWhitespace := input.Whitespace == "hide"
+	content, ok, err := s.workspaceFilePreview(
+		ctx, req, hideWhitespace, input.Path, side,
+	)
+	if err != nil {
+		if errors.Is(err, gitclone.ErrNotFound) {
+			return nil, problemNotFound(CodeNotFound, "workspace file preview not available: file is not changed in this diff", nil)
+		}
+		if errors.Is(err, gitclone.ErrTooLarge) {
+			return nil, problemPayloadTooLarge("file preview is too large", maxFilePreviewBytes)
+		}
+		slog.Error(
+			"failed to read workspace file preview",
+			"workspace_id", input.ID,
+			"base", req.Base,
+			"path", input.Path,
+			"err", err,
+		)
+		return nil, problemUpstream("failed to read workspace file preview", "", "")
+	}
+	if !ok {
+		return nil, workspaceDiffBaseUnavailable(req.Base)
+	}
+
+	return &getWorkspaceFilePreviewOutput{Body: filePreviewResponse{
+		Path:      content.Path,
+		MediaType: previewMediaType(content.Path, content.Data),
+		Encoding:  "base64",
+		Content:   base64.StdEncoding.EncodeToString(content.Data),
+		Size:      content.Size,
+	}}, nil
+}
+
 func (s *Server) workspaceDiffRequest(
 	ctx context.Context,
 	id string,
@@ -5268,6 +5337,47 @@ func (s *Server) workspaceDiff(
 	}
 	return workspace.WorktreeDiff(
 		ctx, req.Summary.WorktreePath, req.Base, hideWhitespace,
+	)
+}
+
+func (s *Server) workspaceFilePreview(
+	ctx context.Context,
+	req workspaceDiffRequest,
+	hideWhitespace bool,
+	path string,
+	side string,
+) (*gitclone.FileContent, bool, error) {
+	if req.FromSHA != "" && req.ToSHA != "" {
+		return workspace.WorktreeFileContentBetween(
+			ctx,
+			req.Summary.WorktreePath,
+			req.FromSHA,
+			req.ToSHA,
+			hideWhitespace,
+			path,
+			side,
+			maxFilePreviewBytes,
+		)
+	}
+	if req.Base == workspace.WorktreeDiffBaseMergeTarget {
+		return workspace.WorktreeFileContentAgainstMergeTarget(
+			ctx,
+			req.Summary.WorktreePath,
+			req.MergeTargetBranch,
+			hideWhitespace,
+			path,
+			side,
+			maxFilePreviewBytes,
+		)
+	}
+	return workspace.WorktreeFileContent(
+		ctx,
+		req.Summary.WorktreePath,
+		req.Base,
+		hideWhitespace,
+		path,
+		side,
+		maxFilePreviewBytes,
 	)
 }
 

@@ -2356,6 +2356,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{id}/file-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace file preview */
+        get: operations["get-workspace-file-preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{id}/files": {
         parameters: {
             query?: never;
@@ -10194,6 +10211,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiffResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-workspace-file-preview": {
+        parameters: {
+            query?: {
+                /** @description Diff base: head, pushed, or merge-target */
+                base?: string;
+                /** @description Set to hide to ignore whitespace-only changes */
+                whitespace?: string;
+                /** @description Changed file path to preview */
+                path?: string;
+                /** @description Optional diff side to read for context expansion */
+                side?: string;
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilePreviewResponse"];
                 };
             };
             /** @description Error */

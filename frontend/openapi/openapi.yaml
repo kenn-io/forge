@@ -11196,6 +11196,80 @@ paths:
       summary: Get workspace diff
       tags:
         - Workspaces
+  /workspaces/{id}/file-preview:
+    get:
+      operationId: get-workspace-file-preview
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: "Diff base: head, pushed, or merge-target"
+          explode: false
+          in: query
+          name: base
+          schema:
+            description: "Diff base: head, pushed, or merge-target"
+            type: string
+        - description: Set to hide to ignore whitespace-only changes
+          explode: false
+          in: query
+          name: whitespace
+          schema:
+            description: Set to hide to ignore whitespace-only changes
+            type: string
+        - description: Changed file path to preview
+          explode: false
+          in: query
+          name: path
+          schema:
+            description: Changed file path to preview
+            type: string
+        - description: Optional diff side to read for context expansion
+          explode: false
+          in: query
+          name: side
+          schema:
+            description: Optional diff side to read for context expansion
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilePreviewResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get workspace file preview
+      tags:
+        - Workspaces
   /workspaces/{id}/files:
     get:
       operationId: get-workspace-files

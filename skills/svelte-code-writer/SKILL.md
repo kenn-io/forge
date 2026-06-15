@@ -9,18 +9,18 @@ description: CLI tools for Svelte 5 documentation lookup and code analysis. MUST
 
 This repo currently uses Svelte `5.55.0`.
 
-You have access to pinned `@sveltejs/mcp@0.1.22` CLI for Svelte-specific assistance. Launch it through the repo's embedded Vite+ tool so package-manager policy and workspace environment stay consistent:
+Use the repo-installed `@sveltejs/mcp@0.1.22` CLI for Svelte-specific assistance. It is pinned in root `devDependencies` and exposed through the repo's Vite+ launcher:
 
 ```bash
-node ./node_modules/vite-plus/bin/vp exec -- bun x @sveltejs/mcp@0.1.22 <command>
+bun run svelte-mcp -- <command>
 ```
 
-Run these commands from the repository root. If your shell is already in `frontend/`, use `node ../node_modules/vite-plus/bin/vp exec -- bun x ...` instead. Do not use `npx` or `npm`.
+Run these commands from the repository root. Do not use `npx`, `npm`, or `bun x` for this tool.
 
 ### List Documentation Sections
 
 ```bash
-node ./node_modules/vite-plus/bin/vp exec -- bun x @sveltejs/mcp@0.1.22 list-sections
+bun run svelte-mcp -- list-sections
 ```
 
 Lists all available Svelte 5 and SvelteKit documentation sections with titles and paths.
@@ -28,7 +28,7 @@ Lists all available Svelte 5 and SvelteKit documentation sections with titles an
 ### Get Documentation
 
 ```bash
-node ./node_modules/vite-plus/bin/vp exec -- bun x @sveltejs/mcp@0.1.22 get-documentation "<section1>,<section2>,..."
+bun run svelte-mcp -- get-documentation "<section1>,<section2>,..."
 ```
 
 Retrieves full documentation for specified sections. Use after `list-sections` to fetch relevant docs.
@@ -36,13 +36,13 @@ Retrieves full documentation for specified sections. Use after `list-sections` t
 **Example:**
 
 ```bash
-node ./node_modules/vite-plus/bin/vp exec -- bun x @sveltejs/mcp@0.1.22 get-documentation "$state,$derived,$effect"
+bun run svelte-mcp -- get-documentation "$state,$derived,$effect"
 ```
 
 ### Svelte Autofixer
 
 ```bash
-node ./node_modules/vite-plus/bin/vp exec -- bun x @sveltejs/mcp@0.1.22 svelte-autofixer "<code_or_path>" [options]
+bun run svelte-mcp -- svelte-autofixer "<code_or_path>" [options]
 ```
 
 Analyzes Svelte code and suggests fixes for common issues.
@@ -55,20 +55,20 @@ Analyzes Svelte code and suggests fixes for common issues.
 **Examples:**
 
 ```bash
-# Analyze inline code (escape $ as \$)
-node ./node_modules/vite-plus/bin/vp exec -- bun x @sveltejs/mcp@0.1.22 svelte-autofixer '<script>let count = \$state(0);</script>' --svelte-version 5
+# Analyze inline code
+bun run svelte-mcp -- svelte-autofixer '<script>let count = $state(0);</script>' --svelte-version 5
 
 # Analyze a file
-node ./node_modules/vite-plus/bin/vp exec -- bun x @sveltejs/mcp@0.1.22 svelte-autofixer ./src/lib/Component.svelte --svelte-version 5
+bun run svelte-mcp -- svelte-autofixer ./src/lib/Component.svelte --svelte-version 5
 
 # Target Svelte 4
-node ./node_modules/vite-plus/bin/vp exec -- bun x @sveltejs/mcp@0.1.22 svelte-autofixer ./Component.svelte --svelte-version 4
+bun run svelte-mcp -- svelte-autofixer ./Component.svelte --svelte-version 4
 ```
 
-**Important:** When passing code with runes (`$state`, `$derived`, etc.) via the terminal, escape the `$` character as `\$` to prevent shell variable substitution.
+**Important:** When passing code with runes (`$state`, `$derived`, etc.) via the terminal, wrap inline code in single quotes. If you use double quotes, escape `$` as `\$` to prevent shell variable substitution.
 
 ## Workflow
 
-1. **Uncertain about syntax?** Run pinned `list-sections` then `get-documentation` for relevant topics through Vite+
-2. **Reviewing/debugging?** Run pinned `svelte-autofixer` on the code through Vite+ to detect issues
-3. **Always validate** - Run `svelte-autofixer` with `--svelte-version 5` through Vite+ before finalizing any Svelte component in this repo
+1. **Uncertain about syntax?** Run pinned `list-sections` then `get-documentation` for relevant topics with `bun run svelte-mcp --`
+2. **Reviewing/debugging?** Run pinned `svelte-autofixer` on the code with `bun run svelte-mcp --` to detect issues
+3. **Always validate** - Run `svelte-autofixer` with `--svelte-version 5` before finalizing any Svelte component in this repo

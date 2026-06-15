@@ -199,6 +199,10 @@
         margin: 0;
         border-radius: 0;
       }
+      code,
+      [data-placeholder] {
+        contain: none;
+      }
       [data-separator='line-info'] {
         color: var(--diff-text-muted);
       }

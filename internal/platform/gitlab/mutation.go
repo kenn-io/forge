@@ -538,6 +538,7 @@ func mergeRequestNoteEvent(
 		Author:             noteAuthorUsername(note),
 		Body:               note.Body,
 		CreatedAt:          timeValue(note.CreatedAt),
+		DirectURL:          noteDirectURL(gitLabMergeRequestURL(ref, number), note.ID),
 		DedupeKey:          noteDedupeKey(ref, "mr", number, "note", strconv.FormatInt(note.ID, 10)),
 		ThreadID:           threadID,
 		PositionJSON:       serializeNotePosition(note.Position),
@@ -560,6 +561,7 @@ func issueNoteEvent(
 		Author:             noteAuthorUsername(note),
 		Body:               note.Body,
 		CreatedAt:          timeValue(note.CreatedAt),
+		DirectURL:          noteDirectURL(gitLabIssueURL(ref, number), note.ID),
 		DedupeKey:          noteDedupeKey(ref, "issue", number, "note", strconv.FormatInt(note.ID, 10)),
 	}
 }

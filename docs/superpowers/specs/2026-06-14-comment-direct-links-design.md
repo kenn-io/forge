@@ -25,7 +25,7 @@ For example:
 https://gitlab.example.com/group/project/-/merge_requests/12#note_345678
 ```
 
-Gitea and Forgejo expose `html_url` on issue comments and timeline comments in their Swagger-generated API schemas. Middleman should store that provider-supplied URL rather than reconstructing it.
+Gitea and Forgejo expose `html_url` on issue comments in their Swagger-generated API schemas. Gitea also has the existing timeline transport used by middleman; Forgejo currently only needs the comment DTO path unless a Forgejo timeline transport is added separately. Middleman should store provider-supplied URLs rather than reconstructing them.
 
 ## Requirements
 
@@ -37,6 +37,8 @@ Gitea and Forgejo expose `html_url` on issue comments and timeline comments in t
 6. GitHub, Gitea, and Forgejo use provider-supplied `html_url` values when available.
 7. GitLab computes the direct URL from the stored parent item URL and the note ID as `#note_<note_id>`.
 8. Events without a known provider comment URL do not render the direct-link action.
+9. Existing rows are not backfilled by the migration. Direct links for already-synced comments appear after the next provider sync or mutation/detail refresh that sees the comment URL.
+10. Provider-supplied direct URLs are treated as provider data and copied as text only. The UI must not navigate to them from this action.
 
 ## Data Model
 
@@ -59,6 +61,12 @@ Issue detail currently returns `[]db.IssueEvent`, so the `json:"DirectURL"` defa
 
 The upsert path should refresh `direct_url` on conflict, because provider URLs can become available after a later sync or mutation response. An empty incoming value should not clear a stored non-empty URL unless the implementation proves provider deletion or invalidation requires that behavior. This mirrors the existing pattern of preserving useful provider metadata when newer partial responses lack it.
 
+Acceptance criteria for the API shape:
+
+- PR/MR detail event payloads include `DirectURL` in `mergeRequestEventResponse`.
+- Issue detail event payloads include `DirectURL` in the existing PascalCase issue event shape.
+- Generated OpenAPI, Go API client, and TypeScript schema artifacts include the field.
+
 ## Provider Normalization
 
 ### GitHub
@@ -74,9 +82,11 @@ GitLab note normalization should compute direct URLs only for non-system comment
 - MR notes: `{merge_request.URL}#note_{note.ID}`
 - Issue notes: `{issue.URL}#note_{note.ID}`
 
-The normalizer currently receives `platform.RepoRef` and item number, not the persisted parent item URL. The implementation should add the parent item URL where events are normalized or add a small post-normalization enrichment step in the sync/server path that has access to the persisted MR or issue row. Prefer the smallest change that keeps GitLab URL construction out of Svelte.
+The canonical contract is that GitLab note normalizers accept a `parentURL` argument. Every caller that returns or stores GitLab non-system note events must pass the persisted or normalized MR/issue browser URL for the parent item. If the caller does not have that URL, it must pass an empty string and the normalizer leaves `DirectURL` empty. Do not add a separate post-normalization enrichment path unless this contract proves insufficient.
 
 If the parent URL is empty, leave `DirectURL` empty.
+
+For mutation responses that create or edit comments, the immediate response may not include a browser URL. In that case, keep `DirectURL` empty and rely on the next detail refresh or sync that normalizes provider notes with a parent URL. The UI must continue to omit the direct-link action until the field is present.
 
 ### Gitea And Forgejo
 
@@ -99,7 +109,7 @@ type TimelineEventDTO struct {
 }
 ```
 
-Update Gitea and Forgejo converters to copy `comment.HTMLURL` and `timeline.HTMLURL`. Then set `DirectURL` during `NormalizeIssueComments`, `NormalizeMergeRequestEvents`, `NormalizeIssueTimelineEvents`, and `NormalizeMergeRequestTimelineEvents` for comment-like events.
+Update Gitea and Forgejo comment converters to copy `comment.HTMLURL`. Update Gitea timeline converters to copy `timeline.HTMLURL`. Then set `DirectURL` during `NormalizeIssueComments`, `NormalizeMergeRequestEvents`, `NormalizeIssueTimelineEvents`, and `NormalizeMergeRequestTimelineEvents` for comment-like events when those DTO fields exist. Forgejo timeline direct URLs remain unsupported unless a Forgejo timeline transport is explicitly introduced.
 
 ## UI Design
 
@@ -112,6 +122,7 @@ For comments with `DirectURL`:
 - Tooltip/title before copy: `Copy direct link`.
 - Tooltip/title after copy: `Copied!`.
 - Copy `event.DirectURL` via the existing clipboard helper.
+- Track copied state separately from the existing body-copy button, keyed by both event ID and action, so copying the direct link does not mark the body-copy action as copied.
 
 The action should appear beside the existing copy-body button. It should remain hidden until hover or focus-visible because this is an expert affordance, not primary timeline content.
 
@@ -122,6 +133,18 @@ Use a lucide icon such as `LinkIcon` or `Link2Icon`. Do not add text inside the 
 Clipboard failures should follow the current copy-body behavior. If `copyToClipboard` returns false, do not show a success state.
 
 No server error should be introduced for missing direct URLs. Missing or unsupported URLs are represented by an empty string.
+
+When copying, the frontend treats the server-provided `DirectURL` only as clipboard text and never navigates to it. Provider normalization should not invent URLs for providers or event types that do not expose a known browser target.
+
+## Implementation Order
+
+1. Add the event schema migration, DB fields, query persistence, and conflict behavior.
+2. Thread `DirectURL` through provider-neutral platform types and persistence helpers.
+3. Add provider normalization for GitHub, GitLab, Gitea, and the currently available Forgejo comment path.
+4. Confirm provider mutation responses either set `DirectURL` through the same normalizer contract or intentionally return it empty until a refresh can normalize provider note data.
+5. Map `DirectURL` through server detail responses and regenerate API artifacts.
+6. Add the Svelte timeline action using generated types and action-specific copied state.
+7. Add backend, server e2e, frontend component, and affected browser e2e coverage.
 
 ## Testing
 
@@ -143,6 +166,7 @@ Frontend tests:
 Verification:
 
 - Run Svelte autofixer for `EventTimeline.svelte` after edits.
+- Run `make api-generate` after server/API type changes.
 - Run the affected frontend component tests.
 - Run targeted Go tests with `-shuffle=on`.
 - Because this changes visible frontend behavior, run the affected Playwright e2e suite before pushing.

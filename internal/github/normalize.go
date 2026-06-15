@@ -338,6 +338,7 @@ func dbMREvent(mrID int64, event platform.MergeRequestEvent) db.MREvent {
 		MetadataJSON:       event.MetadataJSON,
 		CreatedAt:          event.CreatedAt,
 		DedupeKey:          event.DedupeKey,
+		DirectURL:          event.DirectURL,
 	}
 	if event.PlatformID != 0 || event.EventType == "issue_comment" || event.EventType == "review" {
 		platformID := event.PlatformID
@@ -357,6 +358,7 @@ func dbIssueEvent(issueID int64, event platform.IssueEvent) db.IssueEvent {
 		MetadataJSON:       event.MetadataJSON,
 		CreatedAt:          event.CreatedAt,
 		DedupeKey:          event.DedupeKey,
+		DirectURL:          event.DirectURL,
 	}
 	if event.PlatformID != 0 || event.EventType == "issue_comment" {
 		platformID := event.PlatformID

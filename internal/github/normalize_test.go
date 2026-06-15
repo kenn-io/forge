@@ -217,6 +217,7 @@ func TestNormalizeCommentEvent(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	c := &gh.IssueComment{
 		ID:        new(int64(555)),
+		HTMLURL:   new("https://github.com/acme/widget/pull/10#issuecomment-555"),
 		User:      &gh.User{Login: new("carol")},
 		Body:      new("looks good"),
 		CreatedAt: ghTimestamp(now),
@@ -229,6 +230,7 @@ func TestNormalizeCommentEvent(t *testing.T) {
 	assert.Equal("comment-555", event.DedupeKey)
 	assert.Equal("carol", event.Author)
 	assert.Equal("looks good", event.Body)
+	assert.Equal("https://github.com/acme/widget/pull/10#issuecomment-555", event.DirectURL)
 	require.NotNil(t, event.PlatformID)
 	assert.Equal(int64(555), *event.PlatformID)
 	assert.True(event.CreatedAt.Equal(now))
@@ -528,8 +530,10 @@ func TestNormalizeIssueCommentEvent(t *testing.T) {
 	id := int64(777)
 	body := "needs follow-up"
 	login := "dana"
+	htmlURL := "https://github.com/acme/widget/issues/12#issuecomment-777"
 	c := &gh.IssueComment{
 		ID:        &id,
+		HTMLURL:   &htmlURL,
 		Body:      &body,
 		User:      &gh.User{Login: &login},
 		CreatedAt: &gh.Timestamp{Time: now},
@@ -542,6 +546,7 @@ func TestNormalizeIssueCommentEvent(t *testing.T) {
 	assert.Equal("issue-comment-777", event.DedupeKey)
 	assert.Equal("dana", event.Author)
 	assert.Equal("needs follow-up", event.Body)
+	assert.Equal("https://github.com/acme/widget/issues/12#issuecomment-777", event.DirectURL)
 	require.NotNil(t, event.PlatformID)
 	assert.Equal(int64(777), *event.PlatformID)
 	assert.True(event.CreatedAt.Equal(now))

@@ -14,6 +14,7 @@ type TimelineEvent = {
   MetadataJSON: string;
   CreatedAt: string;
   DedupeKey: string;
+  DirectURL?: string;
 };
 
 const mockRepo = {
@@ -190,6 +191,38 @@ test("edits a pull request timeline comment", async ({ page }) => {
 
   await expect.poll(() => patchedBody).toBe("Edited PR comment");
   await expect(page.getByText("Edited PR comment")).toBeVisible();
+});
+
+test("copies a direct provider link from a pull request timeline comment", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const directURL = "https://github.com/acme/widgets/pull/42#issuecomment-9101";
+  const event: TimelineEvent = {
+    ID: 11,
+    MergeRequestID: 1,
+    PlatformID: 9101,
+    EventType: "issue_comment",
+    Author: "marius",
+    Summary: "",
+    Body: "Original PR comment",
+    MetadataJSON: "",
+    CreatedAt: "2026-03-30T14:00:00Z",
+    DedupeKey: "comment-9101",
+    DirectURL: directURL,
+  };
+
+  await page.route(/\/api\/v1\/pulls\/github\/acme\/widgets\/42(?:[/?]|$)/, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await fulfillJson(route, prDetail("Original PR comment", event));
+  });
+
+  await page.goto("/pulls/github/acme/widgets/42");
+  await page.getByText("Original PR comment").hover();
+  await page.getByRole("button", { name: "Copy direct link" }).click();
+
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(directURL);
 });
 
 test("edits an issue timeline comment", async ({ page }) => {

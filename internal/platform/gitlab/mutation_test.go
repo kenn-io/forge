@@ -19,6 +19,7 @@ func projectRef() platform.RepoRef {
 		Owner:    "group",
 		Name:     "project",
 		RepoPath: "group/project",
+		WebURL:   "https://gitlab.example.com/group/project",
 		// Non-zero so projectScopedArg skips the lookup round trip.
 		PlatformID: 42,
 	}
@@ -36,56 +37,78 @@ func TestGitLabCommentMutations(t *testing.T) {
 		name       string
 		path       string
 		method     string
-		call       func(*Client) (author, body string, dedupeKey string, err error)
+		call       func(*Client) (author, body string, dedupeKey string, directURL string, err error)
 		wantDedupe string
+		wantURL    string
 	}{
 		{
 			name:   "create merge request comment",
 			path:   "/api/v4/projects/42/merge_requests/7/notes",
 			method: http.MethodPost,
-			call: func(client *Client) (string, string, string, error) {
+			call: func(client *Client) (string, string, string, string, error) {
 				event, err := client.CreateMergeRequestComment(
 					context.Background(), projectRef(), 7, "hello mr",
 				)
-				return event.Author, event.Body, event.DedupeKey, err
+				return event.Author, event.Body, event.DedupeKey, event.DirectURL, err
 			},
 			wantDedupe: "gitlab:gitlab.example.com:group/project:mr:7:note:9001",
+			wantURL:    "https://gitlab.example.com/group/project/-/merge_requests/7#note_9001",
 		},
 		{
 			name:   "edit merge request comment",
 			path:   "/api/v4/projects/42/merge_requests/7/notes/9001",
 			method: http.MethodPut,
-			call: func(client *Client) (string, string, string, error) {
+			call: func(client *Client) (string, string, string, string, error) {
 				event, err := client.EditMergeRequestComment(
 					context.Background(), projectRef(), 7, 9001, "hello mr",
 				)
-				return event.Author, event.Body, event.DedupeKey, err
+				return event.Author, event.Body, event.DedupeKey, event.DirectURL, err
 			},
 			wantDedupe: "gitlab:gitlab.example.com:group/project:mr:7:note:9001",
+			wantURL:    "https://gitlab.example.com/group/project/-/merge_requests/7#note_9001",
+		},
+		{
+			name:   "reply to merge request discussion",
+			path:   "/api/v4/projects/42/merge_requests/7/discussions/0123456789abcdef0123456789abcdef01234567/notes",
+			method: http.MethodPost,
+			call: func(client *Client) (string, string, string, string, error) {
+				event, err := client.ReplyToThread(
+					context.Background(),
+					projectRef(),
+					7,
+					"0123456789abcdef0123456789abcdef01234567",
+					"hello mr",
+				)
+				return event.Author, event.Body, event.DedupeKey, event.DirectURL, err
+			},
+			wantDedupe: "gitlab:gitlab.example.com:group/project:mr:7:note:9001",
+			wantURL:    "https://gitlab.example.com/group/project/-/merge_requests/7#note_9001",
 		},
 		{
 			name:   "create issue comment",
 			path:   "/api/v4/projects/42/issues/11/notes",
 			method: http.MethodPost,
-			call: func(client *Client) (string, string, string, error) {
+			call: func(client *Client) (string, string, string, string, error) {
 				event, err := client.CreateIssueComment(
 					context.Background(), projectRef(), 11, "hello mr",
 				)
-				return event.Author, event.Body, event.DedupeKey, err
+				return event.Author, event.Body, event.DedupeKey, event.DirectURL, err
 			},
 			wantDedupe: "gitlab:gitlab.example.com:group/project:issue:11:note:9001",
+			wantURL:    "https://gitlab.example.com/group/project/-/issues/11#note_9001",
 		},
 		{
 			name:   "edit issue comment",
 			path:   "/api/v4/projects/42/issues/11/notes/9001",
 			method: http.MethodPut,
-			call: func(client *Client) (string, string, string, error) {
+			call: func(client *Client) (string, string, string, string, error) {
 				event, err := client.EditIssueComment(
 					context.Background(), projectRef(), 11, 9001, "hello mr",
 				)
-				return event.Author, event.Body, event.DedupeKey, err
+				return event.Author, event.Body, event.DedupeKey, event.DirectURL, err
 			},
 			wantDedupe: "gitlab:gitlab.example.com:group/project:issue:11:note:9001",
+			wantURL:    "https://gitlab.example.com/group/project/-/issues/11#note_9001",
 		},
 	}
 
@@ -115,12 +138,13 @@ func TestGitLabCommentMutations(t *testing.T) {
 			}))
 			defer server.Close()
 
-			author, body, dedupeKey, err := tt.call(newTestClient(t, server.URL))
+			author, body, dedupeKey, directURL, err := tt.call(newTestClient(t, server.URL))
 			require.NoError(err)
 			require.True(sawRequest)
 			assert.Equal("ada", author)
 			assert.Equal("hello mr", body)
 			assert.Equal(tt.wantDedupe, dedupeKey)
+			assert.Equal(tt.wantURL, directURL)
 		})
 	}
 }

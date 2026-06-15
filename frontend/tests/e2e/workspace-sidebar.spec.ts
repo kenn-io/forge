@@ -1931,6 +1931,90 @@ test.describe("workspace launch home", () => {
       .toBe(true);
   });
 
+  test("xterm uses stable rendering for colored terminal diff output in Firefox", async ({ page, browserName }) => {
+    test.skip(browserName !== "firefox", "Firefox-specific xterm rendering regression coverage");
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "__middlemanOpenedTerminalSockets", {
+        value: [] as string[],
+      });
+      const NativeWebSocket = window.WebSocket;
+      const diffOutput = [
+        "\x1b[31m--- a/internal/db/queries.go\x1b[0m\r\n",
+        "\x1b[41m\x1b[37m-        Number: 701,\x1b[0m\r\n",
+        '\x1b[41m\x1b[37m-        URL: "https://github.com/acme/widget/pull/701",\x1b[0m\r\n',
+        '\x1b[41m\x1b[37m-        Title: "Sort PR workspace",\x1b[0m\r\n',
+      ].join("");
+
+      class MockTerminalWebSocket extends EventTarget {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+
+        binaryType = "arraybuffer";
+        extensions = "";
+        onclose: ((event: CloseEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onopen: ((event: Event) => void) | null = null;
+        protocol = "";
+        readyState = MockTerminalWebSocket.OPEN;
+        readonly url: string;
+
+        constructor(url: string | URL, protocols?: string | string[]) {
+          super();
+          this.url = String(url);
+          if (!this.url.includes("/ws/v1/workspaces/")) {
+            return new NativeWebSocket(url, protocols);
+          }
+          queueMicrotask(() => {
+            (window as unknown as { __middlemanOpenedTerminalSockets: string[] }).__middlemanOpenedTerminalSockets.push(
+              this.url,
+            );
+            const event = new Event("open");
+            this.dispatchEvent(event);
+            this.onopen?.(event);
+            const message = new MessageEvent("message", {
+              data: new TextEncoder().encode(diffOutput).buffer,
+            });
+            this.dispatchEvent(message);
+            this.onmessage?.(message);
+          });
+        }
+
+        close(): void {
+          this.readyState = MockTerminalWebSocket.CLOSED;
+          const event = new CloseEvent("close");
+          this.dispatchEvent(event);
+          this.onclose?.(event);
+        }
+
+        send(): void {
+          // The rendering assertion only needs inbound terminal output.
+        }
+      }
+
+      window.WebSocket = MockTerminalWebSocket as unknown as typeof WebSocket;
+    });
+
+    await page.goto("/terminal/ws-123", {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByRole("button", { name: "Codex" }).click();
+
+    await expect(page.locator(".terminal-container .xterm")).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window as unknown as { __middlemanOpenedTerminalSockets: string[] }).__middlemanOpenedTerminalSockets.some(
+            (url) => url.includes("/runtime/sessions/ws-123%3Acodex/terminal"),
+          ),
+        ),
+      )
+      .toBe(true);
+    await expect(page.locator(".terminal-container .xterm-screen canvas")).toHaveCount(0);
+  });
+
   test("xterm workspace terminal sends multiline browser paste as one payload", async ({ page }) => {
     await page.addInitScript(() => {
       type RecordedSocket = {

@@ -197,10 +197,18 @@
     terminal.refresh(0, Math.max(0, terminal.rows - 1));
   }
 
+  function isFirefox(): boolean {
+    return navigator.userAgent.toLowerCase().includes("firefox/");
+  }
+
   function recreateWebglAddon(): void {
     if (!terminal) return;
     webglAddon?.dispose();
     webglAddon = null;
+    if (isFirefox()) {
+      scheduleTerminalResize();
+      return;
+    }
     try {
       const wgl = new WebglAddon();
       wgl.onContextLoss(() => {

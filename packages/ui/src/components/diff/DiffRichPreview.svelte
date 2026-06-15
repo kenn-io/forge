@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { DiffFile, FilePreview } from "../../api/types.js";
   import { getStores } from "../../context.js";
+  import type { DiffViewMode } from "../../stores/diff.svelte.js";
+  import { renderMarkdownDiff } from "../../utils/markdown-diff.js";
   import { renderMarkdown } from "../../utils/markdown.js";
 
   interface Props {
@@ -12,12 +14,14 @@
     repoPath: string;
     number: number;
     active: boolean;
+    viewMode?: DiffViewMode;
   }
 
-  const { file, provider, platformHost, owner, name, repoPath, number, active }: Props = $props();
+  const { file, provider, platformHost, owner, name, repoPath, number, active, viewMode = "unified" }: Props = $props();
   const { diff: diffStore } = getStores();
 
   interface MarkdownComparison {
+    diffHtml: string;
     oldHtml: string;
     newHtml: string;
   }
@@ -118,9 +122,13 @@
         if (line.type !== "delete") newLines.push(line.content);
       }
     }
+    const repo = { provider, platformHost, owner, name, repoPath };
+    const oldHtml = renderMarkdown(`${oldLines.join("\n")}\n`, repo);
+    const newHtml = renderMarkdown(`${newLines.join("\n")}\n`, repo);
     return {
-      oldHtml: renderMarkdown(`${oldLines.join("\n")}\n`, { provider, platformHost, owner, name, repoPath }),
-      newHtml: renderMarkdown(`${newLines.join("\n")}\n`, { provider, platformHost, owner, name, repoPath }),
+      diffHtml: renderMarkdownDiff(oldHtml, newHtml),
+      oldHtml,
+      newHtml,
     };
   }
 </script>
@@ -128,26 +136,32 @@
 <div class="preview-shell">
   {#if isMarkdownFile}
     {#if markdownComparison}
-      <div class="diff-rich-preview markdown-rich-diff">
-        <div
-          class="markdown-rich-diff__pane markdown-rich-diff__block--delete"
-          aria-label="Before markdown preview"
-        >
-          <div class="markdown-rich-diff__label">Before</div>
-          <div class="markdown-body">
-            {@html markdownComparison.oldHtml}
+      {#if viewMode === "split"}
+        <div class="diff-rich-preview markdown-rich-diff markdown-rich-diff--split">
+          <div
+            class="markdown-rich-diff__pane markdown-rich-diff__block--delete"
+            aria-label="Before markdown preview"
+          >
+            <div class="markdown-rich-diff__label">Before</div>
+            <div class="markdown-body">
+              {@html markdownComparison.oldHtml}
+            </div>
+          </div>
+          <div
+            class="markdown-rich-diff__pane markdown-rich-diff__block--add"
+            aria-label="After markdown preview"
+          >
+            <div class="markdown-rich-diff__label">After</div>
+            <div class="markdown-body">
+              {@html markdownComparison.newHtml}
+            </div>
           </div>
         </div>
-        <div
-          class="markdown-rich-diff__pane markdown-rich-diff__block--add"
-          aria-label="After markdown preview"
-        >
-          <div class="markdown-rich-diff__label">After</div>
-          <div class="markdown-body">
-            {@html markdownComparison.newHtml}
-          </div>
+      {:else}
+        <div class="diff-rich-preview markdown-rich-diff markdown-rich-diff--unified markdown-body">
+          {@html markdownComparison.diffHtml}
         </div>
-      </div>
+      {/if}
     {:else}
       <div class="preview-state">Loading preview</div>
     {/if}
@@ -207,7 +221,7 @@
     color: var(--text-primary);
   }
 
-  .markdown-rich-diff {
+  .markdown-rich-diff--split {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 12px;
@@ -259,8 +273,39 @@
     text-decoration-color: color-mix(in srgb, var(--diff-del-text) 70%, transparent);
   }
 
+  .markdown-rich-diff--unified {
+    max-width: 920px;
+  }
+
+  .markdown-rich-diff--unified :global(ins),
+  .markdown-rich-diff--unified :global(del) {
+    padding: 0 0.16em;
+    border-radius: 3px;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.12em;
+  }
+
+  .markdown-rich-diff--unified :global(ins) {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--diff-add-bg) 80%, transparent);
+    text-decoration-color: color-mix(in srgb, var(--diff-add-text) 65%, transparent);
+  }
+
+  .markdown-rich-diff--unified :global(del) {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--diff-del-bg) 82%, transparent);
+    text-decoration-color: color-mix(in srgb, var(--diff-del-text) 70%, transparent);
+  }
+
+  .markdown-rich-diff--unified :global(.markdown-diff__block) {
+    display: block;
+    margin: 0.55rem 0;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid currentColor;
+  }
+
   @media (max-width: 760px) {
-    .markdown-rich-diff {
+    .markdown-rich-diff--split {
       grid-template-columns: minmax(0, 1fr);
     }
   }

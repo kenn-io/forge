@@ -539,6 +539,7 @@
             {repoPath}
             {number}
             active={inViewport}
+            {viewMode}
           />
         {/key}
       {:else if file.is_binary}

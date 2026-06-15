@@ -724,9 +724,7 @@
   ): void {
     clearRenderedDomState();
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
-    if (pierreDiff instanceof VirtualizedFileDiff && fullContext && fullContextFileDiff) {
-      pierreDiff.rerender();
-    } else if (fullContext && fullContextFileDiff) {
+    if (fullContext && fullContextFileDiff) {
       const didRender = renderFullContextRange(fullContext, fullContextFileDiff);
       if (!didRender) scheduleRenderRetry();
     }

@@ -616,6 +616,57 @@ async function expectRenderedNonBlankRows(file: ReturnType<Page["locator"]>, tex
     });
 }
 
+async function expectVisibleExpandedRowContent(file: ReturnType<Page["locator"]>, expectedText: string) {
+  await expect
+    .poll(async () => {
+      return await file.locator(".pierre-diff").evaluate((host, expectedText) => {
+        const root = host.shadowRoot;
+        const gutters = Array.from(root?.querySelectorAll("[data-gutter] > [data-line-index]") ?? []);
+        const contents = Array.from(root?.querySelectorAll("[data-content] > [data-line-index]") ?? []);
+        const visibleExpanded = gutters.filter((gutter): gutter is HTMLElement => {
+          if (!(gutter instanceof HTMLElement)) return false;
+          if (gutter.getAttribute("data-line-type") !== "context-expanded") return false;
+          const rect = gutter.getBoundingClientRect();
+          return rect.bottom > 0 && rect.top < window.innerHeight;
+        });
+
+        let matched = false;
+        let missing = 0;
+        let blank = 0;
+        for (const gutter of visibleExpanded) {
+          const gutterRect = gutter.getBoundingClientRect();
+          const index = gutter.getAttribute("data-line-index");
+          const content = contents.find((candidate): candidate is HTMLElement => {
+            if (!(candidate instanceof HTMLElement)) return false;
+            if (candidate.getAttribute("data-line-index") !== index) return false;
+            const contentRect = candidate.getBoundingClientRect();
+            return Math.abs(contentRect.top - gutterRect.top) <= 1;
+          });
+          if (!content) {
+            missing += 1;
+            continue;
+          }
+          const text = content.textContent?.trim() ?? "";
+          if (text.length === 0) blank += 1;
+          if (text.includes(expectedText)) matched = true;
+        }
+
+        return {
+          blank,
+          matched,
+          missing,
+          visibleExpandedPositive: visibleExpanded.length > 0,
+        };
+      }, expectedText);
+    })
+    .toEqual({
+      blank: 0,
+      matched: true,
+      missing: 0,
+      visibleExpandedPositive: true,
+    });
+}
+
 async function expectRenderedPierreContainmentDisabled(page: Page): Promise<void> {
   await expect
     .poll(
@@ -2196,6 +2247,7 @@ test.describe("diff view", () => {
     await clickPierreContextExpander(page, detailFile, 0, "[data-expand-down]");
     await expect.poll(() => [...new Set(previewSides)].sort()).toEqual(["new", "old"]);
     await expectRenderedNonBlankRows(schemaFile, "schema response row");
+    await expectVisibleExpandedRowContent(detailFile, "function onActionMenuKeydown(e: KeyboardEvent): void {");
     await scrollDiffAreaUntilPierreText(
       page,
       diffArea,

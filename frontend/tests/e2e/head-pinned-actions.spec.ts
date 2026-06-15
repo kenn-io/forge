@@ -117,6 +117,32 @@ function unboundDetailEnvelope(platformHeadSha: string, reviewedHeadSha = platfo
   };
 }
 
+async function mockPull77Detail(page: Page, platformHeadSha: string, reviewedHeadSha: string): Promise<void> {
+  await page.route("**/api/v1/pulls/github/acme/widgets/77", async (route: Route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(unboundDetailEnvelope(platformHeadSha, reviewedHeadSha)),
+    });
+  });
+
+  await page.route("**/api/v1/pulls/github/acme/widgets/77/sync", async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(unboundDetailEnvelope(platformHeadSha, reviewedHeadSha)),
+    });
+  });
+
+  await page.route("**/api/v1/pulls/github/acme/widgets/77/sync/async", async (route: Route) => {
+    await route.fulfill({ status: 202, contentType: "application/json", body: "{}" });
+  });
+}
+
 async function gotoPull42(page: Page): Promise<void> {
   await page.goto("/pulls/github/acme/widgets/42");
   await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
@@ -173,6 +199,38 @@ test.describe("head-pinned merge and approve", () => {
     await expect(page.locator(".approve-popover")).toHaveCount(0);
     expect(approveBody).not.toBeNull();
     expect(approveBody!["expected_head_sha"]).toBe(REVIEWED_SHA);
+  });
+
+  test("merge stays on reviewed head while toolbar approve uses synced head", async ({ page }) => {
+    const platformHead = SYNCED_SHA;
+    const reviewedHead = REVIEWED_SHA;
+    let mergeBody: Record<string, unknown> | null = null;
+    let approveBody: Record<string, unknown> | null = null;
+
+    await mockPull77Detail(page, platformHead, reviewedHead);
+    await page.route("**/api/v1/pulls/github/acme/widgets/77/merge", async (route: Route) => {
+      mergeBody = JSON.parse(route.request().postData() ?? "{}");
+      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    await page.route("**/api/v1/pulls/github/acme/widgets/77/approve", async (route: Route) => {
+      approveBody = JSON.parse(route.request().postData() ?? "{}");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "approved" }),
+      });
+    });
+
+    await page.goto("/pulls/github/acme/widgets/77");
+    await expect(page.locator(".detail-title")).toContainText("Unbound head PR");
+
+    await openMergeModalAndConfirm(page);
+    expect(mergeBody).not.toBeNull();
+    expect(mergeBody!["expected_head_sha"]).toBe(reviewedHead);
+
+    await submitApproval(page);
+    expect(approveBody).not.toBeNull();
+    expect(approveBody!["expected_head_sha"]).toBe(platformHead);
   });
 
   test("stale approval renders the provider side-effect context", async ({ page }) => {
@@ -237,6 +295,35 @@ test.describe("head-pinned merge and approve", () => {
 });
 
 test.describe("palette approve head conflict", () => {
+  test("uses the synced head when it differs from the reviewed head", async ({ page }) => {
+    await mockApi(page);
+
+    const platformHead = SYNCED_SHA;
+    const reviewedHead = REVIEWED_SHA;
+    await mockPull77Detail(page, platformHead, reviewedHead);
+    await page.route("**/api/v1/pulls/github/acme/widgets/77/approve", async (route: Route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "approved" }),
+      });
+    });
+
+    const approveRequest = page.waitForRequest(
+      (req) =>
+        req.method() === "POST" && /\/pulls\/github\/acme\/widgets\/77\/approve$/.test(new URL(req.url()).pathname),
+    );
+    await page.goto("/pulls/github/acme/widgets/77");
+    await expect(page.locator(".detail-title")).toContainText("Unbound head PR");
+    await page.keyboard.press("Meta+K");
+    await page.locator(".palette-input").fill("approve pr");
+    await page.keyboard.press("Enter");
+
+    const request = await approveRequest;
+    const body = request.postDataJSON() as { expected_head_sha?: string };
+    expect(body.expected_head_sha).toBe(platformHead);
+  });
+
   test("stale_state from a palette approval reloads the detail before retry", async ({ page }) => {
     await mockApi(page);
 

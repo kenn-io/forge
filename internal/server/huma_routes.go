@@ -2439,6 +2439,12 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	return &actionStatusOutput{Body: actionStatusBody{Status: "approved"}}, nil
 }
 
+// approvalReviewHeadSHA resolves the provider commit to attach a direct
+// approval to. Direct /approve is a provider-head mutation: clients should
+// send the head captured when the approval UI opened, normally
+// platform_head_sha. If older clients omit it, bind to the best stored
+// provider head. Merge and draft-review publish use reviewedHeadSHA instead
+// because those paths require a verified diff snapshot.
 func approvalReviewHeadSHA(mr *db.MergeRequest, clientSHA string) string {
 	if sha := strings.TrimSpace(clientSHA); sha != "" {
 		return sha

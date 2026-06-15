@@ -3,7 +3,7 @@ package e2etest
 // Full-stack coverage for provider-enforced head pins on GitHub: the HTTP API
 // must hand the reviewed head to merge mutations, map the provider's moved-head
 // rejection to a 409 conflict with reason stale_state, and send approval
-// reviews with the rendered commit id when one is available.
+// reviews with the requested or stored provider head when one is available.
 
 import (
 	"context"
@@ -341,6 +341,42 @@ func TestGitHubApproveSubmitsReview(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.True(providerCalled.Load())
 	assert.Equal("reviewed-sha", reviewCommitID)
+}
+
+func TestGitHubApproveOmittedHeadPinUsesStoredPlatformHead(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var providerCalled atomic.Bool
+	var reviewCommitID string
+	mock := &mockGH{
+		createReviewWithCommentsFn: func(
+			_ context.Context, _, _ string, _ int, event, body, commitID string,
+			_ []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			providerCalled.Store(true)
+			reviewCommitID = commitID
+			id := int64(79)
+			state := event
+			now := gh.Timestamp{Time: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)}
+			return &gh.PullRequestReview{
+				ID:          &id,
+				State:       &state,
+				Body:        &body,
+				SubmittedAt: &now,
+				User:        &gh.User{Login: new("reviewer")},
+			}, nil
+		},
+	}
+	srv, database, repoID := setupGitHubHeadPinServerWithoutReviewedDiff(t, mock)
+	require.NoError(database.UpdatePlatformSHAs(t.Context(), repoID, 7, "platform-sha", "base-sha"))
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/approve",
+		json.RawMessage(`{"body":"lgtm"}`),
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.True(providerCalled.Load())
+	assert.Equal("platform-sha", reviewCommitID)
 }
 
 func TestGitHubReviewDraftApprovePublishesReview(t *testing.T) {

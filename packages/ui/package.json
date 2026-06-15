@@ -119,7 +119,7 @@
   },
   "dependencies": {
     "@lucide/svelte": "1.17.0",
-    "@pierre/diffs": "1.2.7",
+    "@pierre/diffs": "1.2.10",
     "@pierre/trees": "1.0.0-beta.4",
     "@tiptap/core": "3.26.0",
     "@tiptap/extension-document": "3.26.0",

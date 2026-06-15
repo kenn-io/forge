@@ -1614,20 +1614,12 @@ test.describe("diff view", () => {
 
     await previewToggle.click();
     await expect(previewToggle).toHaveAttribute("aria-checked", "true");
-    await expect(
-      page.getByLabel("After markdown preview").getByRole("heading", { name: "Rendered preview" }),
-    ).toBeVisible();
-    await expect(page.locator(".markdown-rich-diff")).toContainText("Markdown task");
-    await expect(
-      page.locator(".markdown-rich-diff__block--delete", {
-        hasText: "Old paragraph that should be highlighted.",
-      }),
-    ).toContainText("Old paragraph that should be highlighted.");
-    await expect(
-      page.locator(".markdown-rich-diff__block--add", {
-        hasText: "New paragraph that should be highlighted.",
-      }),
-    ).toContainText("New paragraph that should be highlighted.");
+    const markdownPreview = page.locator(".markdown-rich-diff--unified");
+    await expect(markdownPreview.getByRole("heading", { name: "Rendered preview" })).toBeVisible();
+    await expect(markdownPreview).toContainText("Markdown task");
+    await expect(markdownPreview).toContainText("paragraph that should be highlighted.");
+    await expect(markdownPreview.locator("del", { hasText: "Old" })).toBeVisible();
+    await expect(markdownPreview.locator("ins", { hasText: "New" })).toBeVisible();
 
     const handlerFile = page.locator('[data-file-path="internal/server/handler.go"]');
     await handlerFile.scrollIntoViewIfNeeded();
@@ -2843,10 +2835,9 @@ test.describe("diff view (git-backed)", () => {
       await categoryFilter.getByRole("button", { name: "Plans/docs (2)" }).click();
 
       const planFile = page.locator('[data-file-path="docs/cache-plan.md"]');
-      await expect(planFile.locator(".markdown-rich-diff__block--add")).toContainText("Cache refresh plan");
-      await expect(planFile.locator(".markdown-rich-diff__block--add")).toContainText(
-        "Verify changed-file summaries refresh",
-      );
+      const planPreview = planFile.locator(".markdown-rich-diff--unified");
+      await expect(planPreview.locator("ins", { hasText: "Cache refresh plan" })).toBeVisible();
+      await expect(planPreview.locator("ins", { hasText: "Verify changed-file summaries refresh" })).toBeVisible();
 
       const previewResponse = await page.request.get(
         `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1/file-preview?path=internal/cache.go`,

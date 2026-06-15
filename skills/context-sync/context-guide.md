@@ -27,10 +27,9 @@ GOOD (not greppable): "GitHub GraphQL bulk fetch is an optimization layered *aro
 neutral persistence path, not through it — keep it optional so other providers keep
 working when the GraphQL path is skipped."
 
-## Single-Surface Layout (no WHY/HOW split)
+## Single-Surface Layout
 
-middleman does not use per-module `CLAUDE.md` files or a `.claude/rules/` directory. Its
-context lives in two places, and that is deliberate — do not introduce a dual surface:
+middleman's durable agent context lives in two places:
 
 - **Root `CLAUDE.md`** — the hub. Project overview, architecture, the single canonical
   provider list, non-provider modes, project structure, key files, dev/test commands,

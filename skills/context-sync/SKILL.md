@@ -10,8 +10,7 @@ argument-hint: "[area] [--check | --audit-claims]"
 Keep middleman's context system honest: scan the context docs, compare them against
 the current code, detect drift and knowledge gaps, ask the maintainer to fill them,
 and draft updates for review. Adapted for this repo's Go + Svelte stack and its
-single-surface context layout (hub `CLAUDE.md` + flat `context/*.md` topic docs). There
-is no `.claude/rules/` WHY/HOW split and no Python tooling here — do not introduce either.
+single-surface context layout: root `CLAUDE.md` routes to flat `context/*.md` topic docs.
 
 **Arguments:**
 - No args: sync every area in the area map below.

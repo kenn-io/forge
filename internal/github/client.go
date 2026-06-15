@@ -2215,11 +2215,11 @@ func (c *liveClient) CreateReviewWithComments(
 func (c *liveClient) DismissReview(
 	ctx context.Context, owner, repo string, number int, reviewID int64, message string,
 ) (*gh.PullRequestReview, error) {
-	review, resp, err := c.gh.PullRequests.DismissReview(
+	review, resp, err := c.writeGH().PullRequests.DismissReview(
 		ctx, owner, repo, number, reviewID,
 		&gh.PullRequestReviewDismissalRequest{Message: &message},
 	)
-	c.trackRate(resp)
+	c.trackWriteRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"dismissing review %d on %s/%s#%d: %w", reviewID, owner, repo, number, err,

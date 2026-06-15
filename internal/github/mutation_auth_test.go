@@ -102,6 +102,12 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"merged":true}`))
 		})
+	mux.HandleFunc("PUT /api/v3/repos/acme/widgets/pulls/5/reviews/77/dismissals",
+		func(w http.ResponseWriter, r *http.Request) {
+			record("write:dismiss-review", r)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":77,"state":"DISMISSED"}`))
+		})
 	mux.HandleFunc("POST /api/graphql",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -160,6 +166,8 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	require.NoError(err)
 	_, err = c.MarkPullRequestReadyForReview(t.Context(), "acme", "widgets", 5)
 	require.NoError(err)
+	_, err = c.DismissReview(t.Context(), "acme", "widgets", 5, 77, "stale")
+	require.NoError(err)
 	// GetRepository reads metadata with the sync credential (so
 	// app-only hosts keep syncing) and overlays the viewer-specific
 	// permissions from the user's credential, which feed
@@ -174,6 +182,7 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	assert.Equal("Bearer ghs_app_token", authByCall["read:releases"])
 	assert.Equal("Bearer user-pat", authByCall["write:comment"])
 	assert.Equal("Bearer user-pat", authByCall["write:merge"])
+	assert.Equal("Bearer user-pat", authByCall["write:dismiss-review"])
 	assert.Equal("Bearer user-pat", authByCall["write:rfr-id-lookup"])
 	assert.Equal("Bearer user-pat", authByCall["write:rfr-mutation"])
 	assert.Equal("Bearer ghs_app_token", authByCall["repo:metadata"],

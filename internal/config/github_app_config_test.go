@@ -352,6 +352,21 @@ selected_repos = ["kenn-io/middleman"]
 	require.NoError(err, "the repair loader exists exactly for this failure")
 	require.Len(cfg.GitHubApps, 1)
 
+	missingInstallAccount := `
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+installation_id = 9
+`
+	_, err = Load(writeConfig(t, missingInstallAccount))
+	require.Error(err, "the strict loader must reject incomplete installation metadata")
+	Assert.ErrorContains(t, err, "installation_account is required")
+	cfg, err = LoadForGitHubAppRepair(writeConfig(t, missingInstallAccount))
+	require.NoError(err, "the repair loader must let install refresh the account")
+	require.Len(cfg.GitHubApps, 1)
+	Assert.Equal(t, int64(9), cfg.GitHubApps[0].InstallationID)
+	Assert.Empty(t, cfg.GitHubApps[0].InstallationAccount)
+
 	// Every other validation rule still applies.
 	_, err = LoadForGitHubAppRepair(writeConfig(t, `
 [[github_apps]]

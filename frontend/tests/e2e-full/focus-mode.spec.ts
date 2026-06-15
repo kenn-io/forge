@@ -34,7 +34,7 @@ test.describe("focus mode", () => {
     await page.locator(".actions-menu-trigger").click();
 
     await expect(page.locator(".actions-row--primary .btn--approve")).toBeHidden();
-    await expect(page.locator(".actions-menu-popover .btn--approve")).toHaveCount(0);
+    await expect(page.locator(".actions-menu-popover .btn--approve")).toBeVisible();
     await expect(page.locator(".actions-menu-popover .btn--merge")).toBeVisible();
     await expect(page.locator(".actions-menu-popover .btn--close")).toBeVisible();
     await expect(page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" })).toBeVisible();

@@ -1,6 +1,10 @@
 package platform
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -87,4 +91,54 @@ func TestNormalizeKindCanonicalizesBuiltInShorthands(t *testing.T) {
 	tea, err := NormalizeKind(" tea ")
 	require.NoError(err)
 	assert.Equal(KindGitea, tea)
+}
+
+func TestSupportedProviderListMatchesBuiltInMetadata(t *testing.T) {
+	require := require.New(t)
+
+	contents, err := os.ReadFile(filepath.Join("..", "..", "CLAUDE.md"))
+	require.NoError(err)
+
+	docProviders := supportedProvidersFromDoc(t, string(contents))
+	codeProviders := make([]string, 0, len(builtInMetadata))
+	for _, meta := range builtInMetadata {
+		codeProviders = append(codeProviders, meta.Label)
+	}
+
+	require.ElementsMatch(codeProviders, docProviders)
+}
+
+func supportedProvidersFromDoc(t *testing.T, contents string) []string {
+	t.Helper()
+
+	section := providerSupportSection(t, contents)
+	re := regexp.MustCompile(`(?m)^middleman supports ([^.]+)\.`)
+	match := re.FindStringSubmatch(section)
+	require.Len(t, match, 2, "Provider Support section must contain the supported-provider sentence")
+
+	list := strings.ReplaceAll(match[1], ", and ", ", ")
+	list = strings.ReplaceAll(list, " and ", ", ")
+	parts := strings.Split(list, ",")
+	providers := make([]string, 0, len(parts))
+	for _, part := range parts {
+		provider := strings.TrimSpace(part)
+		if provider != "" {
+			providers = append(providers, provider)
+		}
+	}
+	require.NotEmpty(t, providers, "supported-provider sentence must name at least one provider")
+	return providers
+}
+
+func providerSupportSection(t *testing.T, contents string) string {
+	t.Helper()
+
+	const heading = "## Provider Support\n"
+	start := strings.Index(contents, heading)
+	require.NotEqual(t, -1, start, "CLAUDE.md must contain a Provider Support section")
+	section := contents[start+len(heading):]
+	if end := strings.Index(section, "\n## "); end >= 0 {
+		section = section[:end]
+	}
+	return section
 }

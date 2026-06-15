@@ -1,0 +1,25 @@
+host = "127.0.0.1"
+port = 8091
+# The hub fans out to this member at http://member:18091 (Docker service
+# name + socat port), so the member's host-authority guard must accept the
+# member:18091 authority in addition to its loopback listen address.
+allowed_hosts = ["member:18091"]
+data_dir = "/data/member"
+sync_interval = "1h"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E"
+
+[activity]
+view_mode = "threaded"
+time_range = "7d"
+
+[terminal]
+renderer = "xterm"
+
+[fleet]
+key = "member"
+peer_timeout = "1s"
+
+[[agents]]
+key = "drive-helper"
+label = "Drive helper"
+command = ["sh", "-lc", "printf drive-helper-ready; sleep 300"]

@@ -388,6 +388,16 @@ type workspaceRuntimeResponse struct {
 	Sessions      []localruntime.SessionInfo  `json:"sessions"`
 }
 
+type runtimeAttachSpecResponse struct {
+	Version           int      `json:"version"`
+	Kind              string   `json:"kind"`
+	SessionKey        string   `json:"session_key"`
+	TargetKey         string   `json:"target_key"`
+	TmuxSession       string   `json:"tmux_session"`
+	Command           []string `json:"command"`
+	RequiresLocalHost bool     `json:"requires_local_host"`
+}
+
 // workspaceRef is the lightweight link from item detail APIs back to an
 // existing middleman workspace.
 //

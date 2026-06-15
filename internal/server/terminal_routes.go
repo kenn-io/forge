@@ -18,6 +18,8 @@ func terminalAPIConfig() huma.Config {
 }
 
 func (s *Server) registerTerminalAPI(api huma.API, tmuxCmd []string) {
+	s.registerFleetTerminalRoutes(api)
+
 	handler := &terminal.Handler{
 		Workspaces:  s.workspaces,
 		TmuxCommand: slices.Clone(tmuxCmd),

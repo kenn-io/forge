@@ -324,6 +324,25 @@ id = "notes"`,
 	}
 }
 
+func TestLoadRoundTripsHostAuthorityConfig(t *testing.T) {
+	assert := Assert.New(t)
+
+	cfg, cfg2 := roundTripConfigString(t, `
+host = "127.0.0.1"
+port = 8091
+allowed_hosts = ["middleman.local:8091", "studio.tailnet:8091"]
+trust_reverse_proxy = true
+`)
+
+	assert.Equal(
+		[]string{"middleman.local:8091", "studio.tailnet:8091"},
+		cfg.AllowedHosts,
+	)
+	assert.True(cfg.TrustReverseProxy)
+	assert.Equal(cfg.AllowedHosts, cfg2.AllowedHosts)
+	assert.Equal(cfg.TrustReverseProxy, cfg2.TrustReverseProxy)
+}
+
 func TestLoadNormalizesDefaultPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	cfg, cfg2 := roundTripConfigString(t, `
@@ -2891,6 +2910,63 @@ func TestSavePreservesTmuxCommand(t *testing.T) {
 	)
 }
 
+// TestSaveRoundTripsFleet guards against Save silently dropping the
+// [fleet] section: peers, the local host key, peer timeout, and the
+// [fleet.tmux] toggle must all survive a Save/Load round trip.
+func TestSaveRoundTripsFleet(t *testing.T) {
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	cfg := &Config{
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Host:           "127.0.0.1",
+		Port:           8091,
+		DataDir:        dir,
+		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
+		Fleet: Fleet{
+			Key:         "studio",
+			PeerTimeout: "3s",
+			Tmux:        FleetTmux{IncludeUnmanagedDetails: true},
+			Peers: []FleetPeer{
+				{Key: "laptop", Name: "Laptop", BaseURL: "http://laptop:8091"},
+				{Key: "server", BaseURL: "http://10.0.0.2:8091"},
+			},
+		},
+	}
+	require.NoError(t, cfg.Save(path))
+
+	reloaded, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal("studio", reloaded.Fleet.Key)
+	assert.Equal("3s", reloaded.Fleet.PeerTimeout)
+	assert.True(reloaded.Fleet.Tmux.IncludeUnmanagedDetails)
+	assert.Equal(cfg.Fleet.Peers, reloaded.Fleet.Peers)
+}
+
+// TestSaveOmitsEmptyFleet keeps default configs clean: a daemon with no
+// fleet federation must not gain a [fleet] section on save.
+func TestSaveOmitsEmptyFleet(t *testing.T) {
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	cfg := &Config{
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Host:           "127.0.0.1",
+		Port:           8091,
+		DataDir:        dir,
+		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
+	}
+	require.NoError(t, cfg.Save(path))
+
+	saved, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.NotContains(string(saved), "[fleet]")
+}
+
 func TestLoadAgents(t *testing.T) {
 	assert := Assert.New(t)
 	path := writeConfig(t, `
@@ -3434,4 +3510,182 @@ allowed_hosts = ["mm.local:8091"]
 		[]HostKey{{Host: "mm.local", Port: "8091"}},
 		again,
 	)
+}
+
+func TestFleetConfigParsesAndValidates(t *testing.T) {
+	require := require.New(t)
+	path := writeConfig(t, `
+[fleet]
+key = "studio"
+peer_timeout = "2s"
+[fleet.tmux]
+include_unmanaged_details = true
+[[fleet.peers]]
+key = "mbp"
+name = "MacBook"
+base_url = "http://mbp:8091"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.Equal("studio", cfg.Fleet.Key)
+	require.Len(cfg.Fleet.Peers, 1)
+	require.Equal("mbp", cfg.Fleet.Peers[0].Key)
+	require.Equal("http://mbp:8091", cfg.Fleet.Peers[0].BaseURL)
+	require.Equal("2s", cfg.Fleet.PeerTimeoutOrDefault().String())
+	require.True(cfg.Fleet.Tmux.IncludeUnmanagedDetails)
+}
+
+func TestFleetTmuxConfigDefaultsToRedactedUnmanagedDetails(t *testing.T) {
+	path := writeConfig(t, `
+[fleet]
+key = "studio"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.False(t, cfg.Fleet.Tmux.IncludeUnmanagedDetails)
+}
+
+func TestFleetRejectsDuplicatePeerKeys(t *testing.T) {
+	path := writeConfig(t, `
+[[fleet.peers]]
+key = "dup"
+base_url = "http://a:8091"
+[[fleet.peers]]
+key = "dup"
+base_url = "http://b:8091"
+`)
+	_, err := Load(path)
+	require.Error(t, err, "expected duplicate peer key to fail validation")
+}
+
+func TestFleetRejectsSchemelessBaseURL(t *testing.T) {
+	path := writeConfig(t, "[[fleet.peers]]\nkey = \"p\"\nbase_url = \"localhost:8091\"\n")
+	_, err := Load(path)
+	require.Error(t, err, "expected scheme-less base_url to be rejected")
+}
+
+func TestFleetPeerTimeoutDefaults(t *testing.T) {
+	var f Fleet
+	require.Equal(t, 2*time.Second, f.PeerTimeoutOrDefault(), "empty peer timeout must default to 2s")
+}
+
+func TestValidateHostBinding(t *testing.T) {
+	cases := []struct {
+		name    string
+		host    string
+		wantErr string
+	}{
+		{name: "loopback v4", host: "127.0.0.1"},
+		{name: "loopback v6", host: "::1"},
+		{name: "specific non-loopback", host: "100.100.1.2"},
+		{name: "specific non-loopback v6", host: "fd7a:115c:a1e0::1"},
+		{
+			name:    "wildcard v4",
+			host:    "0.0.0.0",
+			wantErr: "unspecified",
+		},
+		{
+			name:    "wildcard v6",
+			host:    "::",
+			wantErr: "unspecified",
+		},
+		{
+			name:    "hostname",
+			host:    "studio.tailnet",
+			wantErr: "invalid host",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			path := writeConfig(t, "host = \""+tc.host+"\"\n")
+			_, err := Load(path)
+			if tc.wantErr == "" {
+				require.NoError(err)
+				return
+			}
+			require.Error(err)
+			require.Contains(err.Error(), tc.wantErr)
+		})
+	}
+}
+
+// TestValidateFleetSSHPeers pins the load-time rejection of ssh peer
+// configs that would later surface as unroutable hosts or merge
+// collisions.
+func TestValidateFleetSSHPeers(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			Fleet: Fleet{
+				Key:   "studio",
+				Peers: []FleetPeer{{Key: "mbp", BaseURL: "http://x"}},
+			},
+		}
+	}
+
+	ok := base()
+	ok.Fleet.SSHPeers = []FleetSSHPeer{
+		{Key: "epyc", Destination: "wes@epyc.local"},
+	}
+	require.NoError(t, ok.validateFleetSSHPeers())
+
+	cases := []struct {
+		name  string
+		peers []FleetSSHPeer
+		want  string
+	}{
+		{"empty key", []FleetSSHPeer{{Destination: "x@y"}}, "key is required"},
+		{"empty destination", []FleetSSHPeer{{Key: "epyc"}}, "destination is required"},
+		{"self collision", []FleetSSHPeer{{Key: "studio", Destination: "x@y"}}, "collides with fleet.key"},
+		{"http peer collision", []FleetSSHPeer{{Key: "mbp", Destination: "x@y"}}, "collides with fleet.peers"},
+		{"duplicate ssh key", []FleetSSHPeer{
+			{Key: "epyc", Destination: "x@y"},
+			{Key: "epyc", Destination: "x@z"},
+		}, "collides with fleet.ssh_peers"},
+		{"remote command with flags", []FleetSSHPeer{
+			{
+				Key: "epyc", Destination: "x@y",
+				RemoteCommand: "middleman --config /etc/mm.toml",
+			},
+		}, "remote_command must be a bare executable"},
+		{"remote command with semicolon", []FleetSSHPeer{
+			{
+				Key: "epyc", Destination: "x@y",
+				RemoteCommand: "middleman;rm",
+			},
+		}, "remote_command must be a bare executable"},
+		{"remote command with substitution", []FleetSSHPeer{
+			{
+				Key: "epyc", Destination: "x@y",
+				RemoteCommand: "$(which middleman)",
+			},
+		}, "remote_command must be a bare executable"},
+		{"remote command with newline", []FleetSSHPeer{
+			{
+				Key: "epyc", Destination: "x@y",
+				RemoteCommand: "middleman\nrm",
+			},
+		}, "remote_command must be a bare executable"},
+		{"remote command with trailing newline", []FleetSSHPeer{
+			{
+				Key: "epyc", Destination: "x@y",
+				RemoteCommand: "middleman\n",
+			},
+		}, "remote_command must be a bare executable"},
+		{"remote command with trailing space", []FleetSSHPeer{
+			{
+				Key: "epyc", Destination: "x@y",
+				RemoteCommand: "middleman ",
+			},
+		}, "remote_command must be a bare executable"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := base()
+			cfg.Fleet.SSHPeers = tc.peers
+			err := cfg.validateFleetSSHPeers()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.want)
+		})
+	}
 }

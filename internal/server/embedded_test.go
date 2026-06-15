@@ -35,31 +35,11 @@ func setupEmbeddedServer(
 	)
 }
 
-func TestBootstrapInjectsEmbedConfig(t *testing.T) {
-	frontend := fstest.MapFS{
-		"index.html": &fstest.MapFile{
-			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
-		},
-	}
-
-	hideSync := true
-	srv := setupEmbeddedServer(t, "/middleman/", frontend, ServerOptions{
-		EmbedConfig: &EmbedConfig{
-			Theme: &ThemeConfig{Mode: "dark"},
-			UI:    &UIConfig{HideSync: &hideSync},
-		},
-	})
-	req := httptest.NewRequest(http.MethodGet, "/middleman/", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	body := rr.Body.String()
-	assert := Assert.New(t)
-	assert.Contains(body, `window.__middleman_config=`)
-	assert.Contains(body, `"mode":"dark"`)
-	assert.NotContains(body, `__MIDDLEMAN_EMBEDDED__`)
-}
-
+// TestBootstrapActiveWorktreeKey pins the served-config contract:
+// the SPA bootstrap script carries the daemon-side UI focus state
+// (set over PUT /api/v1/ui/active-worktree) and nothing else —
+// presentation preferences are injected client-side by webview
+// hosts.
 func TestBootstrapActiveWorktreeKey(t *testing.T) {
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
@@ -67,26 +47,7 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 		},
 	}
 
-	t.Run("injected into existing embed config", func(t *testing.T) {
-		hideSync := true
-		srv := setupEmbeddedServer(t, "/middleman/", frontend, ServerOptions{
-			EmbedConfig: &EmbedConfig{
-				UI: &UIConfig{HideSync: &hideSync},
-			},
-		})
-		srv.SetActiveWorktreeKey("my-worktree")
-
-		req := httptest.NewRequest(http.MethodGet, "/middleman/", nil)
-		rr := httptest.NewRecorder()
-		srv.ServeHTTP(rr, req)
-
-		body := rr.Body.String()
-		assert := Assert.New(t)
-		assert.Contains(body, `"activeWorktreeKey":"my-worktree"`)
-		assert.Contains(body, `"hideSync":true`)
-	})
-
-	t.Run("creates embed config when none provided", func(t *testing.T) {
+	t.Run("set key is served", func(t *testing.T) {
 		srv := setupEmbeddedServer(t, "/app/", frontend, ServerOptions{})
 		srv.SetActiveWorktreeKey("wt-123")
 
@@ -100,44 +61,17 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 		assert.Contains(body, `window.__middleman_config=`)
 	})
 
-	t.Run("does not mutate shared embed config", func(t *testing.T) {
-		opts := ServerOptions{
-			EmbedConfig: &EmbedConfig{
-				Theme: &ThemeConfig{Mode: "dark"},
-			},
-		}
-		srv := setupEmbeddedServer(t, "/middleman/", frontend, opts)
-		srv.SetActiveWorktreeKey("wt-abc")
-
-		req := httptest.NewRequest(http.MethodGet, "/middleman/", nil)
+	t.Run("no key means no served config", func(t *testing.T) {
+		srv := setupEmbeddedServer(t, "/app/", frontend, ServerOptions{})
+		req := httptest.NewRequest(http.MethodGet, "/app/", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 
 		body := rr.Body.String()
 		assert := Assert.New(t)
-		assert.Contains(body, `"activeWorktreeKey":"wt-abc"`)
-
-		// Original config must not be mutated.
-		assert.Nil(opts.EmbedConfig.UI)
+		assert.NotContains(body, `__middleman_config`)
+		assert.Contains(body, `window.__BASE_PATH__="/app/"`)
 	})
-}
-
-func TestBootstrapNoEmbedConfig(t *testing.T) {
-	frontend := fstest.MapFS{
-		"index.html": &fstest.MapFile{
-			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
-		},
-	}
-
-	srv := setupEmbeddedServer(t, "/app/", frontend, ServerOptions{})
-	req := httptest.NewRequest(http.MethodGet, "/app/", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	body := rr.Body.String()
-	assert := Assert.New(t)
-	assert.NotContains(body, `__middleman_config`)
-	assert.Contains(body, `window.__BASE_PATH__="/app/"`)
 }
 
 func TestSPACacheHeaders(t *testing.T) {

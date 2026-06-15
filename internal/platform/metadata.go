@@ -102,3 +102,15 @@ func LowercaseRepoNames(kind Kind) bool {
 	meta, ok := MetadataFor(kind)
 	return ok && meta.LowercaseRepoNames
 }
+
+// MergeRequestHeadRef returns the remote ref that carries a merge request's
+// head commit on the given platform: GitLab serves
+// refs/merge-requests/<n>/head, while GitHub, Forgejo, and Gitea serve
+// refs/pull/<n>/head. Unknown platforms fall back to the refs/pull form.
+func MergeRequestHeadRef(kind Kind, number int) string {
+	normalized, err := NormalizeKind(string(kind))
+	if err == nil && normalized == KindGitLab {
+		return fmt.Sprintf("refs/merge-requests/%d/head", number)
+	}
+	return fmt.Sprintf("refs/pull/%d/head", number)
+}

@@ -54,6 +54,10 @@ type SessionInfo struct {
 	ExitedAt    *time.Time       `json:"exited_at,omitempty"`
 	ExitCode    *int             `json:"exit_code,omitempty"`
 	TmuxSession string           `json:"-"`
+	// Reused reports that ensure semantics returned an already-live
+	// session instead of launching one. Callers whose post-launch
+	// bookkeeping fails must not stop a session they did not start.
+	Reused bool `json:"-"`
 }
 
 func (s SessionInfo) Compare(other SessionInfo) int {
@@ -732,7 +736,10 @@ func (m *Manager) Detach(workspaceID string, sessionKey string) error {
 // StopWorkspace stops every running runtime session that
 // belongs to workspaceID. It is intended to be called when a
 // workspace is deleted so launched processes do not survive the
-// worktree they were started in.
+// worktree they were started in. The marker it takes internally is
+// released on return; callers that go on to delete the workspace's
+// backing rows must hold their own BeginStopping/EndStopping pair
+// across the whole destructive flow.
 func (m *Manager) StopWorkspace(
 	ctx context.Context,
 	workspaceID string,
@@ -740,17 +747,8 @@ func (m *Manager) StopWorkspace(
 	// 1. Mark the workspace as stopping under the manager mutex.
 	//    New Launch calls that observe this marker bail
 	//    out via claimInflight before spawning a process.
-	m.mu.Lock()
-	m.stoppingWS[workspaceID]++
-	m.mu.Unlock()
-	defer func() {
-		m.mu.Lock()
-		m.stoppingWS[workspaceID]--
-		if m.stoppingWS[workspaceID] <= 0 {
-			delete(m.stoppingWS, workspaceID)
-		}
-		m.mu.Unlock()
-	}()
+	m.BeginStopping(workspaceID)
+	defer m.EndStopping(workspaceID)
 
 	// 2. Drain any Launch calls that passed claimInflight
 	//    before the marker was set. They are mid-startSession; once

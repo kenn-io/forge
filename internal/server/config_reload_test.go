@@ -1591,3 +1591,107 @@ func TestConfigReload_SubscriberAfterParseErrorGetsCachedEvent(t *testing.T) {
 	assert.False(cached.Valid)
 	assert.NotEmpty(cached.Error)
 }
+
+// TestRestartRequiredForAuthAndSSHPeers pins that the startup-bound
+// [api] auth gate and fleet ssh peer set participate in restart
+// detection: both are wired at newServer time (token minting, ssh
+// transport construction), so editing them mid-run must surface
+// restart_required instead of silently not applying.
+func TestRestartRequiredForAuthAndSSHPeers(t *testing.T) {
+	require := require.New(t)
+	base := func() *config.Config {
+		cfg := &config.Config{}
+		cfg.API.RequireAuth = false
+		cfg.Fleet.SSHPeers = []config.FleetSSHPeer{
+			{Key: "epyc", Destination: "wes@epyc.local"},
+		}
+		return cfg
+	}
+	snap := snapshotStartupConfig(base())
+
+	require.False(snap.restartRequiredFor(base()),
+		"identical config must not demand a restart")
+
+	authFlipped := base()
+	authFlipped.API.RequireAuth = true
+	require.True(snap.restartRequiredFor(authFlipped))
+
+	peerAdded := base()
+	peerAdded.Fleet.SSHPeers = append(
+		peerAdded.Fleet.SSHPeers,
+		config.FleetSSHPeer{Key: "mini", Destination: "wes@mini.local"},
+	)
+	require.True(snap.restartRequiredFor(peerAdded))
+
+	peerEdited := base()
+	peerEdited.Fleet.SSHPeers[0].Destination = "wes@epyc.tail"
+	require.True(snap.restartRequiredFor(peerEdited))
+}
+
+const validReloadConfigAuthGate = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[api]
+require_auth = true
+`
+
+const validReloadConfigSSHPeer = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[fleet.ssh_peers]]
+key = "epyc"
+destination = "wes@epyc.local"
+`
+
+// The auth gate and ssh transport are wired in newServer; editing
+// them mid-run must surface restart_required on the user-visible
+// config.changed event, not silently apply nothing.
+func TestConfigReload_RestartRequiredOnAuthGateChange(t *testing.T) {
+	assert := assert.New(t)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfigAuthGate)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid)
+	assert.True(ev.RestartRequired,
+		"[api].require_auth change should mark restart_required")
+}
+
+func TestConfigReload_RestartRequiredOnSSHPeerChange(t *testing.T) {
+	assert := assert.New(t)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfigSSHPeer)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid)
+	assert.True(ev.RestartRequired,
+		"[[fleet.ssh_peers]] change should mark restart_required")
+}

@@ -66,7 +66,11 @@ window.__middleman_notify_config_changed = () => {
 };
 
 export function isEmbedded(): boolean {
-  return readConfig() !== undefined;
+  // Embed mode is signaled by the embed block specifically: the
+  // daemon also serves a config carrying only daemon-side UI state
+  // (ui.activeWorktreeKey), which must not flip the standalone SPA
+  // into embedded behavior.
+  return readConfig()?.embed !== undefined;
 }
 
 export function isHeaderHidden(): boolean {

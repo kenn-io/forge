@@ -29,16 +29,18 @@ describe("isEmbedded", () => {
     expect(isEmbedded()).toBe(false);
   });
 
-  it("returns true when config is set", () => {
-    win.__middleman_config = {};
+  it("returns true when the embed block is present", () => {
+    win.__middleman_config = { embed: {} };
     win.__middleman_notify_config_changed();
     expect(isEmbedded()).toBe(true);
   });
 
-  it("returns true for empty object", () => {
-    win.__middleman_config = {};
+  it("daemon-served ui-only config does not imply embedding", () => {
+    win.__middleman_config = {
+      ui: { activeWorktreeKey: "wt-1" },
+    };
     win.__middleman_notify_config_changed();
-    expect(isEmbedded()).toBe(true);
+    expect(isEmbedded()).toBe(false);
   });
 });
 

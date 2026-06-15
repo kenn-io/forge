@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -243,7 +244,11 @@ func TestCreateProjectWorktreeRejectsUnknownProject(t *testing.T) {
 	assert.ErrorIs(err, db.ErrProjectNotFound)
 }
 
-func TestCreateProjectWorktreeRejectsDuplicatePath(t *testing.T) {
+// TestCreateProjectWorktreeConvergesByPath verifies registration is idempotent
+// by path within a project — adopting an existing row (for example one the
+// background discovery pass created) rather than conflicting — while still
+// rejecting a path already owned by a different project.
+func TestCreateProjectWorktreeConvergesByPath(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -255,20 +260,34 @@ func TestCreateProjectWorktreeRejectsDuplicatePath(t *testing.T) {
 	})
 	require.NoError(err)
 
-	_, err = d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
+	first, err := d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
 		ProjectID: project.ID,
 		Branch:    "feature-x",
 		Path:      "/tmp/wt",
 	})
 	require.NoError(err)
 
-	_, err = d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
+	adopted, err := d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
 		ProjectID: project.ID,
 		Branch:    "feature-y",
 		Path:      "/tmp/wt",
 	})
-	require.Error(err)
-	assert.ErrorIs(err, db.ErrWorktreePathTaken)
+	require.NoError(err)
+	assert.Equal(first.ID, adopted.ID, "same path keeps the existing row id")
+	assert.Equal("feature-y", adopted.Branch, "branch is refreshed on adoption")
+
+	other, err := d.CreateProject(ctx, db.CreateProjectInput{
+		DisplayName: "otherrepo",
+		LocalPath:   "/tmp/otherrepo",
+	})
+	require.NoError(err)
+
+	_, err = d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
+		ProjectID: other.ID,
+		Branch:    "feature-z",
+		Path:      "/tmp/wt",
+	})
+	assert.ErrorIs(err, db.ErrWorktreePathTaken, "cross-project path collision still conflicts")
 }
 
 func TestListProjectWorktreesScopedToProject(t *testing.T) {
@@ -334,4 +353,150 @@ func TestProjectWorktreeCascadesOnProjectDelete(t *testing.T) {
 	).Scan(&count)
 	require.NoError(err)
 	assert.Zero(count)
+}
+
+func TestProjectWorktreeTmuxSessionRoundTrip(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	worktree := createProjectWorktreeForTmuxTest(t, d, "/tmp/runtime-repo", "/tmp/runtime-wt")
+	createdAt := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
+		WorktreeID:  worktree.ID,
+		SessionKey:  "wt_codex",
+		SessionName: "middleman-project-worktree-codex",
+		TargetKey:   "codex",
+		CreatedAt:   createdAt,
+	}))
+
+	sessions, err := d.ListProjectWorktreeTmuxSessions(ctx, worktree.ID)
+	require.NoError(err)
+	require.Len(sessions, 1)
+	assert.Equal(worktree.ID, sessions[0].WorktreeID)
+	assert.Equal("wt_codex", sessions[0].SessionKey)
+	assert.Equal("middleman-project-worktree-codex", sessions[0].SessionName)
+	assert.Equal("codex", sessions[0].TargetKey)
+	assert.Equal(createdAt, sessions[0].CreatedAt)
+}
+
+func TestProjectWorktreeTmuxSessionKeyedBySessionKey(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	worktree := createProjectWorktreeForTmuxTest(t, d, "/tmp/runtime-repo-unique", "/tmp/runtime-wt-unique")
+	first := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	second := first.Add(time.Minute)
+
+	// Re-upserting the same session key refreshes the row in place.
+	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
+		WorktreeID:  worktree.ID,
+		SessionKey:  "wt_codex_1",
+		SessionName: "middleman-project-worktree-codex-a",
+		TargetKey:   "codex",
+		CreatedAt:   first,
+	}))
+	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
+		WorktreeID:  worktree.ID,
+		SessionKey:  "wt_codex_1",
+		SessionName: "middleman-project-worktree-codex-b",
+		TargetKey:   "codex",
+		CreatedAt:   second,
+	}))
+
+	sessions, err := d.ListProjectWorktreeTmuxSessions(ctx, worktree.ID)
+	require.NoError(err)
+	require.Len(sessions, 1)
+	assert.Equal("middleman-project-worktree-codex-b", sessions[0].SessionName)
+	assert.Equal(second, sessions[0].CreatedAt)
+
+	// A distinct session key for the same target is a separate row.
+	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
+		WorktreeID:  worktree.ID,
+		SessionKey:  "wt_codex_2",
+		SessionName: "middleman-project-worktree-codex-c",
+		TargetKey:   "codex",
+		CreatedAt:   second.Add(time.Minute),
+	}))
+	sessions, err = d.ListProjectWorktreeTmuxSessions(ctx, worktree.ID)
+	require.NoError(err)
+	require.Len(sessions, 2)
+}
+
+func TestProjectWorktreeTmuxSessionForgetAndCascade(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	project, err := d.CreateProject(ctx, db.CreateProjectInput{
+		DisplayName: "runtime-repo-cascade",
+		LocalPath:   "/tmp/runtime-repo-cascade",
+	})
+	require.NoError(err)
+	worktree, err := d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
+		ProjectID: project.ID,
+		Branch:    "runtime",
+		Path:      "/tmp/runtime-wt-cascade",
+	})
+	require.NoError(err)
+
+	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
+		WorktreeID:  worktree.ID,
+		SessionKey:  "wt_cascade",
+		SessionName: "middleman-project-worktree-cascade",
+		TargetKey:   "codex",
+		CreatedAt:   time.Now().UTC(),
+	}))
+	require.NoError(d.DeleteProjectWorktreeTmuxSession(ctx, worktree.ID, "wt_cascade"))
+
+	sessions, err := d.ListProjectWorktreeTmuxSessions(ctx, worktree.ID)
+	require.NoError(err)
+	assert.Empty(sessions)
+
+	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
+		WorktreeID:  worktree.ID,
+		SessionKey:  "wt_cascade",
+		SessionName: "middleman-project-worktree-cascade",
+		TargetKey:   "codex",
+		CreatedAt:   time.Now().UTC(),
+	}))
+	_, err = d.WriteDB().ExecContext(ctx,
+		`DELETE FROM middleman_project_worktrees WHERE id = ?`, worktree.ID,
+	)
+	require.NoError(err)
+
+	var count int
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_project_worktree_tmux_sessions WHERE worktree_id = ?`,
+		worktree.ID,
+	).Scan(&count)
+	require.NoError(err)
+	assert.Zero(count)
+}
+
+func createProjectWorktreeForTmuxTest(
+	t *testing.T,
+	d *db.DB,
+	projectPath string,
+	worktreePath string,
+) *db.ProjectWorktree {
+	t.Helper()
+	ctx := context.Background()
+	project, err := d.CreateProject(ctx, db.CreateProjectInput{
+		DisplayName: "runtime-repo",
+		LocalPath:   projectPath,
+	})
+	require.NoError(t, err)
+	worktree, err := d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
+		ProjectID: project.ID,
+		Branch:    "runtime",
+		Path:      worktreePath,
+	})
+	require.NoError(t, err)
+	return worktree
 }

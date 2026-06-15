@@ -30,6 +30,14 @@ function defaultHost(provider: string): string | undefined {
   return defaultHosts[provider.toLowerCase()];
 }
 
+// providerDefaultHost resolves the platform host for a provider when a
+// route or payload omits it (provider-default routes like
+// /pulls/github/...). Consumers comparing refs against API objects need
+// the concrete host, since the API models platform_host as required.
+export function providerDefaultHost(provider: string): string | undefined {
+  return defaultHost(canonicalProvider(provider));
+}
+
 function shouldUseHostRoute(ref: ProviderRouteRef): boolean {
   const provider = canonicalProvider(ref.provider);
   const host = ref.platformHost?.trim();

@@ -1,15 +1,21 @@
 package workspacetest
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
@@ -122,4 +128,90 @@ func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) 
 	require.NotNil(getResp.JSON200.Sessions)
 	require.Len(*getResp.JSON200.Sessions, 1)
 	assert.Equal(shell.Key, (*getResp.JSON200.Sessions)[0].Key)
+}
+
+func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	tmuxPath := writeWorkspaceRuntimeTmuxProbe(t, "workspace-runtime-live", 0, "")
+	cfg := &config.Config{Tmux: config.Tmux{
+		Command: []string{tmuxPath, "--socket", "workspace"},
+	}}
+	fixture := setupWorkspaceServerFixture(t, cfg)
+	ctx := t.Context()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	sessionKey := ws.Id + "_codex"
+	require.NoError(fixture.database.UpsertWorkspaceRuntimeSession(
+		ctx,
+		&db.WorkspaceRuntimeSession{
+			WorkspaceID: ws.Id,
+			SessionKey:  sessionKey,
+			TargetKey:   "codex",
+			Label:       "codex",
+			Kind:        "agent",
+			Scope:       "session",
+			TmuxSession: "workspace-runtime-live",
+			CreatedAt:   time.Now().UTC(),
+		},
+	))
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/workspaces/"+ws.Id+"/runtime/sessions/"+
+			sessionKey+"/attach-spec",
+		nil,
+	)
+	req.Host = "middleman.test"
+	rr := httptest.NewRecorder()
+	fixture.server.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var spec struct {
+		Version           int      `json:"version"`
+		Kind              string   `json:"kind"`
+		SessionKey        string   `json:"session_key"`
+		TargetKey         string   `json:"target_key"`
+		TmuxSession       string   `json:"tmux_session"`
+		Command           []string `json:"command"`
+		RequiresLocalHost bool     `json:"requires_local_host"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&spec))
+	assert.Equal(1, spec.Version)
+	assert.Equal("tmux", spec.Kind)
+	assert.Equal(sessionKey, spec.SessionKey)
+	assert.Equal("codex", spec.TargetKey)
+	assert.Equal("workspace-runtime-live", spec.TmuxSession)
+	assert.Equal(
+		[]string{tmuxPath, "--socket", "workspace", "attach-session", "-t", "workspace-runtime-live"},
+		spec.Command,
+	)
+	assert.True(spec.RequiresLocalHost)
+}
+
+func writeWorkspaceRuntimeTmuxProbe(
+	t *testing.T,
+	expectedSession string,
+	exitCode int,
+	stderr string,
+) string {
+	t.Helper()
+	script := filepath.Join(t.TempDir(), "fake-tmux")
+	body := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"--socket\" ]; then shift 2; fi\n" +
+		"if [ \"$1\" != \"has-session\" ]; then exit 0; fi\n" +
+		"if [ \"$1\" != \"has-session\" ] || [ \"$2\" != \"-t\" ] || [ \"$3\" != \"" + expectedSession + "\" ]; then\n" +
+		"  echo unexpected tmux argv: \"$@\" >&2\n" +
+		"  exit 2\n" +
+		"fi\n"
+	if stderr != "" {
+		body += "echo " + shellQuoteTest(stderr) + " >&2\n"
+	}
+	body += "exit " + strconv.Itoa(exitCode) + "\n"
+	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
+	return script
+}
+
+func shellQuoteTest(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

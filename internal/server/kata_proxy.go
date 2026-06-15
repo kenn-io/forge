@@ -305,9 +305,3 @@ func newDefaultKataDaemonTransport() http.RoundTripper {
 		ExpectContinueTimeout: 1 * time.Second,
 	}).Clone()
 }
-
-func writeProblemResponse(w http.ResponseWriter, p *ProblemError) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(p.Status)
-	_ = json.NewEncoder(w).Encode(p)
-}

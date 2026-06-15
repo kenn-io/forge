@@ -1,6 +1,6 @@
 FROM golang:1.26
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl make socat unzip && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl git make socat tmux unzip && rm -rf /var/lib/apt/lists/*
 
 # Bun from GitHub release (pinned to match frontend/package.json)
 ARG TARGETARCH

@@ -19,7 +19,7 @@ export function getPierreDiffWorkerPool(): WorkerPoolManager | undefined {
   return getOrCreateWorkerPoolSingleton({
     poolOptions: {
       workerFactory: () =>
-        new Worker(new URL("@pierre/diffs/worker/worker.js", import.meta.url), {
+        new Worker(new URL("./pierre-diff-worker-entry.js", import.meta.url), {
           type: "module",
         }),
       poolSize: 4,

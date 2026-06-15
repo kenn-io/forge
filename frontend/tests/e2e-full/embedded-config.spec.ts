@@ -76,7 +76,7 @@ test.describe("embedded config", () => {
 
   test("settings page is blocked in embedded mode", async ({ page }) => {
     await page.addInitScript(() => {
-      window.__middleman_config = {};
+      window.__middleman_config = { embed: {} };
     });
     await page.goto("/settings");
 
@@ -85,5 +85,18 @@ test.describe("embedded config", () => {
     // but the activity feed should render instead.
     await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.locator(".settings-page")).not.toBeAttached();
+  });
+
+  test("daemon ui-only config does not block standalone settings", async ({ page }) => {
+    // The daemon serves window.__middleman_config carrying only its
+    // UI focus state (ui.activeWorktreeKey, set via the API). That
+    // must not flip the SPA into embedded mode and hide the settings
+    // page, which a standalone client needs.
+    await page.addInitScript(() => {
+      window.__middleman_config = { ui: { activeWorktreeKey: "wt-1" } };
+    });
+    await page.goto("/settings");
+
+    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   });
 });

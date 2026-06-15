@@ -134,7 +134,7 @@ func TestWriteRuntimeMetadataRecordsBoundTCPPort(t *testing.T) {
 		require.NoError(ln.Close())
 	})
 
-	require.NoError(writeRuntimeMetadata(lockHandle, ln))
+	require.NoError(writeRuntimeMetadata(lockHandle, ln, dataDir, "/", false))
 
 	data, err := os.ReadFile(runtimelock.MetadataPath(dataDir))
 	require.NoError(err)
@@ -154,7 +154,10 @@ func TestWriteRuntimeMetadataRejectsNonTCPListener(t *testing.T) {
 		require.NoError(t, lockHandle.Release())
 	})
 
-	err = writeRuntimeMetadata(lockHandle, fakeListener{addr: fakeAddr("not-an-address")})
+	err = writeRuntimeMetadata(
+		lockHandle, fakeListener{addr: fakeAddr("not-an-address")},
+		dataDir, "/", false,
+	)
 	require.Error(t, err)
 	Assert.Contains(t, err.Error(), "non-TCP")
 }

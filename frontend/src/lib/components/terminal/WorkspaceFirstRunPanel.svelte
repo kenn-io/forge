@@ -8,10 +8,10 @@
 
   import {
     getProjectAction,
-    getToolingStatus,
     getWorkspaceData,
     invokeProjectAction,
   } from "../../stores/embed-config.svelte.ts";
+  import { resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
   import ToolingStatusBlock from "./ToolingStatusBlock.svelte";
 
   type ActionId = "add-existing" | "clone" | "connect-github";
@@ -47,7 +47,7 @@
   let inFlight = $state<ActionId | null>(null);
   let lastError = $state<string | null>(null);
 
-  const tooling = $derived(getToolingStatus());
+  const tooling = $derived(resolveToolingStatus());
   const provider = $derived.by(() => {
     const workspace = getWorkspaceData();
     if (!workspace) return undefined;

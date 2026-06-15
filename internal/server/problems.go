@@ -36,9 +36,13 @@ type ProblemCode string
 const (
 	CodeBadRequest            ProblemCode = "badRequest"
 	CodeBranchConflict        ProblemCode = "branchConflict"
+	CodeBranchInUse           ProblemCode = "branchInUse"
+	CodeBranchProtected       ProblemCode = "branchProtected"
 	CodeCommentNotFound       ProblemCode = "commentNotFound"
 	CodeConflict              ProblemCode = "conflict"
+	CodeDestinationExists     ProblemCode = "destinationExists"
 	CodeForbidden             ProblemCode = "forbidden"
+	CodeHookFailed            ProblemCode = "hookFailed"
 	CodeInternalError         ProblemCode = "internalError"
 	CodeIssueNotFound         ProblemCode = "issueNotFound"
 	CodeNotFound              ProblemCode = "notFound"
@@ -49,11 +53,14 @@ const (
 	CodeRepoNotFound          ProblemCode = "repoNotFound"
 	CodeServiceUnavailable    ProblemCode = "serviceUnavailable"
 	CodeSettingsUnavailable   ProblemCode = "settingsUnavailable"
+	CodeToolMissing           ProblemCode = "toolMissing"
+	CodeToolUnauthenticated   ProblemCode = "toolUnauthenticated"
 	CodeUnauthorized          ProblemCode = "unauthorized"
 	CodeUnsupportedCapability ProblemCode = "unsupportedCapability"
 	CodeUpstreamError         ProblemCode = "upstreamError"
 	CodeValidationError       ProblemCode = "validationError"
 	CodeWorkspaceNotFound     ProblemCode = "workspaceNotFound"
+	CodeWorktreeDirty         ProblemCode = "worktreeDirty"
 )
 
 // allProblemCodes returns every declared ProblemCode in alphabetical order.
@@ -63,9 +70,13 @@ func allProblemCodes() []ProblemCode {
 	return []ProblemCode{
 		CodeBadRequest,
 		CodeBranchConflict,
+		CodeBranchInUse,
+		CodeBranchProtected,
 		CodeCommentNotFound,
 		CodeConflict,
+		CodeDestinationExists,
 		CodeForbidden,
+		CodeHookFailed,
 		CodeInternalError,
 		CodeIssueNotFound,
 		CodeNotFound,
@@ -76,11 +87,14 @@ func allProblemCodes() []ProblemCode {
 		CodeRepoNotFound,
 		CodeServiceUnavailable,
 		CodeSettingsUnavailable,
+		CodeToolMissing,
+		CodeToolUnauthenticated,
 		CodeUnauthorized,
 		CodeUnsupportedCapability,
 		CodeUpstreamError,
 		CodeValidationError,
 		CodeWorkspaceNotFound,
+		CodeWorktreeDirty,
 	}
 }
 
@@ -120,7 +134,7 @@ type ProblemError struct {
 
 	// Code is the machine-readable error code drawn from the closed enum
 	// in allProblemCodes(). Frontend logic branches on this value.
-	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,commentNotFound,conflict,forbidden,internalError,issueNotFound,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,serviceUnavailable,settingsUnavailable,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceNotFound" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
+	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,hookFailed,internalError,issueNotFound,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,serviceUnavailable,settingsUnavailable,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceNotFound,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
 
 	// Details is a free-form map of machine-readable context for this
 	// occurrence (e.g. {capability: "merge_mutation"} or

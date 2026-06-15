@@ -21,6 +21,20 @@ type Metadata struct {
 	StartedAt  string `json:"started_at"`
 	Version    string `json:"version"`
 	Commit     string `json:"commit"`
+	// TokenPath locates the API auth token file thin clients read
+	// to authenticate (see EnsureAuthToken). The daemon always mints
+	// the token at startup, so the path is always readable by the
+	// daemon's user; RequireAuth says whether requests must present
+	// it.
+	TokenPath string `json:"token_path,omitempty"`
+
+	// BasePath is the URL prefix API routes are mounted under
+	// ("/" when the daemon serves at the root). Thin clients join it
+	// before /api/... paths.
+	BasePath string `json:"base_path,omitempty"`
+	// RequireAuth reports whether the daemon enforces bearer-token
+	// auth on API routes, so clients know to send the token.
+	RequireAuth bool `json:"require_auth,omitempty"`
 }
 
 // errMetadataMissing is the typed reason returned by readMetadata when

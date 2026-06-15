@@ -362,7 +362,16 @@ func TestClientStopTreatsStaleOwnerStateAsAbsent(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(err)
 	addr := listener.Addr().String()
-	require.NoError(listener.Close())
+	t.Cleanup(func() { _ = listener.Close() })
+	accepted := make(chan struct{})
+	go func() {
+		defer close(accepted)
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		_ = conn.Close()
+	}()
 	require.NoError(writeState(paths, ownerState{
 		Session: "middleman-stale",
 		Addr:    addr,
@@ -373,6 +382,7 @@ func TestClientStopTreatsStaleOwnerStateAsAbsent(t *testing.T) {
 	err = (&Client{Root: root}).Stop(context.Background(), "middleman-stale")
 
 	require.NoError(err)
+	<-accepted
 	_, err = os.Stat(paths.Dir)
 	require.True(os.IsNotExist(err))
 }

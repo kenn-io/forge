@@ -1,0 +1,40 @@
+services:
+  hub:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile.dev
+    command: ["./scripts/e2e/fleet/run-daemon.sh", "hub"]
+    environment:
+      MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
+    expose:
+      - "18091"
+    ports:
+      - "127.0.0.1:${MIDDLEMAN_FLEET_HUB_PORT:-18091}:18091"
+    volumes:
+      - ../../..:/app
+      - hub-data:/data/hub
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+
+  member:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile.dev
+    command: ["./scripts/e2e/fleet/run-daemon.sh", "member"]
+    environment:
+      MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
+    expose:
+      - "18091"
+    ports:
+      - "127.0.0.1:${MIDDLEMAN_FLEET_MEMBER_PORT:-18092}:18091"
+    volumes:
+      - ../../..:/app
+      - member-data:/data/member
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+
+volumes:
+  hub-data:
+  member-data:
+  go-mod-cache:
+  go-build-cache:

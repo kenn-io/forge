@@ -201,6 +201,12 @@ func runCLI(args []string, stdout io.Writer) error {
 			return runPtyOwnerCLI(args[1:])
 		case "status":
 			return runStatusCLI(args[1:], stdout)
+		case "api":
+			if err := runAPICLI(args[1:], stdout, os.Stdin); err != nil {
+				_, _ = fmt.Fprintln(os.Stderr, err)
+				os.Exit(exitCodeForAPIVerb(err))
+			}
+			return nil
 		case "serve":
 			return serve.Run(args[1:], runServer)
 		}
@@ -385,13 +391,35 @@ func run(opts serve.Options) error {
 		return fmt.Errorf("load frontend assets: %w", err)
 	}
 
+	// API auth: the token is always minted (thin clients read it from
+	// the well-known data_dir path), but only enforced when
+	// [api].require_auth is set.
+	authToken, err := runtimelock.EnsureAuthToken(cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("ensure auth token: %w", err)
+	}
+	enforcedToken := ""
+	if cfg.API.RequireAuth {
+		enforcedToken = authToken
+	}
+
 	addr := cfg.ListenAddr()
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
+	if ip := net.ParseIP(cfg.Host); ip != nil && !ip.IsLoopback() {
+		slog.Warn(
+			"binding a non-loopback address: the API has no"+
+				" authentication, so the bound network is the trust"+
+				" boundary (e.g. a tailnet with ACLs)",
+			"host", cfg.Host,
+		)
+	}
 
-	if err := writeRuntimeMetadata(lockHandle, ln); err != nil {
+	if err := writeRuntimeMetadata(
+		lockHandle, ln, cfg.DataDir, cfg.BasePath, cfg.API.RequireAuth,
+	); err != nil {
 		slog.Warn("write runtime metadata", "err", err)
 	}
 
@@ -543,6 +571,7 @@ func run(opts serve.Options) error {
 	srv = server.NewWithConfig(
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
+			APIAuthToken:        enforcedToken,
 			WorktreeDir:         filepath.Join(cfg.DataDir, "worktrees"),
 			PtyOwnerManagerPath: os.Getenv("MIDDLEMAN_PTY_MANAGER"),
 			Telemetry:           telemetryReporter,
@@ -575,7 +604,16 @@ func run(opts serve.Options) error {
 		Data: syncer.Status(),
 	})
 
-	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	// The branch-match recompute runs first, then chains to stack
+	// detection, mirroring the embedding API wiring in middleman.go. The
+	// syncer is the watched-MR setter.
+	syncer.SetOnSyncCompleted(
+		server.WorktreeLinksSyncHook(
+			ctx, database, syncer,
+			srv.NotifyWorktreeLinksChanged,
+			stacks.SyncCompletedHook(ctx, database, nil),
+		),
+	)
 	syncer.Start(ctx)
 
 	profilerSrv, err = profiler.Start(opts.ProfilerAddr)
@@ -682,20 +720,38 @@ func profilerSrvDone(srv *profiler.Server) <-chan error {
 // into the runtime metadata file. The recorded port comes from
 // ln.Addr() (not cfg.Port) so it matches the kernel-assigned value if
 // they ever diverge.
-func writeRuntimeMetadata(h *runtimelock.Handle, ln net.Listener) error {
+func writeRuntimeMetadata(
+	h *runtimelock.Handle, ln net.Listener,
+	dataDir, basePath string, requireAuth bool,
+) error {
 	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
 	if !ok {
 		return fmt.Errorf("listener returned non-TCP address %T", ln.Addr())
 	}
 	return h.WriteMetadata(runtimelock.Metadata{
-		PID:        os.Getpid(),
-		Host:       tcpAddr.IP.String(),
-		Port:       tcpAddr.Port,
-		ListenAddr: ln.Addr().String(),
-		StartedAt:  time.Now().UTC().Format(time.RFC3339),
-		Version:    version,
-		Commit:     commit,
+		PID:         os.Getpid(),
+		Host:        tcpAddr.IP.String(),
+		Port:        tcpAddr.Port,
+		ListenAddr:  ln.Addr().String(),
+		StartedAt:   time.Now().UTC().Format(time.RFC3339),
+		Version:     version,
+		Commit:      commit,
+		TokenPath:   runtimelock.AuthTokenPath(dataDir),
+		BasePath:    canonicalBasePath(basePath),
+		RequireAuth: requireAuth,
 	})
+}
+
+// canonicalBasePath publishes the prefix form clients join paths
+// onto: no trailing slash, except the bare root.
+func canonicalBasePath(basePath string) string {
+	if basePath == "" {
+		return "/"
+	}
+	if trimmed := strings.TrimSuffix(basePath, "/"); trimmed != "" {
+		return trimmed
+	}
+	return "/"
 }
 
 func resolveStartupRepos(

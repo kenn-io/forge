@@ -174,6 +174,14 @@ func (h *EventHub) Broadcast(event Event) uint64 {
 	return rec.ID
 }
 
+// Generation returns the current monotonic event counter without
+// emitting an event. Safe to call from read-only request handlers.
+func (h *EventHub) Generation() uint64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.nextEventID
+}
+
 // ringStoreLocked appends rec to the ring buffer, overwriting the oldest
 // slot once full. Caller must hold mu.
 func (h *EventHub) ringStoreLocked(rec RecordedEvent) {

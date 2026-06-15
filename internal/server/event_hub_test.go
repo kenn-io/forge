@@ -9,6 +9,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEventHubGenerationReadsWithoutBroadcast(t *testing.T) {
+	h := NewEventHub()
+	defer h.Close()
+
+	g0 := h.Generation()
+	h.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	assert.Equal(t, g0+1, h.Generation(), "Generation must advance by exactly one per Broadcast")
+}
+
 func TestEventHub_SubscribeReceivesBroadcast(t *testing.T) {
 	hub := NewEventHub()
 	defer hub.Close()

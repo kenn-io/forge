@@ -22,6 +22,7 @@ import (
 var allowedAPITags = map[string]struct{}{
 	"Activity":      {},
 	"Docs":          {},
+	"Fleet":         {},
 	"Issues":        {},
 	"Kata":          {},
 	"Messages":      {},
@@ -30,6 +31,7 @@ var allowedAPITags = map[string]struct{}{
 	"Pull Requests": {},
 	"Repositories":  {},
 	"Roborev":       {},
+	"Runtime":       {},
 	"Settings":      {},
 	"Stacks":        {},
 	"Sync":          {},

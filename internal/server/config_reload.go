@@ -64,6 +64,8 @@ type startupConfigSnapshot struct {
 	Roborev       config.Roborev
 	Tmux          config.Tmux
 	Shell         config.Shell
+	RequireAuth   bool
+	SSHPeers      []config.FleetSSHPeer
 }
 
 func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
@@ -91,6 +93,10 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 	}
 	snap.Shell.Command = slices.Clone(cfg.Shell.Command)
 	snap.TokenEnvNames = startupBoundTokenEnvNames(cfg)
+	// API auth and the ssh peer set are wired in newServer (token
+	// minting, transport construction), so edits require a restart.
+	snap.RequireAuth = cfg.API.RequireAuth
+	snap.SSHPeers = slices.Clone(cfg.Fleet.SSHPeers)
 	return snap
 }
 

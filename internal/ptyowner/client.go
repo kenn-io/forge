@@ -449,7 +449,9 @@ func cleanupAbsentOwner(paths SessionPaths) {
 }
 
 func isAbsentOwner(err error) bool {
-	return errors.Is(err, os.ErrNotExist) || isStaleOwnerConnection(err)
+	return errors.Is(err, os.ErrNotExist) ||
+		errors.Is(err, io.EOF) ||
+		isStaleOwnerConnection(err)
 }
 
 func isStaleOwnerConnection(err error) bool {

@@ -538,6 +538,11 @@ type renameWorkspaceRuntimeSessionInput struct {
 	}
 }
 
+type getWorkspaceRuntimeSessionAttachSpecInput struct {
+	ID         string `path:"id"`
+	SessionKey string `path:"session_key"`
+}
+
 type deleteWorkspaceInput struct {
 	ID    string `path:"id"`
 	Force bool   `query:"force"`
@@ -559,6 +564,8 @@ type getWorkspaceCommitsOutput = bodyOutput[commitsResponse]
 type getWorkspaceRuntimeOutput = bodyOutput[workspaceRuntimeResponse]
 
 type workspaceRuntimeSessionOutput = bodyOutput[localruntime.SessionInfo]
+
+type runtimeAttachSpecOutput = bodyOutput[runtimeAttachSpecResponse]
 
 type createWorkspaceOutput = acceptedBodyOutput[workspaceResponse]
 
@@ -632,6 +639,7 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/issues", s.listIssues,
 		documentOperation("list-issues", "List issues", "Issues"))
 	s.registerProviderRepoAPI(api)
+	s.registerFleetRoutes(api)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "list-repo-summaries",
@@ -781,6 +789,13 @@ func (s *Server) registerAPI(api huma.API) {
 		Tags:          []string{"Workspaces"},
 	}, s.stopWorkspaceRuntimeSession)
 	huma.Register(api, huma.Operation{
+		OperationID: "get-workspace-runtime-session-attach-spec",
+		Method:      http.MethodGet,
+		Path:        "/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
+		Summary:     "Get workspace runtime session attach spec",
+		Tags:        []string{"Workspaces"},
+	}, s.getWorkspaceRuntimeSessionAttachSpec)
+	huma.Register(api, huma.Operation{
 		OperationID: "rename-workspace-runtime-session",
 		Method:      http.MethodPatch,
 		Path:        "/workspaces/{id}/runtime/sessions/{session_key}",
@@ -819,6 +834,14 @@ func (s *Server) registerAPI(api huma.API) {
 		Tags:        []string{"Projects"},
 	}, s.getProject)
 	huma.Register(api, huma.Operation{
+		OperationID:   "delete-project",
+		Method:        http.MethodDelete,
+		Path:          "/projects/{project_id}",
+		DefaultStatus: http.StatusNoContent,
+		Summary:       "Delete project",
+		Tags:          []string{"Projects"},
+	}, s.deleteProject)
+	huma.Register(api, huma.Operation{
 		OperationID:   "register-worktree",
 		Method:        http.MethodPost,
 		Path:          "/projects/{project_id}/worktrees",
@@ -826,6 +849,70 @@ func (s *Server) registerAPI(api huma.API) {
 		Summary:       "Register worktree",
 		Tags:          []string{"Projects"},
 	}, s.registerWorktree)
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-worktree",
+		Method:        http.MethodDelete,
+		Path:          "/projects/{project_id}/worktrees/{worktree_id}",
+		DefaultStatus: http.StatusNoContent,
+		Summary:       "Delete worktree",
+		Tags:          []string{"Projects"},
+	}, s.deleteProjectWorktree)
+	huma.Register(api, huma.Operation{
+		OperationID:   "remove-worktree",
+		Method:        http.MethodPost,
+		Path:          "/projects/{project_id}/worktrees/{worktree_id}/delete",
+		DefaultStatus: http.StatusNoContent,
+		Summary:       "Remove worktree (optionally from disk)",
+		Tags:          []string{"Projects"},
+	}, s.removeProjectWorktree)
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-worktree-from-merge-request",
+		Method:        http.MethodPost,
+		Path:          "/projects/{project_id}/worktrees/from-merge-request",
+		DefaultStatus: http.StatusCreated,
+		Summary:       "Create worktree from a merge request head",
+		Tags:          []string{"Projects"},
+	}, s.createProjectWorktreeFromMergeRequest)
+	huma.Register(api, huma.Operation{
+		OperationID:   "remove-stale-worktree",
+		Method:        http.MethodPost,
+		Path:          "/worktrees/remove-stale",
+		DefaultStatus: http.StatusOK,
+		Summary:       "Remove a stale worktree",
+		Tags:          []string{"Projects"},
+	}, s.removeStaleWorktree)
+	huma.Register(api, huma.Operation{
+		OperationID: "set-worktree-hidden",
+		Method:      http.MethodPut,
+		Path:        "/projects/{project_id}/worktrees/{worktree_id}/hidden",
+		Summary:     "Set worktree hidden",
+		Tags:        []string{"Projects"},
+	}, s.setProjectWorktreeHidden)
+	huma.Register(api, huma.Operation{
+		OperationID: "set-worktree-session-backend",
+		Method:      http.MethodPut,
+		Path:        "/projects/{project_id}/worktrees/{worktree_id}/session-backend",
+		Summary:     "Set worktree session backend",
+		Tags:        []string{"Projects"},
+	}, s.setProjectWorktreeSessionBackend)
+	// OperationID stays generic ("links", not "linked-issues"): the project
+	// registry's operation surface must not bake issue/PR-tracker terms into
+	// op IDs (enforced by TestW1SliceAGate). The path and body field keep the
+	// precise "linked issue numbers" naming; the op ID does not.
+	huma.Register(api, huma.Operation{
+		OperationID: "set-worktree-links",
+		Method:      http.MethodPut,
+		Path:        "/projects/{project_id}/worktrees/{worktree_id}/linked-issues",
+		Summary:     "Set worktree linked issues",
+		Tags:        []string{"Projects"},
+	}, s.setProjectWorktreeLinkedIssues)
+	huma.Register(api, huma.Operation{
+		OperationID: "refresh-worktree-stats",
+		Method:      http.MethodPost,
+		Path:        "/projects/{project_id}/worktrees/{worktree_id}/refresh-stats",
+		Summary:     "Refresh worktree git stats",
+		Tags:        []string{"Projects"},
+	}, s.refreshProjectWorktreeStats)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-worktrees",
 		Method:      http.MethodGet,
@@ -840,6 +927,121 @@ func (s *Server) registerAPI(api huma.API) {
 		Summary:     "List launch targets",
 		Tags:        []string{"Projects"},
 	}, s.listLaunchTargets)
+	huma.Register(api, huma.Operation{
+		OperationID:   "clone-project",
+		Method:        http.MethodPost,
+		Path:          "/projects/clone",
+		DefaultStatus: http.StatusCreated,
+		Summary:       "Clone a repository and register it as a project",
+		Tags:          []string{"Projects"},
+	}, s.cloneProject)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-project-branches",
+		Method:      http.MethodGet,
+		Path:        "/projects/{project_id}/branches",
+		Summary:     "List project repository branches",
+		Tags:        []string{"Projects"},
+	}, s.listProjectBranches)
+	huma.Register(api, huma.Operation{
+		OperationID: "inspect-project-worktree",
+		Method:      http.MethodGet,
+		Path:        "/projects/{project_id}/worktrees/{worktree_id}/inspect",
+		Summary:     "Inspect project worktree",
+		Tags:        []string{"Projects"},
+	}, s.inspectProjectWorktree)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-worktree-runtime",
+		Method:      http.MethodGet,
+		Path:        "/projects/{project_id}/worktrees/{worktree_id}/runtime",
+		Summary:     "Get project worktree runtime",
+		Tags:        []string{"Projects"},
+	}, s.getProjectWorktreeRuntime)
+	huma.Register(api, huma.Operation{
+		OperationID: "ensure-project-worktree-runtime-shell",
+		Method:      http.MethodPost,
+		Path:        "/projects/{project_id}/worktrees/{worktree_id}/runtime/shell",
+		Summary:     "Ensure project worktree shell",
+		Tags:        []string{"Projects"},
+	}, s.ensureProjectWorktreeRuntimeShell)
+	huma.Register(api, huma.Operation{
+		OperationID: "launch-project-worktree-runtime-session",
+		Method:      http.MethodPost,
+		Path:        "/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions",
+		Summary:     "Launch project worktree runtime session",
+		Tags:        []string{"Projects"},
+	}, s.launchProjectWorktreeRuntimeSession)
+	huma.Register(api, huma.Operation{
+		OperationID:   "stop-project-worktree-runtime-session",
+		Method:        http.MethodDelete,
+		Path:          "/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}",
+		DefaultStatus: http.StatusNoContent,
+		Summary:       "Stop project worktree runtime session",
+		Tags:          []string{"Projects"},
+	}, s.stopProjectWorktreeRuntimeSession)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-worktree-runtime-session-attach-spec",
+		Method:      http.MethodGet,
+		Path:        "/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}/attach-spec",
+		Summary:     "Get project worktree runtime session attach spec",
+		Tags:        []string{"Projects"},
+	}, s.getProjectWorktreeRuntimeSessionAttachSpec)
+	huma.Register(api, huma.Operation{
+		OperationID: "complete-filesystem-path",
+		Method:      http.MethodGet,
+		Path:        "/filesystem/complete",
+		Summary:     "Complete a local filesystem path",
+		Tags:        []string{"System"},
+	}, s.completeFilesystemPath)
+	huma.Register(api, huma.Operation{
+		OperationID: "validate-filesystem-repo",
+		Method:      http.MethodGet,
+		Path:        "/filesystem/validate-repo",
+		Summary:     "Resolve a path to a repository root",
+		Tags:        []string{"System"},
+	}, s.validateFilesystemRepo)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-user-repositories",
+		Method:      http.MethodGet,
+		Path:        "/platform/user-repositories",
+		Summary:     "List the authenticated platform CLI user's repositories",
+		Tags:        []string{"System"},
+	}, s.listUserRepositories)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-tooling-status",
+		Method:      http.MethodGet,
+		Path:        "/tooling-status",
+		Summary:     "Report git/gh/glab CLI availability and auth",
+		Tags:        []string{"System"},
+	}, s.getToolingStatus)
+	huma.Register(api, huma.Operation{
+		OperationID: "launch-host-runtime-session",
+		Method:      http.MethodPost,
+		Path:        "/runtime/sessions",
+		Summary:     "Launch host runtime session",
+		Tags:        []string{"Runtime"},
+	}, s.launchHostRuntimeSession)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-host-runtime-sessions",
+		Method:      http.MethodGet,
+		Path:        "/runtime/sessions",
+		Summary:     "List host runtime sessions",
+		Tags:        []string{"Runtime"},
+	}, s.listHostRuntimeSessions)
+	huma.Register(api, huma.Operation{
+		OperationID:   "stop-host-runtime-session",
+		Method:        http.MethodDelete,
+		Path:          "/runtime/sessions/{session_key}",
+		DefaultStatus: http.StatusNoContent,
+		Summary:       "Stop host runtime session",
+		Tags:          []string{"Runtime"},
+	}, s.stopHostRuntimeSession)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-host-runtime-session-attach-spec",
+		Method:      http.MethodGet,
+		Path:        "/runtime/sessions/{session_key}/attach-spec",
+		Summary:     "Get host runtime session attach spec",
+		Tags:        []string{"Runtime"},
+	}, s.getHostRuntimeSessionAttachSpec)
 }
 
 func (s *Server) registerProviderRepoAPI(api huma.API) {
@@ -5921,6 +6123,78 @@ func (s *Server) stopWorkspaceRuntimeSession(
 		return nil, problemInternal("forget runtime session: " + err.Error())
 	}
 	return nil, nil
+}
+
+func (s *Server) getWorkspaceRuntimeSessionAttachSpec(
+	ctx context.Context,
+	input *getWorkspaceRuntimeSessionAttachSpecInput,
+) (*runtimeAttachSpecOutput, error) {
+	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	if runtimeSessionIsNonTmux(
+		s.runtime.ListSessions(summary.ID),
+		input.SessionKey,
+	) {
+		return nil, problemBadRequest(
+			CodeBadRequest, "runtime session is not tmux-backed", nil,
+		)
+	}
+	stored, err := s.db.ListWorkspaceRuntimeTmuxSessions(ctx, summary.ID)
+	if err != nil {
+		return nil, problemInternal("list runtime tmux sessions: " + err.Error())
+	}
+	targetKey, tmuxSession, ok := workspaceRuntimeAttachTarget(
+		input.SessionKey, stored,
+	)
+	if !ok {
+		return nil, problemNotFound(CodeNotFound, "runtime session not found", nil)
+	}
+	spec, err := runtimeAttachSpec(
+		ctx, s.cfg.TmuxCommand(), input.SessionKey, targetKey, tmuxSession,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &runtimeAttachSpecOutput{Body: spec}, nil
+}
+
+func runtimeSessionIsNonTmux(
+	sessions []localruntime.SessionInfo,
+	sessionKey string,
+) bool {
+	for _, session := range sessions {
+		if session.Key == sessionKey {
+			return session.TmuxSession == ""
+		}
+	}
+	return false
+}
+
+func workspaceRuntimeAttachTarget(
+	sessionKey string,
+	stored []db.WorkspaceRuntimeSession,
+) (targetKey string, tmuxSession string, ok bool) {
+	for _, row := range stored {
+		if row.SessionKey != sessionKey {
+			continue
+		}
+		return row.TargetKey, row.TmuxSession, true
+	}
+	return "", "", false
+}
+
+func runtimeSessionTmuxSession(
+	sessions []localruntime.SessionInfo,
+	key string,
+) string {
+	for _, session := range sessions {
+		if session.Key == key {
+			return session.TmuxSession
+		}
+	}
+	return ""
 }
 
 func (s *Server) renameWorkspaceRuntimeSession(

@@ -82,6 +82,11 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
   folders.
 - **Messages** -- search and inspect msgvault-backed messages with safe HTML and
   image handling.
+- **Federated fleet** -- one daemon (the hub) merges snapshots from remote
+  middleman daemons, proxies mutations to the host that owns the resource,
+  and hands out native tmux attach commands fleet-wide. Peers are reached
+  over HTTP or SSH (no exposed remote listener required). See
+  [docs/federated-fleet.md](docs/federated-fleet.md).
 
 ## Quickstart
 
@@ -298,32 +303,18 @@ repository URL or needs to preserve provider-canonical casing.
 Middleman sends limited anonymous telemetry to PostHog: `daemon_active` with repo count and `app_loaded` with view name, plus version, commit, OS/arch, `application: "middleman"`, and an anonymous install ID.
 It disables PostHog person profile processing and IP geolocation for every capture. It does not send repo names, PR/issue content, provider tokens, usernames, hostnames, or paths; set `TELEMETRY_ENABLED=0` to disable it.
 
-## Embedding
+## Thin clients
 
-Middleman can be embedded as a Go library inside another application. The host creates an `Instance`, which provides an `http.Handler` for the API and frontend:
-
-```go
-inst, err := middleman.New(middleman.Options{
-    Token:        os.Getenv("GITHUB_TOKEN"),
-    DBPath:       "/path/to/middleman.db",
-    BasePath:     "/middleman/",
-    SyncInterval: 5 * time.Minute,
-    Repos: []middleman.Repo{
-        {Owner: "org", Name: "repo"},
-    },
-})
-if err != nil {
-    log.Fatal(err)
-}
-defer inst.Close()
-inst.StartSync(ctx)
-
-mux.Handle("/middleman/", inst.Handler())
-```
-
-The `EmbedConfig` option controls theming (light/dark mode, custom colors, fonts, radii) and UI defaults (hide sync controls, pin to a single repo, collapse sidebar). The `EmbedHooks` option provides lifecycle callbacks (`OnMRSynced`, `OnSyncCompleted`) so the host can react to sync events.
-
-The frontend is also available as the `@middleman/ui` Svelte package, which exports individual views (`PRListView`, `KanbanBoardView`, `ActivityFeedView`), store factories, and context accessors. The `@middleman/ui` `Provider` component accepts an action registry for injecting custom buttons into PR and issue detail views.
+Middleman runs as a standalone daemon. Native apps and scripts reach
+it without out-of-band configuration: probe the flock on
+`<data_dir>/middleman.lock`, read `middleman.run.json` for the listen
+address and base path, authenticate with the bearer token minted at
+`<data_dir>/auth_token`, and use `/api/v1` plus the SSE event stream
+(Last-Event-ID replay supported). The `middleman api` CLI verb wraps
+this discovery + auth for one-shot calls; webview hosts can load SPA
+routes directly and read daemon-side UI state from the served
+`window.__middleman_config`. See `docs/federated-fleet.md` for the
+fleet and daemon contract details.
 
 ## Architecture
 

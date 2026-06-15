@@ -33,7 +33,37 @@ func (p tmuxEnvPolicy) paneEnvironment(
 	command []string,
 	extraStripVars []string,
 ) tmuxPaneEnvironment {
+	return paneEnvironmentFromEnv(
+		p.environment(baseEnv, extraStripVars), command,
+	)
+}
+
+// paneEnvironmentWithExtra applies the policy to baseEnv and then appends
+// caller-supplied variables, which always reach the pane even when the
+// policy's allowlist would drop them. Keys must be shell identifiers; the
+// caller validates them.
+func (p tmuxEnvPolicy) paneEnvironmentWithExtra(
+	baseEnv []string,
+	command []string,
+	extraStripVars []string,
+	extraEnv map[string]string,
+) tmuxPaneEnvironment {
 	env := p.environment(baseEnv, extraStripVars)
+	keys := make([]string, 0, len(extraEnv))
+	for key := range extraEnv {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		env = append(env, key+"="+extraEnv[key])
+	}
+	return paneEnvironmentFromEnv(env, command)
+}
+
+func paneEnvironmentFromEnv(
+	env []string,
+	command []string,
+) tmuxPaneEnvironment {
 	envWithTerm := append(slices.Clone(env), "TERM=xterm-256color")
 	keys := tmuxEnvironmentKeys(envWithTerm)
 	parts := make([]string, 0, len(keys)+4)
@@ -345,6 +375,12 @@ func tmuxSessionEnvironment(env []string, extraStrip []string) []string {
 		}
 	}
 	return out
+}
+
+// IsShellIdentifier reports whether value is a valid POSIX shell variable
+// name, the requirement for env keys passed to command sessions.
+func IsShellIdentifier(value string) bool {
+	return isShellIdentifier(value)
 }
 
 func isShellIdentifier(value string) bool {

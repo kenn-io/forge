@@ -340,6 +340,86 @@ components:
       required:
         - repos
       type: object
+    Capabilities:
+      additionalProperties: false
+      properties:
+        commands:
+          $ref: "#/components/schemas/CommandCapabilities"
+        dependencies:
+          $ref: "#/components/schemas/DependencyCapabilities"
+        features:
+          $ref: "#/components/schemas/FeatureCapabilities"
+      required:
+        - commands
+        - dependencies
+        - features
+      type: object
+    CheckDetail:
+      additionalProperties: false
+      properties:
+        conclusion:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        url:
+          type: string
+      required:
+        - name
+        - status
+      type: object
+    CloneProjectInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CloneProjectInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          type: string
+        display_name:
+          type: string
+        path:
+          type: string
+        url:
+          type: string
+      required:
+        - url
+        - path
+      type: object
+    CommandCapabilities:
+      additionalProperties: false
+      properties:
+        projectAdd:
+          type: boolean
+        projectRemove:
+          type: boolean
+        repositoryClone:
+          type: boolean
+        sessionEnsure:
+          type: boolean
+        sessionKill:
+          type: boolean
+        worktreeCreate:
+          type: boolean
+        worktreeDelete:
+          type: boolean
+        worktreeImportPullRequest:
+          type: boolean
+      required:
+        - worktreeCreate
+        - worktreeImportPullRequest
+        - worktreeDelete
+        - sessionEnsure
+        - sessionKill
+        - repositoryClone
+        - projectAdd
+        - projectRemove
+      type: object
     CommentAutocompleteReference:
       additionalProperties: false
       properties:
@@ -611,6 +691,34 @@ components:
         - name
         - mr_number
       type: object
+    CreateWorktreeFromMergeRequestInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateWorktreeFromMergeRequestInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        base_dir:
+          type: string
+        branch:
+          type: string
+        number:
+          format: int64
+          minimum: 1
+          type: integer
+        path:
+          type: string
+        setup_script:
+          type: string
+        worktree_name:
+          type: string
+      required:
+        - number
+        - branch
+      type: object
     CrossFolderHit:
       additionalProperties: false
       properties:
@@ -639,6 +747,20 @@ components:
         - rel_path
         - score
         - hit_type
+      type: object
+    DependencyCapabilities:
+      additionalProperties: false
+      properties:
+        gh:
+          type: boolean
+        git:
+          type: boolean
+        tmux:
+          type: boolean
+      required:
+        - git
+        - gh
+        - tmux
       type: object
     DiffFile:
       additionalProperties: false
@@ -1283,6 +1405,25 @@ components:
         value:
           description: The value at the given location
       type: object
+    FeatureCapabilities:
+      additionalProperties: false
+      properties:
+        moshAttach:
+          type: boolean
+        resourceMetrics:
+          type: boolean
+        setupHook:
+          type: boolean
+        teardownHook:
+          type: boolean
+        tmuxVersion:
+          type: string
+      required:
+        - resourceMetrics
+        - setupHook
+        - teardownHook
+        - moshAttach
+      type: object
     FilePreviewResponse:
       additionalProperties: false
       properties:
@@ -1336,6 +1477,81 @@ components:
         - stale
         - whitespace_only_count
         - files
+      type: object
+    FilesystemCompleteOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FilesystemCompleteOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        completions:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - completions
+      type: object
+    FilesystemValidateRepoOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FilesystemValidateRepoOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        is_valid:
+          type: boolean
+        message:
+          type: string
+        root_path:
+          type: string
+      required:
+        - is_valid
+      type: object
+    FleetSSHPeer:
+      additionalProperties: false
+      properties:
+        destination:
+          type: string
+        key:
+          type: string
+        name:
+          type: string
+        platform:
+          type: string
+        remote_command:
+          type: string
+      required:
+        - key
+        - destination
+      type: object
+    FleetSSHPeersBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FleetSSHPeersBody.json
+          format: uri
+          readOnly: true
+          type: string
+        restart_required:
+          type: boolean
+        ssh_peers:
+          items:
+            $ref: "#/components/schemas/FleetSSHPeer"
+          type: array
+      required:
+        - ssh_peers
+        - restart_required
       type: object
     GitChangesResponse:
       additionalProperties: false
@@ -1462,6 +1678,141 @@ components:
         - rel_path
         - score
       type: object
+    HostDiagnostic:
+      additionalProperties: false
+      properties:
+        blocksOperations:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        code:
+          type: string
+        recoverySuggestion:
+          type: string
+        severity:
+          type: string
+        summary:
+          type: string
+      required:
+        - code
+        - severity
+        - summary
+        - recoverySuggestion
+        - blocksOperations
+      type: object
+    HostOperationAvailability:
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+        unavailableReason:
+          type: string
+      required:
+        - available
+      type: object
+    HostRuntimeSession:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/HostRuntimeSession.json
+          format: uri
+          readOnly: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        exit_code:
+          format: int64
+          type: integer
+        exited_at:
+          format: date-time
+          type: string
+        key:
+          type: string
+        kind:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+        tmux_session:
+          type: string
+      required:
+        - key
+        - label
+        - kind
+        - status
+        - created_at
+      type: object
+    HostSummary:
+      additionalProperties: false
+      properties:
+        capabilities:
+          $ref: "#/components/schemas/Capabilities"
+        configKey:
+          type: string
+        connectionState:
+          type: string
+        diagnostics:
+          items:
+            $ref: "#/components/schemas/HostDiagnostic"
+          type:
+            - array
+            - "null"
+        error:
+          type: string
+        hostname:
+          type: string
+        id:
+          type: string
+        kind:
+          type: string
+        lastSeenAt:
+          type: string
+        name:
+          type: string
+        operationAvailability:
+          additionalProperties:
+            $ref: "#/components/schemas/HostOperationAvailability"
+          type: object
+        platform:
+          type: string
+        preferredTransport:
+          type: string
+        reachable:
+          type: boolean
+        sshDestination:
+          type: string
+        tmuxLastPolledAt:
+          type: string
+        tmuxMetricsError:
+          type: string
+        tmuxProbeError:
+          type: string
+        tmuxSessions:
+          items:
+            $ref: "#/components/schemas/TmuxSessionInfo"
+          type:
+            - array
+            - "null"
+        version:
+          type: string
+      required:
+        - id
+        - configKey
+        - name
+        - kind
+        - platform
+        - preferredTransport
+        - reachable
+        - diagnostics
+        - operationAvailability
+        - tmuxSessions
+      type: object
     Hunk:
       additionalProperties: false
       properties:
@@ -1491,6 +1842,40 @@ components:
         - new_start
         - new_count
         - lines
+      type: object
+    InspectProjectWorktreeOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/InspectProjectWorktreeOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        alive_session_count:
+          format: int64
+          type: integer
+        branch_delete_blocked_reason:
+          type: string
+        can_delete_branch:
+          type: boolean
+        dirty_file_count:
+          format: int64
+          type: integer
+        is_dirty:
+          type: boolean
+        sibling_worktree_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - is_dirty
+        - dirty_file_count
+        - alive_session_count
+        - can_delete_branch
       type: object
     Issue:
       additionalProperties: false
@@ -1892,6 +2277,65 @@ components:
         - color
         - is_default
       type: object
+    LaunchHostRuntimeSessionInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/LaunchHostRuntimeSessionInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        command:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        cwd:
+          type: string
+        env:
+          additionalProperties:
+            type: string
+          type: object
+        label:
+          type: string
+        session_key:
+          type: string
+      required:
+        - command
+        - cwd
+      type: object
+    LaunchProjectWorktreeRuntimeSessionInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/LaunchProjectWorktreeRuntimeSessionInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        command:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        cwd:
+          type: string
+        env:
+          additionalProperties:
+            type: string
+          type: object
+        label:
+          type: string
+        session_key:
+          type: string
+        target_key:
+          type: string
+      type: object
     LaunchTarget:
       additionalProperties: false
       properties:
@@ -1973,6 +2417,25 @@ components:
       required:
         - folders
       type: object
+    ListHostRuntimeSessionsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ListHostRuntimeSessionsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        sessions:
+          items:
+            $ref: "#/components/schemas/HostRuntimeSession"
+          type:
+            - array
+            - "null"
+      required:
+        - sessions
+      type: object
     ListLaunchTargetsOutputBody:
       additionalProperties: false
       properties:
@@ -1992,6 +2455,25 @@ components:
       required:
         - launch_targets
       type: object
+    ListProjectBranchesOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ListProjectBranchesOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        branches:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - branches
+      type: object
     ListProjectsOutputBody:
       additionalProperties: false
       properties:
@@ -2010,6 +2492,25 @@ components:
             - "null"
       required:
         - projects
+      type: object
+    ListUserRepositoriesOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ListUserRepositoriesOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        repositories:
+          items:
+            $ref: "#/components/schemas/UserRepository"
+          type:
+            - array
+            - "null"
+      required:
+        - repositories
       type: object
     ListWorkspacesOutputBody:
       additionalProperties: false
@@ -2575,6 +3076,23 @@ components:
         - KanbanStatus
         - Starred
       type: object
+    MergeRequestSummary:
+      additionalProperties: false
+      properties:
+        is_draft:
+          type: boolean
+        number:
+          format: int64
+          type: integer
+        state:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+      required:
+        - number
+      type: object
     MessageSummary:
       additionalProperties: false
       properties:
@@ -3060,9 +3578,13 @@ components:
           enum:
             - badRequest
             - branchConflict
+            - branchInUse
+            - branchProtected
             - commentNotFound
             - conflict
+            - destinationExists
             - forbidden
+            - hookFailed
             - internalError
             - issueNotFound
             - notFound
@@ -3073,11 +3595,14 @@ components:
             - repoNotFound
             - serviceUnavailable
             - settingsUnavailable
+            - toolMissing
+            - toolUnauthenticated
             - unauthorized
             - unsupportedCapability
             - upstreamError
             - validationError
             - workspaceNotFound
+            - worktreeDirty
           examples:
             - badRequest
           type: string
@@ -3156,6 +3681,117 @@ components:
         - local_path
         - created_at
         - updated_at
+      type: object
+    ProjectSummary:
+      additionalProperties: false
+      properties:
+        defaultBranch:
+          type: string
+        hostID:
+          type: string
+        id:
+          type: string
+        isStale:
+          type: boolean
+        isSynthesized:
+          type: boolean
+        name:
+          type: string
+        platform:
+          type: string
+        platformCoverage:
+          type: string
+        platformURL:
+          type: string
+        registryID:
+          type: string
+        repositoryKind:
+          type: string
+        rootPath:
+          type: string
+        scopedKey:
+          type: string
+      required:
+        - id
+        - hostID
+        - scopedKey
+        - name
+        - rootPath
+        - repositoryKind
+        - defaultBranch
+      type: object
+    ProjectWorktreeRuntimeResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProjectWorktreeRuntimeResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        launch_targets:
+          items:
+            $ref: "#/components/schemas/LaunchTarget"
+          type:
+            - array
+            - "null"
+        sessions:
+          items:
+            $ref: "#/components/schemas/ProjectWorktreeRuntimeSession"
+          type:
+            - array
+            - "null"
+        shell_session:
+          $ref: "#/components/schemas/ProjectWorktreeRuntimeSession"
+      required:
+        - launch_targets
+        - sessions
+      type: object
+    ProjectWorktreeRuntimeSession:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProjectWorktreeRuntimeSession.json
+          format: uri
+          readOnly: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        exit_code:
+          format: int64
+          type: integer
+        exited_at:
+          format: date-time
+          type: string
+        key:
+          type: string
+        kind:
+          type: string
+        label:
+          type: string
+        project_id:
+          type: string
+        status:
+          type: string
+        target_key:
+          type: string
+        tmux_session:
+          type: string
+        worktree_id:
+          type: string
+      required:
+        - key
+        - project_id
+        - worktree_id
+        - target_key
+        - label
+        - kind
+        - status
+        - created_at
       type: object
     ProviderCapabilitiesResponse:
       additionalProperties: false
@@ -3407,6 +4043,294 @@ components:
       required:
         - hosts
       type: object
+    RawHost:
+      additionalProperties: false
+      properties:
+        hostname:
+          type: string
+        lastSeenAt:
+          type: string
+        platform:
+          type: string
+        tmuxLastPolledAt:
+          type: string
+        tmuxMetricsError:
+          type: string
+        tmuxProbeError:
+          type: string
+        tmuxSessions:
+          items:
+            $ref: "#/components/schemas/TmuxSessionInfo"
+          type:
+            - array
+            - "null"
+        version:
+          type: string
+      required:
+        - hostname
+        - platform
+      type: object
+    RawProject:
+      additionalProperties: false
+      properties:
+        backendReady:
+          type: boolean
+        defaultBranch:
+          type: string
+        hostKey:
+          type: string
+        isStale:
+          type: boolean
+        isSynthesized:
+          type: boolean
+        name:
+          type: string
+        platform:
+          type: string
+        platformHost:
+          type: string
+        platformRepo:
+          type: string
+        registryId:
+          type: string
+        repositoryKind:
+          type: string
+        rootPath:
+          type: string
+        scopedKey:
+          type: string
+      required:
+        - scopedKey
+        - name
+        - rootPath
+      type: object
+    RawRemoteHost:
+      additionalProperties: false
+      properties:
+        baseURL:
+          type: string
+        capabilities:
+          $ref: "#/components/schemas/Capabilities"
+        error:
+          type: string
+        generation:
+          format: int64
+          minimum: 0
+          type: integer
+        hostKey:
+          type: string
+        lastSeenAt:
+          type: string
+        name:
+          type: string
+        platform:
+          type: string
+        platformAuthenticated:
+          type: boolean
+        preferredTransport:
+          type: string
+        reachable:
+          type: boolean
+        sshDestination:
+          type: string
+        tmuxLastPolledAt:
+          type: string
+        tmuxMetricsError:
+          type: string
+        tmuxProbeError:
+          type: string
+        tmuxSessions:
+          items:
+            $ref: "#/components/schemas/TmuxSessionInfo"
+          type:
+            - array
+            - "null"
+        version:
+          type: string
+      required:
+        - hostKey
+        - name
+        - reachable
+      type: object
+    RawSession:
+      additionalProperties: false
+      properties:
+        agentKind:
+          type: string
+        cpuPercent:
+          format: double
+          type: number
+        executableName:
+          type: string
+        hostKey:
+          type: string
+        label:
+          type: string
+        lastActiveAt:
+          type: string
+        lastOutputAt:
+          type: string
+        processCount:
+          format: int64
+          type: integer
+        residentMB:
+          format: int64
+          type: integer
+        role:
+          type: string
+        runtimeKind:
+          type: string
+        scopedKey:
+          type: string
+        sessionKind:
+          type: string
+        status:
+          type: string
+        worktreeKey:
+          type: string
+      required:
+        - scopedKey
+        - status
+      type: object
+    RawSnapshot:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RawSnapshot.json
+          format: uri
+          readOnly: true
+          type: string
+        capabilities:
+          $ref: "#/components/schemas/Capabilities"
+        generation:
+          format: int64
+          minimum: 0
+          type: integer
+        host:
+          $ref: "#/components/schemas/RawHost"
+        platformAuthenticated:
+          type: boolean
+        projects:
+          items:
+            $ref: "#/components/schemas/RawProject"
+          type:
+            - array
+            - "null"
+        remoteHosts:
+          items:
+            $ref: "#/components/schemas/RawRemoteHost"
+          type:
+            - array
+            - "null"
+        schemaVersion:
+          format: int64
+          type: integer
+        sessions:
+          items:
+            $ref: "#/components/schemas/RawSession"
+          type:
+            - array
+            - "null"
+        worktrees:
+          items:
+            $ref: "#/components/schemas/RawWorktree"
+          type:
+            - array
+            - "null"
+      required:
+        - schemaVersion
+        - generation
+        - host
+      type: object
+    RawWorktree:
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+        checksDetail:
+          items:
+            $ref: "#/components/schemas/CheckDetail"
+          type:
+            - array
+            - "null"
+        checksStatus:
+          type: string
+        diffAdded:
+          format: int64
+          type: integer
+        diffRemoved:
+          format: int64
+          type: integer
+        hostKey:
+          type: string
+        isHidden:
+          type: boolean
+        isPrimary:
+          type: boolean
+        isStale:
+          type: boolean
+        lastPolledAt:
+          type: string
+        linkedIssueNumbers:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        linkedPRNumber:
+          format: int64
+          type: integer
+        name:
+          type: string
+        path:
+          type: string
+        prState:
+          type: string
+        prTitle:
+          type: string
+        prURL:
+          type: string
+        prUpdatedAt:
+          type: string
+        projectKey:
+          type: string
+        registryId:
+          type: string
+        scopedKey:
+          type: string
+        sessionBackend:
+          type: string
+        syncAhead:
+          format: int64
+          type: integer
+        syncBehind:
+          format: int64
+          type: integer
+      required:
+        - scopedKey
+        - projectKey
+        - name
+        - path
+      type: object
+    RefreshFleetStatsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RefreshFleetStatsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        refreshed:
+          description: True once the synchronous stats pass has completed.
+          type: boolean
+      required:
+        - refreshed
+      type: object
     RegisterProjectInputBody:
       additionalProperties: false
       properties:
@@ -3438,13 +4362,75 @@ components:
           format: uri
           readOnly: true
           type: string
+        base_dir:
+          type: string
+        base_ref:
+          type: string
         branch:
           type: string
+        create_on_disk:
+          type: boolean
         path:
+          type: string
+        setup_script:
+          type: string
+        worktree_name:
           type: string
       required:
         - branch
-        - path
+      type: object
+    RemoveStaleWorktreeInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RemoveStaleWorktreeInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        removeBranch:
+          type: boolean
+        scopedKey:
+          type: string
+      required:
+        - scopedKey
+      type: object
+    RemoveStaleWorktreeOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RemoveStaleWorktreeOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        removed:
+          type: boolean
+      required:
+        - removed
+      type: object
+    RemoveWorktreeInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RemoveWorktreeInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        force:
+          type: boolean
+        remove_branch:
+          type: boolean
+        remove_from_disk:
+          type: boolean
+        teardown_script:
+          type: string
+        worktree_name:
+          type: string
       type: object
     RenameWorkspaceRuntimeSessionInputBody:
       additionalProperties: false
@@ -4042,6 +5028,44 @@ components:
         - version
         - endpoint
       type: object
+    RuntimeAttachSpecResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RuntimeAttachSpecResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        command:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        kind:
+          type: string
+        requires_local_host:
+          type: boolean
+        session_key:
+          type: string
+        target_key:
+          type: string
+        tmux_session:
+          type: string
+        version:
+          format: int64
+          type: integer
+      required:
+        - version
+        - kind
+        - session_key
+        - target_key
+        - tmux_session
+        - command
+        - requires_local_host
+      type: object
     SavedSearch:
       additionalProperties: false
       properties:
@@ -4092,6 +5116,64 @@ components:
         - kind
         - status
         - created_at
+      type: object
+    SessionSummary:
+      additionalProperties: false
+      properties:
+        agentKind:
+          type: string
+        cpuPercent:
+          format: double
+          type: number
+        executableName:
+          type: string
+        hostID:
+          type: string
+        id:
+          type: string
+        lastActiveAt:
+          type: string
+        lastOutputAt:
+          type: string
+        processCount:
+          format: int64
+          type: integer
+        residentMB:
+          format: int64
+          type: integer
+        role:
+          type: string
+        runtimeKind:
+          type: string
+        scopedKey:
+          type: string
+        sessionKind:
+          type: string
+        status:
+          type: string
+        worktreeID:
+          type: string
+      required:
+        - id
+        - hostID
+        - scopedKey
+        - runtimeKind
+        - status
+      type: object
+    SetActiveWorktreeInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SetActiveWorktreeInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        key:
+          type: string
+      required:
+        - key
       type: object
     SetAssigneesRequest:
       additionalProperties: false
@@ -4176,6 +5258,58 @@ components:
       required:
         - reviewers
       type: object
+    SetWorktreeHiddenInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SetWorktreeHiddenInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        hidden:
+          type: boolean
+      required:
+        - hidden
+      type: object
+    SetWorktreeLinkedIssuesInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SetWorktreeLinkedIssuesInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        linked_issue_numbers:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+      required:
+        - linked_issue_numbers
+      type: object
+    SetWorktreeSessionBackendInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SetWorktreeSessionBackendInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        session_backend:
+          type:
+            - string
+            - "null"
+      required:
+        - session_backend
+      type: object
     SettingsResponse:
       additionalProperties: false
       properties:
@@ -4205,6 +5339,63 @@ components:
         - activity
         - terminal
         - agents
+      type: object
+    Snapshot:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/Snapshot.json
+          format: uri
+          readOnly: true
+          type: string
+        activePlatformHost:
+          type: string
+        generation:
+          format: int64
+          minimum: 0
+          type: integer
+        hosts:
+          items:
+            $ref: "#/components/schemas/HostSummary"
+          type:
+            - array
+            - "null"
+        platformAuthenticated:
+          type: boolean
+        projectMap:
+          additionalProperties:
+            type: string
+          type: object
+        projects:
+          items:
+            $ref: "#/components/schemas/ProjectSummary"
+          type:
+            - array
+            - "null"
+        schemaVersion:
+          format: int64
+          type: integer
+        sessions:
+          items:
+            $ref: "#/components/schemas/SessionSummary"
+          type:
+            - array
+            - "null"
+        worktrees:
+          items:
+            $ref: "#/components/schemas/WorktreeSummary"
+          type:
+            - array
+            - "null"
+      required:
+        - schemaVersion
+        - generation
+        - hosts
+        - projects
+        - worktrees
+        - sessions
       type: object
     SnippetRange:
       additionalProperties: false
@@ -4444,6 +5635,97 @@ components:
         - font_ligatures
         - renderer
       type: object
+    TmuxSessionInfo:
+      additionalProperties: false
+      properties:
+        createdAt:
+          type: string
+        managed:
+          type: boolean
+        name:
+          type: string
+        sessionScopedKey:
+          type: string
+        windowCount:
+          format: int64
+          type: integer
+        windows:
+          items:
+            $ref: "#/components/schemas/TmuxWindowInfo"
+          type:
+            - array
+            - "null"
+        worktreeKey:
+          type: string
+      required:
+        - name
+        - managed
+        - windows
+        - windowCount
+      type: object
+    TmuxWindowInfo:
+      additionalProperties: false
+      properties:
+        activity:
+          type: string
+        id:
+          type: string
+        index:
+          format: int64
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - index
+        - name
+      type: object
+    ToolingCLIStatus:
+      additionalProperties: false
+      properties:
+        authenticated:
+          type: boolean
+        available:
+          type: boolean
+        host:
+          type: string
+        user:
+          type: string
+      required:
+        - available
+        - authenticated
+      type: object
+    ToolingGitStatus:
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+        version:
+          type: string
+      required:
+        - available
+      type: object
+    ToolingStatusBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ToolingStatusBody.json
+          format: uri
+          readOnly: true
+          type: string
+        gh:
+          $ref: "#/components/schemas/ToolingCLIStatus"
+        git:
+          $ref: "#/components/schemas/ToolingGitStatus"
+        glab:
+          $ref: "#/components/schemas/ToolingCLIStatus"
+      required:
+        - git
+        - gh
+        - glab
+      type: object
     UpdateDocsFolderInputBody:
       additionalProperties: false
       properties:
@@ -4456,6 +5738,23 @@ components:
           type: string
         name:
           type: string
+      type: object
+    UpdateFleetSSHPeersInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/UpdateFleetSSHPeersInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ssh_peers:
+          items:
+            $ref: "#/components/schemas/FleetSSHPeer"
+          type: array
+      required:
+        - ssh_peers
       type: object
     UpdateSettingsRequest:
       additionalProperties: false
@@ -4477,6 +5776,18 @@ components:
           $ref: "#/components/schemas/ModeVisibility"
         terminal:
           $ref: "#/components/schemas/Terminal"
+      type: object
+    UserRepository:
+      additionalProperties: false
+      properties:
+        default_branch:
+          type: string
+        name_with_owner:
+          type: string
+        ssh_url:
+          type: string
+      required:
+        - name_with_owner
       type: object
     VersionOutputBody:
       additionalProperties: false
@@ -4636,6 +5947,58 @@ components:
         - launch_targets
         - sessions
       type: object
+    WorktreeFromMergeRequestResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorktreeFromMergeRequestResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        is_hidden:
+          type: boolean
+        is_primary:
+          type: boolean
+        linked_issue_numbers:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        merge_request:
+          $ref: "#/components/schemas/MergeRequestSummary"
+        path:
+          type: string
+        project_id:
+          type: string
+        session_backend:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - project_id
+        - branch
+        - path
+        - is_primary
+        - is_hidden
+        - session_backend
+        - linked_issue_numbers
+        - created_at
+        - updated_at
+        - merge_request
+      type: object
     WorktreeLinkResponse:
       additionalProperties: false
       properties:
@@ -4665,9 +6028,22 @@ components:
           type: string
         id:
           type: string
+        is_hidden:
+          type: boolean
+        is_primary:
+          type: boolean
+        linked_issue_numbers:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
         path:
           type: string
         project_id:
+          type: string
+        session_backend:
           type: string
         updated_at:
           format: date-time
@@ -4677,8 +6053,90 @@ components:
         - project_id
         - branch
         - path
+        - is_primary
+        - is_hidden
+        - session_backend
+        - linked_issue_numbers
         - created_at
         - updated_at
+      type: object
+    WorktreeSummary:
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+        checksDetail:
+          items:
+            $ref: "#/components/schemas/CheckDetail"
+          type:
+            - array
+            - "null"
+        checksStatus:
+          type: string
+        diffAdded:
+          format: int64
+          type: integer
+        diffRemoved:
+          format: int64
+          type: integer
+        hostID:
+          type: string
+        id:
+          type: string
+        isHidden:
+          type: boolean
+        isPrimary:
+          type: boolean
+        isStale:
+          type: boolean
+        lastPolledAt:
+          type: string
+        linkedIssueNumbers:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        linkedPRNumber:
+          format: int64
+          type: integer
+        name:
+          type: string
+        path:
+          type: string
+        prState:
+          type: string
+        prTitle:
+          type: string
+        prURL:
+          type: string
+        prUpdatedAt:
+          type: string
+        projectID:
+          type: string
+        registryID:
+          type: string
+        scopedKey:
+          type: string
+        sessionBackend:
+          type: string
+        syncAhead:
+          format: int64
+          type: integer
+        syncBehind:
+          format: int64
+          type: integer
+      required:
+        - id
+        - hostID
+        - projectID
+        - scopedKey
+        - name
+        - path
+        - branch
+        - sessionBackend
+        - linkedIssueNumbers
       type: object
 info:
   title: middleman API
@@ -5240,6 +6698,1038 @@ paths:
       summary: Stream server events
       tags:
         - System
+  /filesystem/complete:
+    get:
+      operationId: complete-filesystem-path
+      parameters:
+        - explode: false
+          in: query
+          name: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilesystemCompleteOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Complete a local filesystem path
+      tags:
+        - System
+  /filesystem/validate-repo:
+    get:
+      operationId: validate-filesystem-repo
+      parameters:
+        - explode: false
+          in: query
+          name: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilesystemValidateRepoOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Resolve a path to a repository root
+      tags:
+        - System
+  /fleet/hosts/{host_key}/filesystem/complete:
+    get:
+      operationId: complete-fleet-filesystem-path
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - description: The partial path to complete on the owning host.
+          in: query
+          name: path
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Complete a filesystem path on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/filesystem/validate-repo:
+    get:
+      operationId: validate-fleet-filesystem-repo
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - description: The path to resolve to a repository root on the owning host.
+          in: query
+          name: path
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Resolve a repository root on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace:
+    post:
+      operationId: create-fleet-issue-workspace-on-platform-host
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Create issue workspace on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/issues/{provider}/{owner}/{name}/{number}/workspace:
+    post:
+      operationId: create-fleet-issue-workspace
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Create issue workspace on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects:
+    post:
+      operationId: register-fleet-project
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Register project on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/clone:
+    post:
+      operationId: clone-fleet-project
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Clone a repository into a project on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}:
+    delete:
+      operationId: delete-fleet-project
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Delete project on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/branches:
+    get:
+      operationId: list-fleet-project-branches
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: List project branches on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees:
+    post:
+      operationId: create-fleet-project-worktree
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Create project worktree on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/from-merge-request:
+    post:
+      operationId: create-fleet-project-worktree-from-merge-request
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Create project worktree from a merge request on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/delete:
+    post:
+      operationId: remove-fleet-project-worktree
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Remove project worktree on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/inspect:
+    get:
+      operationId: inspect-fleet-project-worktree
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Inspect project worktree on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/linked-issues:
+    put:
+      operationId: set-fleet-project-worktree-links
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Set project worktree linked issues on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/refresh-stats:
+    post:
+      operationId: refresh-fleet-project-worktree-stats
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Refresh project worktree git stats on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime:
+    get:
+      operationId: get-fleet-project-worktree-runtime
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get project worktree runtime on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions:
+    post:
+      operationId: launch-fleet-project-worktree-runtime-session
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Launch project worktree session on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}:
+    delete:
+      operationId: stop-fleet-project-worktree-runtime-session
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Stop project worktree session on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}/attach-spec:
+    get:
+      operationId: get-fleet-project-worktree-runtime-session-attach-spec
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get project worktree session attach spec on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/shell:
+    post:
+      operationId: ensure-fleet-project-worktree-runtime-shell
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Ensure project worktree shell on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/session-backend:
+    put:
+      operationId: set-fleet-project-worktree-session-backend
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Set project worktree session backend on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/runtime/sessions:
+    post:
+      operationId: launch-fleet-host-runtime-session
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Launch host runtime session on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/runtime/sessions/{session_key}:
+    delete:
+      operationId: stop-fleet-host-runtime-session
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Stop host runtime session on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/runtime/sessions/{session_key}/attach-spec:
+    get:
+      operationId: get-fleet-host-runtime-session-attach-spec
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get host runtime session attach spec on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces:
+    post:
+      operationId: create-fleet-workspace
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Create workspace on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}:
+    delete:
+      operationId: delete-fleet-workspace
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: Forward force deletion to the owning host.
+          in: query
+          name: force
+          schema:
+            type: boolean
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Delete workspace on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions:
+    post:
+      operationId: launch-fleet-workspace-runtime-session
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Launch workspace session on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}:
+    delete:
+      operationId: stop-fleet-workspace-runtime-session
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Stop workspace session on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec:
+    get:
+      operationId: get-fleet-workspace-runtime-session-attach-spec
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get workspace session attach spec on fleet host
+      tags:
+        - Fleet
   /host/{platform_host}/issues/{provider}/{owner}/{name}:
     post:
       operationId: create-issue-on-host
@@ -8710,6 +11200,42 @@ paths:
       summary: Get msgvault thread
       tags:
         - Msgvault
+  /platform/user-repositories:
+    get:
+      operationId: list-user-repositories
+      parameters:
+        - explode: false
+          in: query
+          name: provider
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_host
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListUserRepositoriesOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List the authenticated platform CLI user's repositories
+      tags:
+        - System
   /projects:
     get:
       operationId: list-projects
@@ -8753,7 +11279,52 @@ paths:
       summary: Register project
       tags:
         - Projects
+  /projects/clone:
+    post:
+      operationId: clone-project
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloneProjectInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Clone a repository and register it as a project
+      tags:
+        - Projects
   /projects/{project_id}:
+    delete:
+      operationId: delete-project
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete project
+      tags:
+        - Projects
     get:
       operationId: get-project
       parameters:
@@ -8776,6 +11347,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get project
+      tags:
+        - Projects
+  /projects/{project_id}/branches:
+    get:
+      operationId: list-project-branches
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListProjectBranchesOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List project repository branches
       tags:
         - Projects
   /projects/{project_id}/launch-targets:
@@ -8856,6 +11452,425 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Register worktree
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/from-merge-request:
+    post:
+      operationId: create-worktree-from-merge-request
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorktreeFromMergeRequestInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorktreeFromMergeRequestResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create worktree from a merge request head
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}:
+    delete:
+      operationId: delete-worktree
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete worktree
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/delete:
+    post:
+      operationId: remove-worktree
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoveWorktreeInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Remove worktree (optionally from disk)
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/hidden:
+    put:
+      operationId: set-worktree-hidden
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetWorktreeHiddenInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorktreeResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set worktree hidden
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/inspect:
+    get:
+      operationId: inspect-project-worktree
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InspectProjectWorktreeOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Inspect project worktree
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/linked-issues:
+    put:
+      operationId: set-worktree-links
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetWorktreeLinkedIssuesInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorktreeResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set worktree linked issues
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/refresh-stats:
+    post:
+      operationId: refresh-worktree-stats
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorktreeResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Refresh worktree git stats
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/runtime:
+    get:
+      operationId: get-project-worktree-runtime
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectWorktreeRuntimeResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get project worktree runtime
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/runtime/sessions:
+    post:
+      operationId: launch-project-worktree-runtime-session
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LaunchProjectWorktreeRuntimeSessionInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectWorktreeRuntimeSession"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Launch project worktree runtime session
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}:
+    delete:
+      operationId: stop-project-worktree-runtime-session
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Stop project worktree runtime session
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}/attach-spec:
+    get:
+      operationId: get-project-worktree-runtime-session-attach-spec
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeAttachSpecResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get project worktree runtime session attach spec
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/runtime/shell:
+    post:
+      operationId: ensure-project-worktree-runtime-shell
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectWorktreeRuntimeSession"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Ensure project worktree shell
+      tags:
+        - Projects
+  /projects/{project_id}/worktrees/{worktree_id}/session-backend:
+    put:
+      operationId: set-worktree-session-backend
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: worktree_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetWorktreeSessionBackendInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorktreeResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set worktree session backend
       tags:
         - Projects
   /pulls:
@@ -10830,6 +13845,95 @@ paths:
       summary: Get roborev status
       tags:
         - Roborev
+  /runtime/sessions:
+    get:
+      operationId: list-host-runtime-sessions
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListHostRuntimeSessionsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List host runtime sessions
+      tags:
+        - Runtime
+    post:
+      operationId: launch-host-runtime-session
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LaunchHostRuntimeSessionInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostRuntimeSession"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Launch host runtime session
+      tags:
+        - Runtime
+  /runtime/sessions/{session_key}:
+    delete:
+      operationId: stop-host-runtime-session
+      parameters:
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Stop host runtime session
+      tags:
+        - Runtime
+  /runtime/sessions/{session_key}/attach-spec:
+    get:
+      operationId: get-host-runtime-session-attach-spec
+      parameters:
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeAttachSpecResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get host runtime session attach spec
+      tags:
+        - Runtime
   /settings:
     get:
       operationId: get-settings
@@ -10873,6 +13977,114 @@ paths:
       summary: Update settings
       tags:
         - Settings
+  /settings/fleet/ssh-peers:
+    get:
+      operationId: get-fleet-ssh-peers
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetSSHPeersBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List SSH fleet peers
+      tags:
+        - Settings
+    put:
+      operationId: update-fleet-ssh-peers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFleetSSHPeersInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetSSHPeersBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Replace SSH fleet peers
+      tags:
+        - Settings
+  /snapshot:
+    get:
+      operationId: get-snapshot
+      parameters:
+        - description: Fan out to configured fleet peers and include their hosts/worktrees.
+          explode: false
+          in: query
+          name: include_peers
+          schema:
+            description: Fan out to configured fleet peers and include their hosts/worktrees.
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read the workspace snapshot
+      tags:
+        - Fleet
+  /snapshot/raw:
+    get:
+      operationId: get-snapshot-raw
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RawSnapshot"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read the local raw inventory
+      tags:
+        - Fleet
+  /snapshot/refresh-stats:
+    post:
+      operationId: refresh-fleet-stats
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshFleetStatsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Refresh all worktree git stats
+      tags:
+        - Fleet
   /stacks:
     get:
       operationId: list-stacks
@@ -11014,6 +14226,46 @@ paths:
       summary: Capture telemetry event
       tags:
         - System
+  /tooling-status:
+    get:
+      operationId: get-tooling-status
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolingStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Report git/gh/glab CLI availability and auth
+      tags:
+        - System
+  /ui/active-worktree:
+    put:
+      operationId: set-active-worktree
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetActiveWorktreeInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set the focused worktree
+      tags:
+        - Settings
   /version:
     get:
       operationId: get-version
@@ -11528,5 +14780,60 @@ paths:
       summary: Rename workspace runtime session
       tags:
         - Workspaces
+  /workspaces/{id}/runtime/sessions/{session_key}/attach-spec:
+    get:
+      operationId: get-workspace-runtime-session-attach-spec
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeAttachSpecResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get workspace runtime session attach spec
+      tags:
+        - Workspaces
+  /worktrees/remove-stale:
+    post:
+      operationId: remove-stale-worktree
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoveStaleWorktreeInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoveStaleWorktreeOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Remove a stale worktree
+      tags:
+        - Projects
 servers:
   - url: /api/v1

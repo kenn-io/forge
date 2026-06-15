@@ -360,7 +360,7 @@ installation_id = 9
 `
 	_, err = Load(writeConfig(t, missingInstallAccount))
 	require.Error(err, "the strict loader must reject incomplete installation metadata")
-	Assert.ErrorContains(t, err, "installation_account is required")
+	require.ErrorContains(err, "installation_account is required")
 	cfg, err = LoadForGitHubAppRepair(writeConfig(t, missingInstallAccount))
 	require.NoError(err, "the repair loader must let install refresh the account")
 	require.Len(cfg.GitHubApps, 1)

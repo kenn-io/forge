@@ -534,6 +534,22 @@ describe("AppHeader", () => {
     );
   });
 
+  it("restores the previous Activity view when returning from the settings gear", async () => {
+    initTheme();
+    navigate("/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets");
+    render(AppHeader);
+
+    // The settings gear leaves Activity without going through navigateTab.
+    await fireEvent.click(screen.getByTitle("Settings"));
+    expect(window.location.pathname).toBe("/settings");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+
+    expect(window.location.pathname + window.location.search).toBe(
+      "/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
+    );
+  });
+
   it("restores the previous Activity view when returning from Repos", async () => {
     initTheme();
     navigate("/?range=90d&view=threaded");

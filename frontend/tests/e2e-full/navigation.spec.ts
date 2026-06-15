@@ -76,6 +76,29 @@ test.describe("view navigation", () => {
     await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
   });
 
+  test("returning to Activity from the settings gear restores the selected item", async ({ page }) => {
+    await page.goto("/");
+    await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".activity-table .activity-row").first().waitFor({ state: "visible", timeout: 10_000 });
+
+    const prRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .first();
+    await prRow.click();
+    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
+    await expect(page).toHaveURL(/\/\?.*selected=pr%3A/);
+
+    // The settings gear leaves Activity without going through the tab bar.
+    await page.getByTitle("Settings").click();
+    await expect(page).toHaveURL(/\/settings$/);
+
+    await page.locator(".view-tab", { hasText: "Activity" }).click();
+
+    await expect(page).toHaveURL(/\/\?.*selected=pr%3A/);
+    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
+  });
+
   test("Kata shell does not expose repo selector or respond to PR number shortcuts", async ({ page }) => {
     await page.goto("/kata");
 

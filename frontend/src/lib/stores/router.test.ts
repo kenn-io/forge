@@ -1,5 +1,13 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vite-plus/test";
-import { navigate, getRoute, getDetailTab, isDiffView, getSelectedPRFromRoute, getPage } from "./router.svelte.js";
+import {
+  navigate,
+  getRoute,
+  getDetailTab,
+  isDiffView,
+  getSelectedPRFromRoute,
+  getPage,
+  getLastActivityRoute,
+} from "./router.svelte.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
 const prFilesRoute = "/pulls/github/acme/widgets/42/files";
@@ -638,5 +646,40 @@ describe("router window bridges", () => {
       page: "embed-workspace-project",
       projectId: "prj_xyz",
     });
+  });
+});
+
+describe("router last activity route", () => {
+  beforeEach(() => {
+    navigate("/");
+  });
+
+  it("captures the Activity URL when leaving for another page", () => {
+    navigate("/?selected=pr:1&provider=github&repo_path=acme%2Fwidgets");
+    navigate("/pulls");
+    expect(getLastActivityRoute()).toBe("/?selected=pr:1&provider=github&repo_path=acme%2Fwidgets");
+  });
+
+  it("captures the Activity URL on a non-tab exit such as the settings route", () => {
+    navigate("/?selected=issue:10&provider=github&repo_path=acme%2Fwidgets");
+    navigate("/settings");
+    expect(getLastActivityRoute()).toBe("/?selected=issue:10&provider=github&repo_path=acme%2Fwidgets");
+  });
+
+  it("does not overwrite the cached route while navigating between non-Activity pages", () => {
+    navigate("/?range=30d");
+    navigate("/pulls");
+    navigate("/issues");
+    navigate("/settings");
+    expect(getLastActivityRoute()).toBe("/?range=30d");
+  });
+
+  it("captures filter-only query changes written without a route update", () => {
+    // Activity feed filters call history.replaceState directly, which does
+    // not update the reactive route. Capturing at navigate() time reads the
+    // live location, so those changes are still preserved on exit.
+    history.replaceState(null, "", "/?range=90d&view=threaded");
+    navigate("/pulls");
+    expect(getLastActivityRoute()).toBe("/?range=90d&view=threaded");
   });
 });

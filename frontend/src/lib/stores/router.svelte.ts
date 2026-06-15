@@ -464,6 +464,17 @@ if (typeof window !== "undefined") {
   queueMicrotask(() => fireRouteChange(route));
 }
 
+// The Activity selection, detail tab, and feed filters all live in the URL
+// query string. Remember the full Activity path on every navigation away so
+// the top-bar Activity tab can restore the previous view instead of resetting
+// to a bare "/". Capturing here covers all exit paths (tabs, settings gear,
+// command palette) since every page transition flows through navigate().
+let lastActivityRoute = "/";
+
+export function getLastActivityRoute(): string {
+  return lastActivityRoute;
+}
+
 export function getRoute(): Route {
   return route;
 }
@@ -481,6 +492,9 @@ export function buildItemRoute(ref: RoutableItemRef): string {
 }
 
 export function navigate(path: string, state?: Record<string, unknown>): void {
+  if (route.page === "activity") {
+    lastActivityRoute = stripBase(currentLocationPath());
+  }
   const fullPath = basePrefix + path;
   history.pushState(state ?? null, "", fullPath);
   route = parseRoute(fullPath);

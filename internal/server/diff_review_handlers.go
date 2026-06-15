@@ -196,12 +196,13 @@ func (s *Server) publishDiffReviewDraft(
 	if reviewHeadSHA == "" {
 		reviewHeadSHA = mr.PlatformHeadSHA
 	}
-	// Approve publishes are head-bound: on providers that enforce head
-	// binding they must clear the same reviewedHeadSHA gate as /approve
-	// and /merge, which fails closed on a missing or stale reviewed diff
-	// snapshot — including a moved base SHA with an unchanged head. The
-	// per-comment head check below only compares DiffHeadSHA, so a stale
-	// base would otherwise let an approval land on an out-of-date diff.
+	// Approve publishes include inline draft comments, so on providers
+	// that enforce head binding they use the reviewedHeadSHA gate shared
+	// with merge rather than direct /approve's provider-head target. This
+	// fails closed on a missing or stale reviewed diff snapshot, including
+	// a moved base SHA with an unchanged head. The per-comment head check
+	// below only compares DiffHeadSHA, so a stale base would otherwise let
+	// an approval land on an out-of-date diff.
 	if action == platform.ReviewActionApprove && caps.MutationHeadBinding {
 		gatedHead, gateErr := s.reviewedHeadSHA(repo, mr)
 		if gateErr != nil {

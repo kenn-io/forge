@@ -385,12 +385,12 @@ func (c *Client) EditIssueContent(
 }
 
 // ApproveMergeRequest approves an MR through the GitLab approvals API.
-// A non-empty expectedHeadSHA binds the approval to the reviewed commit:
-// GitLab rejects the approval when the MR head has moved. The approval
-// itself needs no client-side check, but when a body will be posted as a
-// note (notes are not sha-bound) the current head is verified first so a
-// stale review does not leave an orphaned comment (a small race window
-// remains between the check and the note).
+// A non-empty expectedHeadSHA binds the approval to the caller's target
+// provider head: GitLab rejects the approval when the MR head has moved.
+// The approval itself needs no client-side check, but when a body will be
+// posted as a note (notes are not sha-bound) the current head is verified
+// first so a stale approval comment does not leave an orphaned note (a small
+// race window remains between the check and the note).
 //
 // GitLab approvals carry no body, so a non-empty body is posted as a
 // regular MR note before approving; the synthesized approval event keeps

@@ -313,10 +313,11 @@ type Capabilities struct {
 	ReviewThreadResolution bool
 	ReadReviewThreads      bool
 	NativeMultilineRanges  bool
-	// MutationHeadBinding is true when merge and approve mutations are
-	// hard-bound to the reviewed head SHA: the provider rejects the
-	// mutation when the MR head moved past it. Providers without it treat
-	// the expected head SHA as advisory.
+	// MutationHeadBinding is true when mutations can be hard-bound to an
+	// expected head SHA and the provider rejects the mutation when the MR
+	// head moved past it. Merge uses the reviewed diff head as that pin;
+	// direct approval uses the caller's target provider head. Providers
+	// without it treat the expected head SHA as advisory.
 	MutationHeadBinding    bool
 	SupportedReviewActions []ReviewAction
 }

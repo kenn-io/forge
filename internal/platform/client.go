@@ -133,11 +133,11 @@ type ReviewerMutator interface {
 }
 
 type ReviewMutator interface {
-	// ApproveMergeRequest approves the MR. expectedHeadSHA is the head
-	// commit the caller reviewed; providers that support head binding must
-	// reject the approval when the MR head has moved past it. An empty
-	// value skips the check. Providers whose API cannot bind the approval
-	// to a head commit treat it as advisory.
+	// ApproveMergeRequest approves the MR. expectedHeadSHA is the caller's
+	// target provider head for the approval; providers that support head
+	// binding must reject the approval when the MR head has moved past it.
+	// An empty value skips the check. Providers whose API cannot bind the
+	// approval to a head commit treat it as advisory.
 	ApproveMergeRequest(
 		ctx context.Context,
 		ref RepoRef,

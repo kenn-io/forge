@@ -7,7 +7,8 @@ import { mockApi } from "./support/mockApi";
 // sends the latest synced provider head on approve when available, and
 // branches on the 409 conflict reasons.
 
-// Matches the reviewed_head_sha mockApi serves for acme/widgets#42.
+// The default acme/widgets#42 fixture uses the same SHA for platform_head_sha
+// and reviewed_head_sha; the PR #77 cases below cover divergent heads.
 const REVIEWED_SHA = "42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42";
 const SYNCED_SHA = "0123456789abcdef0123456789abcdef01234567";
 

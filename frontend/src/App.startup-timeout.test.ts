@@ -34,6 +34,15 @@ vi.mock("./lib/api/settings.js", () => ({
   },
 }));
 
+// runAppStartup now gates the settings fetch behind a /healthz readiness
+// poll (PR #496). That backend-warmup gate is orthogonal to the
+// settings-timeout path under test; resolve it immediately so this test
+// exercises the same "settings stalls past the timeout" scenario the
+// Playwright spec did, with the backend already ready.
+vi.mock("./lib/utils/backendReadiness.js", () => ({
+  waitUntilBackendReady: () => Promise.resolve(),
+}));
+
 vi.mock("@middleman/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@middleman/ui")>();
   const Provider = (await import("./lib/testing/AppProviderConfiguredMock.svelte")).default;

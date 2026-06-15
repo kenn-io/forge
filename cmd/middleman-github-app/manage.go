@@ -117,6 +117,7 @@ func runDelete(args []string, env *appEnv) error {
 			app.Slug,
 		)
 	}
+	configuredApp := app
 
 	if !*localOnly {
 		// Deletion is confirmed by the app's credentials dying, so the
@@ -138,9 +139,6 @@ func runDelete(args []string, env *appEnv) error {
 				"cannot verify deletion, app credentials are unusable: %w\n"+
 					"delete the app in GitHub settings yourself, then re-run with --local-only", err,
 			)
-		}
-		if err := updateAppInConfig(cfg, env.configPath, app); err != nil {
-			return fmt.Errorf("saving refreshed app metadata: %w", err)
 		}
 
 		// GitHub has no API for deleting an app; the user confirms it
@@ -183,7 +181,7 @@ func runDelete(args []string, env *appEnv) error {
 	if err := removeAppFromConfig(cfg, env.configPath, app.Host); err != nil {
 		return err
 	}
-	if appPrivateKeyOwnedByCLI(env.configPath, app) {
+	if appPrivateKeyOwnedByCLI(env.configPath, configuredApp, app.Slug) {
 		if err := os.Remove(app.PrivateKeyPath); err != nil && !os.IsNotExist(err) {
 			fmt.Fprintf(env.stdout, "could not remove private key %s: %v\n", app.PrivateKeyPath, err)
 		} else {
@@ -196,7 +194,9 @@ func runDelete(args []string, env *appEnv) error {
 	return nil
 }
 
-func appPrivateKeyOwnedByCLI(configPath string, app config.GitHubAppConfig) bool {
+func appPrivateKeyOwnedByCLI(
+	configPath string, app config.GitHubAppConfig, alternateSlugs ...string,
+) bool {
 	configDir, err := filepath.Abs(filepath.Dir(configPath))
 	if err != nil {
 		return false
@@ -208,8 +208,18 @@ func appPrivateKeyOwnedByCLI(configPath string, app config.GitHubAppConfig) bool
 	if filepath.Dir(keyPath) != configDir {
 		return false
 	}
-	name := "github-app-" + strings.ReplaceAll(app.Host, ":", "_") + "-" + app.Slug + ".pem"
-	return filepath.Base(keyPath) == name
+	base := filepath.Base(keyPath)
+	prefix := "github-app-" + strings.ReplaceAll(app.Host, ":", "_") + "-"
+	slugs := append([]string{app.Slug}, alternateSlugs...)
+	for _, slug := range slugs {
+		if slug == "" {
+			continue
+		}
+		if base == prefix+slug+".pem" {
+			return true
+		}
+	}
+	return false
 }
 
 func runOpen(args []string, env *appEnv) error {
@@ -235,9 +245,6 @@ func runOpen(args []string, env *appEnv) error {
 	app, err = env.refreshAppMetadata(ctx, client, app)
 	if err != nil {
 		return err
-	}
-	if err := updateAppInConfig(cfg, env.configPath, app); err != nil {
-		return fmt.Errorf("saving refreshed app metadata: %w", err)
 	}
 	url := settingsURL(env.webBaseFor(app.Host), app)
 	fmt.Fprintf(env.stdout, "App settings: %s\n", url)

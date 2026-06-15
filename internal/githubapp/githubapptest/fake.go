@@ -181,6 +181,18 @@ func (f *Fake) App(appID int64) (App, bool) {
 	return snapshot, true
 }
 
+// RenameApp simulates a user renaming the GitHub App out of band.
+func (f *Fake) RenameApp(appID int64, slug string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	app, ok := f.apps[appID]
+	if !ok {
+		return fmt.Errorf("no app %d", appID)
+	}
+	app.Slug = slug
+	return nil
+}
+
 // SetRateRemaining configures the core rate numbers reported for
 // installation tokens minted after the call.
 func (f *Fake) SetRateRemaining(limit, used int) {

@@ -488,6 +488,49 @@ func TestDeleteHydratesMinimalAppMetadataBeforeOpeningSettingsURL(t *testing.T) 
 	assert.NoFileExists(keyPath)
 }
 
+func TestDeleteOpensSettingsForRepairInvalidConfig(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-delete-repair")
+	cfg, err := config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	keyPath := cfg.GitHubApps[0].PrivateKeyPath
+
+	raw, err := os.ReadFile(configPath)
+	require.NoError(err)
+	broken := strings.Replace(string(raw), `installation_account = "kenn-io"`, `installation_account = "other-org"`, 1)
+	require.NotEqual(string(raw), broken)
+	require.NoError(os.WriteFile(configPath, []byte(broken), 0o600))
+	_, err = config.Load(configPath)
+	require.ErrorContains(err, "not covered by the github app")
+
+	var opened string
+	env, _ := newTestEnv(t, fake, configPath)
+	env.openBrowser = func(target string) error {
+		opened = target
+		if !strings.Contains(target, "/settings/apps/middleman-delete-repair/advanced") {
+			return fmt.Errorf("unexpected settings URL: %s", target)
+		}
+		app, ok := fake.AppBySlug("middleman-delete-repair")
+		if !ok {
+			return fmt.Errorf("missing fake app middleman-delete-repair")
+		}
+		return fake.DeleteApp(app.ID)
+	}
+	require.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
+	require.Contains(opened, "/settings/apps/middleman-delete-repair/advanced")
+
+	cfg, err = config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	assert := assert.New(t)
+	assert.Empty(cfg.GitHubApps)
+	assert.NoFileExists(keyPath)
+}
+
 func TestInstallRejectsSelectedInstallMissingConfiguredRepos(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -804,6 +847,44 @@ func TestDeletePreservesExternalPrivateKeyPath(t *testing.T) {
 	assert.Contains(out.String(), "Preserved external private key")
 }
 
+func TestDeleteRemovesGeneratedPrivateKeyAfterAppRename(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-rename-delete")
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	keyPath := cfg.GitHubApps[0].PrivateKeyPath
+	require.Contains(filepath.Base(keyPath), "middleman-rename-delete")
+	appID := cfg.GitHubApps[0].AppID
+	require.NoError(fake.RenameApp(appID, "middleman-renamed-live"))
+
+	var opened string
+	env, _ := newTestEnv(t, fake, configPath)
+	env.openBrowser = func(target string) error {
+		opened = target
+		if !strings.Contains(target, "/settings/apps/middleman-renamed-live/advanced") {
+			return fmt.Errorf("unexpected settings URL: %s", target)
+		}
+		app, ok := fake.AppBySlug("middleman-renamed-live")
+		if !ok {
+			return fmt.Errorf("missing fake app middleman-renamed-live")
+		}
+		return fake.DeleteApp(app.ID)
+	}
+	require.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
+	require.Contains(opened, "/settings/apps/middleman-renamed-live/advanced")
+
+	cfg, err = config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	assert := assert.New(t)
+	assert.Empty(cfg.GitHubApps)
+	assert.NoFileExists(keyPath)
+}
+
 func TestOpenHydratesMinimalAppMetadataBeforeOpeningSettingsURL(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -831,14 +912,35 @@ func TestOpenHydratesMinimalAppMetadataBeforeOpeningSettingsURL(t *testing.T) {
 	}
 	require.NoError(runCLI([]string{"open"}, env))
 	require.Contains(opened, "/settings/apps/middleman-open-minimal")
+}
 
-	cfg, err = config.Load(configPath)
+func TestOpenOpensSettingsForRepairInvalidConfig(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-open-repair")
+
+	raw, err := os.ReadFile(configPath)
 	require.NoError(err)
-	require.Len(cfg.GitHubApps, 1)
-	assert := assert.New(t)
-	assert.Equal("middleman-open-minimal", cfg.GitHubApps[0].Slug)
-	assert.Equal("fake-owner", cfg.GitHubApps[0].Owner)
-	assert.Equal("User", cfg.GitHubApps[0].OwnerType)
+	broken := strings.Replace(string(raw), `installation_account = "kenn-io"`, `installation_account = "other-org"`, 1)
+	require.NotEqual(string(raw), broken)
+	require.NoError(os.WriteFile(configPath, []byte(broken), 0o600))
+	_, err = config.Load(configPath)
+	require.ErrorContains(err, "not covered by the github app")
+
+	var opened string
+	env, _ := newTestEnv(t, fake, configPath)
+	env.openBrowser = func(target string) error {
+		opened = target
+		if !strings.Contains(target, "/settings/apps/middleman-open-repair") {
+			return fmt.Errorf("unexpected settings URL: %s", target)
+		}
+		return nil
+	}
+	require.NoError(runCLI([]string{"open"}, env))
+	require.Contains(opened, "/settings/apps/middleman-open-repair")
 }
 
 func TestCreateNoBrowserPrintsManifestURL(t *testing.T) {

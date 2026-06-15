@@ -4512,10 +4512,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 
 	// Seed repo, issue, and PR.
 	repoID := insertTestRepo(t, d, "acme", "widget")
+	issueActivity := base.Add(3 * time.Hour)
+	prActivity := base.Add(2 * time.Hour)
 	insertTestIssue(
 		t, d, repoID, 7,
 		"Track workspace association",
-		base.Add(-time.Minute),
+		issueActivity,
 	)
 	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{
 		RepoID:         repoID,
@@ -4531,8 +4533,8 @@ func TestWorkspaceSummaries(t *testing.T) {
 		Additions:      100,
 		Deletions:      20,
 		CreatedAt:      base,
-		UpdatedAt:      base,
-		LastActivityAt: base,
+		UpdatedAt:      base.Add(time.Hour),
+		LastActivityAt: prActivity,
 	})
 	require.NoError(err)
 
@@ -4603,6 +4605,7 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Nil(noMR.MRAdditions)
 	assert.Nil(noMR.MRDeletions)
 	assert.Nil(noMR.AssociatedPRNumber)
+	assert.Nil(noMR.ItemLastActivityAt)
 
 	// Issue workspace keeps issue-owned header metadata and the linked PR number.
 	require.NotNil(issueWithPR.MRTitle)
@@ -4616,6 +4619,8 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Nil(issueWithPR.MRDeletions)
 	require.NotNil(issueWithPR.AssociatedPRNumber)
 	assert.Equal(42, *issueWithPR.AssociatedPRNumber)
+	require.NotNil(issueWithPR.ItemLastActivityAt)
+	assert.Equal(issueActivity.UTC(), issueWithPR.ItemLastActivityAt.UTC())
 
 	// PR workspace exposes PR metadata in the owner slots.
 	require.NotNil(withMR.MRTitle)
@@ -4633,6 +4638,8 @@ func TestWorkspaceSummaries(t *testing.T) {
 	require.NotNil(withMR.MRDeletions)
 	assert.Equal(20, *withMR.MRDeletions)
 	assert.Nil(withMR.AssociatedPRNumber)
+	require.NotNil(withMR.ItemLastActivityAt)
+	assert.Equal(prActivity.UTC(), withMR.ItemLastActivityAt.UTC())
 
 	// GetWorkspaceSummary by ID
 	single, err := d.GetWorkspaceSummary(ctx, "ws-issue-with-pr")
@@ -4643,6 +4650,8 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Equal("Track workspace association", *single.MRTitle)
 	require.NotNil(single.AssociatedPRNumber)
 	assert.Equal(42, *single.AssociatedPRNumber)
+	require.NotNil(single.ItemLastActivityAt)
+	assert.Equal(issueActivity.UTC(), single.ItemLastActivityAt.UTC())
 
 	// GetWorkspaceSummary miss
 	missSum, err := d.GetWorkspaceSummary(ctx, "nonexistent")

@@ -2090,6 +2090,7 @@ type WorkspaceResponse struct {
 	ErrorMessage       *string         `json:"error_message,omitempty"`
 	GitHeadRef         string          `json:"git_head_ref"`
 	Id                 string          `json:"id"`
+	ItemLastActivityAt *string         `json:"item_last_activity_at,omitempty"`
 	ItemNumber         int64           `json:"item_number"`
 	ItemType           string          `json:"item_type"`
 	MrAdditions        *int64          `json:"mr_additions,omitempty"`

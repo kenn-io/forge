@@ -370,6 +370,7 @@ type workspaceResponse struct {
 	Status             string          `json:"status"`
 	ErrorMessage       *string         `json:"error_message,omitempty"`
 	CreatedAt          string          `json:"created_at"`
+	ItemLastActivityAt *string         `json:"item_last_activity_at,omitempty"`
 	MRTitle            *string         `json:"mr_title,omitempty"`
 	MRState            *string         `json:"mr_state,omitempty"`
 	MRIsDraft          *bool           `json:"mr_is_draft,omitempty"`
@@ -402,6 +403,11 @@ type workspaceRef struct {
 func toWorkspaceResponse(
 	s *db.WorkspaceSummary,
 ) workspaceResponse {
+	var itemLastActivityAt *string
+	if s.ItemLastActivityAt != nil {
+		formatted := s.ItemLastActivityAt.UTC().Format(time.RFC3339)
+		itemLastActivityAt = &formatted
+	}
 	return workspaceResponse{
 		ID:                 s.ID,
 		Repo:               repoRefFromParts(s.Platform, s.PlatformHost, s.RepoOwner, s.RepoName),
@@ -417,6 +423,7 @@ func toWorkspaceResponse(
 		TmuxActivitySource: tmuxActivitySourceUnknown,
 		ErrorMessage:       s.ErrorMessage,
 		CreatedAt:          s.CreatedAt.UTC().Format(time.RFC3339),
+		ItemLastActivityAt: itemLastActivityAt,
 		MRTitle:            s.MRTitle,
 		MRState:            s.MRState,
 		MRIsDraft:          s.MRIsDraft,

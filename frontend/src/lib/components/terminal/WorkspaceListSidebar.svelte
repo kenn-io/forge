@@ -49,6 +49,7 @@
     status: string;
     error_message?: string | null;
     created_at: string;
+    item_last_activity_at?: string | null;
     mr_title?: string | null;
     mr_state?: string | null;
     mr_is_draft?: boolean | null;
@@ -136,17 +137,20 @@
     },
   ]);
 
-  // Flat ordering for the timestamp sorts. The org/repo mode keeps
-  // the API order (created_at DESC) inside each repo group instead.
-  // "Activity" means terminal output only (tmux_last_output_at);
-  // pane-title or working-state changes do not count, and
-  // workspaces that have never produced output fall back to their
-  // creation time.
+  // Flat ordering for timestamp sorts. The org/repo mode keeps
+  // the API order (created_at DESC) inside each repo group.
+  // "Activity" means terminal output only (tmux_last_output_at).
+  // "Item activity" means the synced PR/issue last_activity_at.
+  // Missing timestamps fall back to workspace creation time.
   const sortedFlat = $derived.by(() => {
     const stamp = sortMode === "activity"
       ? (ws: Workspace) =>
-        timeValue(ws.tmux_last_output_at) || timeValue(ws.created_at)
-      : (ws: Workspace) => timeValue(ws.created_at);
+          timeValue(ws.tmux_last_output_at) || timeValue(ws.created_at)
+      : sortMode === "item-activity"
+        ? (ws: Workspace) =>
+            timeValue(ws.item_last_activity_at) ||
+            timeValue(ws.created_at)
+        : (ws: Workspace) => timeValue(ws.created_at);
     return [...visibleWorkspaces].sort(
       (a, b) => stamp(b) - stamp(a) || a.id.localeCompare(b.id),
     );

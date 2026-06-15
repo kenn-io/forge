@@ -35,6 +35,7 @@ interface WorkspaceFixtureOptions {
   itemType?: "pull_request" | "issue";
   createdAt?: string;
   tmuxLastOutputAt?: string | null;
+  itemLastActivityAt?: string | null;
 }
 
 function workspaceFixture({
@@ -49,6 +50,7 @@ function workspaceFixture({
   itemType = "pull_request",
   createdAt = "2026-05-12T12:00:00Z",
   tmuxLastOutputAt = null,
+  itemLastActivityAt = null,
 }: WorkspaceFixtureOptions) {
   return {
     id,
@@ -70,6 +72,7 @@ function workspaceFixture({
     status: "ready",
     created_at: createdAt,
     tmux_last_output_at: tmuxLastOutputAt,
+    item_last_activity_at: itemLastActivityAt,
     mr_title: title,
     mr_state: "open",
   };
@@ -396,6 +399,59 @@ describe("WorkspaceListSidebar", () => {
 
     // ws-old has no tmux output, so it sorts by its creation time.
     expect(rowTitles(container)).toEqual(["Most recently active", "Newest created", "Oldest without activity"]);
+  });
+
+  it("sorts flat by item activity with creation time as fallback", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-created-newest",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 1,
+            title: "Newest created fallback",
+            createdAt: "2026-05-15T12:00:00Z",
+          }),
+          workspaceFixture({
+            id: "ws-pr-active",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 2,
+            title: "PR recently changed",
+            createdAt: "2026-05-10T12:00:00Z",
+            itemLastActivityAt: "2026-05-16T12:00:00Z",
+          }),
+          workspaceFixture({
+            id: "ws-issue-active",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "agentsview",
+            number: 3,
+            title: "Issue recently changed",
+            itemType: "issue",
+            createdAt: "2026-05-09T12:00:00Z",
+            itemLastActivityAt: "2026-05-17T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-created-newest" },
+    });
+    await screen.findByText("Newest created fallback");
+
+    await fireEvent.click(screen.getByTitle("Sort workspaces"));
+    await fireEvent.click(screen.getByRole("button", { name: "Item activity" }));
+
+    expect(rowTitles(container)).toEqual(["Issue recently changed", "PR recently changed", "Newest created fallback"]);
+    expect(container.querySelectorAll(".group-header")).toHaveLength(0);
   });
 
   it("persists the selected sort across mounts", async () => {

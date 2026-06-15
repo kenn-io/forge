@@ -1,4 +1,4 @@
-export type WorkspaceListSort = "repo" | "created" | "activity";
+export type WorkspaceListSort = "repo" | "created" | "activity" | "item-activity";
 
 export const workspaceListSortOptions: {
   value: WorkspaceListSort;
@@ -7,6 +7,7 @@ export const workspaceListSortOptions: {
   { value: "repo", label: "Org / repo" },
   { value: "created", label: "Created" },
   { value: "activity", label: "Activity" },
+  { value: "item-activity", label: "Item activity" },
 ];
 
 export const defaultWorkspaceListSort: WorkspaceListSort = "repo";

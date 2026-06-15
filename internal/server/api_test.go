@@ -18921,6 +18921,121 @@ func waitForWorkspaceStatus(
 	}
 }
 
+func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	client, database, _, _ := setupTestServerWithWorkspaces(t)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByHostOwnerName(
+		ctx, "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+
+	base := time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC)
+	prActivity := base.Add(2 * time.Hour)
+	issueActivity := base.Add(3 * time.Hour)
+
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repo.ID,
+		PlatformID:     9001,
+		Number:         701,
+		URL:            "https://github.com/acme/widget/pull/701",
+		Title:          "Sort PR workspace",
+		Author:         "alice",
+		State:          "open",
+		CreatedAt:      base,
+		UpdatedAt:      base.Add(time.Hour),
+		LastActivityAt: prActivity,
+	})
+	require.NoError(err)
+
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repo.ID,
+		PlatformID:     9002,
+		Number:         702,
+		URL:            "https://github.com/acme/widget/issues/702",
+		Title:          "Sort issue workspace",
+		Author:         "bob",
+		State:          "open",
+		CreatedAt:      base,
+		UpdatedAt:      base.Add(time.Hour),
+		LastActivityAt: issueActivity,
+	})
+	require.NoError(err)
+
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "ws-pr-activity",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   701,
+		GitHeadRef:   "feature/pr-activity",
+		WorktreePath: filepath.Join(t.TempDir(), "ws-pr-activity"),
+		TmuxSession:  "middleman-ws-pr-activity",
+		Status:       "creating",
+		CreatedAt:    base,
+	}))
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "ws-issue-activity",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypeIssue,
+		ItemNumber:   702,
+		GitHeadRef:   "feature/issue-activity",
+		WorktreePath: filepath.Join(t.TempDir(), "ws-issue-activity"),
+		TmuxSession:  "middleman-ws-issue-activity",
+		Status:       "creating",
+		CreatedAt:    base.Add(time.Minute),
+	}))
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "ws-unsynced-activity",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypeIssue,
+		ItemNumber:   799,
+		GitHeadRef:   "feature/unsynced-activity",
+		WorktreePath: filepath.Join(t.TempDir(), "ws-unsynced-activity"),
+		TmuxSession:  "middleman-ws-unsynced-activity",
+		Status:       "creating",
+		CreatedAt:    base.Add(2 * time.Minute),
+	}))
+
+	resp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Workspaces)
+
+	byID := map[string]generated.WorkspaceResponse{}
+	for _, ws := range *resp.JSON200.Workspaces {
+		byID[ws.Id] = ws
+	}
+
+	require.Contains(byID, "ws-pr-activity")
+	require.Contains(byID, "ws-issue-activity")
+	require.Contains(byID, "ws-unsynced-activity")
+
+	assert.NotNil(byID["ws-pr-activity"].ItemLastActivityAt)
+	assert.Equal(
+		prActivity.Format(time.RFC3339),
+		*byID["ws-pr-activity"].ItemLastActivityAt,
+	)
+	assert.NotNil(byID["ws-issue-activity"].ItemLastActivityAt)
+	assert.Equal(
+		issueActivity.Format(time.RFC3339),
+		*byID["ws-issue-activity"].ItemLastActivityAt,
+	)
+	assert.Nil(byID["ws-unsynced-activity"].ItemLastActivityAt)
+}
+
 func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
 	require := require.New(t)
 	if testing.Short() {

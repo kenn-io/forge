@@ -4934,7 +4934,11 @@ const workspaceSummaryColumns = `
 	    ELSE m.state
 	END,
 	m.is_draft, m.ci_status,
-	m.review_decision, m.additions, m.deletions`
+	m.review_decision, m.additions, m.deletions,
+	CASE
+	    WHEN w.item_type = 'issue' THEN i.last_activity_at
+	    ELSE m.last_activity_at
+	END`
 
 // workspaceSummaryJoins is the FROM/JOIN clause shared by
 // ListWorkspaceSummaries and GetWorkspaceSummary.
@@ -4958,6 +4962,7 @@ func scanWorkspaceSummary(
 	scanner interface{ Scan(...any) error },
 ) (*WorkspaceSummary, error) {
 	var s WorkspaceSummary
+	var itemLastActivityAt sql.NullString
 	err := scanner.Scan(
 		&s.ID, &s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
 		&s.ItemType, &s.ItemNumber, &s.AssociatedPRNumber,
@@ -4966,11 +4971,20 @@ func scanWorkspaceSummary(
 		&s.ErrorMessage, &s.CreatedAt,
 		&s.MRTitle, &s.MRState, &s.MRIsDraft, &s.MRCIStatus,
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
+		&itemLastActivityAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 	s.CreatedAt = s.CreatedAt.UTC()
+	if itemLastActivityAt.Valid {
+		parsed, err := parseDBTime(itemLastActivityAt.String)
+		if err != nil {
+			return nil, err
+		}
+		utc := parsed.UTC()
+		s.ItemLastActivityAt = &utc
+	}
 	return &s, nil
 }
 

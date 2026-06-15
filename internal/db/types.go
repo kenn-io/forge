@@ -572,13 +572,14 @@ type Workspace struct {
 // WorkspaceSummary extends Workspace with joined MR metadata.
 type WorkspaceSummary struct {
 	Workspace
-	MRTitle          *string
-	MRState          *string
-	MRIsDraft        *bool
-	MRCIStatus       *string
-	MRReviewDecision *string
-	MRAdditions      *int
-	MRDeletions      *int
+	MRTitle            *string
+	MRState            *string
+	MRIsDraft          *bool
+	MRCIStatus         *string
+	MRReviewDecision   *string
+	MRAdditions        *int
+	MRDeletions        *int
+	ItemLastActivityAt *time.Time
 }
 
 type WorkspaceSetupEvent struct {

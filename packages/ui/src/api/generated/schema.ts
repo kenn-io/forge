@@ -4531,6 +4531,7 @@ export interface components {
             error_message?: string;
             git_head_ref: string;
             id: string;
+            item_last_activity_at?: string;
             /** Format: int64 */
             item_number: number;
             item_type: string;

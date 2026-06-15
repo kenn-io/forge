@@ -4526,6 +4526,8 @@ components:
           type: string
         id:
           type: string
+        item_last_activity_at:
+          type: string
         item_number:
           format: int64
           type: integer

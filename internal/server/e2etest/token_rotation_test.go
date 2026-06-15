@@ -173,8 +173,10 @@ func TestInvalidReloadKeepsLiveTokenSourceE2E(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	dir := t.TempDir()
-	t.Setenv("MIDDLEMAN_REPO_TOKEN", "opaque-live-token-11111")
-	t.Setenv("MIDDLEMAN_MISSING_REPO_TOKEN", "")
+	const liveTokenEnv = "MIDDLEMAN_INVALID_RELOAD_E2E_REPO_TOKEN"
+	const missingTokenEnv = "MIDDLEMAN_INVALID_RELOAD_E2E_MISSING_REPO_TOKEN"
+	t.Setenv(liveTokenEnv, "opaque-live-token-11111")
+	t.Setenv(missingTokenEnv, "")
 
 	var tokens []string
 	gitlabAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +207,7 @@ func TestInvalidReloadKeepsLiveTokenSourceE2E(t *testing.T) {
 	t.Cleanup(gitlabAPI.Close)
 
 	cfgPath := filepath.Join(dir, "config.toml")
-	initialConfig := gitLabTokenEnvConfig("MIDDLEMAN_REPO_TOKEN")
+	initialConfig := gitLabTokenEnvConfig(liveTokenEnv)
 	require.NoError(os.WriteFile(cfgPath, []byte(initialConfig), 0o644))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -233,7 +235,7 @@ func TestInvalidReloadKeepsLiveTokenSourceE2E(t *testing.T) {
 	}
 
 	writeConfigTomlAtomically(
-		t, cfgPath, gitLabTokenEnvConfig("MIDDLEMAN_MISSING_REPO_TOKEN"),
+		t, cfgPath, gitLabTokenEnvConfig(missingTokenEnv),
 	)
 	ev := waitForTokenRotationConfigEvent(t, stream, 3*time.Second)
 	assert.False(ev.Valid)

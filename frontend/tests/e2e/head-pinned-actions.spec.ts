@@ -4,7 +4,7 @@ import { mockApi } from "./support/mockApi";
 // Wire-level coverage for the head-pinning contract
 // (context/provider-architecture.md "Head binding"): the detail view
 // echoes the rendered reviewed_head_sha as expected_head_sha on merge
-// and approve, and branches on the 409 conflict reasons.
+// and approve when available, and branches on the 409 conflict reasons.
 
 // Matches the reviewed_head_sha mockApi serves for acme/widgets#42.
 const REVIEWED_SHA = "42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42";
@@ -58,9 +58,9 @@ const providerCapabilities = {
   supported_review_actions: [],
 };
 
-// A GitLab-shaped PR whose head has never been synced, for the
-// head_unknown flow. Local fixture so the shared mockApi pulls (which
-// now all carry a head SHA) stay untouched.
+// A PR whose reviewed head has never been synced, for the head_unknown
+// flow. Local fixture so the shared mockApi pulls (which now all carry a
+// reviewed head SHA) stay untouched.
 const unboundPR = {
   ID: 9,
   RepoID: 1,
@@ -280,17 +280,18 @@ test.describe("palette approve head conflict", () => {
   });
 });
 
-test.describe("head_unknown approve conflict", () => {
-  test("head-bound actions stay disabled until diff sync records the reviewed head", async ({ page }) => {
+test.describe("head_unknown action gating", () => {
+  test("approve can proceed without a reviewed head while merge waits for diff sync", async ({ page }) => {
     await mockApi(page);
 
-    // On a head-binding provider the UI never fires an unbound
-    // mutation: even with a raw platform head, approve and merge stay
-    // disabled until reviewed_head_sha proves the diff snapshot is
-    // current.
+    // Approval is safe without a locally verified reviewed_head_sha: the
+    // server sends a head SHA when it has one, and providers may approve
+    // the current head otherwise. Merge remains blocked until
+    // reviewed_head_sha proves the rendered diff snapshot is current.
     const platformHead = SYNCED_SHA;
     let reviewedHead = "";
     let approveRequested = false;
+    let approveBody: Record<string, unknown> | null = null;
 
     await page.route("**/api/v1/pulls/github/acme/widgets/77", async (route: Route) => {
       if (route.request().method() !== "GET") {
@@ -318,6 +319,7 @@ test.describe("head_unknown approve conflict", () => {
 
     await page.route("**/api/v1/pulls/github/acme/widgets/77/approve", async (route: Route) => {
       approveRequested = true;
+      approveBody = JSON.parse(route.request().postData() ?? "{}");
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -328,12 +330,15 @@ test.describe("head_unknown approve conflict", () => {
     await page.goto("/pulls/github/acme/widgets/77");
     await expect(page.locator(".detail-title")).toContainText("Unbound head PR");
 
-    await expect(page.locator(".btn--approve").first()).toBeDisabled();
+    await expect(page.locator(".btn--approve").first()).toBeEnabled();
     await expect(page.locator(".btn--merge").first()).toBeDisabled();
-    expect(approveRequested).toBe(false);
+    await submitApproval(page);
+    expect(approveRequested).toBe(true);
+    expect(approveBody).not.toBeNull();
+    expect(approveBody!["expected_head_sha"]).toBeUndefined();
 
     // A diff sync verifies the reviewed head; the reloaded detail
-    // re-enables the head-bound actions.
+    // re-enables merge, while approval remains available.
     reviewedHead = SYNCED_SHA;
     await page.reload();
     await expect(page.locator(".detail-title")).toContainText("Unbound head PR");

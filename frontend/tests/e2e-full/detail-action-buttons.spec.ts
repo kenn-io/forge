@@ -414,12 +414,12 @@ test.describe("detail action buttons", () => {
     const merge = page.locator(".btn--merge");
     const close = page.locator(".btn--close");
 
-    await expect(approve).toHaveCount(0);
+    await expect(approve).toBeVisible();
     await expect(merge).toBeVisible();
     await expect(close).toBeVisible();
 
     // All action buttons use the shared action-button base class
-    for (const btn of [merge, close]) {
+    for (const btn of [approve, merge, close]) {
       const classes = await btn.getAttribute("class");
       expect(classes).toContain("action-button");
     }
@@ -514,7 +514,7 @@ test.describe("detail action buttons", () => {
     await expect(page.locator(".primary-actions-wrap .action-error")).toBeVisible();
   });
 
-  test("narrow actions menu omits unsupported approve action", async ({ page }) => {
+  test("narrow actions menu includes supported approve action", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/pulls/github/acme/widgets/1");
     await expect(page.locator(".pull-detail")).toBeVisible();
@@ -523,12 +523,12 @@ test.describe("detail action buttons", () => {
     const menu = page.locator(".actions-menu-popover");
     await expect(menu).toBeVisible();
 
-    await expect(menu.locator(".btn--approve")).toHaveCount(0);
+    await expect(menu.locator(".btn--approve")).toBeVisible();
     await expect(menu.locator(".btn--merge")).toBeVisible();
     await expect(menu.locator(".btn--close")).toBeVisible();
   });
 
-  test("GitHub approve action stays unavailable in UI and API", async ({ page }) => {
+  test("GitHub approve action is available in UI and API", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
       isolatedServer = await startIsolatedE2EServer();
@@ -538,7 +538,7 @@ test.describe("detail action buttons", () => {
 
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();
-      await expect(page.locator(".btn--approve")).toHaveCount(0);
+      await expect(page.locator(".btn--approve")).toBeVisible();
 
       const response = await page.request.post(`${detailURL}/approve`, {
         data: {
@@ -546,20 +546,9 @@ test.describe("detail action buttons", () => {
           expected_head_sha: "head-sha",
         },
       });
-      expect(response.status()).toBe(409);
-      const problem = (await response.json()) as {
-        code: string;
-        details?: {
-          capability?: string;
-          provider?: string;
-          platformHost?: string;
-        };
-      };
-      expect(problem.code).toBe("unsupportedCapability");
-      expect(problem.details).toMatchObject({
-        capability: "review_mutation",
-        provider: "github",
-        platformHost: "github.com",
+      expect(response.status()).toBe(200);
+      expect((await response.json()) as { status?: string }).toMatchObject({
+        status: "approved",
       });
     } finally {
       await isolatedServer?.stop();
@@ -602,13 +591,12 @@ test.describe("detail action buttons", () => {
     const merge = page.locator(".btn--merge");
     const close = page.locator(".btn--close");
 
-    await expect(approve).toHaveCount(0);
-    for (const btn of [ready, merge, close]) {
+    for (const btn of [ready, approve, merge, close]) {
       await expect(btn).toBeVisible();
     }
 
     const metrics = await page.evaluate(() => {
-      const selectors = [".btn--ready", ".btn--merge", ".btn--close"];
+      const selectors = [".btn--ready", ".btn--approve", ".btn--merge", ".btn--close"];
       return selectors.map((selector) => {
         const element = document.querySelector(selector);
         if (!(element instanceof HTMLElement)) {
@@ -662,7 +650,7 @@ test.describe("detail action buttons", () => {
       expect((await readyResponse.json()).status).toBe("ready_for_review");
 
       await expect(page.locator(".btn--ready")).toHaveCount(0);
-      await expect(page.locator(".btn--approve")).toHaveCount(0);
+      await expect(page.locator(".btn--approve")).toBeVisible();
       await expect(page.locator(".btn--merge")).toBeVisible();
       await expect(page.locator(".btn--close")).toBeVisible();
 

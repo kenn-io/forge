@@ -98,7 +98,7 @@ function tryProcessPatch(
     return processFile(patch, {
       oldFile: contents.oldFile,
       newFile: contents.newFile,
-      throwOnError: true,
+      throwOnError: false,
     });
   } catch {
     return undefined;
@@ -116,7 +116,7 @@ function parsePatchOnly(file: DiffFile): FileDiffMetadata | undefined {
 
 function tryParsePatch(patch: string): FileDiffMetadata | undefined {
   try {
-    return parsePatchFiles(patch, undefined, true)[0]?.files[0];
+    return parsePatchFiles(patch, undefined, false)[0]?.files[0];
   } catch {
     return undefined;
   }

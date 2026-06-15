@@ -161,6 +161,25 @@ describe("Pierre diff parsing", () => {
     expect(fullOld.cacheKey).not.toBe(sparseOld.cacheKey);
   });
 
+  it("renders partial hunk payloads whose headers keep provider line counts", () => {
+    const file = makeFile("src/foo.ts", "-old line\n+new line");
+    file.patch = file.patch.replace("@@ -1,2 +1,2 @@", "@@ -1,3 +1,5 @@");
+    file.hunks[0]!.old_count = 3;
+    file.hunks[0]!.new_count = 5;
+
+    const parsed = parsePierreFileDiff(file);
+    const full = parsePierreFileDiffWithContents(file, {
+      oldFile: pierreFileContents("src/foo.ts", "line 1\nold line\n", "full-old"),
+      newFile: pierreFileContents("src/foo.ts", "line 1\nnew line\n", "full-new"),
+    });
+
+    expect(parsed).toBeDefined();
+    expect(parsed?.deletionLines).toContain("old line\n");
+    expect(parsed?.additionLines).toContain("new line\n");
+    expect(full).toBeDefined();
+    expect(full?.isPartial).toBe(false);
+  });
+
   it("falls back to patch-only parsing for huge sparse line ranges", () => {
     const parsed = parsePierreFileDiff(makeLargeLineFile(), {
       enableDemandContextExpansion: true,

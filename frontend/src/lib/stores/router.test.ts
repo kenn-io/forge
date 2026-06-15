@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vite-plus/test";
 import {
   navigate,
+  replaceUrl,
   getRoute,
   getDetailTab,
   isDiffView,
@@ -681,5 +682,30 @@ describe("router last activity route", () => {
     history.replaceState(null, "", "/?range=90d&view=threaded");
     navigate("/pulls");
     expect(getLastActivityRoute()).toBe("/?range=90d&view=threaded");
+  });
+
+  it("refreshes the cache when a drawer selection is written via replaceUrl", () => {
+    replaceUrl("/?selected=pr:2&provider=github&repo_path=acme%2Fwidgets");
+    expect(getLastActivityRoute()).toBe("/?selected=pr:2&provider=github&repo_path=acme%2Fwidgets");
+  });
+
+  it("captures the Activity URL when browser Back/Forward lands on Activity", () => {
+    navigate("/pulls");
+    // Simulate the browser restoring an Activity history entry: the URL
+    // changes underneath the app and a popstate fires without navigate().
+    history.replaceState(null, "", "/?selected=pr:7&provider=github&repo_path=acme%2Fwidgets");
+    window.dispatchEvent(new Event("popstate"));
+    expect(getLastActivityRoute()).toBe("/?selected=pr:7&provider=github&repo_path=acme%2Fwidgets");
+  });
+
+  it("preserves a drawer change made before leaving Activity via Back/Forward", () => {
+    // Reviewer scenario: change the drawer selection on Activity, then use
+    // Back to leave without navigate(). The cache must hold the latest
+    // Activity selection, not a stale one.
+    replaceUrl("/?selected=pr:2&provider=github&repo_path=acme%2Fwidgets");
+    history.replaceState(null, "", "/pulls");
+    window.dispatchEvent(new Event("popstate"));
+    expect(getPage()).toBe("pulls");
+    expect(getLastActivityRoute()).toBe("/?selected=pr:2&provider=github&repo_path=acme%2Fwidgets");
   });
 });

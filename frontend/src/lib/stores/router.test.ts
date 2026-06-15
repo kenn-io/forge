@@ -684,6 +684,15 @@ describe("router last activity route", () => {
     expect(getLastActivityRoute()).toBe("/?range=90d&view=threaded");
   });
 
+  it("captures direct Activity filter writes before leaving via Back/Forward", () => {
+    navigate("/?range=7d");
+    history.replaceState(null, "", "/?range=90d&view=threaded");
+    history.replaceState(null, "", "/pulls");
+    window.dispatchEvent(new Event("popstate"));
+    expect(getPage()).toBe("pulls");
+    expect(getLastActivityRoute()).toBe("/?range=90d&view=threaded");
+  });
+
   it("refreshes the cache when a drawer selection is written via replaceUrl", () => {
     replaceUrl("/?selected=pr:2&provider=github&repo_path=acme%2Fwidgets");
     expect(getLastActivityRoute()).toBe("/?selected=pr:2&provider=github&repo_path=acme%2Fwidgets");

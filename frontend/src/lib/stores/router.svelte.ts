@@ -469,9 +469,10 @@ if (typeof window !== "undefined") {
 // can restore the previous view instead of resetting to a bare "/". The cache
 // is refreshed at every point the router observes the URL — navigate() (which
 // reads the live location before leaving, so a tab/settings/palette exit keeps
-// even filter-only writes), replaceUrl() (drawer selection changes), popstate
-// (browser Back/Forward), and initial load — so it stays current regardless of
-// how Activity is entered or left.
+// even filter-only writes), replaceUrl() (drawer selection changes), direct
+// history.replaceState() writes from the Activity store, popstate (browser
+// Back/Forward), and initial load — so it stays current regardless of how
+// Activity is entered or left.
 let lastActivityRoute = "/";
 
 export function getLastActivityRoute(): string {
@@ -479,13 +480,22 @@ export function getLastActivityRoute(): string {
 }
 
 function rememberActivityRoute(): void {
-  if (route.page === "activity") {
-    lastActivityRoute = stripBase(currentLocationPath());
+  const currentPath = currentLocationPath();
+  if (route.page === "activity" && parseRoute(currentPath).page === "activity") {
+    lastActivityRoute = stripBase(currentPath);
   }
 }
 
 // Seed the cache when the app loads directly on an Activity URL.
 rememberActivityRoute();
+
+if (typeof window !== "undefined") {
+  const originalReplaceState = history.replaceState.bind(history);
+  history.replaceState = ((data: unknown, unused: string, url?: string | URL | null) => {
+    originalReplaceState(data, unused, url);
+    rememberActivityRoute();
+  }) as History["replaceState"];
+}
 
 export function getRoute(): Route {
   return route;

@@ -448,6 +448,46 @@ func TestDeleteRefusesWhenCredentialsCannotBeVerified(t *testing.T) {
 	assert.FileExists(t, keyPath)
 }
 
+func TestDeleteHydratesMinimalAppMetadataBeforeOpeningSettingsURL(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-delete-minimal")
+
+	cfg, err := config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	keyPath := cfg.GitHubApps[0].PrivateKeyPath
+	cfg.GitHubApps[0].Slug = ""
+	cfg.GitHubApps[0].Owner = ""
+	cfg.GitHubApps[0].OwnerType = ""
+	require.NoError(cfg.Save(configPath))
+
+	var opened string
+	env, _ := newTestEnv(t, fake, configPath)
+	env.openBrowser = func(target string) error {
+		opened = target
+		if !strings.Contains(target, "/settings/apps/middleman-delete-minimal/advanced") {
+			return fmt.Errorf("unexpected settings URL: %s", target)
+		}
+		app, ok := fake.AppBySlug("middleman-delete-minimal")
+		if !ok {
+			return fmt.Errorf("missing fake app middleman-delete-minimal")
+		}
+		return fake.DeleteApp(app.ID)
+	}
+	require.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
+	require.Contains(opened, "/settings/apps/middleman-delete-minimal/advanced")
+
+	cfg, err = config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	assert := assert.New(t)
+	assert.Empty(cfg.GitHubApps)
+	assert.NoFileExists(keyPath)
+}
+
 func TestInstallRejectsSelectedInstallMissingConfiguredRepos(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -762,6 +802,43 @@ func TestDeletePreservesExternalPrivateKeyPath(t *testing.T) {
 	assert.Empty(cfg.GitHubApps)
 	assert.FileExists(externalKeyPath)
 	assert.Contains(out.String(), "Preserved external private key")
+}
+
+func TestOpenHydratesMinimalAppMetadataBeforeOpeningSettingsURL(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-open-minimal")
+
+	cfg, err := config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	cfg.GitHubApps[0].Slug = ""
+	cfg.GitHubApps[0].Owner = ""
+	cfg.GitHubApps[0].OwnerType = ""
+	require.NoError(cfg.Save(configPath))
+
+	var opened string
+	env, _ := newTestEnv(t, fake, configPath)
+	env.openBrowser = func(target string) error {
+		opened = target
+		if !strings.Contains(target, "/settings/apps/middleman-open-minimal") {
+			return fmt.Errorf("unexpected settings URL: %s", target)
+		}
+		return nil
+	}
+	require.NoError(runCLI([]string{"open"}, env))
+	require.Contains(opened, "/settings/apps/middleman-open-minimal")
+
+	cfg, err = config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	assert := assert.New(t)
+	assert.Equal("middleman-open-minimal", cfg.GitHubApps[0].Slug)
+	assert.Equal("fake-owner", cfg.GitHubApps[0].Owner)
+	assert.Equal("User", cfg.GitHubApps[0].OwnerType)
 }
 
 func TestCreateNoBrowserPrintsManifestURL(t *testing.T) {

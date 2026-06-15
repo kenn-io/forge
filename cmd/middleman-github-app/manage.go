@@ -124,14 +124,9 @@ func runDelete(args []string, env *appEnv) error {
 		// or rotated key would read as "deleted" and local state would
 		// be removed while the app keeps its access on GitHub.
 		ctxCheck := context.Background()
-		jwt, err := appJWT(app, env.now())
+		client := env.apiClient(app.Host)
+		app, err = env.refreshAppMetadata(ctxCheck, client, app)
 		if err != nil {
-			return fmt.Errorf(
-				"cannot verify deletion, app credentials are unusable: %w\n"+
-					"delete the app in GitHub settings yourself, then re-run with --local-only", err,
-			)
-		}
-		if _, err := env.apiClient(app.Host).GetApp(ctxCheck, jwt); err != nil {
 			if githubapp.IsStatus(err, http.StatusUnauthorized) ||
 				githubapp.IsStatus(err, http.StatusNotFound) {
 				return fmt.Errorf(
@@ -139,7 +134,13 @@ func runDelete(args []string, env *appEnv) error {
 						"if the app is already deleted, re-run with --local-only", err,
 				)
 			}
-			return err
+			return fmt.Errorf(
+				"cannot verify deletion, app credentials are unusable: %w\n"+
+					"delete the app in GitHub settings yourself, then re-run with --local-only", err,
+			)
+		}
+		if err := updateAppInConfig(cfg, env.configPath, app); err != nil {
+			return fmt.Errorf("saving refreshed app metadata: %w", err)
 		}
 
 		// GitHub has no API for deleting an app; the user confirms it
@@ -156,7 +157,6 @@ func runDelete(args []string, env *appEnv) error {
 		fmt.Fprintln(env.stdout, "Waiting for the app to disappear...")
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		client := env.apiClient(app.Host)
 		err = env.pollUntil(ctx, *timeout, func(ctx context.Context) (bool, error) {
 			jwt, err := appJWT(app, env.now())
 			if err != nil {
@@ -229,6 +229,15 @@ func runOpen(args []string, env *appEnv) error {
 	app, err := selectApp(cfg, *host)
 	if err != nil {
 		return err
+	}
+	ctx := context.Background()
+	client := env.apiClient(app.Host)
+	app, err = env.refreshAppMetadata(ctx, client, app)
+	if err != nil {
+		return err
+	}
+	if err := updateAppInConfig(cfg, env.configPath, app); err != nil {
+		return fmt.Errorf("saving refreshed app metadata: %w", err)
 	}
 	url := settingsURL(env.webBaseFor(app.Host), app)
 	fmt.Fprintf(env.stdout, "App settings: %s\n", url)

@@ -49,6 +49,33 @@ test.describe("view navigation", () => {
     await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 5_000 });
   });
 
+  test("returning to Activity from PRs restores the selected item", async ({ page }) => {
+    await page.goto("/");
+    await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".activity-table .activity-row").first().waitFor({ state: "visible", timeout: 10_000 });
+
+    // Select a PR in the feed: the split view opens and the selection is
+    // written to the URL query string.
+    const prRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .first();
+    await prRow.click();
+    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
+    await expect(page).toHaveURL(/\/\?.*selected=pr%3A/);
+
+    // Leave for the PRs tab, then return to Activity via the top bar.
+    await page.locator(".view-tab", { hasText: "PRs" }).click();
+    await expect(page).toHaveURL(/\/pulls\//);
+
+    await page.locator(".view-tab", { hasText: "Activity" }).click();
+
+    // The previous Activity view comes back: the selection survives in the
+    // URL and the split view reopens, instead of resetting to a bare "/".
+    await expect(page).toHaveURL(/\/\?.*selected=pr%3A/);
+    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
+  });
+
   test("Kata shell does not expose repo selector or respond to PR number shortcuts", async ({ page }) => {
     await page.goto("/kata");
 

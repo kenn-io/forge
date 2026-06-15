@@ -784,9 +784,10 @@
     const workflowApprovalReady = Boolean(
       capabilities.workflow_approval && wfa?.checked && wfa.required,
     );
-    // Same rendered-head source as PullDetail: the detail envelope's
-    // verified reviewed_head_sha, not the mutable platform_head_sha.
+    // Merge remains tied to the verified reviewed_head_sha, but approval
+    // should include the latest synced provider head when one is known.
     const renderedHeadSha = detail.reviewed_head_sha ?? "";
+    const latestPlatformHeadSha = detail.platform_head_sha ?? "";
     // TS cannot carry the !stores narrowing into the closure below.
     const appStores = stores;
     return {
@@ -794,7 +795,7 @@
         State: pr.State,
         IsDraft: pr.IsDraft,
         MergeableState: pr.MergeableState,
-        platform_head_sha: renderedHeadSha,
+        platform_head_sha: latestPlatformHeadSha,
       },
       ref: {
         provider: sel.provider,

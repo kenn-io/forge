@@ -83,6 +83,7 @@ interface BuildOpts {
   onError?: (msg: string) => void;
   approveCommentBody?: string;
   platformHost?: string;
+  platformHeadSha?: string;
   expectedHeadSha?: string;
   requireHeadPin?: boolean;
   onHeadConflict?: (reason: "stale_state" | "head_unknown") => void;
@@ -96,6 +97,7 @@ function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
       State: opts.state ?? "open",
       IsDraft: opts.isDraft ?? false,
       MergeableState: opts.mergeableState ?? "clean",
+      platform_head_sha: opts.platformHeadSha,
     },
     ref: {
       provider: "github",
@@ -257,7 +259,7 @@ describe("runApprovePR", () => {
     expect(client.POST).not.toHaveBeenCalled();
   });
 
-  it("echoes the reviewed head as expected_head_sha when provided", async () => {
+  it("echoes the reviewed head as expected_head_sha when only reviewed head is provided", async () => {
     const client = fakeClient();
     await runApprovePR(
       buildInput({
@@ -269,7 +271,20 @@ describe("runApprovePR", () => {
     expect(init.body).toEqual({ body: "", expected_head_sha: "abc123" });
   });
 
-  it("omits expected_head_sha when the rendered head is unknown", async () => {
+  it("prefers the latest synced platform head over the reviewed head", async () => {
+    const client = fakeClient();
+    await runApprovePR(
+      buildInput({
+        client,
+        platformHeadSha: " platform-head ",
+        expectedHeadSha: " reviewed-head ",
+      }),
+    );
+    const [, init] = client.POST.mock.calls[0];
+    expect(init.body).toEqual({ body: "", expected_head_sha: "platform-head" });
+  });
+
+  it("omits expected_head_sha when no synced or reviewed head is known", async () => {
     const client = fakeClient();
     await runApprovePR(buildInput({ client, expectedHeadSha: "" }));
     const [, init] = client.POST.mock.calls[0];
@@ -354,6 +369,22 @@ describe("canOpenMerge", () => {
 
   it("returns false when PR has merge conflicts (dirty)", () => {
     expect(canOpenMerge(buildInput({ mergeableState: "dirty" }))).toBe(false);
+  });
+
+  it("returns false when head binding requires a reviewed head and only the platform head is known", () => {
+    expect(
+      canOpenMerge(
+        buildInput({
+          requireHeadPin: true,
+          platformHeadSha: "synced-head",
+          expectedHeadSha: "",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("returns true when head binding requires and has a reviewed head", () => {
+    expect(canOpenMerge(buildInput({ requireHeadPin: true, expectedHeadSha: "reviewed-head" }))).toBe(true);
   });
 
   it("returns true for clean open PR with merge capability", () => {

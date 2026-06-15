@@ -17,8 +17,10 @@
     repoPath: string;
     size?: "sm" | "md";
     disabled?: boolean;
-    /** Head commit the rendered detail showed; pinned on approve. */
+    /** Head commit the rendered diff showed; fallback pin on approve. */
     expectedHeadSha?: string | undefined;
+    /** Latest synced PR head from the provider; preferred pin on approve. */
+    platformHeadSha?: string | undefined;
     /** capabilities.mutation_head_binding for this repo's provider. */
     requireHeadPin?: boolean;
     onheadconflict?: ((reason: "stale_state" | "head_unknown", context?: string) => void) | undefined;
@@ -35,6 +37,7 @@
     size = "md",
     disabled = false,
     expectedHeadSha,
+    platformHeadSha,
     requireHeadPin = false,
     onheadconflict,
     oncompleted,
@@ -130,7 +133,7 @@
     class="btn btn--approve"
     onclick={() => {
       if (disabled || submitting) return;
-      if (!expanded) pinAtOpen = (expectedHeadSha ?? "").trim();
+      if (!expanded) pinAtOpen = (platformHeadSha ?? expectedHeadSha ?? "").trim();
       expanded = !expanded;
     }}
     disabled={disabled || submitting}

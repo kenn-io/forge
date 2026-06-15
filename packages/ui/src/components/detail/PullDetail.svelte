@@ -633,9 +633,9 @@
   let showMergeModal = $state(false);
 
   // Head-pinning conflict state (context/provider-architecture.md
-  // "Head binding"). Merge and approve echo the rendered head as
-  // expected_head_sha; a 409 conflict with reason stale_state or
-  // head_unknown lands here.
+  // "Head binding"). Merge echoes the rendered reviewed head, while
+  // approve sends the latest synced provider head when known. A 409
+  // conflict with reason stale_state or head_unknown lands here.
   let headConflict = $state<"stale_state" | "head_unknown" | null>(null);
   // Provider side-effect context from the conflict response (an
   // approval that could not be revoked, posted review text a retry
@@ -645,19 +645,22 @@
   const detailHeadSha = $derived(
     detailStore.getDetail()?.reviewed_head_sha ?? "",
   );
+  const latestPlatformHeadSha = $derived(
+    detailStore.getDetail()?.platform_head_sha ?? "",
+  );
   // After head_unknown the reviewed head stays unbound until diff sync
   // records a current snapshot,
-  // so head-bound actions (approve, merge) are disabled until the
-  // refreshed detail carries a reviewed head SHA again. Once the SHA arrives
-  // this clears on its own; the stale_state prompt instead stays until
-  // the user completes a head-bound action or navigates away.
+  // so merge is disabled until the refreshed detail carries a reviewed
+  // head SHA again. Once the SHA arrives this clears on its own; the
+  // stale_state prompt instead stays until the user completes a
+  // head-bound action or navigates away.
   const headActionsBlocked = $derived(
     headConflict === "head_unknown" && detailHeadSha === "",
   );
-  // Preflight guard: a head-binding provider must never fire an unbound
-  // mutation, so head-bound actions stay disabled until diff sync proves
-  // the rendered code matches the current head — no request, no 409
-  // round trip.
+  // Preflight guard for merge: a head-binding provider must never merge
+  // against an unbound reviewed diff, so merge stays disabled until diff
+  // sync proves the rendered code matches the current head — no request,
+  // no 409 round trip.
   const headPinMissing = $derived(
     (detailStore.getDetail()?.repo?.capabilities?.mutation_head_binding ?? false)
       && detailHeadSha === "",
@@ -1704,6 +1707,7 @@
               size="sm"
               disabled={stalePR || headActionsBlocked}
               expectedHeadSha={detailHeadSha}
+              platformHeadSha={latestPlatformHeadSha}
               requireHeadPin={capabilities.mutation_head_binding}
               onheadconflict={handleHeadConflict}
               oncompleted={() => { headConflict = null; headConflictContext = null; }}

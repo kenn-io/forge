@@ -3,8 +3,9 @@ import { mockApi } from "./support/mockApi";
 
 // Wire-level coverage for the head-pinning contract
 // (context/provider-architecture.md "Head binding"): the detail view
-// echoes the rendered reviewed_head_sha as expected_head_sha on merge
-// and approve when available, and branches on the 409 conflict reasons.
+// echoes the rendered reviewed_head_sha as expected_head_sha on merge,
+// sends the latest synced provider head on approve when available, and
+// branches on the 409 conflict reasons.
 
 // Matches the reviewed_head_sha mockApi serves for acme/widgets#42.
 const REVIEWED_SHA = "42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42";
@@ -155,7 +156,7 @@ test.describe("head-pinned merge and approve", () => {
     expect(mergeBody!["expected_head_sha"]).toBe(REVIEWED_SHA);
   });
 
-  test("approve echoes the rendered head as expected_head_sha", async ({ page }) => {
+  test("approve sends the latest synced head as expected_head_sha", async ({ page }) => {
     let approveBody: Record<string, unknown> | null = null;
     await page.route(APPROVE_PATH, async (route: Route) => {
       approveBody = JSON.parse(route.request().postData() ?? "{}");
@@ -270,8 +271,9 @@ test.describe("palette approve head conflict", () => {
     await page.locator(".palette-input").fill("approve pr");
     await page.keyboard.press("Enter");
 
-    // The pin must be the rendered head, and the conflict must trigger a
-    // detail reload so the user re-reviews current data before retrying.
+    // The approval pin must be the latest synced provider head; in this
+    // fixture it matches the rendered reviewed head. The conflict must
+    // trigger a detail reload so the user re-reviews current data before retrying.
     const request = await approveRequest;
     const body = request.postDataJSON() as { expected_head_sha?: string };
     expect(body.expected_head_sha).toBe(REVIEWED_SHA);
@@ -285,9 +287,10 @@ test.describe("head_unknown action gating", () => {
     await mockApi(page);
 
     // Approval is safe without a locally verified reviewed_head_sha: the
-    // server sends a head SHA when it has one, and providers may approve
-    // the current head otherwise. Merge remains blocked until
-    // reviewed_head_sha proves the rendered diff snapshot is current.
+    // client still sends the latest synced provider head when it has one,
+    // and providers may approve the current head otherwise. Merge remains
+    // blocked until reviewed_head_sha proves the rendered diff snapshot
+    // is current.
     const platformHead = SYNCED_SHA;
     let reviewedHead = "";
     let approveRequested = false;
@@ -335,7 +338,7 @@ test.describe("head_unknown action gating", () => {
     await submitApproval(page);
     expect(approveRequested).toBe(true);
     expect(approveBody).not.toBeNull();
-    expect(approveBody!["expected_head_sha"]).toBeUndefined();
+    expect(approveBody!["expected_head_sha"]).toBe(platformHead);
 
     // A diff sync verifies the reviewed head; the reloaded detail
     // re-enables merge, while approval remains available.

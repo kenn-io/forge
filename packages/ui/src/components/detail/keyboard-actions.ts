@@ -196,9 +196,10 @@ export interface PRDetailActionInput {
   stores: PRDetailActionStores;
   client: MiddlemanClient;
   /**
-   * True when the provider hard-binds mutations to the reviewed head
-   * (capabilities.mutation_head_binding). Head-bound actions are
-   * unavailable until the loaded detail carries reviewed_head_sha to pin.
+   * True when the provider supports mutation head binding
+   * (capabilities.mutation_head_binding). Merge is unavailable until the
+   * loaded detail carries reviewed_head_sha to pin; approve may still run
+   * and sends the latest synced provider head when known.
    */
   requireHeadPin?: boolean;
   /**
@@ -209,9 +210,10 @@ export interface PRDetailActionInput {
   approveCommentBody?: string;
   /**
    * Head commit the rendered detail was reviewed at
-   * (detail.reviewed_head_sha). When set, head-bound mutations echo it
-   * as expected_head_sha so the server rejects the action with a 409
-   * conflict if a sync rebound the head between render and click.
+   * (detail.reviewed_head_sha). Merge uses this as its strict pin.
+   * Approve prefers pr.platform_head_sha so the provider receives the
+   * latest synced PR head, then falls back here if the platform head is
+   * unknown.
    */
   expectedHeadSha?: string;
   /**
@@ -250,6 +252,10 @@ function hasMergeConflicts(pr: PRDetailActionPR): boolean {
   return pr.State === "open" && pr.MergeableState === "dirty";
 }
 
+function hasReviewedHeadPin(input: PRDetailActionInput): boolean {
+  return (input.expectedHeadSha ?? "").trim() !== "";
+}
+
 function describeError(err: { detail?: string; title?: string } | undefined, fallback: string): string {
   return err?.detail ?? err?.title ?? fallback;
 }
@@ -264,10 +270,11 @@ export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
   if (!canApprovePR(input)) return;
   const { ref, number } = input;
   const body = (input.approveCommentBody ?? "").trim();
-  // Include the head the user reviewed when available. Providers that
+  // Include the latest synced PR head when available. Providers that
   // support SHA guards can reject stale approvals; others attach the
-  // review to the supplied commit or approve the current head.
-  const expectedHeadSha = (input.expectedHeadSha ?? input.pr.platform_head_sha ?? "").trim();
+  // review to the supplied commit or approve the current head. Fall back
+  // to reviewed_head_sha only when the provider head is unknown.
+  const expectedHeadSha = (input.pr.platform_head_sha ?? input.expectedHeadSha ?? "").trim();
   const { error } = await input.client.POST(providerItemPath("pulls", ref, "/approve"), {
     params: { path: { ...providerRouteParams(ref), number } },
     body: {
@@ -303,7 +310,7 @@ export function canOpenMerge(input: PRDetailActionInput): boolean {
     input.repoSettings.viewerCanMerge &&
     !input.stale &&
     !hasMergeConflicts(input.pr) &&
-    (!input.requireHeadPin || !!input.pr.platform_head_sha)
+    (!input.requireHeadPin || hasReviewedHeadPin(input))
   );
 }
 

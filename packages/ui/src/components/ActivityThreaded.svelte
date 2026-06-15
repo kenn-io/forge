@@ -693,9 +693,10 @@
     padding: 0 16px;
     --threaded-col-repo-max: 220px;
     --threaded-col-author-max: 140px;
+    --threaded-col-caret: 18px;
     display: grid;
     grid-template-columns:
-      18px
+      var(--threaded-col-caret)
       fit-content(120px)
       fit-content(var(--threaded-col-repo-max))
       fit-content(var(--threaded-col-author-max))
@@ -708,7 +709,7 @@
 
   .threaded-view--grouped {
     grid-template-columns:
-      18px
+      var(--threaded-col-caret)
       fit-content(120px)
       fit-content(var(--threaded-col-author-max))
       minmax(0, 1fr)
@@ -717,6 +718,7 @@
   }
 
   .threaded-view--compact {
+    --threaded-col-caret: 30px;
     --threaded-col-repo-max: 140px;
     --threaded-col-author-max: 96px;
   }
@@ -814,6 +816,10 @@
   }
 
   .thread-caret {
+    box-sizing: border-box;
+    appearance: none;
+    border: 0;
+    padding: 0;
     color: var(--text-muted);
     background: none;
     border-radius: var(--radius-sm);
@@ -1001,10 +1007,6 @@
 
   .threaded-view--compact .item-row {
     padding: 7px 10px;
-  }
-
-  .threaded-view--compact.threaded-view--grouped .item-row {
-    padding-left: 24px;
   }
 
   .threaded-view--compact .event-row {

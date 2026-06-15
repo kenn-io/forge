@@ -100,4 +100,26 @@ test.describe("activity row link button", () => {
     await itemRows.nth(1).click();
     await expect(detailHeader).not.toHaveText(firstSelection!);
   });
+
+  test("grouped threaded compact rows keep the expand chevron separate from the type chip", async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 720 });
+    await page.goto("/");
+    const flatRows = page.locator(".activity-table .activity-row");
+    await flatRows.first().waitFor({ state: "visible", timeout: 10_000 });
+    await flatRows.first().click();
+
+    await selectActivityViewItem(page, "Threaded");
+    await expect(page.locator(".activity-feed .filter-dropdown")).toBeHidden();
+
+    const itemRow = page.locator(".threaded-view .item-row:not(.branch-activity-row)").first();
+    const caret = itemRow.locator(".thread-caret");
+    const typeCell = itemRow.locator(".cell--type");
+    await expect(caret).toBeVisible();
+    await expect(typeCell).toBeVisible();
+
+    const [caretBox, typeBox] = await Promise.all([caret.boundingBox(), typeCell.boundingBox()]);
+    expect(caretBox).not.toBeNull();
+    expect(typeBox).not.toBeNull();
+    expect(typeBox!.x - (caretBox!.x + caretBox!.width)).toBeGreaterThanOrEqual(8);
+  });
 });

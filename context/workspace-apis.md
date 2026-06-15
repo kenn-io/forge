@@ -28,9 +28,52 @@ browser and not an embedder protocol for arbitrary host state.
 - `item_type`: whether the workspace belongs to a `pull_request` or `issue`.
 - `item_number`: the tracked item number within the repo.
 - `git_head_ref`: the Git branch name middleman opens in the worktree.
+- `item_last_activity_at`: the synced provider item activity timestamp for the
+  owning PR or issue, when middleman has that owner item row.
 
 These fields exist so PR-backed workspaces show PR/Reviews sidebars, while
 issue-backed workspaces show the issue sidebar and disable the PR/reviews path.
+
+Workspace summaries join the owning PR or issue row by full provider identity:
+`platform`, `platform_host`, `repo_owner`, `repo_name`, `item_type`, and
+`item_number`. A PR workspace uses `middleman_merge_requests.last_activity_at`;
+an issue workspace uses `middleman_issues.last_activity_at`. If the owning item
+has not synced yet, the summary leaves `item_last_activity_at` absent rather than
+inventing a value.
+
+All workspace API timestamps are emitted as UTC RFC3339 strings. Keep timestamp
+normalization in the DB/server boundary; the Svelte UI can present local time
+where needed.
+
+## Sidebar Ordering
+
+The workspace sidebar has two separate activity concepts:
+
+- `Activity`: terminal/runtime activity, ordered by `tmux_last_output_at` with
+  `created_at` as the fallback.
+- `Item activity`: provider item activity, ordered by `item_last_activity_at`
+  with `created_at` as the fallback.
+
+Keep these modes distinct. Do not relabel `Activity` to mean provider PR/issue
+activity, and do not add compatibility aliases for old sort values without an
+explicit migration reason.
+
+`Org / repo` is the grouped ordering mode. Timestamp sorts are flat lists, with
+ties broken deterministically by workspace ID so the visible order does not
+shift between refreshes.
+
+## Testing Expectations
+
+Workspace API changes that alter summary fields or sorting inputs need coverage
+at the boundary a client observes:
+
+- DB summary tests should prove PR-backed, issue-backed, and unsynced-owner
+  workspaces expose the expected `item_last_activity_at` shape.
+- Server/API tests should assert `/api/v1/workspaces` returns the generated JSON
+  field for synced owner items and omits it for missing owner rows.
+- Frontend sidebar tests should cover the relevant sort mode and fallback.
+- Visible workspace sidebar changes need affected Playwright coverage before
+  pushing.
 
 ## Non-Goals
 

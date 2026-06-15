@@ -5573,15 +5573,32 @@ func TestAPIEditIssueCommentRejectsNilProviderPayload(t *testing.T) {
 	assert.Equal("original body", events[0].Body)
 }
 
-func TestAPIApprovePRUnsupportedBeforeProviderCall(t *testing.T) {
+func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
 	var providerCalled atomic.Bool
+	var reviewCommitID string
 	mock := &mockGH{
-		createReviewFn: func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error) {
+		createReviewWithCommentsFn: func(
+			_ context.Context,
+			_, _ string,
+			_ int,
+			event, body, commitID string,
+			_ []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
 			providerCalled.Store(true)
-			return nil, nil
+			reviewCommitID = commitID
+			id := int64(101)
+			state := event
+			now := gh.Timestamp{Time: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)}
+			return &gh.PullRequestReview{
+				ID:          &id,
+				State:       &state,
+				Body:        &body,
+				SubmittedAt: &now,
+				User:        &gh.User{Login: new("reviewer")},
+			}, nil
 		},
 	}
 	srv, database := setupTestServerWithMock(t, mock)
@@ -5597,15 +5614,15 @@ func TestAPIApprovePRUnsupportedBeforeProviderCall(t *testing.T) {
 		generated.ApprovePullJSONRequestBody{ExpectedHeadSha: &expectedHeadSHA},
 	)
 	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
-	assertUnsupportedCapabilityProblem(
-		t, bytes.NewReader(resp.Body), "github", "github.com", "review_mutation",
-	)
-	assert.False(providerCalled.Load())
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	assert.True(providerCalled.Load())
+	assert.Equal(expectedHeadSHA, reviewCommitID)
 
 	events, err := database.ListMREvents(t.Context(), mrID)
 	require.NoError(err)
-	require.Empty(events)
+	require.Len(events, 1)
+	assert.Equal("review", events[0].EventType)
+	assert.Equal("APPROVE", events[0].Summary)
 }
 
 func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
@@ -13986,13 +14003,12 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 		},
 	)
 	require.NoError(err)
-	require.Equal(http.StatusConflict, approveResp.StatusCode(), string(approveResp.Body))
-	assertUnsupportedCapabilityProblem(
-		t, bytes.NewReader(approveResp.Body), "gitea", "gitea.test", "review_mutation",
-	)
+	require.Equal(http.StatusOK, approveResp.StatusCode(), string(approveResp.Body))
 	mrEvents, err = database.ListMREvents(ctx, mrSeven.ID)
 	require.NoError(err)
-	assert.Len(mrEvents, 1)
+	require.Len(mrEvents, 2)
+	assert.Equal("review", mrEvents[1].EventType)
+	assert.Equal("APPROVED", mrEvents[1].Summary)
 
 	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
@@ -14339,7 +14355,7 @@ func TestAPIGitealikePinnedMergeGenericConflictStaysConflict(t *testing.T) {
 		"an unrelated 409 must not present as a stale-head re-review flow")
 }
 
-func TestAPIGitealikeApproveUnsupportedBeforeProviderCall(t *testing.T) {
+func TestAPIGitealikeApproveSubmitsReview(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	transport := &apiTestGitealikeTransport{}
@@ -14354,15 +14370,11 @@ func TestAPIGitealikeApproveUnsupportedBeforeProviderCall(t *testing.T) {
 		},
 	)
 	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode())
-	assertUnsupportedCapabilityProblem(
-		t, bytes.NewReader(resp.Body), "gitea", "gitea.test", "review_mutation",
-	)
-	assert.NotContains(transport.mutationCalls, "review:7:lgtm")
-	assert.NotContains(transport.mutationCalls, "delete_review:7:980")
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	assert.Contains(transport.mutationCalls, "review:7:lgtm:abc123")
 }
 
-func TestAPIGitealikeApproveUnsupportedDoesNotReadRacingHead(t *testing.T) {
+func TestAPIGitealikeApproveDoesNotReadRacingHead(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	transport := &apiTestGitealikeTransport{}
@@ -14378,12 +14390,9 @@ func TestAPIGitealikeApproveUnsupportedDoesNotReadRacingHead(t *testing.T) {
 		},
 	)
 	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode())
-	assertUnsupportedCapabilityProblem(
-		t, bytes.NewReader(resp.Body), "gitea", "gitea.test", "review_mutation",
-	)
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
 	assert.Equal(0, transport.headCalls)
-	assert.Empty(transport.mutationCalls)
+	assert.Contains(transport.mutationCalls, "review:7:lgtm:abc123")
 }
 
 func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
@@ -14802,7 +14811,7 @@ func TestAPIGitealikeMergeHeadMismatchMapsToStaleState(t *testing.T) {
 	assert.Equal([]string{"abc123"}, transport.mergeHeadPins)
 }
 
-func TestAPIGitealikeApproveUnsupportedBeforeHeadRace(t *testing.T) {
+func TestAPIGitealikeApproveBeforeHeadRace(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := t.Context()
@@ -14819,15 +14828,8 @@ func TestAPIGitealikeApproveUnsupportedBeforeHeadRace(t *testing.T) {
 	)
 
 	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
-	require.NotNil(resp.ApplicationproblemJSONDefault)
-	assert.Equal("unsupportedCapability", string(resp.ApplicationproblemJSONDefault.Code))
-	require.NotNil(resp.ApplicationproblemJSONDefault.Details)
-	assert.Equal("review_mutation", (*resp.ApplicationproblemJSONDefault.Details)["capability"])
-	assert.Equal("gitea", (*resp.ApplicationproblemJSONDefault.Details)["provider"])
-	assert.Equal("gitea.test", (*resp.ApplicationproblemJSONDefault.Details)["platformHost"])
-	assert.NotContains(transport.mutationCalls, "review:7:approved")
-	assert.NotContains(transport.mutationCalls, "delete_review:7:980")
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	assert.Contains(transport.mutationCalls, "review:7:approved:abc123")
 }
 
 type apiTestGitealikeTransport struct {
@@ -15156,6 +15158,25 @@ func (t *apiTestGitealikeTransport) MergePullRequest(
 	pr.MergedAt = &now
 	pr.Updated = now
 	return gitealike.MergeResultDTO{Merged: true, SHA: "merged-sha", Message: "merged"}, nil
+}
+
+func (t *apiTestGitealikeTransport) CreatePullReview(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+	opts gitealike.ReviewOptions,
+) (gitealike.ReviewDTO, error) {
+	if t.findPull(number) == nil {
+		return gitealike.ReviewDTO{}, platform.ErrNotFound
+	}
+	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("review:%d:%s:%s", number, opts.Body, opts.CommitID))
+	return gitealike.ReviewDTO{
+		ID:        980,
+		User:      gitealike.UserDTO{UserName: "mutation-bot"},
+		State:     opts.State,
+		Body:      opts.Body,
+		Submitted: time.Now().UTC().Truncate(time.Second),
+	}, nil
 }
 
 func (t *apiTestGitealikeTransport) findPull(number int) *gitealike.PullRequestDTO {
@@ -20517,6 +20538,10 @@ func TestServerStartupReapsUnrecordedRuntimeTmuxSessionE2E(t *testing.T) {
 
 	require := require.New(t)
 	assert := Assert.New(t)
+	previousStartupCleanupTimeout := startupTmuxCleanupTimeout
+	startupTmuxCleanupTimeout = 10 * time.Second
+	t.Cleanup(func() { startupTmuxCleanupTimeout = previousStartupCleanupTimeout })
+
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	tmuxPath := filepath.Join(dir, "fake-tmux")

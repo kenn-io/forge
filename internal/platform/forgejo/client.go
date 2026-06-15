@@ -147,6 +147,7 @@ func (c *Client) Capabilities() platform.Capabilities {
 	caps.NativeMultilineRanges = false
 	caps.SupportedReviewActions = []platform.ReviewAction{
 		platform.ReviewActionComment,
+		platform.ReviewActionApprove,
 		platform.ReviewActionRequestChanges,
 	}
 	return caps

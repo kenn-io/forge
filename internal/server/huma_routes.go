@@ -2392,28 +2392,7 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 
-	// Bind the approval to the head commit the user reviewed locally so a
-	// source-branch push between review and approval is rejected instead
-	// of approving unreviewed code.
-	expectedHeadSHA, err := s.reviewedHeadSHA(repo, mr)
-	if err != nil {
-		return nil, err
-	}
-	// Head-binding providers require the client to pin the head it
-	// rendered: an omitted pin would silently bind to whatever the cache
-	// holds now, which may be newer than what the user reviewed.
-	if strings.TrimSpace(input.Body.ExpectedHeadSHA) == "" &&
-		s.capabilitiesForRepo(*repo).MutationHeadBinding {
-		return nil, problemValidation(
-			"body.expected_head_sha",
-			"required for this provider: echo the platform_head_sha you rendered",
-		)
-	}
-	if err := s.verifyClientReviewedHead(
-		repo, input.Number, input.Body.ExpectedHeadSHA, expectedHeadSHA,
-	); err != nil {
-		return nil, err
-	}
+	expectedHeadSHA := approvalReviewHeadSHA(mr, input.Body.ExpectedHeadSHA)
 
 	platformEvent, err := mutator.ApproveMergeRequest(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
@@ -2458,6 +2437,19 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	}
 
 	return &actionStatusOutput{Body: actionStatusBody{Status: "approved"}}, nil
+}
+
+func approvalReviewHeadSHA(mr *db.MergeRequest, clientSHA string) string {
+	if sha := strings.TrimSpace(clientSHA); sha != "" {
+		return sha
+	}
+	if mr == nil {
+		return ""
+	}
+	if mr.DiffHeadSHA != "" && !diffSnapshotStale(mr) {
+		return mr.DiffHeadSHA
+	}
+	return mr.PlatformHeadSHA
 }
 
 func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {

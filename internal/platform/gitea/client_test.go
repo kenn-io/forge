@@ -255,6 +255,7 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		CommentMutation:     true,
 		StateMutation:       true,
 		MergeMutation:       true,
+		ReviewMutation:      true,
 		IssueMutation:       true,
 		LabelMutation:       true,
 		AssigneeMutation:    true,
@@ -512,31 +513,48 @@ func TestClientMutationCapabilityUsesGiteaEndpoints(t *testing.T) {
 	}, seen)
 }
 
-func TestClientApproveMergeRequestUnsupported(t *testing.T) {
+func TestClientApproveMergeRequestSubmitsReview(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)
 	var sawRequest bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sawRequest = true
-		http.NotFound(w, r)
+		assert.Equal(http.MethodPost, r.Method)
+		assert.Equal("/api/v1/repos/owner/repo/pulls/7/reviews", r.URL.Path)
+		var body struct {
+			Event    string `json:"event"`
+			Body     string `json:"body"`
+			CommitID string `json:"commit_id"`
+		}
+		if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		assert.Equal("APPROVED", body.Event)
+		assert.Equal("ship it", body.Body)
+		assert.Equal("reviewed-head", body.CommitID)
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+			"id": 40, "state": "APPROVED", "body": "ship it", "user": map[string]any{"login": "dana"},
+			"submitted_at": "2026-05-01T12:00:00Z",
+		}))
 	}))
 	defer server.Close()
 
 	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
 
-	_, err = client.ApproveMergeRequest(
+	event, err := client.ApproveMergeRequest(
 		context.Background(),
 		platform.RepoRef{Owner: "owner", Name: "repo"},
 		7,
 		"ship it",
 		"reviewed-head",
 	)
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeUnsupportedCapability, platformErr.Code)
-	assert.Equal("approve_merge_request", platformErr.Capability)
-	assert.False(sawRequest)
+	require.NoError(err)
+	assert.True(sawRequest)
+	assert.Equal("review", event.EventType)
+	assert.Equal("APPROVED", event.Summary)
 }
 
 func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {

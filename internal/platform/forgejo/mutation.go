@@ -95,6 +95,30 @@ func (c *Client) ApproveMergeRequest(
 	return c.provider.ApproveMergeRequest(ctx, ref, number, body, expectedHeadSHA)
 }
 
+func (t *transport) CreatePullReview(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	opts gitealike.ReviewOptions,
+) (gitealike.ReviewDTO, error) {
+	t.spendSyncBudget(ctx)
+	var review *forgejosdk.PullReview
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		review, resp, err = t.api.CreatePullReview(ref.Owner, ref.Name, int64(number), forgejosdk.CreatePullReviewOptions{
+			State:    forgejosdk.ReviewStateType(opts.State),
+			Body:     opts.Body,
+			CommitID: opts.CommitID,
+		})
+		return err
+	})
+	if err != nil {
+		return gitealike.ReviewDTO{}, forgejoHTTPError(resp, err)
+	}
+	return convertReview(review), nil
+}
+
 func (c *Client) EditMergeRequestContent(
 	ctx context.Context,
 	ref platform.RepoRef,

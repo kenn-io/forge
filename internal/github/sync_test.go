@@ -1090,25 +1090,37 @@ func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
 	assert.Equal(12, comment.GetLine())
 }
 
-func TestGitHubProviderPublishDiffReviewDraftApproveUnsupported(t *testing.T) {
+func TestGitHubProviderPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	mock := &mockClient{}
 	provider := gitHubClientProvider{client: mock, host: "github.com"}
+	line := 12
 
-	_, err := provider.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
+	result, err := provider.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		Owner: "acme",
 		Name:  "widget",
 	}, 7, platform.PublishDiffReviewDraftInput{
+		Body:    "ship it",
 		Action:  platform.ReviewActionApprove,
 		HeadSHA: "reviewed-head",
+		Comments: []platform.LocalDiffReviewDraftComment{{
+			Body: "inline note",
+			Range: platform.DiffReviewLineRange{
+				Path: "src/main.go",
+				Side: "right",
+				Line: line,
+			},
+		}},
 	})
 
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeUnsupportedCapability, platformErr.Code)
-	assert.Equal("approve_merge_request", platformErr.Capability)
-	assert.Empty(mock.createdReviewEvent, "unsupported approval must not reach the review API")
+	require.NoError(err)
+	require.NotNil(result)
+	assert.Equal("APPROVE", mock.createdReviewEvent)
+	assert.Equal("ship it", mock.createdReviewBody)
+	assert.Equal("reviewed-head", mock.createdReviewCommitID)
+	require.Len(mock.createdReviewComments, 1)
+	assert.Equal("inline note", mock.createdReviewComments[0].GetBody())
 }
 
 func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
@@ -1120,8 +1132,8 @@ func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
 	require.True(caps.ReadReviewThreads)
 	require.True(caps.ReviewDraftMutation)
 	require.False(caps.ReviewThreadResolution)
-	require.False(caps.ReviewMutation)
-	require.NotContains(caps.SupportedReviewActions, platform.ReviewActionApprove)
+	require.True(caps.ReviewMutation)
+	require.Contains(caps.SupportedReviewActions, platform.ReviewActionApprove)
 }
 
 func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testing.T) {
@@ -10435,21 +10447,21 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	assert.Equal(4, callCount)
 }
 
-func TestGitHubProviderApproveUnsupported(t *testing.T) {
+func TestGitHubProviderApproveSubmitsReviewForReviewedHead(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	mock := &mockClient{}
 	provider := gitHubClientProvider{client: mock, host: "github.com"}
 
-	_, err := provider.ApproveMergeRequest(
+	event, err := provider.ApproveMergeRequest(
 		t.Context(), platform.RepoRef{Owner: "acme", Name: "widget"}, 7,
 		"ship it", "reviewed-head",
 	)
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeUnsupportedCapability, platformErr.Code)
-	assert.Equal("approve_merge_request", platformErr.Capability)
-	assert.Empty(mock.createdReviewEvent, "unsupported approval must not reach the review API")
+	require.NoError(err)
+	assert.Equal("review", event.EventType)
+	assert.Equal("APPROVE", mock.createdReviewEvent)
+	assert.Equal("ship it", mock.createdReviewBody)
+	assert.Equal("reviewed-head", mock.createdReviewCommitID)
 }
 
 func TestIsGitHubHeadModified(t *testing.T) {

@@ -82,6 +82,9 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		caps.MutationHeadBinding = true
 		caps.LabelMutation = hasLabels
 		caps.AssigneeMutation = true
+		if _, ok := p.transport.(ReviewMutationTransport); ok {
+			caps.ReviewMutation = true
+		}
 		if _, ok := p.transport.(ReviewRequestTransport); ok {
 			caps.ReviewerMutation = true
 		}
@@ -561,9 +564,6 @@ func (p *Provider) MergeMergeRequest(
 	return platform.MergeResult{Merged: result.Merged, SHA: result.SHA, Message: result.Message}, nil
 }
 
-// ApproveMergeRequest is intentionally unsupported because Gitea-like
-// approvals cannot be submitted atomically against the expected pull request
-// head.
 func (p *Provider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -571,8 +571,24 @@ func (p *Provider) ApproveMergeRequest(
 	body string,
 	expectedHeadSHA string,
 ) (platform.MergeRequestEvent, error) {
-	return platform.MergeRequestEvent{},
-		platform.UnsupportedCapability(p.kind, p.host, "approve_merge_request")
+	transport, ok := p.transport.(ReviewMutationTransport)
+	if !ok || !p.options.Mutations {
+		return platform.MergeRequestEvent{},
+			platform.UnsupportedCapability(p.kind, p.host, "approve_merge_request")
+	}
+	review, err := transport.CreatePullReview(ctx, ref, number, ReviewOptions{
+		State:    "APPROVED",
+		Body:     body,
+		CommitID: expectedHeadSHA,
+	})
+	if err != nil {
+		return platform.MergeRequestEvent{}, p.mapError(err)
+	}
+	events := NormalizeMergeRequestEvents(p.kind, ref, number, nil, []ReviewDTO{review}, nil)
+	if len(events) == 0 {
+		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review event")
+	}
+	return events[0], nil
 }
 
 func (p *Provider) EditMergeRequestContent(

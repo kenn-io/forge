@@ -79,19 +79,39 @@ func TestPublishDiffReviewDraftCreatesForgejoReview(t *testing.T) {
 	assert.Equal(submitted, result.SubmittedAt)
 }
 
-func TestPublishDiffReviewDraftApproveUnsupported(t *testing.T) {
+func TestPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)
-	var sawRequest bool
+	submitted := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawRequest = true
-		http.NotFound(w, r)
+		assert.Equal(http.MethodPost, r.Method)
+		assert.Equal("/api/v1/repos/acme/widgets/pulls/42/reviews", r.URL.Path)
+		var body struct {
+			Event    string `json:"event"`
+			Body     string `json:"body"`
+			CommitID string `json:"commit_id"`
+		}
+		if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		assert.Equal("APPROVED", body.Event)
+		assert.Equal("ship it", body.Body)
+		assert.Equal("reviewed-head", body.CommitID)
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+			"id":           100,
+			"state":        "APPROVED",
+			"body":         "ship it",
+			"submitted_at": submitted.Format(time.RFC3339),
+			"user":         map[string]any{"login": "reviewer"},
+		}))
 	}))
 	defer server.Close()
 
 	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
-	_, err = client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
 		Owner: "acme",
 		Name:  "widgets",
 	}, 42, platform.PublishDiffReviewDraftInput{
@@ -100,11 +120,10 @@ func TestPublishDiffReviewDraftApproveUnsupported(t *testing.T) {
 		HeadSHA: "reviewed-head",
 	})
 
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeUnsupportedCapability, platformErr.Code)
-	assert.Equal("approve_merge_request", platformErr.Capability)
-	assert.False(sawRequest)
+	require.NoError(err)
+	require.NotNil(result)
+	assert.Equal("100", result.ProviderReviewID)
+	assert.Equal(submitted, result.SubmittedAt)
 }
 
 func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {

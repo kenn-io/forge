@@ -257,23 +257,16 @@ function describeError(err: { detail?: string; title?: string } | undefined, fal
 // Approve PR ----------------------------------------------------------
 
 export function canApprovePR(input: PRDetailActionInput): boolean {
-  return (
-    input.pr.State === "open" &&
-    input.viewerCan.approve &&
-    !input.stale &&
-    (!input.requireHeadPin || !!input.pr.platform_head_sha)
-  );
+  return input.pr.State === "open" && input.viewerCan.approve && !input.stale;
 }
 
 export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
   if (!canApprovePR(input)) return;
   const { ref, number } = input;
   const body = (input.approveCommentBody ?? "").trim();
-  // Pin the approval to the head the user reviewed; the server rejects
-  // the request when the synced head has moved past it. Callers that
-  // build the input from the loaded detail pass expectedHeadSha; the
-  // pr row's platform_head_sha is the fallback for callers that already
-  // projected the reviewed head into the action input.
+  // Include the head the user reviewed when available. Providers that
+  // support SHA guards can reject stale approvals; others attach the
+  // review to the supplied commit or approve the current head.
   const expectedHeadSha = (input.expectedHeadSha ?? input.pr.platform_head_sha ?? "").trim();
   const { error } = await input.client.POST(providerItemPath("pulls", ref, "/approve"), {
     params: { path: { ...providerRouteParams(ref), number } },

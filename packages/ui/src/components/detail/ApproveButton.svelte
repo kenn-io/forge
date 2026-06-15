@@ -40,13 +40,9 @@
     oncompleted,
   }: Props = $props();
 
-  // A head-binding provider cannot approve without a pinned head; treat
-  // a missing synced head like a stale view.
-  const headPinMissing = $derived(requireHeadPin && !expectedHeadSha);
-
   // Captured when the approval form opens: a background detail refresh
   // must not silently rebind the pin while the form is on screen. A
-  // genuinely moved head is rejected by the server against this pin.
+  // provider with SHA guards can reject a moved head against this pin.
   let pinAtOpen = $state("");
 
   let expanded = $state(false);
@@ -111,7 +107,7 @@
   }
 
   async function handleApprove(): Promise<void> {
-    if (disabled || headPinMissing || submitting) return;
+    if (disabled || submitting) return;
     submitting = true;
     error = null;
     try {
@@ -137,13 +133,11 @@
       if (!expanded) pinAtOpen = (expectedHeadSha ?? "").trim();
       expanded = !expanded;
     }}
-    disabled={disabled || headPinMissing || submitting}
+    disabled={disabled || submitting}
     ariaExpanded={expanded}
     tone="success"
     surface="soft"
-    title={headPinMissing
-      ? "The reviewed head commit has not been synced yet; approving is disabled until the next sync records it"
-      : expanded
+    title={expanded
         ? "Close the approval form"
         : "Open the approval form to submit a code review on this pull request"}
     label="Approve"

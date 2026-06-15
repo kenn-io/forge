@@ -42,6 +42,7 @@ func TestProviderCapabilitiesEnableProvenMutations(t *testing.T) {
 		CommentMutation:     true,
 		StateMutation:       true,
 		MergeMutation:       true,
+		ReviewMutation:      true,
 		IssueMutation:       true,
 		AssigneeMutation:    true,
 		MutationHeadBinding: true,
@@ -364,6 +365,7 @@ type fakeTransport struct {
 	prErrSeq    []error
 	issue       IssueDTO
 	merge       MergeResultDTO
+	review      ReviewDTO
 
 	userRepoPages []int
 	orgRepoPages  []int
@@ -514,6 +516,11 @@ func (t *fakeTransport) MergePullRequest(_ context.Context, _ platform.RepoRef, 
 	return t.merge, nil
 }
 
+func (t *fakeTransport) CreatePullReview(_ context.Context, _ platform.RepoRef, _ int, opts ReviewOptions) (ReviewDTO, error) {
+	t.mutationCalls = append(t.mutationCalls, "review:"+opts.State+":"+opts.CommitID)
+	return t.review, nil
+}
+
 func pageFor[T any](pages [][]T, page int) ([]T, Page, error) {
 	if page < 1 || page > len(pages) {
 		return nil, Page{}, nil
@@ -560,19 +567,22 @@ func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 	assert.Equal(409, conflictErr.StatusCode)
 }
 
-func TestProviderApproveUnsupported(t *testing.T) {
+func TestProviderApproveSubmitsReview(t *testing.T) {
 	require := Require.New(t)
 	assert := Assert.New(t)
 	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
 
-	transport := &fakeTransport{}
+	transport := &fakeTransport{
+		review: ReviewDTO{
+			ID: 22, User: UserDTO{UserName: "dana"}, State: "APPROVED",
+			Body: "ship it", Submitted: time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC),
+		},
+	}
 	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
 
-	_, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "reviewed-head")
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeUnsupportedCapability, platformErr.Code)
-	assert.Equal("approve_merge_request", platformErr.Capability)
-	assert.NotContains(transport.mutationCalls, "review",
-		"unsupported approval must not reach the review API")
+	event, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "reviewed-head")
+	require.NoError(err)
+	assert.Equal("review", event.EventType)
+	assert.Equal("APPROVED", event.Summary)
+	assert.Equal("review:APPROVED:reviewed-head", transport.mutationCalls[len(transport.mutationCalls)-1])
 }

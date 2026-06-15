@@ -656,6 +656,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		CommentMutation:       true,
 		StateMutation:         true,
 		MergeMutation:         true,
+		ReviewMutation:        true,
 		MutationHeadBinding:   true,
 		WorkflowApproval:      true,
 		ReadyForReview:        true,
@@ -669,6 +670,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		NativeMultilineRanges: true,
 		SupportedReviewActions: []platform.ReviewAction{
 			platform.ReviewActionComment,
+			platform.ReviewActionApprove,
 			platform.ReviewActionRequestChanges,
 		},
 	}
@@ -1351,8 +1353,6 @@ func githubRequestedReviewerLogins(pr *gh.PullRequest) []string {
 	return logins
 }
 
-// ApproveMergeRequest is intentionally unsupported because GitHub approvals
-// cannot be submitted atomically against the expected pull request head.
 func (p gitHubClientProvider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1360,8 +1360,23 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 	body string,
 	expectedHeadSHA string,
 ) (platform.MergeRequestEvent, error) {
-	return platform.MergeRequestEvent{},
-		platform.UnsupportedCapability(platform.KindGitHub, p.host, "approve_merge_request")
+	review, err := p.client.CreateReviewWithComments(
+		ctx,
+		ref.Owner,
+		ref.Name,
+		number,
+		"APPROVE",
+		body,
+		expectedHeadSHA,
+		nil,
+	)
+	if err != nil {
+		return platform.MergeRequestEvent{}, err
+	}
+	if review == nil {
+		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review")
+	}
+	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
 }
 
 func (p gitHubClientProvider) ListMergeRequestReviewThreads(
@@ -1492,9 +1507,6 @@ func (p gitHubClientProvider) PublishDiffReviewDraft(
 	number int,
 	input platform.PublishDiffReviewDraftInput,
 ) (*platform.PublishedDiffReview, error) {
-	if input.Action == platform.ReviewActionApprove {
-		return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "approve_merge_request")
-	}
 	event, err := githubReviewEvent(input.Action)
 	if err != nil {
 		return nil, err
@@ -1531,6 +1543,8 @@ func githubReviewEvent(action platform.ReviewAction) (string, error) {
 	switch action {
 	case platform.ReviewActionComment:
 		return "COMMENT", nil
+	case platform.ReviewActionApprove:
+		return "APPROVE", nil
 	case platform.ReviewActionRequestChanges:
 		return "REQUEST_CHANGES", nil
 	default:

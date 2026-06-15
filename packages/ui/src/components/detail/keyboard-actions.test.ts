@@ -84,6 +84,7 @@ interface BuildOpts {
   approveCommentBody?: string;
   platformHost?: string;
   expectedHeadSha?: string;
+  requireHeadPin?: boolean;
   onHeadConflict?: (reason: "stale_state" | "head_unknown") => void;
 }
 
@@ -121,6 +122,7 @@ function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
             viewerCanMerge: true,
           }),
     stale: opts.stale ?? false,
+    requireHeadPin: opts.requireHeadPin ?? false,
     stores: stores as unknown as PRDetailActionInput["stores"],
     client,
     ...(opts.approveCommentBody !== undefined && {
@@ -175,6 +177,10 @@ describe("canApprovePR", () => {
 
   it("returns true for open PR with approve capability", () => {
     expect(canApprovePR(buildInput())).toBe(true);
+  });
+
+  it("returns true when approval head pinning is unavailable", () => {
+    expect(canApprovePR(buildInput({ requireHeadPin: true }))).toBe(true);
   });
 });
 

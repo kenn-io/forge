@@ -2,8 +2,8 @@ package e2etest
 
 // Full-stack coverage for provider-enforced head pins on GitHub: the HTTP API
 // must hand the reviewed head to merge mutations, map the provider's moved-head
-// rejection to a 409 conflict with reason stale_state, and reject approval
-// paths before any non-atomic provider mutation runs.
+// rejection to a 409 conflict with reason stale_state, and send approval
+// reviews with the rendered commit id when one is available.
 
 import (
 	"context"
@@ -308,17 +308,28 @@ func TestGitHubMergeGenericConflictKeepsConflictReason(t *testing.T) {
 		"an unrelated provider conflict must not present as staleness")
 }
 
-func TestGitHubApproveUnsupportedBeforeProviderCall(t *testing.T) {
+func TestGitHubApproveSubmitsReview(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	var providerCalled atomic.Bool
+	var reviewCommitID string
 	mock := &mockGH{
 		createReviewWithCommentsFn: func(
-			_ context.Context, _, _ string, _ int, _, _, _ string,
+			_ context.Context, _, _ string, _ int, event, body, commitID string,
 			_ []*gh.DraftReviewComment,
 		) (*gh.PullRequestReview, error) {
 			providerCalled.Store(true)
-			return &gh.PullRequestReview{}, nil
+			reviewCommitID = commitID
+			id := int64(77)
+			state := event
+			now := gh.Timestamp{Time: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)}
+			return &gh.PullRequestReview{
+				ID:          &id,
+				State:       &state,
+				Body:        &body,
+				SubmittedAt: &now,
+				User:        &gh.User{Login: new("reviewer")},
+			}, nil
 		},
 	}
 	srv, _, _ := setupGitHubHeadPinServer(t, mock)
@@ -327,27 +338,36 @@ func TestGitHubApproveUnsupportedBeforeProviderCall(t *testing.T) {
 		"/api/v1/pulls/github/acme/widget/7/approve",
 		json.RawMessage(`{"body":"lgtm","expected_head_sha":"reviewed-sha"}`),
 	)
-	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	problem := decodeConflictProblemBody(t, json.NewDecoder(rr.Body))
-	assert.Equal("unsupportedCapability", problem.Code)
-	require.NotNil(problem.Details)
-	assert.Equal("review_mutation", problem.Details["capability"])
-	assert.Equal("github", problem.Details["provider"])
-	assert.Equal("github.com", problem.Details["platformHost"])
-	assert.False(providerCalled.Load())
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.True(providerCalled.Load())
+	assert.Equal("reviewed-sha", reviewCommitID)
 }
 
-func TestGitHubReviewDraftApproveUnsupportedBeforeProviderCall(t *testing.T) {
+func TestGitHubReviewDraftApprovePublishesReview(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	var providerCalled atomic.Bool
+	var reviewCommitID string
 	mock := &mockGH{
 		createReviewWithCommentsFn: func(
-			_ context.Context, _, _ string, _ int, _, _, _ string,
-			_ []*gh.DraftReviewComment,
+			_ context.Context, _, _ string, _ int, event, body, commitID string,
+			comments []*gh.DraftReviewComment,
 		) (*gh.PullRequestReview, error) {
 			providerCalled.Store(true)
-			return &gh.PullRequestReview{}, nil
+			reviewCommitID = commitID
+			assert.Equal("APPROVE", event)
+			assert.Equal("summary note", body)
+			assert.Len(comments, 1)
+			id := int64(78)
+			state := event
+			now := gh.Timestamp{Time: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)}
+			return &gh.PullRequestReview{
+				ID:          &id,
+				State:       &state,
+				Body:        &body,
+				SubmittedAt: &now,
+				User:        &gh.User{Login: new("reviewer")},
+			}, nil
 		},
 	}
 	srv, database, repoID := setupGitHubHeadPinServer(t, mock)
@@ -375,13 +395,10 @@ func TestGitHubReviewDraftApproveUnsupportedBeforeProviderCall(t *testing.T) {
 		"/api/v1/pulls/github/acme/widget/7/review-draft/publish",
 		json.RawMessage(`{"action":"approve","body":"summary note"}`),
 	)
-	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	problem := decodeConflictProblemBody(t, json.NewDecoder(rr.Body))
-	assert.Equal("unsupportedCapability", problem.Code)
-	require.NotNil(problem.Details)
-	assert.Equal("review_action_approve", problem.Details["capability"])
-	assert.False(providerCalled.Load())
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.True(providerCalled.Load())
+	assert.Equal("reviewed-sha", reviewCommitID)
 	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
-	require.NotNil(storedDraft, "unsupported approve must preserve the local draft")
+	require.Nil(storedDraft)
 }

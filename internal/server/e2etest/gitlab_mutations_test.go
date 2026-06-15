@@ -673,6 +673,22 @@ func TestGitLabMutationApprove(t *testing.T) {
 	assert.True(commentSeen, "approval comment was not synced into local events")
 }
 
+func TestGitLabMutationApproveAllowsOmittedHeadPin(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, recorder, _ := setupGitLabMutationServer(t)
+
+	rr := doGitLabJSON(t, srv, http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/approve",
+		`{"body":"ship it"}`,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	approve, ok := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/approve")
+	require.True(ok, "fake GitLab API did not receive approval")
+	assert.Contains(approve.Body, `"sha":"head-sha"`)
+}
+
 func TestGitLabMutationApproveStaleHeadReturnsConflict(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -1003,10 +1019,10 @@ func TestGitLabSquashAlwaysProjectDisallowsMergeCommitE2E(t *testing.T) {
 	assert.False(settings.AllowRebaseMerge)
 }
 
-// Head-binding providers reject merge and approve requests that omit the
-// client's head pin: an omitted pin would silently bind to whatever the
-// cache holds now, which may be newer than what the user reviewed.
-func TestGitLabMutationOmittedHeadPinRejected(t *testing.T) {
+// Head-binding providers reject merge requests that omit the client's head
+// pin: an omitted pin would silently bind to whatever the cache holds now,
+// which may be newer than what the user reviewed.
+func TestGitLabMergeOmittedHeadPinRejected(t *testing.T) {
 	tests := []struct {
 		name         string
 		path         string
@@ -1018,12 +1034,6 @@ func TestGitLabMutationOmittedHeadPinRejected(t *testing.T) {
 			path:         "/api/v1/pulls/gitlab/acme/widget/7/merge",
 			body:         `{"method":"squash","commit_title":"t","commit_message":"m"}`,
 			mutationPath: "/api/v4/projects/4242/merge_requests/7/merge",
-		},
-		{
-			name:         "approve",
-			path:         "/api/v1/pulls/gitlab/acme/widget/7/approve",
-			body:         `{"body":"ship it"}`,
-			mutationPath: "/api/v4/projects/4242/merge_requests/7/approve",
 		},
 	}
 	for _, tt := range tests {
@@ -1082,8 +1092,8 @@ func TestGitLabMutationResponsesExposeHeadSHA(t *testing.T) {
 
 // The stored head is only a cache: when a sync moves it between the
 // client's render and click, the client's expected_head_sha assertion
-// must reject the mutation before any provider call.
-func TestGitLabMutationClientExpectedHeadMismatchFailsClosed(t *testing.T) {
+// must reject merge before any provider call.
+func TestGitLabMergeClientExpectedHeadMismatchFailsClosed(t *testing.T) {
 	tests := []struct {
 		name         string
 		path         string
@@ -1095,12 +1105,6 @@ func TestGitLabMutationClientExpectedHeadMismatchFailsClosed(t *testing.T) {
 			path:         "/api/v1/pulls/gitlab/acme/widget/7/merge",
 			body:         `{"method":"squash","commit_title":"t","commit_message":"m","expected_head_sha":"reviewed-old-head"}`,
 			mutationPath: "/api/v4/projects/4242/merge_requests/7/merge",
-		},
-		{
-			name:         "approve",
-			path:         "/api/v1/pulls/gitlab/acme/widget/7/approve",
-			body:         `{"body":"ship it","expected_head_sha":"reviewed-old-head"}`,
-			mutationPath: "/api/v4/projects/4242/merge_requests/7/approve",
 		},
 	}
 	for _, tt := range tests {
@@ -1161,12 +1165,12 @@ func TestGitLabMutationGenericMergeConflictDoesNotResync(t *testing.T) {
 	assert.False(synced, "generic conflicts must not resync on head-binding providers")
 }
 
-// A legacy or partially synced row with no head SHA fails closed: the
-// user never reviewed any particular commit, so neither merge nor approve
-// may proceed. The path must not sync either — persisting a fresh head
-// would let an immediate retry from the same stale UI mutate a commit
-// nobody reviewed — so consecutive requests keep failing identically.
-func TestGitLabMutationMissingHeadSHAFailsClosed(t *testing.T) {
+// A legacy or partially synced row with no head SHA fails closed for merge:
+// the user never reviewed any particular commit, so merge may not proceed.
+// The path must not sync either — persisting a fresh head would let an
+// immediate retry from the same stale UI mutate a commit nobody reviewed —
+// so consecutive requests keep failing identically.
+func TestGitLabMergeMissingHeadSHAFailsClosed(t *testing.T) {
 	tests := []struct {
 		name         string
 		path         string
@@ -1178,12 +1182,6 @@ func TestGitLabMutationMissingHeadSHAFailsClosed(t *testing.T) {
 			path:         "/api/v1/pulls/gitlab/acme/widget/7/merge",
 			body:         `{"method":"squash","commit_title":"t","commit_message":"m"}`,
 			mutationPath: "/api/v4/projects/4242/merge_requests/7/merge",
-		},
-		{
-			name:         "approve",
-			path:         "/api/v1/pulls/gitlab/acme/widget/7/approve",
-			body:         `{"body":"ship it"}`,
-			mutationPath: "/api/v4/projects/4242/merge_requests/7/approve",
 		},
 	}
 	for _, tt := range tests {

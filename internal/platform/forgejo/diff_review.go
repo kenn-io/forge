@@ -34,9 +34,6 @@ func (t *transport) PublishDiffReviewDraft(
 	number int,
 	input platform.PublishDiffReviewDraftInput,
 ) (*platform.PublishedDiffReview, error) {
-	if input.Action == platform.ReviewActionApprove {
-		return nil, platform.UnsupportedCapability(platform.KindForgejo, host, "approve_merge_request")
-	}
 	comments := make([]forgejosdk.CreatePullReviewComment, 0, len(input.Comments))
 	commitID := input.HeadSHA
 	for _, comment := range input.Comments {
@@ -146,6 +143,8 @@ func (t *transport) listPullReviewComments(
 
 func forgejoReviewState(action platform.ReviewAction) forgejosdk.ReviewStateType {
 	switch action {
+	case platform.ReviewActionApprove:
+		return forgejosdk.ReviewStateApproved
 	case platform.ReviewActionRequestChanges:
 		return forgejosdk.ReviewStateRequestChanges
 	default:

@@ -59,6 +59,10 @@ type ReviewRequestTransport interface {
 	DeleteReviewRequests(ctx context.Context, ref platform.RepoRef, number int, reviewers []string) error
 }
 
+type ReviewMutationTransport interface {
+	CreatePullReview(ctx context.Context, ref platform.RepoRef, number int, opts ReviewOptions) (ReviewDTO, error)
+}
+
 type ActionsTransport interface {
 	ListActionRuns(ctx context.Context, ref platform.RepoRef, sha string, opts PageOptions) ([]ActionRunDTO, Page, error)
 }
@@ -245,6 +249,12 @@ type MergeOptions struct {
 	// provider rejects the merge if the PR head moved past the
 	// reviewed commit.
 	ExpectedHeadSHA string
+}
+
+type ReviewOptions struct {
+	State    string
+	Body     string
+	CommitID string
 }
 
 type MergeResultDTO struct {

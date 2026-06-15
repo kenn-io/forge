@@ -19,6 +19,7 @@ REPO_API_ROOT = "https://api.github.com/repos/sveltejs/ai-tools/contents"
 DEFAULT_REF = "e429cd783992de3d39770aab480c5489cd0a5dca"
 SKILLS_API_PATH = "tools/skills"
 MANIFEST_NAME = ".svelte-managed.json"
+SVELTE_MCP_VERSION = "0.1.24"
 
 TARGETS = {
     "codex": Path(".agents/skills"),
@@ -151,6 +152,57 @@ def download_directory(api_path: str, destination: Path, ref: str) -> None:
 
         target_path.parent.mkdir(parents=True, exist_ok=True)
         download_file(entry.download_url, target_path)
+
+
+def normalize_markdown_code_examples(text: str) -> str:
+    return text.replace("+++", "")
+
+
+def apply_repo_skill_overrides(skill_name: str, source_dir: Path) -> None:
+    for markdown_path in source_dir.rglob("*.md"):
+        markdown_path.write_text(
+            normalize_markdown_code_examples(markdown_path.read_text()),
+        )
+
+    if skill_name != "svelte-code-writer":
+        return
+
+    skill_path = source_dir / "SKILL.md"
+    text = skill_path.read_text()
+    text = text.replace(
+        "You have access to `@sveltejs/mcp` CLI for Svelte-specific assistance. Use these commands via `npx`:",
+        f"Use the repo-installed `@sveltejs/mcp@{SVELTE_MCP_VERSION}` CLI for Svelte-specific assistance:\n\n"
+        "```bash\n"
+        "vp exec svelte-mcp <command>\n"
+        "```\n\n"
+        "Run these commands from the repository root. Do not use `npx`, `npm`, or `bun x` for this tool.",
+    )
+    text = text.replace("npx @sveltejs/mcp ", "vp exec svelte-mcp ")
+    text = text.replace(
+        'vp exec svelte-mcp get-documentation "$state,$derived,$effect"',
+        "vp exec svelte-mcp get-documentation '$state,$derived,$effect'",
+    )
+    text = text.replace(
+        "# Analyze inline code (escape $ as \\$)\n"
+        "vp exec svelte-mcp svelte-autofixer '<script>let count = \\$state(0);</script>'",
+        "# Analyze inline code\n"
+        "vp exec svelte-mcp svelte-autofixer '<script>let count = $state(0);</script>'",
+    )
+    text = text.replace(
+        "vp exec svelte-mcp svelte-autofixer ./src/lib/Component.svelte",
+        "vp exec svelte-mcp svelte-autofixer ./frontend/src/lib/Component.svelte",
+    )
+    text = text.replace(
+        "**Important:** When passing code with runes (`$state`, `$derived`, etc.) via the terminal, escape the `$` character as `\\$` to prevent shell variable substitution.",
+        "**Important:** When passing code with runes (`$state`, `$derived`, etc.) via the terminal, wrap inline code in single quotes. If you use double quotes, escape `$` as `\\$` to prevent shell variable substitution.",
+    )
+    text = text.replace(
+        "1. **Uncertain about syntax?** Run `list-sections` then `get-documentation` for relevant topics\n"
+        "2. **Reviewing/debugging?** Run `svelte-autofixer` on the code to detect issues",
+        "1. **Uncertain about syntax?** Run `list-sections` then `get-documentation` for relevant topics with `vp exec svelte-mcp`\n"
+        "2. **Reviewing/debugging?** Run `svelte-autofixer` on the code with `vp exec svelte-mcp` to detect issues",
+    )
+    skill_path.write_text(text)
 
 
 def install_directory(source_dir: Path, target_dir: Path, dry_run: bool) -> None:
@@ -333,6 +385,7 @@ def main() -> int:
             if not (local_dir / "SKILL.md").is_file():
                 raise RuntimeError(f"{skill.name}: missing SKILL.md")
 
+            apply_repo_skill_overrides(skill.name, local_dir)
             extracted[skill.name] = local_dir
 
         for skill_name, source_dir in extracted.items():

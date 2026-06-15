@@ -146,13 +146,13 @@ In the rare case that this is a problem (for example, if `foo` does expensive an
 
 ```js
 // @errors: 7006 2304 2552
-function foo(+++getBar+++) {
+function foo(getBar) {
 	return (node) => {
 		veryExpensiveSetupWork(node);
 
-+++		$effect(() => {
+		$effect(() => {
 			update(node, getBar());
-		});+++
+		});
 	}
 }
 ```

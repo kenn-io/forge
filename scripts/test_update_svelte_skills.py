@@ -114,6 +114,59 @@ class UpdateSvelteSkillsTest(unittest.TestCase):
         manifest = json.loads((self.root / "skills/.svelte-managed.json").read_text())
         self.assertEqual(manifest, {"skills": ["managed-new"]})
 
+    def test_normalizes_highlight_markers_from_markdown_examples(self):
+        text = "```js\nconst { head, body } = +++await+++ render(App);\n```\n"
+
+        self.assertEqual(
+            self.module.normalize_markdown_code_examples(text),
+            "```js\nconst { head, body } = await render(App);\n```\n",
+        )
+
+    def test_applies_repo_svelte_code_writer_launcher(self):
+        skill_dir = self.root / "skills/svelte-code-writer"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "\n".join(
+                [
+                    "You have access to `@sveltejs/mcp` CLI for Svelte-specific assistance. Use these commands via `npx`:",
+                    "",
+                    "```bash",
+                    "npx @sveltejs/mcp list-sections",
+                    "```",
+                    "",
+                    "```bash",
+                    'npx @sveltejs/mcp get-documentation "$state,$derived,$effect"',
+                    "```",
+                    "",
+                    "```bash",
+                    "# Analyze inline code (escape $ as \\$)",
+                    "npx @sveltejs/mcp svelte-autofixer '<script>let count = \\$state(0);</script>'",
+                    "",
+                    "# Analyze a file",
+                    "npx @sveltejs/mcp svelte-autofixer ./src/lib/Component.svelte",
+                    "```",
+                    "",
+                    "**Important:** When passing code with runes (`$state`, `$derived`, etc.) via the terminal, escape the `$` character as `\\$` to prevent shell variable substitution.",
+                    "",
+                    "1. **Uncertain about syntax?** Run `list-sections` then `get-documentation` for relevant topics",
+                    "2. **Reviewing/debugging?** Run `svelte-autofixer` on the code to detect issues",
+                    "3. **Always validate** - Run `svelte-autofixer` before finalizing any Svelte component",
+                    "",
+                ],
+            ),
+        )
+
+        self.module.apply_repo_skill_overrides("svelte-code-writer", skill_dir)
+
+        text = (skill_dir / "SKILL.md").read_text()
+        self.assertIn("vp exec svelte-mcp <command>", text)
+        self.assertIn("vp exec svelte-mcp list-sections", text)
+        self.assertIn("vp exec svelte-mcp get-documentation '$state,$derived,$effect'", text)
+        self.assertIn("'<script>let count = $state(0);</script>'", text)
+        self.assertIn("./frontend/src/lib/Component.svelte", text)
+        self.assertNotIn("npx @sveltejs/mcp", text)
+        self.assertNotIn("bun x @sveltejs/mcp", text)
+
 
 if __name__ == "__main__":
     unittest.main()

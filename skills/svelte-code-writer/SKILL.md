@@ -10,7 +10,7 @@ description: CLI tools for Svelte 5 documentation lookup and code analysis. MUST
 Use the repo-installed `@sveltejs/mcp@0.1.24` CLI for Svelte-specific assistance:
 
 ```bash
-node ./node_modules/vite-plus/bin/vp exec -- svelte-mcp <command>
+vp exec svelte-mcp <command>
 ```
 
 Run these commands from the repository root. Do not use `npx`, `npm`, or `bun x` for this tool.
@@ -18,7 +18,7 @@ Run these commands from the repository root. Do not use `npx`, `npm`, or `bun x`
 ### List Documentation Sections
 
 ```bash
-node ./node_modules/vite-plus/bin/vp exec -- svelte-mcp list-sections
+vp exec svelte-mcp list-sections
 ```
 
 Lists all available Svelte 5 and SvelteKit documentation sections with titles and paths.
@@ -26,7 +26,7 @@ Lists all available Svelte 5 and SvelteKit documentation sections with titles an
 ### Get Documentation
 
 ```bash
-node ./node_modules/vite-plus/bin/vp exec -- svelte-mcp get-documentation "<section1>,<section2>,..."
+vp exec svelte-mcp get-documentation "<section1>,<section2>,..."
 ```
 
 Retrieves full documentation for specified sections. Use after `list-sections` to fetch relevant docs.
@@ -34,13 +34,13 @@ Retrieves full documentation for specified sections. Use after `list-sections` t
 **Example:**
 
 ```bash
-node ./node_modules/vite-plus/bin/vp exec -- svelte-mcp get-documentation "$state,$derived,$effect"
+vp exec svelte-mcp get-documentation '$state,$derived,$effect'
 ```
 
 ### Svelte Autofixer
 
 ```bash
-node ./node_modules/vite-plus/bin/vp exec -- svelte-mcp svelte-autofixer "<code_or_path>" [options]
+vp exec svelte-mcp svelte-autofixer "<code_or_path>" [options]
 ```
 
 Analyzes Svelte code and suggests fixes for common issues.
@@ -54,19 +54,19 @@ Analyzes Svelte code and suggests fixes for common issues.
 
 ```bash
 # Analyze inline code
-node ./node_modules/vite-plus/bin/vp exec -- svelte-mcp svelte-autofixer '<script>let count = $state(0);</script>'
+vp exec svelte-mcp svelte-autofixer '<script>let count = $state(0);</script>'
 
 # Analyze a file
-node ./node_modules/vite-plus/bin/vp exec -- svelte-mcp svelte-autofixer ./src/lib/Component.svelte
+vp exec svelte-mcp svelte-autofixer ./frontend/src/lib/Component.svelte
 
 # Target Svelte 4
-node ./node_modules/vite-plus/bin/vp exec -- svelte-mcp svelte-autofixer ./Component.svelte --svelte-version 4
+vp exec svelte-mcp svelte-autofixer ./Component.svelte --svelte-version 4
 ```
 
 **Important:** When passing code with runes (`$state`, `$derived`, etc.) via the terminal, wrap inline code in single quotes. If you use double quotes, escape `$` as `\$` to prevent shell variable substitution.
 
 ## Workflow
 
-1. **Uncertain about syntax?** Run `list-sections` then `get-documentation` for relevant topics with `vp exec`
-2. **Reviewing/debugging?** Run `svelte-autofixer` on the code with `vp exec` to detect issues
+1. **Uncertain about syntax?** Run `list-sections` then `get-documentation` for relevant topics with `vp exec svelte-mcp`
+2. **Reviewing/debugging?** Run `svelte-autofixer` on the code with `vp exec svelte-mcp` to detect issues
 3. **Always validate** - Run `svelte-autofixer` before finalizing any Svelte component

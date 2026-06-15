@@ -114,7 +114,7 @@ Svelte supports asynchronous server-side rendering (SSR) with the `render(...)` 
 import { render } from 'svelte/server';
 import App from './App.svelte';
 
-const { head, body } = +++await+++ render(App);
+const { head, body } = await render(App);
 ```
 
 > [!NOTE] If you're using a framework like SvelteKit, this is done on your behalf.

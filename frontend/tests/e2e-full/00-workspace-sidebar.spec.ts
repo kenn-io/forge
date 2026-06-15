@@ -10,6 +10,18 @@ type WorkspaceStatusResponse = {
   status: string;
 };
 
+type WorkspaceListResponse = {
+  workspaces: Array<{
+    id: string;
+    created_at: string;
+    item_last_activity_at?: string | null;
+    repo: {
+      repo_path: string;
+      provider: string;
+    };
+  }>;
+};
+
 const lockedWorkspaceTestTimeoutMs = 120_000;
 
 type TerminalCanvasStats = {
@@ -176,6 +188,22 @@ test.describe("workspace sidebar full-stack", () => {
       const gitlabWorkspace = (await gitlabResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, gitlabWorkspace.id);
 
+      const workspacesResponse = await api.get("/api/v1/workspaces");
+      expect(workspacesResponse.ok()).toBe(true);
+      const workspacesPayload = (await workspacesResponse.json()) as WorkspaceListResponse;
+      const expectedItemActivityOrder = workspacesPayload.workspaces
+        .filter((workspace) => workspace.id === githubWorkspace.id || workspace.id === gitlabWorkspace.id)
+        .sort((a, b) => {
+          const aTimestamp = Date.parse(a.item_last_activity_at ?? a.created_at);
+          const bTimestamp = Date.parse(b.item_last_activity_at ?? b.created_at);
+          return bTimestamp - aTimestamp || a.id.localeCompare(b.id);
+        })
+        .map((workspace) => workspace.repo.repo_path);
+      expect(expectedItemActivityOrder).toHaveLength(2);
+      const [firstItemActivityRepo, secondItemActivityRepo] = expectedItemActivityOrder;
+      expect(firstItemActivityRepo).toBeDefined();
+      expect(secondItemActivityRepo).toBeDefined();
+
       await page.goto(`${isolatedServer.info.base_url}/terminal/${githubWorkspace.id}`);
 
       const rows = page.locator(".workspace-list-sidebar .ws-row");
@@ -202,6 +230,21 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(rows).toHaveCount(2);
       await expect(headers).toHaveCount(0);
       await expect(rows.first().locator(".repo-context")).toContainText("group/project");
+
+      await page.getByTitle("Sort workspaces").click();
+      await page.locator(".filter-dropdown .filter-item", { hasText: "Item activity" }).click();
+
+      await expect(headers).toHaveCount(0);
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0).locator(".repo-context")).toContainText(firstItemActivityRepo ?? "");
+      await expect(rows.nth(1).locator(".repo-context")).toContainText(secondItemActivityRepo ?? "");
+
+      // Item activity also persists against the real backend across reloads.
+      await page.reload();
+      await expect(headers).toHaveCount(0);
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0).locator(".repo-context")).toContainText(firstItemActivityRepo ?? "");
+      await expect(rows.nth(1).locator(".repo-context")).toContainText(secondItemActivityRepo ?? "");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

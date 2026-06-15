@@ -8,6 +8,17 @@
 
 **Tech Stack:** Go, SQLite, Huma/OpenAPI, generated Go and TypeScript API clients, Svelte 5, Vite+ tests.
 
+**Success Criteria:**
+- `Item activity` appears as an opt-in flat sort option in the workspace sort menu.
+- PR workspaces sort by the synced PR `last_activity_at`; issue workspaces sort by the synced issue `last_activity_at`.
+- Workspaces without synced owner item metadata fall back to workspace `created_at`.
+- Existing `Activity` sorting still means terminal/tmux output activity, and grouped `Org / repo` ordering is unchanged.
+
+**Non-Goals:**
+- Do not change provider sync semantics or write new provider-specific item freshness logic.
+- Do not change existing `Activity` sort behavior or label.
+- Do not add a compatibility alias for old sort values.
+
 ---
 
 ## File Structure
@@ -35,6 +46,8 @@
 - Modify `frontend/src/lib/components/terminal/WorkspaceListSidebar.test.ts`
   - Extend fixtures with `itemLastActivityAt`.
   - Add a test for the new sort option and fallback behavior.
+- Modify `frontend/tests/e2e-full/00-workspace-sidebar.spec.ts`
+  - Add full-stack coverage for selecting and persisting `Item activity` against real workspace API data.
 
 ## Tasks
 
@@ -185,7 +198,7 @@ func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
 	client, database, _, _ := setupTestServerWithWorkspaces(t)
 	ctx := t.Context()
 
-	repo, err := database.GetRepo(ctx, "github.com", "acme", "widget")
+	repo, err := database.GetRepoByHostOwnerName(ctx, "github.com", "acme", "widget")
 	require.NoError(err)
 	require.NotNil(repo)
 
@@ -502,7 +515,7 @@ Update the existing comment above `sortedFlat`:
 Run:
 
 ```bash
-npx @sveltejs/mcp@0.1.22 svelte-autofixer frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte --svelte-version 5
+vp exec svelte-mcp svelte-autofixer frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte --svelte-version 5
 ```
 
 Expected: no required fixes.
@@ -517,7 +530,26 @@ Run:
 
 Expected: PASS.
 
-### Task 4: Full Verification and Commit
+### Task 4: Add Full-Stack Workspace Sidebar Coverage
+
+**Files:**
+- Test: `frontend/tests/e2e-full/00-workspace-sidebar.spec.ts`
+
+- [ ] **Step 1: Extend the existing flat sort e2e test**
+
+In `frontend/tests/e2e-full/00-workspace-sidebar.spec.ts`, extend `flat sort modes order real workspaces by creation time and keep provider identity` so it fetches `/api/v1/workspaces`, derives the expected descending order from `item_last_activity_at || created_at`, selects `Item activity`, and asserts the visible flat row order plus reload persistence.
+
+- [ ] **Step 2: Run the affected e2e spec**
+
+Run:
+
+```bash
+cd frontend && node ./scripts/run-e2e-to-file.ts --project=chromium tests/e2e-full/00-workspace-sidebar.spec.ts
+```
+
+Expected: PASS.
+
+### Task 5: Full Verification and Commit
 
 **Files:**
 - Verify all modified files.
@@ -540,6 +572,7 @@ Run:
 
 ```bash
 ./node_modules/.bin/vp run test -- WorkspaceListSidebar.test.ts
+cd frontend && node ./scripts/run-e2e-to-file.ts --project=chromium tests/e2e-full/00-workspace-sidebar.spec.ts
 ```
 
 Expected: PASS.
@@ -560,7 +593,7 @@ Expected: `make api-generate` completes. `git diff --check` prints no whitespace
 Run:
 
 ```bash
-git diff -- internal/db/types.go internal/db/queries.go internal/db/queries_test.go internal/server/api_types.go internal/server/api_test.go frontend/src/lib/components/terminal/workspaceListSort.ts frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte frontend/src/lib/components/terminal/WorkspaceListSidebar.test.ts frontend/openapi/openapi.yaml internal/apiclient/spec/openapi.json internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts
+git diff -- internal/db/types.go internal/db/queries.go internal/db/queries_test.go internal/server/api_types.go internal/server/api_test.go frontend/src/lib/components/terminal/workspaceListSort.ts frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte frontend/src/lib/components/terminal/WorkspaceListSidebar.test.ts frontend/tests/e2e-full/00-workspace-sidebar.spec.ts frontend/openapi/openapi.yaml internal/apiclient/spec/openapi.json internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts
 ```
 
 Expected: diff contains only the item activity timestamp exposure, generated API changes, and the new sort option.
@@ -570,8 +603,8 @@ Expected: diff contains only the item activity timestamp exposure, generated API
 Run:
 
 ```bash
-git add internal/db/types.go internal/db/queries.go internal/db/queries_test.go internal/server/api_types.go internal/server/api_test.go frontend/src/lib/components/terminal/workspaceListSort.ts frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte frontend/src/lib/components/terminal/WorkspaceListSidebar.test.ts frontend/openapi/openapi.yaml internal/apiclient/spec/openapi.json internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts
-git commit -m "feat: sort workspaces by item activity"
+git add internal/db/types.go internal/db/queries.go internal/db/queries_test.go internal/server/api_types.go internal/server/api_test.go frontend/src/lib/components/terminal/workspaceListSort.ts frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte frontend/src/lib/components/terminal/WorkspaceListSidebar.test.ts frontend/tests/e2e-full/00-workspace-sidebar.spec.ts frontend/openapi/openapi.yaml internal/apiclient/spec/openapi.json internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts
+git commit -m "feat: sort workspaces by item activity" -m "Expose the synced PR/issue last activity timestamp on workspace responses so the workspace rail can sort by provider item changes separately from terminal output activity."
 ```
 
 Commit body:

@@ -359,8 +359,9 @@ type mergePRInput struct {
 		CommitTitle   string `json:"commit_title"`
 		CommitMessage string `json:"commit_message"`
 		Method        string `json:"method"`
-		// ExpectedHeadSHA: see approvePRInput. Optional client assertion
-		// of the reviewed head commit.
+		// ExpectedHeadSHA is the reviewed diff head the client rendered.
+		// For head-binding providers, merge rejects missing, stale, or
+		// mismatched reviewed-head assertions before provider mutation.
 		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 	}
 }

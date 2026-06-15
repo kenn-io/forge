@@ -57,7 +57,12 @@ peer_timeout = "2s"
 include_unmanaged_details = false
 
 # HTTP peer: the hub fetches http://mini.tail:8091/api/v1/snapshot/raw
-# and proxies writes to the same base URL.
+# and proxies writes to the same base URL. HTTP peers are credential-free
+# from the hub: the hub sends no token and never forwards the caller's
+# Authorization/cookie (those authenticate the hub, not the peer). So the
+# peer daemon must NOT set [api].require_auth, and base_url must ride a
+# trusted transport boundary (loopback, tailnet, or a VPN). Use an SSH
+# peer when the target needs authentication or has no exposed listener.
 [[fleet.peers]]
 key = "mini"
 name = "Mac mini"
@@ -73,8 +78,11 @@ destination = "wes@epyc.tail"
 # remote_command = "middleman"   # bare executable, no flags
 
 [api]
-# Gate the HTTP API behind the minted bearer token (see "Daemon
-# contract"). Recommended whenever fleet peers or browsers are in play.
+# Gate this daemon's own HTTP API and terminal WebSocket routes behind
+# the minted bearer token (see "Daemon contract"). Recommended whenever
+# browsers or SSH-relay peers reach this daemon. Do not enable it on a
+# daemon that other hubs reach as an HTTP peer: HTTP peer fetches are
+# credential-free and would be rejected.
 require_auth = true
 ```
 
@@ -241,12 +249,15 @@ reach a daemon, with no out-of-band configuration:
   onto it), `token_path`, and `require_auth`.
 - **Auth token** — minted at startup (32-byte hex, 0600, reused
   across restarts) at `<data_dir>/auth_token`. The file mode is the
-  authorization boundary. With `[api] require_auth`, API routes
-  demand `Authorization: Bearer <token>` or the session cookie that
-  browsers bootstrap once via the tokenized URL
-  (`/?auth_token=...` → HttpOnly cookie + redirect). `/healthz` and
-  `/livez` stay exempt so supervisors can poll before reading the
-  token file.
+  authorization boundary. With `[api] require_auth`, both the `/api/`
+  routes and the `/ws/` terminal WebSocket routes demand
+  `Authorization: Bearer <token>` or the session cookie that browsers
+  bootstrap once via the tokenized URL (`/?auth_token=...` → HttpOnly
+  cookie + redirect; browsers carry the cookie on the WebSocket
+  upgrade). `/healthz` and `/livez` stay exempt so supervisors can poll
+  before reading the token file. The hub never forwards a caller's
+  token or cookie to an HTTP peer, so a require_auth daemon cannot also
+  serve as an HTTP peer — reach it as an SSH peer instead.
 - **`middleman api` verb** (`cmd/middleman/api_verb.go`) — the
   thin-client primitive: discovers the daemon through the runtime
   metadata, authenticates with the token, relays one request.

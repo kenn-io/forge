@@ -787,7 +787,8 @@ func escapePath(value string) string {
 
 func copyProxyRequestHeaders(dst, src http.Header) {
 	for key, values := range src {
-		if isHopByHopHeader(key) || isPeerProxyClientHeader(key) {
+		if isHopByHopHeader(key) || isPeerProxyClientHeader(key) ||
+			isPeerProxyCredentialHeader(key) {
 			continue
 		}
 		for _, value := range values {
@@ -800,12 +801,30 @@ func copyProxyWebSocketRequestHeaders(dst, src http.Header) {
 	for key, values := range src {
 		lower := strings.ToLower(key)
 		if isHopByHopHeader(key) || isPeerProxyClientHeader(key) ||
+			isPeerProxyCredentialHeader(key) ||
 			strings.HasPrefix(lower, "sec-websocket-") {
 			continue
 		}
 		for _, value := range values {
 			dst.Add(key, value)
 		}
+	}
+}
+
+// isPeerProxyCredentialHeader reports whether key carries the caller's
+// credentials, which must never ride along on a server-to-server fleet proxy
+// request. The hub's Authorization bearer and session cookie (including
+// middleman_auth) authenticate the *hub*, not the peer: each daemon mints its
+// own token, so forwarding them cannot authenticate to the peer and would only
+// leak the hub credential to it. HTTP fleet peers are therefore credential-free
+// and must sit behind a trusted transport boundary; SSH peers are the
+// authenticated peer path.
+func isPeerProxyCredentialHeader(key string) bool {
+	switch strings.ToLower(key) {
+	case "authorization", "cookie":
+		return true
+	default:
+		return false
 	}
 }
 

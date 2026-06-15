@@ -2,6 +2,7 @@ package sshfleet
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -354,18 +355,10 @@ func runSSH(args []string) (int, error) {
 	err := cmd.Run()
 	if err != nil {
 		var exitErr *exec.ExitError
-		if ok := isExitError(err, &exitErr); ok {
+		if errors.As(err, &exitErr) {
 			return exitErr.ExitCode(), err
 		}
 		return -1, err
 	}
 	return 0, nil
-}
-
-func isExitError(err error, target **exec.ExitError) bool {
-	exitErr, ok := err.(*exec.ExitError)
-	if ok {
-		*target = exitErr
-	}
-	return ok
 }

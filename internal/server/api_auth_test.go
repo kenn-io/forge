@@ -73,6 +73,27 @@ func TestAPIAuthGatesAPIRoutes(t *testing.T) {
 	assert.Equal(http.StatusUnauthorized, resp.StatusCode)
 }
 
+// TestAPIAuthGatesTerminalWebSocketRoutes pins that the /ws/ terminal
+// routes are gated alongside /api/. These open interactive shells, so an
+// unauthenticated request must be rejected before routing; a valid
+// credential clears the gate (the route itself may then 404 in this
+// minimal server, but it is no longer a 401).
+func TestAPIAuthGatesTerminalWebSocketRoutes(t *testing.T) {
+	assert := assert.New(t)
+	ts := newAuthTestServer(t, "secret-token")
+
+	resp := authGet(t, ts, "/ws/v1/workspaces/ws-1/terminal", nil)
+	assert.Equal(http.StatusUnauthorized, resp.StatusCode,
+		"unauthenticated terminal WebSocket requests must be rejected")
+
+	resp = authGet(t, ts, "/ws/v1/workspaces/ws-1/terminal",
+		func(r *http.Request) {
+			r.Header.Set("Authorization", "Bearer secret-token")
+		})
+	assert.NotEqual(http.StatusUnauthorized, resp.StatusCode,
+		"a valid credential clears the gate")
+}
+
 // TestAPIAuthHealthAndAssetsStayOpen pins the exemptions: health
 // probes (supervisors poll before reading the token file) and
 // non-API paths (SPA assets) are not gated.

@@ -11,7 +11,9 @@ import (
 // forward a browser's Origin or Sec-Fetch-* metadata onto a server-to-server
 // fleet proxy request. Forwarding them trips the peer's host-authority guard,
 // which validates Origin against its own allowed hosts and rejects the
-// fan-out because the origin is the hub, not the peer.
+// fan-out because the origin is the hub, not the peer. It also verifies the
+// caller's Authorization and Cookie are stripped: they authenticate the hub,
+// not the peer, so forwarding them only leaks the hub credential.
 func TestCopyProxyRequestHeadersStripsBrowserHeaders(t *testing.T) {
 	assert := assert.New(t)
 	src := http.Header{}
@@ -36,9 +38,9 @@ func TestCopyProxyRequestHeadersStripsBrowserHeaders(t *testing.T) {
 	assert.Empty(dst.Get("Forwarded"), "forwarded host metadata must not reach the peer")
 	assert.Empty(dst.Get("X-Forwarded-Host"), "forwarded host metadata must not reach the peer")
 	assert.Empty(dst.Get("X-Forwarded-Proto"), "forwarded proxy metadata must not reach the peer")
-	assert.Equal("Bearer token", dst.Get("Authorization"), "auth must pass through")
+	assert.Empty(dst.Get("Authorization"), "the hub credential must not leak to the peer")
+	assert.Empty(dst.Get("Cookie"), "the hub session cookie must not leak to the peer")
 	assert.Equal("application/json", dst.Get("Content-Type"), "content type must pass through")
-	assert.Equal("session=abc", dst.Get("Cookie"), "cookies must pass through")
 }
 
 // TestCopyProxyWebSocketRequestHeadersStripsBrowserHeaders verifies the same
@@ -51,6 +53,7 @@ func TestCopyProxyWebSocketRequestHeadersStripsBrowserHeaders(t *testing.T) {
 	src.Set("Sec-Fetch-Dest", "websocket")
 	src.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
 	src.Set("Authorization", "Bearer token")
+	src.Set("Cookie", "middleman_auth=abc")
 	src.Set("Forwarded", "host=hub.local:8091")
 	src.Set("X-Forwarded-Host", "hub.local:8091")
 
@@ -62,7 +65,8 @@ func TestCopyProxyWebSocketRequestHeadersStripsBrowserHeaders(t *testing.T) {
 	assert.Empty(dst.Get("Sec-WebSocket-Key"), "Sec-WebSocket-* stays dialer-owned")
 	assert.Empty(dst.Get("Forwarded"), "forwarded host metadata must not reach the peer")
 	assert.Empty(dst.Get("X-Forwarded-Host"), "forwarded host metadata must not reach the peer")
-	assert.Equal("Bearer token", dst.Get("Authorization"), "auth must pass through")
+	assert.Empty(dst.Get("Authorization"), "the hub credential must not leak to the peer")
+	assert.Empty(dst.Get("Cookie"), "the hub session cookie must not leak to the peer")
 }
 
 func TestIsPeerProxyClientHeader(t *testing.T) {
@@ -85,5 +89,22 @@ func TestIsPeerProxyClientHeader(t *testing.T) {
 		{"X-Middleman-Fleet-Host", false},
 	} {
 		assert.Equal(t, tc.want, isPeerProxyClientHeader(tc.key), "header %q", tc.key)
+	}
+}
+
+func TestIsPeerProxyCredentialHeader(t *testing.T) {
+	for _, tc := range []struct {
+		key  string
+		want bool
+	}{
+		{"Authorization", true},
+		{"authorization", true},
+		{"Cookie", true},
+		{"cookie", true},
+		{"Content-Type", false},
+		{"Origin", false},
+		{"X-Middleman-Fleet-Host", false},
+	} {
+		assert.Equal(t, tc.want, isPeerProxyCredentialHeader(tc.key), "header %q", tc.key)
 	}
 }

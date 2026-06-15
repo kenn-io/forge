@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// API auth gates /api routes behind the daemon's bearer token when
-// the server is constructed with one (ServerOptions.APIAuthToken,
+// API auth gates /api and /ws routes behind the daemon's bearer token
+// when the server is constructed with one (ServerOptions.APIAuthToken,
 // minted under data_dir at serve start). Two credentials are
 // accepted: an `Authorization: Bearer <token>` header (CLI, native
 // thin clients, SSE over plain HTTP clients) and the session cookie a
@@ -88,19 +88,20 @@ func (s *Server) authorizeAPIRequest(
 	return false
 }
 
-// isGatedAPIRequest reports whether the path is an API route subject
-// to auth. Health probes are exempt so supervisors can poll liveness
-// before reading the token file.
+// isGatedAPIRequest reports whether the path is a route subject to
+// auth: the REST API under /api/ and the terminal WebSocket routes
+// under /ws/, which open interactive shells and must not be reachable
+// without a credential. Health probes are exempt so supervisors can
+// poll liveness before reading the token file. Browsers carry the
+// session cookie on the WebSocket upgrade, so the same cookie/bearer
+// check applies uniformly.
 func (s *Server) isGatedAPIRequest(r *http.Request) bool {
 	path := r.URL.Path
 	if s.basePath != "/" {
 		prefix := strings.TrimSuffix(s.basePath, "/")
 		path = strings.TrimPrefix(path, prefix)
 	}
-	if !strings.HasPrefix(path, "/api/") {
-		return false
-	}
-	return true
+	return strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws/")
 }
 
 // AuthBootstrapURL renders the tokenized URL a browser loads once to

@@ -119,7 +119,8 @@ func (m *Manager) EnsureCommandSession(
 	)
 	defer releaseLabel()
 
-	launch, err := m.commandSessionLaunch(ctx, workspaceID, key, spec)
+	stripEnvVars := m.currentStripEnvVars()
+	launch, err := m.commandSessionLaunch(ctx, workspaceID, key, spec, stripEnvVars)
 	if err != nil {
 		return SessionInfo{}, err
 	}
@@ -132,7 +133,7 @@ func (m *Manager) EnsureCommandSession(
 		Status:      SessionStatusStarting,
 		CreatedAt:   time.Now().UTC(),
 		TmuxSession: launch.TmuxSession,
-	}, launch.Command, spec.CWD, m.stripEnvVars)
+	}, launch.Command, spec.CWD, stripEnvVars)
 	if err != nil {
 		if launch.TmuxCreated {
 			_ = m.killTmuxSession(ctx, launch.TmuxSession)
@@ -166,6 +167,7 @@ func (m *Manager) commandSessionLaunch(
 	workspaceID string,
 	key string,
 	spec CommandLaunchSpec,
+	stripEnvVars []string,
 ) (launchCommand, error) {
 	tmuxCommand := slices.Clone(m.tmuxCommand)
 	if len(tmuxCommand) == 0 {
@@ -184,7 +186,7 @@ func (m *Manager) commandSessionLaunch(
 
 	tmuxSession := tmuxSessionName(workspaceID, key)
 	paneEnv := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(
-		os.Environ(), command, m.stripEnvVars, spec.Env,
+		os.Environ(), command, stripEnvVars, spec.Env,
 	)
 	prepared, err := tmuxLauncher{
 		TmuxCommand: tmuxCommand,

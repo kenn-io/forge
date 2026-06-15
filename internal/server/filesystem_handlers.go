@@ -99,7 +99,10 @@ func completionEntryIsDir(searchDir string, entry os.DirEntry) bool {
 		return false
 	}
 	info, err := os.Stat(filepath.Join(searchDir, entry.Name()))
-	return err == nil && info.IsDir()
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
 }
 
 func (s *Server) validateFilesystemRepo(

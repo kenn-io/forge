@@ -362,27 +362,29 @@ func TestParseForwardedHost(t *testing.T) {
 // repoint the accept-set at the actual bound port — otherwise every
 // request to an ephemeral-port daemon is rejected.
 func TestHostCheckEphemeralPortFollowsListener(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
 	srv := setupHostCheckServer(t, HostCheckOptions{
 		Bind: config.HostKey{Host: "127.0.0.1", Port: "0"},
 	})
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
+	require.NoError(err)
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
 
 	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
-	require.NoError(t, err)
+	require.NoError(err)
 	defer resp.Body.Close()
-	Assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(http.StatusOK, resp.StatusCode)
 
 	// The accept-set follows the real port — other ports still reject.
 	req, err := http.NewRequest(
 		http.MethodGet, "http://"+ln.Addr().String()+"/healthz", nil,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	req.Host = "127.0.0.1:9"
 	wrong, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
+	require.NoError(err)
 	defer wrong.Body.Close()
-	Assert.Equal(t, http.StatusForbidden, wrong.StatusCode)
+	assert.Equal(http.StatusForbidden, wrong.StatusCode)
 }

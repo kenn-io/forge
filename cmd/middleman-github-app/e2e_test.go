@@ -341,6 +341,26 @@ token_env = "KENN_IO_TOKEN"
 	assert.NotZero(t, cfg.GitHubApps[0].InstallationID)
 }
 
+func TestInstallRejectsRecordedInstallWithoutRepositorySelection(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-no-selection")
+
+	raw, err := os.ReadFile(configPath)
+	require.NoError(err)
+	broken := strings.Replace(string(raw), `repository_selection = "all"`+"\n", "", 1)
+	require.NotEqual(string(raw), broken)
+	require.NoError(os.WriteFile(configPath, []byte(broken), 0o600))
+
+	env, _ := newTestEnv(t, fake, configPath)
+	err = runCLI([]string{"install", "--timeout", "10s"}, env)
+	require.Error(err)
+	require.ErrorContains(err, "repository_selection is required")
+}
+
 func TestInstallHydratesMinimalAppMetadataBeforeOpeningInstallURL(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

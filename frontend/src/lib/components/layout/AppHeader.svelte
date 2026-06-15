@@ -141,6 +141,10 @@
     messages: "/messages",
   };
   const lastStickyModeRoutes = new SvelteMap<StickyMode, string>();
+  // Activity's selected item, detail tab, and filters all live in the URL
+  // query string. Remember the full activity path when leaving so the top-bar
+  // Activity tab restores the previous view instead of resetting to "/".
+  let lastActivityRoute = "/";
 
   function stickyModeForPage(page: ReturnType<typeof getPage>): StickyMode | null {
     return page === "kata" || page === "docs" || page === "messages" ? page : null;
@@ -150,6 +154,10 @@
     const currentMode = stickyModeForPage(getPage());
     if (!currentMode) return;
     lastStickyModeRoutes.set(currentMode, currentAppPath());
+  }
+
+  function rememberCurrentActivityRoute(): void {
+    if (getPage() === "activity") lastActivityRoute = currentAppPath();
   }
 
   function routeForTab(
@@ -179,7 +187,8 @@
   ): void {
     const currentMode = stickyModeForPage(getPage());
     rememberCurrentStickyModeRoute();
-    if (destination === "activity") navigate("/");
+    rememberCurrentActivityRoute();
+    if (destination === "activity") navigate(lastActivityRoute);
     else if (destination === "repos") navigate("/repos");
     else if (destination === "kata" || destination === "docs" || destination === "messages") {
       if (currentMode === destination) {

@@ -160,6 +160,7 @@ type IssueDTO struct {
 
 type CommentDTO struct {
 	ID      int64
+	HTMLURL string
 	User    UserDTO
 	Body    string
 	Created time.Time
@@ -168,6 +169,7 @@ type CommentDTO struct {
 
 type TimelineEventDTO struct {
 	ID            int64
+	HTMLURL       string
 	User          UserDTO
 	Type          string
 	Body          string

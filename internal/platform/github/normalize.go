@@ -176,6 +176,7 @@ func NormalizeReviewCommentEvent(
 		DedupeKey:          fmt.Sprintf("review_comment:%d", c.GetID()),
 		Author:             loginOrEmpty(c.GetUser()),
 		Body:               c.GetBody(),
+		DirectURL:          c.GetHTMLURL(),
 	}
 	if c.CreatedAt != nil {
 		event.CreatedAt = c.CreatedAt.Time
@@ -406,6 +407,7 @@ func NormalizeIssueCommentEvent(
 		Body:               event.Body,
 		CreatedAt:          event.CreatedAt,
 		DedupeKey:          fmt.Sprintf("issue-comment-%d", c.GetID()),
+		DirectURL:          event.DirectURL,
 	}
 }
 
@@ -621,6 +623,7 @@ func normalizeIssueCommentBase(repo platform.RepoRef, c *gh.IssueComment) platfo
 		EventType:          "issue_comment",
 		Author:             loginOrEmpty(c.GetUser()),
 		Body:               c.GetBody(),
+		DirectURL:          c.GetHTMLURL(),
 	}
 	if c.CreatedAt != nil {
 		event.CreatedAt = c.CreatedAt.Time

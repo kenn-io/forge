@@ -22,6 +22,35 @@ func TestNormalizeReviewCommentEventUsesReviewThreadDedupeKey(t *testing.T) {
 	assert.Equal(t, "review_comment:222", event.DedupeKey)
 }
 
+func TestNormalizeCommentEventsPreserveHTMLURL(t *testing.T) {
+	assert := assert.New(t)
+	commentID := int64(123)
+	commentURL := "https://github.com/acme/widget/pull/7#issuecomment-123"
+	issueComment := &gh.IssueComment{
+		ID:      &commentID,
+		HTMLURL: &commentURL,
+	}
+
+	prEvent := NormalizeCommentEvent(platform.RepoRef{Owner: "acme", Name: "widget"}, 7, issueComment)
+	issueEvent := NormalizeIssueCommentEvent(platform.RepoRef{Owner: "acme", Name: "widget"}, 9, issueComment)
+
+	assert.Equal(commentURL, prEvent.DirectURL)
+	assert.Equal(commentURL, issueEvent.DirectURL)
+}
+
+func TestNormalizeReviewCommentEventPreservesHTMLURL(t *testing.T) {
+	commentID := int64(456)
+	commentURL := "https://github.com/acme/widget/pull/7#discussion_r456"
+	comment := &gh.PullRequestComment{
+		ID:      &commentID,
+		HTMLURL: &commentURL,
+	}
+
+	event := NormalizeReviewCommentEvent(platform.RepoRef{Owner: "acme", Name: "widget"}, 7, comment)
+
+	assert.Equal(t, commentURL, event.DirectURL)
+}
+
 func TestNormalizeIssue_ExtractsAssignees(t *testing.T) {
 	require := require.New(t)
 

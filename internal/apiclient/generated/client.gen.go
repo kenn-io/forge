@@ -1008,6 +1008,7 @@ type IssueEvent struct {
 	Body               string    `json:"Body"`
 	CreatedAt          time.Time `json:"CreatedAt"`
 	DedupeKey          string    `json:"DedupeKey"`
+	DirectURL          string    `json:"DirectURL"`
 	EventType          string    `json:"EventType"`
 	ID                 int64     `json:"ID"`
 	IssueID            int64     `json:"IssueID"`
@@ -1265,6 +1266,7 @@ type MergeRequestEventResponse struct {
 	Body               string                    `json:"Body"`
 	CreatedAt          time.Time                 `json:"CreatedAt"`
 	DedupeKey          string                    `json:"DedupeKey"`
+	DirectURL          string                    `json:"DirectURL"`
 	EventType          string                    `json:"EventType"`
 	ID                 int64                     `json:"ID"`
 	MergeRequestID     int64                     `json:"MergeRequestID"`

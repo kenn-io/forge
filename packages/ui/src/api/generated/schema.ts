@@ -3263,6 +3263,7 @@ export interface components {
             /** Format: date-time */
             CreatedAt: string;
             DedupeKey: string;
+            DirectURL: string;
             EventType: string;
             /** Format: int64 */
             ID: number;
@@ -3566,6 +3567,7 @@ export interface components {
             /** Format: date-time */
             CreatedAt: string;
             DedupeKey: string;
+            DirectURL: string;
             EventType: string;
             /** Format: int64 */
             ID: number;

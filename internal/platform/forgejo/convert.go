@@ -107,6 +107,7 @@ func convertComment(comment *forgejosdk.Comment) gitealike.CommentDTO {
 	}
 	return gitealike.CommentDTO{
 		ID:      comment.ID,
+		HTMLURL: comment.HTMLURL,
 		User:    convertUser(comment.Poster),
 		Body:    comment.Body,
 		Created: comment.Created,

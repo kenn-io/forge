@@ -280,6 +280,7 @@ type MREvent struct {
 	MetadataJSON       string
 	CreatedAt          time.Time
 	DedupeKey          string
+	DirectURL          string
 	// ThreadID groups root comments and replies that belong to the same
 	// provider conversation. GitLab calls this a discussion ID.
 	ThreadID     *string
@@ -406,6 +407,7 @@ type IssueEvent struct {
 	MetadataJSON       string
 	CreatedAt          time.Time
 	DedupeKey          string
+	DirectURL          string
 	// ThreadID groups root comments and replies that belong to the same
 	// provider conversation. GitLab calls this a discussion ID.
 	ThreadID *string

@@ -354,7 +354,12 @@ func (c *Client) ListMergeRequestEvents(
 		return nil, err
 	}
 
-	events := NormalizeMergeRequestDiscussions(normalizedRef, number, discussions)
+	events := NormalizeMergeRequestDiscussions(
+		normalizedRef,
+		number,
+		gitLabMergeRequestURL(normalizedRef, number),
+		discussions,
+	)
 	for _, commit := range commits {
 		events = append(events, NormalizeCommitEvent(normalizedRef, number, commit))
 	}
@@ -416,7 +421,12 @@ func (c *Client) ListIssueEvents(
 	if err != nil {
 		return nil, err
 	}
-	return NormalizeIssueDiscussions(normalizedRef, number, discussions), nil
+	return NormalizeIssueDiscussions(
+		normalizedRef,
+		number,
+		gitLabIssueURL(normalizedRef, number),
+		discussions,
+	), nil
 }
 
 func (c *Client) ListReleases(ctx context.Context, ref platform.RepoRef) ([]platform.Release, error) {
@@ -463,6 +473,21 @@ func (c *Client) ListTags(ctx context.Context, ref platform.RepoRef) ([]platform
 		}
 		opt.Page = resp.NextPage
 	}
+}
+
+func gitLabMergeRequestURL(ref platform.RepoRef, number int) string {
+	return gitLabItemURL(ref, "merge_requests", number)
+}
+
+func gitLabIssueURL(ref platform.RepoRef, number int) string {
+	return gitLabItemURL(ref, "issues", number)
+}
+
+func gitLabItemURL(ref platform.RepoRef, kind string, number int) string {
+	if ref.WebURL == "" || number <= 0 {
+		return ""
+	}
+	return strings.TrimRight(ref.WebURL, "/") + "/-/" + kind + "/" + strconv.Itoa(number)
 }
 
 func (c *Client) ListCIChecks(

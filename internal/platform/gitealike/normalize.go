@@ -190,6 +190,7 @@ func NormalizeIssueComments(
 			Author:             comment.User.UserName,
 			Body:               comment.Body,
 			CreatedAt:          comment.Created.UTC(),
+			DirectURL:          comment.HTMLURL,
 			DedupeKey: NoteDedupeKey(
 				kind, repo.Host, repo.RepoPath, "issue", number, "issue_comment",
 				strconv.FormatInt(comment.ID, 10),
@@ -222,6 +223,7 @@ func NormalizeIssueTimelineEvents(
 			Summary:            summary,
 			MetadataJSON:       metadataJSON,
 			CreatedAt:          item.Created.UTC(),
+			DirectURL:          item.HTMLURL,
 			DedupeKey: NoteDedupeKey(
 				kind, repo.Host, repo.RepoPath, "issue", number, eventType,
 				externalID,
@@ -251,6 +253,7 @@ func NormalizeMergeRequestEvents(
 			Author:             comment.User.UserName,
 			Body:               comment.Body,
 			CreatedAt:          comment.Created.UTC(),
+			DirectURL:          comment.HTMLURL,
 			DedupeKey:          NoteDedupeKey(kind, repo.Host, repo.RepoPath, "mr", number, "issue_comment", externalID),
 		})
 	}
@@ -307,6 +310,7 @@ func NormalizeMergeRequestTimelineEvents(
 			Summary:            summary,
 			MetadataJSON:       metadataJSON,
 			CreatedAt:          item.Created.UTC(),
+			DirectURL:          item.HTMLURL,
 			DedupeKey: NoteDedupeKey(
 				kind, repo.Host, repo.RepoPath, "mr", number, eventType,
 				externalID,

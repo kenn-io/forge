@@ -19,6 +19,7 @@ type timelineDetailResponse struct {
 		Author       string `json:"Author"`
 		Summary      string `json:"Summary"`
 		MetadataJSON string `json:"MetadataJSON"`
+		DirectURL    string `json:"DirectURL"`
 	} `json:"events"`
 }
 
@@ -66,6 +67,46 @@ func TestE2E_DetailTimelineReturnsAssignmentEvents(t *testing.T) {
 	assert.JSONEq(`{"assignee":"bob"}`, issueDetail.Events[0].MetadataJSON)
 }
 
+func TestE2E_DetailTimelineReturnsCommentDirectURLs(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	srv, database := setupTestServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	mrID, issueID := seedAssignmentTimelineItems(t, database)
+
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     ptrInt64(101),
+		EventType:      "issue_comment",
+		Author:         "wesm",
+		Body:           "PR comment",
+		CreatedAt:      time.Now().UTC(),
+		DedupeKey:      "timeline-pr-comment",
+		DirectURL:      "https://github.com/acme/widget/pull/1#issuecomment-101",
+	}}))
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: ptrInt64(202),
+		EventType:  "issue_comment",
+		Author:     "alice",
+		Body:       "Issue comment",
+		CreatedAt:  time.Now().UTC(),
+		DedupeKey:  "timeline-issue-comment",
+		DirectURL:  "https://github.com/acme/widget/issues/5#issuecomment-202",
+	}}))
+
+	prDetail := getTimelineDetail(t, ts, "/api/v1/pulls/github/acme/widget/1")
+	require.Len(prDetail.Events, 1)
+	assert.Equal("https://github.com/acme/widget/pull/1#issuecomment-101", prDetail.Events[0].DirectURL)
+
+	issueDetail := getTimelineDetail(t, ts, "/api/v1/issues/github/acme/widget/5")
+	require.Len(issueDetail.Events, 1)
+	assert.Equal("https://github.com/acme/widget/issues/5#issuecomment-202", issueDetail.Events[0].DirectURL)
+}
+
 func seedAssignmentTimelineItems(t *testing.T, database *db.DB) (int64, int64) {
 	t.Helper()
 	ctx := t.Context()
@@ -106,6 +147,11 @@ func seedAssignmentTimelineItems(t *testing.T, database *db.DB) (int64, int64) {
 	require.NoError(t, err)
 
 	return mrID, issueID
+}
+
+//go:fix inline
+func ptrInt64(v int64) *int64 {
+	return new(v)
 }
 
 func getTimelineDetail(

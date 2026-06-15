@@ -91,6 +91,7 @@ type mergeRequestEventResponse struct {
 	MetadataJSON       string
 	CreatedAt          time.Time
 	DedupeKey          string
+	DirectURL          string
 	ThreadID           *string
 	Resolvable         bool
 	Resolved           bool

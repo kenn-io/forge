@@ -349,7 +349,7 @@ func TestNormalizeNotesKeepsAssignmentSystemNotes(t *testing.T) {
 		{ID: 6, Body: "reopened", System: true, Author: gitlab.NoteAuthor{Username: "opener"}, CreatedAt: &createdAt},
 	}
 
-	mrEvents := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, notes)
+	mrEvents := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, "", notes)
 	require.Len(mrEvents, 5)
 	assert.Equal("issue_comment", mrEvents[0].EventType)
 	assert.Equal("visible", mrEvents[0].Body)
@@ -368,7 +368,7 @@ func TestNormalizeNotesKeepsAssignmentSystemNotes(t *testing.T) {
 	assert.Equal("reopened", mrEvents[4].Summary)
 	assert.Equal("opener", mrEvents[4].Author)
 
-	issueEvents := NormalizeIssueNotes(testGitLabRepoRef(), 5, notes)
+	issueEvents := NormalizeIssueNotes(testGitLabRepoRef(), 5, "", notes)
 	require.Len(issueEvents, 2)
 	assert.Equal("issue_comment", issueEvents[0].EventType)
 	assert.Equal("visible", issueEvents[0].Body)
@@ -376,6 +376,33 @@ func TestNormalizeNotesKeepsAssignmentSystemNotes(t *testing.T) {
 	assert.Equal("assigned", issueEvents[1].EventType)
 	assert.Equal("assigned to @bob", issueEvents[1].Summary)
 	assert.Equal("gitlab:gitlab.example.com:group/project:issue:5:system_note:2", issueEvents[1].DedupeKey)
+}
+
+func TestNormalizeNotesBuildsDirectNoteURLFromParentURL(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	createdAt := time.Date(2026, 4, 4, 10, 0, 0, 0, time.UTC)
+	notes := []*gitlab.Note{
+		{ID: 101, Body: "visible", System: false, Author: gitlab.NoteAuthor{Username: "alice"}, CreatedAt: &createdAt},
+	}
+
+	mrEvents := NormalizeMergeRequestNotes(
+		testGitLabRepoRef(),
+		7,
+		"https://gitlab.example.com/group/project/-/merge_requests/7",
+		notes,
+	)
+	require.Len(mrEvents, 1)
+	assert.Equal("https://gitlab.example.com/group/project/-/merge_requests/7#note_101", mrEvents[0].DirectURL)
+
+	issueEvents := NormalizeIssueNotes(
+		testGitLabRepoRef(),
+		5,
+		"https://gitlab.example.com/group/project/-/issues/5",
+		notes,
+	)
+	require.Len(issueEvents, 1)
+	assert.Equal("https://gitlab.example.com/group/project/-/issues/5#note_101", issueEvents[0].DirectURL)
 }
 
 func TestNormalizeMergeRequestNotesDropsPositionedDiffNotes(t *testing.T) {
@@ -401,7 +428,7 @@ func TestNormalizeMergeRequestNotesDropsPositionedDiffNotes(t *testing.T) {
 		},
 	}
 
-	events := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, notes)
+	events := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, "", notes)
 
 	require.Len(events, 1)
 	assert.Equal("issue_comment", events[0].EventType)
@@ -419,14 +446,14 @@ func TestNormalizeNotesDedupeKeyIncludesRepositoryAndParent(t *testing.T) {
 	otherRepo.PlatformID = 43
 	otherRepo.RepoPath = "other/project"
 
-	firstMR := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, notes)
-	secondMR := NormalizeMergeRequestNotes(otherRepo, 7, notes)
+	firstMR := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, "", notes)
+	secondMR := NormalizeMergeRequestNotes(otherRepo, 7, "", notes)
 	require.Len(firstMR, 1)
 	require.Len(secondMR, 1)
 	assert.NotEqual(firstMR[0].DedupeKey, secondMR[0].DedupeKey)
 
-	firstIssue := NormalizeIssueNotes(testGitLabRepoRef(), 5, notes)
-	secondIssue := NormalizeIssueNotes(testGitLabRepoRef(), 6, notes)
+	firstIssue := NormalizeIssueNotes(testGitLabRepoRef(), 5, "", notes)
+	secondIssue := NormalizeIssueNotes(testGitLabRepoRef(), 6, "", notes)
 	require.Len(firstIssue, 1)
 	require.Len(secondIssue, 1)
 	assert.NotEqual(firstIssue[0].DedupeKey, secondIssue[0].DedupeKey)
@@ -586,7 +613,7 @@ func TestNormalizeMergeRequestDiscussions(t *testing.T) {
 		},
 	}
 
-	events := NormalizeMergeRequestDiscussions(repo, 7, discussions)
+	events := NormalizeMergeRequestDiscussions(repo, 7, "", discussions)
 
 	// Positioned diff notes are synced through review-thread reads, not timeline comments.
 	assert.Len(events, 3)
@@ -606,6 +633,43 @@ func TestNormalizeMergeRequestDiscussions(t *testing.T) {
 	assert.Equal("disc-def456", events[2].ThreadID)
 	assert.Equal("commenter", events[2].Author)
 	assert.False(events[2].Resolvable)
+}
+
+func TestNormalizeDiscussionsBuildsDirectNoteURLFromParentURL(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	createdAt := time.Date(2026, 4, 4, 10, 0, 0, 0, time.UTC)
+	discussions := []*gitlab.Discussion{
+		{
+			ID: "disc-abc123",
+			Notes: []*gitlab.Note{
+				{
+					ID:        2001,
+					Body:      "thread note",
+					Author:    gitlab.NoteAuthor{Username: "author"},
+					CreatedAt: &createdAt,
+				},
+			},
+		},
+	}
+
+	mrEvents := NormalizeMergeRequestDiscussions(
+		testGitLabRepoRef(),
+		7,
+		"https://gitlab.example.com/group/project/-/merge_requests/7",
+		discussions,
+	)
+	require.Len(mrEvents, 1)
+	assert.Equal("https://gitlab.example.com/group/project/-/merge_requests/7#note_2001", mrEvents[0].DirectURL)
+
+	issueEvents := NormalizeIssueDiscussions(
+		testGitLabRepoRef(),
+		5,
+		"https://gitlab.example.com/group/project/-/issues/5",
+		discussions,
+	)
+	require.Len(issueEvents, 1)
+	assert.Equal("https://gitlab.example.com/group/project/-/issues/5#note_2001", issueEvents[0].DirectURL)
 }
 
 func TestNormalizeIssueDiscussions(t *testing.T) {
@@ -633,7 +697,7 @@ func TestNormalizeIssueDiscussions(t *testing.T) {
 		},
 	}
 
-	events := NormalizeIssueDiscussions(repo, 10, discussions)
+	events := NormalizeIssueDiscussions(repo, 10, "", discussions)
 
 	assert.Len(events, 1)
 	assert.Equal("issue-disc-111", events[0].ThreadID)

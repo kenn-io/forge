@@ -286,6 +286,7 @@ func normalizeIssueState(state string) string {
 func NormalizeMergeRequestNotes(
 	repo platform.RepoRef,
 	mrNumber int,
+	parentURL string,
 	notes []*gitlab.Note,
 ) []platform.MergeRequestEvent {
 	events := make([]platform.MergeRequestEvent, 0, len(notes))
@@ -312,6 +313,7 @@ func NormalizeMergeRequestNotes(
 			Author:             note.Author.Username,
 			Body:               note.Body,
 			CreatedAt:          timeValue(note.CreatedAt),
+			DirectURL:          noteDirectURL(parentURL, note.ID),
 			DedupeKey:          noteDedupeKey(repo, "mr", mrNumber, "note", strconv.FormatInt(note.ID, 10)),
 		})
 	}
@@ -321,6 +323,7 @@ func NormalizeMergeRequestNotes(
 func NormalizeMergeRequestDiscussions(
 	repo platform.RepoRef,
 	mrNumber int,
+	parentURL string,
 	discussions []*gitlab.Discussion,
 ) []platform.MergeRequestEvent {
 	var events []platform.MergeRequestEvent
@@ -351,6 +354,7 @@ func NormalizeMergeRequestDiscussions(
 				Author:             noteAuthorUsername(note),
 				Body:               note.Body,
 				CreatedAt:          timeValue(note.CreatedAt),
+				DirectURL:          noteDirectURL(parentURL, note.ID),
 				DedupeKey:          noteDedupeKey(repo, "mr", mrNumber, "note", strconv.FormatInt(note.ID, 10)),
 				ThreadID:           discussion.ID,
 				PositionJSON:       serializeNotePosition(note.Position),
@@ -383,6 +387,7 @@ func serializeNotePosition(pos *gitlab.NotePosition) string {
 func NormalizeIssueNotes(
 	repo platform.RepoRef,
 	issueNumber int,
+	parentURL string,
 	notes []*gitlab.Note,
 ) []platform.IssueEvent {
 	events := make([]platform.IssueEvent, 0, len(notes))
@@ -406,6 +411,7 @@ func NormalizeIssueNotes(
 			Author:             note.Author.Username,
 			Body:               note.Body,
 			CreatedAt:          timeValue(note.CreatedAt),
+			DirectURL:          noteDirectURL(parentURL, note.ID),
 			DedupeKey:          noteDedupeKey(repo, "issue", issueNumber, "note", strconv.FormatInt(note.ID, 10)),
 		})
 	}
@@ -415,6 +421,7 @@ func NormalizeIssueNotes(
 func NormalizeIssueDiscussions(
 	repo platform.RepoRef,
 	issueNumber int,
+	parentURL string,
 	discussions []*gitlab.Discussion,
 ) []platform.IssueEvent {
 	var events []platform.IssueEvent
@@ -435,6 +442,7 @@ func NormalizeIssueDiscussions(
 				Author:             noteAuthorUsername(note),
 				Body:               note.Body,
 				CreatedAt:          timeValue(note.CreatedAt),
+				DirectURL:          noteDirectURL(parentURL, note.ID),
 				DedupeKey:          noteDedupeKey(repo, "issue", issueNumber, "note", strconv.FormatInt(note.ID, 10)),
 				ThreadID:           discussion.ID,
 			})
@@ -467,6 +475,13 @@ func normalizeMergeRequestSystemNote(
 		CreatedAt:          timeValue(note.CreatedAt),
 		DedupeKey:          noteDedupeKey(repo, "mr", mrNumber, "system_note", externalID),
 	}, true
+}
+
+func noteDirectURL(parentURL string, noteID int64) string {
+	if parentURL == "" || noteID == 0 {
+		return ""
+	}
+	return parentURL + "#note_" + strconv.FormatInt(noteID, 10)
 }
 
 func normalizeIssueSystemNote(

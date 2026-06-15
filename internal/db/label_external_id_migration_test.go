@@ -61,8 +61,9 @@ func TestOpenClearsGitLabNameDerivedLabelExternalIDs(t *testing.T) {
 	// Rewind to the pre-cleanup schema version and reopen so migration
 	// 000031 runs against the seeded legacy rows. The migration is
 	// data-only, but later migrations are not: drop the columns that
-	// 000032 adds so the replay applies cleanly.
+	// later schema migrations add so the replay applies cleanly.
 	require.NoError(removeMergeRequestUserListColumnsForTest(d.WriteDB()))
+	require.NoError(removeEventDirectURLColumnsForTest(d.WriteDB()))
 	_, err = d.WriteDB().ExecContext(ctx, `UPDATE schema_migrations SET version = 30, dirty = 0`)
 	require.NoError(err)
 	d.Close()

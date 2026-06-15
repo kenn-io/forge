@@ -110,6 +110,7 @@ func convertComment(comment *giteasdk.Comment) gitealike.CommentDTO {
 	}
 	return gitealike.CommentDTO{
 		ID:      comment.ID,
+		HTMLURL: comment.HTMLURL,
 		User:    convertUser(comment.Poster),
 		Body:    comment.Body,
 		Created: comment.Created,
@@ -123,6 +124,7 @@ func convertTimelineEvent(comment *giteasdk.TimelineComment) gitealike.TimelineE
 	}
 	return gitealike.TimelineEventDTO{
 		ID:            comment.ID,
+		HTMLURL:       comment.HTMLURL,
 		User:          convertUser(comment.Poster),
 		Type:          comment.Type,
 		Body:          comment.Body,

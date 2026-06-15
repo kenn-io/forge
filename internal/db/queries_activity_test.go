@@ -538,6 +538,11 @@ func TestListActivity(t *testing.T) {
 	_ = prID2
 }
 
+//go:fix inline
+func ptrInt64(v int64) *int64 {
+	return new(v)
+}
+
 func insertOversizedBranchCommitRow(
 	ctx context.Context,
 	d *DB,
@@ -805,6 +810,44 @@ func TestUpsertMREventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 	require.Equal(canonical, events[0].CreatedAt)
 }
 
+func TestUpsertMREventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	prID := insertTestMR(t, d, repoID, 1, "Preserve direct URL", base)
+
+	err := d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: prID,
+		PlatformID:     ptrInt64(101),
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "first",
+		CreatedAt:      base,
+		DedupeKey:      "comment-direct-url",
+		DirectURL:      "https://github.com/alice/alpha/pull/1#issuecomment-101",
+	}})
+	require.NoError(err)
+
+	err = d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: prID,
+		PlatformID:     ptrInt64(101),
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "edited",
+		CreatedAt:      base.Add(time.Minute),
+		DedupeKey:      "comment-direct-url",
+	}})
+	require.NoError(err)
+
+	events, err := d.ListMREvents(ctx, prID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal("edited", events[0].Body)
+	require.Equal("https://github.com/alice/alpha/pull/1#issuecomment-101", events[0].DirectURL)
+}
+
 func TestUpsertIssueEventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -855,4 +898,42 @@ func TestUpsertIssueEventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 	require.NoError(err)
 	require.Len(events, 1)
 	require.Equal(canonical, events[0].CreatedAt)
+}
+
+func TestUpsertIssueEventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	issueID := insertTestIssue(t, d, repoID, 7, "Preserve issue direct URL", base)
+
+	err := d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: ptrInt64(202),
+		EventType:  "issue_comment",
+		Author:     "reporter",
+		Body:       "first",
+		CreatedAt:  base,
+		DedupeKey:  "issue-comment-direct-url",
+		DirectURL:  "https://github.com/alice/alpha/issues/7#issuecomment-202",
+	}})
+	require.NoError(err)
+
+	err = d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: ptrInt64(202),
+		EventType:  "issue_comment",
+		Author:     "reporter",
+		Body:       "edited",
+		CreatedAt:  base.Add(time.Minute),
+		DedupeKey:  "issue-comment-direct-url",
+	}})
+	require.NoError(err)
+
+	events, err := d.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal("edited", events[0].Body)
+	require.Equal("https://github.com/alice/alpha/issues/7#issuecomment-202", events[0].DirectURL)
 }

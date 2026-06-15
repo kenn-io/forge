@@ -3,6 +3,7 @@
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import CopyIcon from "@lucide/svelte/icons/copy";
+  import LinkIcon from "@lucide/svelte/icons/link";
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import XIcon from "@lucide/svelte/icons/x";
@@ -821,6 +822,10 @@
     });
   }
 
+  function directLinkCopyID(event: PREvent | IssueEvent): string {
+    return `direct-link-${event.ID}`;
+  }
+
   function inlineReplyButtonHtml(entry: TimelineEntry): string {
     const targetID = replyTargetID(entry);
     const expanded = targetID !== null && replyingThreadID === targetID;
@@ -924,6 +929,22 @@
               <PencilIcon size={14} />
             </button>
           {/if}
+          {#if event.DirectURL}
+            {@const directCopyID = directLinkCopyID(event)}
+            <button
+              class="event-action-btn"
+              class:copied={copiedId === directCopyID}
+              onclick={() => copyText(directCopyID, event.DirectURL)}
+              title={copiedId === directCopyID ? "Copied!" : "Copy direct link"}
+              aria-label={copiedId === directCopyID ? "Copied" : "Copy direct link"}
+            >
+              {#if copiedId === directCopyID}
+                <CheckIcon size={14} />
+              {:else}
+                <LinkIcon size={14} />
+              {/if}
+            </button>
+          {/if}
           <button
             class="event-action-btn"
             class:copied={copiedId === String(event.ID)}
@@ -1003,6 +1024,22 @@
                   disabled={savingEditId !== null}
                 >
                   <PencilIcon size={14} />
+                </button>
+              {/if}
+              {#if event.DirectURL}
+                {@const directCopyID = directLinkCopyID(event)}
+                <button
+                  class="event-action-btn"
+                  class:copied={copiedId === directCopyID}
+                  onclick={() => copyText(directCopyID, event.DirectURL)}
+                  title={copiedId === directCopyID ? "Copied!" : "Copy direct link"}
+                  aria-label={copiedId === directCopyID ? "Copied" : "Copy direct link"}
+                >
+                  {#if copiedId === directCopyID}
+                    <CheckIcon size={14} />
+                  {:else}
+                    <LinkIcon size={14} />
+                  {/if}
                 </button>
               {/if}
               <button

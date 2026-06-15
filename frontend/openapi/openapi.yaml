@@ -1634,6 +1634,8 @@ components:
           type: string
         DedupeKey:
           type: string
+        DirectURL:
+          type: string
         EventType:
           type: string
         ID:
@@ -1669,6 +1671,7 @@ components:
         - MetadataJSON
         - CreatedAt
         - DedupeKey
+        - DirectURL
         - ThreadID
       type: object
     IssueResponse:
@@ -2355,6 +2358,8 @@ components:
           type: string
         DedupeKey:
           type: string
+        DirectURL:
+          type: string
         EventType:
           type: string
         ID:
@@ -2396,6 +2401,7 @@ components:
         - MetadataJSON
         - CreatedAt
         - DedupeKey
+        - DirectURL
         - ThreadID
         - Resolvable
         - Resolved

@@ -631,6 +631,7 @@ func mergeRequestEventResponseFromDB(event db.MREvent) mergeRequestEventResponse
 		MetadataJSON:       event.MetadataJSON,
 		CreatedAt:          event.CreatedAt,
 		DedupeKey:          event.DedupeKey,
+		DirectURL:          event.DirectURL,
 		ThreadID:           event.ThreadID,
 		Resolvable:         event.Resolvable,
 		Resolved:           event.Resolved,

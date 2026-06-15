@@ -353,6 +353,38 @@ func TestNormalizeStatusesKeepsQueuedActionRerunAsLatest(t *testing.T) {
 	assert.Equal("https://gitea/actions/11", checks[0].URL)
 }
 
+func TestNormalizeEventsPreserveCommentHTMLURL(t *testing.T) {
+	assert := Assert.New(t)
+	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
+	repo := platform.RepoRef{
+		Platform: platform.KindGitea,
+		Host:     "gitea.com",
+		Owner:    "gitea",
+		Name:     "tea",
+		RepoPath: "gitea/tea",
+	}
+
+	mrEvents := NormalizeMergeRequestEvents(platform.KindGitea, repo, 7, []CommentDTO{{
+		ID:      123,
+		HTMLURL: "https://gitea.com/gitea/tea/pulls/7#issuecomment-123",
+		User:    UserDTO{UserName: "alice"},
+		Body:    "comment",
+		Created: base,
+	}}, nil, nil)
+	assert.Len(mrEvents, 1)
+	assert.Equal("https://gitea.com/gitea/tea/pulls/7#issuecomment-123", mrEvents[0].DirectURL)
+
+	issueEvents := NormalizeIssueComments(platform.KindForgejo, repo, 9, []CommentDTO{{
+		ID:      456,
+		HTMLURL: "https://codeberg.org/gitea/tea/issues/9#issuecomment-456",
+		User:    UserDTO{UserName: "bob"},
+		Body:    "comment",
+		Created: base,
+	}})
+	assert.Len(issueEvents, 1)
+	assert.Equal("https://codeberg.org/gitea/tea/issues/9#issuecomment-456", issueEvents[0].DirectURL)
+}
+
 func TestNormalizeIssue_ExtractsAssignees(t *testing.T) {
 	require := Require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)

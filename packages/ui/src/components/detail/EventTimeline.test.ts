@@ -4,8 +4,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-p
 import componentSource from "./EventTimeline.svelte?raw";
 import EventTimeline from "./EventTimeline.svelte";
 import { STORES_KEY } from "../../context.js";
+import { copyToClipboard } from "../../utils/clipboard.js";
 import type { DiffResult, PREvent } from "../../api/types.js";
 import type { DiffStore } from "../../stores/diff.svelte.js";
+
+vi.mock("../../utils/clipboard.js", () => ({
+  copyToClipboard: vi.fn(() => Promise.resolve(true)),
+}));
 
 const compiledCss = compile(componentSource, { filename: "EventTimeline.svelte" }).css?.code ?? "";
 
@@ -50,6 +55,10 @@ afterAll(() => {
       delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync;
     }
   }
+});
+
+afterEach(() => {
+  vi.mocked(copyToClipboard).mockClear();
 });
 
 function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
@@ -1340,6 +1349,43 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.queryByRole("button", { name: "Edit comment" })).toBeNull();
+  });
+
+  it("copies a direct comment link when the event exposes one", async () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            Body: "Original comment",
+            DirectURL: "https://github.com/acme/widget/pull/7#issuecomment-44",
+            EventType: "issue_comment",
+            PlatformID: 44,
+          }),
+        ],
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Copy direct link" }));
+
+    await waitFor(() => {
+      expect(copyToClipboard).toHaveBeenCalledWith("https://github.com/acme/widget/pull/7#issuecomment-44");
+    });
+  });
+
+  it("does not render a direct link action for comments without a direct URL", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            Body: "Original comment",
+            EventType: "issue_comment",
+            PlatformID: 44,
+          }),
+        ],
+      },
+    });
+
+    expect(screen.queryByRole("button", { name: "Copy direct link" })).toBeNull();
   });
 
   it("shows review thread diff context and exposes a jump action", async () => {

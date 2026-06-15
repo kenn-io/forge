@@ -148,11 +148,14 @@ describe("threaded activity collapse", () => {
     await waitFor(() => expect(document.querySelector(".activity-detail")).not.toBeNull());
     expect(document.querySelector(".activity-pane")).not.toBeNull();
 
-    // In the narrow pane the control is icon-only: the button keeps its
-    // accessible name while the compact feed class hides the text label
-    // (`.activity-feed--compact .collapse-all-label { display: none }`).
+    // Opening the side pane switches the feed into compact mode, where the
+    // control keeps its accessible name (CSS hides only the text label —
+    // that visual hiding is asserted in the browser lane, see
+    // tests/e2e/activity-collapse-compact-label.spec.ts). Here we verify the
+    // behavior jsdom can see: compact mode is active and the control still
+    // collapses the threads.
+    expect(document.querySelector(".activity-feed--compact")).not.toBeNull();
     const collapseBtn = screen.getByRole("button", { name: "Collapse all" });
-    expect(document.querySelector(".activity-feed--compact .collapse-all-label")).not.toBeNull();
 
     await fireEvent.click(collapseBtn);
     await waitFor(() => expect(eventRows()).toHaveLength(0));

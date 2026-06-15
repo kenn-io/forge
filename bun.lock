@@ -4,7 +4,7 @@
   "workspaces": {
     "": {
       "devDependencies": {
-        "@sveltejs/mcp": "0.1.22",
+        "@sveltejs/mcp": "0.1.24",
         "svelte-check": "4.6.0",
         "vite-plus": "0.1.24",
       },
@@ -378,7 +378,7 @@
 
     "@sveltejs/load-config": ["@sveltejs/load-config@0.1.1", "", {}, "sha512-BXXm+VOH/9X4N7Dd1iZ2MqA1h7M+9i2noI8QYuLDY8QcN2WHYn7D/VK/+IJNfcAmRw7ACNJ538UT9GXIhnBTiA=="],
 
-    "@sveltejs/mcp": ["@sveltejs/mcp@0.1.22", "", { "dependencies": { "eslint": "^9.36.0", "sade": "1.8.1", "tmcp": "^1.19.0" }, "bin": { "svelte-mcp": "dist/index.mjs" } }, "sha512-hehoPCNCDYbjCF8MGxDlnlfex0uKwrKNzRri0+M/bgg3xlnlvmr8wT2J16xpyDEGQI60jJOkHkwMWNBgNeKeFQ=="],
+    "@sveltejs/mcp": ["@sveltejs/mcp@0.1.24", "", { "dependencies": { "eslint": "^9.36.0", "sade": "1.8.1", "tmcp": "^1.19.3" }, "bin": { "svelte-mcp": "dist/index.mjs" } }, "sha512-HkM8zSABWtRBfWHHpgqi2jQfI/5yVW69zd2+CXD/ViV3BHBL74IMFF8JCg86HqXICMnHeSfyUmChij/BeC/Xgg=="],
 
     "@sveltejs/vite-plugin-svelte": ["@sveltejs/vite-plugin-svelte@7.1.2", "", { "dependencies": { "deepmerge": "^4.3.1", "magic-string": "^0.30.21", "obug": "^2.1.0", "vitefu": "^1.1.2" }, "peerDependencies": { "svelte": "^5.46.4", "vite": "^8.0.0-beta.7 || ^8.0.0" } }, "sha512-DrUBA2UXRfDmUX/ZTiEopd3X40yavsJF1FX2RygcuIScHL7o5YX1fMvoYnDhjeJQC4weCOklirpNWlcb2NiSeA=="],
 

@@ -175,6 +175,7 @@ app_id = 4242
 private_key_path = "app.pem"
 installation_id = 11
 installation_account = "kenn-io"
+repository_selection = "all"
 `), 0o644))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -482,6 +483,7 @@ app_id = 4242
 private_key_path = "app.pem"
 installation_id = 11
 installation_account = "mariusvniekerk"
+repository_selection = "all"
 `), 0o644))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -644,6 +646,7 @@ app_id = 4242
 private_key_path = "app.pem"
 installation_id = 11
 installation_account = "kenn-io"
+repository_selection = "all"
 `), 0o644))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)

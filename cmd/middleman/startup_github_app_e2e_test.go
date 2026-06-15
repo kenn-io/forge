@@ -77,6 +77,7 @@ slug = "middleman-startup"
 private_key_path = "app.pem"
 installation_id = ` + strconv.FormatInt(installID, 10) + `
 installation_account = "kenn-io"
+repository_selection = "all"
 `
 	require.NoError(os.WriteFile(configPath, []byte(configTOML), 0o644))
 	cfg, err := config.Load(configPath)

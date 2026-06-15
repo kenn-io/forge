@@ -1053,6 +1053,7 @@ app_id = 4242
 private_key_path = "app.pem"
 installation_id = 7
 installation_account = "acme"
+repository_selection = "all"
 `)
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
@@ -1112,6 +1113,7 @@ app_id = 4242
 private_key_path = "app.pem"
 installation_id = 7
 installation_account = "acme"
+repository_selection = "all"
 `
 	loadCfg := func(t *testing.T, name, content string) (*config.Config, string) {
 		t.Helper()

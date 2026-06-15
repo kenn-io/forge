@@ -616,6 +616,43 @@ async function expectRenderedNonBlankRows(file: ReturnType<Page["locator"]>, tex
     });
 }
 
+async function expectRenderedPierreContainmentDisabled(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        return await page.locator(".diff-file .pierre-diff").evaluateAll((hosts) => {
+          for (const host of hosts) {
+            const root = host.shadowRoot;
+            const code = root?.querySelector("code");
+            if (!(root instanceof ShadowRoot) || !(code instanceof HTMLElement)) continue;
+
+            const visibleTextRows = Array.from(root.querySelectorAll("[data-content] [data-line-type]")).filter(
+              (element): element is HTMLElement => {
+                if (!(element instanceof HTMLElement)) return false;
+                const rect = element.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && (element.textContent?.trim().length ?? 0) > 0;
+              },
+            ).length;
+            if (visibleTextRows === 0) continue;
+
+            const placeholderProbe = document.createElement("div");
+            placeholderProbe.dataset.placeholder = "";
+            root.append(placeholderProbe);
+            const containment = {
+              code: getComputedStyle(code).contain,
+              placeholder: getComputedStyle(placeholderProbe).contain,
+            };
+            placeholderProbe.remove();
+            return containment;
+          }
+          return null;
+        });
+      },
+      { timeout: 10_000 },
+    )
+    .toEqual({ code: "none", placeholder: "none" });
+}
+
 async function scrollDiffAreaUntilPierreText(
   page: Page,
   diffArea: Locator,
@@ -1598,6 +1635,7 @@ test.describe("diff view", () => {
         timeout: 10_000,
       })
       .toBe(0);
+    await expectRenderedPierreContainmentDisabled(page);
   });
 
   test("rich preview toggle renders markdown and browser images", async ({ page }) => {

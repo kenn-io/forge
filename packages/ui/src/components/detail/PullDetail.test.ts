@@ -686,4 +686,31 @@ describe("PullDetail approvals", () => {
     expect(button.disabled).toBe(true);
     expect(button.title).toBe("No user credential for writes on github.com");
   });
+
+  it("opens the merge modal in deferred mode when CI is still pending", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      {
+        name: "build",
+        status: "in_progress",
+        conclusion: "",
+        url: "https://example.com/build",
+        app: "GitHub Actions",
+      },
+    ]);
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+
+    expect(screen.getByRole("heading", { name: "Merge Pull Request" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+  });
 });

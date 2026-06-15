@@ -149,4 +149,53 @@ describe("MergeModal head pinning", () => {
     expect(onheadconflict).not.toHaveBeenCalled();
     expect(onclose).not.toHaveBeenCalled();
   });
+
+  it("waits for checks that were pending at confirmation before merging", async () => {
+    vi.useFakeTimers();
+    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
+    const onrefreshci = vi.fn(async () => undefined);
+    const pendingChecks = JSON.stringify([
+      {
+        name: "build",
+        status: "in_progress",
+        conclusion: "",
+        url: "https://example.com/build",
+        app: "GitHub Actions",
+      },
+    ]);
+    const passingChecks = JSON.stringify([
+      {
+        name: "build",
+        status: "completed",
+        conclusion: "success",
+        url: "https://example.com/build",
+        app: "GitHub Actions",
+      },
+    ]);
+    const { rerender } = renderModal(post, {
+      deferUntilChecksPass: true,
+      checksJSON: pendingChecks,
+      onrefreshci,
+      ciPollIntervalMs: 1_000,
+    });
+
+    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".modal-footer button" }));
+
+    expect(post).not.toHaveBeenCalled();
+    expect(screen.getByText("Waiting for 1 pending check to pass.")).toBeTruthy();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await waitFor(() => expect(onrefreshci).toHaveBeenCalledTimes(1));
+    await rerender({
+      ...baseProps,
+      deferUntilChecksPass: true,
+      checksJSON: passingChecks,
+      onrefreshci,
+      ciPollIntervalMs: 1_000,
+    });
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    const [, init] = post.mock.calls[0];
+    expect(init.body.method).toBe("squash");
+  });
 });

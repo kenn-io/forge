@@ -2036,6 +2036,14 @@
           allowRebase={repoSettings.allowRebase}
           expectedHeadSha={detailHeadSha}
           requireHeadPin={capabilities.mutation_head_binding}
+          deferUntilChecksPass={ciChecksHavePending(p.CIChecksJSON)}
+          checksJSON={p.CIChecksJSON}
+          onrefreshci={() => detailStore.refreshPendingCI(owner, name, number, {
+            provider,
+            platformHost,
+            repoPath,
+            workflowApprovalSync,
+          })}
           onheadconflict={handleHeadConflict}
           onclose={() => { showMergeModal = false; }}
           onmerged={() => {

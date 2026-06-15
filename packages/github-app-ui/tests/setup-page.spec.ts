@@ -13,6 +13,7 @@ import { expect, test } from "@playwright/test";
 // level.
 
 const distDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../dist");
+const setupPath = "/setup/test-token/";
 
 const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -32,7 +33,7 @@ function startFakeFlowServer(opts: { flowGone?: boolean }): Promise<FakeFlow> {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    if (url.pathname === "/flow.json") {
+    if (url.pathname === `${setupPath}flow.json`) {
       if (opts.flowGone) {
         res.writeHead(404).end("no app creation in progress");
         return;
@@ -65,10 +66,15 @@ function startFakeFlowServer(opts: { flowGone?: boolean }): Promise<FakeFlow> {
       return;
     }
     if (url.pathname.startsWith("/callback/")) {
-      res.writeHead(302, { Location: "/?step=done" }).end();
+      res.writeHead(302, { Location: `${setupPath}?step=done` }).end();
       return;
     }
-    const file = path.join(distDir, url.pathname === "/" ? "index.html" : url.pathname);
+    if (!url.pathname.startsWith(setupPath)) {
+      res.writeHead(404).end("not found");
+      return;
+    }
+    const assetPath = url.pathname.slice(setupPath.length);
+    const file = path.join(distDir, assetPath === "" ? "index.html" : assetPath);
     if (!file.startsWith(distDir) || !existsSync(file)) {
       res.writeHead(404).end("not found");
       return;
@@ -82,7 +88,7 @@ function startFakeFlowServer(opts: { flowGone?: boolean }): Promise<FakeFlow> {
     server.listen(0, "127.0.0.1", () => {
       resolve({
         server,
-        base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+        base: `http://127.0.0.1:${(server.address() as AddressInfo).port}${setupPath}`,
         manifestPosts,
       });
     });
@@ -92,7 +98,7 @@ function startFakeFlowServer(opts: { flowGone?: boolean }): Promise<FakeFlow> {
 test("create step renders the flow and hands the manifest to GitHub", async ({ page }) => {
   const fake = await startFakeFlowServer({});
   try {
-    await page.goto(fake.base + "/");
+    await page.goto(fake.base);
 
     await expect(page.getByRole("heading", { name: "Create the GitHub App for middleman" })).toBeVisible();
     await expect(page.getByText("middleman-pw")).toBeVisible();
@@ -118,7 +124,7 @@ test("create step renders the flow and hands the manifest to GitHub", async ({ p
 test("create step auto-continues without a click", async ({ page }) => {
   const fake = await startFakeFlowServer({});
   try {
-    await page.goto(fake.base + "/");
+    await page.goto(fake.base);
     // No interaction: the countdown submits the manifest by itself.
     await expect(page).toHaveURL(/step=done/, { timeout: 10_000 });
     expect(fake.manifestPosts).toHaveLength(1);
@@ -130,7 +136,7 @@ test("create step auto-continues without a click", async ({ page }) => {
 test("stale setup link explains the flow is gone", async ({ page }) => {
   const fake = await startFakeFlowServer({ flowGone: true });
   try {
-    await page.goto(fake.base + "/");
+    await page.goto(fake.base);
     await expect(page.getByRole("heading", { name: "This setup link is no longer active" })).toBeVisible();
     expect(fake.manifestPosts).toHaveLength(0);
   } finally {

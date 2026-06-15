@@ -131,13 +131,14 @@ type manifestFlowOptions struct {
 }
 
 // flowServer is the loopback HTTP server backing the browser side of
-// app creation. It serves the embedded Svelte setup page, exposes the
-// manifest hand-off contract at /flow.json, and receives GitHub's
-// post-creation redirect. It outlives the manifest exchange so the
-// browser can still load the page's assets for the "done" view while
-// the terminal continues with the install step.
+// app creation. It serves the embedded Svelte setup page and manifest
+// hand-off contract under an unguessable setup path, and receives
+// GitHub's post-creation redirect. It outlives the manifest exchange so
+// the browser can still load the page's assets for the "done" view
+// while the terminal continues with the install step.
 type flowServer struct {
 	localBase    string
+	setupPath    string
 	callbackPath string
 	state        string
 	listener     net.Listener
@@ -184,6 +185,11 @@ func newFlowServer(stdout io.Writer) (*flowServer, error) {
 		_ = listener.Close()
 		return nil, err
 	}
+	setupToken, err := randomToken()
+	if err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
 	assets, err := ui.Assets()
 	if err != nil {
 		_ = listener.Close()
@@ -198,8 +204,9 @@ func newFlowServer(stdout io.Writer) (*flowServer, error) {
 
 	fs := &flowServer{
 		localBase: "http://" + listener.Addr().String(),
-		// The callback path is itself unguessable, so a forged request
-		// cannot hit the handler even if the state echo were dropped.
+		setupPath: "/setup/" + setupToken + "/",
+		// The callback path is itself unguessable, and the handler also
+		// requires GitHub to echo the expected state.
 		callbackPath: "/callback/" + state,
 		state:        state,
 		listener:     listener,
@@ -209,16 +216,16 @@ func newFlowServer(stdout io.Writer) (*flowServer, error) {
 
 	mux := http.NewServeMux()
 	if hasBuiltApp {
-		mux.Handle("GET /", http.FileServerFS(assets))
+		mux.Handle("GET "+fs.setupPath, http.StripPrefix(fs.setupPath, http.FileServerFS(assets)))
 	} else {
 		// Without the embedded page the flow is a dead end in the
 		// browser; explain that instead of serving a stub directory.
-		mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("GET "+fs.setupPath, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			fmt.Fprint(w, missingUIPage)
 		})
 	}
-	mux.HandleFunc("GET /flow.json", fs.handleFlowJSON)
+	mux.HandleFunc("GET "+fs.flowJSONPath(), fs.handleFlowJSON)
 	mux.HandleFunc("GET "+fs.callbackPath, fs.handleCallback)
 	fs.srv = &http.Server{Handler: mux}
 	go func() {
@@ -230,6 +237,14 @@ func newFlowServer(stdout io.Writer) (*flowServer, error) {
 		}
 	}()
 	return fs, nil
+}
+
+func (f *flowServer) setupURL() string {
+	return f.localBase + f.setupPath
+}
+
+func (f *flowServer) flowJSONPath() string {
+	return f.setupPath + "flow.json"
 }
 
 func (f *flowServer) Close() {
@@ -270,8 +285,7 @@ func (f *flowServer) handleFlowJSON(w http.ResponseWriter, r *http.Request) {
 
 func (f *flowServer) handleCallback(w http.ResponseWriter, r *http.Request) {
 	gotState := r.URL.Query().Get("state")
-	if gotState != "" &&
-		subtle.ConstantTimeCompare([]byte(gotState), []byte(f.state)) != 1 {
+	if gotState == "" || subtle.ConstantTimeCompare([]byte(gotState), []byte(f.state)) != 1 {
 		http.Error(w, "state mismatch", http.StatusBadRequest)
 		return
 	}
@@ -289,7 +303,7 @@ func (f *flowServer) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	// Hand the browser to the setup page's success view; the code
 	// exchange continues in the terminal.
-	http.Redirect(w, r, "/?step=done", http.StatusFound)
+	http.Redirect(w, r, f.setupURL()+"?step=done", http.StatusFound)
 }
 
 // runManifestFlow points the user's browser at the setup page, which
@@ -317,10 +331,10 @@ func (env *appEnv) runManifestFlow(
 
 	fmt.Fprintf(env.stdout,
 		"Open this page to create the app (it hands a prepared manifest to GitHub):\n  %s\n",
-		flow.localBase,
+		flow.setupURL(),
 	)
 	if opts.open {
-		if err := env.openBrowser(flow.localBase); err != nil {
+		if err := env.openBrowser(flow.setupURL()); err != nil {
 			fmt.Fprintf(env.stdout, "could not open browser: %v\n", err)
 		}
 	}

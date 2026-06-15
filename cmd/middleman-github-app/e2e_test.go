@@ -955,7 +955,16 @@ func TestCreateNoBrowserPrintsManifestURL(t *testing.T) {
 	go func() {
 		deadline := time.Now().Add(5 * time.Second)
 		for {
-			if m := regexp.MustCompile(`http://127\.0\.0\.1:\d+`).FindString(out.String()); m != "" {
+			if m := regexp.MustCompile(`http://127\.0\.0\.1:\d+/\S+`).FindString(out.String()); m != "" {
+				u, err := url.Parse(m)
+				if err != nil {
+					done <- err
+					return
+				}
+				if u.Path == "/" {
+					done <- fmt.Errorf("manifest setup URL must include an unguessable path: %s", m)
+					return
+				}
 				done <- submitManifestForm(m)
 				return
 			}

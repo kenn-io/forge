@@ -13,9 +13,9 @@ import (
 )
 
 // TestFlowServerServesEmbeddedAssetsAndFlowContract pins the loopback
-// server's browser surface: embedded UI assets are reachable at the
-// root, and /flow.json is the manifest hand-off contract that only
-// exists once a create flow has been prepared.
+// server's browser surface: the setup page and flow contract are only
+// reachable through the per-flow setup URL, and the hand-off contract
+// only exists once a create flow has been prepared.
 func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -29,6 +29,11 @@ func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	// explicit "rebuild with make build" explanation when only the
 	// committed stub is present (plain go test / go build).
 	resp, err := http.Get(flow.localBase + "/")
+	require.NoError(err)
+	_ = resp.Body.Close()
+	assert.Equal(http.StatusNotFound, resp.StatusCode)
+
+	resp, err = http.Get(flow.setupURL())
 	require.NoError(err)
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
@@ -47,8 +52,18 @@ func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusNotFound, resp.StatusCode)
 
+	resp, err = http.Get(flow.setupURL() + "flow.json")
+	require.NoError(err)
+	_ = resp.Body.Close()
+	assert.Equal(http.StatusNotFound, resp.StatusCode)
+
 	flow.setFlow("https://example.test/settings/apps/new?state=s", `{"name":"x"}`, "x", "github.com")
 	resp, err = http.Get(flow.localBase + "/flow.json")
+	require.NoError(err)
+	_ = resp.Body.Close()
+	assert.Equal(http.StatusNotFound, resp.StatusCode)
+
+	resp, err = http.Get(flow.setupURL() + "flow.json")
 	require.NoError(err)
 	defer resp.Body.Close()
 	assert.Equal(http.StatusOK, resp.StatusCode)
@@ -57,6 +72,11 @@ func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	// A callback with a wrong state must be rejected, and a good one
 	// must land the browser on the setup page's done view.
 	resp, err = http.Get(flow.localBase + flow.callbackPath + "?code=c&state=wrong")
+	require.NoError(err)
+	_ = resp.Body.Close()
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+
+	resp, err = http.Get(flow.localBase + flow.callbackPath + "?code=c")
 	require.NoError(err)
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusBadRequest, resp.StatusCode)
@@ -70,13 +90,13 @@ func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	require.NoError(err)
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusFound, resp.StatusCode)
-	assert.Equal("/?step=done", resp.Header.Get("Location"))
+	assert.Equal(flow.setupURL()+"?step=done", resp.Header.Get("Location"))
 	assert.Equal("c", <-flow.codeCh)
 
 	// Once the callback consumed the flow, re-serving the manifest
 	// would let a refreshed create tab auto-submit again and register
 	// a second app nothing records.
-	resp, err = http.Get(flow.localBase + "/flow.json")
+	resp, err = http.Get(flow.setupURL() + "flow.json")
 	require.NoError(err)
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusNotFound, resp.StatusCode,

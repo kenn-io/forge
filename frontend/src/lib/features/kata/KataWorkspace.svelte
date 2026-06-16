@@ -114,6 +114,9 @@
       daemonInfos.find((daemon) => daemon.default)?.id ??
       daemonInfos[0]?.id,
   );
+  const listStatusFilter = $derived<KataTaskSearchFilters["status"]>(
+    store.currentView.name === "logbook" ? "all" : store.searchFilters.status,
+  );
   const eventStream = createKataEventStreamController({
     getDaemonId: () => activeKataDaemonId,
     getLastEventID: () => store.eventCursor,
@@ -835,7 +838,7 @@
         scopedProjectName={selectedProjectName()}
         selectedIssueUID={store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null}
         loading={viewLoading}
-        statusFilter={store.searchFilters.status}
+        statusFilter={listStatusFilter}
         resetGeneration={listResetGeneration}
         navigationGeneration={navigationEpoch}
         api={store.api}

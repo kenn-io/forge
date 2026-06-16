@@ -144,6 +144,24 @@ describe("KataWorkspace", () => {
     expect(screen.getByRole("region", { name: /^Inbox\s+1$/ })).toBeTruthy();
   });
 
+  it("renders closed logbook tasks while the default status filter remains open", async () => {
+    const closedIssue = {
+      ...issue("issue-done-work", "Done work", "project-kata"),
+      status: "closed" as const,
+      closed_at: "2026-05-15T12:00:00.000Z",
+    };
+    const { api } = createWorkspaceAPI([closedIssue]);
+
+    render(KataWorkspace, { props: { api, routeViewName: "logbook" } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Logbook" })).toBeTruthy();
+      expect(screen.getByRole("combobox", { name: "Status: Open" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /Done work/ })).toBeTruthy();
+    });
+    expect(screen.queryByText("No tasks")).toBeNull();
+  });
+
   it("captures a new task into the inbox from the feature toolbar", async () => {
     const { api, createIssue } = createWorkspaceAPI();
 

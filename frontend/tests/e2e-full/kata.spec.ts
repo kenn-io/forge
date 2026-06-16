@@ -3385,6 +3385,41 @@ test("kata search filters tasks through the configured external daemon", async (
   }
 });
 
+test("kata logbook shows closed tasks with the default open status filter", async ({ page }) => {
+  const closedKataTask = issueSummary({
+    id: 34,
+    uid: "issue-logbook-closed",
+    project_id: 2,
+    project_uid: "project-kata",
+    project_name: "Kata",
+    short_id: "kat-logbook",
+    qualified_id: "Kata#kat-logbook",
+    title: "Logbook closed Kata task",
+    body: "This closed task should stay visible in Logbook.",
+    status: "closed",
+    closed_at: now,
+    owner: "Susan",
+    labels: ["work"],
+  });
+  const backend = await startKataBackend({ issues: [...issues, closedKataTask] });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=logbook`);
+
+    const taskList = page.locator(".kata-list");
+    await expect(page.getByRole("heading", { name: "Logbook" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Status: Open" })).toBeVisible();
+    await expect(taskList.getByRole("button", { name: /Logbook closed Kata task/ })).toBeVisible();
+    await expect(taskList.getByText("No tasks")).toHaveCount(0);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata status filter hides closed rows while the open reload is pending", async ({ page }) => {
   const closedKataTask = issueSummary({
     id: 33,

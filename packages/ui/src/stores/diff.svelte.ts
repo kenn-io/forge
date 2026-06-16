@@ -601,7 +601,6 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       scope.kind === "commit" ? hasCommit(scope.sha) : hasCommit(scope.fromSha) && hasCommit(scope.toSha);
     if (scopeStillExists) return;
     scope = { kind: "head" };
-    clearFilePreviewCache();
   }
 
   function startDiffLoad(): {
@@ -744,7 +743,6 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentName = "";
     currentNumber = 0;
     currentCommitSHA = "";
-    clearFilePreviewCache();
     if (workspaceScopeChanged) {
       resetDiffScopeState();
     }
@@ -754,6 +752,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       resetScopeIfMissingFromLoadedCommits();
     }
 
+    clearFilePreviewCache();
     const { diffAc, filesAc } = startDiffLoad();
 
     try {

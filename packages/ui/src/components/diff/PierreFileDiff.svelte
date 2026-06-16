@@ -19,6 +19,7 @@
     diffFileWithPatch,
     parsePierreFileDiff,
     parsePierreFileDiffWithContents,
+    pierreDiffDebugEnabled,
     pierreFileContents,
   } from "./pierre-diff.js";
   import { diffTokenizeMaxLineLength, getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
@@ -746,7 +747,7 @@
     debugPierreDiff("expand complete", {
       path: renderFile.path,
       hunkIndex,
-      rows: expandedContextDebugRows(),
+      rows: pierreDiffDebugEnabled() ? expandedContextDebugRows() : [],
     });
   }
 
@@ -764,7 +765,7 @@
         hunkIndex,
         didRender,
         fullCacheKey: fullContextFileDiff.cacheKey,
-        rows: expandedContextDebugRows(),
+        rows: pierreDiffDebugEnabled() ? expandedContextDebugRows() : [],
       });
       if (!didRender) scheduleRenderRetry();
     }

@@ -406,6 +406,80 @@ describe("createDiffStore loadDiff", () => {
     expect(store.getScope()).toEqual({ kind: "commit", sha: "sha2" });
   });
 
+  it("keeps workspace preview generation stable until refreshed diff load starts", async () => {
+    const calls: string[] = [];
+    let resolveRefreshCommits: () => void = () => {};
+    let refreshCommitsStarted: () => void = () => {};
+    const refreshCommitsStartedPromise = new Promise<void>((resolve) => {
+      refreshCommitsStarted = resolve;
+    });
+    const refreshCommitsGate = new Promise<void>((resolve) => {
+      resolveRefreshCommits = resolve;
+    });
+    const commitResponses = [
+      [
+        {
+          sha: "sha2",
+          message: "second",
+          author_name: "Alice",
+          authored_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      [
+        {
+          sha: "sha2",
+          message: "second",
+          author_name: "Alice",
+          authored_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    ];
+    const files = makeFilesResult(["src/app.go"]);
+    const diff = makeDiffResult(["src/app.go"]);
+    let store: ReturnType<typeof createDiffStore>;
+    let generationAtRefreshedFilesRequest = -1;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/workspaces/ws-1/commits")) {
+        if (commitResponses.length === 1) {
+          refreshCommitsStarted();
+          await refreshCommitsGate;
+        }
+        return Response.json({
+          commits: commitResponses.shift() ?? [],
+        });
+      }
+      if (url.includes("/workspaces/ws-1/files")) {
+        if (calls.includes("/api/v1/workspaces/ws-1/commits")) {
+          generationAtRefreshedFilesRequest = store.getFilePreviewGeneration();
+        }
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    store = createDiffStore({ client: testClient() });
+    await store.loadWorkspaceDiff("ws-1", "merge-target");
+    await store.loadCommits();
+    const generationBeforeRefresh = store.getFilePreviewGeneration();
+
+    const refresh = store.loadWorkspaceDiff("ws-1", "merge-target", false, { refreshCommits: true });
+    await refreshCommitsStartedPromise;
+
+    expect(store.getFilePreviewGeneration()).toBe(generationBeforeRefresh);
+
+    resolveRefreshCommits();
+    await refresh;
+
+    expect(generationAtRefreshedFilesRequest).toBe(generationBeforeRefresh + 1);
+    expect(store.getFilePreviewGeneration()).toBe(generationBeforeRefresh + 1);
+  });
+
   it("resets workspace commit scope when refresh removes the selected commit", async () => {
     const calls: string[] = [];
     const commitResponses = [

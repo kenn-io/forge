@@ -1902,6 +1902,7 @@ func TestSyncNotificationsSkipsNonPRIssueSubjects(t *testing.T) {
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	prNumber := 7
+	authorNumber := 9
 	syncer := NewSyncer(
 		map[string]Client{
 			"github.com": &mockClient{
@@ -1921,6 +1922,22 @@ func TestSyncNotificationsSkipsNonPRIssueSubjects(t *testing.T) {
 							SubjectTitle: "CI workflow run failed for some-branch branch",
 							ItemType:     "other",
 							Reason:       "ci_activity",
+							Unread:       true,
+							UpdatedAt:    now,
+						},
+						{
+							// "author" notifications duplicate feed activity on
+							// the user's own thread and must be skipped even when
+							// anchored to a PR.
+							ID:           "thread-author",
+							RepoOwner:    "acme",
+							RepoName:     "widget",
+							SubjectType:  "PullRequest",
+							SubjectTitle: "Your own PR",
+							WebURL:       "https://github.com/acme/widget/pull/9",
+							ItemNumber:   &authorNumber,
+							ItemType:     "pr",
+							Reason:       "author",
 							Unread:       true,
 							UpdatedAt:    now,
 						},

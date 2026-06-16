@@ -115,7 +115,8 @@ func (d *DB) ListActivity(
 			       n.web_url
 			FROM middleman_notification_items n
 			JOIN middleman_repos r ON n.repo_id = r.id
-			WHERE n.item_type IN ('pr', 'issue') AND n.item_number IS NOT NULL`
+			WHERE n.item_type IN ('pr', 'issue') AND n.item_number IS NOT NULL
+			      AND n.reason != 'author'`
 	}
 
 	query := fmt.Sprintf(`

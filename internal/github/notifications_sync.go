@@ -208,6 +208,14 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 			if (thread.ItemType != "pr" && thread.ItemType != "issue") || thread.ItemNumber == nil {
 				continue
 			}
+			// "author" notifications fire for any activity on a thread the
+			// user opened ("Your thread"); the triggering comment/review/state
+			// change is already its own row in the feed, so they are pure
+			// duplication. Drop them while keeping comment, subscribed, and
+			// the attention-requesting reasons (mention, review_requested, …).
+			if thread.Reason == "author" {
+				continue
+			}
 			notification, err := s.notificationToDB(ctx, host, repo, thread, now)
 			if err != nil {
 				return fmt.Errorf("normalize notification %s for %s page %d: %w", thread.ID, host, page, err)

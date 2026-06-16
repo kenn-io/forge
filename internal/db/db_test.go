@@ -31,6 +31,7 @@ func openDBWithMigrations(t *testing.T) *DB {
 }
 
 func TestOpenAndSchema(t *testing.T) {
+	require := require.New(t)
 	d := openDBWithMigrations(t)
 	tables := []string{
 		"middleman_repos",
@@ -52,7 +53,7 @@ func TestOpenAndSchema(t *testing.T) {
 		err := d.ReadDB().QueryRow(
 			"SELECT name FROM sqlite_master WHERE type='table' AND name=?", tbl,
 		).Scan(&name)
-		require.NoErrorf(t, err, "table %s should exist", tbl)
+		require.NoErrorf(err, "table %s should exist", tbl)
 	}
 
 	for _, column := range []string{"workspace_branch", "associated_pr_number", "terminal_backend"} {
@@ -63,8 +64,8 @@ func TestOpenAndSchema(t *testing.T) {
 			 WHERE name = ?`,
 			column,
 		).Scan(&found)
-		require.NoError(t, err)
-		require.Equal(t, column, found)
+		require.NoError(err)
+		require.Equal(column, found)
 	}
 
 	runtimeSessionColumns := map[string][]string{
@@ -86,8 +87,8 @@ func TestOpenAndSchema(t *testing.T) {
 				 WHERE name = ?`,
 				table, column,
 			).Scan(&found)
-			require.NoError(t, err)
-			require.Equal(t, column, found)
+			require.NoError(err)
+			require.Equal(column, found)
 		}
 	}
 }

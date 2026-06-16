@@ -1959,6 +1959,8 @@
     // the user is still looking at it. Navigate away even after
     // an A→B→A round trip — otherwise they'd be staring at a
     // workspace that no longer exists.
+    if (!window.location.pathname.endsWith(`/terminal/${targetId}`))
+      return;
     navigate("/workspaces");
   }
 

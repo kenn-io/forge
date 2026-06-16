@@ -174,6 +174,7 @@ test("markdown images open in an expanded overlay", async ({ page }) => {
   expect(buttonBox).not.toBeNull();
   expect(buttonBox!.x).toBeGreaterThan(imageBox!.x + imageBox!.width - 44);
   expect(buttonBox!.y).toBeLessThan(imageBox!.y + 16);
+  await page.mouse.move(1, 1);
   await expect(zoomButton).toHaveCSS("opacity", "0");
   await expect(zoomButton).toHaveCSS("pointer-events", "none");
 

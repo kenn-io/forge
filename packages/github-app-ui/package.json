@@ -9,7 +9,7 @@
     "build": "node ../../node_modules/vite-plus/bin/vp build --logLevel warn",
     "check": "cd ../.. && node node_modules/vite-plus/bin/vp run github-app-ui-package-check",
     "test:e2e": "node ../../node_modules/vite-plus/bin/vp build --logLevel warn && node node_modules/.bin/playwright test",
-    "typecheck": "cd ../.. && node node_modules/vite-plus/bin/vp check packages/github-app-ui --no-fmt --no-lint --no-error-on-unmatched-pattern --threads=1 && node node_modules/vite-plus/bin/vp run svelte-check:github-app-ui"
+    "typecheck": "cd ../.. && node node_modules/vite-plus/bin/vp run github-app-ui-package-typecheck"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",

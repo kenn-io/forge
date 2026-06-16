@@ -11,7 +11,7 @@
     "check": "cd .. && node node_modules/vite-plus/bin/vp run frontend-package-check",
     "lint": "node ../node_modules/vite-plus/bin/vp lint . --no-error-on-unmatched-pattern",
     "lint:fix": "node ../node_modules/vite-plus/bin/vp lint . --fix --no-error-on-unmatched-pattern",
-    "typecheck": "cd .. && node node_modules/vite-plus/bin/vp lint frontend '!frontend/dist/**' '!frontend/test-results/**' --no-error-on-unmatched-pattern --threads=1 && cd frontend && node ../node_modules/vite-plus/bin/vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "typecheck": "cd .. && node node_modules/vite-plus/bin/vp run frontend-package-typecheck",
     "test": "node ../node_modules/vite-plus/bin/vp test run",
     "test:e2e": "node ./scripts/run-e2e-to-file.ts",
     "test:e2e:mock": "node node_modules/.bin/playwright test --config=playwright.config.ts",

@@ -115,7 +115,7 @@
   "scripts": {
     "check": "cd ../.. && node node_modules/vite-plus/bin/vp run ui-package-check",
     "lint": "cd ../.. && node node_modules/vite-plus/bin/vp lint packages/ui --no-error-on-unmatched-pattern",
-    "typecheck": "cd ../.. && node node_modules/vite-plus/bin/vp lint packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1 && cd packages/ui && node ../../node_modules/vite-plus/bin/vp exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
+    "typecheck": "cd ../.. && node node_modules/vite-plus/bin/vp run ui-package-typecheck"
   },
   "dependencies": {
     "@lucide/svelte": "1.17.0",

@@ -36,6 +36,7 @@ export function parsePierreFileDiff(
       withRenderMetadata(
         patchedFile,
         withSyntheticPatchCacheKey(patchedFile, processPatchWithContext(patchedFile, contents)),
+        contextRenderCacheIdentity(patchedFile, "sparse", contents),
       ),
     );
   }
@@ -53,6 +54,7 @@ export function parsePierreFileDiffWithContents(
     withRenderMetadata(
       patchedFile,
       withSyntheticPatchCacheKey(patchedFile, processPatchWithContext(patchedFile, contents)),
+      contextRenderCacheIdentity(patchedFile, "full", contents),
     ),
   );
 }
@@ -134,19 +136,39 @@ function withSyntheticPatchCacheKey(file: DiffFile, meta: FileDiffMetadata | und
   };
 }
 
-function withRenderMetadata(file: DiffFile, meta: FileDiffMetadata | undefined): FileDiffMetadata | undefined {
+function withRenderMetadata(
+  file: DiffFile,
+  meta: FileDiffMetadata | undefined,
+  cacheIdentity?: string,
+): FileDiffMetadata | undefined {
   if (!meta) return meta;
   return {
     ...meta,
     cacheKey:
-      meta.cacheKey ??
-      fileContentsCacheKey(
-        file.path,
-        file.patch,
-        `${syntheticPatchFiles.has(file) ? "synthetic" : "provider"}-diff:${file.status}:${file.old_path || ""}`,
-      ),
+      cacheIdentity != null
+        ? fileContentsCacheKey(file.path, file.patch, cacheIdentity)
+        : (meta.cacheKey ??
+          fileContentsCacheKey(
+            file.path,
+            file.patch,
+            `${syntheticPatchFiles.has(file) ? "synthetic" : "provider"}-diff:${file.status}:${file.old_path || ""}`,
+          )),
     lang: meta.lang ?? getFiletypeFromFileName(file.path),
   };
+}
+
+function contextRenderCacheIdentity(
+  file: DiffFile,
+  kind: "full" | "sparse",
+  contents: { oldFile: FileContents; newFile: FileContents },
+): string {
+  return [
+    `${kind}-diff`,
+    file.status,
+    file.old_path || "",
+    contents.oldFile.cacheKey ?? "",
+    contents.newFile.cacheKey ?? "",
+  ].join(":");
 }
 
 function safePierrePatch(file: DiffFile): string {

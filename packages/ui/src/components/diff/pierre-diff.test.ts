@@ -159,6 +159,9 @@ describe("Pierre diff parsing", () => {
     expect(sparseOld.cacheKey).toBeDefined();
     expect(fullOld.cacheKey).toBeDefined();
     expect(fullOld.cacheKey).not.toBe(sparseOld.cacheKey);
+    expect(parsed?.cacheKey).toBeDefined();
+    expect(full?.cacheKey).toBeDefined();
+    expect(full?.cacheKey).not.toBe(parsed?.cacheKey);
   });
 
   it("renders partial hunk payloads whose headers keep provider line counts", () => {

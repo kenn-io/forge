@@ -20210,6 +20210,55 @@ func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) 
 	assert.Equal(shell.Key, (*getResp.JSON200.Sessions)[0].Key)
 }
 
+func TestWorkspaceRuntimeExistingSessionsAvailableWhenWorkspaceErroredE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "plain_shell",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+	shell := launchResp.JSON200
+
+	errMsg := "restart failed"
+	require.NoError(database.UpdateWorkspaceStatus(ctx, ws.Id, "error", &errMsg))
+
+	getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.NotNil(getResp.JSON200)
+	require.NotNil(getResp.JSON200.Sessions)
+	require.Len(*getResp.JSON200.Sessions, 1)
+	assert.Equal(shell.Key, (*getResp.JSON200.Sessions)[0].Key)
+	assert.Equal(string(localruntime.SessionStatusRunning), (*getResp.JSON200.Sessions)[0].Status)
+
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id, shell.Key,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+
+	relaunchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "plain_shell",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, relaunchResp.StatusCode())
+}
+
 func TestWorkspaceRuntimeLaunchMultipleAndStopOneE2E(t *testing.T) {
 	runParallelPTYE2E(t)
 

@@ -5910,7 +5910,7 @@ func (s *Server) getWorkspaceRuntime(
 	ctx context.Context,
 	input *getWorkspaceRuntimeInput,
 ) (*getWorkspaceRuntimeOutput, error) {
-	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	summary, err := s.getRuntimeWorkspace(ctx, input.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -6094,7 +6094,7 @@ func (s *Server) stopWorkspaceRuntimeSession(
 	ctx context.Context,
 	input *stopWorkspaceRuntimeSessionInput,
 ) (*struct{}, error) {
-	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	summary, err := s.getRuntimeWorkspace(ctx, input.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -6129,7 +6129,7 @@ func (s *Server) getWorkspaceRuntimeSessionAttachSpec(
 	ctx context.Context,
 	input *getWorkspaceRuntimeSessionAttachSpecInput,
 ) (*runtimeAttachSpecOutput, error) {
-	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	summary, err := s.getRuntimeWorkspace(ctx, input.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -6201,7 +6201,7 @@ func (s *Server) renameWorkspaceRuntimeSession(
 	ctx context.Context,
 	input *renameWorkspaceRuntimeSessionInput,
 ) (*workspaceRuntimeSessionOutput, error) {
-	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	summary, err := s.getRuntimeWorkspace(ctx, input.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -6269,7 +6269,7 @@ func (s *Server) renameStoredRuntimeSession(
 	return localruntime.SessionInfo{}, false, nil
 }
 
-func (s *Server) getReadyRuntimeWorkspace(
+func (s *Server) getRuntimeWorkspace(
 	ctx context.Context,
 	id string,
 ) (*db.WorkspaceSummary, error) {
@@ -6283,6 +6283,17 @@ func (s *Server) getReadyRuntimeWorkspace(
 	}
 	if summary == nil {
 		return nil, problemNotFound(CodeWorkspaceNotFound, "workspace not found", nil)
+	}
+	return summary, nil
+}
+
+func (s *Server) getReadyRuntimeWorkspace(
+	ctx context.Context,
+	id string,
+) (*db.WorkspaceSummary, error) {
+	summary, err := s.getRuntimeWorkspace(ctx, id)
+	if err != nil {
+		return nil, err
 	}
 	if summary.Status != "ready" {
 		return nil, problemConflict(CodeConflict,

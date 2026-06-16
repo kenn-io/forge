@@ -32,7 +32,7 @@ func (s *Server) handleWorkspaceRuntimeSessionTerminal(
 		"path", r.URL.Path,
 		"query", r.URL.RawQuery,
 	)
-	summary, ok := s.readyRuntimeWorkspaceForHTTP(
+	summary, ok := s.runtimeWorkspaceForHTTP(
 		w, r, r.PathValue("id"),
 	)
 	if !ok {
@@ -142,7 +142,7 @@ func (s *Server) serveRuntimeTerminal(
 	}
 }
 
-func (s *Server) readyRuntimeWorkspaceForHTTP(
+func (s *Server) runtimeWorkspaceForHTTP(
 	w http.ResponseWriter,
 	r *http.Request,
 	id string,
@@ -162,19 +162,6 @@ func (s *Server) readyRuntimeWorkspaceForHTTP(
 	}
 	if summary == nil {
 		http.Error(w, "workspace not found", http.StatusNotFound)
-		return nil, false
-	}
-	if summary.Status != "ready" {
-		logWebsocketDebug(
-			"runtime websocket rejected: workspace not ready",
-			"workspace_id", id,
-			"status", summary.Status,
-		)
-		http.Error(
-			w,
-			"workspace not ready (status: "+summary.Status+")",
-			http.StatusConflict,
-		)
 		return nil, false
 	}
 	return summary, true

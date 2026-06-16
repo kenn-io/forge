@@ -126,22 +126,20 @@ test.describe("activity feed filters", () => {
     const input = page.locator(".search-input");
     await input.fill("caching layer");
 
-    // Wait for the filtered result to render. All rows should
-    // reference "Add widget caching layer" (the only match).
-    // Use a web-first assertion on the row count: the seeded 7d
-    // feed has 14 items, so waiting for exactly the expected
-    // match count proves the search completed.
+    // Wait for the server-side search to actually apply. Notifications now
+    // sort to the top of the unfiltered feed, so a notification titled
+    // "Add widget caching layer" satisfies a first-row check before the
+    // debounced query returns; gating only on the first row would race the
+    // search and observe the still-unfiltered list. Retry until every
+    // visible row matches, which only holds once the filtered set renders.
     const rows = page.locator(".activity-row");
-    await expect(rows.first().locator(".item-title")).toContainText("caching layer", {
-      timeout: 10_000,
-    });
-
-    const count = await rows.count();
-    expect(count).toBeGreaterThan(0);
-    for (let i = 0; i < count; i++) {
-      const title = await rows.nth(i).locator(".item-title").textContent();
-      expect(title).toContain("Add widget caching layer");
-    }
+    await expect(async () => {
+      const titles = await rows.locator(".item-title").allTextContents();
+      expect(titles.length).toBeGreaterThan(0);
+      for (const title of titles) {
+        expect(title).toContain("Add widget caching layer");
+      }
+    }).toPass({ timeout: 10_000 });
   });
 
   test("combined: PRs + hide closed/merged shows only open PRs", async ({ page }) => {

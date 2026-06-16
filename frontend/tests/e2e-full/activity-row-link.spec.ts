@@ -41,7 +41,10 @@ test.describe("activity row link button", () => {
 
     const lastOpen = await captureWindowOpen(page);
 
-    const linkBtn = firstRow.locator(".link-btn");
+    // Unread notification rows carry both a "Mark seen" and an "Open
+    // activity" button (both .link-btn), so target the open affordance by
+    // its label rather than assuming one link button per row.
+    const linkBtn = firstRow.getByRole("button", { name: "Open activity in provider" });
     await expect(linkBtn).toBeVisible();
     await linkBtn.click();
 

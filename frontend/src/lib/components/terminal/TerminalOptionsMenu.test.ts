@@ -165,31 +165,13 @@ describe("TerminalOptionsMenu", () => {
     expect(currentTerminal.value.font_size).toBe(19);
   });
 
-  it("persists mode visibility from the options popover", async () => {
-    const updatedModes = {
-      ...defaultModes,
-      kata: true,
-      docs: true,
-      messages: true,
-    };
-    mockUpdateSettings.mockResolvedValue({ modes: updatedModes });
-
+  it("omits global mode visibility from the options popover", async () => {
     render(TerminalOptionsMenu);
 
     await fireEvent.click(screen.getByRole("button", { name: "Terminal options" }));
 
-    expect((screen.getByLabelText("Kata") as HTMLInputElement).checked).toBe(false);
-    expect((screen.getByLabelText("Docs") as HTMLInputElement).checked).toBe(false);
-    expect((screen.getByLabelText("Messages") as HTMLInputElement).checked).toBe(false);
-
-    await fireEvent.click(screen.getByLabelText("Kata"));
-    await fireEvent.click(screen.getByLabelText("Docs"));
-    await fireEvent.click(screen.getByLabelText("Messages"));
-    await fireEvent.click(screen.getByRole("button", { name: "Save visible modes" }));
-
-    await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({ modes: updatedModes });
-    });
-    expect(mockSetModeVisibility).toHaveBeenCalledWith(updatedModes);
+    expect(screen.queryByText("Visible modes")).toBeNull();
+    expect(screen.queryByLabelText("Kata")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save visible modes" })).toBeNull();
   });
 });

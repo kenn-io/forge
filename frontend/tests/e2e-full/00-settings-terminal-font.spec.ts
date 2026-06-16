@@ -226,7 +226,10 @@ test.describe("terminal options popover", () => {
       const initialScreenSize = await terminalScreenSizeKey(page);
 
       await page.getByRole("button", { name: "Terminal options" }).click();
-      await expect(page.getByRole("dialog", { name: "Terminal options" })).toBeVisible();
+      const terminalOptionsDialog = page.getByRole("dialog", { name: "Terminal options" });
+      await expect(terminalOptionsDialog).toBeVisible();
+      await expect(terminalOptionsDialog.getByText("Visible modes")).toHaveCount(0);
+      await expect(terminalOptionsDialog.getByRole("button", { name: "Save visible modes" })).toHaveCount(0);
       await page.getByLabel("Font size").fill("20");
       await expect.poll(() => terminalScreenSizeKey(page)).not.toBe(initialScreenSize);
 

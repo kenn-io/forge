@@ -2,7 +2,7 @@
   import type { DiffFile, FilePreview } from "../../api/types.js";
   import { getStores } from "../../context.js";
   import type { DiffViewMode } from "../../stores/diff.svelte.js";
-  import { renderMarkdownDiff } from "../../utils/markdown-diff.js";
+  import { renderMarkdownDiff, renderMarkdownSplitDiff } from "../../utils/markdown-diff.js";
   import { renderMarkdown } from "../../utils/markdown.js";
 
   interface Props {
@@ -125,10 +125,11 @@
     const repo = { provider, platformHost, owner, name, repoPath };
     const oldHtml = renderMarkdown(`${oldLines.join("\n")}\n`, repo);
     const newHtml = renderMarkdown(`${newLines.join("\n")}\n`, repo);
+    const splitHtml = mode === "split" ? renderMarkdownSplitDiff(oldHtml, newHtml) : null;
     return {
       ...(mode === "split" ? {} : { diffHtml: renderMarkdownDiff(oldHtml, newHtml) }),
-      oldHtml,
-      newHtml,
+      oldHtml: splitHtml?.beforeHtml ?? oldHtml,
+      newHtml: splitHtml?.afterHtml ?? newHtml,
     };
   }
 </script>
@@ -259,6 +260,11 @@
 
   .markdown-rich-diff__block--delete :global(*) {
     color: var(--text-primary);
+  }
+
+  .markdown-rich-diff--split :global(.markdown-diff__placeholder) {
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .markdown-rich-diff__block--delete :global(p),

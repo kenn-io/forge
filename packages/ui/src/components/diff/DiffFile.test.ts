@@ -369,8 +369,13 @@ describe("DiffFile", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Before markdown preview")).toBeTruthy();
-      expect(screen.getByLabelText("After markdown preview")).toBeTruthy();
+      const beforePreview = screen.getByLabelText("Before markdown preview");
+      const afterPreview = screen.getByLabelText("After markdown preview");
+
+      expect(beforePreview.querySelector("del")?.textContent).toBe("old");
+      expect(beforePreview.querySelector("ins")).toBeNull();
+      expect(afterPreview.querySelector("del")).toBeNull();
+      expect(afterPreview.querySelector("ins")?.textContent).toBe("new");
     });
   });
 

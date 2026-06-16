@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from "vite-plus/test";
-import { renderMarkdownDiff } from "./markdown-diff.js";
+import { renderMarkdownDiff, renderMarkdownSplitDiff } from "./markdown-diff.js";
 
 describe("renderMarkdownDiff", () => {
   it("renders changed prose as one annotated HTML document", () => {
@@ -43,5 +43,24 @@ describe("renderMarkdownDiff", () => {
 
     expect(html).toContain("<del>old-0");
     expect(html).toContain("<ins>new-0");
+  });
+
+  it("projects split diffs with placeholders to keep changed prose aligned", () => {
+    const split = renderMarkdownSplitDiff("<p>Hello old world</p>", "<p>Hello new world</p>");
+
+    expect(split.beforeHtml).toContain("<del>old</del>");
+    expect(split.beforeHtml).not.toContain("new");
+    expect(split.afterHtml).not.toContain("old");
+    expect(split.afterHtml).toContain("<ins>new</ins>");
+  });
+
+  it("projects split block additions with opposite-side placeholders", () => {
+    const split = renderMarkdownSplitDiff("<h2>Intro</h2>", "<h2>Intro</h2><p>Added note</p>");
+
+    expect(split.beforeHtml).toContain("<h2>Intro</h2>");
+    expect(split.beforeHtml).toContain(
+      '<ins class="markdown-diff__block markdown-diff__placeholder" aria-hidden="true"><p>Added note</p></ins>',
+    );
+    expect(split.afterHtml).toContain('<ins class="markdown-diff__block"><p>Added note</p></ins>');
   });
 });

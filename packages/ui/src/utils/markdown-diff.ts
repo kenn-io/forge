@@ -208,13 +208,68 @@ function tokenizeText(text: string): string[] {
   return text.match(/\s+|[^\s]+/g) ?? [];
 }
 
-export function renderMarkdownDiff(beforeHtml: string, afterHtml: string): string {
-  if (beforeHtml === afterHtml) return beforeHtml;
+function diffHTMLFragment(beforeHtml: string, afterHtml: string): HTMLElement {
   const before = parseHTMLFragment(beforeHtml);
   const after = parseHTMLFragment(afterHtml);
   const host = document.createElement("div");
   host.append(...diffChildNodes(before.content, after.content));
-  return DOMPurify.sanitize(host.innerHTML, {
-    ADD_ATTR: ["class"],
+  return host;
+}
+
+function sanitizeMarkdownDiff(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ADD_ATTR: ["class", "aria-hidden"],
   });
+}
+
+function placeholderFor(node: Element): Element {
+  const placeholder = node.cloneNode(true) as Element;
+  placeholder.classList.add("markdown-diff__placeholder");
+  placeholder.setAttribute("aria-hidden", "true");
+  return placeholder;
+}
+
+function projectDiffForSide(node: Node, side: "before" | "after"): Node | null {
+  if (node instanceof Element) {
+    const tagName = node.tagName.toLowerCase();
+    if (tagName === "del" && side === "after") {
+      return node.classList.contains("markdown-diff__block") ? placeholderFor(node) : null;
+    }
+    if (tagName === "ins" && side === "before") {
+      return node.classList.contains("markdown-diff__block") ? placeholderFor(node) : null;
+    }
+    const clone = node.cloneNode(false) as Element;
+    for (const child of Array.from(node.childNodes)) {
+      const projected = projectDiffForSide(child, side);
+      if (projected) clone.append(projected);
+    }
+    return clone;
+  }
+  return node.cloneNode(true);
+}
+
+function projectDiffHTML(host: ParentNode, side: "before" | "after"): string {
+  const projection = document.createElement("div");
+  for (const child of Array.from(host.childNodes)) {
+    const projected = projectDiffForSide(child, side);
+    if (projected) projection.append(projected);
+  }
+  return sanitizeMarkdownDiff(projection.innerHTML);
+}
+
+export function renderMarkdownDiff(beforeHtml: string, afterHtml: string): string {
+  if (beforeHtml === afterHtml) return beforeHtml;
+  return sanitizeMarkdownDiff(diffHTMLFragment(beforeHtml, afterHtml).innerHTML);
+}
+
+export function renderMarkdownSplitDiff(
+  beforeHtml: string,
+  afterHtml: string,
+): { beforeHtml: string; afterHtml: string } {
+  if (beforeHtml === afterHtml) return { beforeHtml, afterHtml };
+  const host = diffHTMLFragment(beforeHtml, afterHtml);
+  return {
+    beforeHtml: projectDiffHTML(host, "before"),
+    afterHtml: projectDiffHTML(host, "after"),
+  };
 }

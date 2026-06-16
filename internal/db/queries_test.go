@@ -4231,6 +4231,7 @@ func TestFreshWorkspaceRuntimeSessionSchemaIncludesTmuxSession(t *testing.T) {
 	}
 	require.NoError(rows.Err())
 
+	assert.Equal("TEXT", columns["display_region"])
 	assert.Equal("TEXT", columns["tmux_session"])
 	assert.Equal("DATETIME", columns["created_at"])
 }

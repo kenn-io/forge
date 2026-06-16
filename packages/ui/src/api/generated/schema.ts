@@ -4626,6 +4626,7 @@ export interface components {
              * @example /api/v1/schemas/LaunchWorkspaceRuntimeSessionInputBody.json
              */
             readonly $schema?: string;
+            display_region?: string;
             target_key: string;
         };
         Line: {
@@ -5803,6 +5804,7 @@ export interface components {
             readonly $schema?: string;
             /** Format: date-time */
             created_at: string;
+            display_region: string;
             /** Format: int64 */
             exit_code?: number;
             /** Format: date-time */

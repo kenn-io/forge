@@ -592,14 +592,15 @@ type WorkspaceSetupEvent struct {
 }
 
 type WorkspaceRuntimeSession struct {
-	WorkspaceID string
-	SessionKey  string
-	TargetKey   string
-	Label       string
-	Kind        string
-	Scope       string
-	TmuxSession string
-	CreatedAt   time.Time
+	WorkspaceID   string
+	SessionKey    string
+	TargetKey     string
+	Label         string
+	Kind          string
+	DisplayRegion string
+	Scope         string
+	TmuxSession   string
+	CreatedAt     time.Time
 }
 
 // ListActivityOpts holds filters and pagination for the activity feed.

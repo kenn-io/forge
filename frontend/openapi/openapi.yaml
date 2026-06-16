@@ -2374,6 +2374,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        display_region:
+          type: string
         target_key:
           type: string
       required:
@@ -5090,6 +5092,8 @@ components:
         created_at:
           format: date-time
           type: string
+        display_region:
+          type: string
         exit_code:
           format: int64
           type: integer
@@ -5115,6 +5119,7 @@ components:
         - label
         - kind
         - status
+        - display_region
         - created_at
       type: object
     SessionSummary:

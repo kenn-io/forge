@@ -923,7 +923,7 @@ func TestOpenRenamesWorkspaceTmuxSessionsTableToRuntimeSessions(t *testing.T) {
 	require.Equal(1, count)
 	var session WorkspaceRuntimeSession
 	err = reopened.ReadDB().QueryRow(`
-		SELECT workspace_id, session_key, target_key, label, kind, scope,
+		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
 		FROM middleman_workspace_runtime_sessions`,
 	).Scan(
@@ -932,6 +932,7 @@ func TestOpenRenamesWorkspaceTmuxSessionsTableToRuntimeSessions(t *testing.T) {
 		&session.TargetKey,
 		&session.Label,
 		&session.Kind,
+		&session.DisplayRegion,
 		&session.Scope,
 		&session.TmuxSession,
 		&session.CreatedAt,
@@ -943,6 +944,7 @@ func TestOpenRenamesWorkspaceTmuxSessionsTableToRuntimeSessions(t *testing.T) {
 	require.Equal("helper", session.TargetKey)
 	require.Equal("helper", session.Label)
 	require.Equal("agent", session.Kind)
+	require.Equal("workflow", session.DisplayRegion)
 	require.Equal("session", session.Scope)
 	require.Equal("middleman-ws-1-helper", session.TmuxSession)
 	require.Equal(
@@ -956,6 +958,7 @@ func TestOpenRenamesWorkspaceTmuxSessionsTableToRuntimeSessions(t *testing.T) {
 		"created_at",
 		"label",
 		"kind",
+		"display_region",
 		"scope",
 		"tmux_session",
 	} {

@@ -521,7 +521,8 @@ type getWorkspaceRuntimeInput struct {
 type launchWorkspaceRuntimeSessionInput struct {
 	ID   string `path:"id"`
 	Body struct {
-		TargetKey string `json:"target_key"`
+		TargetKey     string `json:"target_key"`
+		DisplayRegion string `json:"display_region,omitempty"`
 	}
 }
 
@@ -5947,9 +5948,23 @@ func mergeStoredRuntimeSessions(
 	stored []db.WorkspaceRuntimeSession,
 ) []localruntime.SessionInfo {
 	sessions := slices.Clone(live)
+	storedByKey := make(map[string]db.WorkspaceRuntimeSession, len(stored))
+	for _, session := range stored {
+		if session.SessionKey != "" {
+			storedByKey[session.SessionKey] = session
+		}
+	}
 	seen := make(map[string]struct{}, len(sessions))
-	for _, session := range sessions {
+	for i, session := range sessions {
 		seen[session.Key] = struct{}{}
+		if storedSession, ok := storedByKey[session.Key]; ok {
+			sessions[i].DisplayRegion = normalizeRuntimeDisplayRegion(
+				storedSession.DisplayRegion,
+				session,
+			)
+		} else {
+			sessions[i].DisplayRegion = normalizeRuntimeDisplayRegion("", session)
+		}
 	}
 	for _, session := range stored {
 		if session.SessionKey == "" {
@@ -5993,6 +6008,10 @@ func storedRuntimeSessionInfo(
 		Label:       label,
 		Kind:        kind,
 		Status:      localruntime.SessionStatusError,
+		DisplayRegion: normalizeRuntimeDisplayRegion(session.DisplayRegion, localruntime.SessionInfo{
+			TargetKey: targetKey,
+			Kind:      kind,
+		}),
 		CreatedAt:   session.CreatedAt,
 		TmuxSession: session.TmuxSession,
 	}
@@ -6017,6 +6036,10 @@ func (s *Server) launchWorkspaceRuntimeSession(
 	if err != nil {
 		return nil, workspaceRuntimeLaunchError(err)
 	}
+	session.DisplayRegion = normalizeRuntimeDisplayRegion(
+		input.Body.DisplayRegion,
+		session,
+	)
 	if err := s.recordRuntimeSession(
 		ctx, summary.ID, session, "session",
 	); err != nil {
@@ -6075,19 +6098,37 @@ func (s *Server) recordRuntimeSession(
 	if err := s.workspaces.RecordRuntimeSession(
 		ctx,
 		db.WorkspaceRuntimeSession{
-			WorkspaceID: workspaceID,
-			SessionKey:  session.Key,
-			TargetKey:   session.TargetKey,
-			Label:       session.Label,
-			Kind:        string(session.Kind),
-			Scope:       scope,
-			TmuxSession: session.TmuxSession,
-			CreatedAt:   session.CreatedAt,
+			WorkspaceID:   workspaceID,
+			SessionKey:    session.Key,
+			TargetKey:     session.TargetKey,
+			Label:         session.Label,
+			Kind:          string(session.Kind),
+			DisplayRegion: session.DisplayRegion,
+			Scope:         scope,
+			TmuxSession:   session.TmuxSession,
+			CreatedAt:     session.CreatedAt,
 		},
 	); err != nil {
 		return problemInternal("record runtime session: " + err.Error())
 	}
 	return nil
+}
+
+func normalizeRuntimeDisplayRegion(
+	value string,
+	session localruntime.SessionInfo,
+) string {
+	switch strings.TrimSpace(value) {
+	case "workflow":
+		return "workflow"
+	case "terminal":
+		return "terminal"
+	}
+	if session.TargetKey == string(localruntime.LaunchTargetPlainShell) ||
+		session.Kind == localruntime.LaunchTargetPlainShell {
+		return "terminal"
+	}
+	return "workflow"
 }
 
 func (s *Server) stopWorkspaceRuntimeSession(

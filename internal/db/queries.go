@@ -4704,19 +4704,20 @@ func (d *DB) UpsertWorkspaceRuntimeSession(
 	}
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_workspace_runtime_sessions
-		    (workspace_id, session_key, target_key, label, kind, scope,
+		    (workspace_id, session_key, target_key, label, kind, display_region, scope,
 		     tmux_session, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(workspace_id, session_key) DO UPDATE SET
 		    target_key = excluded.target_key,
 		    label = excluded.label,
 		    kind = excluded.kind,
+		    display_region = excluded.display_region,
 		    scope = excluded.scope,
 		    tmux_session = excluded.tmux_session,
 		    created_at = excluded.created_at`,
 		session.WorkspaceID, session.SessionKey, session.TargetKey,
-		session.Label, session.Kind, session.Scope, session.TmuxSession,
-		createdAt,
+		session.Label, session.Kind, session.DisplayRegion, session.Scope,
+		session.TmuxSession, createdAt,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert workspace runtime session: %w", err)
@@ -4731,7 +4732,7 @@ func (d *DB) ListWorkspaceRuntimeSessions(
 	workspaceID string,
 ) ([]WorkspaceRuntimeSession, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT workspace_id, session_key, target_key, label, kind, scope,
+		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
 		FROM middleman_workspace_runtime_sessions
 		WHERE workspace_id = ?
@@ -4751,7 +4752,7 @@ func (d *DB) ListAllWorkspaceRuntimeSessions(
 	ctx context.Context,
 ) ([]WorkspaceRuntimeSession, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT workspace_id, session_key, target_key, label, kind, scope,
+		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
 		FROM middleman_workspace_runtime_sessions
 		ORDER BY workspace_id, created_at, session_key`,
@@ -4771,7 +4772,7 @@ func (d *DB) ListWorkspaceRuntimeTmuxSessions(
 	workspaceID string,
 ) ([]WorkspaceRuntimeSession, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT workspace_id, session_key, target_key, label, kind, scope,
+		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
 		FROM middleman_workspace_runtime_sessions
 		WHERE workspace_id = ? AND tmux_session != ''
@@ -4791,7 +4792,7 @@ func (d *DB) ListAllWorkspaceRuntimeTmuxSessions(
 	ctx context.Context,
 ) ([]WorkspaceRuntimeSession, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT workspace_id, session_key, target_key, label, kind, scope,
+		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
 		FROM middleman_workspace_runtime_sessions
 		WHERE tmux_session != ''
@@ -4838,7 +4839,8 @@ func scanWorkspaceRuntimeSessions(
 		if err := rows.Scan(
 			&session.WorkspaceID, &session.SessionKey,
 			&session.TargetKey, &session.Label, &session.Kind,
-			&session.Scope, &session.TmuxSession, &session.CreatedAt,
+			&session.DisplayRegion, &session.Scope, &session.TmuxSession,
+			&session.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan workspace runtime session: %w", err)
 		}

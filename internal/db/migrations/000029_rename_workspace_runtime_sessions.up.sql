@@ -13,6 +13,7 @@ CREATE TABLE middleman_workspace_runtime_sessions (
     target_key    TEXT NOT NULL,
     label         TEXT NOT NULL,
     kind          TEXT NOT NULL,
+    display_region TEXT NOT NULL DEFAULT '',
     scope         TEXT NOT NULL DEFAULT 'session',
     tmux_session  TEXT NOT NULL DEFAULT '',
     created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
@@ -26,6 +27,7 @@ INSERT INTO middleman_workspace_runtime_sessions (
     target_key,
     label,
     kind,
+    display_region,
     scope,
     tmux_session,
     created_at
@@ -42,6 +44,10 @@ SELECT
         WHEN target_key = 'plain_shell' THEN 'plain_shell'
         ELSE 'agent'
     END AS kind,
+    CASE
+        WHEN target_key = 'plain_shell' THEN 'terminal'
+        ELSE 'workflow'
+    END AS display_region,
     'session' AS scope,
     session_name AS tmux_session,
     created_at

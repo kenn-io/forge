@@ -44,16 +44,17 @@ var (
 )
 
 type SessionInfo struct {
-	Key         string           `json:"key"`
-	WorkspaceID string           `json:"workspace_id"`
-	TargetKey   string           `json:"target_key"`
-	Label       string           `json:"label"`
-	Kind        LaunchTargetKind `json:"kind"`
-	Status      SessionStatus    `json:"status"`
-	CreatedAt   time.Time        `json:"created_at"`
-	ExitedAt    *time.Time       `json:"exited_at,omitempty"`
-	ExitCode    *int             `json:"exit_code,omitempty"`
-	TmuxSession string           `json:"-"`
+	Key           string           `json:"key"`
+	WorkspaceID   string           `json:"workspace_id"`
+	TargetKey     string           `json:"target_key"`
+	Label         string           `json:"label"`
+	Kind          LaunchTargetKind `json:"kind"`
+	Status        SessionStatus    `json:"status"`
+	DisplayRegion string           `json:"display_region"`
+	CreatedAt     time.Time        `json:"created_at"`
+	ExitedAt      *time.Time       `json:"exited_at,omitempty"`
+	ExitCode      *int             `json:"exit_code,omitempty"`
+	TmuxSession   string           `json:"-"`
 	// Reused reports that ensure semantics returned an already-live
 	// session instead of launching one. Callers whose post-launch
 	// bookkeeping fails must not stop a session they did not start.

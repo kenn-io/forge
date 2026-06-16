@@ -1372,8 +1372,9 @@ type LaunchTarget struct {
 // LaunchWorkspaceRuntimeSessionInputBody defines model for LaunchWorkspaceRuntimeSessionInputBody.
 type LaunchWorkspaceRuntimeSessionInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string `json:"$schema,omitempty"`
-	TargetKey string  `json:"target_key"`
+	Schema        *string `json:"$schema,omitempty"`
+	DisplayRegion *string `json:"display_region,omitempty"`
+	TargetKey     string  `json:"target_key"`
 }
 
 // Line defines model for Line.
@@ -2396,16 +2397,17 @@ type SavedSearch struct {
 // SessionInfo defines model for SessionInfo.
 type SessionInfo struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string    `json:"$schema,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	ExitCode    *int64     `json:"exit_code,omitempty"`
-	ExitedAt    *time.Time `json:"exited_at,omitempty"`
-	Key         string     `json:"key"`
-	Kind        string     `json:"kind"`
-	Label       string     `json:"label"`
-	Status      string     `json:"status"`
-	TargetKey   string     `json:"target_key"`
-	WorkspaceId string     `json:"workspace_id"`
+	Schema        *string    `json:"$schema,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	DisplayRegion string     `json:"display_region"`
+	ExitCode      *int64     `json:"exit_code,omitempty"`
+	ExitedAt      *time.Time `json:"exited_at,omitempty"`
+	Key           string     `json:"key"`
+	Kind          string     `json:"kind"`
+	Label         string     `json:"label"`
+	Status        string     `json:"status"`
+	TargetKey     string     `json:"target_key"`
+	WorkspaceId   string     `json:"workspace_id"`
 }
 
 // SessionSummary defines model for SessionSummary.

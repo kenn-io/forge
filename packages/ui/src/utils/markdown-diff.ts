@@ -20,18 +20,12 @@ function nodesEqual(left: Node, right: Node): boolean {
 function nodesCompatible(left: Node, right: Node): boolean {
   if (left.nodeType === Node.TEXT_NODE && right.nodeType === Node.TEXT_NODE) return true;
   if (!(left instanceof Element) || !(right instanceof Element)) return false;
-  if (left.tagName === right.tagName) return compatibleAttributes(left, right);
-  return headingLevel(left) !== null && headingLevel(right) !== null && left.textContent === right.textContent;
-}
-
-function headingLevel(node: Element): number | null {
-  const match = node.tagName.match(/^H([1-6])$/);
-  return match ? Number(match[1]) : null;
+  return left.tagName === right.tagName && compatibleAttributes(left, right);
 }
 
 function compatibleAttributes(left: Element, right: Element): boolean {
-  const leftAttrs = attributesWithoutHref(left);
-  const rightAttrs = attributesWithoutHref(right);
+  const leftAttrs = attributesMap(left);
+  const rightAttrs = attributesMap(right);
   if (leftAttrs.size !== rightAttrs.size) return false;
   for (const [name, value] of leftAttrs) {
     if (rightAttrs.get(name) !== value) return false;
@@ -39,10 +33,9 @@ function compatibleAttributes(left: Element, right: Element): boolean {
   return true;
 }
 
-function attributesWithoutHref(element: Element): Map<string, string> {
+function attributesMap(element: Element): Map<string, string> {
   const attrs = new Map<string, string>();
   for (const attr of Array.from(element.attributes)) {
-    if (attr.name === "href") continue;
     attrs.set(attr.name, attr.value);
   }
   return attrs;
@@ -53,6 +46,13 @@ function diffSequence<T>(
   newItems: readonly T[],
   equal: (left: T, right: T) => boolean,
 ): DiffOp<T>[] {
+  if (oldItems.length * newItems.length > 20_000) {
+    return [
+      ...oldItems.map((oldItem): DiffOp<T> => ({ kind: "delete", oldItem })),
+      ...newItems.map((newItem): DiffOp<T> => ({ kind: "insert", newItem })),
+    ];
+  }
+
   const rows = oldItems.length + 1;
   const cols = newItems.length + 1;
   const lengths = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
@@ -133,36 +133,14 @@ function diffNode(oldNode: Node, newNode: Node): Node[] {
     return diffText(oldNode.textContent ?? "", newNode.textContent ?? "");
   }
   if (oldNode instanceof Element && newNode instanceof Element) {
-    if (headingLevel(oldNode) !== null && headingLevel(newNode) !== null && oldNode.tagName !== newNode.tagName) {
-      return [nodeWithUpdatedTag(oldNode, newNode)];
-    }
     if (oldNode.tagName === newNode.tagName && compatibleAttributes(oldNode, newNode)) {
       const clone = oldNode.cloneNode(false) as Element;
-      if (
-        oldNode instanceof HTMLAnchorElement &&
-        newNode instanceof HTMLAnchorElement &&
-        oldNode.href !== newNode.href
-      ) {
-        clone.setAttribute("data-before-href", oldNode.getAttribute("href") ?? "");
-        clone.setAttribute("href", newNode.getAttribute("href") ?? "");
-      }
       clone.append(...diffChildNodes(oldNode, newNode));
       markChangedContainer(clone);
       return [clone];
     }
   }
   return [wrapChangedNode("del", oldNode), wrapChangedNode("ins", newNode)];
-}
-
-function nodeWithUpdatedTag(oldNode: Element, newNode: Element): Element {
-  const replacement = document.createElement(newNode.tagName.toLowerCase());
-  for (const attr of Array.from(newNode.attributes)) {
-    replacement.setAttribute(attr.name, attr.value);
-  }
-  replacement.setAttribute("data-before-tag-name", oldNode.tagName.toLowerCase());
-  replacement.append(...diffChildNodes(oldNode, newNode));
-  markChangedContainer(replacement);
-  return replacement;
 }
 
 function markChangedContainer(element: Element): void {
@@ -237,6 +215,6 @@ export function renderMarkdownDiff(beforeHtml: string, afterHtml: string): strin
   const host = document.createElement("div");
   host.append(...diffChildNodes(before.content, after.content));
   return DOMPurify.sanitize(host.innerHTML, {
-    ADD_ATTR: ["class", "data-before-href", "data-before-tag-name"],
+    ADD_ATTR: ["class"],
   });
 }

@@ -21,7 +21,7 @@
   const { diff: diffStore } = getStores();
 
   interface MarkdownComparison {
-    diffHtml: string;
+    diffHtml?: string;
     oldHtml: string;
     newHtml: string;
   }
@@ -33,7 +33,7 @@
 
   const isMarkdownFile = $derived(isMarkdownPath(file.path));
   const markdownComparison = $derived.by(() =>
-    active && isMarkdownFile ? buildMarkdownComparison(file) : null,
+    active && isMarkdownFile ? buildMarkdownComparison(file, viewMode) : null,
   );
   const text = $derived(preview ? decodeText(preview.content) : "");
   const dataURL = $derived(preview ? `data:${preview.media_type};base64,${preview.content}` : "");
@@ -109,7 +109,7 @@
     }
   }
 
-  function buildMarkdownComparison(source: DiffFile): MarkdownComparison {
+  function buildMarkdownComparison(source: DiffFile, mode: DiffViewMode): MarkdownComparison {
     const oldLines: string[] = [];
     const newLines: string[] = [];
     for (const hunk of source.hunks) {
@@ -126,7 +126,7 @@
     const oldHtml = renderMarkdown(`${oldLines.join("\n")}\n`, repo);
     const newHtml = renderMarkdown(`${newLines.join("\n")}\n`, repo);
     return {
-      diffHtml: renderMarkdownDiff(oldHtml, newHtml),
+      ...(mode === "split" ? {} : { diffHtml: renderMarkdownDiff(oldHtml, newHtml) }),
       oldHtml,
       newHtml,
     };
@@ -159,7 +159,7 @@
         </div>
       {:else}
         <div class="diff-rich-preview markdown-rich-diff markdown-rich-diff--unified markdown-body">
-          {@html markdownComparison.diffHtml}
+          {@html markdownComparison.diffHtml ?? markdownComparison.newHtml}
         </div>
       {/if}
     {:else}

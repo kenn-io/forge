@@ -60,6 +60,7 @@ describe("WorkspaceHome", () => {
             label: "Codex",
             kind: "agent",
             status: "running",
+            display_region: "workflow",
             created_at: "2026-04-25T00:00:00Z",
           },
           {
@@ -69,6 +70,7 @@ describe("WorkspaceHome", () => {
             label: "Shell",
             kind: "plain_shell",
             status: "running",
+            display_region: "terminal",
             created_at: "2026-04-25T00:00:01Z",
           },
         ],

@@ -176,8 +176,6 @@
         --diffs-tab-size: ${tabWidth};
         --diffs-light-bg: var(--bg-surface, #fff);
         --diffs-dark-bg: var(--bg-surface, #16161e);
-        --diffs-addition-color-override: var(--accent-green);
-        --diffs-deletion-color-override: var(--accent-red);
         --diffs-bg-addition-override: light-dark(
           color-mix(in srgb, var(--accent-green) 12%, transparent),
           color-mix(in srgb, var(--accent-green) 38%, black)

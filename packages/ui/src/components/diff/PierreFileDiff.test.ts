@@ -385,6 +385,24 @@ describe("PierreFileDiff", () => {
     expect(pierre.lastOptions()?.tokenizeMaxLineLength).toBe(diffTokenizeMaxLineLength);
   });
 
+  it("does not override syntax token foreground colors for changed lines", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+
+    render(PierreFileDiff, {
+      props: { file: makeFile() },
+    });
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+    });
+
+    const css = pierre.lastOptions()?.unsafeCSS ?? "";
+    expect(css).not.toContain("--diffs-addition-color-override");
+    expect(css).not.toContain("--diffs-deletion-color-override");
+    expect(css).toContain("--diffs-bg-addition-override");
+    expect(css).toContain("--diffs-fg-number-addition-override");
+  });
+
   it("rerenders when annotation metadata changes without moving lines", async () => {
     const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
     const file = makeFile();

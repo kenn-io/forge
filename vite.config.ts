@@ -31,6 +31,9 @@ export default defineConfig({
         ],
         cache: false,
       },
+      // svelte-check behaves poorly with concurrent processes. Keep one task
+      // name and route package wrappers through it; cache hits keep repeated
+      // package-local typechecks cheap without exposing per-package tasks.
       "svelte-check": {
         command: [
           `(cd frontend && ${frontendVP} exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)`,

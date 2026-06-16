@@ -140,6 +140,9 @@ describe("RepoImportModal", () => {
         renderer: "xterm",
         hide_tmux_status: false,
       },
+      notifications: {
+        enabled: false,
+      },
       agents: [],
       fleet: defaultFleetSettings(),
     });
@@ -212,6 +215,9 @@ describe("RepoImportModal", () => {
         font_ligatures: false,
         renderer: "xterm",
         hide_tmux_status: false,
+      },
+      notifications: {
+        enabled: false,
       },
       agents: [],
       fleet: defaultFleetSettings(),

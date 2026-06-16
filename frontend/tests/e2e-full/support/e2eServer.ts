@@ -392,6 +392,7 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
         host: defaultPlatformHost,
         visibleImportedModes: true,
         providerCollision: false,
+        notificationsEnabled: true,
       });
       // Permanently leased: this is the worker's shared server; the
       // isolated-server pool must never hand it out or reset it.

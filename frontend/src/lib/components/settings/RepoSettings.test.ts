@@ -712,6 +712,9 @@ describe("RepoSettings", () => {
         hide_tmux_status: false,
         renderer: "xterm",
       },
+      notifications: {
+        enabled: false,
+      },
       agents: [],
       fleet: defaultFleetSettings(),
     });

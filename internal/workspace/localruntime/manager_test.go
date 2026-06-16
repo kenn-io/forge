@@ -1874,6 +1874,58 @@ drain:
 			"the session as output-closed and emit the exit frame")
 }
 
+func TestAttachmentResizeOwnerPrefersActiveLocalUntilInactive(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	pty := &fakeRuntimePTY{
+		output: make(chan []byte),
+		done:   make(chan struct{}),
+	}
+	s := &session{
+		info: SessionInfo{
+			Key:         "session-1",
+			WorkspaceID: "ws-1",
+			Status:      SessionStatusRunning,
+		},
+		pty:         pty,
+		done:        make(chan struct{}),
+		outputDone:  make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+
+	remote, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{
+			ResizePriority: ResizePriorityRemote,
+			ResizeActive:   true,
+		},
+	)
+	require.NoError(err)
+	defer remote.Close()
+	require.NoError(remote.Resize(80, 24))
+
+	local, err := attachToSession(
+		s, "ws-1", "session-1", nil,
+		AttachSessionOptions{ResizePriority: ResizePriorityLocal},
+	)
+	require.NoError(err)
+	require.NoError(remote.Resize(90, 25))
+	local.SetResizeActive(true)
+	require.NoError(remote.Resize(95, 26))
+	require.NoError(local.Resize(100, 30))
+
+	local.SetResizeActive(false)
+	require.NoError(remote.Resize(120, 40))
+
+	assert.Equal([]terminalResize{
+		{cols: 80, rows: 24},
+		{cols: 90, rows: 25},
+		{cols: 100, rows: 30},
+		{cols: 120, rows: 40},
+	}, pty.resizes())
+}
+
 type fakeRuntimePtyOwner struct {
 	startedSession      string
 	startedCwd          string
@@ -1957,8 +2009,15 @@ func (f *fakeRuntimePtyOwner) Stop(_ context.Context, session string) error {
 }
 
 type fakeRuntimePTY struct {
-	output chan []byte
-	done   chan struct{}
+	mu          sync.Mutex
+	output      chan []byte
+	done        chan struct{}
+	resizeCalls []terminalResize
+}
+
+type terminalResize struct {
+	cols int
+	rows int
 }
 
 func (f *fakeRuntimePTY) Output() <-chan []byte { return f.output }
@@ -1967,7 +2026,18 @@ func (f *fakeRuntimePTY) Done() <-chan struct{} { return f.done }
 
 func (f *fakeRuntimePTY) Write([]byte) error { return nil }
 
-func (f *fakeRuntimePTY) Resize(int, int) error { return nil }
+func (f *fakeRuntimePTY) Resize(cols, rows int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resizeCalls = append(f.resizeCalls, terminalResize{cols: cols, rows: rows})
+	return nil
+}
+
+func (f *fakeRuntimePTY) resizes() []terminalResize {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.resizeCalls)
+}
 
 func (f *fakeRuntimePTY) ExitCode() int { return 0 }
 

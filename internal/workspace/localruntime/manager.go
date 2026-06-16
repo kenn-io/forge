@@ -173,17 +173,39 @@ type session struct {
 	lifecycleMu           sync.Mutex
 	lifecycleClosed       bool
 	stopRequested         bool
+	nextAttachmentID      uint64
+	resizeOwnerID         uint64
+	resizeOwnerPriority   ResizePriority
+	resizeAttachments     map[uint64]resizeAttachment
+}
+
+type ResizePriority int
+
+const (
+	ResizePriorityRemote ResizePriority = iota + 1
+	ResizePriorityLocal
+)
+
+type AttachSessionOptions struct {
+	ResizePriority ResizePriority
+	ResizeActive   bool
+}
+
+type resizeAttachment struct {
+	priority ResizePriority
+	active   bool
 }
 
 type Attachment struct {
 	Output <-chan []byte
 	Done   <-chan struct{}
 
-	info    func() SessionInfo
-	write   func([]byte) error
-	resize  func(cols, rows int) error
-	refresh func(context.Context) error
-	close   func()
+	info            func() SessionInfo
+	write           func([]byte) error
+	resize          func(cols, rows int) error
+	refresh         func(context.Context) error
+	setResizeActive func(active bool)
+	close           func()
 
 	// sessionOutputClosed reports whether the underlying session's
 	// PTY EOF has been observed by drainOutput (s.outputClosed=true).
@@ -1060,6 +1082,17 @@ func (m *Manager) AttachSession(
 	workspaceID string,
 	key string,
 ) (*Attachment, error) {
+	return m.AttachSessionWithOptions(workspaceID, key, AttachSessionOptions{
+		ResizePriority: ResizePriorityLocal,
+		ResizeActive:   true,
+	})
+}
+
+func (m *Manager) AttachSessionWithOptions(
+	workspaceID string,
+	key string,
+	options AttachSessionOptions,
+) (*Attachment, error) {
 	slog.Debug(
 		"runtime terminal attach requested",
 		"workspace_id", workspaceID,
@@ -1069,7 +1102,7 @@ func (m *Manager) AttachSession(
 	s := m.sessions[key]
 	m.mu.Unlock()
 	attachment, err := attachToSession(
-		s, workspaceID, key, m.refreshSession,
+		s, workspaceID, key, m.refreshSession, options,
 	)
 	if err != nil {
 		slog.Debug(
@@ -1107,6 +1140,12 @@ func (a *Attachment) Refresh(ctx context.Context) error {
 		return errors.New("attachment is closed")
 	}
 	return a.refresh(ctx)
+}
+
+func (a *Attachment) SetResizeActive(active bool) {
+	if a != nil && a.setResizeActive != nil {
+		a.setResizeActive(active)
+	}
 }
 
 func (a *Attachment) Info() SessionInfo {
@@ -1828,6 +1867,106 @@ func (s *session) subscribe() (<-chan []byte, func()) {
 	}
 }
 
+func (s *session) registerResizeAttachment(
+	priority ResizePriority,
+	active bool,
+) uint64 {
+	if priority == 0 {
+		priority = ResizePriorityRemote
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.nextAttachmentID++
+	id := s.nextAttachmentID
+	if s.resizeAttachments == nil {
+		s.resizeAttachments = make(map[uint64]resizeAttachment)
+	}
+	s.resizeAttachments[id] = resizeAttachment{
+		priority: priority,
+		active:   active,
+	}
+	if active && (s.resizeOwnerID == 0 || priority > s.resizeOwnerPriority) {
+		s.resizeOwnerID = id
+		s.resizeOwnerPriority = priority
+	}
+	return id
+}
+
+func (s *session) unregisterResizeAttachment(id uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.resizeAttachments != nil {
+		delete(s.resizeAttachments, id)
+	}
+	if s.resizeOwnerID != id {
+		return
+	}
+	s.resizeOwnerID = 0
+	s.resizeOwnerPriority = 0
+	s.selectResizeOwnerLocked()
+}
+
+func (s *session) canResize(id uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	attachment, ok := s.resizeAttachments[id]
+	if !ok || !attachment.active {
+		return false
+	}
+	if s.resizeOwnerID == 0 {
+		s.resizeOwnerID = id
+		s.resizeOwnerPriority = attachment.priority
+		return true
+	}
+	if attachment.priority > s.resizeOwnerPriority {
+		s.resizeOwnerID = id
+		s.resizeOwnerPriority = attachment.priority
+		return true
+	}
+	return s.resizeOwnerID == id
+}
+
+func (s *session) setResizeAttachmentActive(id uint64, active bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	attachment, ok := s.resizeAttachments[id]
+	if !ok {
+		return
+	}
+	attachment.active = active
+	s.resizeAttachments[id] = attachment
+	if active {
+		if s.resizeOwnerID == 0 ||
+			attachment.priority > s.resizeOwnerPriority {
+			s.resizeOwnerID = id
+			s.resizeOwnerPriority = attachment.priority
+		}
+		return
+	}
+	if s.resizeOwnerID == id {
+		s.resizeOwnerID = 0
+		s.resizeOwnerPriority = 0
+		s.selectResizeOwnerLocked()
+	}
+}
+
+func (s *session) selectResizeOwnerLocked() {
+	for attachmentID, attachment := range s.resizeAttachments {
+		if !attachment.active {
+			continue
+		}
+		if s.resizeOwnerID == 0 || attachment.priority > s.resizeOwnerPriority {
+			s.resizeOwnerID = attachmentID
+			s.resizeOwnerPriority = attachment.priority
+		}
+	}
+}
+
 func (s *session) closeSubscribers() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2060,6 +2199,7 @@ func attachToSession(
 	workspaceID string,
 	key string,
 	refresh func(context.Context, *session) error,
+	options AttachSessionOptions,
 ) (*Attachment, error) {
 	if s == nil {
 		return nil, fmt.Errorf("session %q not found", key)
@@ -2074,6 +2214,10 @@ func attachToSession(
 	}
 
 	output, unsubscribe := s.subscribe()
+	resizeAttachmentID := s.registerResizeAttachment(
+		options.ResizePriority,
+		options.ResizeActive,
+	)
 	return &Attachment{
 		Output: output,
 		Done:   s.done,
@@ -2087,6 +2231,9 @@ func attachToSession(
 		},
 		resize: func(cols, rows int) error {
 			if cols <= 0 || rows <= 0 {
+				return nil
+			}
+			if !s.canResize(resizeAttachmentID) {
 				return nil
 			}
 			if s.pty != nil {
@@ -2103,7 +2250,13 @@ func attachToSession(
 			}
 			return refresh(ctx, s)
 		},
-		close: unsubscribe,
+		setResizeActive: func(active bool) {
+			s.setResizeAttachmentActive(resizeAttachmentID, active)
+		},
+		close: func() {
+			s.unregisterResizeAttachment(resizeAttachmentID)
+			unsubscribe()
+		},
 		sessionOutputClosed: func() bool {
 			s.mu.Lock()
 			defer s.mu.Unlock()

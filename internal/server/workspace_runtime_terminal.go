@@ -15,9 +15,10 @@ import (
 )
 
 type runtimeTerminalControlMsg struct {
-	Type string `json:"type"`
-	Cols int    `json:"cols,omitempty"`
-	Rows int    `json:"rows,omitempty"`
+	Type   string `json:"type"`
+	Cols   int    `json:"cols,omitempty"`
+	Rows   int    `json:"rows,omitempty"`
+	Active *bool  `json:"active,omitempty"`
 }
 
 func (s *Server) handleWorkspaceRuntimeSessionTerminal(
@@ -38,8 +39,12 @@ func (s *Server) handleWorkspaceRuntimeSessionTerminal(
 		return
 	}
 
-	attachment, err := s.runtime.AttachSession(
+	attachment, err := s.runtime.AttachSessionWithOptions(
 		summary.ID, r.PathValue("session_key"),
+		localruntime.AttachSessionOptions{
+			ResizePriority: runtimeTerminalResizePriority(r),
+			ResizeActive:   parseRuntimeTerminalResizeActive(r),
+		},
 	)
 	if err != nil {
 		logWebsocketDebug(
@@ -52,6 +57,18 @@ func (s *Server) handleWorkspaceRuntimeSessionTerminal(
 		return
 	}
 	s.serveRuntimeTerminal(w, r, attachment)
+}
+
+func runtimeTerminalResizePriority(r *http.Request) localruntime.ResizePriority {
+	if r.Header.Get("X-Middleman-Fleet-Host") != "" {
+		return localruntime.ResizePriorityRemote
+	}
+	return localruntime.ResizePriorityLocal
+}
+
+func parseRuntimeTerminalResizeActive(r *http.Request) bool {
+	raw := r.URL.Query().Get("resize_active")
+	return raw == "" || raw == "1" || raw == "true"
 }
 
 func (s *Server) serveRuntimeTerminal(
@@ -312,6 +329,11 @@ func handleRuntimeTerminalControl(
 	}
 	info := attachment.Info()
 	switch msg.Type {
+	case "resize_active":
+		if msg.Active != nil {
+			attachment.SetResizeActive(*msg.Active)
+		}
+		return
 	case "refresh":
 		logWebsocketDebug(
 			"runtime terminal refresh requested",

@@ -1959,9 +1959,12 @@
     // the user is still looking at it. Navigate away even after
     // an A→B→A round trip — otherwise they'd be staring at a
     // workspace that no longer exists.
-    if (!window.location.pathname.endsWith(`/terminal/${targetId}`))
-      return;
+    if (!isCurrentTerminalRoute(targetId)) return;
     navigate("/workspaces");
+  }
+
+  function isCurrentTerminalRoute(targetId: string): boolean {
+    return window.location.pathname.endsWith(`/terminal/${targetId}`);
   }
 
   async function confirmForceDelete(): Promise<void> {
@@ -2002,6 +2005,7 @@
       // destroyed.
       forcePromptMessage = null;
       forcePromptForId = null;
+      if (!isCurrentTerminalRoute(targetId)) return;
       navigate("/workspaces");
     } finally {
       forceDeleting = false;

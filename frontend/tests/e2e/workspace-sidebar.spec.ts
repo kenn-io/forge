@@ -1059,6 +1059,53 @@ test.describe("terminal state icons", () => {
     expect(deleteRequests[1]).toContain("force=true");
   });
 
+  test("in-flight successful force DELETE does not yank the user off the route they chose", async ({ page }) => {
+    await setupTerminalMocks(page);
+
+    let deleteCount = 0;
+    await page.route(
+      (url) => url.pathname === "/api/v1/workspaces/ws-123",
+      async (route) => {
+        if (route.request().method() !== "DELETE") {
+          await route.fallback();
+          return;
+        }
+        deleteCount += 1;
+        if (deleteCount === 1) {
+          await route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              detail: "Worktree has uncommitted changes.",
+            }),
+          });
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        await route.fulfill({ status: 204 });
+      },
+    );
+
+    await page.goto("/terminal/ws-123");
+
+    await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+
+    const dialog = page.getByRole("dialog", {
+      name: "Force delete workspace?",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Force delete" }).click();
+
+    await page.evaluate(() => {
+      history.pushState(null, "", "/pulls");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    await page.waitForTimeout(700);
+
+    await expect(page).toHaveURL(/\/pulls$/);
+  });
+
   test("force-delete prompt cancel keeps the workspace and the modal closes", async ({ page }) => {
     const deleteRequests: string[] = [];
     page.on("request", (req) => {

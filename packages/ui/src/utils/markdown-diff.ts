@@ -230,7 +230,7 @@ function wrapChangedChildren(tagName: "del" | "ins", source: ParentNode): HTMLEl
 }
 
 function isStructuralChildElement(node: Element): boolean {
-  return /^(LI|TR)$/.test(node.tagName);
+  return /^(LI|TR|TD|TH)$/.test(node.tagName);
 }
 
 function isBlockElement(node: Element): boolean {

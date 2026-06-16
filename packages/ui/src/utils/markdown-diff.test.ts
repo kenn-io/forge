@@ -83,6 +83,19 @@ describe("renderMarkdownDiff", () => {
     expect(fragment.querySelector('tbody > tr[data-diff-kind="insert"] > td > ins')?.textContent).toBe("Added");
   });
 
+  it("preserves table cell structure for inserted and deleted cells", () => {
+    const html = renderMarkdownDiff(
+      "<table><tbody><tr><td>Removed</td><td>Keep</td></tr></tbody></table>",
+      "<table><tbody><tr><td>Keep</td><td>Added</td></tr></tbody></table>",
+    );
+    const fragment = htmlFragment(html);
+
+    expect(fragment.querySelector("tr > del")).toBeNull();
+    expect(fragment.querySelector("tr > ins")).toBeNull();
+    expect(fragment.querySelector('tr > td[data-diff-kind="delete"] > del')?.textContent).toBe("Removed");
+    expect(fragment.querySelector('tr > td[data-diff-kind="insert"] > ins')?.textContent).toBe("Added");
+  });
+
   it("renders heading level changes visibly", () => {
     const html = renderMarkdownDiff("<h2>Release notes</h2>", "<h3>Release notes</h3>");
 

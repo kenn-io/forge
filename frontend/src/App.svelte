@@ -885,6 +885,7 @@
     {client}
     roborevBaseUrl="/api/roborev"
     onError={showFlash}
+    onNotification={showFlash}
     onNavigate={(e) =>
       navigate(typeof e === "string" ? e : e.path)}
     onWorkspaceCommand={emitWorkspaceCommand}

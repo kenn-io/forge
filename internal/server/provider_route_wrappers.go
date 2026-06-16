@@ -248,13 +248,16 @@ type mergePRHostInput struct {
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
-	Body         struct {
-		CommitTitle   string `json:"commit_title"`
-		CommitMessage string `json:"commit_message"`
-		Method        string `json:"method"`
-		// ExpectedHeadSHA: see mergePRInput.
-		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
-	}
+	Body         mergePRInputBody
+}
+
+type deferMergePRHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         mergePRInputBody
 }
 
 type editPRContentHostInput struct {
@@ -721,6 +724,18 @@ func (s *Server) mergePROnHost(ctx context.Context, input *mergePRHostInput) (*m
 		Body:         input.Body,
 	}
 	return s.mergePR(ctx, &next)
+}
+
+func (s *Server) deferMergePROnHost(ctx context.Context, input *deferMergePRHostInput) (*deferMergePROutput, error) {
+	next := deferMergePRInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Body:         input.Body,
+	}
+	return s.deferMergePR(ctx, &next)
 }
 
 func (s *Server) syncPROnHost(ctx context.Context, input *repoNumberHostInput) (*syncPROutput, error) {

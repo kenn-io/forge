@@ -9,8 +9,6 @@
   import type { CICheck } from "../../api/types.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
-  const DEFAULT_CI_POLL_INTERVAL_MS = 60_000;
-
   const client = getClient();
 
   onMount(() => pushModalFrame("merge-modal", []));
@@ -37,10 +35,6 @@
     deferUntilChecksPass?: boolean;
     /** Current provider CI snapshot for the loaded pull request. */
     checksJSON?: string;
-    /** Refreshes the loaded CI snapshot while a deferred merge is armed. */
-    onrefreshci?: (() => Promise<void>) | undefined;
-    /** Test hook for shortening the default one-minute polling interval. */
-    ciPollIntervalMs?: number;
     onclose: () => void;
     onmerged: () => void;
     onheadconflict?: ((reason: "stale_state" | "head_unknown", context?: string) => void) | undefined;
@@ -53,8 +47,6 @@
     expectedHeadSha, requireHeadPin = false,
     deferUntilChecksPass = false,
     checksJSON = "",
-    onrefreshci,
-    ciPollIntervalMs = DEFAULT_CI_POLL_INTERVAL_MS,
     onclose, onmerged, onheadconflict,
   }: Props = $props();
 
@@ -118,69 +110,45 @@
 
   let merging = $state(false);
   let error = $state<string | null>(null);
-  let waitingForCI = $state(false);
-  let deferredPendingCheckKeys = $state<string[] | null>(null);
-  let deferredMergeStarted = $state(false);
-  let deferredCIError = $state<string | null>(null);
 
   const parsedChecks = $derived(parseCIChecks(checksJSON));
-  const deferredCIState = $derived.by(() =>
-    deferredPendingCheckKeys === null
-      ? "idle"
-      : pendingCheckState(deferredPendingCheckKeys, parsedChecks.checks),
-  );
-  const pendingAtConfirmationCount = $derived(deferredPendingCheckKeys?.length ?? 0);
-
-  function checkKey(check: CICheck): string {
-    return `${check.app}\0${check.name}`;
-  }
 
   function pendingCheckKeys(checks: CICheck[]): string[] {
     return checks
       .filter((check) => bucketForCheck(check) === "pending")
-      .map(checkKey);
+      .map((check) => `${check.app}\0${check.name}`);
   }
 
-  function pendingCheckState(keys: readonly string[], checks: readonly CICheck[]): "pending" | "passed" | "failed" {
-    if (keys.length === 0) return "passed";
-    const checksByKey = new Map(checks.map((check) => [checkKey(check), check]));
-    let hasPending = false;
-    for (const key of keys) {
-      const check = checksByKey.get(key);
-      if (check === undefined) {
-        hasPending = true;
-        continue;
-      }
-      switch (bucketForCheck(check)) {
-        case "passed":
-        case "skipped":
-          break;
-        case "failed":
-        case "unknown":
-          return "failed";
-        case "pending":
-          hasPending = true;
-          break;
-      }
+  function mergeParams(): MergeParams {
+    return {
+      commit_title: commitTitle,
+      commit_message: commitMessage,
+      method: selectedMethod,
+      ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
+    };
+  }
+
+  function handleMergeError(requestError: { detail?: string; title?: string; details?: unknown } | undefined): boolean {
+    if (!requestError) return false;
+    const reason = isProblem(requestError) ? problemConflictReason(requestError) : undefined;
+    if (reason === "stale_state" || reason === "head_unknown") {
+      onheadconflict?.(reason, isProblem(requestError) ? problemConflictContext(requestError) : undefined);
+      onclose();
+      return true;
     }
-    return hasPending ? "pending" : "passed";
+    throw new Error(requestError.detail ?? requestError.title ?? "failed to merge pull request");
   }
 
-  async function submitMerge(): Promise<void> {
+  async function submitMerge(deferred: boolean): Promise<void> {
     if (headPinMissing) return;
     merging = true;
     error = null;
     try {
       // Pin the merge to the head the user reviewed; the server rejects
       // the request when the synced head has moved past it.
-      const params: MergeParams = {
-        commit_title: commitTitle,
-        commit_message: commitMessage,
-        method: selectedMethod,
-        ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
-      };
+      const params = mergeParams();
       const ref = { provider, platformHost, owner, name, repoPath };
-      const { error } = await client.POST(providerItemPath("pulls", ref, "/merge"), {
+      const { error } = await client.POST(providerItemPath("pulls", ref, deferred ? "/merge/deferred" : "/merge"), {
         params: { path: { ...providerRouteParams(ref), number } },
         body: params,
       });
@@ -188,13 +156,11 @@
         // Head-pinning conflicts close the modal: the user must
         // re-review the refreshed detail before retrying, so an
         // inline retry from this stale form would be wrong.
-        const reason = isProblem(error) ? problemConflictReason(error) : undefined;
-        if (reason === "stale_state" || reason === "head_unknown") {
-          onheadconflict?.(reason, isProblem(error) ? problemConflictContext(error) : undefined);
-          onclose();
-          return;
-        }
-        throw new Error(error.detail ?? error.title ?? "failed to merge pull request");
+        if (handleMergeError(error)) return;
+      }
+      if (deferred) {
+        onclose();
+        return;
       }
       onmerged();
     } catch (err) {
@@ -205,42 +171,12 @@
   }
 
   function handleMerge(): void {
-    if (deferUntilChecksPass && !waitingForCI) {
-      const keys = pendingCheckKeys(parsedChecks.checks);
-      if (keys.length > 0) {
-        deferredPendingCheckKeys = keys;
-        waitingForCI = true;
-        deferredMergeStarted = false;
-        deferredCIError = null;
-        error = null;
-        return;
-      }
+    if (deferUntilChecksPass && pendingCheckKeys(parsedChecks.checks).length > 0) {
+      void submitMerge(true);
+      return;
     }
-    void submitMerge();
+    void submitMerge(false);
   }
-
-  $effect(() => {
-    if (!waitingForCI || deferredPendingCheckKeys === null) return;
-    if (deferredCIState === "failed") {
-      waitingForCI = false;
-      deferredCIError = "A check that was pending failed; merge was not performed.";
-      return;
-    }
-    if (deferredCIState === "passed") {
-      if (deferredMergeStarted) return;
-      deferredMergeStarted = true;
-      void submitMerge();
-      return;
-    }
-    if (onrefreshci === undefined) return;
-    const refresh = () => {
-      void onrefreshci().catch((err) => {
-        deferredCIError = err instanceof Error ? err.message : String(err);
-      });
-    };
-    const interval = setInterval(refresh, ciPollIntervalMs);
-    return () => clearInterval(interval);
-  });
 
   function handleKeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") {
@@ -256,14 +192,8 @@
     );
   }
 
-  function deferredStatusText(): string {
-    const suffix = pendingAtConfirmationCount === 1 ? "check" : "checks";
-    return `Waiting for ${pendingAtConfirmationCount} pending ${suffix} to pass.`;
-  }
-
   function primaryButtonLabel(): string {
     if (merging) return "Merging...";
-    if (waitingForCI) return "Waiting for CI...";
     return deferUntilChecksPass ? "Merge after CI is complete" : methodLabel();
   }
 </script>
@@ -346,16 +276,9 @@
         <p class="merge-error">{error}</p>
       {/if}
       {#if deferUntilChecksPass}
-        <div class="ci-defer-note" role={waitingForCI ? "status" : undefined}>
-          {#if waitingForCI}
-            {deferredStatusText()}
-          {:else}
-            CI is still running. This will merge only if the checks that are pending now pass.
-          {/if}
+        <div class="ci-defer-note">
+          CI is still running. This will merge only if the checks that are pending now pass.
         </div>
-      {/if}
-      {#if deferredCIError}
-        <p class="merge-error">{deferredCIError}</p>
       {/if}
     </div>
 
@@ -379,7 +302,7 @@
       <ActionButton
         class="btn btn--primary btn--green"
         onclick={handleMerge}
-        disabled={merging || headPinMissing || waitingForCI}
+        disabled={merging || headPinMissing}
         tone="success"
         surface="solid"
       >

@@ -355,15 +355,26 @@ type mergePRInput struct {
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
-	Body         struct {
-		CommitTitle   string `json:"commit_title"`
-		CommitMessage string `json:"commit_message"`
-		Method        string `json:"method"`
-		// ExpectedHeadSHA is the reviewed diff head the client rendered.
-		// For head-binding providers, merge rejects missing, stale, or
-		// mismatched reviewed-head assertions before provider mutation.
-		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
-	}
+	Body         mergePRInputBody
+}
+
+type deferMergePRInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         mergePRInputBody
+}
+
+type mergePRInputBody struct {
+	CommitTitle   string `json:"commit_title"`
+	CommitMessage string `json:"commit_message"`
+	Method        string `json:"method"`
+	// ExpectedHeadSHA is the reviewed diff head the client rendered.
+	// For head-binding providers, merge rejects missing, stale, or
+	// mismatched reviewed-head assertions before provider mutation.
+	ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 }
 
 type mergePRBody struct {
@@ -373,6 +384,13 @@ type mergePRBody struct {
 }
 
 type mergePROutput = bodyOutput[mergePRBody]
+
+type deferMergePRBody struct {
+	Status        string `json:"status"`
+	PendingChecks int    `json:"pending_checks"`
+}
+
+type deferMergePROutput = acceptedBodyOutput[deferMergePRBody]
 
 type editPRContentInput struct {
 	Provider     string `path:"provider"`
@@ -1153,6 +1171,22 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 		documentOperation("merge-pull", "Merge pull request", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/merge", s.mergePROnHost,
 		documentOperation("merge-pull-on-host", "Merge pull request", "Pull Requests"))
+	huma.Register(api, huma.Operation{
+		OperationID:   "defer-merge-pull",
+		Method:        http.MethodPost,
+		Path:          pullPath + "/merge/deferred",
+		DefaultStatus: http.StatusAccepted,
+		Summary:       "Defer pull request merge until pending CI passes",
+		Tags:          []string{"Pull Requests"},
+	}, s.deferMergePR)
+	huma.Register(api, huma.Operation{
+		OperationID:   "defer-merge-pull-on-host",
+		Method:        http.MethodPost,
+		Path:          hostPullPath + "/merge/deferred",
+		DefaultStatus: http.StatusAccepted,
+		Summary:       "Defer pull request merge until pending CI passes",
+		Tags:          []string{"Pull Requests"},
+	}, s.deferMergePROnHost)
 	huma.Post(api, pullPath+"/sync", s.syncPR,
 		documentOperation("sync-pull", "Sync pull request", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/sync", s.syncPROnHost,
@@ -2873,9 +2907,25 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 }
 
 func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutput, error) {
+	result, err := s.mergePRWithBody(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Number, input.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &mergePROutput{Body: result}, nil
+}
+
+func (s *Server) mergePRWithBody(
+	ctx context.Context,
+	provider string,
+	platformHost string,
+	owner string,
+	name string,
+	number int,
+	body mergePRInputBody,
+) (mergePRBody, error) {
 	validMethods := map[string]bool{"merge": true, "squash": true, "rebase": true}
-	if !validMethods[input.Body.Method] {
-		return nil, problemValidation(
+	if !validMethods[body.Method] {
+		return mergePRBody{}, problemValidation(
 			"body.method",
 			"invalid merge method: must be merge, squash, or rebase",
 			"merge", "squash", "rebase",
@@ -2884,29 +2934,29 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
-		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		provider, platformHost, owner, name,
 		capabilityMergeMutation,
 	)
 	if err != nil {
-		return nil, err
+		return mergePRBody{}, err
 	}
 	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
-		return nil, err
+		return mergePRBody{}, err
 	}
 
 	mutator, err := s.syncer.MergeMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityMergeMutation)
+		return mergePRBody{}, unsupportedCapabilityProblem(*repo, capabilityMergeMutation)
 	}
 
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 	if err != nil {
-		return nil, problemInternal("get pull request failed")
+		return mergePRBody{}, problemInternal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return mergePRBody{}, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 
 	// Bind the merge to the head commit the user reviewed locally so a
@@ -2914,38 +2964,38 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	// instead of merging unreviewed code.
 	expectedHeadSHA, err := s.reviewedHeadSHA(repo, mr)
 	if err != nil {
-		return nil, err
+		return mergePRBody{}, err
 	}
 	// Head-binding providers require the client to pin the head it
 	// rendered: an omitted pin would silently bind to whatever the cache
 	// holds now, which may be newer than what the user reviewed.
-	if strings.TrimSpace(input.Body.ExpectedHeadSHA) == "" &&
+	if strings.TrimSpace(body.ExpectedHeadSHA) == "" &&
 		s.capabilitiesForRepo(*repo).MutationHeadBinding {
-		return nil, problemValidation(
+		return mergePRBody{}, problemValidation(
 			"body.expected_head_sha",
 			"required for this provider: echo the platform_head_sha you rendered",
 		)
 	}
 	if err := s.verifyClientReviewedHead(
-		repo, input.Number, input.Body.ExpectedHeadSHA, expectedHeadSHA,
+		repo, number, body.ExpectedHeadSHA, expectedHeadSHA,
 	); err != nil {
-		return nil, err
+		return mergePRBody{}, err
 	}
 
 	result, err := mutator.MergeMergeRequest(
 		ctx,
 		platformRepoRefFromDB(*repo),
-		input.Number,
-		input.Body.CommitTitle,
-		input.Body.CommitMessage,
-		input.Body.Method,
+		number,
+		body.CommitTitle,
+		body.CommitMessage,
+		body.Method,
 		expectedHeadSHA,
 	)
 	if err != nil {
 		if status, message, ok := mergeHTTPErrorStatus(err); ok {
 			slog.Error("provider merge failed",
-				"owner", input.Owner, "repo", input.Name,
-				"number", input.Number, "method", input.Body.Method,
+				"owner", owner, "repo", name,
+				"number", number, "method", body.Method,
 				"status", status,
 				"message", message,
 				"err", err)
@@ -2966,30 +3016,30 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 						if syncErr := s.syncer.SyncMROnProvider(
 							bgCtx,
 							repoProviderKind(*repo), repoProviderHost(*repo),
-							repo.Owner, repo.Name, input.Number,
+							repo.Owner, repo.Name, number,
 						); syncErr != nil {
 							slog.Warn("background sync after merge failure", "err", syncErr)
 						}
 					})
 				}
-				return nil, problemConflict(CodeConflict, message, map[string]any{"reason": reason})
+				return mergePRBody{}, problemConflict(CodeConflict, message, map[string]any{"reason": reason})
 			}
 
 			// Forward 4xx provider errors as-is so the user sees the real cause
 			// (e.g. 422 validation, 403 forbidden). 5xx becomes 502.
 			if status >= 400 && status < 500 {
-				return nil, newProblem(status, codeForStatus(status), message, nil)
+				return mergePRBody{}, newProblem(status, codeForStatus(status), message, nil)
 			}
-			return nil, problemUpstream(
+			return mergePRBody{}, problemUpstream(
 				"provider merge error: "+message,
 				string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			)
 		}
 		slog.Error("provider merge transport error",
-			"owner", input.Owner, "repo", input.Name,
-			"number", input.Number, "method", input.Body.Method,
+			"owner", owner, "repo", name,
+			"number", number, "method", body.Method,
 			"err", err)
-		return nil, providerCallProblemWithDetail(
+		return mergePRBody{}, providerCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"provider merge error: "+err.Error(),
@@ -2997,14 +3047,12 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	}
 
 	now := s.now().UTC()
-	_ = s.db.UpdateMRState(ctx, repo.ID, input.Number, "merged", &now, &now)
+	_ = s.db.UpdateMRState(ctx, repo.ID, number, "merged", &now, &now)
 
-	return &mergePROutput{
-		Body: mergePRBody{
-			Merged:  result.Merged,
-			SHA:     result.SHA,
-			Message: result.Message,
-		},
+	return mergePRBody{
+		Merged:  result.Merged,
+		SHA:     result.SHA,
+		Message: result.Message,
 	}, nil
 }
 

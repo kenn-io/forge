@@ -60,7 +60,7 @@ function mergeTarget(browserName: string): PullRef {
     case "chromium":
       return widgetsPull(7);
     case "firefox":
-      return widgetsPull(1);
+      return toolsPull(1);
     case "webkit":
       return toolsPull(1);
     default:

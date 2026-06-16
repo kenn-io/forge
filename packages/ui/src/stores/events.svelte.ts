@@ -83,6 +83,22 @@ export interface PRCIRefreshedEvent {
   warnings: string[];
 }
 
+export interface DeferredMergeCompletedEvent {
+  provider: string;
+  platform_host: string;
+  repo_path: string;
+  owner: string;
+  name: string;
+  number: number;
+  head_sha: string;
+  status: "merged" | "failed";
+  merged?: boolean;
+  sha?: string;
+  message?: string;
+  error?: string;
+  completed_at: string;
+}
+
 export interface EventsStoreOptions {
   /**
    * Base URL path (typically from config.basePath). Trailing
@@ -110,6 +126,7 @@ export interface EventsStoreOptions {
   onPRDetailRefreshed?: (event: PRDetailRefreshedEvent) => void;
   onPRCIRefreshQueued?: (event: PRCIRefreshQueuedEvent) => void;
   onPRCIRefreshed?: (event: PRCIRefreshedEvent) => void;
+  onDeferredMergeCompleted?: (event: DeferredMergeCompletedEvent) => void;
 }
 
 /**
@@ -171,6 +188,7 @@ export function createEventsStore(opts: EventsStoreOptions = {}) {
     addJSONListener<PRDetailRefreshedEvent>(source, "pr_detail_refreshed", opts.onPRDetailRefreshed);
     addJSONListener<PRCIRefreshQueuedEvent>(source, "pr_ci_refresh_queued", opts.onPRCIRefreshQueued);
     addJSONListener<PRCIRefreshedEvent>(source, "pr_ci_refreshed", opts.onPRCIRefreshed);
+    addJSONListener<DeferredMergeCompletedEvent>(source, "deferred_merge_completed", opts.onDeferredMergeCompleted);
   }
 
   function disconnect(): void {

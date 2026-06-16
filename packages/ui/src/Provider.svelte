@@ -96,6 +96,7 @@
     getPage?: () => string;
     roborevBaseUrl?: string;
     onError?: (msg: string) => void;
+    onNotification?: (msg: string) => void;
     stores?: StoreInstances | undefined;
     children?: import("svelte").Snippet;
   }
@@ -117,6 +118,7 @@
     getPage = () => "",
     roborevBaseUrl = undefined,
     onError = undefined,
+    onNotification = undefined,
     stores = $bindable(),
     children,
   }: Props = $props();
@@ -137,6 +139,7 @@
     gp: () => string,
     roborevBase: string | undefined,
     errorCb: ((msg: string) => void) | undefined,
+    notificationCb: ((msg: string) => void) | undefined,
   ): StoreInstances {
     const grouping = createGroupingStore();
     const detailActivityView = createDetailActivityViewStore();
@@ -319,6 +322,37 @@
           );
         }
       },
+      onDeferredMergeCompleted: (event) => {
+        void pullsStore.loadPulls();
+        void activityStore.loadActivity();
+        const detail = detailStore.getDetail();
+        if (
+          detail?.repo?.provider === event.provider &&
+          detail.repo.platform_host === event.platform_host &&
+          detail.repo.repo_path === event.repo_path &&
+          detail.repo_owner === event.owner &&
+          detail.repo_name === event.name &&
+          detail.merge_request?.Number === event.number
+        ) {
+          void detailStore.refreshDetailOnly(
+            event.owner,
+            event.name,
+            event.number,
+            {
+              provider: event.provider,
+              platformHost: event.platform_host,
+              repoPath: event.repo_path,
+            },
+          );
+        }
+        if (event.status === "merged") {
+          notificationCb?.(`${event.owner}/${event.name}#${event.number} merged after CI passed.`);
+        } else {
+          (notificationCb ?? errorCb)?.(
+            `Deferred merge for ${event.owner}/${event.name}#${event.number} failed: ${event.error ?? "checks did not pass"}`,
+          );
+        }
+      },
       onReconnectStale: () => {
         // The replay ring rolled past the client's cursor while it
         // was disconnected (long sleep, extended network outage).
@@ -411,7 +445,7 @@
     client, hostState, config, actions,
     onNavigate, onEvent, prepareRoute,
     onWorkspaceCommand,
-    sidebar, getPage, roborevBaseUrl, onError,
+    sidebar, getPage, roborevBaseUrl, onError, onNotification,
   );
 
   onDestroy(() => {

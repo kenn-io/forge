@@ -71,6 +71,7 @@ type PullSuffix =
   | "/import-metadata"
   | "/labels"
   | "/merge"
+  | "/merge/deferred"
   | "/ready-for-review"
   | "/reviewers"
   | "/discussions/{discussion_id}/reply"

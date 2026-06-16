@@ -425,6 +425,36 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("pending CI merge action enqueues deferred merge and closes the modal", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      await page.locator(".btn--merge").first().click();
+      const modal = page.locator(".modal", { hasText: "Merge Pull Request" });
+      await expect(modal).toBeVisible();
+
+      const deferResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === "POST" &&
+          url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge/deferred"
+        );
+      });
+      await modal.getByRole("button", { name: "Merge after CI is complete" }).click();
+      expect((await deferResponse).status()).toBe(202);
+
+      await expect(modal).toHaveCount(0);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("repo merge permission disables merge action with reason end-to-end", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

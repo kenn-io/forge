@@ -752,6 +752,25 @@ components:
         - score
         - hit_type
       type: object
+    DeferMergePRBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DeferMergePRBody.json
+          format: uri
+          readOnly: true
+          type: string
+        pending_checks:
+          format: int64
+          type: integer
+        status:
+          type: string
+      required:
+        - status
+        - pending_checks
+      type: object
     DependencyCapabilities:
       additionalProperties: false
       properties:
@@ -2630,29 +2649,6 @@ components:
         - merged
         - sha
         - message
-      type: object
-    MergePRHostInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/MergePRHostInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        commit_message:
-          type: string
-        commit_title:
-          type: string
-        expected_head_sha:
-          type: string
-        method:
-          type: string
-      required:
-        - commit_title
-        - commit_message
-        - method
       type: object
     MergePRInputBody:
       additionalProperties: false
@@ -9709,7 +9705,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/MergePRHostInputBody"
+              $ref: "#/components/schemas/MergePRInputBody"
         required: true
       responses:
         "200":
@@ -9725,6 +9721,58 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Merge pull request
+      tags:
+        - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/deferred:
+    post:
+      operationId: defer-merge-pull-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergePRInputBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeferMergePRBody"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Defer pull request merge until pending CI passes
       tags:
         - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ready-for-review:
@@ -13340,6 +13388,53 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Merge pull request
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/merge/deferred:
+    post:
+      operationId: defer-merge-pull
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergePRInputBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeferMergePRBody"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Defer pull request merge until pending CI passes
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/ready-for-review:

@@ -1340,6 +1340,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/deferred": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Defer pull request merge until pending CI passes */
+        post: operations["defer-merge-pull-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ready-for-review": {
         parameters: {
             query?: never;
@@ -2675,6 +2692,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pulls/{provider}/{owner}/{name}/{number}/merge/deferred": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Defer pull request merge until pending CI passes */
+        post: operations["defer-merge-pull"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pulls/{provider}/{owner}/{name}/{number}/ready-for-review": {
         parameters: {
             query?: never;
@@ -3984,6 +4018,17 @@ export interface components {
             score: number;
             snippet?: components["schemas"]["BodySnippet"];
         };
+        DeferMergePRBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DeferMergePRBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            pending_checks: number;
+            status: string;
+        };
         DependencyCapabilities: {
             gh: boolean;
             git: boolean;
@@ -4865,18 +4910,6 @@ export interface components {
             merged: boolean;
             message: string;
             sha: string;
-        };
-        MergePRHostInputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/MergePRHostInputBody.json
-             */
-            readonly $schema?: string;
-            commit_message: string;
-            commit_title: string;
-            expected_head_sha?: string;
-            method: string;
         };
         MergePRInputBody: {
             /**
@@ -9377,7 +9410,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MergePRHostInputBody"];
+                "application/json": components["schemas"]["MergePRInputBody"];
             };
         };
         responses: {
@@ -9388,6 +9421,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MergePRBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "defer-merge-pull-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergePRInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeferMergePRBody"];
                 };
             };
             /** @description Error */
@@ -12454,6 +12526,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MergePRBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "defer-merge-pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergePRInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeferMergePRBody"];
                 };
             };
             /** @description Error */

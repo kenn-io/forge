@@ -722,6 +722,14 @@ type CrossFolderHit struct {
 	Snippet    *BodySnippet `json:"snippet,omitempty"`
 }
 
+// DeferMergePRBody defines model for DeferMergePRBody.
+type DeferMergePRBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string `json:"$schema,omitempty"`
+	PendingChecks int64   `json:"pending_checks"`
+	Status        string  `json:"status"`
+}
+
 // DependencyCapabilities defines model for DependencyCapabilities.
 type DependencyCapabilities struct {
 	Gh   bool `json:"gh"`
@@ -1476,16 +1484,6 @@ type MergePRBody struct {
 	Merged  bool    `json:"merged"`
 	Message string  `json:"message"`
 	Sha     string  `json:"sha"`
-}
-
-// MergePRHostInputBody defines model for MergePRHostInputBody.
-type MergePRHostInputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema          *string `json:"$schema,omitempty"`
-	CommitMessage   string  `json:"commit_message"`
-	CommitTitle     string  `json:"commit_title"`
-	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
-	Method          string  `json:"method"`
 }
 
 // MergePRInputBody defines model for MergePRInputBody.
@@ -3435,7 +3433,10 @@ type SetPrGithubStateOnHostJSONRequestBody = GithubStateHostInputBody
 type SetPrLabelsOnHostJSONRequestBody = SetLabelsRequest
 
 // MergePullOnHostJSONRequestBody defines body for MergePullOnHost for application/json ContentType.
-type MergePullOnHostJSONRequestBody = MergePRHostInputBody
+type MergePullOnHostJSONRequestBody = MergePRInputBody
+
+// DeferMergePullOnHostJSONRequestBody defines body for DeferMergePullOnHost for application/json ContentType.
+type DeferMergePullOnHostJSONRequestBody = MergePRInputBody
 
 // CreatePrReviewDraftCommentOnHostJSONRequestBody defines body for CreatePrReviewDraftCommentOnHost for application/json ContentType.
 type CreatePrReviewDraftCommentOnHostJSONRequestBody = CreateDiffReviewDraftCommentHostInputBody
@@ -3541,6 +3542,9 @@ type SetPrLabelsJSONRequestBody = SetLabelsRequest
 
 // MergePullJSONRequestBody defines body for MergePull for application/json ContentType.
 type MergePullJSONRequestBody = MergePRInputBody
+
+// DeferMergePullJSONRequestBody defines body for DeferMergePull for application/json ContentType.
+type DeferMergePullJSONRequestBody = MergePRInputBody
 
 // CreatePrReviewDraftCommentJSONRequestBody defines body for CreatePrReviewDraftComment for application/json ContentType.
 type CreatePrReviewDraftCommentJSONRequestBody = CreateDiffReviewDraftCommentInputBody
@@ -4018,6 +4022,11 @@ type ClientInterface interface {
 
 	MergePullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body MergePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DeferMergePullOnHostWithBody request with any body
+	DeferMergePullOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DeferMergePullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body DeferMergePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// MarkPullReadyForReviewOnHost request
 	MarkPullReadyForReviewOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -4348,6 +4357,11 @@ type ClientInterface interface {
 	MergePullWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	MergePull(ctx context.Context, provider string, owner string, name string, number int64, body MergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeferMergePullWithBody request with any body
+	DeferMergePullWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DeferMergePull(ctx context.Context, provider string, owner string, name string, number int64, body DeferMergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// MarkPullReadyForReview request
 	MarkPullReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6105,6 +6119,30 @@ func (c *Client) MergePullOnHost(ctx context.Context, platformHost string, provi
 	return c.Client.Do(req)
 }
 
+func (c *Client) DeferMergePullOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeferMergePullOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeferMergePullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body DeferMergePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeferMergePullOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) MarkPullReadyForReviewOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewMarkPullReadyForReviewOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
@@ -7559,6 +7597,30 @@ func (c *Client) MergePullWithBody(ctx context.Context, provider string, owner s
 
 func (c *Client) MergePull(ctx context.Context, provider string, owner string, name string, number int64, body MergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewMergePullRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeferMergePullWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeferMergePullRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeferMergePull(ctx context.Context, provider string, owner string, name string, number int64, body DeferMergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeferMergePullRequest(c.Server, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -14080,6 +14142,81 @@ func NewMergePullOnHostRequestWithBody(server string, platformHost string, provi
 	return req, nil
 }
 
+// NewDeferMergePullOnHostRequest calls the generic DeferMergePullOnHost builder with application/json body
+func NewDeferMergePullOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body DeferMergePullOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeferMergePullOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewDeferMergePullOnHostRequestWithBody generates requests for DeferMergePullOnHost with any type of body
+func NewDeferMergePullOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/merge/deferred", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewMarkPullReadyForReviewOnHostRequest generates requests for MarkPullReadyForReviewOnHost
 func NewMarkPullReadyForReviewOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
@@ -19455,6 +19592,74 @@ func NewMergePullRequestWithBody(server string, provider string, owner string, n
 	return req, nil
 }
 
+// NewDeferMergePullRequest calls the generic DeferMergePull builder with application/json body
+func NewDeferMergePullRequest(server string, provider string, owner string, name string, number int64, body DeferMergePullJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeferMergePullRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewDeferMergePullRequestWithBody generates requests for DeferMergePull with any type of body
+func NewDeferMergePullRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/merge/deferred", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewMarkPullReadyForReviewRequest generates requests for MarkPullReadyForReview
 func NewMarkPullReadyForReviewRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
@@ -23119,6 +23324,11 @@ type ClientWithResponsesInterface interface {
 
 	MergePullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body MergePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePullOnHostResponse, error)
 
+	// DeferMergePullOnHostWithBodyWithResponse request with any body
+	DeferMergePullOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeferMergePullOnHostResponse, error)
+
+	DeferMergePullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body DeferMergePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*DeferMergePullOnHostResponse, error)
+
 	// MarkPullReadyForReviewOnHostWithResponse request
 	MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewOnHostResponse, error)
 
@@ -23449,6 +23659,11 @@ type ClientWithResponsesInterface interface {
 	MergePullWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePullResponse, error)
 
 	MergePullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body MergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePullResponse, error)
+
+	// DeferMergePullWithBodyWithResponse request with any body
+	DeferMergePullWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeferMergePullResponse, error)
+
+	DeferMergePullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body DeferMergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*DeferMergePullResponse, error)
 
 	// MarkPullReadyForReviewWithResponse request
 	MarkPullReadyForReviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewResponse, error)
@@ -25690,6 +25905,29 @@ func (r MergePullOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type DeferMergePullOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON202                       *DeferMergePRBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeferMergePullOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeferMergePullOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type MarkPullReadyForReviewOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -27670,6 +27908,29 @@ func (r MergePullResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r MergePullResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeferMergePullResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON202                       *DeferMergePRBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeferMergePullResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeferMergePullResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -30290,6 +30551,23 @@ func (c *ClientWithResponses) MergePullOnHostWithResponse(ctx context.Context, p
 	return ParseMergePullOnHostResponse(rsp)
 }
 
+// DeferMergePullOnHostWithBodyWithResponse request with arbitrary body returning *DeferMergePullOnHostResponse
+func (c *ClientWithResponses) DeferMergePullOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeferMergePullOnHostResponse, error) {
+	rsp, err := c.DeferMergePullOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeferMergePullOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) DeferMergePullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body DeferMergePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*DeferMergePullOnHostResponse, error) {
+	rsp, err := c.DeferMergePullOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeferMergePullOnHostResponse(rsp)
+}
+
 // MarkPullReadyForReviewOnHostWithResponse request returning *MarkPullReadyForReviewOnHostResponse
 func (c *ClientWithResponses) MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewOnHostResponse, error) {
 	rsp, err := c.MarkPullReadyForReviewOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
@@ -31351,6 +31629,23 @@ func (c *ClientWithResponses) MergePullWithResponse(ctx context.Context, provide
 		return nil, err
 	}
 	return ParseMergePullResponse(rsp)
+}
+
+// DeferMergePullWithBodyWithResponse request with arbitrary body returning *DeferMergePullResponse
+func (c *ClientWithResponses) DeferMergePullWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeferMergePullResponse, error) {
+	rsp, err := c.DeferMergePullWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeferMergePullResponse(rsp)
+}
+
+func (c *ClientWithResponses) DeferMergePullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body DeferMergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*DeferMergePullResponse, error) {
+	rsp, err := c.DeferMergePull(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeferMergePullResponse(rsp)
 }
 
 // MarkPullReadyForReviewWithResponse request returning *MarkPullReadyForReviewResponse
@@ -34960,6 +35255,39 @@ func ParseMergePullOnHostResponse(rsp *http.Response) (*MergePullOnHostResponse,
 	return response, nil
 }
 
+// ParseDeferMergePullOnHostResponse parses an HTTP response from a DeferMergePullOnHostWithResponse call
+func ParseDeferMergePullOnHostResponse(rsp *http.Response) (*DeferMergePullOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeferMergePullOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest DeferMergePRBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseMarkPullReadyForReviewOnHostResponse parses an HTTP response from a MarkPullReadyForReviewOnHostWithResponse call
 func ParseMarkPullReadyForReviewOnHostResponse(rsp *http.Response) (*MarkPullReadyForReviewOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -37713,6 +38041,39 @@ func ParseMergePullResponse(rsp *http.Response) (*MergePullResponse, error) {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeferMergePullResponse parses an HTTP response from a DeferMergePullWithResponse call
+func ParseDeferMergePullResponse(rsp *http.Response) (*DeferMergePullResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeferMergePullResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest DeferMergePRBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError

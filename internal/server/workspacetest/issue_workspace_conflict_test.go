@@ -2,6 +2,8 @@ package workspacetest
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 
 	Assert "github.com/stretchr/testify/assert"
@@ -76,4 +78,41 @@ func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.
 		branch+"-2",
 		locations["body.suggested_git_head_ref"],
 	)
+}
+
+func TestIssueWorkspaceCreateIgnoresBrokenCallerCwdForBranchValidation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	seedIssue(t, fixture.database, "acme", "widget", 23, "open")
+
+	brokenCwd := t.TempDir()
+	require.NoError(os.WriteFile(
+		filepath.Join(brokenCwd, ".git"),
+		[]byte("gitdir: /definitely/not/a/git/worktree\n"),
+		0o644,
+	))
+	previousCwd, err := os.Getwd()
+	require.NoError(err)
+	require.NoError(os.Chdir(brokenCwd))
+	t.Cleanup(func() {
+		require.NoError(os.Chdir(previousCwd))
+	})
+
+	branch := "middleman/issue-23-federation-test"
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
+		t.Context(), "gh", "acme", "widget", 23,
+		generated.CreateIssueWorkspaceInputBody{GitHeadRef: &branch},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON202)
+
+	ready := waitForWorkspaceReady(
+		t, t.Context(), fixture.client, resp.JSON202.Id,
+	)
+	assert.Equal(branch, ready.GitHeadRef)
+	assert.Equal("ready", ready.Status)
+	assert.FileExists(filepath.Join(ready.WorktreePath, "base.txt"))
 }

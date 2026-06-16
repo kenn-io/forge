@@ -656,7 +656,9 @@ func (d *DB) DeleteProjectWorktreeTmuxSession(
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
 		DELETE FROM middleman_project_worktree_runtime_sessions
-		WHERE worktree_id = ? AND session_key = ?`, worktreeID, sessionKey,
+		WHERE worktree_id = ?
+		  AND session_key = ?
+		  AND runtime_backend = 'tmux'`, worktreeID, sessionKey,
 	)
 	if err != nil {
 		return fmt.Errorf("delete project worktree tmux session: %w", err)
@@ -677,7 +679,10 @@ func (d *DB) DeleteProjectWorktreeTmuxSessionCreatedAt(
 ) (bool, error) {
 	result, err := d.rw.ExecContext(ctx, `
 		DELETE FROM middleman_project_worktree_runtime_sessions
-		WHERE worktree_id = ? AND session_key = ? AND created_at = ?`,
+		WHERE worktree_id = ?
+		  AND session_key = ?
+		  AND runtime_backend = 'tmux'
+		  AND created_at = ?`,
 		worktreeID, sessionKey, canonicalUTCTime(createdAt),
 	)
 	if err != nil {

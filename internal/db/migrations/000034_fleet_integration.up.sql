@@ -2,8 +2,8 @@
 -- terminal/runtime owner and backend_session_key stores the owner-specific
 -- session identifier when one exists (for example, a tmux session name). label
 -- is the display label persisted at launch time. Command sessions
--- (caller-supplied argv, no launch target) have no target_key to derive a label
--- from.
+-- (caller-supplied argv, no launch target) store their stable command session
+-- key in target_key so stored runtime rows keep a non-empty target dimension.
 CREATE TABLE middleman_project_worktree_runtime_sessions (
     worktree_id         TEXT NOT NULL REFERENCES middleman_project_worktrees(id) ON DELETE CASCADE,
     session_key         TEXT NOT NULL,

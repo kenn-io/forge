@@ -37,6 +37,16 @@ type fleetHostTarget struct {
 func (s *Server) registerFleetOperationRoutes(api huma.API) {
 	routes := []fleetRESTProxyRoute{
 		{
+			operationID: "list-fleet-workspaces",
+			method:      http.MethodGet,
+			path:        "/fleet/hosts/{host_key}/workspaces",
+			summary:     "List workspaces on fleet host",
+			pathParams:  []string{"host_key"},
+			targetPath: func(*http.Request) string {
+				return "/api/v1/workspaces"
+			},
+		},
+		{
 			operationID: "create-fleet-workspace",
 			method:      http.MethodPost,
 			path:        "/fleet/hosts/{host_key}/workspaces",
@@ -78,6 +88,46 @@ func (s *Server) registerFleetOperationRoutes(api huma.API) {
 			},
 		},
 		{
+			operationID: "get-fleet-workspace",
+			method:      http.MethodGet,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}",
+			summary:     "Get workspace on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id"))
+			},
+		},
+		{
+			operationID: "retry-fleet-workspace",
+			method:      http.MethodPost,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/retry",
+			summary:     "Retry workspace setup on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/retry"
+			},
+		},
+		{
+			operationID: "refresh-fleet-workspace",
+			method:      http.MethodPost,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/refresh",
+			summary:     "Refresh workspace metadata on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/refresh"
+			},
+		},
+		{
+			operationID: "get-fleet-workspace-runtime",
+			method:      http.MethodGet,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/runtime",
+			summary:     "Get workspace runtime on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/runtime"
+			},
+		},
+		{
 			operationID: "launch-fleet-workspace-runtime-session",
 			method:      http.MethodPost,
 			path:        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions",
@@ -86,6 +136,18 @@ func (s *Server) registerFleetOperationRoutes(api huma.API) {
 			body:        true,
 			targetPath: func(r *http.Request) string {
 				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/runtime/sessions"
+			},
+		},
+		{
+			operationID: "rename-fleet-workspace-runtime-session",
+			method:      http.MethodPatch,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}",
+			summary:     "Rename workspace session on fleet host",
+			pathParams:  []string{"host_key", "id", "session_key"},
+			body:        true,
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) +
+					"/runtime/sessions/" + escapePath(r.PathValue("session_key"))
 			},
 		},
 		{

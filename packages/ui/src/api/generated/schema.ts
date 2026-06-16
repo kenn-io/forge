@@ -679,7 +679,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List workspaces on fleet host */
+        get: operations["list-fleet-workspaces"];
         put?: never;
         /** Create workspace on fleet host */
         post: operations["create-fleet-workspace"];
@@ -696,11 +697,63 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get workspace on fleet host */
+        get: operations["get-fleet-workspace"];
         put?: never;
         post?: never;
         /** Delete workspace on fleet host */
         delete: operations["delete-fleet-workspace"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh workspace metadata on fleet host */
+        post: operations["refresh-fleet-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry workspace setup on fleet host */
+        post: operations["retry-fleet-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace runtime on fleet host */
+        get: operations["get-fleet-workspace-runtime"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -737,7 +790,8 @@ export interface paths {
         delete: operations["stop-fleet-workspace-runtime-session"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Rename workspace session on fleet host */
+        patch: operations["rename-fleet-workspace-runtime-session"];
         trace?: never;
     };
     "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec": {
@@ -7618,6 +7672,31 @@ export interface operations {
             };
         };
     };
+    "list-fleet-workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "create-fleet-workspace": {
         parameters: {
             query?: never;
@@ -7650,12 +7729,116 @@ export interface operations {
             };
         };
     };
+    "get-fleet-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "delete-fleet-workspace": {
         parameters: {
             query?: {
                 /** @description Forward force deletion to the owning host. */
                 force?: boolean;
             };
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "refresh-fleet-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "retry-fleet-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-fleet-workspace-runtime": {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 host_key: string;
@@ -7724,6 +7907,40 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "rename-fleet-workspace-runtime-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+                session_key: string;
+            };
+            cookie?: never;
+        };
+        /** @description JSON payload forwarded to the owning host. */
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description Response returned by the owning fleet host. */
             default: {

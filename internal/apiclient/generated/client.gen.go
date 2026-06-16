@@ -2932,6 +2932,9 @@ type DeleteFleetWorkspaceParams struct {
 // LaunchFleetWorkspaceRuntimeSessionJSONBody defines parameters for LaunchFleetWorkspaceRuntimeSession.
 type LaunchFleetWorkspaceRuntimeSessionJSONBody map[string]interface{}
 
+// RenameFleetWorkspaceRuntimeSessionJSONBody defines parameters for RenameFleetWorkspaceRuntimeSession.
+type RenameFleetWorkspaceRuntimeSessionJSONBody map[string]interface{}
+
 // GetPullDiffOnHostParams defines parameters for GetPullDiffOnHost.
 type GetPullDiffOnHostParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
@@ -3264,6 +3267,9 @@ type CreateFleetWorkspaceJSONRequestBody CreateFleetWorkspaceJSONBody
 
 // LaunchFleetWorkspaceRuntimeSessionJSONRequestBody defines body for LaunchFleetWorkspaceRuntimeSession for application/json ContentType.
 type LaunchFleetWorkspaceRuntimeSessionJSONRequestBody LaunchFleetWorkspaceRuntimeSessionJSONBody
+
+// RenameFleetWorkspaceRuntimeSessionJSONRequestBody defines body for RenameFleetWorkspaceRuntimeSession for application/json ContentType.
+type RenameFleetWorkspaceRuntimeSessionJSONRequestBody RenameFleetWorkspaceRuntimeSessionJSONBody
 
 // CreateIssueOnHostJSONRequestBody defines body for CreateIssueOnHost for application/json ContentType.
 type CreateIssueOnHostJSONRequestBody = CreateIssueHostInputBody
@@ -3717,6 +3723,9 @@ type ClientInterface interface {
 	// GetFleetHostRuntimeSessionAttachSpec request
 	GetFleetHostRuntimeSessionAttachSpec(ctx context.Context, hostKey string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListFleetWorkspaces request
+	ListFleetWorkspaces(ctx context.Context, hostKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateFleetWorkspaceWithBody request with any body
 	CreateFleetWorkspaceWithBody(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -3725,6 +3734,18 @@ type ClientInterface interface {
 	// DeleteFleetWorkspace request
 	DeleteFleetWorkspace(ctx context.Context, hostKey string, id string, params *DeleteFleetWorkspaceParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetFleetWorkspace request
+	GetFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshFleetWorkspace request
+	RefreshFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetryFleetWorkspace request
+	RetryFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetWorkspaceRuntime request
+	GetFleetWorkspaceRuntime(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// LaunchFleetWorkspaceRuntimeSessionWithBody request with any body
 	LaunchFleetWorkspaceRuntimeSessionWithBody(ctx context.Context, hostKey string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -3732,6 +3753,11 @@ type ClientInterface interface {
 
 	// StopFleetWorkspaceRuntimeSession request
 	StopFleetWorkspaceRuntimeSession(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RenameFleetWorkspaceRuntimeSessionWithBody request with any body
+	RenameFleetWorkspaceRuntimeSessionWithBody(ctx context.Context, hostKey string, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RenameFleetWorkspaceRuntimeSession(ctx context.Context, hostKey string, id string, sessionKey string, body RenameFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetFleetWorkspaceRuntimeSessionAttachSpec request
 	GetFleetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -5148,6 +5174,18 @@ func (c *Client) GetFleetHostRuntimeSessionAttachSpec(ctx context.Context, hostK
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListFleetWorkspaces(ctx context.Context, hostKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListFleetWorkspacesRequest(c.Server, hostKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) CreateFleetWorkspaceWithBody(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateFleetWorkspaceRequestWithBody(c.Server, hostKey, contentType, body)
 	if err != nil {
@@ -5184,6 +5222,54 @@ func (c *Client) DeleteFleetWorkspace(ctx context.Context, hostKey string, id st
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetWorkspaceRequest(c.Server, hostKey, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshFleetWorkspaceRequest(c.Server, hostKey, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RetryFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetryFleetWorkspaceRequest(c.Server, hostKey, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetWorkspaceRuntime(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetWorkspaceRuntimeRequest(c.Server, hostKey, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) LaunchFleetWorkspaceRuntimeSessionWithBody(ctx context.Context, hostKey string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewLaunchFleetWorkspaceRuntimeSessionRequestWithBody(c.Server, hostKey, id, contentType, body)
 	if err != nil {
@@ -5210,6 +5296,30 @@ func (c *Client) LaunchFleetWorkspaceRuntimeSession(ctx context.Context, hostKey
 
 func (c *Client) StopFleetWorkspaceRuntimeSession(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStopFleetWorkspaceRuntimeSessionRequest(c.Server, hostKey, id, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RenameFleetWorkspaceRuntimeSessionWithBody(ctx context.Context, hostKey string, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenameFleetWorkspaceRuntimeSessionRequestWithBody(c.Server, hostKey, id, sessionKey, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RenameFleetWorkspaceRuntimeSession(ctx context.Context, hostKey string, id string, sessionKey string, body RenameFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenameFleetWorkspaceRuntimeSessionRequest(c.Server, hostKey, id, sessionKey, body)
 	if err != nil {
 		return nil, err
 	}
@@ -10559,6 +10669,40 @@ func NewGetFleetHostRuntimeSessionAttachSpecRequest(server string, hostKey strin
 	return req, nil
 }
 
+// NewListFleetWorkspacesRequest generates requests for ListFleetWorkspaces
+func NewListFleetWorkspacesRequest(server string, hostKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewCreateFleetWorkspaceRequest calls the generic CreateFleetWorkspace builder with application/json body
 func NewCreateFleetWorkspaceRequest(server string, hostKey string, body CreateFleetWorkspaceJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -10674,6 +10818,170 @@ func NewDeleteFleetWorkspaceRequest(server string, hostKey string, id string, pa
 	return req, nil
 }
 
+// NewGetFleetWorkspaceRequest generates requests for GetFleetWorkspace
+func NewGetFleetWorkspaceRequest(server string, hostKey string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRefreshFleetWorkspaceRequest generates requests for RefreshFleetWorkspace
+func NewRefreshFleetWorkspaceRequest(server string, hostKey string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/refresh", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRetryFleetWorkspaceRequest generates requests for RetryFleetWorkspace
+func NewRetryFleetWorkspaceRequest(server string, hostKey string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/retry", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFleetWorkspaceRuntimeRequest generates requests for GetFleetWorkspaceRuntime
+func NewGetFleetWorkspaceRuntimeRequest(server string, hostKey string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/runtime", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewLaunchFleetWorkspaceRuntimeSessionRequest calls the generic LaunchFleetWorkspaceRuntimeSession builder with application/json body
 func NewLaunchFleetWorkspaceRuntimeSessionRequest(server string, hostKey string, id string, body LaunchFleetWorkspaceRuntimeSessionJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -10772,6 +11080,67 @@ func NewStopFleetWorkspaceRuntimeSessionRequest(server string, hostKey string, i
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewRenameFleetWorkspaceRuntimeSessionRequest calls the generic RenameFleetWorkspaceRuntimeSession builder with application/json body
+func NewRenameFleetWorkspaceRuntimeSessionRequest(server string, hostKey string, id string, sessionKey string, body RenameFleetWorkspaceRuntimeSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRenameFleetWorkspaceRuntimeSessionRequestWithBody(server, hostKey, id, sessionKey, "application/json", bodyReader)
+}
+
+// NewRenameFleetWorkspaceRuntimeSessionRequestWithBody generates requests for RenameFleetWorkspaceRuntimeSession with any type of body
+func NewRenameFleetWorkspaceRuntimeSessionRequestWithBody(server string, hostKey string, id string, sessionKey string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/runtime/sessions/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -21684,6 +22053,9 @@ type ClientWithResponsesInterface interface {
 	// GetFleetHostRuntimeSessionAttachSpecWithResponse request
 	GetFleetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, hostKey string, sessionKey string, reqEditors ...RequestEditorFn) (*GetFleetHostRuntimeSessionAttachSpecResponse, error)
 
+	// ListFleetWorkspacesWithResponse request
+	ListFleetWorkspacesWithResponse(ctx context.Context, hostKey string, reqEditors ...RequestEditorFn) (*ListFleetWorkspacesResponse, error)
+
 	// CreateFleetWorkspaceWithBodyWithResponse request with any body
 	CreateFleetWorkspaceWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetWorkspaceResponse, error)
 
@@ -21692,6 +22064,18 @@ type ClientWithResponsesInterface interface {
 	// DeleteFleetWorkspaceWithResponse request
 	DeleteFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, params *DeleteFleetWorkspaceParams, reqEditors ...RequestEditorFn) (*DeleteFleetWorkspaceResponse, error)
 
+	// GetFleetWorkspaceWithResponse request
+	GetFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceResponse, error)
+
+	// RefreshFleetWorkspaceWithResponse request
+	RefreshFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*RefreshFleetWorkspaceResponse, error)
+
+	// RetryFleetWorkspaceWithResponse request
+	RetryFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*RetryFleetWorkspaceResponse, error)
+
+	// GetFleetWorkspaceRuntimeWithResponse request
+	GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceRuntimeResponse, error)
+
 	// LaunchFleetWorkspaceRuntimeSessionWithBodyWithResponse request with any body
 	LaunchFleetWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchFleetWorkspaceRuntimeSessionResponse, error)
 
@@ -21699,6 +22083,11 @@ type ClientWithResponsesInterface interface {
 
 	// StopFleetWorkspaceRuntimeSessionWithResponse request
 	StopFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*StopFleetWorkspaceRuntimeSessionResponse, error)
+
+	// RenameFleetWorkspaceRuntimeSessionWithBodyWithResponse request with any body
+	RenameFleetWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResponse, error)
+
+	RenameFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, body RenameFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResponse, error)
 
 	// GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse request
 	GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceRuntimeSessionAttachSpecResponse, error)
@@ -23369,6 +23758,29 @@ func (r GetFleetHostRuntimeSessionAttachSpecResponse) StatusCode() int {
 	return 0
 }
 
+type ListFleetWorkspacesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListFleetWorkspacesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListFleetWorkspacesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type CreateFleetWorkspaceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -23415,6 +23827,98 @@ func (r DeleteFleetWorkspaceResponse) StatusCode() int {
 	return 0
 }
 
+type GetFleetWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RefreshFleetWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshFleetWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshFleetWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RetryFleetWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RetryFleetWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RetryFleetWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetWorkspaceRuntimeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetWorkspaceRuntimeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetWorkspaceRuntimeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type LaunchFleetWorkspaceRuntimeSessionResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -23455,6 +23959,29 @@ func (r StopFleetWorkspaceRuntimeSessionResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r StopFleetWorkspaceRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RenameFleetWorkspaceRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RenameFleetWorkspaceRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RenameFleetWorkspaceRuntimeSessionResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -28093,6 +28620,15 @@ func (c *ClientWithResponses) GetFleetHostRuntimeSessionAttachSpecWithResponse(c
 	return ParseGetFleetHostRuntimeSessionAttachSpecResponse(rsp)
 }
 
+// ListFleetWorkspacesWithResponse request returning *ListFleetWorkspacesResponse
+func (c *ClientWithResponses) ListFleetWorkspacesWithResponse(ctx context.Context, hostKey string, reqEditors ...RequestEditorFn) (*ListFleetWorkspacesResponse, error) {
+	rsp, err := c.ListFleetWorkspaces(ctx, hostKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListFleetWorkspacesResponse(rsp)
+}
+
 // CreateFleetWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateFleetWorkspaceResponse
 func (c *ClientWithResponses) CreateFleetWorkspaceWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetWorkspaceResponse, error) {
 	rsp, err := c.CreateFleetWorkspaceWithBody(ctx, hostKey, contentType, body, reqEditors...)
@@ -28119,6 +28655,42 @@ func (c *ClientWithResponses) DeleteFleetWorkspaceWithResponse(ctx context.Conte
 	return ParseDeleteFleetWorkspaceResponse(rsp)
 }
 
+// GetFleetWorkspaceWithResponse request returning *GetFleetWorkspaceResponse
+func (c *ClientWithResponses) GetFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceResponse, error) {
+	rsp, err := c.GetFleetWorkspace(ctx, hostKey, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetWorkspaceResponse(rsp)
+}
+
+// RefreshFleetWorkspaceWithResponse request returning *RefreshFleetWorkspaceResponse
+func (c *ClientWithResponses) RefreshFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*RefreshFleetWorkspaceResponse, error) {
+	rsp, err := c.RefreshFleetWorkspace(ctx, hostKey, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshFleetWorkspaceResponse(rsp)
+}
+
+// RetryFleetWorkspaceWithResponse request returning *RetryFleetWorkspaceResponse
+func (c *ClientWithResponses) RetryFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*RetryFleetWorkspaceResponse, error) {
+	rsp, err := c.RetryFleetWorkspace(ctx, hostKey, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetryFleetWorkspaceResponse(rsp)
+}
+
+// GetFleetWorkspaceRuntimeWithResponse request returning *GetFleetWorkspaceRuntimeResponse
+func (c *ClientWithResponses) GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceRuntimeResponse, error) {
+	rsp, err := c.GetFleetWorkspaceRuntime(ctx, hostKey, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetWorkspaceRuntimeResponse(rsp)
+}
+
 // LaunchFleetWorkspaceRuntimeSessionWithBodyWithResponse request with arbitrary body returning *LaunchFleetWorkspaceRuntimeSessionResponse
 func (c *ClientWithResponses) LaunchFleetWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchFleetWorkspaceRuntimeSessionResponse, error) {
 	rsp, err := c.LaunchFleetWorkspaceRuntimeSessionWithBody(ctx, hostKey, id, contentType, body, reqEditors...)
@@ -28143,6 +28715,23 @@ func (c *ClientWithResponses) StopFleetWorkspaceRuntimeSessionWithResponse(ctx c
 		return nil, err
 	}
 	return ParseStopFleetWorkspaceRuntimeSessionResponse(rsp)
+}
+
+// RenameFleetWorkspaceRuntimeSessionWithBodyWithResponse request with arbitrary body returning *RenameFleetWorkspaceRuntimeSessionResponse
+func (c *ClientWithResponses) RenameFleetWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.RenameFleetWorkspaceRuntimeSessionWithBody(ctx, hostKey, id, sessionKey, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenameFleetWorkspaceRuntimeSessionResponse(rsp)
+}
+
+func (c *ClientWithResponses) RenameFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, body RenameFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.RenameFleetWorkspaceRuntimeSession(ctx, hostKey, id, sessionKey, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenameFleetWorkspaceRuntimeSessionResponse(rsp)
 }
 
 // GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse request returning *GetFleetWorkspaceRuntimeSessionAttachSpecResponse
@@ -31731,6 +32320,39 @@ func ParseGetFleetHostRuntimeSessionAttachSpecResponse(rsp *http.Response) (*Get
 	return response, nil
 }
 
+// ParseListFleetWorkspacesResponse parses an HTTP response from a ListFleetWorkspacesWithResponse call
+func ParseListFleetWorkspacesResponse(rsp *http.Response) (*ListFleetWorkspacesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListFleetWorkspacesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseCreateFleetWorkspaceResponse parses an HTTP response from a CreateFleetWorkspaceWithResponse call
 func ParseCreateFleetWorkspaceResponse(rsp *http.Response) (*CreateFleetWorkspaceResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -31797,6 +32419,138 @@ func ParseDeleteFleetWorkspaceResponse(rsp *http.Response) (*DeleteFleetWorkspac
 	return response, nil
 }
 
+// ParseGetFleetWorkspaceResponse parses an HTTP response from a GetFleetWorkspaceWithResponse call
+func ParseGetFleetWorkspaceResponse(rsp *http.Response) (*GetFleetWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshFleetWorkspaceResponse parses an HTTP response from a RefreshFleetWorkspaceWithResponse call
+func ParseRefreshFleetWorkspaceResponse(rsp *http.Response) (*RefreshFleetWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshFleetWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRetryFleetWorkspaceResponse parses an HTTP response from a RetryFleetWorkspaceWithResponse call
+func ParseRetryFleetWorkspaceResponse(rsp *http.Response) (*RetryFleetWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RetryFleetWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetWorkspaceRuntimeResponse parses an HTTP response from a GetFleetWorkspaceRuntimeWithResponse call
+func ParseGetFleetWorkspaceRuntimeResponse(rsp *http.Response) (*GetFleetWorkspaceRuntimeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetWorkspaceRuntimeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseLaunchFleetWorkspaceRuntimeSessionResponse parses an HTTP response from a LaunchFleetWorkspaceRuntimeSessionWithResponse call
 func ParseLaunchFleetWorkspaceRuntimeSessionResponse(rsp *http.Response) (*LaunchFleetWorkspaceRuntimeSessionResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -31839,6 +32593,39 @@ func ParseStopFleetWorkspaceRuntimeSessionResponse(rsp *http.Response) (*StopFle
 	}
 
 	response := &StopFleetWorkspaceRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRenameFleetWorkspaceRuntimeSessionResponse parses an HTTP response from a RenameFleetWorkspaceRuntimeSessionWithResponse call
+func ParseRenameFleetWorkspaceRuntimeSessionResponse(rsp *http.Response) (*RenameFleetWorkspaceRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RenameFleetWorkspaceRuntimeSessionResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

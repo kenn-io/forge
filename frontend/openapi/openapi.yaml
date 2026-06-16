@@ -7565,6 +7565,28 @@ paths:
       tags:
         - Fleet
   /fleet/hosts/{host_key}/workspaces:
+    get:
+      operationId: list-fleet-workspaces
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: List workspaces on fleet host
+      tags:
+        - Fleet
     post:
       operationId: create-fleet-workspace
       parameters:
@@ -7626,6 +7648,117 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Response returned by the owning fleet host.
       summary: Delete workspace on fleet host
+      tags:
+        - Fleet
+    get:
+      operationId: get-fleet-workspace
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get workspace on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/refresh:
+    post:
+      operationId: refresh-fleet-workspace
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Refresh workspace metadata on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/retry:
+    post:
+      operationId: retry-fleet-workspace
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Retry workspace setup on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/runtime:
+    get:
+      operationId: get-fleet-workspace-runtime
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get workspace runtime on fleet host
       tags:
         - Fleet
   /fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions:
@@ -7695,6 +7828,46 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Response returned by the owning fleet host.
       summary: Stop workspace session on fleet host
+      tags:
+        - Fleet
+    patch:
+      operationId: rename-fleet-workspace-runtime-session
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Rename workspace session on fleet host
       tags:
         - Fleet
   /fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec:

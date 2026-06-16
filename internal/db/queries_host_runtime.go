@@ -90,7 +90,7 @@ func (d *DB) DeleteHostRuntimeTmuxSession(
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
 		DELETE FROM middleman_host_runtime_sessions
-		WHERE session_key = ?`, sessionKey,
+		WHERE session_key = ? AND runtime_backend = 'tmux'`, sessionKey,
 	)
 	if err != nil {
 		return fmt.Errorf("delete host runtime tmux session: %w", err)
@@ -110,7 +110,9 @@ func (d *DB) DeleteHostRuntimeTmuxSessionCreatedAt(
 ) (bool, error) {
 	result, err := d.rw.ExecContext(ctx, `
 		DELETE FROM middleman_host_runtime_sessions
-		WHERE session_key = ? AND created_at = ?`,
+		WHERE session_key = ?
+		  AND runtime_backend = 'tmux'
+		  AND created_at = ?`,
 		sessionKey, canonicalUTCTime(createdAt),
 	)
 	if err != nil {

@@ -1,6 +1,7 @@
 package e2etest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -80,6 +81,32 @@ func deleteJSON(t *testing.T, client *http.Client, url string) (int, string) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return resp.StatusCode, string(body)
+}
+
+func patchJSON(
+	t *testing.T,
+	client *http.Client,
+	url string,
+	body any,
+) (int, string) {
+	t.Helper()
+	require := require.New(t)
+
+	var payload io.Reader = http.NoBody
+	if body != nil {
+		buf, err := json.Marshal(body)
+		require.NoError(err)
+		payload = bytes.NewReader(buf)
+	}
+	req, err := http.NewRequest(http.MethodPatch, url, payload)
+	require.NoError(err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(err)
+	return resp.StatusCode, string(respBody)
 }
 
 func TestFleetSnapshotLocalE2E(t *testing.T) {
@@ -623,13 +650,32 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 		observedMu.Unlock()
 
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"workspaces":[{"id":"peer-ws","status":"ready"}]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/workspaces":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"id":"peer-ws","status":"queued"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/peer-ws":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"peer-ws","status":"ready"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/workspaces/peer-ws/retry":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"id":"peer-ws","status":"creating"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/workspaces/peer-ws/refresh":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"peer-ws","status":"ready","refreshed":true}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/peer-ws/runtime":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"launch_targets":[],"sessions":[]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/workspaces/peer-ws/runtime/sessions":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"key":"peer-ws:helper","workspace_id":"peer-ws","target_key":"helper"}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/workspaces/peer-ws/runtime/sessions/sess-1":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"key":"sess-1","workspace_id":"peer-ws","label":"renamed"}`))
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/workspaces/peer-ws/runtime/sessions/sess-1":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime":
@@ -670,7 +716,27 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 	}
 	hubTS, _ := bootFleetServer(t, hubCfg)
 
-	status, body := postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces", map[string]any{
+	status, body := getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces")
+	assert.Equal(http.StatusOK, status)
+	req.JSONEq(`{"workspaces":[{"id":"peer-ws","status":"ready"}]}`, body)
+
+	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws")
+	assert.Equal(http.StatusOK, status)
+	req.JSONEq(`{"id":"peer-ws","status":"ready"}`, body)
+
+	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/retry", nil)
+	assert.Equal(http.StatusAccepted, status)
+	req.JSONEq(`{"id":"peer-ws","status":"creating"}`, body)
+
+	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/refresh", nil)
+	assert.Equal(http.StatusOK, status)
+	req.JSONEq(`{"id":"peer-ws","status":"ready","refreshed":true}`, body)
+
+	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/runtime")
+	assert.Equal(http.StatusOK, status)
+	req.JSONEq(`{"launch_targets":[],"sessions":[]}`, body)
+
+	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces", map[string]any{
 		"platform_host": "github.com",
 		"owner":         "acme",
 		"name":          "widget",
@@ -684,6 +750,12 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 	})
 	assert.Equal(http.StatusOK, status)
 	req.JSONEq(`{"key":"peer-ws:helper","workspace_id":"peer-ws","target_key":"helper"}`, body)
+
+	status, body = patchJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/runtime/sessions/sess-1", map[string]any{
+		"label": "renamed",
+	})
+	assert.Equal(http.StatusOK, status)
+	req.JSONEq(`{"key":"sess-1","workspace_id":"peer-ws","label":"renamed"}`, body)
 
 	status, body = deleteJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/runtime/sessions/sess-1")
 	assert.Equal(http.StatusNoContent, status)
@@ -716,21 +788,30 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 	gotHandlerErrors := append([]string(nil), handlerErrors...)
 	observedMu.Unlock()
 	assert.Empty(gotHandlerErrors)
-	req.Len(got, 8)
-	assert.Equal(http.MethodPost, got[0].Method)
+	req.Len(got, 14)
+	assert.Equal(http.MethodGet, got[0].Method)
 	assert.Equal("/api/v1/workspaces", got[0].Path)
-	req.JSONEq(`{"platform_host":"github.com","owner":"acme","name":"widget","mr_number":7}`, got[0].Body)
-	assert.Equal("/api/v1/workspaces/peer-ws/runtime/sessions", got[1].Path)
-	req.JSONEq(`{"target_key":"helper"}`, got[1].Body)
-	assert.Equal("/api/v1/workspaces/peer-ws/runtime/sessions/sess-1", got[2].Path)
-	assert.Equal(http.MethodGet, got[3].Method)
-	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime", got[3].Path)
-	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime/shell", got[4].Path)
-	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime/sessions", got[5].Path)
-	req.JSONEq(`{"target_key":"helper"}`, got[5].Body)
-	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime/sessions/agent-peer", got[6].Path)
-	assert.Equal("/api/v1/workspaces/peer-ws", got[7].Path)
-	assert.Equal("force=true", got[7].Query)
+	assert.Equal("/api/v1/workspaces/peer-ws", got[1].Path)
+	assert.Equal("/api/v1/workspaces/peer-ws/retry", got[2].Path)
+	assert.Equal("/api/v1/workspaces/peer-ws/refresh", got[3].Path)
+	assert.Equal("/api/v1/workspaces/peer-ws/runtime", got[4].Path)
+	assert.Equal(http.MethodPost, got[5].Method)
+	assert.Equal("/api/v1/workspaces", got[5].Path)
+	req.JSONEq(`{"platform_host":"github.com","owner":"acme","name":"widget","mr_number":7}`, got[5].Body)
+	assert.Equal("/api/v1/workspaces/peer-ws/runtime/sessions", got[6].Path)
+	req.JSONEq(`{"target_key":"helper"}`, got[6].Body)
+	assert.Equal(http.MethodPatch, got[7].Method)
+	assert.Equal("/api/v1/workspaces/peer-ws/runtime/sessions/sess-1", got[7].Path)
+	req.JSONEq(`{"label":"renamed"}`, got[7].Body)
+	assert.Equal("/api/v1/workspaces/peer-ws/runtime/sessions/sess-1", got[8].Path)
+	assert.Equal(http.MethodGet, got[9].Method)
+	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime", got[9].Path)
+	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime/shell", got[10].Path)
+	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime/sessions", got[11].Path)
+	req.JSONEq(`{"target_key":"helper"}`, got[11].Body)
+	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime/sessions/agent-peer", got[12].Path)
+	assert.Equal("/api/v1/workspaces/peer-ws", got[13].Path)
+	assert.Equal("force=true", got[13].Query)
 }
 
 func TestFleetOperationProxyUnknownHostE2E(t *testing.T) {

@@ -538,11 +538,6 @@ func TestListActivity(t *testing.T) {
 	_ = prID2
 }
 
-//go:fix inline
-func ptrInt64(v int64) *int64 {
-	return new(v)
-}
-
 func insertOversizedBranchCommitRow(
 	ctx context.Context,
 	d *DB,
@@ -820,7 +815,7 @@ func TestUpsertMREventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing.T)
 
 	err := d.UpsertMREvents(ctx, []MREvent{{
 		MergeRequestID: prID,
-		PlatformID:     ptrInt64(101),
+		PlatformID:     new(int64(101)),
 		EventType:      "issue_comment",
 		Author:         "reviewer",
 		Body:           "first",
@@ -832,7 +827,7 @@ func TestUpsertMREventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing.T)
 
 	err = d.UpsertMREvents(ctx, []MREvent{{
 		MergeRequestID: prID,
-		PlatformID:     ptrInt64(101),
+		PlatformID:     new(int64(101)),
 		EventType:      "issue_comment",
 		Author:         "reviewer",
 		Body:           "edited",
@@ -910,7 +905,7 @@ func TestUpsertIssueEventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing
 
 	err := d.UpsertIssueEvents(ctx, []IssueEvent{{
 		IssueID:    issueID,
-		PlatformID: ptrInt64(202),
+		PlatformID: new(int64(202)),
 		EventType:  "issue_comment",
 		Author:     "reporter",
 		Body:       "first",
@@ -922,7 +917,7 @@ func TestUpsertIssueEventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing
 
 	err = d.UpsertIssueEvents(ctx, []IssueEvent{{
 		IssueID:    issueID,
-		PlatformID: ptrInt64(202),
+		PlatformID: new(int64(202)),
 		EventType:  "issue_comment",
 		Author:     "reporter",
 		Body:       "edited",

@@ -79,7 +79,7 @@ func TestE2E_DetailTimelineReturnsCommentDirectURLs(t *testing.T) {
 
 	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: mrID,
-		PlatformID:     ptrInt64(101),
+		PlatformID:     new(int64(101)),
 		EventType:      "issue_comment",
 		Author:         "wesm",
 		Body:           "PR comment",
@@ -89,7 +89,7 @@ func TestE2E_DetailTimelineReturnsCommentDirectURLs(t *testing.T) {
 	}}))
 	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
 		IssueID:    issueID,
-		PlatformID: ptrInt64(202),
+		PlatformID: new(int64(202)),
 		EventType:  "issue_comment",
 		Author:     "alice",
 		Body:       "Issue comment",
@@ -196,11 +196,6 @@ func seedAssignmentTimelineItems(t *testing.T, database *db.DB) (int64, int64) {
 	require.NoError(t, err)
 
 	return mrID, issueID
-}
-
-//go:fix inline
-func ptrInt64(v int64) *int64 {
-	return new(v)
 }
 
 func getTimelineDetail(

@@ -3204,6 +3204,9 @@ func (s *Server) triggerSync(
 	ctx context.Context,
 	input *triggerSyncInput,
 ) (*acceptedOutput, error) {
+	if s.syncer == nil {
+		return nil, problemServiceUnavailable("syncer not configured")
+	}
 	s.syncer.TriggerRunWithPriority(
 		context.WithoutCancel(ctx),
 		s.priorityReposFromFilter(input.PriorityRepos),
@@ -3308,12 +3311,18 @@ func repoPlatformForPriority(repo ghclient.RepoRef) platform.Kind {
 }
 
 func (s *Server) syncStatus(_ context.Context, _ *struct{}) (*syncStatusOutput, error) {
+	if s.syncer == nil {
+		return &syncStatusOutput{Body: &ghclient.SyncStatus{}}, nil
+	}
 	return &syncStatusOutput{Body: s.syncer.Status()}, nil
 }
 
 func (s *Server) getRateLimits(
 	_ context.Context, _ *struct{},
 ) (*rateLimitsOutput, error) {
+	if s.syncer == nil {
+		return &rateLimitsOutput{Body: rateLimitsResponse{Hosts: map[string]rateLimitHostStatus{}}}, nil
+	}
 	trackers := s.syncer.RateTrackers()
 	gqlTrackers := s.syncer.GQLRateTrackers()
 	budgets := s.syncer.Budgets()

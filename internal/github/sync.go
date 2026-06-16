@@ -28,6 +28,22 @@ func parseInt64(raw string) (int64, error) {
 	return strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
 }
 
+func withCommitOrderMetadata(metadataJSON string, order int) string {
+	metadata := map[string]any{}
+	if metadataJSON != "" {
+		var existing map[string]any
+		if err := json.Unmarshal([]byte(metadataJSON), &existing); err == nil && existing != nil {
+			metadata = existing
+		}
+	}
+	metadata["commit_order"] = order
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return metadataJSON
+	}
+	return string(encoded)
+}
+
 // SyncStatus holds the current state of the sync engine.
 type SyncStatus struct {
 	Running     bool      `json:"running"`
@@ -855,8 +871,10 @@ func (p gitHubClientProvider) ListMergeRequestEvents(
 	for _, review := range reviews {
 		out = append(out, platformgithub.NormalizeReviewEvent(ref, number, review))
 	}
-	for _, commit := range commits {
-		out = append(out, platformgithub.NormalizeCommitEvent(ref, number, commit))
+	for i, commit := range commits {
+		event := platformgithub.NormalizeCommitEvent(ref, number, commit)
+		event.MetadataJSON = withCommitOrderMetadata(event.MetadataJSON, i+1)
+		out = append(out, event)
 	}
 	for _, timelineEvent := range timelineEvents {
 		event := platformgithub.NormalizeTimelineEvent(ref, number, platformgithub.PullRequestTimelineEvent{
@@ -4859,8 +4877,10 @@ func (s *Syncer) syncOpenMRFromBulk(
 	for _, r := range bulk.Reviews {
 		events = append(events, NormalizeReviewEvent(mrID, r))
 	}
-	for _, c := range bulk.Commits {
-		events = append(events, NormalizeCommitEvent(mrID, c))
+	for i, c := range bulk.Commits {
+		event := NormalizeCommitEvent(mrID, c)
+		event.MetadataJSON = withCommitOrderMetadata(event.MetadataJSON, i+1)
+		events = append(events, event)
 	}
 	for _, timelineEvent := range bulk.TimelineEvents {
 		if event := NormalizeTimelineEvent(mrID, timelineEvent); event != nil {
@@ -5810,8 +5830,10 @@ func (s *Syncer) refreshTimeline(
 	for _, r := range reviews {
 		events = append(events, NormalizeReviewEvent(mrID, r))
 	}
-	for _, c := range commits {
-		events = append(events, NormalizeCommitEvent(mrID, c))
+	for i, c := range commits {
+		event := NormalizeCommitEvent(mrID, c)
+		event.MetadataJSON = withCommitOrderMetadata(event.MetadataJSON, i+1)
+		events = append(events, event)
 	}
 	for _, timelineEvent := range timelineEvents {
 		event := NormalizeTimelineEvent(mrID, timelineEvent)

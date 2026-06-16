@@ -1769,16 +1769,21 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 	require.NotEmpty(events)
 
 	var forcePush *db.MREvent
+	var commit *db.MREvent
 	for i := range events {
 		if events[i].EventType == "force_push" {
 			forcePush = &events[i]
-			break
+		}
+		if events[i].EventType == "commit" {
+			commit = &events[i]
 		}
 	}
 	require.NotNil(forcePush)
+	require.NotNil(commit)
 	assert.Equal("alice", forcePush.Author)
 	assert.Equal("aaaaaaa -> bbbbbbb", forcePush.Summary)
 	assert.Contains(forcePush.MetadataJSON, `"ref":"feature"`)
+	assert.Contains(commit.MetadataJSON, `"commit_order":1`)
 }
 
 func TestSyncStoresPullRequestTimelineEvents(t *testing.T) {
@@ -8566,6 +8571,8 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 
 	now := time.Date(2024, 6, 3, 14, 0, 0, 0, time.UTC)
 	timelineAt := now.Add(3 * time.Minute)
+	commitSHA := "abc123def456"
+	commitMsg := "fix: preserve timeline commit order"
 	syncer := NewSyncer(
 		map[string]Client{"github.com": &mockClient{}},
 		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
@@ -8575,6 +8582,16 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 
 	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
 		PR: buildOpenPR(1, now),
+		Commits: []*gh.RepositoryCommit{{
+			SHA: &commitSHA,
+			Commit: &gh.Commit{
+				Message: &commitMsg,
+				Author: &gh.CommitAuthor{
+					Name: new("dev"),
+					Date: makeTimestamp(now.Add(-time.Minute)),
+				},
+			},
+		}},
 		TimelineEvents: []PullRequestTimelineEvent{{
 			NodeID:          "BRC_1",
 			EventType:       "base_ref_changed",
@@ -8605,11 +8622,20 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 
 	events, err := d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
-	require.Len(events, 2)
+	require.Len(events, 3)
 	assert.Equal("comment_deleted", events[0].EventType)
 	assert.Equal("deleted a comment from reviewer", events[0].Summary)
 	assert.Equal("base_ref_changed", events[1].EventType)
 	assert.Equal("main -> release", events[1].Summary)
+	var commit *db.MREvent
+	for i := range events {
+		if events[i].EventType == "commit" {
+			commit = &events[i]
+			break
+		}
+	}
+	require.NotNil(commit)
+	assert.Contains(commit.MetadataJSON, `"commit_order":1`)
 }
 
 // buildOpenPRWithSHA mirrors buildOpenPR but lets the caller set the

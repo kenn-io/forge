@@ -269,6 +269,11 @@
     return event.EventType === "commit" ? normalizeSHA(event.Summary) : null;
   }
 
+  function commitOrder(event: PREvent | IssueEvent): number {
+    if (event.EventType !== "commit") return event.ID;
+    return metadataNumber(parseMetadata(event), "commit_order") ?? event.ID;
+  }
+
   function addUniquePrefix(
     prefixes: CommitSHAIndex["prefixes"],
     prefix: string,
@@ -336,11 +341,25 @@
       if (beforeCommit) {
         const afterSHA = forcePushAfterSHA(event);
         const afterCommit = afterSHA ? lookupCommitBySHA(commitIndex, afterSHA) : null;
+        const beforeOrder = commitOrder(beforeCommit);
+        const afterOrder = afterCommit ? commitOrder(afterCommit) : null;
+        if (afterCommit && afterOrder !== null && afterOrder < beforeOrder) {
+          boundaries.push({
+            eventID: event.ID,
+            orderCommitID: afterOrder,
+            startAfterCommitID: 0,
+            afterCommitID: afterOrder,
+            endAtCommitID: afterOrder,
+            pushedAt: eventSortValue(event),
+            usesAfterAnchor: true,
+          });
+          continue;
+        }
         boundaries.push({
           eventID: event.ID,
-          orderCommitID: beforeCommit.ID,
-          startAfterCommitID: beforeCommit.ID,
-          afterCommitID: afterCommit?.ID,
+          orderCommitID: beforeOrder,
+          startAfterCommitID: beforeOrder,
+          afterCommitID: afterCommit ? commitOrder(afterCommit) : undefined,
           pushedAt: eventSortValue(event),
           usesAfterAnchor: false,
         });
@@ -352,10 +371,10 @@
       if (!afterCommit) continue;
       boundaries.push({
         eventID: event.ID,
-        orderCommitID: afterCommit.ID,
+        orderCommitID: commitOrder(afterCommit),
         startAfterCommitID: 0,
-        afterCommitID: afterCommit.ID,
-        endAtCommitID: afterCommit.ID,
+        afterCommitID: commitOrder(afterCommit),
+        endAtCommitID: commitOrder(afterCommit),
         pushedAt: eventSortValue(event),
         usesAfterAnchor: true,
       });
@@ -407,7 +426,11 @@
 
     const commitEvents = sourceEvents
       .filter((event) => event.EventType === "commit")
-      .sort((a, b) => a.ID - b.ID);
+      .sort((a, b) => commitOrder(a) - commitOrder(b) || a.ID - b.ID);
+    const commitOrderAt = (index: number): number => {
+      const event = commitEvents[index];
+      return event ? commitOrder(event) : Number.POSITIVE_INFINITY;
+    };
     let commitIndex = 0;
 
     for (const [index, generation] of generations.entries()) {
@@ -420,13 +443,13 @@
       };
       while (
         commitIndex < commitEvents.length &&
-        (commitEvents[commitIndex]?.ID ?? 0) <= generation.effectiveStartAfterCommitID
+        commitOrderAt(commitIndex) <= generation.effectiveStartAfterCommitID
       ) {
         commitIndex += 1;
       }
       while (
         commitIndex < commitEvents.length &&
-        (commitEvents[commitIndex]?.ID ?? Number.POSITIVE_INFINITY) <= generation.effectiveEndAtCommitID
+        commitOrderAt(commitIndex) <= generation.effectiveEndAtCommitID
       ) {
         const event = commitEvents[commitIndex];
         if (!event) break;

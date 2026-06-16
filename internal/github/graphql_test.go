@@ -317,6 +317,14 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 			"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
 			"lastCommit":{"nodes":[]},
 			"timelineItems":{"nodes":[{
+				"__typename":"HeadRefForcePushedEvent",
+				"id":"HFP_1",
+				"actor":{"login":"alice"},
+				"beforeCommit":{"oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+				"afterCommit":{"oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+				"createdAt":"` + now + `",
+				"ref":{"name":"feature"}
+			},{
 				"__typename":"BaseRefChangedEvent",
 				"id":"BRC_1",
 				"actor":{"login":"bob"},
@@ -364,33 +372,40 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 	require.NotNil(result)
 	require.Len(result.PullRequests, 1)
 	require.True(sawTimelineItems)
-	require.Len(result.PullRequests[0].TimelineEvents, 6)
+	require.Len(result.PullRequests[0].TimelineEvents, 7)
 
 	event := result.PullRequests[0].TimelineEvents[0]
+	assert.Equal("force_push", event.EventType)
+	assert.Equal("HFP_1", event.NodeID)
+	assert.Equal("alice", event.Actor)
+	assert.Equal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", event.BeforeSHA)
+	assert.Equal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", event.AfterSHA)
+	assert.Equal("feature", event.Ref)
+	event = result.PullRequests[0].TimelineEvents[1]
 	assert.Equal("base_ref_changed", event.EventType)
 	assert.Equal("BRC_1", event.NodeID)
 	assert.Equal("bob", event.Actor)
 	assert.Equal("main", event.PreviousRefName)
 	assert.Equal("release", event.CurrentRefName)
-	deleted := result.PullRequests[0].TimelineEvents[1]
+	deleted := result.PullRequests[0].TimelineEvents[2]
 	assert.Equal("comment_deleted", deleted.EventType)
 	assert.Equal("CDE_1", deleted.NodeID)
 	assert.Equal("maintainer", deleted.Actor)
 	assert.Equal("reviewer", deleted.DeletedCommentAuthor)
-	assigned := result.PullRequests[0].TimelineEvents[2]
+	assigned := result.PullRequests[0].TimelineEvents[3]
 	assert.Equal("assigned", assigned.EventType)
 	assert.Equal("AE_1", assigned.NodeID)
 	assert.Equal("wesm", assigned.Actor)
 	assert.Equal("wesm", assigned.Assignee)
-	merged := result.PullRequests[0].TimelineEvents[3]
+	merged := result.PullRequests[0].TimelineEvents[4]
 	assert.Equal("merged", merged.EventType)
 	assert.Equal("ME_1", merged.NodeID)
 	assert.Equal("merger", merged.Actor)
-	closed := result.PullRequests[0].TimelineEvents[4]
+	closed := result.PullRequests[0].TimelineEvents[5]
 	assert.Equal("closed", closed.EventType)
 	assert.Equal("CE_1", closed.NodeID)
 	assert.Equal("closer", closed.Actor)
-	reopened := result.PullRequests[0].TimelineEvents[5]
+	reopened := result.PullRequests[0].TimelineEvents[6]
 	assert.Equal("reopened", reopened.EventType)
 	assert.Equal("RE_1", reopened.NodeID)
 	assert.Equal("opener", reopened.Actor)

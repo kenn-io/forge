@@ -683,6 +683,63 @@ describe("EventTimeline", () => {
     expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(text.indexOf("old C2 before rebase"));
   });
 
+  it("orders force-push generations from commit ancestry even when database IDs are not generation order", () => {
+    const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
+    const newHead = "ffffffffffffffffffffffffffffffffffffffff";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 70,
+            EventType: "force_push",
+            Author: "alice",
+            Summary: "ccccccc -> fffffff",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: newHead,
+            }),
+          }),
+          makeEvent({
+            ID: 20,
+            EventType: "commit",
+            Summary: newHead,
+            Body: "new head after rebase despite lower database id",
+            CreatedAt: "2024-06-01T10:03:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 3 }),
+          }),
+          makeEvent({
+            ID: 30,
+            EventType: "commit",
+            Summary: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            Body: "new base after rebase despite lower database id",
+            CreatedAt: "2024-06-01T10:02:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 2 }),
+          }),
+          makeEvent({
+            ID: 90,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "old head before rebase with higher database id",
+            CreatedAt: "2024-06-01T10:03:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 1 }),
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("new head after rebase despite lower database id")).toBeLessThan(
+      text.indexOf("ccccccc -> fffffff"),
+    );
+    expect(text.indexOf("new base after rebase despite lower database id")).toBeLessThan(
+      text.indexOf("ccccccc -> fffffff"),
+    );
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(
+      text.indexOf("old head before rebase with higher database id"),
+    );
+  });
+
   it("keeps later commits in chronological order after force-push generations", () => {
     const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
     const newHead = "ffffffffffffffffffffffffffffffffffffffff";

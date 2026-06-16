@@ -271,7 +271,8 @@
 
   function commitOrder(event: PREvent | IssueEvent): number {
     if (event.EventType !== "commit") return event.ID;
-    return metadataNumber(parseMetadata(event), "commit_order") ?? event.ID;
+    const metadata = parseMetadata(event);
+    return metadataNumber(metadata, "commit_order_key") ?? metadataNumber(metadata, "commit_order") ?? event.ID;
   }
 
   function addUniquePrefix(

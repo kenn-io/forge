@@ -1786,6 +1786,107 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 	assert.Contains(commit.MetadataJSON, `"commit_order":1`)
 }
 
+func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	oldBaseSHA := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	oldHeadSHA := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	newBaseSHA := "cccccccccccccccccccccccccccccccccccccccc"
+	newHeadSHA := "dddddddddddddddddddddddddddddddddddddddd"
+
+	commit := func(sha, msg string, committedAt time.Time) *gh.RepositoryCommit {
+		return &gh.RepositoryCommit{
+			SHA: &sha,
+			Commit: &gh.Commit{
+				Message: &msg,
+				Author:  &gh.CommitAuthor{Name: new("dev"), Date: makeTimestamp(committedAt)},
+			},
+		}
+	}
+
+	mc := &mockClient{
+		commits: []*gh.RepositoryCommit{
+			commit(newBaseSHA, "new base", now.Add(-30*time.Minute)),
+			commit(newHeadSHA, "new head", now.Add(-20*time.Minute)),
+		},
+		timelineEvents: []PullRequestTimelineEvent{{
+			EventType: "force_push",
+			Actor:     "alice",
+			BeforeSHA: oldHeadSHA,
+			AfterSHA:  newHeadSHA,
+			Ref:       "feature",
+			CreatedAt: now.Add(-10 * time.Minute),
+		}},
+		reviews:  []*gh.PullRequestReview{},
+		comments: []*gh.IssueComment{},
+	}
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     1,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/pull/1",
+		Title:          "force push",
+		Author:         "dev",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      now.Add(-3 * time.Hour),
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: mrID,
+			EventType:      "commit",
+			Summary:        oldBaseSHA,
+			Body:           "old base",
+			MetadataJSON:   `{"commit_order":1,"commit_order_key":1}`,
+			CreatedAt:      now.Add(-2 * time.Hour),
+			DedupeKey:      "commit-" + oldBaseSHA[:12],
+		},
+		{
+			MergeRequestID: mrID,
+			EventType:      "commit",
+			Summary:        oldHeadSHA,
+			Body:           "old head",
+			MetadataJSON:   `{"commit_order":2,"commit_order_key":2}`,
+			CreatedAt:      now.Add(-1 * time.Hour),
+			DedupeKey:      "commit-" + oldHeadSHA[:12],
+		},
+	}))
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
+	require.NoError(syncer.refreshTimeline(ctx, repo, repoID, mrID, buildOpenPR(1, now)))
+
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+
+	findCommit := func(sha string) *db.MREvent {
+		for i := range events {
+			if events[i].EventType == "commit" && events[i].Summary == sha {
+				return &events[i]
+			}
+		}
+		return nil
+	}
+
+	oldHead := findCommit(oldHeadSHA)
+	newHead := findCommit(newHeadSHA)
+	require.NotNil(oldHead)
+	require.NotNil(newHead)
+	assert.Contains(oldHead.MetadataJSON, `"commit_order":2`)
+	assert.Contains(oldHead.MetadataJSON, `"commit_order_key":2`)
+	assert.Contains(newHead.MetadataJSON, `"commit_order":2`)
+	assert.Contains(newHead.MetadataJSON, `"commit_order_key":4`)
+}
+
 func TestSyncStoresPullRequestTimelineEvents(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

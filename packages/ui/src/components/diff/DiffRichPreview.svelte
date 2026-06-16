@@ -301,7 +301,15 @@
     display: block;
     margin: 0.55rem 0;
     padding: 0.45rem 0.6rem;
-    border: 1px solid currentColor;
+    border: 1px solid transparent;
+  }
+
+  .markdown-rich-diff--unified :global(ins.markdown-diff__block) {
+    border-color: color-mix(in srgb, var(--diff-add-text) 32%, transparent);
+  }
+
+  .markdown-rich-diff--unified :global(del.markdown-diff__block) {
+    border-color: color-mix(in srgb, var(--diff-del-text) 36%, transparent);
   }
 
   @media (max-width: 760px) {

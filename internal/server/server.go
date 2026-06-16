@@ -1050,9 +1050,8 @@ func scriptSafe(s string) string {
 
 // ServeHTTP implements http.Handler so Server can be used directly.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !checkHost(w, r, *s.hostOpts.Load()) {
-		return
-	}
+	logged := &statusLoggingResponseWriter{ResponseWriter: w}
+	w = logged
 	start := time.Now()
 	slog.Debug(
 		"http request started",
@@ -1063,13 +1062,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"user_agent", r.UserAgent(),
 	)
 	defer func() {
-		slog.Debug(
-			"http request completed",
+		status := logged.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		args := []any{
 			"method", r.Method,
 			"path", r.URL.Path,
+			"query", redactedQuery(r.URL),
+			"status", status,
 			"duration", time.Since(start).String(),
-		)
+			"bytes", logged.bytes,
+			"remote_addr", r.RemoteAddr,
+			"user_agent", r.UserAgent(),
+		}
+		if status >= http.StatusBadRequest {
+			slog.Warn("http request failed", args...)
+		} else {
+			slog.Debug("http request completed", args...)
+		}
 	}()
+	if !checkHost(w, r, *s.hostOpts.Load()) {
+		return
+	}
 	if !s.checkHost(w, r) {
 		return
 	}

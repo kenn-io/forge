@@ -3,6 +3,12 @@
 import { describe, expect, it } from "vite-plus/test";
 import { renderMarkdownDiff, renderMarkdownSplitDiff } from "./markdown-diff.js";
 
+function htmlFragment(html: string): DocumentFragment {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  return template.content;
+}
+
 describe("renderMarkdownDiff", () => {
   it("renders changed prose as one annotated HTML document", () => {
     const html = renderMarkdownDiff("<p>Hello old world</p>", "<p>Hello new world</p>");
@@ -40,6 +46,43 @@ describe("renderMarkdownDiff", () => {
     expect(html).not.toContain("<ins><em>one</em></ins>");
   });
 
+  it("continues pairing compatible element changes after an incompatible sibling", () => {
+    const html = renderMarkdownDiff(
+      "<p><em>alpha</em><strong>beta</strong><code>gamma</code></p>",
+      '<p><a href="/link">link</a><strong>two</strong><code>three</code></p>',
+    );
+
+    expect(html).toContain("<del><em>alpha</em></del>");
+    expect(html).toContain('<ins><a href="/link">link</a></ins>');
+    expect(html).toContain("<strong><del>beta</del><ins>two</ins></strong>");
+    expect(html).toContain("<code><del>gamma</del><ins>three</ins></code>");
+    expect(html).not.toContain("<del><strong>beta</strong></del>");
+    expect(html).not.toContain("<ins><strong>two</strong></ins>");
+  });
+
+  it("preserves list item structure for inserted and deleted items", () => {
+    const html = renderMarkdownDiff("<ul><li>Removed</li><li>Keep</li></ul>", "<ul><li>Keep</li><li>Added</li></ul>");
+    const fragment = htmlFragment(html);
+
+    expect(fragment.querySelector("ul > del")).toBeNull();
+    expect(fragment.querySelector("ul > ins")).toBeNull();
+    expect(fragment.querySelector('ul > li[data-diff-kind="delete"] > del')?.textContent).toBe("Removed");
+    expect(fragment.querySelector('ul > li[data-diff-kind="insert"] > ins')?.textContent).toBe("Added");
+  });
+
+  it("preserves table row structure for inserted and deleted rows", () => {
+    const html = renderMarkdownDiff(
+      "<table><tbody><tr><td>Removed</td></tr><tr><td>Keep</td></tr></tbody></table>",
+      "<table><tbody><tr><td>Keep</td></tr><tr><td>Added</td></tr></tbody></table>",
+    );
+    const fragment = htmlFragment(html);
+
+    expect(fragment.querySelector("tbody > del")).toBeNull();
+    expect(fragment.querySelector("tbody > ins")).toBeNull();
+    expect(fragment.querySelector('tbody > tr[data-diff-kind="delete"] > td > del')?.textContent).toBe("Removed");
+    expect(fragment.querySelector('tbody > tr[data-diff-kind="insert"] > td > ins')?.textContent).toBe("Added");
+  });
+
   it("renders heading level changes visibly", () => {
     const html = renderMarkdownDiff("<h2>Release notes</h2>", "<h3>Release notes</h3>");
 
@@ -74,5 +117,17 @@ describe("renderMarkdownDiff", () => {
       '<ins class="markdown-diff__block markdown-diff__placeholder" aria-hidden="true"><p>Added note</p></ins>',
     );
     expect(split.afterHtml).toContain('<ins class="markdown-diff__block"><p>Added note</p></ins>');
+  });
+
+  it("projects split structural additions with same-structure placeholders", () => {
+    const split = renderMarkdownSplitDiff("<ul><li>Keep</li></ul>", "<ul><li>Keep</li><li>Added</li></ul>");
+    const beforeFragment = htmlFragment(split.beforeHtml);
+    const afterFragment = htmlFragment(split.afterHtml);
+
+    expect(beforeFragment.querySelector("ul > ins")).toBeNull();
+    expect(
+      beforeFragment.querySelector('ul > li.markdown-diff__placeholder[data-diff-kind="insert"] > ins')?.textContent,
+    ).toBe("Added");
+    expect(afterFragment.querySelector('ul > li[data-diff-kind="insert"] > ins')?.textContent).toBe("Added");
   });
 });

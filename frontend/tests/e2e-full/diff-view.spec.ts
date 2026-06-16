@@ -392,12 +392,12 @@ const previewDiff: DiffResult = withServerDiffData({
       status: "modified",
       is_binary: false,
       is_whitespace_only: false,
-      additions: 4,
-      deletions: 3,
+      additions: 5,
+      deletions: 4,
       hunks: [
         {
           old_start: 1,
-          old_count: 5,
+          old_count: 6,
           new_start: 1,
           new_count: 6,
           lines: [
@@ -425,6 +425,16 @@ const previewDiff: DiffResult = withServerDiffData({
               old_num: 5,
             },
             { type: "add", content: "- [x] Markdown task", new_num: 5 },
+            {
+              type: "delete",
+              content: "<em>alpha</em><strong>beta</strong><code>gamma</code>",
+              old_num: 6,
+            },
+            {
+              type: "add",
+              content: '<a href="/link">link</a><strong>two</strong><code>three</code>',
+              new_num: 6,
+            },
           ],
         },
       ],
@@ -919,7 +929,9 @@ async function mockFilePreviewApi(page: Page): Promise<void> {
           path,
           media_type: "text/markdown; charset=utf-8",
           encoding: "base64",
-          content: btoa("# Rendered preview\n\n- [x] Markdown task\n"),
+          content: btoa(
+            '# Rendered preview\n\nNew paragraph that should be highlighted.\n\n- [x] Markdown task\n<a href="/link">link</a><strong>two</strong><code>three</code>\n',
+          ),
         }),
       });
       return;
@@ -1620,6 +1632,12 @@ test.describe("diff view", () => {
     await expect(markdownPreview).toContainText("paragraph that should be highlighted.");
     await expect(markdownPreview.locator("del", { hasText: "Old" })).toBeVisible();
     await expect(markdownPreview.locator("ins", { hasText: "New" })).toBeVisible();
+    await expect(markdownPreview.locator("del em", { hasText: "alpha" })).toBeVisible();
+    await expect(markdownPreview.locator("ins a", { hasText: "link" })).toBeVisible();
+    await expect(markdownPreview.locator("strong del", { hasText: "beta" })).toBeVisible();
+    await expect(markdownPreview.locator("strong ins", { hasText: "two" })).toBeVisible();
+    await expect(markdownPreview.locator("code del", { hasText: "gamma" })).toBeVisible();
+    await expect(markdownPreview.locator("code ins", { hasText: "three" })).toBeVisible();
 
     const handlerFile = page.locator('[data-file-path="internal/server/handler.go"]');
     await handlerFile.scrollIntoViewIfNeeded();

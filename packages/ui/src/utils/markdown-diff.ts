@@ -111,6 +111,8 @@ function diffChildNodes(oldParent: ParentNode, newParent: ParentNode): Node[] {
 }
 
 type PairedNodeOp = DiffOp<Node> | { kind: "replace"; oldItem: Node; newItem: Node };
+type DeleteNodeOp = Extract<DiffOp<Node>, { kind: "delete" }>;
+type InsertNodeOp = Extract<DiffOp<Node>, { kind: "insert" }>;
 
 function pairCompatibleNodes(ops: DiffOp<Node>[]): PairedNodeOp[] {
   const paired: PairedNodeOp[] = [];
@@ -121,15 +123,15 @@ function pairCompatibleNodes(ops: DiffOp<Node>[]): PairedNodeOp[] {
       continue;
     }
 
-    const deleteRun: Extract<DiffOp<Node>, { kind: "delete" }>[] = [];
+    const deleteRun: DeleteNodeOp[] = [];
     while (ops[i]?.kind === "delete") {
-      deleteRun.push(ops[i] as Extract<DiffOp<Node>, { kind: "delete" }>);
+      deleteRun.push(ops[i] as DeleteNodeOp);
       i++;
     }
 
-    const insertRun: Extract<DiffOp<Node>, { kind: "insert" }>[] = [];
+    const insertRun: InsertNodeOp[] = [];
     while (ops[i]?.kind === "insert") {
-      insertRun.push(ops[i] as Extract<DiffOp<Node>, { kind: "insert" }>);
+      insertRun.push(ops[i] as InsertNodeOp);
       i++;
     }
     i--;
@@ -139,23 +141,29 @@ function pairCompatibleNodes(ops: DiffOp<Node>[]): PairedNodeOp[] {
       continue;
     }
 
-    const pairCount = Math.min(deleteRun.length, insertRun.length);
-    let pairedCount = 0;
-    while (
-      pairedCount < pairCount &&
-      nodesCompatible(deleteRun[pairedCount]!.oldItem, insertRun[pairedCount]!.newItem)
-    ) {
-      paired.push({
-        kind: "replace",
-        oldItem: deleteRun[pairedCount]!.oldItem,
-        newItem: insertRun[pairedCount]!.newItem,
-      });
-      pairedCount++;
-    }
-    paired.push(...deleteRun.slice(pairedCount), ...insertRun.slice(pairedCount));
+    paired.push(...pairChangedNodeRun(deleteRun, insertRun));
   }
   return paired;
 }
+
+function pairChangedNodeRun(deleteRun: DeleteNodeOp[], insertRun: InsertNodeOp[]): PairedNodeOp[] {
+  const deleteItems = deleteRun.map((op): ChangedNodeRunItem => ({ node: op.oldItem }));
+  const insertItems = insertRun.map((op): ChangedNodeRunItem => ({ node: op.newItem }));
+  const aligned = diffSequence(deleteItems, insertItems, (left, right) => nodesCompatible(left.node, right.node));
+  return aligned.map((op): PairedNodeOp => {
+    if (op.kind === "equal") {
+      return {
+        kind: "replace",
+        oldItem: op.oldItem.node,
+        newItem: op.newItem.node,
+      };
+    }
+    if (op.kind === "delete") return { kind: "delete", oldItem: op.oldItem.node };
+    return { kind: "insert", newItem: op.newItem.node };
+  });
+}
+
+type ChangedNodeRunItem = { node: Node };
 
 function diffNode(oldNode: Node, newNode: Node): Node[] {
   if (nodesEqual(oldNode, newNode)) return [oldNode.cloneNode(true)];
@@ -177,13 +185,52 @@ function markChangedContainer(element: Element): void {
   if (element.matches("li,tr")) element.classList.add("changed");
 }
 
-function wrapChangedNode(tagName: "del" | "ins", node: Node): HTMLElement {
+function wrapChangedNode(tagName: "del" | "ins", node: Node): Element {
+  if (node instanceof Element && isStructuralChildElement(node)) {
+    return wrapChangedStructuralElement(tagName, node);
+  }
+
   const wrapper = document.createElement(tagName);
   if (node instanceof Element && isBlockElement(node)) {
     wrapper.classList.add("markdown-diff__block");
   }
   wrapper.append(node.cloneNode(true));
   return wrapper;
+}
+
+function wrapChangedStructuralElement(tagName: "del" | "ins", element: Element): Element {
+  const clone = element.cloneNode(false) as Element;
+  clone.classList.add("changed", "markdown-diff__structural");
+  clone.setAttribute("data-diff-kind", tagName === "del" ? "delete" : "insert");
+
+  if (element.tagName === "TR") {
+    appendChangedTableRowChildren(clone, element, tagName);
+  } else {
+    clone.append(wrapChangedChildren(tagName, element));
+  }
+  return clone;
+}
+
+function appendChangedTableRowChildren(row: Element, source: Element, tagName: "del" | "ins"): void {
+  for (const child of Array.from(source.childNodes)) {
+    if (child instanceof Element && /^(TD|TH)$/.test(child.tagName)) {
+      const cell = child.cloneNode(false) as Element;
+      cell.append(wrapChangedChildren(tagName, child));
+      row.append(cell);
+    } else if (!(child.nodeType === Node.TEXT_NODE && /^\s*$/.test(child.textContent ?? ""))) {
+      row.append(child.cloneNode(true));
+    }
+  }
+}
+
+function wrapChangedChildren(tagName: "del" | "ins", source: ParentNode): HTMLElement {
+  const wrapper = document.createElement(tagName);
+  wrapper.append(...Array.from(source.childNodes).map((child) => child.cloneNode(true)));
+  return wrapper;
+}
+
+function isStructuralChildElement(node: Element): boolean {
+  return /^(LI|TR)$/.test(node.tagName);
 }
 
 function isBlockElement(node: Element): boolean {
@@ -248,7 +295,7 @@ function diffHTMLFragment(beforeHtml: string, afterHtml: string): HTMLElement {
 
 function sanitizeMarkdownDiff(html: string): string {
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ["class", "aria-hidden"],
+    ADD_ATTR: ["class", "aria-hidden", "data-diff-kind"],
   });
 }
 
@@ -261,6 +308,11 @@ function placeholderFor(node: Element): Element {
 
 function projectDiffForSide(node: Node, side: "before" | "after"): Node | null {
   if (node instanceof Element) {
+    const structuralKind = changedStructuralKind(node);
+    if ((structuralKind === "delete" && side === "after") || (structuralKind === "insert" && side === "before")) {
+      return placeholderFor(node);
+    }
+
     const tagName = node.tagName.toLowerCase();
     if (tagName === "del" && side === "after") {
       return node.classList.contains("markdown-diff__block") ? placeholderFor(node) : null;
@@ -276,6 +328,12 @@ function projectDiffForSide(node: Node, side: "before" | "after"): Node | null {
     return clone;
   }
   return node.cloneNode(true);
+}
+
+function changedStructuralKind(node: Element): "delete" | "insert" | null {
+  if (!node.classList.contains("markdown-diff__structural")) return null;
+  const kind = node.getAttribute("data-diff-kind");
+  return kind === "delete" || kind === "insert" ? kind : null;
 }
 
 function projectDiffHTML(host: ParentNode, side: "before" | "after"): string {

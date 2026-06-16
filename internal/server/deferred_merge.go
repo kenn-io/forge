@@ -160,7 +160,7 @@ func (s *Server) runDeferredMerge(
 			s.completeDeferredMerge(ctx, repo, number, body, queuedHeadSHA)
 			return
 		case "failed":
-			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedHeadSHA), "a check failed; merge was not performed")
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedHeadSHA), "a current CI check failed; merge was not performed")
 			return
 		}
 		select {
@@ -395,6 +395,10 @@ func deferredMergeCheckState(keys []deferredMergeCheckKey, checksJSON string) (s
 			return "", err
 		}
 	}
+	// Middleman does not have a provider-neutral required-check model. Deferred
+	// merge therefore fails closed: the checks that were pending when queued
+	// must pass, and the current refreshed snapshot must contain no failed or
+	// still-pending checks before the merge is attempted.
 	byKey := make(map[deferredMergeCheckKey]db.CICheck, len(checks))
 	currentPending := false
 	for _, check := range checks {

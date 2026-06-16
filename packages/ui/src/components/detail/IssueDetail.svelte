@@ -14,6 +14,7 @@
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
+  import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
   import ActionButton from "../shared/ActionButton.svelte";
   import Chip from "../shared/Chip.svelte";
@@ -38,7 +39,7 @@
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
-  const { issues, activity } = getStores();
+  const { issues, activity, detailActivityView } = getStores();
   const client = getClient();
   const actions = getActions();
   const uiConfig = getUIConfig();
@@ -1118,7 +1119,13 @@
 
       <!-- Activity -->
       <div class="section">
-        <h3 class="section-title">Activity</h3>
+        <div class="section-title-row">
+          <h3 class="section-title">Activity</h3>
+          <DetailActivityViewMenu
+            viewMode={detailActivityView.getMode()}
+            onViewChange={(mode) => detailActivityView.setMode(mode)}
+          />
+        </div>
         {#if issues.getIssueDetailLoaded()}
           <EventTimeline
             events={detail.events ?? []}
@@ -1127,6 +1134,7 @@
             repoOwner={owner}
             repoName={name}
             {repoPath}
+            activityViewMode={detailActivityView.getMode()}
             onEditComment={capabilities.comment_mutation && !staleIssue && !editCommentGate.unavailable
               ? editTimelineComment
               : undefined}
@@ -1436,6 +1444,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .section-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
 
   .section-title {

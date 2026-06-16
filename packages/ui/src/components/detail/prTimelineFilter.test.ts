@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PREvent } from "../../api/types.js";
-import PRTimelineFilter from "./PRTimelineFilter.svelte";
+import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
 import {
   activePRTimelineFilterCount,
   DEFAULT_PR_TIMELINE_FILTER,
@@ -257,60 +257,99 @@ describe("prTimelineFilter", () => {
   });
 });
 
-describe("PRTimelineFilter", () => {
+describe("DetailActivityViewMenu", () => {
   afterEach(() => {
     cleanup();
   });
 
-  it("uses the shared filter dropdown trigger and emits changes", async () => {
-    const onChange = vi.fn();
-    render(PRTimelineFilter, {
+  it("shows layout options in the shared View dropdown", async () => {
+    const onViewChange = vi.fn();
+    render(DetailActivityViewMenu, {
       props: {
-        filter: DEFAULT_PR_TIMELINE_FILTER,
-        onChange,
+        viewMode: "normal",
+        onViewChange,
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /view/i }));
+
+    expect(screen.getByRole("button", { name: /normal/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /compact/i })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: /compact/i }));
+    expect(onViewChange).toHaveBeenCalledWith("compact");
+    expect(document.querySelector(".filter-dropdown")).toBeNull();
+  });
+
+  it("adds PR filter controls when filter state is provided", async () => {
+    const onFilterChange = vi.fn();
+    render(DetailActivityViewMenu, {
+      props: {
+        viewMode: "normal",
+        onViewChange: vi.fn(),
+        filter: DEFAULT_PR_TIMELINE_FILTER,
+        onFilterChange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /view/i }));
     await fireEvent.click(screen.getByRole("button", { name: /messages/i }));
 
-    expect(onChange).toHaveBeenCalledWith({
+    expect(onFilterChange).toHaveBeenCalledWith({
       ...DEFAULT_PR_TIMELINE_FILTER,
       showMessages: false,
     });
     expect(document.querySelector(".filter-dropdown")).toBeTruthy();
   });
 
-  it("shows active filter count and reset", async () => {
-    const onChange = vi.fn();
-    render(PRTimelineFilter, {
+  it("shows active PR filter count and reset without counting layout mode", async () => {
+    const onFilterChange = vi.fn();
+    render(DetailActivityViewMenu, {
       props: {
+        viewMode: "compact",
+        onViewChange: vi.fn(),
         filter: {
           ...DEFAULT_PR_TIMELINE_FILTER,
           showCommitDetails: false,
           hideBots: true,
         },
-        onChange,
+        onFilterChange,
       },
     });
 
     expect(screen.getByText("2")).toBeTruthy();
-    await fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /view/i }));
     await fireEvent.click(screen.getByRole("button", { name: /show all/i }));
 
-    expect(onChange).toHaveBeenCalledWith(DEFAULT_PR_TIMELINE_FILTER);
+    expect(onFilterChange).toHaveBeenCalledWith(DEFAULT_PR_TIMELINE_FILTER);
   });
 
-  it("offers timeline filter labels", async () => {
-    const onChange = vi.fn();
-    render(PRTimelineFilter, {
+  it("omits PR-only filters for issue detail usage", async () => {
+    render(DetailActivityViewMenu, {
       props: {
-        filter: DEFAULT_PR_TIMELINE_FILTER,
-        onChange,
+        viewMode: "normal",
+        onViewChange: vi.fn(),
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /view/i }));
+
+    expect(screen.getByRole("button", { name: /normal/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /messages/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /hide bot activity/i })).toBeNull();
+  });
+
+  it("offers timeline filter labels when used by PR detail", async () => {
+    render(DetailActivityViewMenu, {
+      props: {
+        viewMode: "normal",
+        onViewChange: vi.fn(),
+        filter: DEFAULT_PR_TIMELINE_FILTER,
+        onFilterChange: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /view/i }));
 
     expect(screen.getByRole("button", { name: /messages/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /replies/i })).toBeTruthy();

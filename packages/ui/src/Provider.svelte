@@ -65,6 +65,9 @@
     createGroupingStore,
   } from "./stores/grouping.svelte.js";
   import {
+    createDetailActivityViewStore,
+  } from "./stores/detail-activity-view.svelte.js";
+  import {
     createCollapsedReposStore,
   } from "./stores/collapsedRepos.svelte.js";
   import {
@@ -136,6 +139,7 @@
     errorCb: ((msg: string) => void) | undefined,
   ): StoreInstances {
     const grouping = createGroupingStore();
+    const detailActivityView = createDetailActivityViewStore();
     const collapsedRepos = createCollapsedReposStore();
     const settingsStore = createSettingsStore();
 
@@ -337,6 +341,7 @@
       diff: diffStore,
       diffReviewDraft: diffReviewDraftStore,
       grouping,
+      detailActivityView,
       collapsedRepos,
       settings: settingsStore,
       events: eventsStore,

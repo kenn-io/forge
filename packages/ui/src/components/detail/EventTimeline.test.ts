@@ -515,6 +515,88 @@ describe("EventTimeline", () => {
     );
   });
 
+  it("renders threaded comments as separate compact rows with one-line previews", () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        activityViewMode: "compact",
+        events: [
+          makeEvent({
+            ID: 3,
+            EventType: "issue_comment",
+            Author: "reviewer",
+            Body: "Reply with [a link](https://example.test)\n\nand details",
+            ThreadID: "compact-discussion",
+            CreatedAt: "2024-06-01T12:02:00Z",
+          }),
+          makeEvent({
+            ID: 1,
+            EventType: "issue_comment",
+            Author: "author",
+            Body: "Root **comment**\n\n```ts\nconst hidden = true;\n```",
+            ThreadID: "compact-discussion",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    expect(container.querySelectorAll(".event-card--compact-row")).toHaveLength(2);
+    expect(container.querySelectorAll(".thread-reply")).toHaveLength(0);
+    expect(container.textContent).toContain("Root comment");
+    expect(container.textContent).toContain("Reply with a link");
+    expect(container.textContent).not.toContain("const hidden = true");
+    expect(screen.queryByLabelText("Copy comment")).toBeNull();
+  });
+
+  it("renders compact review verdicts and review comment context", () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        activityViewMode: "compact",
+        events: [
+          makeEvent({
+            ID: 2,
+            EventType: "review_comment",
+            Author: "reviewer",
+            Body: "This branch needs a guard clause.",
+            Summary: "",
+            CreatedAt: "2024-06-01T12:01:00Z",
+            diff_thread: {
+              id: "compact-review-thread",
+              provider_comment_id: "2",
+              path: "src/review.ts",
+              old_path: "src/review.ts",
+              side: "right",
+              line: 42,
+              new_line: 42,
+              line_type: "add",
+              diff_head_sha: "head-sha",
+              commit_sha: "head-sha",
+              body: "This branch needs a guard clause.",
+              author_login: "reviewer",
+              resolved: false,
+              can_resolve: false,
+              created_at: "2024-06-01T12:01:00Z",
+              updated_at: "2024-06-01T12:01:00Z",
+            },
+          } as Partial<PREvent>),
+          makeEvent({
+            ID: 1,
+            EventType: "review",
+            Author: "maintainer",
+            Body: "",
+            Summary: "Approved",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    expect(container.querySelectorAll(".event-card--compact-row")).toHaveLength(2);
+    expect(screen.getByText("Approved")).toBeTruthy();
+    expect(screen.getByText("src/review.ts:42")).toBeTruthy();
+    expect(screen.getByText("This branch needs a guard clause.")).toBeTruthy();
+  });
+
   it("can collapse and expand threaded replies", async () => {
     const { container } = render(EventTimeline, {
       props: {

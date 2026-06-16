@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullDetail } from "../../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
+import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import PullDetailComponent from "./PullDetail.svelte";
 
 const capabilities = {
@@ -169,6 +170,7 @@ function renderPullDetail(
           detail: detailStore,
           pulls: { loadPulls: vi.fn() },
           activity: { loadActivity: vi.fn() },
+          detailActivityView: createDetailActivityViewStore(),
         },
       ],
       [ACTIONS_KEY, { pull: [] }],
@@ -188,6 +190,10 @@ function getActionMenuLabelsButton(): HTMLButtonElement {
 }
 
 describe("PullDetail approvals", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
@@ -457,6 +463,39 @@ describe("PullDetail approvals", () => {
     expect(labelsItem?.classList.contains("label-editor-anchor")).toBe(true);
     expect(labelsIcon?.getAttribute("width")).toBe("14");
     expect(labelsIcon?.getAttribute("height")).toBe("14");
+  });
+
+  it("uses the shared View menu to persist compact activity rows", async () => {
+    const detail = pullDetail();
+    detail.events = [
+      {
+        ID: 30,
+        MergeRequestID: 1,
+        PlatformID: 30,
+        PlatformExternalID: "",
+        EventType: "issue_comment",
+        Author: "alice",
+        Summary: "",
+        Body: "Compact **activity** preview",
+        MetadataJSON: "",
+        CreatedAt: "2026-05-01T12:03:00Z",
+        DedupeKey: "comment-30",
+        DirectURL: "",
+        ThreadID: null,
+        Resolvable: false,
+        Resolved: false,
+      },
+    ];
+    const { container } = renderPullDetail(detail);
+
+    expect(screen.queryByRole("button", { name: /filters/i })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: /view/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /compact/i }));
+
+    expect(localStorage.getItem("middleman-detail-activity-view")).toBe("compact");
+    expect(container.querySelectorAll(".event-card--compact-row")).toHaveLength(1);
+    expect(container.textContent).toContain("Compact activity preview");
   });
 
   const warningCases = [

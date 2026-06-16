@@ -10,6 +10,7 @@
   import { untrack } from "svelte";
   import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
+  import type { DetailActivityViewMode } from "../../stores/detail-activity-view.svelte.js";
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
@@ -23,6 +24,7 @@
   import DiffReviewThreadSnippet from "../diff/DiffReviewThreadSnippet.svelte";
   import {
     reviewThreadContext,
+    reviewThreadLineLabel,
     type ReviewThread,
   } from "../diff/review-thread-context.js";
 
@@ -39,6 +41,7 @@
     canReplyToThreads?: boolean;
     filtered?: boolean;
     showCommitDetails?: boolean;
+    activityViewMode?: DetailActivityViewMode;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
     jumpToReviewThread?: ((thread: ReviewThread) => void) | undefined;
   }
@@ -56,6 +59,7 @@
     canReplyToThreads = false,
     filtered = false,
     showCommitDetails = true,
+    activityViewMode = "normal",
     onEditComment,
     jumpToReviewThread,
   }: Props = $props();
@@ -567,6 +571,22 @@
   const displayEvents = $derived(collapseLifecycleTransitions(events));
   const displayOrderingEvents = $derived(collapseLifecycleTransitions(orderingEvents));
   const timelineEntries = $derived(buildTimelineEntries(displayEvents, displayOrderingEvents));
+  const compactTimelineEntries = $derived(buildCompactTimelineEntries(displayEvents, displayOrderingEvents));
+  const renderedTimelineEntries = $derived(
+    activityViewMode === "compact" ? compactTimelineEntries : timelineEntries,
+  );
+
+  function buildCompactTimelineEntries(
+    sourceEvents: Array<PREvent | IssueEvent>,
+    orderingSourceEvents: Array<PREvent | IssueEvent>,
+  ): TimelineEntry[] {
+    return orderEventsForForcePushBoundaries(sourceEvents, orderingSourceEvents).map((event) => ({
+      key: `compact-event-${event.ID}`,
+      event,
+      reviewThread: reviewThreadFor(event) ?? undefined,
+      replies: [],
+    }));
+  }
 
   function isCompactEvent(eventType: string): boolean {
     return (
@@ -621,6 +641,73 @@
       default:
         return typeLabels[eventType] ?? eventType;
     }
+  }
+
+  function compactEventLabel(eventType: string): string {
+    return typeLabels[eventType] ?? systemEventLabel(eventType);
+  }
+
+  function compactMarkdownPreview(body: string): string {
+    const lines = body.replace(/\r\n/g, "\n").split("\n");
+    let inFence = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+        inFence = !inFence;
+        continue;
+      }
+      if (inFence || trimmed.length === 0) continue;
+
+      const text = trimmed
+        .replace(/!\[[^\]]*]\([^)]+\)/g, "")
+        .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
+        .replace(/`([^`]+)`/g, "$1")
+        .replace(/^#{1,6}\s+/, "")
+        .replace(/^>\s?/, "")
+        .replace(/^[-*+]\s+/, "")
+        .replace(/^\d+\.\s+/, "")
+        .replace(/[*_~]/g, "")
+        .trim();
+      if (text.length > 0) return text;
+    }
+
+    return "";
+  }
+
+  function compactEventContext(
+    event: PREvent | IssueEvent,
+    reviewThread: TimelineReviewThread | undefined,
+  ): string {
+    if (reviewThread) return reviewThreadLineLabel(reviewThread.thread);
+    if (event.EventType === "commit") return shortCommit(event.Summary);
+    if (event.EventType === "force_push") return event.Summary;
+    return "";
+  }
+
+  function compactEventSummary(
+    event: PREvent | IssueEvent,
+    reviewThread: TimelineReviewThread | undefined,
+  ): string {
+    if (event.EventType === "review") {
+      return event.Summary || compactMarkdownPreview(event.Body) || "Left a review";
+    }
+    if (event.EventType === "review_comment") {
+      return compactMarkdownPreview(event.Body)
+        || (reviewThread ? compactMarkdownPreview(reviewThread.thread.body) : "")
+        || event.Summary
+        || "Left a review comment";
+    }
+    if (event.EventType === "issue_comment") {
+      return compactMarkdownPreview(event.Body) || event.Summary || "Commented";
+    }
+    if (event.EventType === "commit") {
+      return commitTitle(event.Body) || event.Summary;
+    }
+    if (event.EventType === "cross_referenced") {
+      return metadataString(parseMetadata(event), "source_title") ?? event.Summary;
+    }
+    return event.Summary || compactMarkdownPreview(event.Body) || systemEventLabel(event.EventType);
   }
 
   function parseMetadata(event: PREvent | IssueEvent): Record<string, unknown> {
@@ -1152,11 +1239,11 @@
   <p class="empty">{filtered ? "No activity matches the current filters" : "No activity yet"}</p>
 {:else}
   <ol class="timeline">
-    {#each timelineEntries as entry (entry.key)}
+    {#each renderedTimelineEntries as entry (entry.key)}
       {@const event = entry.event}
       {@const targetID = replyTargetID(entry)}
       {@const hasReplyOnlyAction = entry.replies.length === 0 && canReplyToThread(entry)}
-      <li class={isCompactEvent(event.EventType) ? "event event--compact" : "event"}>
+      <li class={activityViewMode === "compact" || isCompactEvent(event.EventType) ? "event event--compact" : "event"}>
         <div class="event-rail">
           <span
             class="dot"
@@ -1164,7 +1251,28 @@
           ></span>
           <span class="rail-line"></span>
         </div>
-        {#if isCompactEvent(event.EventType)}
+        {#if activityViewMode === "compact"}
+          {@const compactContext = compactEventContext(event, entry.reviewThread)}
+          {@const compactSummary = compactEventSummary(event, entry.reviewThread)}
+          <div class="event-card event-card--compact event-card--compact-row">
+            <div class="compact-event-row">
+              <span
+                class="event-type compact-event-type"
+                style="color: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
+              >
+                {compactEventLabel(event.EventType)}
+              </span>
+              <span class="event-author compact-event-author">{event.Author || "Unknown"}</span>
+              <span class="compact-event-context" title={compactContext}>
+                {compactContext}
+              </span>
+              <span class="compact-event-summary" title={compactSummary}>
+                {compactSummary}
+              </span>
+              <span class="event-time compact-event-time">{timeAgo(event.CreatedAt)}</span>
+            </div>
+          </div>
+        {:else if isCompactEvent(event.EventType)}
           {@const metadata = parseMetadata(event)}
           {@const commitDetails = event.EventType === "commit" ? commitDetailsBody(event.Body) : ""}
           <div class="event-card event-card--compact">
@@ -1436,6 +1544,44 @@
   }
 
   .event-header--compact .event-time {
+    margin-left: 0;
+  }
+
+  .event-card--compact-row {
+    overflow: hidden;
+  }
+
+  .compact-event-row {
+    display: grid;
+    grid-template-columns: minmax(6.5rem, 7.5rem) minmax(5rem, 7rem) minmax(0, 8.5rem) minmax(0, 1fr) max-content;
+    align-items: center;
+    gap: var(--focus-detail-space-xs, 0.46rem);
+    min-width: 0;
+  }
+
+  .compact-event-type,
+  .compact-event-author,
+  .compact-event-context,
+  .compact-event-summary,
+  .compact-event-time {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .compact-event-context {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+  }
+
+  .compact-event-summary {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+  }
+
+  .compact-event-time {
     margin-left: 0;
   }
 

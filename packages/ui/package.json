@@ -72,6 +72,10 @@
       "svelte": "./src/stores/grouping.svelte.ts",
       "default": "./src/stores/grouping.svelte.ts"
     },
+    "./stores/detail-activity-view": {
+      "svelte": "./src/stores/detail-activity-view.svelte.ts",
+      "default": "./src/stores/detail-activity-view.svelte.ts"
+    },
     "./stores/workflow": {
       "svelte": "./src/stores/workflow.svelte.ts",
       "default": "./src/stores/workflow.svelte.ts"

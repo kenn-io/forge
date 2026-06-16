@@ -24,7 +24,7 @@
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
-  import PRTimelineFilter from "./PRTimelineFilter.svelte";
+  import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import CommentBox from "./CommentBox.svelte";
   import ApproveButton from "./ApproveButton.svelte";
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
@@ -88,7 +88,7 @@
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
-  const { detail: detailStore, pulls, activity, diff: diffStore } = getStores();
+  const { detail: detailStore, pulls, activity, diff: diffStore, detailActivityView } = getStores();
   const client = getClient();
   const actions = getActions();
   const uiConfig = getUIConfig();
@@ -2157,9 +2157,11 @@
       <div class="section">
         <div class="section-title-row">
           <h3 class="section-title">Activity</h3>
-          <PRTimelineFilter
+          <DetailActivityViewMenu
+            viewMode={detailActivityView.getMode()}
+            onViewChange={(mode) => detailActivityView.setMode(mode)}
             filter={timelineFilter}
-            onChange={updateTimelineFilter}
+            onFilterChange={updateTimelineFilter}
           />
         </div>
         {#if detailStore.getDetailLoaded()}
@@ -2176,6 +2178,7 @@
             canReplyToThreads={capabilities.thread_reply && !stalePR && !replyThreadGate.unavailable}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
+            activityViewMode={detailActivityView.getMode()}
             onEditComment={capabilities.comment_mutation && !stalePR && !editCommentGate.unavailable
               ? editTimelineComment
               : undefined}

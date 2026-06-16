@@ -20,6 +20,7 @@ export type {
   DiffStore,
   DiffReviewDraftStore,
   GroupingStore,
+  DetailActivityViewStore,
   CollapsedReposStore,
   SettingsStore,
   EventsStore,
@@ -72,6 +73,8 @@ export { createSyncStore } from "./stores/sync.svelte.js";
 export { createDiffStore } from "./stores/diff.svelte.js";
 export { createDiffReviewDraftStore } from "./stores/diff-review-draft.svelte.js";
 export { createGroupingStore } from "./stores/grouping.svelte.js";
+export { createDetailActivityViewStore } from "./stores/detail-activity-view.svelte.js";
+export type { DetailActivityViewMode } from "./stores/detail-activity-view.svelte.js";
 export { classifyPR, groupByWorkflow, workflowGroupOrder, workflowGroupLabels } from "./stores/workflow.svelte.js";
 export type { WorkflowGroup, WorkflowGroupEntry } from "./stores/workflow.svelte.js";
 export { createCollapsedReposStore } from "./stores/collapsedRepos.svelte.js";

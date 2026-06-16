@@ -32,6 +32,10 @@ const uiStoreActivity = path.resolve(process.cwd(), "../packages/ui/src/stores/a
 const uiStoreSync = path.resolve(process.cwd(), "../packages/ui/src/stores/sync.svelte.ts");
 const uiStoreDiff = path.resolve(process.cwd(), "../packages/ui/src/stores/diff.svelte.ts");
 const uiStoreGrouping = path.resolve(process.cwd(), "../packages/ui/src/stores/grouping.svelte.ts");
+const uiStoreDetailActivityView = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/stores/detail-activity-view.svelte.ts",
+);
 const uiStoreSettings = path.resolve(process.cwd(), "../packages/ui/src/stores/settings.svelte.ts");
 
 function devApiUrlPlugin(url: string): Plugin {
@@ -224,6 +228,10 @@ const config = {
       {
         find: /^@middleman\/ui\/stores\/grouping$/,
         replacement: uiStoreGrouping,
+      },
+      {
+        find: /^@middleman\/ui\/stores\/detail-activity-view$/,
+        replacement: uiStoreDetailActivityView,
       },
       {
         find: /^@middleman\/ui\/stores\/settings$/,

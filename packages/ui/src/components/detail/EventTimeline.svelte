@@ -650,6 +650,7 @@
   function compactMarkdownPreview(body: string): string {
     const lines = body.replace(/\r\n/g, "\n").split("\n");
     let inFence = false;
+    let codeFallback = "";
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -657,7 +658,11 @@
         inFence = !inFence;
         continue;
       }
-      if (inFence || trimmed.length === 0) continue;
+      if (trimmed.length === 0) continue;
+      if (inFence) {
+        codeFallback ||= trimmed;
+        continue;
+      }
 
       const text = trimmed
         .replace(/!\[[^\]]*]\([^)]+\)/g, "")
@@ -672,7 +677,7 @@
       if (text.length > 0) return text;
     }
 
-    return "";
+    return codeFallback;
   }
 
   function compactEventContext(

@@ -521,6 +521,14 @@ describe("EventTimeline", () => {
         activityViewMode: "compact",
         events: [
           makeEvent({
+            ID: 4,
+            EventType: "issue_comment",
+            Author: "reviewer",
+            Body: "```ts\nreturn cache.get(key);\n```",
+            ThreadID: "compact-discussion",
+            CreatedAt: "2024-06-01T12:03:00Z",
+          }),
+          makeEvent({
             ID: 3,
             EventType: "issue_comment",
             Author: "reviewer",
@@ -540,10 +548,11 @@ describe("EventTimeline", () => {
       },
     });
 
-    expect(container.querySelectorAll(".event-card--compact-row")).toHaveLength(2);
+    expect(container.querySelectorAll(".event-card--compact-row")).toHaveLength(3);
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(0);
     expect(container.textContent).toContain("Root comment");
     expect(container.textContent).toContain("Reply with a link");
+    expect(container.textContent).toContain("return cache.get(key);");
     expect(container.textContent).not.toContain("const hidden = true");
     expect(screen.queryByLabelText("Copy comment")).toBeNull();
   });

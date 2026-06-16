@@ -95,7 +95,8 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		"- [ ] Cmd+K opens palette, focus lands in the search input\n" +
 		"- [ ] Tab/Shift+Tab cycles within the palette dialog only\n" +
 		"- [ ] `>settings` + Enter navigates to /settings\n" +
-		"- [x] Cache invalidates on widget update\n"
+		"- [x] Cache invalidates on widget update\n" +
+		"- [x] Small, scoped PR (< 500 total lines excluding tests); or opened as Draft with a plan on how to break it into smaller pieces\n"
 	w1ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
 		PlatformID:        1001,

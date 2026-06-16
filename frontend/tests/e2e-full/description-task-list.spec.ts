@@ -26,6 +26,51 @@ test.describe("PR description task list", () => {
     return server;
   }
 
+  test("keeps long checklist text on the checkbox line", async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 720 });
+    const server = await openPullDetail(page);
+    try {
+      const body = page.locator(".body-section .markdown-body");
+      const longItem = body.locator(".task-list-item--interactive").filter({ hasText: "Small, scoped PR" });
+      await expect(longItem).toBeVisible();
+
+      const metrics = await longItem.evaluate((li) => {
+        const checkbox = li.querySelector<HTMLInputElement>('input[type="checkbox"]');
+        if (!checkbox) throw new Error("missing task checkbox");
+
+        const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+        let textNode: Text | null = null;
+        let offset = -1;
+        while (walker.nextNode()) {
+          const node = walker.currentNode as Text;
+          offset = node.data.indexOf("Small");
+          if (offset >= 0) {
+            textNode = node;
+            break;
+          }
+        }
+        if (!textNode || offset < 0) throw new Error("missing checklist text");
+
+        const range = document.createRange();
+        range.setStart(textNode, offset);
+        range.setEnd(textNode, offset + "Small".length);
+        const textRect = range.getBoundingClientRect();
+        const checkboxRect = checkbox.getBoundingClientRect();
+
+        return {
+          checkboxBottom: checkboxRect.bottom,
+          checkboxTop: checkboxRect.top,
+          textTop: textRect.top,
+        };
+      });
+
+      expect(metrics.textTop).toBeLessThan(metrics.checkboxBottom);
+      expect(Math.abs(metrics.textTop - metrics.checkboxTop)).toBeLessThan(8);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("checkbox clicks toggle locally and persist on reload", async ({ page }) => {
     const server = await openPullDetail(page);
     try {

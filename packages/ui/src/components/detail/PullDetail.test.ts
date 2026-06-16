@@ -713,4 +713,23 @@ describe("PullDetail approvals", () => {
     expect(screen.getByRole("heading", { name: "Merge Pull Request" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
   });
+
+  it("opens the merge modal in deferred mode when aggregate CI is pending without check rows", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = "";
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+
+    expect(screen.getByRole("heading", { name: "Merge Pull Request" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+  });
 });

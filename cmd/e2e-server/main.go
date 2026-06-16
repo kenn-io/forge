@@ -1520,6 +1520,21 @@ func buildAppState(
 			return
 		}
 		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-ci-state/pending-status-only" {
+			// CIStatus is pending while CIChecksJSON is still empty.
+			// Keep the provider pinned to pending so the deferred-merge
+			// endpoint can refresh granular checks before queueing.
+			setPR1CIState(w, r, database, fc, "pending-status-only", ciFixtureOptions{
+				statusName: "pending",
+				checksJSON: "",
+				pinProviderTo: &struct {
+					Status     string
+					Conclusion string
+				}{Status: "in_progress", Conclusion: ""},
+			})
+			return
+		}
+		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-ci-state/dropdown-mixed" {
 			// 21-check payload spanning every bucket so the dropdown
 			// e2e can exercise the summary header, all five sections,

@@ -130,7 +130,11 @@ frontend-dev-bun: frontend-deps
 
 # Run TypeScript/Svelte lint and type checks
 frontend-check: frontend-deps
-	$(VITE_PLUS_BIN) run frontend-check
+	$(VITE_PLUS_BIN) fmt --check frontend packages/ui packages/github-app-ui --no-error-on-unmatched-pattern --threads=1
+	$(VITE_PLUS_BIN) lint frontend packages/ui packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
+	cd frontend && ../node_modules/.bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+	cd packages/ui && ../../node_modules/.bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+	cd packages/github-app-ui && ../../node_modules/.bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check: check-vite-plus-bin

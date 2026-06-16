@@ -202,6 +202,14 @@
     }
   }
 
+  function ciStatusIsPending(status: string): boolean {
+    return ["pending", "in_progress", "queued"].includes(status.toLowerCase());
+  }
+
+  function shouldDeferMergeForCI(status: string, checksJSON: string): boolean {
+    return ciStatusIsPending(status) || ciChecksHavePending(checksJSON);
+  }
+
   function requiredStatusChecksHaveNotPassed(checksJSON: string): boolean {
     if (!checksJSON) return false;
     try {
@@ -2036,8 +2044,7 @@
           allowRebase={repoSettings.allowRebase}
           expectedHeadSha={detailHeadSha}
           requireHeadPin={capabilities.mutation_head_binding}
-          deferUntilChecksPass={ciChecksHavePending(p.CIChecksJSON)}
-          checksJSON={p.CIChecksJSON}
+          deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           onheadconflict={handleHeadConflict}
           onclose={() => { showMergeModal = false; }}
           onmerged={() => {

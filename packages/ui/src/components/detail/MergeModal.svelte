@@ -5,8 +5,6 @@
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
-  import { bucketForCheck, parseCIChecks } from "../../utils/ci-buckets.js";
-  import type { CICheck } from "../../api/types.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
   const client = getClient();
@@ -33,8 +31,6 @@
     requireHeadPin?: boolean;
     /** When true, the primary action waits for currently pending CI before merging. */
     deferUntilChecksPass?: boolean;
-    /** Current provider CI snapshot for the loaded pull request. */
-    checksJSON?: string;
     onclose: () => void;
     onmerged: () => void;
     onheadconflict?: ((reason: "stale_state" | "head_unknown", context?: string) => void) | undefined;
@@ -46,7 +42,6 @@
     allowSquash, allowMerge, allowRebase,
     expectedHeadSha, requireHeadPin = false,
     deferUntilChecksPass = false,
-    checksJSON = "",
     onclose, onmerged, onheadconflict,
   }: Props = $props();
 
@@ -111,14 +106,6 @@
   let merging = $state(false);
   let error = $state<string | null>(null);
 
-  const parsedChecks = $derived(parseCIChecks(checksJSON));
-
-  function pendingCheckKeys(checks: CICheck[]): string[] {
-    return checks
-      .filter((check) => bucketForCheck(check) === "pending")
-      .map((check) => `${check.app}\0${check.name}`);
-  }
-
   function mergeParams(): MergeParams {
     return {
       commit_title: commitTitle,
@@ -171,7 +158,7 @@
   }
 
   function handleMerge(): void {
-    if (deferUntilChecksPass && pendingCheckKeys(parsedChecks.checks).length > 0) {
+    if (deferUntilChecksPass) {
       void submitMerge(true);
       return;
     }

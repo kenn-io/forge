@@ -100,25 +100,39 @@ func (s *Server) enqueueDeferredMerge(
 	if strings.TrimSpace(expectedHeadSHA) != "" {
 		queuedTarget.HeadSHA = expectedHeadSHA
 	}
+	if strings.TrimSpace(queuedTarget.BaseSHA) == "" {
+		return deferMergePRBody{}, problemConflict(
+			CodeConflict,
+			"target base commit has not been synced; refresh and retry",
+			map[string]any{"reason": "base_unknown"},
+		)
+	}
 	pendingKeys, err := pendingDeferredMergeCheckKeys(mr.CIChecksJSON)
 	if err != nil {
 		return deferMergePRBody{}, problemValidation("ci_checks", err.Error())
 	}
 	aggregateState := deferredMergeAggregateState(mr.CIStatus)
-	if len(pendingKeys) == 0 {
-		refreshed, refreshedKeys, err := s.refreshPendingDeferredMergeCheckKeys(ctx, *repo, number, queuedTarget)
-		if err != nil {
-			return deferMergePRBody{}, err
-		}
-		pendingKeys = refreshedKeys
-		aggregateState = deferredMergeAggregateState(refreshed.CIStatus)
-	}
 	if aggregateState == "failed" {
 		return deferMergePRBody{}, problemConflict(
 			CodeConflict,
 			"CI checks have already failed",
 			map[string]any{"reason": "ci_failed"},
 		)
+	}
+	if len(pendingKeys) == 0 && aggregateState != "pending" {
+		refreshed, refreshedKeys, err := s.refreshPendingDeferredMergeCheckKeys(ctx, *repo, number, queuedTarget)
+		if err != nil {
+			return deferMergePRBody{}, err
+		}
+		pendingKeys = refreshedKeys
+		aggregateState = deferredMergeAggregateState(refreshed.CIStatus)
+		if aggregateState == "failed" {
+			return deferMergePRBody{}, problemConflict(
+				CodeConflict,
+				"CI checks have already failed",
+				map[string]any{"reason": "ci_failed"},
+			)
+		}
 	}
 	if len(pendingKeys) == 0 && aggregateState != "pending" {
 		return deferMergePRBody{}, problemConflict(
@@ -517,7 +531,7 @@ func deferredMergeCheckState(aggregateStatus string, keys []deferredMergeCheckKe
 	if currentPending {
 		return "pending", nil
 	}
-	if aggregateState == "pending" {
+	if aggregateState != "passed" {
 		return "pending", nil
 	}
 	return "passed", nil
@@ -526,7 +540,7 @@ func deferredMergeCheckState(aggregateStatus string, keys []deferredMergeCheckKe
 func deferredMergeAggregateState(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "":
-		return ""
+		return "unknown"
 	case "success", "passed":
 		return "passed"
 	case "failure", "failed", "error", "cancelled", "canceled", "timed_out":
@@ -534,7 +548,7 @@ func deferredMergeAggregateState(status string) string {
 	case "pending", "in_progress", "queued", "running", "waiting":
 		return "pending"
 	default:
-		return "pending"
+		return "unknown"
 	}
 }
 

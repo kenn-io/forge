@@ -505,6 +505,35 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 	require.Contains(err.Error(), "invalid branch name")
 }
 
+func TestValidateLocalBranchNameIgnoresBrokenWorkingTreeCwd(t *testing.T) {
+	if os.Getenv("MIDDLEMAN_TEST_VALIDATE_BRANCH_CWD") == "1" {
+		require.NoError(t, os.Chdir(os.Getenv("MIDDLEMAN_TEST_BROKEN_CWD")))
+		require.NoError(t, validateLocalBranchName(
+			t.Context(), "", "middleman/issue-23-federation-test",
+		))
+		return
+	}
+
+	brokenCwd := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(brokenCwd, ".git"),
+		[]byte("gitdir: /definitely/not/a/git/worktree\n"),
+		0o644,
+	))
+
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestValidateLocalBranchNameIgnoresBrokenWorkingTreeCwd$",
+	)
+	cmd.Env = append(
+		os.Environ(),
+		"MIDDLEMAN_TEST_VALIDATE_BRANCH_CWD=1",
+		"MIDDLEMAN_TEST_BROKEN_CWD="+brokenCwd,
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+}
+
 func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
 	type worktreeExpectation struct {
 		headSHA  string

@@ -672,9 +672,13 @@ func validateLocalBranchName(
 	cmd := procutil.CommandContext(
 		ctx, "git", "check-ref-format", "--branch", branch,
 	)
-	if dir != "" {
-		cmd.Dir = dir
+	if dir == "" {
+		// `git check-ref-format --branch` consults cwd when it appears to be
+		// inside a worktree. Run repo-independent validation somewhere neutral
+		// so a broken launch cwd cannot make a valid branch look invalid.
+		dir = os.TempDir()
 	}
+	cmd.Dir = dir
 	out, err := procutil.CombinedOutput(
 		ctx, cmd, "git subprocess capacity",
 	)

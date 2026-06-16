@@ -28,6 +28,18 @@ describe("renderMarkdownDiff", () => {
     expect(html).toMatch(/<ins><a href="\/new">docs<\/a><\/ins>/);
   });
 
+  it("pairs adjacent compatible element changes in order", () => {
+    const html = renderMarkdownDiff(
+      "<p><em>alpha</em><strong>beta</strong></p>",
+      "<p><em>one</em><strong>two</strong></p>",
+    );
+
+    expect(html).toContain("<em><del>alpha</del><ins>one</ins></em>");
+    expect(html).toContain("<strong><del>beta</del><ins>two</ins></strong>");
+    expect(html).not.toContain("<del><em>alpha</em></del>");
+    expect(html).not.toContain("<ins><em>one</em></ins>");
+  });
+
   it("renders heading level changes visibly", () => {
     const html = renderMarkdownDiff("<h2>Release notes</h2>", "<h3>Release notes</h3>");
 

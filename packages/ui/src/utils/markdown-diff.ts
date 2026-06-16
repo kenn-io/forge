@@ -116,13 +116,43 @@ function pairCompatibleNodes(ops: DiffOp<Node>[]): PairedNodeOp[] {
   const paired: PairedNodeOp[] = [];
   for (let i = 0; i < ops.length; i++) {
     const current = ops[i]!;
-    const next = ops[i + 1];
-    if (current.kind === "delete" && next?.kind === "insert" && nodesCompatible(current.oldItem, next.newItem)) {
-      paired.push({ kind: "replace", oldItem: current.oldItem, newItem: next.newItem });
-      i++;
-    } else {
+    if (current.kind !== "delete") {
       paired.push(current);
+      continue;
     }
+
+    const deleteRun: Extract<DiffOp<Node>, { kind: "delete" }>[] = [];
+    while (ops[i]?.kind === "delete") {
+      deleteRun.push(ops[i] as Extract<DiffOp<Node>, { kind: "delete" }>);
+      i++;
+    }
+
+    const insertRun: Extract<DiffOp<Node>, { kind: "insert" }>[] = [];
+    while (ops[i]?.kind === "insert") {
+      insertRun.push(ops[i] as Extract<DiffOp<Node>, { kind: "insert" }>);
+      i++;
+    }
+    i--;
+
+    if (insertRun.length === 0) {
+      paired.push(...deleteRun);
+      continue;
+    }
+
+    const pairCount = Math.min(deleteRun.length, insertRun.length);
+    let pairedCount = 0;
+    while (
+      pairedCount < pairCount &&
+      nodesCompatible(deleteRun[pairedCount]!.oldItem, insertRun[pairedCount]!.newItem)
+    ) {
+      paired.push({
+        kind: "replace",
+        oldItem: deleteRun[pairedCount]!.oldItem,
+        newItem: insertRun[pairedCount]!.newItem,
+      });
+      pairedCount++;
+    }
+    paired.push(...deleteRun.slice(pairedCount), ...insertRun.slice(pairedCount));
   }
   return paired;
 }

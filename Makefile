@@ -24,9 +24,9 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 VITE_PLUS_VERSION := 0.1.24
-VITE_PLUS_BIN := node ./node_modules/vite-plus/bin/vp
-VITE_PLUS_FRONTEND_BIN := node ../node_modules/vite-plus/bin/vp
-VITE_PLUS_PACKAGE_BIN := node ../../node_modules/vite-plus/bin/vp
+VITE_PLUS_BIN := bun-latest ./node_modules/vite-plus/bin/vp
+VITE_PLUS_FRONTEND_BIN := bun-latest ../node_modules/vite-plus/bin/vp
+VITE_PLUS_PACKAGE_BIN := bun-latest ../../node_modules/vite-plus/bin/vp
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
@@ -87,7 +87,7 @@ install: build-release
 
 # Install Bun workspace dependencies for frontend and packages/ui
 frontend-deps:
-	bun install
+	bun-latest install --no-save
 
 check-vite-plus-bin:
 	@test -f node_modules/vite-plus/bin/vp || { echo "vite-plus is not installed; run make frontend-deps" >&2; exit 1; }
@@ -97,8 +97,8 @@ vite-plus-install:
 	@if command -v vp >/dev/null 2>&1; then \
 		vp --version | head -n 1; \
 	else \
-		echo "vp not found; installing vite-plus@$(VITE_PLUS_VERSION) with Bun"; \
-		bun install -g vite-plus@$(VITE_PLUS_VERSION); \
+		echo "vp not found; installing vite-plus@$(VITE_PLUS_VERSION) with bun-latest"; \
+		bun-latest install -g vite-plus@$(VITE_PLUS_VERSION); \
 	fi
 
 # Build frontend SPA and copy into embed directory
@@ -120,7 +120,7 @@ githubapp-frontend: frontend-deps
 frontend-dev:
 	./scripts/frontend-dev.sh $(ARGS)
 
-# Run Vite+ dev server after installing dependencies with Bun; Node launches Vite+ (use alongside `make dev`)
+# Run Vite+ dev server after installing dependencies with Bun (use alongside `make dev`)
 frontend-dev-bun: frontend-deps
 	cd frontend && $(VITE_PLUS_FRONTEND_BIN) dev
 

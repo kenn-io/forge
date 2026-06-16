@@ -118,7 +118,7 @@ async function tryBuildFrontend(frontendDir: string): Promise<BuildOutcome> {
   }
 
   return await new Promise<BuildOutcome>((resolve) => {
-    const build = spawn(process.execPath, [vitePlusBin, "build", "--logLevel", "warn"], {
+    const build = spawn("bun-latest", [vitePlusBin, "build", "--logLevel", "warn"], {
       cwd: frontendDir,
       stdio: "inherit",
       env: process.env,

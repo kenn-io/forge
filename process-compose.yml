@@ -27,4 +27,4 @@ processes:
     description: "Vite frontend dev server on 127.0.0.1:5174"
     namespace: dev
     log_location: "tmp/logs/frontend-process-compose.log"
-    command: "bun install ${BUN_INSTALL_FLAGS:-} && cd frontend && exec vp dev -- ${FRONTEND_ARGS:-}"
+    command: "sh ./scripts/dev-stack-frontend.sh"

@@ -1,9 +1,9 @@
 import { defineConfig } from "vite-plus";
 
-const rootVP = "node node_modules/vite-plus/bin/vp";
-const frontendVP = "node ../node_modules/vite-plus/bin/vp";
-const uiVP = "node ../../node_modules/vite-plus/bin/vp";
-const packageVP = "node ../../node_modules/vite-plus/bin/vp";
+const rootVP = "bun-latest node_modules/vite-plus/bin/vp";
+const frontendVP = "bun-latest ../node_modules/vite-plus/bin/vp";
+const uiVP = "bun-latest ../../node_modules/vite-plus/bin/vp";
+const packageVP = "bun-latest ../../node_modules/vite-plus/bin/vp";
 
 export default defineConfig({
   run: {

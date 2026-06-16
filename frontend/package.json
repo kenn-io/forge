@@ -5,14 +5,14 @@
   "license": "Elastic-2.0",
   "type": "module",
   "scripts": {
-    "dev": "node ../node_modules/vite-plus/bin/vp dev",
-    "build": "node ../node_modules/vite-plus/bin/vp build --logLevel warn",
-    "preview": "node ../node_modules/vite-plus/bin/vp preview",
-    "check": "cd .. && node node_modules/vite-plus/bin/vp run frontend-package-check",
-    "lint": "node ../node_modules/vite-plus/bin/vp lint . --no-error-on-unmatched-pattern",
-    "lint:fix": "node ../node_modules/vite-plus/bin/vp lint . --fix --no-error-on-unmatched-pattern",
-    "typecheck": "cd .. && node node_modules/vite-plus/bin/vp run frontend-package-typecheck",
-    "test": "node ../node_modules/vite-plus/bin/vp test run",
+    "dev": "bun-latest ../node_modules/vite-plus/bin/vp dev",
+    "build": "bun-latest ../node_modules/vite-plus/bin/vp build --logLevel warn",
+    "preview": "bun-latest ../node_modules/vite-plus/bin/vp preview",
+    "check": "cd .. && bun-latest node_modules/vite-plus/bin/vp run frontend-package-check",
+    "lint": "bun-latest ../node_modules/vite-plus/bin/vp lint . --no-error-on-unmatched-pattern",
+    "lint:fix": "bun-latest ../node_modules/vite-plus/bin/vp lint . --fix --no-error-on-unmatched-pattern",
+    "typecheck": "cd .. && bun-latest node_modules/vite-plus/bin/vp run frontend-package-typecheck",
+    "test": "bun-latest ../node_modules/vite-plus/bin/vp test run",
     "test:e2e": "node ./scripts/run-e2e-to-file.ts",
     "test:e2e:mock": "node node_modules/.bin/playwright test --config=playwright.config.ts",
     "demo-workspace": "node node_modules/.bin/playwright test --config tests/demo/playwright-demo.config.ts"
@@ -54,13 +54,12 @@
   "devEngines": {
     "packageManager": {
       "name": "bun",
+      "version": "latest",
       "onFail": "download"
     },
     "runtime": {
-      "name": "node",
-      "version": ">=24.0.0",
+      "name": "bun-latest",
       "onFail": "download"
     }
-  },
-  "packageManager": "bun@1.3.11"
+  }
 }

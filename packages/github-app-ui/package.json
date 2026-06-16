@@ -5,11 +5,11 @@
   "license": "Elastic-2.0",
   "type": "module",
   "scripts": {
-    "dev": "node ../../node_modules/vite-plus/bin/vp dev",
-    "build": "node ../../node_modules/vite-plus/bin/vp build --logLevel warn",
-    "check": "cd ../.. && node node_modules/vite-plus/bin/vp run github-app-ui-package-check",
-    "test:e2e": "node ../../node_modules/vite-plus/bin/vp build --logLevel warn && node node_modules/.bin/playwright test",
-    "typecheck": "cd ../.. && node node_modules/vite-plus/bin/vp run github-app-ui-package-typecheck"
+    "dev": "bun-latest ../../node_modules/vite-plus/bin/vp dev",
+    "build": "bun-latest ../../node_modules/vite-plus/bin/vp build --logLevel warn",
+    "check": "cd ../.. && bun-latest node_modules/vite-plus/bin/vp run github-app-ui-package-check",
+    "test:e2e": "bun-latest ../../node_modules/vite-plus/bin/vp build --logLevel warn && node node_modules/.bin/playwright test",
+    "typecheck": "cd ../.. && bun-latest node_modules/vite-plus/bin/vp run github-app-ui-package-typecheck"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",

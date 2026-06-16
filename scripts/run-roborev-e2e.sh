@@ -37,8 +37,8 @@ trap 'FAILED=1' ERR
 # 1. Build frontend + e2e server (unless SKIP_BUILD=1)
 if [ "${SKIP_BUILD:-}" != "1" ]; then
   echo "--- build frontend ---"
-  cd "$REPO_ROOT" && bun install --frozen-lockfile
-  cd "$REPO_ROOT/frontend" && node ../node_modules/vite-plus/bin/vp build --logLevel warn
+  cd "$REPO_ROOT" && bun-latest install --no-save --frozen-lockfile
+  cd "$REPO_ROOT/frontend" && bun-latest ../node_modules/vite-plus/bin/vp build --logLevel warn
   rm -rf "$REPO_ROOT/internal/web/dist"
   cp -r "$REPO_ROOT/frontend/dist" "$REPO_ROOT/internal/web/dist"
 

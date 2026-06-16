@@ -113,9 +113,9 @@
     }
   },
   "scripts": {
-    "check": "cd ../.. && node node_modules/vite-plus/bin/vp run ui-package-check",
-    "lint": "cd ../.. && node node_modules/vite-plus/bin/vp lint packages/ui --no-error-on-unmatched-pattern",
-    "typecheck": "cd ../.. && node node_modules/vite-plus/bin/vp run ui-package-typecheck"
+    "check": "cd ../.. && bun-latest node_modules/vite-plus/bin/vp run ui-package-check",
+    "lint": "cd ../.. && bun-latest node_modules/vite-plus/bin/vp lint packages/ui --no-error-on-unmatched-pattern",
+    "typecheck": "cd ../.. && bun-latest node_modules/vite-plus/bin/vp run ui-package-typecheck"
   },
   "dependencies": {
     "@lucide/svelte": "1.17.0",

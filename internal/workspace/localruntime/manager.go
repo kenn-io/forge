@@ -631,6 +631,9 @@ func (m *Manager) LaunchTargets() []LaunchTarget {
 
 	targets := make([]LaunchTarget, 0, len(m.targetsList))
 	for _, target := range m.targetsList {
+		if target.Kind == LaunchTargetShell {
+			continue
+		}
 		targets = append(targets, cloneTarget(target))
 	}
 	return targets

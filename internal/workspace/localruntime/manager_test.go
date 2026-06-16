@@ -1143,6 +1143,24 @@ func TestManagerUpdateTargetsAndStripEnvVarsPreservesPreviousNames(t *testing.T)
 	assert.Equal([]string{"OLD_TOKEN", "NEW_TOKEN"}, mgr.currentStripEnvVars())
 }
 
+func TestManagerLaunchTargetsHideInternalShellTarget(t *testing.T) {
+	mgr := NewManager(Options{Targets: []LaunchTarget{
+		{
+			Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
+			Source: "system", Command: []string{"tmux"}, Available: true,
+		},
+		plainShellTarget(),
+		helperTarget("codex", "sleep"),
+	}})
+	t.Cleanup(mgr.Shutdown)
+
+	targets := mgr.LaunchTargets()
+	assert := Assert.New(t)
+	assert.Len(targets, 2)
+	assert.Equal(string(LaunchTargetPlainShell), targets[0].Key)
+	assert.Equal("codex", targets[1].Key)
+}
+
 func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
 	assert := Assert.New(t)
 	agent := helperTarget("codex", "sleep")

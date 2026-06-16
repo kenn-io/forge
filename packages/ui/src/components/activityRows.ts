@@ -12,6 +12,10 @@ export interface CollapsedActivityRun {
 
 export type ActivityRow = ActivityItem | CollapsedActivityRun;
 
+export interface CollapseActivityRunsOptions {
+  rollUpCommits?: boolean;
+}
+
 export function isCollapsedActivityRow(row: ActivityRow): row is CollapsedActivityRun {
   return "kind" in row && row.kind === "collapsed";
 }
@@ -45,26 +49,33 @@ function activityRunAuthor(item: ActivityItem): string {
   return item.author_name || item.author;
 }
 
-function activityRunGroupKey(item: ActivityItem): string | null {
+function activityRunGroupKey(item: ActivityItem, options: Required<CollapseActivityRunsOptions>): string | null {
   const author = activityRunAuthor(item);
-  if (item.activity_type === "commit" || item.activity_type === "comment" || item.activity_type === "review") {
+  if (item.activity_type === "commit") {
+    if (!options.rollUpCommits) return null;
+    return ["item", item.activity_type, repoKeyForItem(item), item.item_type, item.item_number, author].join("|");
+  }
+
+  if (item.activity_type === "comment" || item.activity_type === "review") {
     return ["item", item.activity_type, repoKeyForItem(item), item.item_type, item.item_number, author].join("|");
   }
 
   if (isDefaultBranchCommitActivity(item)) {
+    if (!options.rollUpCommits) return null;
     return ["branch", repoKeyForItem(item), item.branch_name ?? "", author].join("|");
   }
 
   return null;
 }
 
-export function collapseActivityRuns(items: ActivityItem[]): ActivityRow[] {
+export function collapseActivityRuns(items: ActivityItem[], options: CollapseActivityRunsOptions = {}): ActivityRow[] {
+  const resolvedOptions = { rollUpCommits: options.rollUpCommits ?? false };
   const result: ActivityRow[] = [];
   let i = 0;
 
   while (i < items.length) {
     const item = items[i]!;
-    const groupKey = activityRunGroupKey(item);
+    const groupKey = activityRunGroupKey(item, resolvedOptions);
     if (groupKey === null) {
       result.push(item);
       i++;
@@ -74,7 +85,7 @@ export function collapseActivityRuns(items: ActivityItem[]): ActivityRow[] {
     let j = i + 1;
     while (j < items.length) {
       const next = items[j]!;
-      if (activityRunGroupKey(next) !== groupKey) break;
+      if (activityRunGroupKey(next, resolvedOptions) !== groupKey) break;
       j++;
     }
 

@@ -233,3 +233,23 @@ describe("activity store default-branch visibility", () => {
     expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(false);
   });
 });
+
+describe("activity store commit roll-up", () => {
+  it("shows individual commits by default and persists the URL override for rolled-up commits", () => {
+    const s = makeStore();
+    s.initializeFromMount();
+    expect(s.getRollUpCommits()).toBe(false);
+
+    s.setRollUpCommits(true);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("rollup_commits")).toBe("1");
+
+    const next = makeStore();
+    next.initializeFromMount();
+    expect(next.getRollUpCommits()).toBe(true);
+
+    next.setRollUpCommits(false);
+    next.syncToURL();
+    expect(new URLSearchParams(window.location.search).has("rollup_commits")).toBe(false);
+  });
+});

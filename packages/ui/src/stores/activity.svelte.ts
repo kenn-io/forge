@@ -74,6 +74,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let timeRange = $state<TimeRange>("7d");
   let viewMode = $state<ViewMode>("flat");
   let collapseThreads = $state(false);
+  let rollUpCommits = $state(false);
   let collapseThreadsDefault = false;
   let expandOverrides = $state<Set<string>>(new Set());
   let pollHandle: ReturnType<typeof setInterval> | null = null;
@@ -118,6 +119,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function getCollapseThreads(): boolean {
     return collapseThreads;
   }
+  function getRollUpCommits(): boolean {
+    return rollUpCommits;
+  }
   function isThreadItemExpanded(key: string): boolean {
     return expandOverrides.has(key) ? collapseThreads : !collapseThreads;
   }
@@ -153,6 +157,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function setViewMode(mode: ViewMode): void {
     viewMode = mode;
+  }
+  function setRollUpCommits(value: boolean): void {
+    rollUpCommits = value;
   }
   function collapseAllThreads(): void {
     collapseThreads = true;
@@ -392,6 +399,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const viewParam = sp.get("view");
       if (viewParam === "flat" || viewParam === "threaded") viewMode = viewParam;
     }
+    rollUpCommits = sp.get("rollup_commits") === "1";
     hideDefaultBranchActivity = sp.get("hide_branch") === "1";
     applyCollapsedFromURL();
     deriveFiltersFromTypes();
@@ -407,6 +415,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     else sp.delete("range");
     if (viewMode !== "flat") sp.set("view", viewMode);
     else sp.delete("view");
+    if (rollUpCommits) sp.set("rollup_commits", "1");
+    else sp.delete("rollup_commits");
     if (hideDefaultBranchActivity) sp.set("hide_branch", "1");
     else sp.delete("hide_branch");
     if (collapseThreads !== collapseThreadsDefault) {
@@ -430,6 +440,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getTimeRange,
     getViewMode,
     getCollapseThreads,
+    getRollUpCommits,
     isThreadItemExpanded,
     getHideClosedMerged,
     getHideBots,
@@ -441,6 +452,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     setActivitySearch,
     setTimeRange,
     setViewMode,
+    setRollUpCommits,
     collapseAllThreads,
     expandAllThreads,
     toggleThreadItem,

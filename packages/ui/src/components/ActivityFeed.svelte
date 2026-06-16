@@ -155,6 +155,11 @@
     activity.syncToURL();
   }
 
+  function handleRollUpCommitsChange(value: boolean): void {
+    activity.setRollUpCommits(value);
+    activity.syncToURL();
+  }
+
   const TIME_RANGES: { value: TimeRange; label: string }[] = [
     { value: "24h", label: "24h" },
     { value: "7d", label: "7d" },
@@ -322,7 +327,8 @@
 
   const currentViewDetail = $derived.by(() => {
     const mode = activity.getViewMode() === "flat" ? "Flat" : "Threaded";
-    return `${mode} · ${activity.getTimeRange()}`;
+    const commitMode = activity.getRollUpCommits() ? "Rolled commits" : "Individual commits";
+    return `${mode} · ${activity.getTimeRange()} · ${commitMode}`;
   });
 
   const collapseThreads = $derived(activity.getCollapseThreads());
@@ -360,6 +366,17 @@
         closeOnSelect: true,
         onSelect: () => handleTimeRangeChange(range.value),
       })),
+    },
+    {
+      title: "Commits",
+      items: [
+        {
+          id: "roll-up-commits",
+          label: "Roll up commits",
+          active: activity.getRollUpCommits(),
+          onSelect: () => handleRollUpCommitsChange(!activity.getRollUpCommits()),
+        },
+      ],
     },
     ...(activity.getViewMode() === "threaded"
       ? [

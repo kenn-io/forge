@@ -53,6 +53,7 @@ function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): 
 const expanded = vi.hoisted(() => ({ value: true }));
 const groupByRepo = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
+const rollUpCommits = vi.hoisted(() => ({ value: false }));
 const toggleThreadItem = vi.hoisted(() => vi.fn());
 
 vi.mock("../context.js", () => ({
@@ -64,6 +65,7 @@ vi.mock("../context.js", () => ({
     activity: {
       isThreadItemExpanded: () => expanded.value,
       toggleThreadItem,
+      getRollUpCommits: () => rollUpCommits.value,
     },
   }),
 }));
@@ -74,6 +76,7 @@ describe("ActivityThreaded collapse", () => {
     expanded.value = true;
     groupByRepo.value = false;
     hideOrgName.value = false;
+    rollUpCommits.value = false;
     toggleThreadItem.mockClear();
   });
 
@@ -115,6 +118,8 @@ describe("ActivityThreaded collapse", () => {
   });
 
   it("renders branch activity as top-level rows interleaved with item threads", async () => {
+    rollUpCommits.value = true;
+
     const { container } = render(ActivityThreaded, {
       props: {
         items: [
@@ -149,6 +154,38 @@ describe("ActivityThreaded collapse", () => {
     expect(container.textContent).not.toContain("main updates on acme/widgets");
     expect(container.textContent).not.toContain("#0");
     expect(container.querySelector(".branch-activity-row .thread-caret")).toBeNull();
+  });
+
+  it("shows default-branch commits as individual rows when commit roll-up is off", () => {
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [
+          branchActivityItem("c3", {
+            created_at: "2026-04-27T12:03:00Z",
+            body_preview: "Ship direct main commit 3",
+            commit_sha: "3333333333333333333333333333333333333333",
+          }),
+          branchActivityItem("c2", {
+            created_at: "2026-04-27T12:02:00Z",
+            body_preview: "Ship direct main commit 2",
+            commit_sha: "2222222222222222222222222222222222222222",
+          }),
+          branchActivityItem("c1", {
+            created_at: "2026-04-27T12:01:00Z",
+            body_preview: "Ship direct main commit 1",
+            commit_sha: "1111111111111111111111111111111111111111",
+          }),
+        ],
+        onSelectItem: undefined,
+      },
+    });
+
+    const rows = Array.from(container.querySelectorAll(".branch-activity-row"));
+    expect(rows).toHaveLength(3);
+    expect(rows[0]?.textContent).toContain("Ship direct main commit 3");
+    expect(rows[1]?.textContent).toContain("Ship direct main commit 2");
+    expect(rows[2]?.textContent).toContain("Ship direct main commit 1");
+    expect(container.textContent).not.toContain("3 commits");
   });
 
   it("labels commit rows without the branch type or duplicated commit text", () => {

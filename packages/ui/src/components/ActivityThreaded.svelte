@@ -176,7 +176,9 @@
           itemAuthor: itemAuthor(first),
           workspace: first.workspace,
           events,
-          displayEvents: collapseActivityRuns(events),
+          displayEvents: collapseActivityRuns(events, {
+            rollUpCommits: activity.getRollUpCommits(),
+          }),
         },
       });
     }
@@ -188,7 +190,9 @@
     threadedEntries.sort((a, b) =>
       parseAPITimestamp(entryLatestTime(b)).getTime() - parseAPITimestamp(entryLatestTime(a)).getTime());
 
-    const allEntries = collapseTopLevelBranchRuns(threadedEntries);
+    const allEntries = activity.getRollUpCommits()
+      ? collapseTopLevelBranchRuns(threadedEntries)
+      : threadedEntries;
 
     if (!byRepo) {
       if (allEntries.length === 0) return [];
@@ -278,7 +282,9 @@
         branchItems.push(branchRowRepresentative(branchEntry.row));
         j++;
       }
-      for (const row of collapseActivityRuns(branchItems)) {
+      for (const row of collapseActivityRuns(branchItems, {
+        rollUpCommits: activity.getRollUpCommits(),
+      })) {
         result.push(branchEntryFromRow(row));
       }
       i = j;

@@ -295,10 +295,11 @@ async function pierreDiffCount(file: ReturnType<Page["locator"]>, selector: stri
 
 async function selectActivityFilterItem(page: Page, label: string): Promise<void> {
   await page.locator(".activity-feed .filter-btn", { hasText: "View" }).click();
-  await page.locator(".activity-feed .filter-dropdown").waitFor({
+  const dropdown = page.locator(".activity-feed .filter-dropdown");
+  await dropdown.waitFor({
     state: "visible",
   });
-  await page.locator(".activity-feed .filter-item", { hasText: label }).click();
+  await dropdown.getByRole("button", { name: label, exact: true }).click();
 }
 
 test.describe("default branch activity", () => {
@@ -394,10 +395,25 @@ test.describe("default branch activity", () => {
       }),
     ).toHaveCount(0);
     await expect(
-      page.locator(".item-row", {
-        hasText: "3 commits",
+      page.locator(".branch-activity-row", {
+        hasText: "Ship direct main commit 5",
       }),
     ).toBeVisible();
+    await expect(
+      page.locator(".branch-activity-row", {
+        hasText: "Ship direct main commit 4",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".branch-activity-row", {
+        hasText: "Ship direct main commit 3",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".branch-activity-row", {
+        hasText: "3 commits",
+      }),
+    ).toHaveCount(0);
     await expect(
       page.locator(".item-row", {
         hasText: "Add browser regression coverage",
@@ -414,6 +430,24 @@ test.describe("default branch activity", () => {
         hasText: "3 commits",
       }),
     ).toHaveCount(0);
+
+    await selectActivityFilterItem(page, "Roll up commits");
+    await expect(page).toHaveURL(/rollup_commits=1/);
+    await expect(
+      page.locator(".branch-activity-row", {
+        hasText: "Ship direct main commit 5",
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".branch-activity-row", {
+        hasText: "3 commits",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".branch-activity-row", {
+        hasText: "Ship direct main commit 2",
+      }),
+    ).toBeVisible();
 
     const forcePushRow = page.locator(".branch-activity-row", {
       hasText: "Force-pushed",

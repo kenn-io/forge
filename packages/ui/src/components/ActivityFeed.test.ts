@@ -56,6 +56,7 @@ const viewMode = vi.hoisted(() => ({
 const collapseThreads = vi.hoisted(() => ({ value: false }));
 const collapseAllThreads = vi.hoisted(() => vi.fn());
 const expandAllThreads = vi.hoisted(() => vi.fn());
+const rollUpCommits = vi.hoisted(() => ({ value: false }));
 const hideDefaultBranchActivity = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const setActivityFilterTypes = vi.hoisted(() => vi.fn());
@@ -87,6 +88,10 @@ vi.mock("../context.js", () => ({
       getCollapseThreads: () => collapseThreads.value,
       collapseAllThreads,
       expandAllThreads,
+      getRollUpCommits: () => rollUpCommits.value,
+      setRollUpCommits: vi.fn((value: boolean) => {
+        rollUpCommits.value = value;
+      }),
       isThreadItemExpanded: () => true,
       toggleThreadItem: vi.fn(),
       setActivityFilterTypes,
@@ -126,6 +131,7 @@ describe("ActivityFeed compact mode", () => {
   beforeEach(() => {
     viewMode.value = "flat";
     collapseThreads.value = false;
+    rollUpCommits.value = false;
     hideDefaultBranchActivity.value = false;
     hideOrgName.value = false;
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
@@ -386,6 +392,15 @@ describe("ActivityFeed compact mode", () => {
       "commit",
       "force_push",
     ]);
+  });
+
+  it("can enable commit roll-up from the view dropdown", async () => {
+    render(ActivityFeed, { props: { compact: true } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Roll up commits" }));
+
+    expect(rollUpCommits.value).toBe(true);
   });
 });
 

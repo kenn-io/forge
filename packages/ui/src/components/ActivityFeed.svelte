@@ -32,6 +32,7 @@
   import ItemStateChip from "./shared/ItemStateChip.svelte";
   import WorkspaceIndicator from "./shared/WorkspaceIndicator.svelte";
   import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
+  import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronsDownUpIcon from "@lucide/svelte/icons/chevrons-down-up";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
 
@@ -523,6 +524,15 @@
     return (item.item_type === "pr" || item.item_type === "issue") && item.item_number > 0;
   }
 
+  function isUnreadNotification(item: ActivityItem): boolean {
+    return item.activity_type === "notification" && item.item_state === "unread";
+  }
+
+  function handleMarkSeen(e: Event, item: ActivityItem): void {
+    e.stopPropagation();
+    void activity.markNotificationSeen(item);
+  }
+
   function isSelectedActivityItem(item: ActivityItem): boolean {
     if (isDefaultBranchActivity(item)) {
       if (!isDefaultBranchCommitActivity(item)) return false;
@@ -849,6 +859,17 @@
                 </span>
                 <span class="cell cell--time col-when">{relativeTime(row.created_at)}</span>
                 <span class="cell cell--link">
+                  {#if isUnreadNotification(row)}
+                    <button
+                      class="link-btn mark-seen-btn"
+                      type="button"
+                      aria-label="Mark notification seen"
+                      title="Mark seen"
+                      onclick={(e) => handleMarkSeen(e, row)}
+                    >
+                      <CheckIcon size="14" strokeWidth="2" aria-hidden="true" />
+                    </button>
+                  {/if}
                   {#if activityLink(row)}
                     <button
                       class="link-btn"
@@ -1238,6 +1259,10 @@
   .link-btn:focus-visible {
     outline: 2px solid var(--accent-blue);
     outline-offset: 1px;
+  }
+
+  .mark-seen-btn {
+    color: var(--accent-blue);
   }
 
   :global(.evt-label) {

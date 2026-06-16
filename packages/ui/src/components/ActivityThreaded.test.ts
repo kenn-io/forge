@@ -55,6 +55,7 @@ const groupByRepo = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const rollUpCommits = vi.hoisted(() => ({ value: false }));
 const toggleThreadItem = vi.hoisted(() => vi.fn());
+const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock("../context.js", () => ({
   getStores: () => ({
@@ -66,6 +67,7 @@ vi.mock("../context.js", () => ({
       isThreadItemExpanded: () => expanded.value,
       toggleThreadItem,
       getRollUpCommits: () => rollUpCommits.value,
+      markNotificationSeen,
     },
   }),
 }));
@@ -401,5 +403,44 @@ describe("ActivityThreaded collapse", () => {
       "noopener",
     );
     open.mockRestore();
+  });
+});
+
+describe("ActivityThreaded notification events", () => {
+  afterEach(() => {
+    cleanup();
+    expanded.value = true;
+    markNotificationSeen.mockClear();
+  });
+
+  it("labels a notification event by its reason and marks it seen", async () => {
+    const notif = activityItem("ntf:42", {
+      activity_type: "notification",
+      item_state: "unread",
+      body_preview: "review_requested",
+    });
+    const { container, getByRole } = render(ActivityThreaded, {
+      props: { items: [notif], onSelectItem: undefined },
+    });
+
+    expect(container.textContent).toContain("Review requested");
+    const btn = getByRole("button", { name: "Mark notification seen" });
+    await fireEvent.click(btn);
+    expect(markNotificationSeen).toHaveBeenCalledTimes(1);
+    expect(markNotificationSeen.mock.calls[0]![0]).toMatchObject({ id: "ntf:42" });
+  });
+
+  it("omits the seen control once a notification is read", () => {
+    const notif = activityItem("ntf:43", {
+      activity_type: "notification",
+      item_state: "read",
+      body_preview: "mention",
+    });
+    const { container, queryByRole } = render(ActivityThreaded, {
+      props: { items: [notif], onSelectItem: undefined },
+    });
+
+    expect(container.textContent).toContain("Mentioned");
+    expect(queryByRole("button", { name: "Mark notification seen" })).toBeNull();
   });
 });

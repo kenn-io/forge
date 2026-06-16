@@ -37,6 +37,33 @@ test.describe("notifications in the activity feed", () => {
     }
   });
 
+  test("marks a notification seen and queues the upstream read", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/`);
+      await waitForTable(page);
+
+      const reviewRow = page.locator(".activity-row", { hasText: "Review requested" });
+      await expect(reviewRow).toHaveCount(1);
+      const seen = reviewRow.getByRole("button", { name: "Mark notification seen" });
+      await expect(seen).toBeVisible();
+
+      // Clicking queues the GitHub read propagation and flips the row
+      // to read, which removes the seen control.
+      const readResponse = page.waitForResponse(
+        (r) => r.request().method() === "POST" && r.url().endsWith("/api/v1/notifications/read"),
+      );
+      await seen.click();
+      expect((await readResponse).status()).toBe(200);
+
+      await expect(reviewRow.getByRole("button", { name: "Mark notification seen" })).toHaveCount(0);
+      // The row itself stays in the feed as read history.
+      await expect(reviewRow).toHaveCount(1);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("omits notifications from the feed when the feature is disabled", async ({ page }) => {
     const server = await startIsolatedE2EServerWithOptions({ notificationsEnabled: false });
     try {

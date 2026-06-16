@@ -1,6 +1,11 @@
-import { beforeEach, describe, expect, it } from "vite-plus/test";
-import type { ActivitySettings } from "../api/types.js";
-import { buildActivityFilterTypes, createActivityStore, DEFAULT_EVENT_TYPES } from "./activity.svelte.js";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { ActivityItem, ActivitySettings } from "../api/types.js";
+import {
+  buildActivityFilterTypes,
+  createActivityStore,
+  DEFAULT_EVENT_TYPES,
+  notificationDbId,
+} from "./activity.svelte.js";
 
 const fakeClient = {
   GET: async () => ({
@@ -301,5 +306,73 @@ describe("activity store commit roll-up", () => {
     next.setRollUpCommits(false);
     next.syncToURL();
     expect(new URLSearchParams(window.location.search).has("rollup_commits")).toBe(false);
+  });
+});
+
+function notificationItem(id: string, state: "unread" | "read"): ActivityItem {
+  return {
+    id,
+    cursor: id,
+    activity_type: "notification",
+    item_type: "pr",
+    item_number: 1,
+    item_state: state,
+    body_preview: "review_requested",
+    repo_owner: "acme",
+    repo_name: "widgets",
+    platform_host: "github.com",
+  } as unknown as ActivityItem;
+}
+
+describe("notificationDbId", () => {
+  it("parses ntf-source ids and rejects everything else", () => {
+    expect(notificationDbId("ntf:42")).toBe(42);
+    expect(notificationDbId("pr:1")).toBeNull();
+    expect(notificationDbId("ntf:0")).toBeNull();
+    expect(notificationDbId("ntf:-3")).toBeNull();
+    expect(notificationDbId("ntf:abc")).toBeNull();
+    expect(notificationDbId("ntf:")).toBeNull();
+  });
+});
+
+describe("activity store markNotificationSeen", () => {
+  function storeWith(post: ReturnType<typeof vi.fn>) {
+    const client = {
+      GET: async () => ({ data: { items: [notificationItem("ntf:42", "unread")], capped: false }, error: null }),
+      POST: post,
+    } as unknown as Parameters<typeof createActivityStore>[0]["client"];
+    return createActivityStore({ client });
+  }
+
+  it("flips the row to read and queues the upstream GitHub read", async () => {
+    const post = vi.fn(async () => ({ data: {}, error: null }));
+    const s = storeWith(post);
+    await s.loadActivity();
+    expect(s.getActivityItems()[0]!.item_state).toBe("unread");
+
+    await s.markNotificationSeen(s.getActivityItems()[0]!);
+
+    expect(post).toHaveBeenCalledWith("/notifications/read", { body: { ids: [42] } });
+    expect(s.getActivityItems()[0]!.item_state).toBe("read");
+  });
+
+  it("rolls back the optimistic flip when the request fails", async () => {
+    const post = vi.fn(async () => ({ data: null, error: { detail: "boom" } }));
+    const s = storeWith(post);
+    await s.loadActivity();
+
+    await s.markNotificationSeen(s.getActivityItems()[0]!);
+
+    expect(s.getActivityItems()[0]!.item_state).toBe("unread");
+  });
+
+  it("ignores rows that are not notification feed rows", async () => {
+    const post = vi.fn(async () => ({ data: {}, error: null }));
+    const s = storeWith(post);
+    await s.loadActivity();
+
+    await s.markNotificationSeen({ ...s.getActivityItems()[0]!, id: "pr:7" });
+
+    expect(post).not.toHaveBeenCalled();
   });
 });

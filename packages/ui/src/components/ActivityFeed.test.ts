@@ -64,6 +64,7 @@ const enabledEvents = vi.hoisted(() => ({
   value: new Set(["comment", "review", "commit", "force_push"]),
 }));
 const showNotifications = vi.hoisted(() => ({ value: true }));
+const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock("../context.js", () => ({
   getNavigate: () => vi.fn(),
@@ -104,6 +105,7 @@ vi.mock("../context.js", () => ({
       setShowNotifications: vi.fn((value: boolean) => {
         showNotifications.value = value;
       }),
+      markNotificationSeen,
       setHideClosedMerged: vi.fn(),
       setHideBots: vi.fn(),
       setHideDefaultBranchActivity: vi.fn((value: boolean) => {
@@ -544,5 +546,54 @@ describe("ActivityFeed collapse-all control", () => {
     await fireEvent.click(btn);
     expect(expandAllThreads).toHaveBeenCalledTimes(1);
     expect(collapseAllThreads).not.toHaveBeenCalled();
+  });
+});
+
+describe("ActivityFeed notification rows", () => {
+  beforeEach(() => {
+    viewMode.value = "flat";
+    showNotifications.value = true;
+    markNotificationSeen.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    items.value = [];
+  });
+
+  it("offers Mark seen only on unread notification rows and calls the store", async () => {
+    items.value = [
+      activityItem("ntf:42", {
+        activity_type: "notification",
+        item_state: "unread",
+        body_preview: "review_requested",
+      }),
+      activityItem("comment", { activity_type: "comment" }),
+    ];
+
+    render(ActivityFeed, { props: {} });
+
+    expect(screen.getByText("Review requested")).toBeTruthy();
+    const buttons = screen.getAllByRole("button", { name: "Mark notification seen" });
+    expect(buttons).toHaveLength(1);
+
+    await fireEvent.click(buttons[0]!);
+    expect(markNotificationSeen).toHaveBeenCalledTimes(1);
+    expect(markNotificationSeen.mock.calls[0]![0]).toMatchObject({ id: "ntf:42" });
+  });
+
+  it("hides Mark seen once a notification row is read", () => {
+    items.value = [
+      activityItem("ntf:42", {
+        activity_type: "notification",
+        item_state: "read",
+        body_preview: "mention",
+      }),
+    ];
+
+    render(ActivityFeed, { props: {} });
+
+    expect(screen.getByText("Mentioned")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Mark notification seen" })).toBeNull();
   });
 });

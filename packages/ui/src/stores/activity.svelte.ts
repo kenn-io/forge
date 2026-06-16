@@ -50,6 +50,15 @@ export function buildActivityFilterTypes(
   return types;
 }
 
+// Activity item ids are "<source>:<source_id>"; notification rows use
+// the "ntf" source whose source_id is the notification's DB id.
+export function notificationDbId(activityItemId: string): number | null {
+  const prefix = "ntf:";
+  if (!activityItemId.startsWith(prefix)) return null;
+  const id = Number(activityItemId.slice(prefix.length));
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 const RANGE_MS: Record<TimeRange, number> = {
   "24h": 24 * 60 * 60 * 1000,
   "7d": 7 * 24 * 60 * 60 * 1000,
@@ -297,6 +306,29 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     }
   }
 
+  // Mark a notification feed row as seen: queues the GitHub read
+  // propagation backend-side and flips the row to read locally so the
+  // unread affordance clears without waiting for the next sync. The
+  // activity item id for a notification is "ntf:<db id>".
+  async function markNotificationSeen(item: ActivityItem): Promise<void> {
+    const id = notificationDbId(item.id);
+    if (id === null) return;
+    // Optimistically flip locally; QueueNotificationIDsRead persists
+    // unread=0, so a later feed reload agrees.
+    items = items.map((it) => (it.id === item.id ? { ...it, item_state: "read" } : it));
+    try {
+      const { error: requestError } = await apiClient.POST("/notifications/read", {
+        body: { ids: [id] },
+      });
+      if (requestError) {
+        // Roll back the optimistic flip so the row stays actionable.
+        items = items.map((it) => (it.id === item.id ? { ...it, item_state: "unread" } : it));
+      }
+    } catch {
+      items = items.map((it) => (it.id === item.id ? { ...it, item_state: "unread" } : it));
+    }
+  }
+
   async function pollNewItems(): Promise<void> {
     if (pollInFlight) return;
     pollInFlight = true;
@@ -492,6 +524,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     hydrateDefaults,
     initializeFromMount,
     loadActivity,
+    markNotificationSeen,
     startActivityPolling,
     stopActivityPolling,
     syncFromURL,

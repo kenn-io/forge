@@ -160,7 +160,8 @@ Rules:
 - The "Notifications" toggle lives in the activity filter dropdown's event-type group and defaults on. It is persisted by its own `notif` URL param, NOT by membership in the `types` list — a legacy `types` URL that lists every event but no `notification` must still mean "show everything", so the toggle cannot be inferred from list membership.
 - Hiding notifications sends the explicit non-notification `types` list to `/activity` (the backend filters by inclusion, so exclusion is expressed as an explicit list); showing them with a partial event filter appends `notification` to that list, and the all-selected case stays the empty `[]` (backend returns everything).
 - Clicking a notification row opens its PR/issue in the detail pane when `(item_type, item_number)` resolve; otherwise it follows `web_url`.
-- The notification list/sync/triage API endpoints still exist for backend propagation; they are not driven by a dedicated triage UI.
+- Unread notification rows (and only notification rows) carry a "Mark seen" control in both the flat and threaded layouts. It calls `POST /notifications/read` with the row's notification id (parsed from the `ntf:<id>` activity item id), which flips the row to read locally and queues the GitHub read propagation; the control then clears. Non-notification activity rows never get this control.
+- The notification list/sync/triage API endpoints still exist for backend propagation; "Mark seen" is the only triage action surfaced in the feed.
 
 ## API Contract
 
@@ -190,6 +191,6 @@ Use full-stack coverage for user-visible notification behavior.
 - GitHub tests: notification normalization, PR issue-style URL parsing, participating flag, host pagination/watermarks, rate-limit behavior.
 - Server tests: feature-flag gating, bulk mutation result shape, sync status, disabled access, real SQLite API behavior.
 - Frontend/store tests: activity filter type construction (notification toggle on/off, legacy URL normalization), feed rendering of notification rows.
-- Playwright e2e (`frontend/tests/e2e-full/activity-notifications.spec.ts`): notifications appear as feed rows, the Notifications filter hides them, and the disabled feature omits them while the API returns `403`.
+- Playwright e2e (`frontend/tests/e2e-full/activity-notifications.spec.ts`): notifications appear as feed rows, the Notifications filter hides them, "Mark seen" posts the read and clears the control, and the disabled feature omits them while the API returns `403`.
 
 Always run relevant Go tests with `-shuffle=on`. Use Bun for frontend tests and typechecks.

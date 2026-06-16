@@ -28,6 +28,7 @@
   const { grouping, activity } = getStores();
   import { repoColor } from "../utils/repo-color.js";
   import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
+  import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 
@@ -362,6 +363,39 @@
     }
   }
 
+  // Notification rows carry their reason in body_preview; everything
+  // else labels purely by activity type.
+  function eventRowLabel(row: ActivityItem): string {
+    if (row.activity_type === "notification") {
+      return notificationReasonLabel(row.body_preview);
+    }
+    return eventLabel(row.activity_type);
+  }
+
+  function notificationReasonLabel(reason: string): string {
+    switch (reason) {
+      case "review_requested": return "Review requested";
+      case "mention": return "Mentioned";
+      case "team_mention": return "Team mentioned";
+      case "assign": return "Assigned";
+      case "author": return "Your thread";
+      case "comment": return "New comment";
+      case "state_change": return "State changed";
+      case "subscribed": return "Subscribed";
+      case "ci_activity": return "CI activity";
+      default: return "Notification";
+    }
+  }
+
+  function isUnreadNotification(row: ActivityItem): boolean {
+    return row.activity_type === "notification" && row.item_state === "unread";
+  }
+
+  function handleMarkSeen(e: Event, row: ActivityItem): void {
+    e.stopPropagation();
+    void activity.markNotificationSeen(row);
+  }
+
   function eventClass(type: string): string {
     switch (type) {
       case "comment": return "evt-comment";
@@ -370,6 +404,7 @@
       case "default_branch_commit": return "evt-commit";
       case "force_push": return "evt-force-push";
       case "default_branch_force_push": return "evt-force-push";
+      case "notification": return "evt-notification";
       default: return "";
     }
   }
@@ -699,12 +734,23 @@
               </div>
             {:else}
               <div class="event-row" onclick={() => handleEventClick(row)}>
-                <span class="event-type {eventClass(row.activity_type)}">{eventLabel(row.activity_type)}</span>
+                <span class="event-type {eventClass(row.activity_type)}">{eventRowLabel(row)}</span>
                 {#if eventSummary(row)}
                   <span class="event-summary">{eventSummary(row)}</span>
                 {/if}
                 <span class="event-author">{eventAuthor(row)}</span>
                 <span class="event-time">{relativeTime(row.created_at)}</span>
+                {#if isUnreadNotification(row)}
+                  <button
+                    class="event-mark-seen"
+                    type="button"
+                    aria-label="Mark notification seen"
+                    title="Mark seen"
+                    onclick={(e) => handleMarkSeen(e, row)}
+                  >
+                    <CheckIcon size="13" strokeWidth="2" aria-hidden="true" />
+                  </button>
+                {/if}
               </div>
             {/if}
           {/each}
@@ -985,6 +1031,7 @@
   .event-type.evt-review { color: var(--accent-green); }
   .event-type.evt-commit { color: var(--accent-teal); }
   .event-type.evt-force-push { color: var(--accent-red); }
+  .event-type.evt-notification { color: var(--accent-blue); }
 
   .branch-event-type {
     font-size: var(--font-size-xs);
@@ -1015,6 +1062,24 @@
     color: var(--text-muted);
     margin-left: auto;
     flex-shrink: 0;
+  }
+
+  .event-mark-seen {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 2px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .event-mark-seen:hover {
+    background: var(--bg-hover, rgba(127, 127, 127, 0.15));
+    color: var(--accent-blue);
   }
 
   .empty-state {

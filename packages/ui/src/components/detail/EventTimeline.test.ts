@@ -622,7 +622,28 @@ describe("EventTimeline", () => {
     const { container } = render(EventTimeline, {
       props: {
         activityViewMode: "compact",
-        events: [makeReviewThreadEvent()],
+        events: [
+          makeReviewThreadEvent({
+            ID: 1,
+            Body: "First compact review comment",
+            CreatedAt: "2024-06-01T12:01:00Z",
+            diff_thread: {
+              ...makeReviewThreadEvent().diff_thread!,
+              provider_comment_id: "1",
+              body: "First compact review comment",
+            },
+          }),
+          makeReviewThreadEvent({
+            ID: 2,
+            Body: "Second compact review comment",
+            CreatedAt: "2024-06-01T12:02:00Z",
+            diff_thread: {
+              ...makeReviewThreadEvent().diff_thread!,
+              provider_comment_id: "2",
+              body: "Second compact review comment",
+            },
+          }),
+        ],
         provider: "github",
         platformHost: "github.com",
         repoOwner: "acme",
@@ -649,13 +670,18 @@ describe("EventTimeline", () => {
       ]),
     });
 
-    await fireEvent.click(container.querySelector<HTMLButtonElement>(".compact-event-toggle")!);
+    const rows = Array.from(container.querySelectorAll<HTMLElement>(".event-card--compact-row"));
+    expect(rows).toHaveLength(2);
+    await fireEvent.click(rows[0]!.querySelector<HTMLButtonElement>(".compact-event-toggle")!);
+    await fireEvent.click(rows[1]!.querySelector<HTMLButtonElement>(".compact-event-toggle")!);
 
-    expect(container.querySelector(".thread-reply-action--inline")).toBeTruthy();
-    await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+    expect(container.querySelectorAll(".thread-reply-action--inline")).toHaveLength(2);
+    await fireEvent.click(rows[1]!.querySelector<HTMLButtonElement>(".thread-reply-action--inline")!);
 
+    expect(container.querySelectorAll(".thread-reply-panel")).toHaveLength(1);
+    expect(rows[0]!.querySelector(".thread-reply-panel")).toBeNull();
+    expect(rows[1]!.querySelector(".thread-reply-panel")).toBeTruthy();
     expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "Reply" })).toHaveLength(2);
   });
 
   it("can collapse and expand threaded replies", async () => {

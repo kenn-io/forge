@@ -834,6 +834,7 @@
   let collapsedThreads = $state<string[]>([]);
   let expandedCompactRows = $state<string[]>([]);
   let replyingThreadID = $state<string | null>(null);
+  let replyingEntryKey = $state<string | null>(null);
   let replyDraft = $state("");
   let savingReplyThreadID = $state<string | null>(null);
   let replyError = $state<string | null>(null);
@@ -881,6 +882,11 @@
     );
   }
 
+  function isReplyingToEntry(entry: TimelineEntry): boolean {
+    const targetID = replyTargetID(entry);
+    return targetID !== null && replyingThreadID === targetID && replyingEntryKey === entry.key;
+  }
+
   function isThreadCollapsed(entry: TimelineEntry): boolean {
     return collapsedThreads.includes(entryThreadID(entry));
   }
@@ -917,12 +923,14 @@
     const targetID = replyTargetID(entry);
     if (!targetID) return;
     replyingThreadID = targetID;
+    replyingEntryKey = entry.key;
     replyDraft = "";
     replyError = null;
   }
 
   function cancelReply(): void {
     replyingThreadID = null;
+    replyingEntryKey = null;
     replyDraft = "";
     replyError = null;
   }
@@ -996,7 +1004,7 @@
 
   function inlineReplyButtonHtml(entry: TimelineEntry): string {
     const targetID = replyTargetID(entry);
-    const expanded = targetID !== null && replyingThreadID === targetID;
+    const expanded = isReplyingToEntry(entry);
     const disabled = savingReplyThreadID !== null;
     return `
       <span class="thread-reply-inline-float">
@@ -1427,7 +1435,7 @@
                 {@render eventBody(event, false, entry.reviewThread, hasReplyOnlyAction ? entry : undefined)}
               </div>
             {/if}
-            {#if targetID !== null && replyingThreadID === targetID}
+            {#if isReplyingToEntry(entry) && targetID !== null}
               {@render threadReplyPanel(entry, targetID)}
             {/if}
           </div>
@@ -1544,7 +1552,7 @@
                     class="thread-toggle thread-reply-action"
                     type="button"
                     onclick={() => startReply(entry)}
-                    aria-expanded={targetID !== null && replyingThreadID === targetID}
+                    aria-expanded={isReplyingToEntry(entry)}
                     disabled={savingReplyThreadID !== null}
                   >
                     <MessageSquareReplyIcon size={14} />
@@ -1578,7 +1586,7 @@
                 </ol>
               {/if}
             {/if}
-            {#if targetID !== null && replyingThreadID === targetID}
+            {#if isReplyingToEntry(entry) && targetID !== null}
               {@render threadReplyPanel(entry, targetID)}
             {/if}
           </div>

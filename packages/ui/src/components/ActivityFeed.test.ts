@@ -344,6 +344,32 @@ describe("ActivityFeed compact mode", () => {
     expect(container.textContent).not.toContain("Ship direct main commit 3");
   });
 
+  it("keeps consecutive comments expanded in the flat table", () => {
+    items.value = [
+      activityItem("comment-1", {
+        body_preview: "First comment",
+        created_at: "2026-04-27T12:03:00Z",
+      }),
+      activityItem("comment-2", {
+        body_preview: "Second comment",
+        created_at: "2026-04-27T12:02:00Z",
+      }),
+      activityItem("comment-3", {
+        body_preview: "Third comment",
+        created_at: "2026-04-27T12:01:00Z",
+      }),
+    ];
+
+    const { container } = render(ActivityFeed, {
+      props: { compact: false },
+    });
+
+    const rows = container.querySelectorAll(".activity-row");
+    expect(rows).toHaveLength(3);
+    expect(container.querySelectorAll(".activity-row.collapsed-row")).toHaveLength(0);
+    expect(container.textContent).not.toContain("3 commits");
+  });
+
   it("renders default-branch force-pushes in table rows", () => {
     items.value = [
       branchActivityItem("force-push", {

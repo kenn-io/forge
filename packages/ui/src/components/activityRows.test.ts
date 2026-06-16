@@ -76,6 +76,23 @@ describe("collapseActivityRuns", () => {
     expect(isCollapsedActivityRow(rows[0]!) ? rows[0].representative.activity_type : undefined).toBe("review");
   });
 
+  it("can keep consecutive comments and reviews expanded", () => {
+    const rows = collapseActivityRuns(
+      [
+        item("9", "comment", "alice"),
+        item("8", "comment", "alice"),
+        item("7", "comment", "alice"),
+        item("6", "review", "alice"),
+        item("5", "review", "alice"),
+        item("4", "review", "alice"),
+      ],
+      { rollUpNonCommitActivity: false },
+    );
+
+    expect(rows).toHaveLength(6);
+    expect(rows.every((row) => !isCollapsedActivityRow(row))).toBe(true);
+  });
+
   it("does not merge runs of different event types", () => {
     const rows = collapseActivityRuns([
       item("9", "review", "alice"),

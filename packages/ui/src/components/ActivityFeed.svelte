@@ -258,6 +258,7 @@
 
   const flatRows = $derived.by(() => collapseActivityRuns(displayItems, {
     rollUpCommits: activity.getRollUpCommits(),
+    rollUpNonCommitActivity: false,
   }));
 
   function resetFilters(): void {
@@ -330,8 +331,7 @@
 
   const currentViewDetail = $derived.by(() => {
     const mode = activity.getViewMode() === "flat" ? "Flat" : "Threaded";
-    const commitMode = activity.getRollUpCommits() ? "Rolled commits" : "Individual commits";
-    return `${mode} · ${activity.getTimeRange()} · ${commitMode}`;
+    return `${mode} · ${activity.getTimeRange()}`;
   });
 
   const collapseThreads = $derived(activity.getCollapseThreads());

@@ -14,6 +14,7 @@ export type ActivityRow = ActivityItem | CollapsedActivityRun;
 
 export interface CollapseActivityRunsOptions {
   rollUpCommits?: boolean;
+  rollUpNonCommitActivity?: boolean;
 }
 
 export function isCollapsedActivityRow(row: ActivityRow): row is CollapsedActivityRun {
@@ -57,6 +58,7 @@ function activityRunGroupKey(item: ActivityItem, options: Required<CollapseActiv
   }
 
   if (item.activity_type === "comment" || item.activity_type === "review") {
+    if (!options.rollUpNonCommitActivity) return null;
     return ["item", item.activity_type, repoKeyForItem(item), item.item_type, item.item_number, author].join("|");
   }
 
@@ -69,7 +71,10 @@ function activityRunGroupKey(item: ActivityItem, options: Required<CollapseActiv
 }
 
 export function collapseActivityRuns(items: ActivityItem[], options: CollapseActivityRunsOptions = {}): ActivityRow[] {
-  const resolvedOptions = { rollUpCommits: options.rollUpCommits ?? false };
+  const resolvedOptions = {
+    rollUpCommits: options.rollUpCommits ?? false,
+    rollUpNonCommitActivity: options.rollUpNonCommitActivity ?? true,
+  };
   const result: ActivityRow[] = [];
   let i = 0;
 

@@ -31,6 +31,15 @@ export function buildActivityFilterTypes(
   // to build the explicit list that omits "notification".
   if (allSelected) return [];
 
+  // Notifications-only inbox: every event type is deselected, the item
+  // filter is unscoped, and notifications are on. Return just the
+  // notification type so the PR/issue "Opened" anchor rows (new_pr /
+  // new_issue) do not leak into a view the user narrowed to
+  // notifications. A bare [] cannot express this (it means "everything").
+  if (itemFilter === "all" && enabledEvents.size === 0 && showNotifications) {
+    return ["notification"];
+  }
+
   const types: string[] = [];
   if (itemFilter === "prs") types.push("new_pr");
   else if (itemFilter === "issues") types.push("new_issue");

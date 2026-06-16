@@ -142,6 +142,7 @@ describe("ActivityFeed compact mode", () => {
     hideDefaultBranchActivity.value = false;
     hideOrgName.value = false;
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
+    showNotifications.value = true;
     setActivityFilterTypes.mockClear();
     items.value = [
       activityItem("selected"),
@@ -515,6 +516,20 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Roll up commits" }));
 
     expect(rollUpCommits.value).toBe(true);
+  });
+
+  it("can deselect the last remaining event type", async () => {
+    enabledEvents.value = new Set(["comment"]);
+    render(ActivityFeed, { props: { compact: true } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Comments" }));
+
+    // The last event type must be removable. With notifications still on
+    // and the item filter unscoped, that leaves a notifications-only view
+    // rather than reintroducing the PR/issue "Opened" anchor rows.
+    expect(enabledEvents.value.size).toBe(0);
+    expect(setActivityFilterTypes).toHaveBeenCalledWith(["notification"]);
   });
 });
 

@@ -146,7 +146,12 @@
   function toggleEvent(evt: EventType): void {
     const current = activity.getEnabledEvents();
     const next = new Set(current);
-    if (next.has(evt)) { if (next.size > 1) next.delete(evt); }
+    // Deselecting the last event type is valid: it hides every event row
+    // while PR/issue rows and the separate Notifications toggle still
+    // govern their own rows. buildActivityFilterTypes encodes the empty
+    // set as an explicit type list, so the state round-trips through the
+    // URL rather than collapsing back to "show everything".
+    if (next.has(evt)) next.delete(evt);
     else next.add(evt);
     activity.setEnabledEvents(next);
     applyFilters();

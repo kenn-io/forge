@@ -448,7 +448,11 @@ describe("WorkspaceListSidebar", () => {
     await screen.findByText("Newest created fallback");
 
     await fireEvent.click(screen.getByTitle("Sort workspaces"));
-    await fireEvent.click(screen.getByRole("button", { name: "Item activity" }));
+    const itemActivitySort = screen.getByRole("button", { name: "Item activity" });
+    expect(itemActivitySort.getAttribute("title")).toBe(
+      "Sort by latest linked PR or issue activity, falling back to workspace creation.",
+    );
+    await fireEvent.click(itemActivitySort);
 
     expect(rowTitles(container)).toEqual(["Issue recently changed", "PR recently changed", "Newest created fallback"]);
     expect(container.querySelectorAll(".group-header")).toHaveLength(0);

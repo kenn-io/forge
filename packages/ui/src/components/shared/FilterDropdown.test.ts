@@ -121,6 +121,35 @@ describe("FilterDropdown", () => {
     expect(document.querySelector(".filter-dropdown")).toBeNull();
   });
 
+  it("adds optional hover descriptions to menu items without changing their names", async () => {
+    render(FilterDropdown, {
+      props: {
+        label: "Sort",
+        sections: [
+          {
+            items: [
+              {
+                id: "updated",
+                label: "Updated",
+                description: "Sort by latest item activity.",
+                active: false,
+                onSelect: vi.fn(),
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /sort/i }));
+
+    const item = screen.getByRole("button", { name: "Updated" });
+    expect(item.getAttribute("title")).toBe("Sort by latest item activity.");
+    const descriptionId = item.getAttribute("aria-describedby");
+    expect(descriptionId).toBeTruthy();
+    expect(document.getElementById(descriptionId!)?.textContent?.trim()).toBe("Sort by latest item activity.");
+  });
+
   it("supports end-aligned dropdown placement", async () => {
     render(FilterDropdown, {
       props: {

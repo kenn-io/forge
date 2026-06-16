@@ -3,11 +3,28 @@ export type WorkspaceListSort = "repo" | "created" | "activity" | "item-activity
 export const workspaceListSortOptions: {
   value: WorkspaceListSort;
   label: string;
+  description: string;
 }[] = [
-  { value: "repo", label: "Org / repo" },
-  { value: "created", label: "Created" },
-  { value: "activity", label: "Activity" },
-  { value: "item-activity", label: "Item activity" },
+  {
+    value: "repo",
+    label: "Org / repo",
+    description: "Group by repository, with newest workspaces first inside each repo.",
+  },
+  {
+    value: "created",
+    label: "Created",
+    description: "Sort all workspaces by when the workspace was created.",
+  },
+  {
+    value: "activity",
+    label: "Activity",
+    description: "Sort by latest terminal output, falling back to workspace creation.",
+  },
+  {
+    value: "item-activity",
+    label: "Item activity",
+    description: "Sort by latest linked PR or issue activity, falling back to workspace creation.",
+  },
 ];
 
 export const defaultWorkspaceListSort: WorkspaceListSort = "repo";

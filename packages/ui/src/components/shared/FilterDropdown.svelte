@@ -8,6 +8,7 @@
   interface FilterDropdownItem {
     id: string;
     label: string;
+    description?: string;
     active: boolean;
     color?: string;
     disabled?: boolean;
@@ -144,6 +145,10 @@
     if (disabled) return;
     onReset?.();
   }
+
+  function itemDescriptionId(item: FilterDropdownItem): string {
+    return `filter-item-description-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  }
 </script>
 
 <div class="filter-wrap">
@@ -194,6 +199,10 @@
             class:active={item.active}
             onclick={() => handleSelect(item)}
             disabled={disabled || item.disabled}
+            title={item.description}
+            aria-describedby={item.description
+              ? itemDescriptionId(item)
+              : undefined}
             type="button"
           >
             <span
@@ -211,6 +220,11 @@
               {/if}
             </span>
           </button>
+          {#if item.description}
+            <span id={itemDescriptionId(item)} class="sr-only">
+              {item.description}
+            </span>
+          {/if}
         {/each}
       {/each}
       {#if hasReset}
@@ -356,6 +370,18 @@
     justify-content: center;
     color: var(--accent-green);
     flex-shrink: 0;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .filter-reset {

@@ -130,6 +130,7 @@
       items: workspaceListSortOptions.map((option) => ({
         id: option.value,
         label: option.label,
+        description: option.description,
         active: sortMode === option.value,
         closeOnSelect: true,
         onSelect: () => setSort(option.value),

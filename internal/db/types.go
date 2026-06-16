@@ -570,6 +570,11 @@ type ActivityItem struct {
 	AuthoredAt     *time.Time
 	CommittedAt    *time.Time
 	ActivityURL    string
+	// SubjectState is the open/closed/merged state of a notification row's
+	// linked PR/issue. Empty for non-notification rows, which carry their
+	// own state in ItemState. Lets the feed apply Hide closed/merged to
+	// notifications, whose ItemState holds unread/read instead.
+	SubjectState string
 }
 
 // Stack represents a detected chain of dependent PRs.

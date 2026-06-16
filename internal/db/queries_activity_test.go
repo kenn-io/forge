@@ -1038,3 +1038,45 @@ func TestListActivityIncludesNotifications(t *testing.T) {
 		assert.NotEqual("notification", it.ActivityType)
 	}
 }
+
+func TestListActivityNotificationCarriesSubjectState(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	number := 7
+	// The notification's linked PR is merged.
+	insertTestMRWithOptions(t, d, testMR(repoID, number,
+		withMRTitle("Merged change"),
+		withMRState(MergeRequestStateMerged),
+		withMRActivity(base)))
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform:               "github",
+		PlatformHost:           "github.com",
+		PlatformNotificationID: "ntf-merged",
+		RepoOwner:              "alice",
+		RepoName:               "alpha",
+		SubjectType:            "PullRequest",
+		SubjectTitle:           "Merged change",
+		WebURL:                 "https://github.com/alice/alpha/pull/7",
+		ItemNumber:             &number,
+		ItemType:               "pr",
+		ItemAuthor:             "carol",
+		Reason:                 "review_requested",
+		Unread:                 true,
+		SourceUpdatedAt:        base.Add(10 * time.Minute),
+		SyncedAt:               base.Add(10 * time.Minute),
+	}}))
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50, Types: []string{"notification"}})
+	require.NoError(err)
+	require.Len(items, 1)
+	// item_state still carries the notification's unread/read state; the
+	// linked PR's merged state rides in subject_state so the feed can hide
+	// closed/merged notifications even with no PR row present.
+	assert.Equal("unread", items[0].ItemState)
+	assert.Equal("merged", items[0].SubjectState)
+}

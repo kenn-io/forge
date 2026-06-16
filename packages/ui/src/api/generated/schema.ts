@@ -2652,6 +2652,7 @@ export interface components {
             repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
+            subject_state?: string;
             workspace?: components["schemas"]["WorkspaceRef"];
         };
         ActivityResponse: {

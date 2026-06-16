@@ -4089,6 +4089,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		if item.ActivityURL == "" {
 			item.ActivityURL = branchActivityURL(it)
 		}
+		item.SubjectState = it.SubjectState
 		out[i] = item
 	}
 

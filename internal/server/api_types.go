@@ -575,4 +575,5 @@ type activityItemResponse struct {
 	AuthoredAt     string          `json:"authored_at,omitempty"`
 	CommittedAt    string          `json:"committed_at,omitempty"`
 	ActivityURL    string          `json:"activity_url,omitempty"`
+	SubjectState   string          `json:"subject_state,omitempty"`
 }

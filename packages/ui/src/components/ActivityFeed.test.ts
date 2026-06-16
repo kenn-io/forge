@@ -534,30 +534,28 @@ describe("ActivityFeed compact mode", () => {
     expect(setActivityFilterTypes).toHaveBeenCalledWith(["notification"]);
   });
 
-  it("hides notifications whose PR/issue is merged when hiding closed/merged", () => {
+  it("hides notifications on merged PRs even in a notifications-only feed", () => {
     hideClosedMerged.value = true;
+    // Notifications-only: no sibling PR rows are present, so the filter must
+    // read each notification's own subject_state (its linked PR/issue's
+    // state) rather than item_state, which holds unread/read.
     items.value = [
-      // Notification rows carry unread/read in item_state, so the filter
-      // must resolve the subject state from the PR's own row instead.
       activityItem("ntf:1", {
         activity_type: "notification",
         item_state: "unread",
+        subject_state: "merged",
         item_number: 1,
         item_title: "Merged work",
         body_preview: "review_requested",
       }),
-      activityItem("pr-1", {
-        activity_type: "new_pr",
-        item_state: "merged",
-        item_number: 1,
-        item_title: "Merged work",
-      }),
-      activityItem("pr-2", {
-        activity_type: "new_pr",
-        item_state: "open",
+      activityItem("ntf:2", {
+        activity_type: "notification",
+        item_state: "unread",
+        subject_state: "open",
         item_number: 2,
         item_title: "Open work",
         item_url: "https://github.com/acme/widgets/pull/2",
+        body_preview: "mention",
       }),
     ];
     const { container } = render(ActivityFeed, { props: { compact: true } });

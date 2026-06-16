@@ -419,6 +419,7 @@ type ActivityItemResponse struct {
 	Repo           RepoRefResponse `json:"repo"`
 	RepoName       string          `json:"repo_name"`
 	RepoOwner      string          `json:"repo_owner"`
+	SubjectState   *string         `json:"subject_state,omitempty"`
 	Workspace      *WorkspaceRef   `json:"workspace,omitempty"`
 }
 

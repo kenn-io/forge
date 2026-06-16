@@ -112,6 +112,8 @@ components:
           type: string
         repo_owner:
           type: string
+        subject_state:
+          type: string
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
       required:

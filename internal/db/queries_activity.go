@@ -113,9 +113,14 @@ func (d *DB) ListActivity(
 			       '', '',
 			       '', '',
 			       NULL, NULL,
-			       n.web_url
+			       n.web_url,
+			       COALESCE(mr.state, iss.state, '')
 			FROM middleman_notification_items n
 			JOIN middleman_repos r ON n.repo_id = r.id
+			LEFT JOIN middleman_merge_requests mr
+			       ON n.item_type = 'pr' AND mr.repo_id = n.repo_id AND mr.number = n.item_number
+			LEFT JOIN middleman_issues iss
+			       ON n.item_type = 'issue' AND iss.repo_id = n.repo_id AND iss.number = n.item_number
 			WHERE n.item_type IN ('pr', 'issue') AND n.item_number IS NOT NULL
 			      AND n.reason != 'author'`
 	}
@@ -128,7 +133,8 @@ func (d *DB) ListActivity(
 		       created_at, body_preview,
 		       branch_name, commit_sha, before_sha, after_sha,
 		       author_name, author_email, committer_name, committer_email,
-		       authored_at, committed_at, activity_url
+		       authored_at, committed_at, activity_url,
+		       subject_state
 		FROM (
 			SELECT 'new_pr' AS activity_type,
 			       'pr' AS source, p.id AS source_id,
@@ -143,7 +149,8 @@ func (d *DB) ListActivity(
 			       '' AS author_name, '' AS author_email,
 			       '' AS committer_name, '' AS committer_email,
 			       NULL AS authored_at, NULL AS committed_at,
-			       '' AS activity_url
+			       '' AS activity_url,
+			       '' AS subject_state
 			FROM middleman_merge_requests p
 			JOIN middleman_repos r ON p.repo_id = r.id
 			UNION ALL
@@ -157,6 +164,7 @@ func (d *DB) ListActivity(
 			       '', '',
 			       '', '',
 			       NULL, NULL,
+			       '',
 			       ''
 			FROM middleman_issues i
 			JOIN middleman_repos r ON i.repo_id = r.id
@@ -175,6 +183,7 @@ func (d *DB) ListActivity(
 			       '', '',
 			       '', '',
 			       NULL, NULL,
+			       '',
 			       ''
 			FROM middleman_mr_events e
 			JOIN middleman_merge_requests p ON e.merge_request_id = p.id
@@ -192,6 +201,7 @@ func (d *DB) ListActivity(
 			       '', '',
 			       '', '',
 			       NULL, NULL,
+			       '',
 			       ''
 			FROM middleman_issue_events e
 			JOIN middleman_issues i ON e.issue_id = i.id
@@ -210,6 +220,7 @@ func (d *DB) ListActivity(
 			       substr(bc.committer_name, 1, %[1]d),
 			       substr(bc.committer_email, 1, %[1]d),
 			       bc.authored_at, bc.committed_at,
+			       '',
 			       ''
 			FROM middleman_branch_commits bc
 			JOIN middleman_repos r ON bc.repo_id = r.id
@@ -224,6 +235,7 @@ func (d *DB) ListActivity(
 			       '', '',
 			       '', '',
 			       NULL, NULL,
+			       '',
 			       ''
 			FROM middleman_branch_force_pushes bfp
 			JOIN middleman_repos r ON bfp.repo_id = r.id
@@ -257,6 +269,7 @@ func (d *DB) ListActivity(
 			&it.AuthorName, &it.AuthorEmail,
 			&it.CommitterName, &it.CommitterEmail,
 			&authoredAtStr, &committedAtStr, &it.ActivityURL,
+			&it.SubjectState,
 		); err != nil {
 			return nil, fmt.Errorf("scan activity item: %w", err)
 		}

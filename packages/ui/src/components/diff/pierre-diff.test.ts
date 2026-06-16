@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile } from "../../api/types.js";
 import {
   diffFileWithPatch,
@@ -162,6 +162,42 @@ describe("Pierre diff parsing", () => {
     expect(parsed?.cacheKey).toBeDefined();
     expect(full?.cacheKey).toBeDefined();
     expect(full?.cacheKey).not.toBe(parsed?.cacheKey);
+  });
+
+  it("keeps Pierre diff debug logging disabled by default", () => {
+    window.localStorage.removeItem("middleman:debug:diff");
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    try {
+      parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"), {
+        enableDemandContextExpansion: true,
+      });
+
+      expect(debug).not.toHaveBeenCalled();
+    } finally {
+      debug.mockRestore();
+    }
+  });
+
+  it("emits Pierre diff debug logging when explicitly enabled", () => {
+    window.localStorage.setItem("middleman:debug:diff", "1");
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    try {
+      parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"), {
+        enableDemandContextExpansion: true,
+      });
+
+      expect(debug).toHaveBeenCalledWith(
+        "[middleman:diff]",
+        "parse sparse context diff",
+        expect.objectContaining({
+          kind: "sparse",
+          path: "src/foo.ts",
+        }),
+      );
+    } finally {
+      window.localStorage.removeItem("middleman:debug:diff");
+      debug.mockRestore();
+    }
   });
 
   it("renders partial hunk payloads whose headers keep provider line counts", () => {

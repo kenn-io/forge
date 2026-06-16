@@ -7,6 +7,9 @@ interface ParsePierreFileDiffOptions {
   enableDemandContextExpansion?: boolean;
 }
 
+type PierreDiffDebugDetails = Record<string, unknown>;
+
+const debugDiffStorageKey = "middleman:debug:diff";
 const maxSparseContextLine = 50_000;
 const syntheticPatchFiles = new WeakSet<DiffFile>();
 
@@ -32,17 +35,26 @@ export function parsePierreFileDiff(
   if (!patchedFile.patch) return undefined;
   if (options.enableDemandContextExpansion && canBuildSparsePatchContents(patchedFile)) {
     const contents = sparsePatchContents(patchedFile);
-    return withAutomationLanguage(
+    const meta = withAutomationLanguage(
       withRenderMetadata(
         patchedFile,
         withSyntheticPatchCacheKey(patchedFile, processPatchWithContext(patchedFile, contents)),
         contextRenderCacheIdentity(patchedFile, "sparse", contents),
       ),
     );
+    debugPierreDiff("parse sparse context diff", contextDebugDetails(patchedFile, "sparse", contents, meta));
+    return meta;
   }
-  return withAutomationLanguage(
+  const meta = withAutomationLanguage(
     withRenderMetadata(patchedFile, withSyntheticPatchCacheKey(patchedFile, parsePatchOnly(patchedFile))),
   );
+  debugPierreDiff("parse patch diff", {
+    path: patchedFile.path,
+    status: patchedFile.status,
+    cacheKey: meta?.cacheKey,
+    hunkCount: meta?.hunks.length,
+  });
+  return meta;
 }
 
 export function parsePierreFileDiffWithContents(
@@ -50,13 +62,15 @@ export function parsePierreFileDiffWithContents(
   contents: { oldFile: FileContents; newFile: FileContents },
 ): FileDiffMetadata | undefined {
   const patchedFile = diffFileWithPatch(file);
-  return withAutomationLanguage(
+  const meta = withAutomationLanguage(
     withRenderMetadata(
       patchedFile,
       withSyntheticPatchCacheKey(patchedFile, processPatchWithContext(patchedFile, contents)),
       contextRenderCacheIdentity(patchedFile, "full", contents),
     ),
   );
+  debugPierreDiff("parse full context diff", contextDebugDetails(patchedFile, "full", contents, meta));
+  return meta;
 }
 
 export function pierreFileContents(name: string, contents: string, cacheIdentity: string): FileContents {
@@ -65,6 +79,21 @@ export function pierreFileContents(name: string, contents: string, cacheIdentity
     contents,
     cacheKey: fileContentsCacheKey(name, contents, cacheIdentity),
   };
+}
+
+export function debugPierreDiff(message: string, details?: PierreDiffDebugDetails): void {
+  if (!pierreDiffDebugEnabled()) return;
+  console.debug("[middleman:diff]", message, details ?? {});
+}
+
+export function pierreDiffDebugEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (new URLSearchParams(window.location.search).get("debugDiff") === "1") return true;
+    return window.localStorage?.getItem(debugDiffStorageKey) === "1";
+  } catch {
+    return false;
+  }
 }
 
 export function diffFileWithPatch(file: DiffFile): DiffFile {
@@ -169,6 +198,25 @@ function contextRenderCacheIdentity(
     contents.oldFile.cacheKey ?? "",
     contents.newFile.cacheKey ?? "",
   ].join(":");
+}
+
+function contextDebugDetails(
+  file: DiffFile,
+  kind: "full" | "sparse",
+  contents: { oldFile: FileContents; newFile: FileContents },
+  meta: FileDiffMetadata | undefined,
+): PierreDiffDebugDetails {
+  return {
+    path: file.path,
+    status: file.status,
+    kind,
+    cacheKey: meta?.cacheKey,
+    hunkCount: meta?.hunks.length,
+    oldCacheKey: contents.oldFile.cacheKey,
+    newCacheKey: contents.newFile.cacheKey,
+    oldLength: contents.oldFile.contents.length,
+    newLength: contents.newFile.contents.length,
+  };
 }
 
 function safePierrePatch(file: DiffFile): string {

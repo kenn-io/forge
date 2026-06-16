@@ -15,6 +15,7 @@
   import type { DiffFile } from "../../api/types.js";
   import {
     appThemeType,
+    debugPierreDiff,
     diffFileWithPatch,
     parsePierreFileDiff,
     parsePierreFileDiffWithContents,
@@ -661,9 +662,23 @@
     const expandAll = isExpandAllClick(target, event);
     const direction = expandAll ? "both" : expansionDirection(target);
     const expansionLineCount = expandAll ? Number.POSITIVE_INFINITY : undefined;
+    debugPierreDiff("expand click intercepted", {
+      path: renderFile.path,
+      hunkIndex,
+      direction,
+      expansionLineCount: expansionLineCount ?? "default",
+      fullContextLoaded: Boolean(fullContext),
+      fullContextRendered,
+      sparseCacheKey: pierreFile?.cacheKey,
+    });
     void loadFullContextAndExpand(hunkIndex, direction, expansionLineCount)
       .catch((err: unknown) => {
         contextError = err instanceof Error ? err.message : String(err);
+        debugPierreDiff("expand failed", {
+          path: renderFile.path,
+          hunkIndex,
+          error: contextError,
+        });
       });
   }
 
@@ -695,12 +710,25 @@
   ): Promise<void> {
     const requestFileKey = fileKey;
     const alreadyRendered = fullContextRendered;
+    debugPierreDiff("expand loading full context", {
+      path: renderFile.path,
+      hunkIndex,
+      direction,
+      alreadyRendered,
+    });
     const context = await loadFullContext(requestFileKey);
     if (!context || fileKey !== requestFileKey) return;
     await tick();
     if (fileKey !== requestFileKey) return;
     if (!alreadyRendered && !fullContextRendered) {
       const didRender = renderFullContext(context);
+      debugPierreDiff("expand full context render result", {
+        path: renderFile.path,
+        hunkIndex,
+        didRender,
+        fullCacheKey: fullContextFileDiff?.cacheKey,
+        sparseCacheKey: pierreFile?.cacheKey,
+      });
       if (fileKey !== requestFileKey) return;
       if (!didRender) {
         if (!fullContextFileDiff) return;
@@ -715,6 +743,11 @@
       }
     }
     expandRenderedHunk(hunkIndex, direction, expansionLineCount);
+    debugPierreDiff("expand complete", {
+      path: renderFile.path,
+      hunkIndex,
+      rows: expandedContextDebugRows(),
+    });
   }
 
   function expandRenderedHunk(
@@ -726,6 +759,13 @@
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
     if (fullContext && fullContextFileDiff) {
       const didRender = renderFullContextRange(fullContext, fullContextFileDiff);
+      debugPierreDiff("expand rerendered full context range", {
+        path: renderFile.path,
+        hunkIndex,
+        didRender,
+        fullCacheKey: fullContextFileDiff.cacheKey,
+        rows: expandedContextDebugRows(),
+      });
       if (!didRender) scheduleRenderRetry();
     }
     removeStalePlaceholderPres();
@@ -744,6 +784,15 @@
     rendered = false;
     clearRenderedDomState();
     fullContextFileDiff = parsePierreFileDiffWithContents(renderFile, context) ?? pierreFile;
+    debugPierreDiff("render full context prepared", {
+      path: renderFile.path,
+      sparseCacheKey: pierreFile?.cacheKey,
+      fullCacheKey: fullContextFileDiff?.cacheKey,
+      oldCacheKey: context.oldFile.cacheKey,
+      newCacheKey: context.newFile.cacheKey,
+      oldLength: context.oldFile.contents.length,
+      newLength: context.newFile.contents.length,
+    });
     if (!fullContextFileDiff) return false;
     const didRender = renderFullContextRange(context, fullContextFileDiff);
     pierreDiff.setSelectedLines(selectedRange);
@@ -832,14 +881,26 @@
       throw new Error("Context loading is unavailable");
     }
     contextError = null;
+    debugPierreDiff("fetch full context start", {
+      path: renderFile.path,
+      status: renderFile.status,
+    });
     const [oldContents, newContents] = await Promise.all([
       renderFile.status === "added" ? Promise.resolve("") : loadFileText("old"),
       renderFile.status === "deleted" ? Promise.resolve("") : loadFileText("new"),
     ]);
-    return {
+    const context = {
       oldFile: pierreFileContents(renderFile.old_path || renderFile.path, oldContents, "full-old"),
       newFile: pierreFileContents(renderFile.path, newContents, "full-new"),
     };
+    debugPierreDiff("fetch full context complete", {
+      path: renderFile.path,
+      oldLength: oldContents.length,
+      newLength: newContents.length,
+      oldCacheKey: context.oldFile.cacheKey,
+      newCacheKey: context.newFile.cacheKey,
+    });
+    return context;
   }
 
   function annotationKey(annotations: DiffLineAnnotation<unknown>[]): string {
@@ -1215,6 +1276,24 @@
 
   function renderedDiffPre(root = host?.shadowRoot): HTMLPreElement | null {
     return root?.querySelector<HTMLPreElement>("pre[data-diff]") ?? null;
+  }
+
+  function expandedContextDebugRows(): Array<{
+    altLine: string | null;
+    line: string | null;
+    text: string;
+    type: string | null;
+  }> {
+    const root = host?.shadowRoot;
+    if (!root) return [];
+    return Array.from(root.querySelectorAll<HTMLElement>("[data-line-type='context-expanded'][data-line]"))
+      .slice(0, 12)
+      .map((row) => ({
+        altLine: row.getAttribute("data-alt-line"),
+        line: row.getAttribute("data-line"),
+        text: (row.textContent ?? "").trim().slice(0, 120),
+        type: row.getAttribute("data-line-type"),
+      }));
   }
 
   function removeStalePlaceholderPres(): void {

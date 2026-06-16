@@ -314,6 +314,36 @@ describe("ActivityFeed compact mode", () => {
     expect(container.textContent).not.toContain("3 commits");
   });
 
+  it("rolls up default-branch commits in the flat table when enabled", () => {
+    rollUpCommits.value = true;
+    items.value = [
+      branchActivityItem("branch-commit-1", {
+        body_preview: "Ship direct main commit 1",
+        commit_sha: "1111111111111111111111111111111111111111",
+      }),
+      branchActivityItem("branch-commit-2", {
+        body_preview: "Ship direct main commit 2",
+        commit_sha: "2222222222222222222222222222222222222222",
+      }),
+      branchActivityItem("branch-commit-3", {
+        body_preview: "Ship direct main commit 3",
+        commit_sha: "3333333333333333333333333333333333333333",
+      }),
+    ];
+
+    const { container } = render(ActivityFeed, {
+      props: { compact: false },
+    });
+
+    const rows = container.querySelectorAll(".activity-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.classList.contains("collapsed-row")).toBe(true);
+    expect(rows[0]?.textContent).toContain("3 commits");
+    expect(container.textContent).not.toContain("Ship direct main commit 1");
+    expect(container.textContent).not.toContain("Ship direct main commit 2");
+    expect(container.textContent).not.toContain("Ship direct main commit 3");
+  });
+
   it("renders default-branch force-pushes in table rows", () => {
     items.value = [
       branchActivityItem("force-push", {

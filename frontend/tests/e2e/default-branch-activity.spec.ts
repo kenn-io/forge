@@ -350,6 +350,35 @@ test.describe("default branch activity", () => {
     ).toBeVisible();
   });
 
+  test("roll-up toggle collapses commit runs in the flat feed", async ({ page }) => {
+    await mockDefaultBranchActivity(page);
+    await page.goto("/?view=flat");
+
+    const commitRows = page.locator(".activity-row", {
+      hasText: "Ship direct main commit",
+    });
+    await expect(commitRows).toHaveCount(5);
+
+    await selectActivityFilterItem(page, "Roll up commits");
+    await expect(page).toHaveURL(/rollup_commits=1/);
+
+    await expect(
+      page.locator(".activity-row.collapsed-row", {
+        hasText: "3 commits",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".activity-row", {
+        hasText: "Ship direct main commit 5",
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".activity-row", {
+        hasText: "Ship direct main commit 2",
+      }),
+    ).toBeVisible();
+  });
+
   test("legacy URL with stale default-branch commit types hides commit rows on load", async ({ page }) => {
     await mockDefaultBranchActivity(page);
     // URLs written before the fix kept default_branch_commit in the types

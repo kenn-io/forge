@@ -15,6 +15,7 @@
     isDefaultBranchCommitActivity,
     isDefaultBranchForcePushActivity,
     isCollapsedActivityRow,
+    collapseActivityRuns,
     shortSha,
   } from "./activityRows.js";
   import {
@@ -255,7 +256,9 @@
     return result;
   });
 
-  const flatRows = $derived(displayItems);
+  const flatRows = $derived.by(() => collapseActivityRuns(displayItems, {
+    rollUpCommits: activity.getRollUpCommits(),
+  }));
 
   function resetFilters(): void {
     activity.setEnabledEvents(new Set(EVENT_TYPES));

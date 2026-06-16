@@ -525,7 +525,11 @@ func (m *Manager) addWorktreeLocked(
 func (m *Manager) addIssueWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
 ) (string, error) {
-	if ws.WorkspaceBranch == "" {
+	workspaceBranch := ws.WorkspaceBranch
+	if workspaceBranch == workspaceBranchUnknown {
+		workspaceBranch = ws.GitHeadRef
+	}
+	if workspaceBranch == "" {
 		if err := runGit(
 			ctx, cloneDir,
 			"worktree", "add", ws.WorktreePath, ws.GitHeadRef,
@@ -538,11 +542,11 @@ func (m *Manager) addIssueWorktree(
 	if err := runGit(
 		ctx, cloneDir,
 		"worktree", "add", ws.WorktreePath,
-		"-b", ws.WorkspaceBranch, startRef,
+		"-b", workspaceBranch, startRef,
 	); err != nil {
 		return "", err
 	}
-	return ws.WorkspaceBranch, nil
+	return workspaceBranch, nil
 }
 
 func (m *Manager) addPreferredWorktree(
@@ -939,6 +943,13 @@ func (m *Manager) cleanupWorkspaceArtifactsForRetry(
 			"worktree", "remove", "--force", ws.WorktreePath,
 		); err != nil && !isGitWorktreeAbsent(err) {
 			return fmt.Errorf("remove git worktree: %w", err)
+		}
+		if ws.WorkspaceBranch == workspaceBranchUnknown {
+			if err := deleteWorkspaceBranchStrict(
+				ctx, cloneDir, workspaceBranchUnknown,
+			); err != nil {
+				return err
+			}
 		}
 		if err := m.deleteWorkspaceBranchesStrict(
 			ctx, cloneDir, ws, ws.WorkspaceBranch,
@@ -2049,16 +2060,27 @@ func (m *Manager) deleteWorkspaceBranchesStrict(
 	managedBranch string,
 ) error {
 	for _, branch := range workspaceBranchCandidates(ws, managedBranch) {
-		if err := validateLocalBranchName(
+		if err := deleteWorkspaceBranchStrict(
 			ctx, cloneDir, branch,
 		); err != nil {
 			return err
 		}
-		if err := runGit(
-			ctx, cloneDir, "branch", "-D", "--", branch,
-		); err != nil && !isGitBranchAbsent(err) {
-			return fmt.Errorf("delete git branch %q: %w", branch, err)
-		}
+	}
+	return nil
+}
+
+func deleteWorkspaceBranchStrict(
+	ctx context.Context, cloneDir string, branch string,
+) error {
+	if err := validateLocalBranchName(
+		ctx, cloneDir, branch,
+	); err != nil {
+		return err
+	}
+	if err := runGit(
+		ctx, cloneDir, "branch", "-D", "--", branch,
+	); err != nil && !isGitBranchAbsent(err) {
+		return fmt.Errorf("delete git branch %q: %w", branch, err)
 	}
 	return nil
 }

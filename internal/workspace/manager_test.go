@@ -744,6 +744,49 @@ func setupBareCloneForWorkspaceGitTest(t *testing.T) string {
 	return cloneDir
 }
 
+func seedWorkspaceBareCloneAt(t *testing.T, cloneDir string) {
+	t.Helper()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	work := filepath.Join(dir, "work")
+
+	runWorkspaceTestGit(
+		t, dir, "init", "--bare", "--initial-branch=main", remote,
+	)
+	runWorkspaceTestGit(t, dir, "clone", remote, work)
+	runWorkspaceTestGit(
+		t, work, "config", "user.email", "test@test.com",
+	)
+	runWorkspaceTestGit(
+		t, work, "config", "user.name", "Test",
+	)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(work, "base.txt"), []byte("base\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "base commit")
+	runWorkspaceTestGit(t, work, "push", "origin", "main")
+	require.NoError(t, os.MkdirAll(filepath.Dir(cloneDir), 0o755))
+	runWorkspaceTestGit(t, dir, "clone", "--bare", remote, cloneDir)
+	runWorkspaceTestGit(t, cloneDir, "config", "user.email", "test@test.com")
+	runWorkspaceTestGit(t, cloneDir, "config", "user.name", "Test")
+}
+
+func configureOriginHeadForIssueWorkspace(t *testing.T, cloneDir string) {
+	t.Helper()
+	out, err := gitOutput(t.Context(), cloneDir, "rev-parse", "main")
+	require.NoError(t, err)
+	sha := strings.TrimSpace(out)
+	require.NotEmpty(t, sha)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref", "refs/remotes/origin/main", sha,
+	)
+	runWorkspaceTestGit(
+		t, cloneDir, "symbolic-ref",
+		"refs/remotes/origin/HEAD", "refs/remotes/origin/main",
+	)
+}
+
 func configureSameRepoPRRefs(
 	t *testing.T, cloneDir, branch string, prNumber int,
 ) string {
@@ -2224,6 +2267,66 @@ func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
 	assert.Equal("creating", got.Status)
 	assert.Equal(workspaceBranchUnknown, got.WorkspaceBranch)
 	assert.Nil(got.ErrorMessage)
+}
+
+func TestIssueRetryCleansLeakedUnknownBranchAndUsesIssueBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	host, owner, name := "github.com", "acme", "widget"
+	baseDir := t.TempDir()
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetClones(gitclone.New(baseDir, nil))
+
+	cloneDir, err := mgr.clones.ClonePath(host, owner, name)
+	require.NoError(err)
+	seedWorkspaceBareCloneAt(t, cloneDir)
+	configureOriginHeadForIssueWorkspace(t, cloneDir)
+
+	staleWorktree := filepath.Join(t.TempDir(), "stale-unknown-worktree")
+	runWorkspaceTestGit(
+		t, cloneDir,
+		"worktree", "add", staleWorktree,
+		"-b", workspaceBranchUnknown, "origin/HEAD",
+	)
+	exists, err := localBranchExists(
+		t.Context(), cloneDir, workspaceBranchUnknown,
+	)
+	require.NoError(err)
+	require.True(exists)
+
+	ws := &Workspace{
+		ID:              "ws-issue-retry-unknown",
+		PlatformHost:    host,
+		RepoOwner:       owner,
+		RepoName:        name,
+		ItemType:        db.WorkspaceItemTypeIssue,
+		ItemNumber:      23,
+		GitHeadRef:      "middleman/issue-23-federation-test",
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    staleWorktree,
+		Status:          "error",
+	}
+	require.NoError(mgr.cleanupWorkspaceArtifactsForRetry(t.Context(), ws))
+
+	exists, err = localBranchExists(
+		t.Context(), cloneDir, workspaceBranchUnknown,
+	)
+	require.NoError(err)
+	assert.False(exists)
+
+	branch, err := mgr.addIssueWorktree(t.Context(), cloneDir, ws)
+	require.NoError(err)
+	assert.Equal(ws.GitHeadRef, branch)
+
+	exists, err = localBranchExists(t.Context(), cloneDir, ws.GitHeadRef)
+	require.NoError(err)
+	assert.True(exists)
+	exists, err = localBranchExists(
+		t.Context(), cloneDir, workspaceBranchUnknown,
+	)
+	require.NoError(err)
+	assert.False(exists)
 }
 
 func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) {

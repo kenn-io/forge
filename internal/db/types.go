@@ -682,8 +682,10 @@ type ListActivityOpts struct {
 	Types       []string     // activity type filter
 	Search      string       // title/body search
 	// ExcludeNotifications drops notification rows from the union before
-	// ordering/limit, so a disabled-notifications feed cannot have its
-	// safety-capped window starved by stale notification rows.
+	// ordering/limit. Notifications are always enabled in normal operation;
+	// the server only sets this when no config is loaded (nil-config
+	// nil-safety), so the safety-capped window is never spent on rows the
+	// caller will not serve.
 	ExcludeNotifications bool
 	Limit                int        // page size (default 50, max 200)
 	Since                *time.Time // only return events created at or after this time

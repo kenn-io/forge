@@ -95,9 +95,10 @@ func (d *DB) ListActivity(
 		where = "WHERE " + strings.Join(whereClauses, " AND ")
 	}
 
-	// Notifications join the union as their own source. Excluding them
-	// here (rather than after the query) keeps stale notification rows
-	// from consuming the LIMIT window when the feature is disabled.
+	// Notifications join the union as their own source, filtered to
+	// PR/issue-anchored, non-author rows. Excluding the whole branch here
+	// (only when no config is loaded) rather than after the query keeps the
+	// LIMIT window from being spent on rows the caller will not serve.
 	notificationUnion := ""
 	if !opts.ExcludeNotifications {
 		notificationUnion = `

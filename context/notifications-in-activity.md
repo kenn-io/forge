@@ -127,6 +127,7 @@ Rules:
 
 - Only PR/issue-anchored notifications are persisted. GitHub sends CheckSuite/CI, discussion, and release notifications with no subject number or browser URL, so sync skips any thread whose `item_type` is not `pr`/`issue` (or whose `item_number` is nil), and `listActivity` filters the notification union the same way for rows synced before this rule.
 - Sync also skips `reason = "author"` ("Your thread") notifications: they fire for any activity on a thread the user opened and carry no displayable content beyond a `latest_comment_url` (a raw API URL) that already corresponds to a comment/review/state row in the feed. Comment, subscribed, and the attention-requesting reasons (mention, review_requested, assign, …) are kept.
+- These two filters are enforced at sync (new rows) and in the Activity union (existing rows). The notification list/summary APIs (`GET /notifications`, summaries) are not UI-surfaced today and intentionally still return any rows already in `middleman_notification_items`; the Activity feed is the only filtered surface. If those APIs gain a UI, apply the same `item_type IN ('pr','issue') AND item_number IS NOT NULL AND reason != 'author'` filter there.
 - Notification sync should process each configured provider host independently; one provider-host failure must not block others.
 - Notification sync failures should update notification sync status so UI can surface them.
 - Top-level manual sync also triggers notification sync.

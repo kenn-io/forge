@@ -472,7 +472,7 @@ func TestProjectWorktreeTmuxSessionForgetAndCascade(t *testing.T) {
 
 	var count int
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_project_worktree_tmux_sessions WHERE worktree_id = ?`,
+		`SELECT COUNT(*) FROM middleman_project_worktree_runtime_sessions WHERE worktree_id = ?`,
 		worktree.ID,
 	).Scan(&count)
 	require.NoError(err)

@@ -518,7 +518,10 @@ func TestGitLabUpgradeKeepsLegacyLabelAssignmentThroughCatalogRefresh(t *testing
 		ALTER TABLE middleman_project_worktrees DROP COLUMN is_hidden;
 		ALTER TABLE middleman_projects DROP COLUMN repository_kind;
 		ALTER TABLE middleman_projects DROP COLUMN is_stale;
-		ALTER TABLE middleman_project_worktree_tmux_sessions DROP COLUMN label;
+		DROP TABLE middleman_host_runtime_sessions;
+		DROP TABLE middleman_worktree_stats;
+		DROP INDEX middleman_project_worktree_runtime_sessions_worktree_id_idx;
+		DROP TABLE middleman_project_worktree_runtime_sessions;
 	`)
 	require.NoError(err)
 	_, err = seeded.WriteDB().ExecContext(ctx, `UPDATE schema_migrations SET version = 30, dirty = 0`)

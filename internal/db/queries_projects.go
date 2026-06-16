@@ -559,14 +559,14 @@ func (d *DB) UpsertProjectWorktreeTmuxSession(
 		createdAt = time.Now().UTC()
 	}
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_project_worktree_tmux_sessions
-		    (worktree_id, session_key, target_key, label, session_name,
+		INSERT INTO middleman_project_worktree_runtime_sessions
+		    (worktree_id, session_key, target_key, label, tmux_session,
 		     created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(worktree_id, session_key) DO UPDATE SET
 		    target_key = excluded.target_key,
 		    label = excluded.label,
-		    session_name = excluded.session_name,
+		    tmux_session = excluded.tmux_session,
 		    created_at = excluded.created_at`,
 		session.WorktreeID, session.SessionKey, session.TargetKey,
 		session.Label, session.SessionName, createdAt,
@@ -584,9 +584,9 @@ func (d *DB) ListProjectWorktreeTmuxSessions(
 	worktreeID string,
 ) ([]ProjectWorktreeTmuxSession, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT s.worktree_id, s.session_key, s.session_name, s.target_key,
+		SELECT s.worktree_id, s.session_key, s.tmux_session, s.target_key,
 		       s.label, s.created_at, w.path, w.project_id
-		FROM middleman_project_worktree_tmux_sessions s
+		FROM middleman_project_worktree_runtime_sessions s
 		JOIN middleman_project_worktrees w ON w.id = s.worktree_id
 		WHERE s.worktree_id = ?
 		ORDER BY s.created_at, s.session_key`, worktreeID,
@@ -616,9 +616,9 @@ func (d *DB) ListAllProjectWorktreeTmuxSessions(
 	ctx context.Context,
 ) ([]ProjectWorktreeTmuxSession, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT s.worktree_id, s.session_key, s.session_name, s.target_key,
+		SELECT s.worktree_id, s.session_key, s.tmux_session, s.target_key,
 		       s.label, s.created_at, w.path, w.project_id
-		FROM middleman_project_worktree_tmux_sessions s
+		FROM middleman_project_worktree_runtime_sessions s
 		JOIN middleman_project_worktrees w ON w.id = s.worktree_id
 		ORDER BY w.path, s.created_at, s.session_key`,
 	)
@@ -649,7 +649,7 @@ func (d *DB) DeleteProjectWorktreeTmuxSession(
 	sessionKey string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_project_worktree_tmux_sessions
+		DELETE FROM middleman_project_worktree_runtime_sessions
 		WHERE worktree_id = ? AND session_key = ?`, worktreeID, sessionKey,
 	)
 	if err != nil {
@@ -670,7 +670,7 @@ func (d *DB) DeleteProjectWorktreeTmuxSessionCreatedAt(
 	createdAt time.Time,
 ) (bool, error) {
 	result, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_project_worktree_tmux_sessions
+		DELETE FROM middleman_project_worktree_runtime_sessions
 		WHERE worktree_id = ? AND session_key = ? AND created_at = ?`,
 		worktreeID, sessionKey, canonicalUTCTime(createdAt),
 	)

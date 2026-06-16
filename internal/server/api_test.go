@@ -16981,7 +16981,10 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 			ALTER TABLE middleman_issues DROP COLUMN assignees_json;
 			ALTER TABLE middleman_merge_requests DROP COLUMN assignees_json;
 			ALTER TABLE middleman_merge_requests DROP COLUMN reviewers_json;
-			ALTER TABLE middleman_project_worktree_tmux_sessions DROP COLUMN label;
+			DROP TABLE middleman_host_runtime_sessions;
+			DROP TABLE middleman_worktree_stats;
+			DROP INDEX middleman_project_worktree_runtime_sessions_worktree_id_idx;
+			DROP TABLE middleman_project_worktree_runtime_sessions;
 			ALTER TABLE middleman_project_worktrees DROP COLUMN linked_issue_numbers;
 			ALTER TABLE middleman_project_worktrees DROP COLUMN session_backend;
 			ALTER TABLE middleman_project_worktrees DROP COLUMN is_stale;

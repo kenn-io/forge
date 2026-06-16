@@ -44,6 +44,8 @@ func TestOpenAndSchema(t *testing.T) {
 		"middleman_mr_review_drafts",
 		"middleman_mr_review_draft_comments",
 		"middleman_mr_review_threads",
+		"middleman_project_worktree_runtime_sessions",
+		"middleman_host_runtime_sessions",
 	}
 	for _, tbl := range tables {
 		var name string
@@ -1533,12 +1535,15 @@ func removeDiscussionColumnsForTest(raw *sql.DB) error {
 	return err
 }
 
-// removeProjectDiscoveryColumnsForTest strips the project/worktree columns
-// folded into migration 000034 (discovery + worktree visibility + session
-// backend) so a downgraded fixture can replay the forward migrations without
-// hitting a duplicate-column error.
+// removeProjectDiscoveryColumnsForTest strips the project/worktree schema
+// folded into migration 000034 so a downgraded fixture can replay the forward
+// migrations without hitting duplicate schema errors.
 func removeProjectDiscoveryColumnsForTest(raw *sql.DB) error {
 	_, err := raw.Exec(`
+		DROP TABLE middleman_host_runtime_sessions;
+		DROP TABLE middleman_worktree_stats;
+		DROP INDEX middleman_project_worktree_runtime_sessions_worktree_id_idx;
+		DROP TABLE middleman_project_worktree_runtime_sessions;
 		ALTER TABLE middleman_project_worktrees DROP COLUMN linked_issue_numbers;
 		ALTER TABLE middleman_project_worktrees DROP COLUMN session_backend;
 		ALTER TABLE middleman_project_worktrees DROP COLUMN is_stale;

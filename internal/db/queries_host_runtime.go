@@ -28,11 +28,11 @@ func (d *DB) UpsertHostRuntimeTmuxSession(
 		createdAt = time.Now().UTC()
 	}
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_host_runtime_tmux_sessions
-		    (session_key, session_name, label, cwd, created_at)
+		INSERT INTO middleman_host_runtime_sessions
+		    (session_key, tmux_session, label, cwd, created_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(session_key) DO UPDATE SET
-		    session_name = excluded.session_name,
+		    tmux_session = excluded.tmux_session,
 		    label = excluded.label,
 		    cwd = excluded.cwd,
 		    created_at = excluded.created_at`,
@@ -51,8 +51,8 @@ func (d *DB) ListHostRuntimeTmuxSessions(
 	ctx context.Context,
 ) ([]HostRuntimeTmuxSession, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT session_key, session_name, label, cwd, created_at
-		FROM middleman_host_runtime_tmux_sessions
+		SELECT session_key, tmux_session, label, cwd, created_at
+		FROM middleman_host_runtime_sessions
 		ORDER BY created_at, session_key`,
 	)
 	if err != nil {
@@ -85,7 +85,7 @@ func (d *DB) DeleteHostRuntimeTmuxSession(
 	sessionKey string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_host_runtime_tmux_sessions
+		DELETE FROM middleman_host_runtime_sessions
 		WHERE session_key = ?`, sessionKey,
 	)
 	if err != nil {
@@ -105,7 +105,7 @@ func (d *DB) DeleteHostRuntimeTmuxSessionCreatedAt(
 	createdAt time.Time,
 ) (bool, error) {
 	result, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_host_runtime_tmux_sessions
+		DELETE FROM middleman_host_runtime_sessions
 		WHERE session_key = ? AND created_at = ?`,
 		sessionKey, canonicalUTCTime(createdAt),
 	)

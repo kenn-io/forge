@@ -1,26 +1,27 @@
--- Registered-worktree runtime tmux sessions. label is the display
--- label persisted at launch time: command sessions (caller-supplied
--- argv, no launch target) have no target_key to derive one from.
-CREATE TABLE IF NOT EXISTS middleman_project_worktree_tmux_sessions (
+-- Registered-worktree runtime sessions. tmux_session stores the backend
+-- session identifier for tmux-backed launches; label is the display label
+-- persisted at launch time. Command sessions (caller-supplied argv, no launch
+-- target) have no target_key to derive a label from.
+CREATE TABLE middleman_project_worktree_runtime_sessions (
     worktree_id   TEXT NOT NULL REFERENCES middleman_project_worktrees(id) ON DELETE CASCADE,
     session_key   TEXT NOT NULL,
     target_key    TEXT NOT NULL,
-    session_name  TEXT NOT NULL,
+    tmux_session  TEXT NOT NULL,
     label         TEXT NOT NULL DEFAULT '',
     created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (worktree_id, session_key),
     UNIQUE (session_key),
-    UNIQUE (session_name)
+    UNIQUE (tmux_session)
 );
 
-CREATE INDEX IF NOT EXISTS middleman_project_worktree_tmux_sessions_worktree_id_idx
-    ON middleman_project_worktree_tmux_sessions(worktree_id);
+CREATE INDEX middleman_project_worktree_runtime_sessions_worktree_id_idx
+    ON middleman_project_worktree_runtime_sessions(worktree_id);
 
 -- Project/worktree discovery columns, folded into this branch migration to
 -- keep a single migration delta vs main. The background discovery refresher
 -- reconciles on-disk git state into the registry tables: is_stale marks rows
 -- that vanished from the last successful discovery (kept, not deleted, so
--- worktree IDs and their tmux-session links survive) and clears when the path
+-- worktree IDs and their runtime-session links survive) and clears when the path
 -- reappears; repository_kind distinguishes bare from standard checkouts.
 ALTER TABLE middleman_projects
     ADD COLUMN is_stale INTEGER NOT NULL DEFAULT 0;
@@ -60,7 +61,7 @@ ALTER TABLE middleman_project_worktrees
 -- background stats sampler is the only writer; the fleet snapshot read path
 -- overlays these without any git I/O. A present row means "sampled" and surfaces
 -- all four counts (even zero); an absent row leaves the snapshot fields null.
-CREATE TABLE IF NOT EXISTS middleman_worktree_stats (
+CREATE TABLE middleman_worktree_stats (
     path         TEXT PRIMARY KEY,
     diff_added   INTEGER NOT NULL DEFAULT 0,
     diff_removed INTEGER NOT NULL DEFAULT 0,
@@ -69,14 +70,14 @@ CREATE TABLE IF NOT EXISTS middleman_worktree_stats (
     sampled_at   DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
--- Host-scoped runtime tmux sessions: command sessions launched on the
--- host itself rather than from a registered project worktree (e.g. a
--- machine-level console terminal). Mirrors
--- middleman_project_worktree_tmux_sessions minus the worktree FK; cwd
--- is recorded because there is no worktree path to fall back to.
-CREATE TABLE IF NOT EXISTS middleman_host_runtime_tmux_sessions (
+-- Host-scoped runtime sessions: command sessions launched on the host itself
+-- rather than from a registered project worktree (e.g. a machine-level console
+-- terminal). Mirrors middleman_project_worktree_runtime_sessions minus the
+-- worktree FK; cwd is recorded because there is no worktree path to fall back
+-- to.
+CREATE TABLE middleman_host_runtime_sessions (
     session_key   TEXT PRIMARY KEY,
-    session_name  TEXT NOT NULL UNIQUE,
+    tmux_session  TEXT NOT NULL UNIQUE,
     label         TEXT NOT NULL DEFAULT '',
     cwd           TEXT NOT NULL DEFAULT '',
     created_at    DATETIME NOT NULL DEFAULT (datetime('now'))

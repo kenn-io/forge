@@ -405,6 +405,77 @@ describe("KataWorkspace", () => {
     });
   });
 
+  it("hides closed task rows immediately when the status filter changes to open", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const openIssue = issue("issue-open-work", "Open work", "project-kata");
+    const closedIssue = {
+      ...issue("issue-done-work", "Done work", "project-kata"),
+      status: "closed" as const,
+      closed_at: "2026-05-15T12:00:00.000Z",
+    };
+    const { api, search } = createWorkspaceAPI([openIssue, closedIssue]);
+    const delayedOpenSearch = deferred<KataTaskSearchResponse>();
+    let openSearches = 0;
+    search.mockImplementation(async (filters: KataTaskSearchFilters) => {
+      if (filters.scope.kind !== "project" || filters.scope.project_uid !== "project-kata") {
+        return { filters, issues: [], fetched_at: fetchedAt };
+      }
+      if (filters.status === "closed") {
+        return { filters, issues: [closedIssue], fetched_at: fetchedAt };
+      }
+      if (filters.status === "open") {
+        openSearches += 1;
+        if (openSearches > 1) return delayedOpenSearch.promise;
+        return { filters, issues: [openIssue], fetched_at: fetchedAt };
+      }
+      return { filters, issues: [openIssue, closedIssue], fetched_at: fetchedAt };
+    });
+
+    render(KataWorkspace, { props: { api, routeScopeUID: "project-kata" } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Open work/ })).toBeTruthy();
+    });
+    await fireEvent.click(screen.getByRole("combobox", { name: "Status: Open" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Closed" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Done work/ })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Reopen" })).toBeTruthy();
+    });
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Status: Closed" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Open" }));
+
+    expect(screen.getByRole("combobox", { name: "Status: Open" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Done work/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reopen" })).toBeNull();
+
+    delayedOpenSearch.resolve({
+      filters: {
+        scope: { kind: "project", project_uid: "project-kata" },
+        status: "open",
+        owner: "",
+        label: "",
+        query: "",
+      },
+      issues: [openIssue],
+      fetched_at: fetchedAt,
+    });
+  });
+
   it("keeps the loading announcement active until the newest overlapping search finishes", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({

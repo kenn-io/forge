@@ -4,7 +4,7 @@
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
   import { relativeTime, shortDate } from "../../api/dates.js";
-  import type { KataTaskAPI, KataTaskSummary } from "../../api/kata/taskTypes.js";
+  import type { KataTaskAPI, KataTaskSearchFilters, KataTaskSummary } from "../../api/kata/taskTypes.js";
   import type { KataCurrentView } from "../../stores/kata-workspace.svelte.js";
   import {
     DEFAULT_KATA_TASK_SORT,
@@ -20,6 +20,7 @@
     scopedProjectName?: string | null;
     selectedIssueUID?: string | null;
     loading?: boolean;
+    statusFilter?: KataTaskSearchFilters["status"];
     resetGeneration?: number;
     navigationGeneration?: number;
     api?: KataTaskAPI;
@@ -32,6 +33,7 @@
     scopedProjectName = null,
     selectedIssueUID = null,
     loading = false,
+    statusFilter = "all",
     resetGeneration = 0,
     navigationGeneration = 0,
     api = undefined,
@@ -53,8 +55,9 @@
   // today-bucket detail that doesn't carry inside a project view.
   // Collapse to a flat list and let the sort drive the order.
   let isProjectScoped = $derived(Boolean(scopedProjectName));
+  let statusVisibleGroups = $derived(filterGroupsByStatus(currentView.groups, statusFilter));
   let flatIssues = $derived(
-    isProjectScoped ? topLevelIssues(currentView.groups.flatMap((group) => group.issues)) : [],
+    isProjectScoped ? topLevelIssues(statusVisibleGroups.flatMap((group) => group.issues)) : [],
   );
 
   // For the Today view, the kata daemon hands us a "This evening"
@@ -66,7 +69,7 @@
   // "evening" bucket in any other view passes through unchanged.
   let visibleGroups = $derived.by(() => {
     if (isProjectScoped) return [];
-    const groups = currentView.groups.map((group) => ({ ...group, issues: [...group.issues] }));
+    const groups = statusVisibleGroups.map((group) => ({ ...group, issues: [...group.issues] }));
     if (currentView.name === "today") {
       const todayIdx = groups.findIndex((group) => group.id === "today");
       const eveningIdx = groups.findIndex((group) => group.id === "evening");
@@ -90,11 +93,7 @@
   // per group. A single-group view (like Inbox) has nothing to collapse,
   // so keep its labeled region instead of dropping it to a bare list.
   let shouldFlatten = $derived(!isProjectScoped && sort.key === "updated" && visibleGroups.length > 1);
-  let globalSortedIssues = $derived(
-    shouldFlatten
-      ? sortKataTasks(topLevelIssues(currentView.groups.flatMap((group) => group.issues)), sort)
-      : [],
-  );
+  let globalSortedIssues = $derived(shouldFlatten ? sortKataTasks(visibleGroups.flatMap((group) => group.issues), sort) : []);
 
   function loadSort(): KataTaskSort {
     if (typeof window === "undefined") return DEFAULT_KATA_TASK_SORT;
@@ -170,6 +169,22 @@
 
   function parentHierarchyKey(issue: KataTaskSummary): string | null {
     return issue.parent_short_id ? `${issue.project_uid}:${issue.parent_short_id}` : null;
+  }
+
+  function issueMatchesStatusFilter(issue: KataTaskSummary): boolean {
+    return statusFilter === "all" || issue.status === statusFilter;
+  }
+
+  function filterGroupsByStatus(
+    groups: KataCurrentView["groups"],
+    status: KataTaskSearchFilters["status"],
+  ): KataCurrentView["groups"] {
+    return groups
+      .map((group) => ({
+        ...group,
+        issues: group.issues.filter((issue) => status === "all" || issue.status === status),
+      }))
+      .filter((group) => group.issues.length > 0);
   }
 
   function topLevelIssues(
@@ -358,15 +373,19 @@
   }
 
   function findIssueByUID(uid: string): KataTaskSummary | undefined {
-    for (const group of currentView.groups) {
+    for (const group of statusVisibleGroups) {
       const match = group.issues.find((issue) => issue.uid === uid);
       if (match) return match;
     }
     for (const children of Object.values(childrenByUID)) {
-      const match = children.find((issue) => issue.uid === uid);
+      const match = children.find((issue) => issue.uid === uid && issueMatchesStatusFilter(issue));
       if (match) return match;
     }
     return undefined;
+  }
+
+  function visibleChildren(issue: KataTaskSummary): KataTaskSummary[] {
+    return (childrenByUID[issue.uid] ?? []).filter(issueMatchesStatusFilter);
   }
 
   $effect(() => {
@@ -581,10 +600,10 @@
   {#if isExpanded}
     {#if loadingChildren[issue.uid]}
       <div class="children-status">Loading subtasks…</div>
-    {:else if (childrenByUID[issue.uid] ?? []).length === 0}
+    {:else if visibleChildren(issue).length === 0}
       <div class="children-status">No subtasks.</div>
     {:else}
-      {#each childrenByUID[issue.uid] ?? [] as child (child.uid)}
+      {#each visibleChildren(issue) as child (child.uid)}
         {@const childPriority = priorityLabel(child.priority)}
         {@const childLabels = child.labels?.join(" · ") ?? ""}
         <button

@@ -3385,6 +3385,64 @@ test("kata search filters tasks through the configured external daemon", async (
   }
 });
 
+test("kata status filter hides closed rows while the open reload is pending", async ({ page }) => {
+  const closedKataTask = issueSummary({
+    id: 33,
+    uid: "issue-closed-kata",
+    project_id: 2,
+    project_uid: "project-kata",
+    project_name: "Kata",
+    short_id: "kat-closed",
+    qualified_id: "Kata#kat-closed",
+    title: "Closed Kata task",
+    body: "This task should disappear when Open is selected.",
+    status: "closed",
+    closed_at: now,
+    owner: "Susan",
+    labels: ["work"],
+  });
+  let releaseOpenIssues!: () => void;
+  const openIssuesBarrier = new Promise<void>((resolve) => {
+    releaseOpenIssues = resolve;
+  });
+  const backend = await startKataBackend({ issues: [...issues, closedKataTask] });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    const taskList = page.locator(".kata-list");
+
+    await page.getByRole("button", { name: /^Kata\s+1$/ }).click();
+    await expect(taskList.getByRole("button", { name: /Email Susan re: Q3/ })).toBeVisible();
+
+    await page.getByRole("combobox", { name: "Status: Open" }).click();
+    await page.getByRole("option", { name: "Closed" }).click();
+    await expect(taskList.getByRole("button", { name: /Closed Kata task/ })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Task detail" }).getByRole("button", { name: "Reopen" }),
+    ).toBeVisible();
+
+    backend.state.issuesBarrier = openIssuesBarrier;
+    await page.getByRole("combobox", { name: "Status: Closed" }).click();
+    await page.getByRole("option", { name: "Open" }).click();
+
+    await expect(page.getByRole("combobox", { name: "Status: Open" })).toBeVisible();
+    await expect(taskList.getByRole("button", { name: /Closed Kata task/ })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Task detail" }).getByRole("button", { name: "Reopen" })).toHaveCount(
+      0,
+    );
+
+    releaseOpenIssues();
+    await expect(taskList.getByRole("button", { name: /Email Susan re: Q3/ })).toBeVisible();
+  } finally {
+    releaseOpenIssues();
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata search clears loading after the newest overlapping daemon search finishes", async ({ page }) => {
   let releaseOldSearch!: () => void;
   const oldSearchBarrier = new Promise<void>((resolve) => {

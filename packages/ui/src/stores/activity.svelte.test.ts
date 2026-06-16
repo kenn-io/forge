@@ -345,7 +345,7 @@ describe("activity store markNotificationSeen", () => {
   }
 
   it("flips the row to read and queues the upstream GitHub read", async () => {
-    const post = vi.fn(async () => ({ data: {}, error: null }));
+    const post = vi.fn(async () => ({ data: { queued: [42], succeeded: [], failed: [] }, error: null }));
     const s = storeWith(post);
     await s.loadActivity();
     expect(s.getActivityItems()[0]!.item_state).toBe("unread");
@@ -366,8 +366,21 @@ describe("activity store markNotificationSeen", () => {
     expect(s.getActivityItems()[0]!.item_state).toBe("unread");
   });
 
+  it("rolls back when the bulk response reports the id as failed despite a 200", async () => {
+    const post = vi.fn(async () => ({
+      data: { succeeded: [], queued: [], failed: [{ id: 42, error: "not found" }] },
+      error: null,
+    }));
+    const s = storeWith(post);
+    await s.loadActivity();
+
+    await s.markNotificationSeen(s.getActivityItems()[0]!);
+
+    expect(s.getActivityItems()[0]!.item_state).toBe("unread");
+  });
+
   it("ignores rows that are not notification feed rows", async () => {
-    const post = vi.fn(async () => ({ data: {}, error: null }));
+    const post = vi.fn(async () => ({ data: { queued: [], succeeded: [], failed: [] }, error: null }));
     const s = storeWith(post);
     await s.loadActivity();
 

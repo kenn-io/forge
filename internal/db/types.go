@@ -681,8 +681,12 @@ type ListActivityOpts struct {
 	RepoFilters []RepoFilter // one or more repository filters
 	Types       []string     // activity type filter
 	Search      string       // title/body search
-	Limit       int          // page size (default 50, max 200)
-	Since       *time.Time   // only return events created at or after this time
+	// ExcludeNotifications drops notification rows from the union before
+	// ordering/limit, so a disabled-notifications feed cannot have its
+	// safety-capped window starved by stale notification rows.
+	ExcludeNotifications bool
+	Limit                int        // page size (default 50, max 200)
+	Since                *time.Time // only return events created at or after this time
 	// Cursor fields -- decoded from opaque token by the handler.
 	BeforeTime     *time.Time
 	BeforeSource   string

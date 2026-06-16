@@ -443,4 +443,28 @@ describe("ActivityThreaded notification events", () => {
     expect(container.textContent).toContain("Mentioned");
     expect(queryByRole("button", { name: "Mark notification seen" })).toBeNull();
   });
+
+  it("opens the web URL for a notification without a PR/issue subject", async () => {
+    const onSelectItem = vi.fn();
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const notif = activityItem("ntf:44", {
+      activity_type: "notification",
+      item_state: "read",
+      item_type: "release",
+      item_number: 0,
+      body_preview: "subscribed",
+      activity_url: "https://github.com/acme/widgets/releases/tag/v1.2.3",
+    });
+
+    const { container } = render(ActivityThreaded, {
+      props: { items: [notif], onSelectItem },
+    });
+    const row = container.querySelector(".event-row");
+    expect(row).not.toBeNull();
+    await fireEvent.click(row!);
+
+    expect(onSelectItem).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith("https://github.com/acme/widgets/releases/tag/v1.2.3", "_blank", "noopener");
+    open.mockRestore();
+  });
 });

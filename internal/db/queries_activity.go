@@ -95,6 +95,28 @@ func (d *DB) ListActivity(
 		where = "WHERE " + strings.Join(whereClauses, " AND ")
 	}
 
+	// Notifications join the union as their own source. Excluding them
+	// here (rather than after the query) keeps stale notification rows
+	// from consuming the LIMIT window when the feature is disabled.
+	notificationUnion := ""
+	if !opts.ExcludeNotifications {
+		notificationUnion = `
+			UNION ALL
+			SELECT 'notification', 'ntf', n.id,
+			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
+			       n.item_type, COALESCE(n.item_number, 0), n.subject_title,
+			       n.web_url, CASE WHEN n.unread = 1 THEN 'unread' ELSE 'read' END,
+			       n.item_author, n.item_author, n.source_updated_at,
+			       substr(n.reason, 1, 200),
+			       '', '', '', '',
+			       '', '',
+			       '', '',
+			       NULL, NULL,
+			       n.web_url
+			FROM middleman_notification_items n
+			JOIN middleman_repos r ON n.repo_id = r.id`
+	}
+
 	query := fmt.Sprintf(`
 		SELECT activity_type, source, source_id, platform, platform_host,
 		       repo_owner, repo_name,
@@ -202,24 +224,11 @@ func (d *DB) ListActivity(
 			       ''
 			FROM middleman_branch_force_pushes bfp
 			JOIN middleman_repos r ON bfp.repo_id = r.id
-			UNION ALL
-			SELECT 'notification', 'ntf', n.id,
-			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
-			       n.item_type, COALESCE(n.item_number, 0), n.subject_title,
-			       n.web_url, CASE WHEN n.unread = 1 THEN 'unread' ELSE 'read' END,
-			       n.item_author, n.item_author, n.source_updated_at,
-			       substr(n.reason, 1, 200),
-			       '', '', '', '',
-			       '', '',
-			       '', '',
-			       NULL, NULL,
-			       n.web_url
-			FROM middleman_notification_items n
-			JOIN middleman_repos r ON n.repo_id = r.id
+			%[3]s
 		) unified
 		%[2]s
 		ORDER BY created_at DESC, source DESC, source_id DESC
-		LIMIT ?`, branchCommitIdentityMaxBytes, where)
+		LIMIT ?`, branchCommitIdentityMaxBytes, where, notificationUnion)
 
 	args = append(args, limit)
 

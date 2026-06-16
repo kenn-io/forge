@@ -1029,4 +1029,12 @@ func TestListActivityIncludesNotifications(t *testing.T) {
 	require.NoError(err)
 	require.Len(filtered, 1)
 	assert.Equal("notification", filtered[0].ActivityType)
+
+	// ExcludeNotifications drops them from the union entirely (before
+	// the limit), so a disabled feed never lists notification rows.
+	excluded, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50, ExcludeNotifications: true})
+	require.NoError(err)
+	for _, it := range excluded {
+		assert.NotEqual("notification", it.ActivityType)
+	}
 }

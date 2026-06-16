@@ -113,6 +113,7 @@ Rules:
 - GitHub remains only implemented notification provider today. Provider support is declared through `ReadNotifications`/`NotificationMutation` in `platform.Capabilities`; the sync engine selects providers by those flags, never by hard-coded platform kind.
 - GitLab and the gitealike (Forgejo/Gitea) providers ship notification stubs that return typed `unsupported_capability` errors until real support lands. Implementing a provider means replacing its stub bodies (GitLab: to-do items API; gitealike: `/notifications` endpoints on the transport) and flipping the two capability flags.
 - The registry's `NotificationReader`/`NotificationMutator` accessors gate on the declared capability flags, not interface satisfaction, because stubs satisfy the interfaces.
+- The sync engine intentionally requires BOTH `ReadNotifications` and `NotificationMutation` to select a provider: listing and read-ack propagation are treated as one feature today. A future read-only provider (list without upstream mark-read) would split this — select listing on `ReadNotifications` and propagation on `NotificationMutation` separately. Until such a provider exists the coupling keeps the path simple.
 - Propagation workers must revalidate queued generation before calling provider.
 - Stale queued work must not mark newer provider activity read.
 - After successful propagation, stale GitHub sync payloads with `unread=true` and `source_updated_at <= source_ack_generation_at` must preserve local read state.
@@ -161,7 +162,9 @@ Rules:
 - Hiding notifications sends the explicit non-notification `types` list to `/activity` (the backend filters by inclusion, so exclusion is expressed as an explicit list); showing them with a partial event filter appends `notification` to that list, and the all-selected case stays the empty `[]` (backend returns everything).
 - Clicking a notification row opens its PR/issue in the detail pane when `(item_type, item_number)` resolve; otherwise it follows `web_url`.
 - Unread notification rows (and only notification rows) carry a "Mark seen" control in both the flat and threaded layouts. It calls `POST /notifications/read` with the row's notification id (parsed from the `ntf:<id>` activity item id), which flips the row to read locally and queues the GitHub read propagation; the control then clears. Non-notification activity rows never get this control.
-- The notification list/sync/triage API endpoints still exist for backend propagation; "Mark seen" is the only triage action surfaced in the feed.
+- The notification list/sync/triage API endpoints still exist for backend propagation; "Mark seen" is the only triage action surfaced in the feed. Bulk read/done/undone remain backend-only and are an intentional non-goal for the feed.
+- The "Notifications" filter stays in the dropdown even when the feature is disabled; with no notification rows it is a harmless no-op, so the toggle does not depend on settings hydration.
+- Feed inclusion is historical: notification rows appear regardless of unread/read/done state within the Activity time window. `done_at` excludes a notification from the notification list API, not from the Activity feed; the feed is immutable history, not a triage queue.
 
 ## API Contract
 

@@ -316,16 +316,22 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     // Optimistically flip locally; QueueNotificationIDsRead persists
     // unread=0, so a later feed reload agrees.
     items = items.map((it) => (it.id === item.id ? { ...it, item_state: "read" } : it));
+    const rollback = () => {
+      items = items.map((it) => (it.id === item.id ? { ...it, item_state: "unread" } : it));
+    };
     try {
-      const { error: requestError } = await apiClient.POST("/notifications/read", {
+      const { data, error: requestError } = await apiClient.POST("/notifications/read", {
         body: { ids: [id] },
       });
-      if (requestError) {
-        // Roll back the optimistic flip so the row stays actionable.
-        items = items.map((it) => (it.id === item.id ? { ...it, item_state: "unread" } : it));
+      // The endpoint is bulk-shaped and can return 200 while reporting
+      // this id in `failed`. Only keep the optimistic flip when the id
+      // was actually queued/acknowledged.
+      const acked = !!data && [...(data.succeeded ?? []), ...(data.queued ?? [])].includes(id);
+      if (requestError || !acked) {
+        rollback();
       }
     } catch {
-      items = items.map((it) => (it.id === item.id ? { ...it, item_state: "unread" } : it));
+      rollback();
     }
   }
 

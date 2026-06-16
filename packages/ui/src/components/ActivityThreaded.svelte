@@ -445,7 +445,19 @@
       }
       return;
     }
+    // Notifications without a tracked PR/issue subject (releases,
+    // discussions, item_number 0) have no in-app detail; follow their
+    // web URL instead of opening a #0 detail drawer.
+    if (event.activity_type === "notification" && !opensInDetailPane(event)) {
+      const url = event.activity_url || event.item_url;
+      if (url) window.open(url, "_blank", "noopener");
+      return;
+    }
     onSelectItem?.(event);
+  }
+
+  function opensInDetailPane(event: ActivityItem): boolean {
+    return (event.item_type === "pr" || event.item_type === "issue") && event.item_number > 0;
   }
 
   function isSelectedItemGroup(group: ItemGroup): boolean {

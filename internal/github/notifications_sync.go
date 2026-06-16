@@ -407,7 +407,15 @@ func (s *Syncer) reopenIfNotificationThreadAdvanced(ctx context.Context, host st
 		remote.RepoName = notification.RepoName
 	}
 	remote.Unread = true
-	repo := RepoRef{Owner: remote.RepoOwner, Name: remote.RepoName, PlatformHost: host}
+	// Preserve the original provider identity: notificationToDB keys off
+	// repoPlatform(repo), so dropping Platform here would re-upsert the
+	// refreshed notification under GitHub for any non-GitHub provider.
+	repo := RepoRef{
+		Platform:     platform.Kind(notification.Platform),
+		Owner:        remote.RepoOwner,
+		Name:         remote.RepoName,
+		PlatformHost: host,
+	}
 	refreshed, err := s.notificationToDB(ctx, host, repo, remote, time.Now().UTC())
 	if err != nil {
 		return false, fmt.Errorf("normalize refreshed notification %s for %s: %w", notification.PlatformNotificationID, host, err)

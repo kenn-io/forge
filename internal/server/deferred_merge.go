@@ -85,6 +85,10 @@ func (s *Server) enqueueDeferredMerge(
 	if mr == nil {
 		return deferMergePRBody{}, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
+	if _, err := s.preflightMergePR(repo, mr, number, body); err != nil {
+		return deferMergePRBody{}, err
+	}
+	queuedHeadSHA := mr.PlatformHeadSHA
 	pendingKeys, err := pendingDeferredMergeCheckKeys(mr.CIChecksJSON)
 	if err != nil {
 		return deferMergePRBody{}, problemValidation("ci_checks", err.Error())
@@ -112,7 +116,7 @@ func (s *Server) enqueueDeferredMerge(
 	}
 	started := s.runBackground(func(bgCtx context.Context) {
 		defer s.clearDeferredMergeInFlight(key)
-		s.runDeferredMerge(bgCtx, *repo, number, body, pendingKeys, pollInterval, maxWait)
+		s.runDeferredMerge(bgCtx, *repo, number, body, pendingKeys, queuedHeadSHA, pollInterval, maxWait)
 	})
 	if !started {
 		s.clearDeferredMergeInFlight(key)
@@ -130,11 +134,12 @@ func (s *Server) runDeferredMerge(
 	number int,
 	body mergePRInputBody,
 	pendingKeys []deferredMergeCheckKey,
+	queuedHeadSHA string,
 	pollInterval time.Duration,
 	maxWait time.Duration,
 ) {
 	if len(pendingKeys) == 0 {
-		s.completeDeferredMerge(ctx, repo, number, body)
+		s.completeDeferredMerge(ctx, repo, number, body, queuedHeadSHA)
 		return
 	}
 	if maxWait <= 0 {
@@ -145,24 +150,24 @@ func (s *Server) runDeferredMerge(
 	timeout := time.NewTimer(maxWait)
 	defer timeout.Stop()
 	for {
-		state, err := s.refreshDeferredMergeCI(ctx, repo, number, pendingKeys)
+		state, err := s.refreshDeferredMergeCI(ctx, repo, number, pendingKeys, queuedHeadSHA)
 		if err != nil {
-			s.broadcastDeferredMergeFailure(repo, number, body.ExpectedHeadSHA, err.Error())
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedHeadSHA), err.Error())
 			return
 		}
 		switch state {
 		case "passed":
-			s.completeDeferredMerge(ctx, repo, number, body)
+			s.completeDeferredMerge(ctx, repo, number, body, queuedHeadSHA)
 			return
 		case "failed":
-			s.broadcastDeferredMergeFailure(repo, number, body.ExpectedHeadSHA, "a check that was pending failed; merge was not performed")
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedHeadSHA), "a check failed; merge was not performed")
 			return
 		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-timeout.C:
-			s.broadcastDeferredMergeFailure(repo, number, body.ExpectedHeadSHA, "timed out waiting for pending CI checks to finish; merge was not performed")
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedHeadSHA), "timed out waiting for pending CI checks to finish; merge was not performed")
 			return
 		case <-ticker.C:
 		}
@@ -174,6 +179,7 @@ func (s *Server) refreshDeferredMergeCI(
 	repo db.Repo,
 	number int,
 	pendingKeys []deferredMergeCheckKey,
+	queuedHeadSHA string,
 ) (string, error) {
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 	if err != nil {
@@ -181,6 +187,9 @@ func (s *Server) refreshDeferredMergeCI(
 	}
 	if mr == nil {
 		return "", errors.New("pull request no longer exists")
+	}
+	if strings.TrimSpace(queuedHeadSHA) != "" && mr.PlatformHeadSHA != queuedHeadSHA {
+		return "", errors.New("target changed since deferred merge was queued; refresh and retry")
 	}
 	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
@@ -201,6 +210,9 @@ func (s *Server) refreshDeferredMergeCI(
 	}
 	if refreshed == nil {
 		return "", errors.New("pull request no longer exists after CI refresh")
+	}
+	if strings.TrimSpace(queuedHeadSHA) != "" && refreshed.PlatformHeadSHA != queuedHeadSHA {
+		return "", errors.New("target changed since deferred merge was queued; refresh and retry")
 	}
 	s.hub.Broadcast(Event{
 		Type: "pr_ci_refreshed",
@@ -279,10 +291,15 @@ func (s *Server) completeDeferredMerge(
 	repo db.Repo,
 	number int,
 	body mergePRInputBody,
+	queuedHeadSHA string,
 ) {
+	if err := s.ensureDeferredMergeHeadUnchanged(ctx, repo, number, queuedHeadSHA); err != nil {
+		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedHeadSHA), err.Error())
+		return
+	}
 	result, err := s.mergePRWithBody(ctx, string(repoProviderKind(repo)), repoProviderHost(repo), repo.Owner, repo.Name, number, body)
 	if err != nil {
-		s.broadcastDeferredMergeFailure(repo, number, body.ExpectedHeadSHA, err.Error())
+		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedHeadSHA), err.Error())
 		return
 	}
 	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
@@ -295,7 +312,7 @@ func (s *Server) completeDeferredMerge(
 			Owner:        repo.Owner,
 			Name:         repo.Name,
 			Number:       number,
-			HeadSHA:      body.ExpectedHeadSHA,
+			HeadSHA:      deferredMergeHeadSHA(body, queuedHeadSHA),
 			Status:       "merged",
 			Merged:       result.Merged,
 			SHA:          result.SHA,
@@ -303,6 +320,30 @@ func (s *Server) completeDeferredMerge(
 			CompletedAt:  formatUTCRFC3339(s.now().UTC()),
 		},
 	})
+}
+
+func (s *Server) ensureDeferredMergeHeadUnchanged(ctx context.Context, repo db.Repo, number int, queuedHeadSHA string) error {
+	if strings.TrimSpace(queuedHeadSHA) == "" {
+		return nil
+	}
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	if err != nil {
+		return err
+	}
+	if mr == nil {
+		return errors.New("pull request no longer exists")
+	}
+	if mr.PlatformHeadSHA != queuedHeadSHA {
+		return errors.New("target changed since deferred merge was queued; refresh and retry")
+	}
+	return nil
+}
+
+func deferredMergeHeadSHA(body mergePRInputBody, queuedHeadSHA string) string {
+	if strings.TrimSpace(body.ExpectedHeadSHA) != "" {
+		return body.ExpectedHeadSHA
+	}
+	return queuedHeadSHA
 }
 
 func (s *Server) broadcastDeferredMergeFailure(repo db.Repo, number int, headSHA string, message string) {
@@ -355,8 +396,18 @@ func deferredMergeCheckState(keys []deferredMergeCheckKey, checksJSON string) (s
 		}
 	}
 	byKey := make(map[deferredMergeCheckKey]db.CICheck, len(checks))
+	currentPending := false
 	for _, check := range checks {
 		byKey[deferredMergeCheckKey{App: check.App, Name: check.Name}] = check
+		if check.Status != "completed" {
+			currentPending = true
+			continue
+		}
+		switch check.Conclusion {
+		case "success", "neutral", "skipped":
+		default:
+			return "failed", nil
+		}
 	}
 	pending := false
 	for _, key := range keys {
@@ -376,6 +427,9 @@ func deferredMergeCheckState(keys []deferredMergeCheckKey, checksJSON string) (s
 		}
 	}
 	if pending {
+		return "pending", nil
+	}
+	if currentPending {
 		return "pending", nil
 	}
 	return "passed", nil

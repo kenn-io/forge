@@ -2923,15 +2923,6 @@ func (s *Server) mergePRWithBody(
 	number int,
 	body mergePRInputBody,
 ) (mergePRBody, error) {
-	validMethods := map[string]bool{"merge": true, "squash": true, "rebase": true}
-	if !validMethods[body.Method] {
-		return mergePRBody{}, problemValidation(
-			"body.method",
-			"invalid merge method: must be merge, squash, or rebase",
-			"merge", "squash", "rebase",
-		)
-	}
-
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
 		provider, platformHost, owner, name,
@@ -2958,27 +2949,8 @@ func (s *Server) mergePRWithBody(
 	if mr == nil {
 		return mergePRBody{}, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
-
-	// Bind the merge to the head commit the user reviewed locally so a
-	// source-branch push between review and merge is rejected upstream
-	// instead of merging unreviewed code.
-	expectedHeadSHA, err := s.reviewedHeadSHA(repo, mr)
+	expectedHeadSHA, err := s.preflightMergePR(repo, mr, number, body)
 	if err != nil {
-		return mergePRBody{}, err
-	}
-	// Head-binding providers require the client to pin the head it
-	// rendered: an omitted pin would silently bind to whatever the cache
-	// holds now, which may be newer than what the user reviewed.
-	if strings.TrimSpace(body.ExpectedHeadSHA) == "" &&
-		s.capabilitiesForRepo(*repo).MutationHeadBinding {
-		return mergePRBody{}, problemValidation(
-			"body.expected_head_sha",
-			"required for this provider: echo the platform_head_sha you rendered",
-		)
-	}
-	if err := s.verifyClientReviewedHead(
-		repo, number, body.ExpectedHeadSHA, expectedHeadSHA,
-	); err != nil {
 		return mergePRBody{}, err
 	}
 
@@ -3054,6 +3026,46 @@ func (s *Server) mergePRWithBody(
 		SHA:     result.SHA,
 		Message: result.Message,
 	}, nil
+}
+
+func (s *Server) preflightMergePR(
+	repo *db.Repo,
+	mr *db.MergeRequest,
+	number int,
+	body mergePRInputBody,
+) (string, error) {
+	validMethods := map[string]bool{"merge": true, "squash": true, "rebase": true}
+	if !validMethods[body.Method] {
+		return "", problemValidation(
+			"body.method",
+			"invalid merge method: must be merge, squash, or rebase",
+			"merge", "squash", "rebase",
+		)
+	}
+
+	// Bind the merge to the head commit the user reviewed locally so a
+	// source-branch push between review and merge is rejected upstream
+	// instead of merging unreviewed code.
+	expectedHeadSHA, err := s.reviewedHeadSHA(repo, mr)
+	if err != nil {
+		return "", err
+	}
+	// Head-binding providers require the client to pin the head it
+	// rendered: an omitted pin would silently bind to whatever the cache
+	// holds now, which may be newer than what the user reviewed.
+	if strings.TrimSpace(body.ExpectedHeadSHA) == "" &&
+		s.capabilitiesForRepo(*repo).MutationHeadBinding {
+		return "", problemValidation(
+			"body.expected_head_sha",
+			"required for this provider: echo the platform_head_sha you rendered",
+		)
+	}
+	if err := s.verifyClientReviewedHead(
+		repo, number, body.ExpectedHeadSHA, expectedHeadSHA,
+	); err != nil {
+		return "", err
+	}
+	return expectedHeadSHA, nil
 }
 
 // reviewedHeadSHA resolves the head commit a mutation should be pinned

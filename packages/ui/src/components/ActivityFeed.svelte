@@ -11,6 +11,7 @@
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import FilterDropdown from "./shared/FilterDropdown.svelte";
   import {
+    activityItemKey,
     isDefaultBranchActivity,
     isDefaultBranchCommitActivity,
     isDefaultBranchForcePushActivity,
@@ -262,6 +263,17 @@
     if (url) window.open(url, "_blank", "noopener");
   }
 
+  function closedFilterKey(item: ActivityItem): string {
+    return activityItemKey({
+      provider: item.repo?.provider ?? "",
+      platformHost: item.platform_host ?? "",
+      owner: item.repo_owner,
+      name: item.repo_name,
+      itemType: item.item_type,
+      itemNumber: item.item_number,
+    });
+  }
+
   const displayItems = $derived.by(() => {
     let result = activity.getActivityItems();
     const filter = activity.getItemFilter();
@@ -271,8 +283,22 @@
       result = result.filter((it) => it.item_type === "issue");
     }
     if (activity.getHideClosedMerged()) {
-      result = result.filter((it) =>
-        it.item_state !== "merged" && it.item_state !== "closed");
+      // Notification rows carry unread/read in item_state, not their
+      // subject PR/issue's state, so they would slip past this filter. The
+      // subject is also in the feed (its new_pr/new_issue/comment rows), so
+      // map each tracked item's real state and use it for notifications.
+      const subjectStateByItem = new Map<string, string>();
+      for (const it of result) {
+        if (it.activity_type === "notification" || isDefaultBranchActivity(it)) continue;
+        subjectStateByItem.set(closedFilterKey(it), it.item_state);
+      }
+      result = result.filter((it) => {
+        const state =
+          it.activity_type === "notification"
+            ? (subjectStateByItem.get(closedFilterKey(it)) ?? it.item_state)
+            : it.item_state;
+        return state !== "merged" && state !== "closed";
+      });
     }
     if (activity.getHideBots()) {
       result = result.filter((it) => !isBot(it.author));

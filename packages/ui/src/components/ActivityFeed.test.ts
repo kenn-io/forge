@@ -58,6 +58,7 @@ const collapseAllThreads = vi.hoisted(() => vi.fn());
 const expandAllThreads = vi.hoisted(() => vi.fn());
 const rollUpCommits = vi.hoisted(() => ({ value: false }));
 const hideDefaultBranchActivity = vi.hoisted(() => ({ value: false }));
+const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const setActivityFilterTypes = vi.hoisted(() => vi.fn());
 const enabledEvents = vi.hoisted(() => ({
@@ -78,7 +79,7 @@ vi.mock("../context.js", () => ({
       getActivitySearch: () => "",
       getEnabledEvents: () => enabledEvents.value,
       getShowNotifications: () => showNotifications.value,
-      getHideClosedMerged: () => false,
+      getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
       getItemFilter: () => "all",
@@ -140,6 +141,7 @@ describe("ActivityFeed compact mode", () => {
     collapseThreads.value = false;
     rollUpCommits.value = false;
     hideDefaultBranchActivity.value = false;
+    hideClosedMerged.value = false;
     hideOrgName.value = false;
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
     showNotifications.value = true;
@@ -530,6 +532,37 @@ describe("ActivityFeed compact mode", () => {
     // rather than reintroducing the PR/issue "Opened" anchor rows.
     expect(enabledEvents.value.size).toBe(0);
     expect(setActivityFilterTypes).toHaveBeenCalledWith(["notification"]);
+  });
+
+  it("hides notifications whose PR/issue is merged when hiding closed/merged", () => {
+    hideClosedMerged.value = true;
+    items.value = [
+      // Notification rows carry unread/read in item_state, so the filter
+      // must resolve the subject state from the PR's own row instead.
+      activityItem("ntf:1", {
+        activity_type: "notification",
+        item_state: "unread",
+        item_number: 1,
+        item_title: "Merged work",
+        body_preview: "review_requested",
+      }),
+      activityItem("pr-1", {
+        activity_type: "new_pr",
+        item_state: "merged",
+        item_number: 1,
+        item_title: "Merged work",
+      }),
+      activityItem("pr-2", {
+        activity_type: "new_pr",
+        item_state: "open",
+        item_number: 2,
+        item_title: "Open work",
+        item_url: "https://github.com/acme/widgets/pull/2",
+      }),
+    ];
+    const { container } = render(ActivityFeed, { props: { compact: true } });
+    expect(container.textContent).toContain("Open work");
+    expect(container.textContent).not.toContain("Merged work");
   });
 });
 

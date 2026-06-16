@@ -71,6 +71,7 @@ type ServerOptions struct {
 	// Use this for httptest-style listeners on ephemeral ports.
 	HostCheckAllowLoopbackAnyPort bool
 	msgvaultRemoteImageDeps       *msgvaultRemoteImageDeps
+	deferredMergeMaxWait          time.Duration
 }
 
 type shutdownDeadline struct {
@@ -177,6 +178,7 @@ type Server struct {
 	detailSyncInFlight     map[string]struct{}
 	deferredMergeMu        sync.Mutex
 	deferredMergeInFlight  map[string]struct{}
+	deferredMergeMaxWait   time.Duration
 	writeCredProbeMu       sync.Mutex
 	writeCredProbes        map[string]writeCredentialProbe
 	writeCredProbeInFlight map[string]chan struct{}
@@ -667,6 +669,10 @@ func newServer(
 		options.HostCheck,
 		options.HostCheckAllowLoopbackAnyPort,
 	)
+	deferredMergeMaxWait := options.deferredMergeMaxWait
+	if deferredMergeMaxWait <= 0 {
+		deferredMergeMaxWait = defaultDeferredMergeMaxWait
+	}
 
 	s := &Server{
 		db:                     database,
@@ -685,6 +691,7 @@ func newServer(
 		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		tmuxActivity:           newTmuxActivityTracker(nil),
 		labelCatalogRefreshIDs: make(map[int64]struct{}),
+		deferredMergeMaxWait:   deferredMergeMaxWait,
 		docsPublishLocks:       newDocsPublishLockSet(),
 		msgvault:               newMsgvaultHandler(cfg, basePath, options.msgvaultRemoteImageDeps),
 		bgCtx: shutdownAwareContext{

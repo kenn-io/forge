@@ -66,6 +66,7 @@ func newDeferredMergeRouteServer(
 	ref platform.RepoRef,
 	now time.Time,
 	initialChecks []db.CICheck,
+	options ...ServerOptions,
 ) (*Server, *db.DB, int64, *apiclient.Client) {
 	t.Helper()
 	ctx := t.Context()
@@ -113,7 +114,11 @@ func newDeferredMergeRouteServer(
 		},
 	)
 	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	opts := ServerOptions{}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	srv := New(database, syncer, nil, "/", nil, opts)
 	setTestServerNow(t, srv, now)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	return srv, database, repoID, setupTestClient(t, srv)
@@ -385,6 +390,58 @@ func TestDeferMergeEndpointRejectsWithoutPendingChecks(t *testing.T) {
 	}
 }
 
+func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	provider := &deferredMergeTestProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{
+			ref: ref,
+			ciChecks: map[string][]platform.CICheck{
+				"head-sha": {{
+					App:    "GitLab",
+					Name:   "pipeline",
+					Status: "in_progress",
+				}},
+			},
+		},
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
+	}
+	_, _, _, client := newDeferredMergeRouteServer(t, provider, ref, now, nil, ServerOptions{
+		deferredMergeMaxWait: 10 * time.Millisecond,
+	})
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON202)
+	require.Equal(int64(1), resp.JSON202.PendingChecks)
+	select {
+	case call := <-provider.mergeCh:
+		require.Failf("unexpected merge", "merge call: %+v", call)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestDeferMergeEndpointBroadcastsFailureWhenCIRefreshWarns(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
@@ -444,6 +501,87 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCIRefreshWarns(t *testing.T) {
 	require.Equal("failed", completed.Status)
 	require.Contains(completed.Error, "could not refresh CI checks")
 	require.Equal("2026-06-15T12:00:00Z", completed.CompletedAt)
+	select {
+	case call := <-provider.mergeCh:
+		require.Failf("unexpected merge", "merge call: %+v", call)
+	default:
+	}
+}
+
+func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	provider := &deferredMergeTestProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{
+			ref: ref,
+			ciChecks: map[string][]platform.CICheck{
+				"head-sha": {{
+					App:    "GitLab",
+					Name:   "pipeline",
+					Status: "in_progress",
+				}},
+			},
+		},
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
+	}
+	srv, _, _, client := newDeferredMergeRouteServer(
+		t,
+		provider,
+		ref,
+		now,
+		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+		ServerOptions{deferredMergeMaxWait: 10 * time.Millisecond},
+	)
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode(), string(resp.Body))
+
+	var completed deferredMergeCompletedPayload
+	for range 4 {
+		select {
+		case ev := <-events:
+			if ev.Event.Type != "deferred_merge_completed" {
+				continue
+			}
+			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			require.True(ok)
+			completed = payload
+		case <-time.After(time.Second):
+			require.FailNow("timed out waiting for deferred merge timeout event")
+		}
+		if completed.Status != "" {
+			break
+		}
+	}
+	require.Equal("failed", completed.Status)
+	require.Contains(completed.Error, "timed out waiting for pending CI checks")
+	require.Eventually(func() bool {
+		srv.deferredMergeMu.Lock()
+		defer srv.deferredMergeMu.Unlock()
+		return len(srv.deferredMergeInFlight) == 0
+	}, time.Second, 10*time.Millisecond)
 	select {
 	case call := <-provider.mergeCh:
 		require.Failf("unexpected merge", "merge call: %+v", call)

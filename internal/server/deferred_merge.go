@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	deferredMergePollInterval = time.Minute
-	deferredMergeMaxWait      = 24 * time.Hour
+	deferredMergePollInterval   = time.Minute
+	defaultDeferredMergeMaxWait = 24 * time.Hour
 )
 
 type deferredMergeCheckKey struct {
@@ -43,7 +43,7 @@ func (s *Server) deferMergePR(
 	ctx context.Context,
 	input *deferMergePRInput,
 ) (*deferMergePROutput, error) {
-	body, err := s.enqueueDeferredMerge(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Number, input.Body, deferredMergePollInterval)
+	body, err := s.enqueueDeferredMerge(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Number, input.Body, deferredMergePollInterval, s.deferredMergeMaxWait)
 	if err != nil {
 		return nil, err
 	}
@@ -59,9 +59,13 @@ func (s *Server) enqueueDeferredMerge(
 	number int,
 	body mergePRInputBody,
 	pollInterval time.Duration,
+	maxWait time.Duration,
 ) (deferMergePRBody, error) {
 	if pollInterval <= 0 {
 		pollInterval = deferredMergePollInterval
+	}
+	if maxWait <= 0 {
+		maxWait = defaultDeferredMergeMaxWait
 	}
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
@@ -86,6 +90,12 @@ func (s *Server) enqueueDeferredMerge(
 		return deferMergePRBody{}, problemValidation("ci_checks", err.Error())
 	}
 	if len(pendingKeys) == 0 {
+		pendingKeys, err = s.refreshPendingDeferredMergeCheckKeys(ctx, *repo, number, mr.PlatformHeadSHA)
+		if err != nil {
+			return deferMergePRBody{}, err
+		}
+	}
+	if len(pendingKeys) == 0 {
 		return deferMergePRBody{}, problemConflict(
 			CodeConflict,
 			"no pending CI checks to wait for",
@@ -102,7 +112,7 @@ func (s *Server) enqueueDeferredMerge(
 	}
 	started := s.runBackground(func(bgCtx context.Context) {
 		defer s.clearDeferredMergeInFlight(key)
-		s.runDeferredMerge(bgCtx, *repo, number, body, pendingKeys, pollInterval)
+		s.runDeferredMerge(bgCtx, *repo, number, body, pendingKeys, pollInterval, maxWait)
 	})
 	if !started {
 		s.clearDeferredMergeInFlight(key)
@@ -121,14 +131,18 @@ func (s *Server) runDeferredMerge(
 	body mergePRInputBody,
 	pendingKeys []deferredMergeCheckKey,
 	pollInterval time.Duration,
+	maxWait time.Duration,
 ) {
 	if len(pendingKeys) == 0 {
 		s.completeDeferredMerge(ctx, repo, number, body)
 		return
 	}
+	if maxWait <= 0 {
+		maxWait = defaultDeferredMergeMaxWait
+	}
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
-	timeout := time.NewTimer(deferredMergeMaxWait)
+	timeout := time.NewTimer(maxWait)
 	defer timeout.Stop()
 	for {
 		state, err := s.refreshDeferredMergeCI(ctx, repo, number, pendingKeys)
@@ -170,17 +184,7 @@ func (s *Server) refreshDeferredMergeCI(
 	}
 	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
-		ghclient.RepoRef{
-			Platform:           repoProviderKind(repo),
-			Owner:              repo.Owner,
-			Name:               repo.Name,
-			PlatformHost:       repoProviderHost(repo),
-			RepoPath:           repo.RepoPath,
-			PlatformExternalID: repo.PlatformRepoID,
-			WebURL:             repo.WebURL,
-			CloneURL:           repo.CloneURL,
-			DefaultBranch:      repo.DefaultBranch,
-		},
+		deferredMergeRepoRef(repo),
 		repo.ID,
 		number,
 		mr.PlatformHeadSHA,
@@ -213,6 +217,61 @@ func (s *Server) refreshDeferredMergeCI(
 		},
 	})
 	return deferredMergeCheckState(pendingKeys, refreshed.CIChecksJSON)
+}
+
+func (s *Server) refreshPendingDeferredMergeCheckKeys(
+	ctx context.Context,
+	repo db.Repo,
+	number int,
+	headSHA string,
+) ([]deferredMergeCheckKey, error) {
+	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
+		ctx,
+		deferredMergeRepoRef(repo),
+		repo.ID,
+		number,
+		headSHA,
+	)
+	if err != nil {
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(repo)), repoProviderHost(repo),
+			"refresh PR CI before deferring merge: "+err.Error(),
+		)
+	}
+	if len(warnings) > 0 {
+		return nil, problemConflict(
+			CodeConflict,
+			"could not refresh CI checks before deferring merge",
+			map[string]any{"reason": "ci_refresh_unavailable", "warnings": warnings},
+		)
+	}
+	refreshed, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	if err != nil {
+		return nil, problemInternal("get pull request after CI refresh failed")
+	}
+	if refreshed == nil {
+		return nil, problemNotFound(CodePullNotFound, "pull request not found after CI refresh", nil)
+	}
+	keys, err := pendingDeferredMergeCheckKeys(refreshed.CIChecksJSON)
+	if err != nil {
+		return nil, problemValidation("ci_checks", err.Error())
+	}
+	return keys, nil
+}
+
+func deferredMergeRepoRef(repo db.Repo) ghclient.RepoRef {
+	return ghclient.RepoRef{
+		Platform:           repoProviderKind(repo),
+		Owner:              repo.Owner,
+		Name:               repo.Name,
+		PlatformHost:       repoProviderHost(repo),
+		RepoPath:           repo.RepoPath,
+		PlatformExternalID: repo.PlatformRepoID,
+		WebURL:             repo.WebURL,
+		CloneURL:           repo.CloneURL,
+		DefaultBranch:      repo.DefaultBranch,
+	}
 }
 
 func (s *Server) completeDeferredMerge(

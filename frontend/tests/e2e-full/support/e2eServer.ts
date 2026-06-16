@@ -25,7 +25,6 @@ export type IsolatedE2EServerOptions = {
   defaultPlatformHost?: string;
   visibleImportedModes?: boolean;
   providerCollision?: boolean;
-  notificationsEnabled?: boolean;
   // Spawn a dedicated server process and kill it on stop() instead of
   // leasing from the per-worker pool. Required when the test depends
   // on process environment the server must inherit at spawn time
@@ -300,9 +299,6 @@ async function spawnServer(
   if (options.providerCollision) {
     args.push("-provider-collision");
   }
-  if (options.notificationsEnabled === false) {
-    args.push("-notifications-enabled=false");
-  }
   if (process.env.ROBOREV_ENDPOINT) {
     args.push("-roborev", process.env.ROBOREV_ENDPOINT);
   }
@@ -392,7 +388,6 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
         host: defaultPlatformHost,
         visibleImportedModes: true,
         providerCollision: false,
-        notificationsEnabled: true,
       });
       // Permanently leased: this is the worker's shared server; the
       // isolated-server pool must never hand it out or reset it.
@@ -464,7 +459,6 @@ type PooledServerOptions = {
   host: string;
   visibleImportedModes: boolean;
   providerCollision: boolean;
-  notificationsEnabled: boolean;
 };
 
 type PooledServer = {
@@ -481,7 +475,6 @@ const defaultPooledOptions: PooledServerOptions = {
   host: defaultPlatformHost,
   visibleImportedModes: false,
   providerCollision: false,
-  notificationsEnabled: true,
 };
 
 // Env vars that steer a spawned e2e server's behavior. A pooled
@@ -512,7 +505,6 @@ function normalizedPooledOptions(options: IsolatedE2EServerOptions): PooledServe
     host: options.defaultPlatformHost ?? defaultPlatformHost,
     visibleImportedModes: options.visibleImportedModes ?? false,
     providerCollision: options.providerCollision ?? false,
-    notificationsEnabled: options.notificationsEnabled ?? true,
   };
 }
 
@@ -520,8 +512,7 @@ function samePooledOptions(a: PooledServerOptions, b: PooledServerOptions): bool
   return (
     a.host === b.host &&
     a.visibleImportedModes === b.visibleImportedModes &&
-    a.providerCollision === b.providerCollision &&
-    a.notificationsEnabled === b.notificationsEnabled
+    a.providerCollision === b.providerCollision
   );
 }
 
@@ -588,7 +579,6 @@ async function postReset(baseURL: string, options: PooledServerOptions): Promise
         default_platform_host: options.host,
         visible_imported_modes: options.visibleImportedModes,
         provider_collision: options.providerCollision,
-        notifications_enabled: options.notificationsEnabled,
       }),
     );
   });
@@ -628,7 +618,6 @@ async function spawnPooledServer(options: PooledServerOptions): Promise<PooledSe
     ...(options.host === defaultPlatformHost ? {} : { defaultPlatformHost: options.host }),
     ...(options.visibleImportedModes ? { visibleImportedModes: true } : {}),
     ...(options.providerCollision ? { providerCollision: true } : {}),
-    ...(options.notificationsEnabled ? {} : { notificationsEnabled: false }),
   });
   // The info is in memory now; the temp dir is no longer needed.
   await rm(infoDir, { force: true, recursive: true });

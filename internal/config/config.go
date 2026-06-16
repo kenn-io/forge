@@ -724,7 +724,6 @@ func (f Fleet) PeerTimeoutOrDefault() time.Duration {
 }
 
 type Notifications struct {
-	Enabled             *bool  `toml:"enabled,omitempty" json:"enabled"`
 	SyncInterval        string `toml:"sync_interval" json:"sync_interval"`
 	PropagationInterval string `toml:"propagation_interval" json:"propagation_interval"`
 	BatchSize           int    `toml:"batch_size" json:"batch_size"`
@@ -1059,7 +1058,6 @@ reviews = true
 workspaces = true
 
 [notifications]
-enabled = false
 sync_interval = "2m"
 propagation_interval = "1m"
 batch_size = 25
@@ -1933,8 +1931,12 @@ func (c *Config) BranchActivityRetention() time.Duration {
 	return time.Duration(c.Activity.DefaultBranchRetentionDays) * 24 * time.Hour
 }
 
+// NotificationsEnabled reports whether notification sync and the
+// notification API are active. Notifications are a built-in capability with
+// no enable/disable setting; the only "off" state is the absence of any
+// loaded config (nil), which the callers use for nil-safety.
 func (c *Config) NotificationsEnabled() bool {
-	return c != nil && c.Notifications.Enabled != nil && *c.Notifications.Enabled
+	return c != nil
 }
 
 func (c *Config) NotificationSyncDuration() time.Duration {

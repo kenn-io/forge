@@ -4,7 +4,7 @@ Use this document for changes touching GitHub notifications, their presentation 
 
 ## Purpose
 
-Notifications are a feature-flagged signal that syncs the signed-in user's GitHub notification threads into SQLite, filters them to currently monitored repositories, and gives middleman local triage state that is separate from GitHub's read/unread flag.
+Notifications are a built-in signal that syncs the signed-in user's GitHub notification threads into SQLite, filters them to currently monitored repositories, and gives middleman local triage state that is separate from GitHub's read/unread flag.
 
 There is no standalone inbox surface. Notifications are presented as rows **inside the Activity feed**, labelled by their reason (review requested, mentioned, assigned, etc.) and toggled by a dedicated "Notifications" filter. The backend still owns the mutable per-user state behind those rows:
 
@@ -12,13 +12,12 @@ There is no standalone inbox surface. Notifications are presented as rows **insi
 - A notification row and an event row may point at the same subject identity: `(platform_host, owner, repo, item_type, number)`; they coexist in the feed (e.g. a PR's `Opened` row and a `Review requested` notification row).
 - The feed obtains notifications through the same `/activity` union as every other source (`db.ListActivity`, `activity_type = "notification"`), so cursor pagination, the time window, type filtering, and the safety cap apply uniformly.
 
-## Feature Flag
+## Always Enabled
 
-Notifications are disabled by default.
+Notifications are a built-in capability with no enable/disable setting. There is no `[notifications] enabled` key.
 
 ```toml
 [notifications]
-enabled = false
 sync_interval = "2m"
 propagation_interval = "1m"
 batch_size = 25
@@ -26,12 +25,10 @@ batch_size = 25
 
 Rules:
 
-- `Config.NotificationsEnabled()` returns true only when `enabled = true` is explicit.
-- The Settings UI does not expose this flag yet.
-- When disabled, the app must not run notification sync loops or expose notification list/mutation APIs.
-- When disabled, `listActivity` drops `activity_type = "notification"` rows defensively, so stale rows synced before the feature was turned off never leak into the feed. In practice the table is empty when disabled because nothing syncs.
-- Notification list, sync, and bulk mutation handlers should return `403` when disabled.
-- E2E servers may opt out (`notificationsEnabled: false`) so the disabled path stays covered.
+- `Config.NotificationsEnabled()` reports `c != nil`; the only "off" state is the absence of a loaded config, which callers use purely for nil-safety. There is no user-facing toggle.
+- A legacy config that still carries `[notifications] enabled = false` loads without error — the key is ignored (it is not a deprecated-key error) and notifications stay on.
+- The `[notifications]` section only tunes sync/propagation cadence and batch size.
+- The Settings API reports `notifications.enabled = true` as a read-only status, not a configurable knob.
 
 ## Repository Scope And Identity
 
@@ -73,7 +70,7 @@ Rules:
 - `done_at` and `done_reason` remain middleman-local triage state.
 - `source_*` fields track provider-side activity and acknowledgement propagation state.
 - `sync_cursor` is opaque provider-owned watermark state. GitHub currently leaves it empty.
-- Current notification schema ships as single DB upgrade in `000021_notifications.*`; do not split future assumptions across deleted branch-only migrations.
+- The notification schema ships as a single migration, `000034_notifications.*`; do not split future assumptions across deleted branch-only migrations.
 
 ## Triage State Model
 
@@ -130,7 +127,7 @@ Rules:
 
 - Notification sync should process each configured provider host independently; one provider-host failure must not block others.
 - Notification sync failures should update notification sync status so UI can surface them.
-- Top-level manual sync may trigger notification sync only when notifications are enabled.
+- Top-level manual sync also triggers notification sync.
 - `/notifications/sync` triggers only notification sync and returns `202` once accepted.
 - Sync watermark identity is `(platform, platform_host)`.
 - First host sync may need GitHub `All: true`; later syncs should use persisted watermark/overlap to avoid full backlog scans.
@@ -158,12 +155,11 @@ Notifications render in the Activity feed (`packages/ui/src/components/ActivityF
 Rules:
 
 - A notification row's reason rides in `body_preview` from the backend union; the feed maps it to a human label (`Review requested`, `Mentioned`, `Assigned`, …).
-- The "Notifications" toggle lives in the activity filter dropdown's event-type group and defaults on. It is persisted by its own `notif` URL param, NOT by membership in the `types` list — a legacy `types` URL that lists every event but no `notification` must still mean "show everything", so the toggle cannot be inferred from list membership.
-- Hiding notifications sends the explicit non-notification `types` list to `/activity` (the backend filters by inclusion, so exclusion is expressed as an explicit list); showing them with a partial event filter appends `notification` to that list, and the all-selected case stays the empty `[]` (backend returns everything).
+- The "Notifications" toggle lives in the activity filter dropdown's event-type group, is always present (notifications are always enabled), and defaults on. It is persisted by its own `notif` URL param, NOT by membership in the `types` list — a legacy `types` URL that lists every event but no `notification` must still mean "show everything", so the toggle cannot be inferred from list membership.
+- `buildActivityFilterTypes` turns the dropdown state into the `/activity` `types` list (the backend filters by inclusion, so exclusion is an explicit list): the all-selected case stays the empty `[]` (backend returns everything); a partial event selection appends `notification` when the toggle is on; hiding notifications drops it from the list. Deselecting every event type while leaving Notifications on collapses to exactly `["notification"]` — a notifications-only feed where the PR/issue `Opened` anchor rows (`new_pr`/`new_issue`) do not leak in.
 - Clicking a notification row opens its PR/issue in the detail pane when `(item_type, item_number)` resolve; otherwise it follows `web_url`.
 - Unread notification rows (and only notification rows) carry a "Mark seen" control in both the flat and threaded layouts. It calls `POST /notifications/read` with the row's notification id (parsed from the `ntf:<id>` activity item id), which flips the row to read locally and queues the GitHub read propagation; the control then clears. Non-notification activity rows never get this control.
 - The notification list/sync/triage API endpoints still exist for backend propagation; "Mark seen" is the only triage action surfaced in the feed. Bulk read/done/undone remain backend-only and are an intentional non-goal for the feed.
-- The "Notifications" filter stays in the dropdown even when the feature is disabled; with no notification rows it is a harmless no-op, so the toggle does not depend on settings hydration.
 - Feed inclusion is historical: notification rows appear regardless of unread/read/done state within the Activity time window. `done_at` excludes a notification from the notification list API, not from the Activity feed; the feed is immutable history, not a triage queue.
 
 ## API Contract
@@ -192,8 +188,8 @@ Use full-stack coverage for user-visible notification behavior.
 
 - DB tests: state filters, monitored repo scope, host-qualified identity, read generation guards, retry metadata, closed-linked auto-done.
 - GitHub tests: notification normalization, PR issue-style URL parsing, participating flag, host pagination/watermarks, rate-limit behavior.
-- Server tests: feature-flag gating, bulk mutation result shape, sync status, disabled access, real SQLite API behavior.
-- Frontend/store tests: activity filter type construction (notification toggle on/off, legacy URL normalization), feed rendering of notification rows.
-- Playwright e2e (`frontend/tests/e2e-full/activity-notifications.spec.ts`): notifications appear as feed rows, the Notifications filter hides them, "Mark seen" posts the read and clears the control, and the disabled feature omits them while the API returns `403`.
+- Server tests: nil-config nil-safety (notifications served whenever a config is loaded), bulk mutation result shape, sync status, real SQLite API behavior.
+- Frontend/store tests: activity filter type construction (notification toggle on/off, notifications-only collapse to `["notification"]`, legacy URL normalization), feed rendering of notification rows.
+- Playwright e2e (`frontend/tests/e2e-full/activity-notifications.spec.ts`): notifications appear as feed rows, the Notifications filter hides them, and "Mark seen" posts the read and clears the control.
 
 Always run relevant Go tests with `-shuffle=on`. Use Bun for frontend tests and typechecks.

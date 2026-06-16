@@ -62,7 +62,6 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	s.cfgMu.Lock()
 	repos := slices.Clone(s.cfg.Repos)
 	activity := s.cfg.Activity
-	notifications := s.cfg.Notifications
 	terminal := s.cfg.Terminal
 	modes := cloneModeVisibility(s.cfg.Modes).WithDefaults()
 	agents := cloneConfigAgents(s.cfg.Agents)
@@ -88,7 +87,9 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	return settingsResponse{
 		Repos:         configured,
 		Activity:      activity,
-		Notifications: notificationsSettingsResponse{Enabled: notifications.Enabled != nil && *notifications.Enabled},
+		// Notifications are a built-in capability with no enable/disable
+		// setting; report them as always available.
+		Notifications: notificationsSettingsResponse{Enabled: true},
 		Terminal:      terminal,
 		Modes:         modes,
 		Agents:        agents,

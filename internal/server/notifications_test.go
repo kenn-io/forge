@@ -51,8 +51,9 @@ func seedServerNotification(t *testing.T, database *db.DB) int64 {
 }
 
 func notificationsEnabledConfig() *config.Config {
-	enabled := true
-	return &config.Config{Notifications: config.Notifications{Enabled: &enabled}}
+	// Notifications are always on; a non-nil config is all the server
+	// needs to serve the notification APIs.
+	return &config.Config{}
 }
 
 func TestNotificationsAPIListsAndQueuesReadWithoutDone(t *testing.T) {
@@ -470,82 +471,6 @@ func TestGlobalSyncExposesNotificationSyncFailure(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
-func requireNotificationClientNotCalled(t *testing.T, called <-chan struct{}) {
-	t.Helper()
-	select {
-	case <-called:
-		require.Fail(t, "notification client should not be called when notifications are disabled")
-	default:
-	}
-}
-
-func TestNotificationsSyncEndpointRejectsWhenDisabled(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	called := make(chan struct{}, 1)
-	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{
-			"github.com": &mockGH{
-				listNotificationsFn: func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
-					called <- struct{}{}
-					return nil, false, nil
-				},
-			},
-		},
-		database, nil,
-		[]ghclient.RepoRef{{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
-		time.Minute, nil, nil,
-	)
-	disabled := false
-	s := New(database, syncer, nil, "/", &config.Config{Notifications: config.Notifications{Enabled: &disabled}}, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, s) })
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
-	resp, err := http.Post(ts.URL+"/api/v1/notifications/sync", "application/json", nil)
-	require.NoError(err)
-	defer resp.Body.Close()
-	require.Equal(http.StatusForbidden, resp.StatusCode)
-	requireNotificationClientNotCalled(t, called)
-}
-
-func TestGlobalSyncSkipsNotificationsWhenDisabled(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	called := make(chan struct{}, 1)
-	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{
-			"github.com": &mockGH{
-				listNotificationsFn: func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
-					called <- struct{}{}
-					return nil, false, nil
-				},
-			},
-		},
-		database, nil,
-		[]ghclient.RepoRef{{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
-		time.Minute, nil, nil,
-	)
-	disabled := false
-	s := New(database, syncer, nil, "/", &config.Config{Notifications: config.Notifications{Enabled: &disabled}}, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, s) })
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
-	resp, err := http.Post(ts.URL+"/api/v1/sync", "application/json", nil)
-	require.NoError(err)
-	defer resp.Body.Close()
-	require.Equal(http.StatusAccepted, resp.StatusCode)
-	require.Never(func() bool {
-		select {
-		case <-called:
-			return true
-		default:
-			return false
-		}
-	}, 250*time.Millisecond, 10*time.Millisecond)
-}
-
 func TestNotificationsAPIExposesReadPropagationStatus(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -588,55 +513,6 @@ func TestNotificationsAPIExposesReadPropagationStatus(t *testing.T) {
 	assert.Equal(0, read.Items[0].GitHubReadAttempts)
 	assert.Empty(read.Items[0].GitHubReadQueuedAt)
 	assert.Equal(syncedAt.UTC().Format(time.RFC3339), read.Items[0].GitHubReadSyncedAt)
-}
-
-func TestNotificationsAPIRejectsDisabledAccess(t *testing.T) {
-	cases := []struct {
-		name   string
-		method string
-		path   string
-	}{
-		{name: "list", method: http.MethodGet, path: "/api/v1/notifications?state=unread"},
-		{name: "read", method: http.MethodPost, path: "/api/v1/notifications/read"},
-		{name: "done", method: http.MethodPost, path: "/api/v1/notifications/done"},
-		{name: "undone", method: http.MethodPost, path: "/api/v1/notifications/undone"},
-	}
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			require := require.New(t)
-			database := openTestDB(t)
-			id := seedServerNotification(t, database)
-			disabled := false
-			s := New(database, nil, nil, "/", &config.Config{Notifications: config.Notifications{Enabled: &disabled}}, ServerOptions{})
-			ts := httptest.NewServer(s)
-			defer ts.Close()
-			body, err := json.Marshal(map[string]any{"ids": []int64{id}})
-			require.NoError(err)
-			var reader *bytes.Reader
-			if tt.method == http.MethodPost {
-				reader = bytes.NewReader(body)
-			} else {
-				reader = bytes.NewReader(nil)
-			}
-			req, err := http.NewRequest(tt.method, ts.URL+tt.path, reader)
-			require.NoError(err)
-			if tt.method == http.MethodPost {
-				req.Header.Set("Content-Type", "application/json")
-			}
-
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(err)
-			defer resp.Body.Close()
-			require.Equal(http.StatusForbidden, resp.StatusCode)
-
-			items, err := database.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "unread"})
-			require.NoError(err)
-			require.Len(items, 1)
-			assert.Equal(t, id, items[0].ID)
-			assert.Nil(t, items[0].DoneAt)
-			assert.Nil(t, items[0].SourceAckQueuedAt)
-		})
-	}
 }
 
 func TestNotificationsAPIRejectsNilConfigAccess(t *testing.T) {

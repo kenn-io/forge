@@ -1469,6 +1469,7 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	boom := errors.New("boom")
+	okNumber := 7
 	syncer := NewSyncer(
 		map[string]Client{
 			"aaa.example.com": &mockClient{
@@ -1485,6 +1486,7 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 						SubjectType:   "PullRequest",
 						SubjectTitle:  "Review requested",
 						WebURL:        "https://ghe.example.com/acme/widget/pull/7",
+						ItemNumber:    &okNumber,
 						ItemType:      "pr",
 						Reason:        "mention",
 						Unread:        true,
@@ -1832,6 +1834,8 @@ func TestSyncNotificationsMarksParticipatingThreads(t *testing.T) {
 	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	prNumber := 7
+	issueNumber := 8
 	syncer := NewSyncer(
 		map[string]Client{
 			"github.com": &mockClient{
@@ -1847,6 +1851,7 @@ func TestSyncNotificationsMarksParticipatingThreads(t *testing.T) {
 							SubjectType:  "PullRequest",
 							SubjectTitle: "Review requested",
 							WebURL:       "https://github.com/acme/widget/pull/7",
+							ItemNumber:   &prNumber,
 							ItemType:     "pr",
 							Reason:       "mention",
 							Unread:       true,
@@ -1859,6 +1864,7 @@ func TestSyncNotificationsMarksParticipatingThreads(t *testing.T) {
 							SubjectType:  "Issue",
 							SubjectTitle: "FYI",
 							WebURL:       "https://github.com/acme/widget/issues/8",
+							ItemNumber:   &issueNumber,
 							ItemType:     "issue",
 							Reason:       "mention",
 							Unread:       true,
@@ -1886,6 +1892,68 @@ func TestSyncNotificationsMarksParticipatingThreads(t *testing.T) {
 	}
 	assert.True(participatingByThread["thread-1"])
 	assert.False(participatingByThread["thread-2"])
+}
+
+func TestSyncNotificationsSkipsNonPRIssueSubjects(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	prNumber := 7
+	syncer := NewSyncer(
+		map[string]Client{
+			"github.com": &mockClient{
+				listNotificationsFn: func(_ context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+					if opts.Participating {
+						return nil, false, nil
+					}
+					return []NotificationThread{
+						{
+							// CheckSuite/CI notifications carry no subject URL or
+							// number from GitHub, so they cannot anchor to a PR or
+							// issue and must be skipped entirely.
+							ID:           "thread-ci",
+							RepoOwner:    "acme",
+							RepoName:     "widget",
+							SubjectType:  "CheckSuite",
+							SubjectTitle: "CI workflow run failed for some-branch branch",
+							ItemType:     "other",
+							Reason:       "ci_activity",
+							Unread:       true,
+							UpdatedAt:    now,
+						},
+						{
+							ID:           "thread-pr",
+							RepoOwner:    "acme",
+							RepoName:     "widget",
+							SubjectType:  "PullRequest",
+							SubjectTitle: "Review requested",
+							WebURL:       "https://github.com/acme/widget/pull/7",
+							ItemNumber:   &prNumber,
+							ItemType:     "pr",
+							Reason:       "mention",
+							Unread:       true,
+							UpdatedAt:    now,
+						},
+					}, false, nil
+				},
+			},
+		},
+		d,
+		nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	require.NoError(syncer.SyncNotifications(t.Context()))
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 1)
+	assert.Equal("thread-pr", items[0].PlatformNotificationID)
 }
 
 func TestProcessQueuedNotificationReadsStopsRetryMetadataAtMaxAttempts(t *testing.T) {

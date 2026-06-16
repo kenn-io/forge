@@ -63,21 +63,4 @@ test.describe("notifications in the activity feed", () => {
       await server.stop();
     }
   });
-
-  test("omits notifications from the feed when the feature is disabled", async ({ page }) => {
-    const server = await startIsolatedE2EServerWithOptions({ notificationsEnabled: false });
-    try {
-      await page.goto(`${server.info.base_url}/`);
-      await waitForTable(page);
-
-      // Activity still renders; notification reason labels never appear.
-      await expect(page.locator(".activity-row", { hasText: "Review requested" })).toHaveCount(0);
-      await expect(page.locator(".activity-row", { hasText: "Mentioned" })).toHaveCount(0);
-
-      const list = await page.request.get(`${server.info.base_url}/api/v1/notifications?state=unread`);
-      expect(list.status()).toBe(403);
-    } finally {
-      await server.stop();
-    }
-  });
 });

@@ -181,8 +181,7 @@ func TestBuildAppStateSeedsReviewedHeadsForUTCMergeTargets(t *testing.T) {
 	require.NoError(t, err)
 
 	state, err := buildAppState(t.Context(), assets, appOptions{
-		roborevEndpoint:      defaultRoborevEndpoint,
-		notificationsEnabled: true,
+		roborevEndpoint: defaultRoborevEndpoint,
 	})
 	require.NoError(t, err)
 	t.Cleanup(state.close)
@@ -256,7 +255,7 @@ func TestRunDefaultRoborevFailsClosedThroughProxy(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, true)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
 	}()
 
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
@@ -333,7 +332,7 @@ func TestResetSwapsFixtureState(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, true)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
 	}()
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
 

@@ -118,7 +118,7 @@ the regression would show up.
 - Fixture-client coverage when a fake GitHub path needs to model private repos,
   edited comments, or timeline families consistently.
 
-For notification sync specifics, see [`context/notification-inbox.md`](./notification-inbox.md).
+For notification sync specifics, see [`context/notifications-in-activity.md`](./notifications-in-activity.md).
 
 Also see [`context/testing.md`](./testing.md):
 

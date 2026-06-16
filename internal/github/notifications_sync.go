@@ -201,6 +201,13 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 			if !ok {
 				continue
 			}
+			// Only notifications anchored to a PR or issue have an in-app
+			// destination and meaningful triage. CI/check-suite, discussion,
+			// release, and other subjects are worthless in middleman, so do
+			// not persist them.
+			if (thread.ItemType != "pr" && thread.ItemType != "issue") || thread.ItemNumber == nil {
+				continue
+			}
 			notification, err := s.notificationToDB(ctx, host, repo, thread, now)
 			if err != nil {
 				return fmt.Errorf("normalize notification %s for %s page %d: %w", thread.ID, host, page, err)

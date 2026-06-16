@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, test } from "vite-plus/test";
 
-const appCss = readFileSync(fileURLToPath(new URL("../../app.css", import.meta.url)), "utf8");
+const appCssPath = existsSync("src/app.css") ? "src/app.css" : "frontend/src/app.css";
+const appCss = readFileSync(appCssPath, "utf8");
 
 function declarationsFor(selector: string): Map<string, string> {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

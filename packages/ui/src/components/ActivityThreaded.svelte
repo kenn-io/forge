@@ -423,7 +423,11 @@
 
   function handleItemClick(group: ItemGroup): void {
     if (group.events.length > 0) {
-      onSelectItem?.(group.events[0]!);
+      // Route through handleEventClick so a top-level notification group
+      // whose subject has no in-app detail (release, discussion,
+      // item_number 0) follows its provider URL instead of opening an
+      // invalid #0 detail drawer, matching the expanded event rows.
+      handleEventClick(group.events[0]!);
     }
   }
 

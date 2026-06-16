@@ -467,4 +467,30 @@ describe("ActivityThreaded notification events", () => {
     expect(open).toHaveBeenCalledWith("https://github.com/acme/widgets/releases/tag/v1.2.3", "_blank", "noopener");
     open.mockRestore();
   });
+
+  it("opens the web URL when the top-level notification group row is clicked", async () => {
+    const onSelectItem = vi.fn();
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const notif = activityItem("ntf:45", {
+      activity_type: "notification",
+      item_state: "read",
+      item_type: "release",
+      item_number: 0,
+      body_preview: "subscribed",
+      activity_url: "https://github.com/acme/widgets/releases/tag/v2.0.0",
+    });
+
+    const { container } = render(ActivityThreaded, {
+      props: { items: [notif], onSelectItem },
+    });
+    const row = container.querySelector(".item-row");
+    expect(row).not.toBeNull();
+    await fireEvent.click(row!);
+
+    // The top-level group row must not reopen the invalid #0 detail
+    // drawer; it follows the provider URL like the expanded event row.
+    expect(onSelectItem).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith("https://github.com/acme/widgets/releases/tag/v2.0.0", "_blank", "noopener");
+    open.mockRestore();
+  });
 });

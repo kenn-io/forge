@@ -11,9 +11,20 @@ processes:
     namespace: dev
     log_location: "tmp/logs/backend-process-compose.log"
     command: "sh ./scripts/dev-stack-backend.sh"
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        scheme: http
+        path: /healthz
+        port: 8091
+      initial_delay_seconds: 5
+      period_seconds: 5
+      timeout_seconds: 3
+      success_threshold: 1
+      failure_threshold: 10
 
   frontend:
     description: "Vite frontend dev server on 127.0.0.1:5174"
     namespace: dev
     log_location: "tmp/logs/frontend-process-compose.log"
-    command: "sh ./scripts/dev-stack-frontend.sh"
+    command: "bun install ${BUN_INSTALL_FLAGS:-} && cd frontend && exec vp dev -- ${FRONTEND_ARGS:-}"

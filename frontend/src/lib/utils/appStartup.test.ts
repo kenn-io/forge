@@ -11,7 +11,6 @@ function makeStores(): StoreInstances {
       setTerminalSettings: vi.fn(),
       setTerminalFontFamily: vi.fn(),
       setTerminalRenderer: vi.fn(),
-      setNotificationsEnabled: vi.fn(),
     },
     activity: {
       hydrateDefaults: vi.fn(),

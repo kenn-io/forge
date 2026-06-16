@@ -103,6 +103,7 @@
 
   const hiddenFilterCount = $derived(
     (EVENT_TYPES.length - activity.getEnabledEvents().size)
+    + (activity.getShowNotifications() ? 0 : 1)
     + (activity.getHideClosedMerged() ? 1 : 0)
     + (activity.getHideBots() ? 1 : 0)
     + (activity.getHideDefaultBranchActivity() ? 1 : 0)
@@ -130,6 +131,7 @@
       activity.getItemFilter(),
       activity.getEnabledEvents(),
       activity.getHideDefaultBranchActivity(),
+      activity.getShowNotifications(),
     ));
     activity.syncToURL();
     void activity.loadActivity();
@@ -193,7 +195,26 @@
       case "force_push": return "Force-pushed";
       case "default_branch_commit": return "Commit";
       case "default_branch_force_push": return "Force-pushed";
+      case "notification": return notificationReasonLabel(item.body_preview);
       default: return item.activity_type;
+    }
+  }
+
+  // The notification's reason rides in body_preview from the backend
+  // union; turn the raw GitHub reason token into a human label.
+  function notificationReasonLabel(reason: string): string {
+    switch (reason) {
+      case "review_requested": return "Review requested";
+      case "mention": return "Mentioned";
+      case "team_mention": return "Team mentioned";
+      case "assign": return "Assigned";
+      case "author": return "Your thread";
+      case "comment": return "New comment";
+      case "state_change": return "State changed";
+      case "subscribed": return "Subscribed";
+      case "ci_activity": return "CI activity";
+      case "": return "Notification";
+      default: return "Notification";
     }
   }
 
@@ -284,6 +305,7 @@
 
   function resetFilters(): void {
     activity.setEnabledEvents(new Set(EVENT_TYPES));
+    activity.setShowNotifications(true);
     activity.setHideClosedMerged(false);
     activity.setHideBots(false);
     activity.setHideDefaultBranchActivity(false);
@@ -294,13 +316,25 @@
   const activityFilterSections = $derived.by(() => [
     {
       title: "Event types",
-      items: EVENT_TYPES.map((evt) => ({
-        id: evt,
-        label: EVENT_LABELS[evt],
-        active: activity.getEnabledEvents().has(evt),
-        color: EVENT_COLORS[evt],
-        onSelect: () => toggleEvent(evt),
-      })),
+      items: [
+        ...EVENT_TYPES.map((evt) => ({
+          id: evt,
+          label: EVENT_LABELS[evt],
+          active: activity.getEnabledEvents().has(evt),
+          color: EVENT_COLORS[evt],
+          onSelect: () => toggleEvent(evt),
+        })),
+        {
+          id: "notification",
+          label: "Notifications",
+          active: activity.getShowNotifications(),
+          color: "var(--accent-blue)",
+          onSelect: () => {
+            activity.setShowNotifications(!activity.getShowNotifications());
+            applyFilters();
+          },
+        },
+      ],
     },
     {
       title: "Visibility",
@@ -436,6 +470,7 @@
       case "default_branch_commit": return "evt-commit";
       case "force_push": return "evt-force-push";
       case "default_branch_force_push": return "evt-force-push";
+      case "notification": return "evt-notification";
       default: return "";
     }
   }
@@ -446,6 +481,7 @@
       : type === "review" ? "chip--green"
       : type === "commit" || type === "default_branch_commit" ? "chip--teal"
       : type === "force_push" || type === "default_branch_force_push" ? "chip--red"
+      : type === "notification" ? "chip--blue"
       : "chip--muted";
     return `evt-label ${eventClass(type)} ${toneClass}`;
   }
@@ -472,7 +508,19 @@
       if (url) window.open(url, "_blank", "noopener");
       return;
     }
+    // Notifications that point at a tracked PR/issue open in the detail
+    // pane like any other row; those for other subjects (discussions,
+    // releases, CI) have no in-app detail, so follow their web URL.
+    if (item.activity_type === "notification" && !opensInDetailPane(item)) {
+      const url = activityLink(item);
+      if (url) window.open(url, "_blank", "noopener");
+      return;
+    }
     onSelectItem?.(item);
+  }
+
+  function opensInDetailPane(item: ActivityItem): boolean {
+    return (item.item_type === "pr" || item.item_type === "issue") && item.item_number > 0;
   }
 
   function isSelectedActivityItem(item: ActivityItem): boolean {
@@ -1201,6 +1249,7 @@
   :global(.evt-label.evt-review) { color: var(--accent-green); }
   :global(.evt-label.evt-commit) { color: var(--accent-teal); }
   :global(.evt-label.evt-force-push) { color: var(--accent-red); }
+  :global(.evt-label.evt-notification) { color: var(--accent-blue); }
 
   .sha {
     color: var(--text-muted);

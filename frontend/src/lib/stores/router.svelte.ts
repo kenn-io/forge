@@ -17,21 +17,11 @@ export type EmbedEmptyReason = "noSelection" | "noRepo" | "noWorkspace";
 
 export type EmbedDetailTab = "pr" | "issue" | "reviews";
 
-export type InboxRouteFilters = {
-  state?: "unread" | "active" | "read" | "done" | "all" | undefined;
-  reason?: string[] | undefined;
-  type?: string[] | undefined;
-  repo?: string | undefined;
-  q?: string | undefined;
-  sort?: string | undefined;
-};
-
 export type Route =
   | { page: "activity" }
   | { page: "mobile-activity" }
   | { page: "mobile-pulls" }
   | { page: "mobile-issues" }
-  | { page: "inbox"; filters?: InboxRouteFilters }
   | { page: "design-system" }
   | { page: "repos" }
   | { page: "kata"; issue?: string; view?: KataTaskViewName; scope?: string }
@@ -197,51 +187,6 @@ function splitRepoPath(repoPath: string): { owner: string; name: string } | unde
   };
 }
 
-const validInboxStates = new Set(["unread", "active", "read", "done", "all"]);
-
-function nonEmptyValues(sp: URLSearchParams, key: string): string[] {
-  return sp
-    .getAll(key)
-    .map((value) => value.trim())
-    .filter(Boolean);
-}
-
-function parseInboxFilters(search: string): InboxRouteFilters | undefined {
-  const sp = new URLSearchParams(search);
-  const filters: InboxRouteFilters = {};
-  const state = sp.get("state")?.trim();
-  if (state && validInboxStates.has(state)) {
-    filters.state = state as InboxRouteFilters["state"];
-  }
-  const reason = nonEmptyValues(sp, "reason");
-  if (reason.length > 0) filters.reason = reason;
-  const type = nonEmptyValues(sp, "type");
-  if (type.length > 0) filters.type = type;
-  const repo = sp.get("repo")?.trim();
-  if (repo) filters.repo = repo;
-  const q = sp.get("q")?.trim();
-  if (q) filters.q = q;
-  const sort = sp.get("sort")?.trim();
-  if (sort) filters.sort = sort;
-  return Object.keys(filters).length > 0 ? filters : undefined;
-}
-
-export function buildInboxRoute(filters: InboxRouteFilters = {}): string {
-  const sp = new URLSearchParams();
-  if (filters.state && filters.state !== "unread") sp.set("state", filters.state);
-  for (const reason of filters.reason ?? []) {
-    if (reason) sp.append("reason", reason);
-  }
-  for (const type of filters.type ?? []) {
-    if (type) sp.append("type", type);
-  }
-  if (filters.repo) sp.set("repo", filters.repo);
-  if (filters.q) sp.set("q", filters.q);
-  if (filters.sort && filters.sort !== "priority") sp.set("sort", filters.sort);
-  const query = sp.toString();
-  return query ? `/inbox?${query}` : "/inbox";
-}
-
 function parseRoute(fullPath: string): Route {
   const qIdx = fullPath.indexOf("?");
   const pathname = qIdx >= 0 ? fullPath.slice(0, qIdx) : fullPath;
@@ -291,10 +236,6 @@ function parseRoute(fullPath: string): Route {
         ...issue,
       };
     }
-  }
-  if (path === "/inbox") {
-    const filters = parseInboxFilters(search);
-    return filters ? { page: "inbox", filters } : { page: "inbox" };
   }
   if (path === "/design-system") {
     return { page: "design-system" };
@@ -619,8 +560,6 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "docs";
   } else if (r.page === "messages") {
     navType = "messages";
-  } else if (r.page === "inbox") {
-    navType = "activity";
   } else if (r.page === "reviews") {
     navType = "reviews";
   } else if (isWorkspacePage(r.page)) {

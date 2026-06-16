@@ -972,3 +972,61 @@ func TestUpsertIssueEventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing
 	require.Equal("edited", events[0].Body)
 	require.Equal("https://github.com/alice/alpha/issues/7#issuecomment-202", events[0].DirectURL)
 }
+
+func TestListActivityIncludesNotifications(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	_ = repoID
+	number := 7
+	err := d.UpsertNotifications(ctx, []Notification{{
+		Platform:               "github",
+		PlatformHost:           "github.com",
+		PlatformNotificationID: "ntf-1",
+		RepoOwner:              "alice",
+		RepoName:               "alpha",
+		SubjectType:            "PullRequest",
+		SubjectTitle:           "Review my change",
+		WebURL:                 "https://github.com/alice/alpha/pull/7",
+		ItemNumber:             &number,
+		ItemType:               "pr",
+		ItemAuthor:             "carol",
+		Reason:                 "review_requested",
+		Unread:                 true,
+		SourceUpdatedAt:        base.Add(10 * time.Minute),
+		SyncedAt:               base.Add(10 * time.Minute),
+	}})
+	require.NoError(err)
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50})
+	require.NoError(err)
+
+	var notif *ActivityItem
+	for i := range items {
+		if items[i].ActivityType == "notification" {
+			notif = &items[i]
+			break
+		}
+	}
+	require.NotNil(notif, "notification should appear in the activity feed")
+	assert.Equal("ntf", notif.Source)
+	assert.Equal("alice", notif.RepoOwner)
+	assert.Equal("alpha", notif.RepoName)
+	assert.Equal("pr", notif.ItemType)
+	assert.Equal(7, notif.ItemNumber)
+	assert.Equal("Review my change", notif.ItemTitle)
+	assert.Equal("review_requested", notif.BodyPreview)
+	assert.Equal("unread", notif.ItemState)
+	assert.Equal("https://github.com/alice/alpha/pull/7", notif.ActivityURL)
+
+	// The notification type participates in the type filter like any
+	// other activity source.
+	filtered, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50, Types: []string{"notification"}})
+	require.NoError(err)
+	require.Len(filtered, 1)
+	assert.Equal("notification", filtered[0].ActivityType)
+}

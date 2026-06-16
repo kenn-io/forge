@@ -6,7 +6,6 @@
     IssueListView,
     ActivityFeedView,
     MobileActivityView,
-    InboxView,
     KanbanBoardView,
     ReviewsView,
     FocusListView,
@@ -80,7 +79,6 @@
     isMobilePage,
     getDetailTab,
     getSelectedPRFromRoute,
-    buildInboxRoute,
     type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
   import {
@@ -570,9 +568,6 @@
     );
     void stores.issues.loadIssues();
     void stores.activity.loadActivity();
-    if (stores.settings.notificationsEnabled()) {
-      void stores.notifications.loadNotifications();
-    }
   });
 
   $effect(() => {
@@ -1115,16 +1110,6 @@
           onDetailTabChange={handleActivityDetailTabChange}
           onDrawerItemChange={handleActivityDrawerItemChange}
         />
-      {:else if getPage() === "inbox"}
-        {#if stores?.settings.notificationsEnabled()}
-          {@const route = getRoute()}
-          <InboxView
-            filters={route.page === "inbox" ? (route.filters ?? {}) : {}}
-            onFiltersChange={(filters) => navigate(buildInboxRoute(filters))}
-          />
-        {:else}
-          <div class="disabled-state">Notifications are disabled.</div>
-        {/if}
       {:else if getPage() === "repos"}
         <RepoSummaryPage />
       {:else if getPage() === "kata"}
@@ -1573,7 +1558,6 @@
     position: relative;
   }
 
-  .disabled-state,
   .loading-state {
     display: flex;
     align-items: center;
@@ -1595,10 +1579,6 @@
 
   .feature-shell[hidden] {
     display: none;
-  }
-
-  .disabled-state {
-    flex-direction: column;
   }
 
   :global(.loading-spinner) {

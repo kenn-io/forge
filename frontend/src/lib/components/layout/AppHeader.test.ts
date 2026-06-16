@@ -47,10 +47,6 @@ vi.mock("../../stores/container.svelte.js", () => ({
   isNarrow: () => mockedContainerSize.value === "narrow",
 }));
 
-const mockSettings = vi.hoisted(() => ({
-  notificationsEnabled: false,
-}));
-
 // AppHeader reads sync state from the @middleman/ui context.
 vi.mock("@middleman/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@middleman/ui")>();
@@ -63,7 +59,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
       },
       settings: {
         isModeVisible: (mode: ModeKey) => mockedModeVisibility.value[mode],
-        notificationsEnabled: () => mockSettings.notificationsEnabled,
       },
     }),
   };
@@ -140,7 +135,6 @@ describe("AppHeader", () => {
       workspaces: true,
     };
     resetPaletteState();
-    mockSettings.notificationsEnabled = false;
   });
 
   afterEach(() => {
@@ -524,21 +518,6 @@ describe("AppHeader", () => {
     await fireEvent.click(screen.getByRole("option", { name: "Kata" }));
 
     expect(window.location.pathname + window.location.search).toBe("/kata?issue=issue-q3");
-  });
-
-  it("hides the Inbox tab while notification feature flag is disabled", () => {
-    initTheme();
-    render(AppHeader);
-
-    expect(screen.queryByRole("button", { name: "Inbox" })).toBeNull();
-  });
-
-  it("shows the Inbox tab when notification feature flag is enabled", () => {
-    mockSettings.notificationsEnabled = true;
-    initTheme();
-    render(AppHeader);
-
-    expect(screen.getByRole("button", { name: "Inbox" })).toBeTruthy();
   });
 
   it("opens selected Activity PR in PRs tab with files tab preserved", async () => {

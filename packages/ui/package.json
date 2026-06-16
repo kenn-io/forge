@@ -63,10 +63,6 @@
       "svelte": "./src/stores/activity.svelte.ts",
       "default": "./src/stores/activity.svelte.ts"
     },
-    "./stores/notifications": {
-      "svelte": "./src/stores/notifications.svelte.ts",
-      "default": "./src/stores/notifications.svelte.ts"
-    },
     "./stores/sync": {
       "svelte": "./src/stores/sync.svelte.ts",
       "default": "./src/stores/sync.svelte.ts"

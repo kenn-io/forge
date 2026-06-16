@@ -18,9 +18,17 @@ export function buildActivityFilterTypes(
   itemFilter: ItemFilter,
   enabledEvents: ReadonlySet<string>,
   hideDefaultBranchActivity: boolean,
+  showNotifications = true,
 ): string[] {
   const allSelected =
-    itemFilter === "all" && enabledEvents.size === DEFAULT_EVENT_TYPES.length && !hideDefaultBranchActivity;
+    itemFilter === "all" &&
+    enabledEvents.size === DEFAULT_EVENT_TYPES.length &&
+    !hideDefaultBranchActivity &&
+    showNotifications;
+  // An empty list means "no type filter" — the backend returns every
+  // activity_type, notifications included. Only short-circuit when the
+  // notification toggle is also at its default, otherwise fall through
+  // to build the explicit list that omits "notification".
   if (allSelected) return [];
 
   const types: string[] = [];
@@ -38,6 +46,7 @@ export function buildActivityFilterTypes(
   for (const evt of DEFAULT_EVENT_TYPES) {
     if (enabledEvents.has(evt)) types.push(evt);
   }
+  if (showNotifications) types.push("notification");
   return types;
 }
 
@@ -87,6 +96,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let hideBots = $state(false);
   let hideDefaultBranchActivity = $state(false);
   let enabledEvents = $state<Set<string>>(new Set(DEFAULT_EVENT_TYPES));
+  let showNotifications = $state(true);
   let itemFilter = $state<ItemFilter>("all");
   let initialized = false;
 
@@ -136,6 +146,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function getEnabledEvents(): Set<string> {
     return enabledEvents;
+  }
+  function getShowNotifications(): boolean {
+    return showNotifications;
   }
   function getItemFilter(): ItemFilter {
     return itemFilter;
@@ -190,6 +203,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function setEnabledEvents(events: Set<string>): void {
     enabledEvents = events;
+  }
+  function setShowNotifications(v: boolean): void {
+    showNotifications = v;
   }
   function setItemFilter(f: ItemFilter): void {
     itemFilter = f;
@@ -349,22 +365,29 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     }
   }
 
+  // deriveFiltersFromTypes reconstructs the dropdown state from the
+  // persisted `types` list. The notification toggle is NOT inferred
+  // from list membership: a legacy URL listing every event type but no
+  // "notification" must still mean "show everything" rather than
+  // "notifications hidden", so showNotifications is carried by its own
+  // `notif` URL param (read in syncFromURL) instead.
   function deriveFiltersFromTypes(): void {
     if (filterTypes.length === 0) {
       itemFilter = "all";
       enabledEvents = new Set(DEFAULT_EVENT_TYPES);
-      return;
+    } else {
+      const hasPR = filterTypes.includes("new_pr");
+      const hasIssue = filterTypes.includes("new_issue");
+      if (hasPR && !hasIssue) itemFilter = "prs";
+      else if (hasIssue && !hasPR) itemFilter = "issues";
+      else itemFilter = "all";
+      enabledEvents = new Set(DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)));
     }
-    const hasPR = filterTypes.includes("new_pr");
-    const hasIssue = filterTypes.includes("new_issue");
-    if (hasPR && !hasIssue) itemFilter = "prs";
-    else if (hasIssue && !hasPR) itemFilter = "issues";
-    else itemFilter = "all";
-    enabledEvents = new Set(DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)));
-    // URLs written before the event toggles governed default-branch types can
-    // list default_branch_commit while commit is deselected; rebuild so the
-    // request matches the filter state the dropdown shows.
-    filterTypes = buildActivityFilterTypes(itemFilter, enabledEvents, hideDefaultBranchActivity);
+    // Rebuild so the request matches the filter state the dropdown
+    // shows: legacy URLs can list default_branch_commit while commit is
+    // deselected, and an empty list with notifications hidden must
+    // become the explicit exclusion list a bare `[]` cannot express.
+    filterTypes = buildActivityFilterTypes(itemFilter, enabledEvents, hideDefaultBranchActivity, showNotifications);
   }
 
   function applyCollapsedFromURL(): void {
@@ -401,6 +424,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     }
     rollUpCommits = sp.get("rollup_commits") === "1";
     hideDefaultBranchActivity = sp.get("hide_branch") === "1";
+    showNotifications = sp.get("notif") !== "0";
     applyCollapsedFromURL();
     deriveFiltersFromTypes();
   }
@@ -419,6 +443,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     else sp.delete("rollup_commits");
     if (hideDefaultBranchActivity) sp.set("hide_branch", "1");
     else sp.delete("hide_branch");
+    if (!showNotifications) sp.set("notif", "0");
+    else sp.delete("notif");
     if (collapseThreads !== collapseThreadsDefault) {
       sp.set("collapsed", collapseThreads ? "1" : "0");
     } else {
@@ -446,6 +472,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getHideBots,
     getHideDefaultBranchActivity,
     getEnabledEvents,
+    getShowNotifications,
     getItemFilter,
     isInitialized,
     setActivityFilterTypes,
@@ -460,6 +487,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     setHideBots,
     setHideDefaultBranchActivity,
     setEnabledEvents,
+    setShowNotifications,
     setItemFilter,
     hydrateDefaults,
     initializeFromMount,

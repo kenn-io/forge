@@ -15,7 +15,6 @@ export function createSettingsStore() {
   let modeVisibility = $state<ModeVisibility>({
     ...DEFAULT_MODE_VISIBILITY,
   });
-  let notificationsFeatureEnabled = $state(false);
   let loaded = $state(false);
 
   function getConfiguredRepos(): ConfigRepo[] {
@@ -96,14 +95,6 @@ export function createSettingsStore() {
     };
   }
 
-  function setNotificationsEnabled(enabled: boolean): void {
-    notificationsFeatureEnabled = enabled;
-  }
-
-  function notificationsEnabled(): boolean {
-    return notificationsFeatureEnabled;
-  }
-
   function hasConfiguredRepos(): boolean {
     return repos.length > 0;
   }
@@ -130,8 +121,6 @@ export function createSettingsStore() {
     getTerminalFontLigatures,
     getTerminalRenderer,
     setTerminalRenderer,
-    setNotificationsEnabled,
-    notificationsEnabled,
     hasConfiguredRepos,
     isSettingsLoaded,
   };

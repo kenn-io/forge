@@ -135,6 +135,7 @@ describe("buildActivityFilterTypes", () => {
       "comment",
       "review",
       "force_push",
+      "notification",
     ]);
   });
 
@@ -147,6 +148,7 @@ describe("buildActivityFilterTypes", () => {
       "comment",
       "review",
       "commit",
+      "notification",
     ]);
   });
 
@@ -158,6 +160,7 @@ describe("buildActivityFilterTypes", () => {
       "review",
       "commit",
       "force_push",
+      "notification",
     ]);
   });
 
@@ -168,9 +171,28 @@ describe("buildActivityFilterTypes", () => {
       "review",
       "commit",
       "force_push",
+      "notification",
     ]);
     expect(buildActivityFilterTypes("issues", allEvents, false)).toEqual([
       "new_issue",
+      "comment",
+      "review",
+      "commit",
+      "force_push",
+      "notification",
+    ]);
+  });
+
+  it("keeps the all-selected shortcut only while notifications stay on", () => {
+    expect(buildActivityFilterTypes("all", allEvents, false, true)).toEqual([]);
+  });
+
+  it("builds an explicit list omitting notifications when they are hidden", () => {
+    expect(buildActivityFilterTypes("all", allEvents, false, false)).toEqual([
+      "new_pr",
+      "new_issue",
+      "default_branch_commit",
+      "default_branch_force_push",
       "comment",
       "review",
       "commit",
@@ -188,6 +210,8 @@ describe("activity store URL hydration", () => {
     );
     const s = makeStore();
     s.initializeFromMount();
+    // Notifications default on, so a legacy filtered URL (no notif=0)
+    // gains the notification type on hydration.
     expect(s.getActivityFilterTypes()).toEqual([
       "new_pr",
       "new_issue",
@@ -195,9 +219,10 @@ describe("activity store URL hydration", () => {
       "comment",
       "review",
       "force_push",
+      "notification",
     ]);
     expect(new URLSearchParams(window.location.search).get("types")).toBe(
-      "new_pr,new_issue,default_branch_force_push,comment,review,force_push",
+      "new_pr,new_issue,default_branch_force_push,comment,review,force_push,notification",
     );
   });
 
@@ -211,6 +236,31 @@ describe("activity store URL hydration", () => {
     s.initializeFromMount();
     expect(s.getActivityFilterTypes()).toEqual([]);
     expect(new URLSearchParams(window.location.search).has("types")).toBe(false);
+  });
+});
+
+describe("activity store notification visibility", () => {
+  it("shows notifications by default and persists hiding them via the notif param", () => {
+    const s = makeStore();
+    s.initializeFromMount();
+    expect(s.getShowNotifications()).toBe(true);
+    // Default-on, all-selected: no explicit type filter at all.
+    expect(s.getActivityFilterTypes()).toEqual([]);
+    expect(new URLSearchParams(window.location.search).has("notif")).toBe(false);
+
+    s.setShowNotifications(false);
+    s.setActivityFilterTypes(
+      buildActivityFilterTypes(s.getItemFilter(), s.getEnabledEvents(), s.getHideDefaultBranchActivity(), false),
+    );
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("notif")).toBe("0");
+    // Hiding notifications sends the explicit non-notification list.
+    expect(s.getActivityFilterTypes()).not.toContain("notification");
+
+    const next = makeStore();
+    next.initializeFromMount();
+    expect(next.getShowNotifications()).toBe(false);
+    expect(next.getActivityFilterTypes()).not.toContain("notification");
   });
 });
 

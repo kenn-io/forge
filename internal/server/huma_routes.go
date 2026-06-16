@@ -4015,6 +4015,12 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		return nil, problemInternal("list activity failed")
 	}
 
+	// When the notification feature is off, notification rows must not
+	// leak into the feed even if stale entries remain in the table
+	// (e.g. synced before the feature was disabled). Disabled means no
+	// sync, so the table should be empty in practice; this keeps the
+	// guarantee authoritative regardless.
+	notificationsEnabled := s.notificationsEnabled()
 	if s.cfg != nil {
 		tracked := make(map[string]struct{})
 		for _, repo := range s.syncer.TrackedRepos() {
@@ -4022,6 +4028,9 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		}
 		filtered := make([]db.ActivityItem, 0, len(items))
 		for _, it := range items {
+			if it.ActivityType == "notification" && !notificationsEnabled {
+				continue
+			}
 			key := trackedRepoKey(ghclient.RepoRef{
 				Platform:     platform.Kind(it.Platform),
 				PlatformHost: it.PlatformHost,
@@ -4031,6 +4040,15 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			if _, ok := tracked[key]; ok {
 				filtered = append(filtered, it)
 			}
+		}
+		items = filtered
+	} else if !notificationsEnabled {
+		filtered := make([]db.ActivityItem, 0, len(items))
+		for _, it := range items {
+			if it.ActivityType == "notification" {
+				continue
+			}
+			filtered = append(filtered, it)
 		}
 		items = filtered
 	}

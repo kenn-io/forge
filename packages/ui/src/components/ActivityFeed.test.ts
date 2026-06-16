@@ -63,6 +63,7 @@ const setActivityFilterTypes = vi.hoisted(() => vi.fn());
 const enabledEvents = vi.hoisted(() => ({
   value: new Set(["comment", "review", "commit", "force_push"]),
 }));
+const showNotifications = vi.hoisted(() => ({ value: true }));
 
 vi.mock("../context.js", () => ({
   getNavigate: () => vi.fn(),
@@ -75,6 +76,7 @@ vi.mock("../context.js", () => ({
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
       getEnabledEvents: () => enabledEvents.value,
+      getShowNotifications: () => showNotifications.value,
       getHideClosedMerged: () => false,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
@@ -98,6 +100,9 @@ vi.mock("../context.js", () => ({
       setItemFilter: vi.fn(),
       setEnabledEvents: vi.fn((events: Set<string>) => {
         enabledEvents.value = events;
+      }),
+      setShowNotifications: vi.fn((value: boolean) => {
+        showNotifications.value = value;
       }),
       setHideClosedMerged: vi.fn(),
       setHideBots: vi.fn(),
@@ -439,6 +444,7 @@ describe("ActivityFeed compact mode", () => {
       "comment",
       "review",
       "force_push",
+      "notification",
     ]);
   });
 
@@ -455,6 +461,7 @@ describe("ActivityFeed compact mode", () => {
       "comment",
       "review",
       "commit",
+      "notification",
     ]);
   });
 
@@ -472,6 +479,26 @@ describe("ActivityFeed compact mode", () => {
     expect(setActivityFilterTypes).toHaveBeenCalledWith([
       "new_pr",
       "new_issue",
+      "comment",
+      "review",
+      "commit",
+      "force_push",
+      "notification",
+    ]);
+  });
+
+  it("deselecting Notifications drops the notification type from the request", async () => {
+    render(ActivityFeed, { props: { compact: true } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+
+    expect(showNotifications.value).toBe(false);
+    expect(setActivityFilterTypes).toHaveBeenCalledWith([
+      "new_pr",
+      "new_issue",
+      "default_branch_commit",
+      "default_branch_force_push",
       "comment",
       "review",
       "commit",

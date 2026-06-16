@@ -180,6 +180,7 @@
       activity.getItemFilter(),
       activity.getEnabledEvents(),
       activity.getHideDefaultBranchActivity(),
+      activity.getShowNotifications(),
     ));
     activity.syncToURL();
     void activity.loadActivity();

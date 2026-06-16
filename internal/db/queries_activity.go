@@ -12,8 +12,9 @@ import (
 
 // ListActivity returns a unified, reverse-chronological feed of
 // activity across all repos. It merges new PRs, new issues, PR
-// events, and issue events into a single stream with cursor-based
-// keyset pagination.
+// events, issue events, default-branch commits/force-pushes, and
+// notification threads into a single stream with cursor-based keyset
+// pagination.
 func (d *DB) ListActivity(
 	ctx context.Context, opts ListActivityOpts,
 ) ([]ActivityItem, error) {
@@ -201,6 +202,20 @@ func (d *DB) ListActivity(
 			       ''
 			FROM middleman_branch_force_pushes bfp
 			JOIN middleman_repos r ON bfp.repo_id = r.id
+			UNION ALL
+			SELECT 'notification', 'ntf', n.id,
+			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
+			       n.item_type, COALESCE(n.item_number, 0), n.subject_title,
+			       n.web_url, CASE WHEN n.unread = 1 THEN 'unread' ELSE 'read' END,
+			       n.item_author, n.item_author, n.source_updated_at,
+			       substr(n.reason, 1, 200),
+			       '', '', '', '',
+			       '', '',
+			       '', '',
+			       NULL, NULL,
+			       n.web_url
+			FROM middleman_notification_items n
+			JOIN middleman_repos r ON n.repo_id = r.id
 		) unified
 		%[2]s
 		ORDER BY created_at DESC, source DESC, source_id DESC

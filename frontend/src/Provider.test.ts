@@ -32,13 +32,9 @@ vi.mock("@middleman/ui/stores/events", () => ({
 const loadPulls = vi.fn(async () => undefined);
 const loadIssues = vi.fn(async () => undefined);
 const loadActivity = vi.fn(async () => undefined);
-const loadNotifications = vi.fn(async () => undefined);
 const setSyncStatus = vi.fn();
 const refreshDetailOnly = vi.fn(async () => undefined);
 let currentDetail: unknown = null;
-const mockSettings = vi.hoisted(() => ({
-  notificationsEnabled: false,
-}));
 
 vi.mock("@middleman/ui/stores/pulls", () => ({
   createPullsStore: () => ({
@@ -102,12 +98,6 @@ vi.mock("@middleman/ui/stores/grouping", () => ({
   }),
 }));
 
-vi.mock("@middleman/ui/stores/notifications", () => ({
-  createNotificationsStore: () => ({
-    loadNotifications,
-  }),
-}));
-
 vi.mock("@middleman/ui/stores/settings", () => ({
   createSettingsStore: () => ({
     getConfiguredRepos: () => [],
@@ -130,7 +120,6 @@ vi.mock("@middleman/ui/stores/settings", () => ({
     setTerminalFontFamily: vi.fn(),
     hasConfiguredRepos: () => false,
     isSettingsLoaded: () => true,
-    notificationsEnabled: () => mockSettings.notificationsEnabled,
   }),
 }));
 
@@ -148,11 +137,9 @@ beforeEach(() => {
   loadPulls.mockClear();
   loadIssues.mockClear();
   loadActivity.mockClear();
-  loadNotifications.mockClear();
   setSyncStatus.mockClear();
   refreshDetailOnly.mockClear();
   currentDetail = null;
-  mockSettings.notificationsEnabled = false;
 });
 
 afterEach(() => {
@@ -160,7 +147,7 @@ afterEach(() => {
 });
 
 describe("Provider events store wiring", () => {
-  it("passes onDataChanged that refreshes core stores without disabled notifications", () => {
+  it("passes onDataChanged that refreshes the core stores", () => {
     render(Provider, { props: { client: stubClient } });
 
     expect(captured.store).not.toBeNull();
@@ -173,19 +160,6 @@ describe("Provider events store wiring", () => {
     assert(loadPulls).toHaveBeenCalledTimes(1);
     assert(loadIssues).toHaveBeenCalledTimes(1);
     assert(loadActivity).toHaveBeenCalledTimes(1);
-    assert(loadNotifications).not.toHaveBeenCalled();
-  });
-
-  it("passes onDataChanged that refreshes notifications when enabled", () => {
-    mockSettings.notificationsEnabled = true;
-    render(Provider, { props: { client: stubClient } });
-
-    const cb = captured.store?.options.onDataChanged;
-    expect(cb).toBeTypeOf("function");
-
-    cb?.();
-
-    expect(loadNotifications).toHaveBeenCalledTimes(1);
   });
 
   it("passes onSyncStatus that pushes the received status into sync store", () => {

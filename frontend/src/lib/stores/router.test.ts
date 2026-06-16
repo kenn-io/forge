@@ -8,7 +8,6 @@ import {
   getSelectedPRFromRoute,
   getPage,
   getLastActivityRoute,
-  buildInboxRoute,
 } from "./router.svelte.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
@@ -218,38 +217,6 @@ describe("router basic routes", () => {
   it("parses / as activity", () => {
     navigate("/");
     expect(getRoute()).toEqual({ page: "activity" });
-  });
-
-  it("parses inbox query filters", () => {
-    navigate(
-      "/inbox?state=done&reason=mention&reason=review_requested&type=pr&repo=ghe.example.com%2Facme%2Fwidget&q=octo&sort=repo",
-    );
-    expect(getRoute()).toEqual({
-      page: "inbox",
-      filters: {
-        state: "done",
-        reason: ["mention", "review_requested"],
-        type: ["pr"],
-        repo: "ghe.example.com/acme/widget",
-        q: "octo",
-        sort: "repo",
-      },
-    });
-  });
-
-  it("builds inbox routes with filter query params", () => {
-    expect(
-      buildInboxRoute({
-        state: "done",
-        reason: ["mention", "review_requested"],
-        type: ["pr"],
-        repo: "github.com/acme/widget",
-        q: "octo",
-        sort: "repo",
-      }),
-    ).toBe(
-      "/inbox?state=done&reason=mention&reason=review_requested&type=pr&repo=github.com%2Facme%2Fwidget&q=octo&sort=repo",
-    );
   });
 
   it("parses /repos", () => {

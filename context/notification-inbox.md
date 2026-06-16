@@ -1,16 +1,16 @@
-# Notification Inbox
+# Notifications In Activity
 
-Use this document for changes touching GitHub notifications, the Inbox route, notification API handlers, notification sync, or notification persistence.
+Use this document for changes touching GitHub notifications, their presentation in the Activity feed, notification API handlers, notification sync, or notification persistence.
 
 ## Purpose
 
-The notification inbox is a draft, feature-flagged maintainer work queue. It syncs the signed-in user's GitHub notification threads into SQLite, filters them to currently monitored repositories, and gives middleman local triage state that is separate from GitHub's read/unread flag.
+Notifications are a feature-flagged signal that syncs the signed-in user's GitHub notification threads into SQLite, filters them to currently monitored repositories, and gives middleman local triage state that is separate from GitHub's read/unread flag.
 
-This surface is intentionally not the Activity feed:
+There is no standalone inbox surface. Notifications are presented as rows **inside the Activity feed**, labelled by their reason (review requested, mentioned, assigned, etc.) and toggled by a dedicated "Notifications" filter. The backend still owns the mutable per-user state behind those rows:
 
-- Activity is immutable history across repos.
-- Notifications are mutable, per-user inbox state with unread/read, done/undone, queued GitHub read propagation, retry, and dead-letter metadata.
-- Both surfaces may point at the same subject identity: `(platform_host, owner, repo, item_type, number)`.
+- Activity events (PRs, issues, comments, reviews, commits) are immutable history across repos; notification rows are mutable, per-user state with unread/read, done/undone, queued GitHub read propagation, retry, and dead-letter metadata.
+- A notification row and an event row may point at the same subject identity: `(platform_host, owner, repo, item_type, number)`; they coexist in the feed (e.g. a PR's `Opened` row and a `Review requested` notification row).
+- The feed obtains notifications through the same `/activity` union as every other source (`db.ListActivity`, `activity_type = "notification"`), so cursor pagination, the time window, type filtering, and the safety cap apply uniformly.
 
 ## Feature Flag
 
@@ -28,10 +28,10 @@ Rules:
 
 - `Config.NotificationsEnabled()` returns true only when `enabled = true` is explicit.
 - The Settings UI does not expose this flag yet.
-- When disabled, the app must not load notification data, render the Inbox UI, run notification sync loops, or expose notification list/mutation APIs.
-- Direct `/inbox` navigation should show disabled copy rather than the draft Inbox.
+- When disabled, the app must not run notification sync loops or expose notification list/mutation APIs.
+- When disabled, `listActivity` drops `activity_type = "notification"` rows defensively, so stale rows synced before the feature was turned off never leak into the feed. In practice the table is empty when disabled because nothing syncs.
 - Notification list, sync, and bulk mutation handlers should return `403` when disabled.
-- E2E servers may opt in so Inbox tests keep covering the feature.
+- E2E servers may opt out (`notificationsEnabled: false`) so the disabled path stays covered.
 
 ## Repository Scope And Identity
 
@@ -75,11 +75,11 @@ Rules:
 - `sync_cursor` is opaque provider-owned watermark state. GitHub currently leaves it empty.
 - Current notification schema ships as single DB upgrade in `000021_notifications.*`; do not split future assumptions across deleted branch-only migrations.
 
-## Inbox State Model
+## Triage State Model
 
-Middleman stores local workflow state separately from GitHub state.
+Middleman stores local workflow state separately from GitHub state. These states drive the notification list/mutation API; the Activity feed surfaces unread vs read via the row's `item_state`.
 
-- `unread`: `done_at IS NULL AND unread = 1`. This is the default landing state.
+- `unread`: `done_at IS NULL AND unread = 1`.
 - `active`: `done_at IS NULL`, regardless of unread.
 - `read`: `done_at IS NULL AND unread = 0`.
 - `done`: `done_at IS NOT NULL`.
@@ -88,7 +88,7 @@ Middleman stores local workflow state separately from GitHub state.
 Rules:
 
 - `done_at` is local Octobox-style completion state.
-- Marking a row done hides it from default Inbox immediately.
+- Marking a row done excludes it from the active/unread queries immediately.
 - Marking a row read clears local unread immediately without setting `done_at`.
 - Marking done with `mark_read=true` queues GitHub read propagation; it does not block on GitHub.
 - `undone` clears only local `done_at` unless linked PR/issue closure rules immediately re-close it.
@@ -152,16 +152,15 @@ Rules:
 
 ## UI Contract
 
-The Inbox UI lives in `packages/ui/src/views/InboxView.svelte` and is mounted by `frontend/src/App.svelte`.
+Notifications render in the Activity feed (`packages/ui/src/components/ActivityFeed.svelte`, threaded and flat layouts) — there is no dedicated view, route, or header tab.
 
 Rules:
 
-- Show `Draft UI` above the Inbox content while the feature remains early/flagged.
-- Hide the header Inbox tab/select option when notifications are disabled.
-- Direct `/inbox` access must still respect the feature flag.
-- State, reason, type, repo, search, and sort filters belong in the route query so reload/share/back-forward preserve triage context.
-- Bulk actions operate only on explicit selected visible rows; unbounded "mark all filtered" is out of scope.
-- Sync status, queued propagation, retry failures, and terminal failures should be visible without blocking local triage.
+- A notification row's reason rides in `body_preview` from the backend union; the feed maps it to a human label (`Review requested`, `Mentioned`, `Assigned`, …).
+- The "Notifications" toggle lives in the activity filter dropdown's event-type group and defaults on. It is persisted by its own `notif` URL param, NOT by membership in the `types` list — a legacy `types` URL that lists every event but no `notification` must still mean "show everything", so the toggle cannot be inferred from list membership.
+- Hiding notifications sends the explicit non-notification `types` list to `/activity` (the backend filters by inclusion, so exclusion is expressed as an explicit list); showing them with a partial event filter appends `notification` to that list, and the all-selected case stays the empty `[]` (backend returns everything).
+- Clicking a notification row opens its PR/issue in the detail pane when `(item_type, item_number)` resolve; otherwise it follows `web_url`.
+- The notification list/sync/triage API endpoints still exist for backend propagation; they are not driven by a dedicated triage UI.
 
 ## API Contract
 
@@ -190,7 +189,7 @@ Use full-stack coverage for user-visible notification behavior.
 - DB tests: state filters, monitored repo scope, host-qualified identity, read generation guards, retry metadata, closed-linked auto-done.
 - GitHub tests: notification normalization, PR issue-style URL parsing, participating flag, host pagination/watermarks, rate-limit behavior.
 - Server tests: feature-flag gating, bulk mutation result shape, sync status, disabled access, real SQLite API behavior.
-- Frontend/store tests: route filters, disabled event refresh, sync polling, unavailable destination rows.
-- Playwright e2e: Inbox listing/filtering/sync, disabled direct `/inbox`, bulk read/done, tight-height internal scroll layout.
+- Frontend/store tests: activity filter type construction (notification toggle on/off, legacy URL normalization), feed rendering of notification rows.
+- Playwright e2e (`frontend/tests/e2e-full/activity-notifications.spec.ts`): notifications appear as feed rows, the Notifications filter hides them, and the disabled feature omits them while the API returns `403`.
 
 Always run relevant Go tests with `-shuffle=on`. Use Bun for frontend tests and typechecks.

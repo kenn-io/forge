@@ -193,6 +193,9 @@ func (s *Server) runDeferredMerge(
 		case "failed":
 			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "a current CI check failed; merge was not performed")
 			return
+		case "unknown":
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "aggregate CI status is unavailable after refresh; merge was not performed")
+			return
 		}
 		select {
 		case <-ctx.Done():
@@ -507,6 +510,9 @@ func deferredMergeCheckState(aggregateStatus string, keys []deferredMergeCheckKe
 		default:
 			return "failed", nil
 		}
+	}
+	if aggregateState == "unknown" {
+		return "unknown", nil
 	}
 	pending := false
 	for _, key := range keys {

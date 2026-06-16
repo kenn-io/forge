@@ -13,7 +13,10 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 )
 
-const deferredMergePollInterval = time.Minute
+const (
+	deferredMergePollInterval = time.Minute
+	deferredMergeMaxWait      = 24 * time.Hour
+)
 
 type deferredMergeCheckKey struct {
 	App  string
@@ -82,6 +85,13 @@ func (s *Server) enqueueDeferredMerge(
 	if err != nil {
 		return deferMergePRBody{}, problemValidation("ci_checks", err.Error())
 	}
+	if len(pendingKeys) == 0 {
+		return deferMergePRBody{}, problemConflict(
+			CodeConflict,
+			"no pending CI checks to wait for",
+			map[string]any{"reason": "no_pending_checks"},
+		)
+	}
 	key := deferredMergeKey(*repo, number)
 	if !s.markDeferredMergeInFlight(key) {
 		return deferMergePRBody{}, problemConflict(
@@ -118,6 +128,8 @@ func (s *Server) runDeferredMerge(
 	}
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
+	timeout := time.NewTimer(deferredMergeMaxWait)
+	defer timeout.Stop()
 	for {
 		state, err := s.refreshDeferredMergeCI(ctx, repo, number, pendingKeys)
 		if err != nil {
@@ -134,6 +146,9 @@ func (s *Server) runDeferredMerge(
 		}
 		select {
 		case <-ctx.Done():
+			return
+		case <-timeout.C:
+			s.broadcastDeferredMergeFailure(repo, number, body.ExpectedHeadSHA, "timed out waiting for pending CI checks to finish; merge was not performed")
 			return
 		case <-ticker.C:
 		}
@@ -153,7 +168,7 @@ func (s *Server) refreshDeferredMergeCI(
 	if mr == nil {
 		return "", errors.New("pull request no longer exists")
 	}
-	if _, err := s.syncer.RefreshMRCIStatusOnProvider(
+	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
 		ghclient.RepoRef{
 			Platform:           repoProviderKind(repo),
@@ -169,8 +184,12 @@ func (s *Server) refreshDeferredMergeCI(
 		repo.ID,
 		number,
 		mr.PlatformHeadSHA,
-	); err != nil {
+	)
+	if err != nil {
 		return "", err
+	}
+	if len(warnings) > 0 {
+		return "", errors.New("could not refresh CI checks; deferred merge was not performed: " + strings.Join(warnings, "; "))
 	}
 	refreshed, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 	if err != nil {

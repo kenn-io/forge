@@ -560,13 +560,15 @@ func (d *DB) UpsertProjectWorktreeTmuxSession(
 	}
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_project_worktree_runtime_sessions
-		    (worktree_id, session_key, target_key, label, tmux_session,
+		    (worktree_id, session_key, target_key, label, runtime_backend,
+		     backend_session_key,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, 'tmux', ?, ?)
 		ON CONFLICT(worktree_id, session_key) DO UPDATE SET
 		    target_key = excluded.target_key,
 		    label = excluded.label,
-		    tmux_session = excluded.tmux_session,
+		    runtime_backend = excluded.runtime_backend,
+		    backend_session_key = excluded.backend_session_key,
 		    created_at = excluded.created_at`,
 		session.WorktreeID, session.SessionKey, session.TargetKey,
 		session.Label, session.SessionName, createdAt,
@@ -584,11 +586,13 @@ func (d *DB) ListProjectWorktreeTmuxSessions(
 	worktreeID string,
 ) ([]ProjectWorktreeTmuxSession, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT s.worktree_id, s.session_key, s.tmux_session, s.target_key,
+		SELECT s.worktree_id, s.session_key, COALESCE(s.backend_session_key, ''),
+		       s.target_key,
 		       s.label, s.created_at, w.path, w.project_id
 		FROM middleman_project_worktree_runtime_sessions s
 		JOIN middleman_project_worktrees w ON w.id = s.worktree_id
 		WHERE s.worktree_id = ?
+		  AND s.runtime_backend = 'tmux'
 		ORDER BY s.created_at, s.session_key`, worktreeID,
 	)
 	if err != nil {
@@ -616,10 +620,12 @@ func (d *DB) ListAllProjectWorktreeTmuxSessions(
 	ctx context.Context,
 ) ([]ProjectWorktreeTmuxSession, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT s.worktree_id, s.session_key, s.tmux_session, s.target_key,
+		SELECT s.worktree_id, s.session_key, COALESCE(s.backend_session_key, ''),
+		       s.target_key,
 		       s.label, s.created_at, w.path, w.project_id
 		FROM middleman_project_worktree_runtime_sessions s
 		JOIN middleman_project_worktrees w ON w.id = s.worktree_id
+		WHERE s.runtime_backend = 'tmux'
 		ORDER BY w.path, s.created_at, s.session_key`,
 	)
 	if err != nil {

@@ -1,17 +1,20 @@
--- Registered-worktree runtime sessions. tmux_session stores the backend
--- session identifier for tmux-backed launches; label is the display label
--- persisted at launch time. Command sessions (caller-supplied argv, no launch
--- target) have no target_key to derive a label from.
+-- Registered-worktree runtime sessions. runtime_backend identifies the
+-- terminal/runtime owner and backend_session_key stores the owner-specific
+-- session identifier when one exists (for example, a tmux session name). label
+-- is the display label persisted at launch time. Command sessions
+-- (caller-supplied argv, no launch target) have no target_key to derive a label
+-- from.
 CREATE TABLE middleman_project_worktree_runtime_sessions (
-    worktree_id   TEXT NOT NULL REFERENCES middleman_project_worktrees(id) ON DELETE CASCADE,
-    session_key   TEXT NOT NULL,
-    target_key    TEXT NOT NULL,
-    tmux_session  TEXT NOT NULL,
-    label         TEXT NOT NULL DEFAULT '',
-    created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+    worktree_id         TEXT NOT NULL REFERENCES middleman_project_worktrees(id) ON DELETE CASCADE,
+    session_key         TEXT NOT NULL,
+    target_key          TEXT NOT NULL,
+    runtime_backend     TEXT NOT NULL,
+    backend_session_key TEXT,
+    label               TEXT NOT NULL DEFAULT '',
+    created_at          DATETIME NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (worktree_id, session_key),
     UNIQUE (session_key),
-    UNIQUE (tmux_session)
+    UNIQUE (runtime_backend, backend_session_key)
 );
 
 CREATE INDEX middleman_project_worktree_runtime_sessions_worktree_id_idx
@@ -76,9 +79,11 @@ CREATE TABLE middleman_worktree_stats (
 -- worktree FK; cwd is recorded because there is no worktree path to fall back
 -- to.
 CREATE TABLE middleman_host_runtime_sessions (
-    session_key   TEXT PRIMARY KEY,
-    tmux_session  TEXT NOT NULL UNIQUE,
-    label         TEXT NOT NULL DEFAULT '',
-    cwd           TEXT NOT NULL DEFAULT '',
-    created_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+    session_key         TEXT PRIMARY KEY,
+    runtime_backend     TEXT NOT NULL,
+    backend_session_key TEXT,
+    label               TEXT NOT NULL DEFAULT '',
+    cwd                 TEXT NOT NULL DEFAULT '',
+    created_at          DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (runtime_backend, backend_session_key)
 );

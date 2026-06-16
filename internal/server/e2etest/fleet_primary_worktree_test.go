@@ -24,7 +24,7 @@ func gitInitRepoWithWorktree(t *testing.T, worktreeName string) (string, string)
 		t.Skip("git not available")
 	}
 	repoDir := t.TempDir()
-	gitRun(t, repoDir, "init", "-q")
+	gitRun(t, repoDir, "init", "-q", "-b", "main")
 	gitRun(t, repoDir, "-c", "user.email=t@e.st", "-c", "user.name=Tester",
 		"commit", "--allow-empty", "-m", "init")
 	wtDir := filepath.Join(t.TempDir(), worktreeName)

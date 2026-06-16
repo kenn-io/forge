@@ -29,10 +29,12 @@ func (d *DB) UpsertHostRuntimeTmuxSession(
 	}
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_host_runtime_sessions
-		    (session_key, tmux_session, label, cwd, created_at)
-		VALUES (?, ?, ?, ?, ?)
+		    (session_key, runtime_backend, backend_session_key, label, cwd,
+		     created_at)
+		VALUES (?, 'tmux', ?, ?, ?, ?)
 		ON CONFLICT(session_key) DO UPDATE SET
-		    tmux_session = excluded.tmux_session,
+		    runtime_backend = excluded.runtime_backend,
+		    backend_session_key = excluded.backend_session_key,
 		    label = excluded.label,
 		    cwd = excluded.cwd,
 		    created_at = excluded.created_at`,
@@ -51,8 +53,10 @@ func (d *DB) ListHostRuntimeTmuxSessions(
 	ctx context.Context,
 ) ([]HostRuntimeTmuxSession, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT session_key, tmux_session, label, cwd, created_at
+		SELECT session_key, COALESCE(backend_session_key, ''), label, cwd,
+		       created_at
 		FROM middleman_host_runtime_sessions
+		WHERE runtime_backend = 'tmux'
 		ORDER BY created_at, session_key`,
 	)
 	if err != nil {

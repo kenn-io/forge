@@ -66,6 +66,30 @@ func TestOpenAndSchema(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, column, found)
 	}
+
+	runtimeSessionColumns := map[string][]string{
+		"middleman_project_worktree_runtime_sessions": {
+			"runtime_backend",
+			"backend_session_key",
+		},
+		"middleman_host_runtime_sessions": {
+			"runtime_backend",
+			"backend_session_key",
+		},
+	}
+	for table, columns := range runtimeSessionColumns {
+		for _, column := range columns {
+			var found string
+			err := d.ReadDB().QueryRow(
+				`SELECT name
+				 FROM pragma_table_info(?)
+				 WHERE name = ?`,
+				table, column,
+			).Scan(&found)
+			require.NoError(t, err)
+			require.Equal(t, column, found)
+		}
+	}
 }
 
 func TestOpenCreatesFile(t *testing.T) {

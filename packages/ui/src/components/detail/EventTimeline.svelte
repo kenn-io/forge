@@ -1233,8 +1233,8 @@
         </div>
       {/if}
     </div>
-  {:else if canEditComment(event)}
-    <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
+	{:else if canEditComment(event)}
+	  <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
       {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
         <div class="edit-panel">
           <CommentEditor
@@ -1285,8 +1285,52 @@
           <PencilIcon size={14} />
         </button>
       {/if}
-    </div>
-  {/if}
+	  </div>
+	{/if}
+{/snippet}
+
+{#snippet threadReplyPanel(entry: TimelineEntry, targetID: string)}
+	{#if provider && repoOwner && repoName && repoPath}
+	  <div class="thread-reply-panel">
+	    <CommentEditor
+	      {provider}
+	      {platformHost}
+	      owner={repoOwner}
+	      name={repoName}
+	      {repoPath}
+	      value={replyDraft}
+	      placeholder="Reply to thread... (Cmd+Enter to submit)"
+	      disabled={savingReplyThreadID === targetID}
+	      oninput={(nextBody) => {
+	        replyDraft = nextBody;
+	      }}
+	      onsubmit={() => {
+	        void submitReply(entry);
+	      }}
+	    />
+	    {#if replyError}
+	      <p class="edit-error">{replyError}</p>
+	    {/if}
+	    <div class="edit-actions">
+	      <button
+	        class="edit-action edit-action--primary"
+	        onclick={() => void submitReply(entry)}
+	        disabled={savingReplyThreadID === targetID || !canReplyToThread(entry)}
+	      >
+	        <CheckIcon size={14} />
+	        {savingReplyThreadID === targetID ? "Replying..." : "Reply"}
+	      </button>
+	      <button
+	        class="edit-action"
+	        onclick={cancelReply}
+	        disabled={savingReplyThreadID === targetID}
+	      >
+	        <XIcon size={14} />
+	        Cancel
+	      </button>
+	    </div>
+	  </div>
+	{/if}
 {/snippet}
 
 {#if events.length === 0}
@@ -1311,7 +1355,7 @@
           {@const canExpandCompact = compactEntryCanExpand(entry)}
           {@const compactExpanded = isCompactEntryExpanded(entry)}
           {@const canCopyCompact = compactEntryCanCopy(entry)}
-          <div class="event-card event-card--compact event-card--compact-row">
+          <div class={["event-card event-card--compact event-card--compact-row", hasReplyOnlyAction && compactExpanded && "event-card--reply-inline"]}>
             <div class="compact-event-line">
               {#if canExpandCompact}
                 <button
@@ -1380,8 +1424,11 @@
             </div>
             {#if canExpandCompact && compactExpanded}
               <div class="compact-expanded-content">
-                {@render eventBody(event, false, entry.reviewThread)}
+                {@render eventBody(event, false, entry.reviewThread, hasReplyOnlyAction ? entry : undefined)}
               </div>
+            {/if}
+            {#if targetID !== null && replyingThreadID === targetID}
+              {@render threadReplyPanel(entry, targetID)}
             {/if}
           </div>
         {:else if isCompactEvent(event.EventType)}
@@ -1531,46 +1578,8 @@
                 </ol>
               {/if}
             {/if}
-            {#if targetID !== null && replyingThreadID === targetID && provider && repoOwner && repoName && repoPath}
-              <div class="thread-reply-panel">
-                <CommentEditor
-                  {provider}
-                  {platformHost}
-                  owner={repoOwner}
-                  name={repoName}
-                  {repoPath}
-                  value={replyDraft}
-                  placeholder="Reply to thread... (Cmd+Enter to submit)"
-                  disabled={savingReplyThreadID === targetID}
-                  oninput={(nextBody) => {
-                    replyDraft = nextBody;
-                  }}
-                  onsubmit={() => {
-                    void submitReply(entry);
-                  }}
-                />
-                {#if replyError}
-                  <p class="edit-error">{replyError}</p>
-                {/if}
-                <div class="edit-actions">
-                  <button
-                    class="edit-action edit-action--primary"
-                    onclick={() => void submitReply(entry)}
-                    disabled={savingReplyThreadID === targetID || !canReplyToThread(entry)}
-                  >
-                    <CheckIcon size={14} />
-                    {savingReplyThreadID === targetID ? "Replying..." : "Reply"}
-                  </button>
-                  <button
-                    class="edit-action"
-                    onclick={cancelReply}
-                    disabled={savingReplyThreadID === targetID}
-                  >
-                    <XIcon size={14} />
-                    Cancel
-                  </button>
-                </div>
-              </div>
+            {#if targetID !== null && replyingThreadID === targetID}
+              {@render threadReplyPanel(entry, targetID)}
             {/if}
           </div>
         {/if}

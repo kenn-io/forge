@@ -218,6 +218,7 @@ test.describe("PR timeline filters", () => {
     await expect(page.getByText("Expanded context explains stale data handling.")).toHaveCount(0);
     await reviewCommentRow.click();
     await expect(page.getByText("Expanded context explains stale data handling.")).toBeVisible();
+    await expect(reviewCommentRow.getByRole("button", { name: "Reply" })).toBeVisible();
     await expect
       .poll(async () => await page.evaluate((key) => localStorage.getItem(key), activityViewStorageKey))
       .toBe("compact");

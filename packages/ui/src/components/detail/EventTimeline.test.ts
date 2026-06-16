@@ -618,6 +618,46 @@ describe("EventTimeline", () => {
     expect(screen.getByText("This branch needs a guard clause.")).toBeTruthy();
   });
 
+  it("keeps review thread replies available when compact rows expand", async () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        activityViewMode: "compact",
+        events: [makeReviewThreadEvent()],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        canReplyToThreads: true,
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            detail: {
+              replyToDiscussion: vi.fn().mockResolvedValue(true),
+              getDetailError: vi.fn(),
+            },
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    await fireEvent.click(container.querySelector<HTMLButtonElement>(".compact-event-toggle")!);
+
+    expect(container.querySelector(".thread-reply-action--inline")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Reply" })).toHaveLength(2);
+  });
+
   it("can collapse and expand threaded replies", async () => {
     const { container } = render(EventTimeline, {
       props: {

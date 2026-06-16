@@ -515,7 +515,7 @@ describe("EventTimeline", () => {
     );
   });
 
-  it("renders threaded comments as separate compact rows with one-line previews", () => {
+  it("renders threaded comments as separate compact rows with one-line previews", async () => {
     const { container } = render(EventTimeline, {
       props: {
         activityViewMode: "compact",
@@ -554,7 +554,18 @@ describe("EventTimeline", () => {
     expect(container.textContent).toContain("Reply with a link");
     expect(container.textContent).toContain("return cache.get(key);");
     expect(container.textContent).not.toContain("const hidden = true");
-    expect(screen.queryByLabelText("Copy comment")).toBeNull();
+    const copyButtons = screen.getAllByLabelText("Copy comment");
+    expect(copyButtons).toHaveLength(3);
+    await fireEvent.click(copyButtons[1]!);
+    expect(copyToClipboard).toHaveBeenCalledWith("Reply with [a link](https://example.test)\n\nand details");
+
+    expect(screen.queryByText("and details")).toBeNull();
+    const expandableRows = container.querySelectorAll<HTMLButtonElement>(".compact-event-toggle");
+    expect(expandableRows.length).toBe(3);
+    await fireEvent.click(expandableRows[1]!);
+
+    expect(screen.getByText("and details")).toBeTruthy();
+    expect(expandableRows[1]?.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("renders compact review verdicts and review comment context", () => {

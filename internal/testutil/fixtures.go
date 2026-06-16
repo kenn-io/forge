@@ -952,7 +952,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 						DatabaseID:       6011,
 						ReviewDatabaseID: 5012,
 						SubjectType:      "LINE",
-						Body:             "Guard the cache fallback before returning stale data.",
+						Body:             "Guard the cache fallback before returning stale data.\n\nExpanded context explains stale data handling.",
 						AuthorLogin:      "bob",
 						Path:             "src/cache/store.ts",
 						Line:             42,

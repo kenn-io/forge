@@ -214,6 +214,10 @@ test.describe("PR timeline filters", () => {
     });
     await expect(reviewCommentRow).toBeVisible();
     await expect(reviewCommentRow).toContainText("Guard the cache fallback before returning");
+    await expect(reviewCommentRow.getByRole("button", { name: "Copy comment" })).toBeVisible();
+    await expect(page.getByText("Expanded context explains stale data handling.")).toHaveCount(0);
+    await reviewCommentRow.click();
+    await expect(page.getByText("Expanded context explains stale data handling.")).toBeVisible();
     await expect
       .poll(async () => await page.evaluate((key) => localStorage.getItem(key), activityViewStorageKey))
       .toBe("compact");

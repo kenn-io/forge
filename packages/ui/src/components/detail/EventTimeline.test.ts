@@ -583,8 +583,8 @@ describe("EventTimeline", () => {
             ID: 1,
             EventType: "review",
             Author: "maintainer",
-            Body: "",
-            Summary: "Approved",
+            Body: "Please handle the cache fallback before merge.",
+            Summary: "CHANGES_REQUESTED",
             CreatedAt: "2024-06-01T12:00:00Z",
           }),
         ],
@@ -592,7 +592,8 @@ describe("EventTimeline", () => {
     });
 
     expect(container.querySelectorAll(".event-card--compact-row")).toHaveLength(2);
-    expect(screen.getByText("Approved")).toBeTruthy();
+    expect(screen.getByText("Changes requested - Please handle the cache fallback before merge.")).toBeTruthy();
+    expect(container.textContent).not.toContain("CHANGES_REQUESTED");
     expect(screen.getByText("src/review.ts:42")).toBeTruthy();
     expect(screen.getByText("This branch needs a guard clause.")).toBeTruthy();
   });

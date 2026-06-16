@@ -685,12 +685,39 @@
     return "";
   }
 
+  function compactReviewSummary(event: PREvent | IssueEvent): string {
+    const bodyPreview = compactMarkdownPreview(event.Body);
+    const summary = event.Summary.trim();
+    const verdict = reviewVerdictLabel(summary);
+    if (verdict && bodyPreview) return `${verdict} - ${bodyPreview}`;
+    if (verdict) return verdict;
+    if (summary && bodyPreview) return `${summary} - ${bodyPreview}`;
+    return summary || bodyPreview || "Left a review";
+  }
+
+  function reviewVerdictLabel(summary: string): string {
+    switch (summary.toUpperCase()) {
+      case "APPROVED":
+        return "Approved";
+      case "CHANGES_REQUESTED":
+        return "Changes requested";
+      case "COMMENTED":
+        return "Commented";
+      case "DISMISSED":
+        return "Dismissed";
+      case "PENDING":
+        return "Pending";
+      default:
+        return "";
+    }
+  }
+
   function compactEventSummary(
     event: PREvent | IssueEvent,
     reviewThread: TimelineReviewThread | undefined,
   ): string {
     if (event.EventType === "review") {
-      return event.Summary || compactMarkdownPreview(event.Body) || "Left a review";
+      return compactReviewSummary(event);
     }
     if (event.EventType === "review_comment") {
       return compactMarkdownPreview(event.Body)

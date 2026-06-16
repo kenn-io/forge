@@ -209,6 +209,11 @@ test.describe("PR timeline filters", () => {
 
     await expect(page.locator(".pull-detail .event-card--compact-row").first()).toBeVisible();
     await expect(page.locator(".pull-detail .event-card--compact-row", { hasText: "COMMENTED" })).toBeVisible();
+    const reviewCommentRow = page.locator(".pull-detail .event-card--compact-row", {
+      hasText: "src/cache/store.ts:42",
+    });
+    await expect(reviewCommentRow).toBeVisible();
+    await expect(reviewCommentRow).toContainText("Guard the cache fallback before returning");
     await expect
       .poll(async () => await page.evaluate((key) => localStorage.getItem(key), activityViewStorageKey))
       .toBe("compact");

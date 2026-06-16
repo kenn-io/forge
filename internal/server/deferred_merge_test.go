@@ -168,9 +168,10 @@ func TestDeferredMergeCheckStateRequiresCapturedChecksToPass(t *testing.T) {
 	}
 
 	tests := []struct {
-		name   string
-		checks []db.CICheck
-		want   string
+		name            string
+		aggregateStatus string
+		checks          []db.CICheck
+		want            string
 	}{
 		{
 			name: "missing captured check stays pending",
@@ -221,11 +222,29 @@ func TestDeferredMergeCheckStateRequiresCapturedChecksToPass(t *testing.T) {
 			},
 			want: "pending",
 		},
+		{
+			name:            "aggregate pending keeps passing rows pending",
+			aggregateStatus: "pending",
+			checks: []db.CICheck{
+				{App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success"},
+				{App: "Buildkite", Name: "integration", Status: "completed", Conclusion: "success"},
+			},
+			want: "pending",
+		},
+		{
+			name:            "aggregate failure blocks passing rows",
+			aggregateStatus: "failure",
+			checks: []db.CICheck{
+				{App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success"},
+				{App: "Buildkite", Name: "integration", Status: "completed", Conclusion: "success"},
+			},
+			want: "failed",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := deferredMergeCheckState(keys, mustDeferredMergeChecksJSON(t, tt.checks))
+			got, err := deferredMergeCheckState(tt.aggregateStatus, keys, mustDeferredMergeChecksJSON(t, tt.checks))
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
@@ -753,6 +772,107 @@ func TestDeferMergeEndpointBroadcastsFailureWhenHeadChangesWhileWaiting(t *testi
 			completed = payload
 		case <-time.After(time.Second):
 			require.FailNow("timed out waiting for deferred merge stale-head event")
+		}
+		if completed.Status != "" {
+			break
+		}
+	}
+	require.Equal("failed", completed.Status)
+	require.Contains(completed.Error, "target changed")
+	select {
+	case call := <-provider.mergeCh:
+		require.Failf("unexpected merge", "merge call: %+v", call)
+	default:
+	}
+}
+
+func TestDeferMergeEndpointBroadcastsFailureWhenProviderBaseChangesBeforeMerge(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	ciStarted := make(chan struct{})
+	ciRelease := make(chan struct{})
+	provider := &deferredMergeTestProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{
+			ref: ref,
+			mergeRequests: []platform.MergeRequest{{
+				Repo:           ref,
+				PlatformID:     7001,
+				Number:         7,
+				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+				Title:          "Defer merge",
+				Author:         "ada",
+				State:          "open",
+				HeadBranch:     "feature",
+				BaseBranch:     "main",
+				HeadSHA:        "head-sha",
+				BaseSHA:        "base-sha",
+				CIStatus:       "pending",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				LastActivityAt: now,
+			}},
+			ciChecks: map[string][]platform.CICheck{
+				"head-sha": {{
+					App:        "GitLab",
+					Name:       "pipeline",
+					Status:     "completed",
+					Conclusion: "success",
+				}},
+			},
+		},
+		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
+		ciStarted: ciStarted,
+		ciRelease: ciRelease,
+	}
+	srv, _, _, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
+		App: "GitLab", Name: "pipeline", Status: "in_progress",
+	}})
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode(), string(resp.Body))
+
+	select {
+	case <-ciStarted:
+	case <-time.After(time.Second):
+		require.FailNow("timed out waiting for deferred CI refresh to start")
+	}
+	provider.mergeRequests[0].BaseSHA = "new-base-sha"
+	close(ciRelease)
+
+	var completed deferredMergeCompletedPayload
+	for range 4 {
+		select {
+		case ev := <-events:
+			if ev.Event.Type != "deferred_merge_completed" {
+				continue
+			}
+			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			require.True(ok)
+			completed = payload
+		case <-time.After(time.Second):
+			require.FailNow("timed out waiting for deferred merge stale-base event")
 		}
 		if completed.Status != "" {
 			break

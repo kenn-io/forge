@@ -14982,7 +14982,7 @@ func NewUpdateRepoWorktreeBaseOnHostRequestWithBody(server string, platformHost 
 		return nil, err
 	}
 
-	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -20230,7 +20230,7 @@ func NewUpdateRepoWorktreeBaseRequestWithBody(server string, provider string, ow
 		return nil, err
 	}
 
-	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}

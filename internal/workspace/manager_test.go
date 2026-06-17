@@ -210,7 +210,7 @@ func TestWorkspaceSummaryCacheDoesNotResurrectDeletedWorkspace(t *testing.T) {
 	seedMR(t, d, repoID, 7, "feature/cache-workspace")
 	mgr := NewManager(d, t.TempDir())
 
-	ws, err := mgr.Create(ctx, "github.com", "acme", "widget", 7)
+	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 7)
 	require.NoError(err)
 	first, err := mgr.ListSummaries(ctx)
 	require.NoError(err)

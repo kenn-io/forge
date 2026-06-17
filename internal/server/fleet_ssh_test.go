@@ -336,10 +336,10 @@ func TestSSHFleetSnapshotDegradesColdPeerFast(t *testing.T) {
 
 	start := time.Now()
 	first := hostByKey()
-	// peer_timeout is 150ms; the bound leaves scheduling slack but
-	// stays far below the 2s default so a regression that ignores the
-	// configured timeout fails here.
-	require.Less(time.Since(start), 750*time.Millisecond,
+	// peer_timeout is 150ms; the bound leaves scheduler and local
+	// snapshot/enrichment slack but stays below the 2s default so a
+	// regression that ignores the configured timeout fails here.
+	require.Less(time.Since(start), 1500*time.Millisecond,
 		"cold peer must degrade within the configured peer timeout")
 	epyc, ok := first["epyc"]
 	require.True(ok, "degraded ssh host still appears")

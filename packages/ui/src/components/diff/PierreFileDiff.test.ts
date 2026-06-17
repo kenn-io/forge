@@ -232,6 +232,57 @@ function makeMetadataOnlyFile(): DiffFile {
   };
 }
 
+function makeSyntaxStateGapFile(): DiffFile {
+  const path = "src/example.test.ts";
+  return {
+    ...makeFile(),
+    path,
+    old_path: path,
+    additions: 4,
+    deletions: 0,
+    patch: `diff --git a/${path} b/${path}
+--- a/${path}
++++ b/${path}
+@@ -10,3 +10,4 @@ function render() {
+ const html = \`
++  <span>new</span>
+   <div>
+@@ -80,2 +81,4 @@ afterRender();
++vi.doMock("./worker", () => ({
++  run: () => undefined,
++}));
+ function makeFile() {}
+`,
+    hunks: [
+      {
+        old_start: 10,
+        old_count: 3,
+        new_start: 10,
+        new_count: 4,
+        section: "function render() {",
+        lines: [
+          { type: "context", content: "const html = `", old_num: 10, new_num: 10 },
+          { type: "add", content: "  <span>new</span>", new_num: 11 },
+          { type: "context", content: "  <div>", old_num: 11, new_num: 12 },
+        ],
+      },
+      {
+        old_start: 80,
+        old_count: 2,
+        new_start: 81,
+        new_count: 4,
+        section: "afterRender();",
+        lines: [
+          { type: "add", content: 'vi.doMock("./worker", () => ({', new_num: 81 },
+          { type: "add", content: "  run: () => undefined,", new_num: 82 },
+          { type: "add", content: "}));", new_num: 83 },
+          { type: "context", content: "function makeFile() {}", old_num: 80, new_num: 84 },
+        ],
+      },
+    ],
+  };
+}
+
 describe("PierreFileDiff", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -280,6 +331,26 @@ describe("PierreFileDiff", () => {
     });
 
     expect(document.querySelector(".empty-textual-diff")).toBeNull();
+  });
+
+  it("falls back to sparse rendering when syntax full-context loading fails", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const loadFileText = vi.fn(async () => {
+      throw new Error("preview failed");
+    });
+
+    render(PierreFileDiff, {
+      props: { file: makeSyntaxStateGapFile(), loadFileText },
+    });
+
+    await waitFor(() => {
+      expect(loadFileText).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector(".context-error")?.textContent).toContain("preview failed");
+      expect(pierre.renderCount()).toBe(1);
+    });
   });
 
   it("shows the empty textual state for metadata-only patches", async () => {

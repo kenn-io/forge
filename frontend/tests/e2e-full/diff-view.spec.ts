@@ -385,6 +385,105 @@ const oversizedSparseDiff: DiffResult = withServerDiffData({
   ],
 });
 
+const syntaxContextPath = "src/example.test.ts";
+const syntaxContextOldText = [
+  "import { vi } from 'vitest';",
+  "",
+  "function render() {",
+  "  return null;",
+  "}",
+  "",
+  "const setup = true;",
+  "",
+  "function mount() {",
+  "const html = `",
+  "  <div>",
+  "  </div>",
+  "  <main>",
+  "    content",
+  "  </main>",
+  "  <footer>",
+  "    footer",
+  "  </footer>",
+  "`;",
+  "afterRender();",
+  ...Array.from({ length: 59 }, (_, index) => `// unchanged ${index + 21}`),
+  "function makeFile() {}",
+  "export const done = true;",
+].join("\n");
+const syntaxContextNewText = [
+  "import { vi } from 'vitest';",
+  "",
+  "function render() {",
+  "  return null;",
+  "}",
+  "",
+  "const setup = true;",
+  "",
+  "function mount() {",
+  "const html = `",
+  "  <span>new</span>",
+  "  <div>",
+  "  </div>",
+  "  <main>",
+  "    content",
+  "  </main>",
+  "  <footer>",
+  "    footer",
+  "  </footer>",
+  "`;",
+  "afterRender();",
+  ...Array.from({ length: 59 }, (_, index) => `// unchanged ${index + 21}`),
+  'vi.doMock("./worker", () => ({',
+  "  run: () => undefined,",
+  "}));",
+  "function makeFile() {}",
+  "export const done = true;",
+].join("\n");
+const syntaxContextDiff: DiffResult = withServerDiffData({
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: syntaxContextPath,
+      old_path: syntaxContextPath,
+      status: "modified",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 4,
+      deletions: 0,
+      hunks: [
+        {
+          old_start: 10,
+          old_count: 2,
+          new_start: 10,
+          new_count: 3,
+          section: "function mount() {",
+          lines: [
+            { type: "context", content: "const html = `", old_num: 10, new_num: 10 },
+            { type: "add", content: "  <span>new</span>", new_num: 11 },
+            { type: "context", content: "  <div>", old_num: 11, new_num: 12 },
+          ],
+        },
+        {
+          old_start: 80,
+          old_count: 2,
+          new_start: 81,
+          new_count: 5,
+          section: "afterRender();",
+          lines: [
+            { type: "add", content: 'vi.doMock("./worker", () => ({', new_num: 81 },
+            { type: "add", content: "  run: () => undefined,", new_num: 82 },
+            { type: "add", content: "}));", new_num: 83 },
+            { type: "context", content: "function makeFile() {}", old_num: 80, new_num: 84 },
+            { type: "context", content: "export const done = true;", old_num: 81, new_num: 85 },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 const previewDiff: DiffResult = withServerDiffData({
   stale: smallDiff.stale,
   whitespace_only_count: smallDiff.whitespace_only_count,
@@ -620,6 +719,21 @@ async function expectPierreDiffVisibleExactText(file: ReturnType<Page["locator"]
       }, selector);
     })
     .toContain(text);
+}
+
+async function pierreAdditionTokenStats(file: ReturnType<Page["locator"]>, lineText: string) {
+  return await file.locator(".pierre-diff").evaluate((host, lineText) => {
+    const rows = Array.from(
+      host.shadowRoot?.querySelectorAll('[data-content] [data-line-type="change-addition"]') ?? [],
+    );
+    const row = rows.find((candidate) => candidate.textContent?.includes(lineText));
+    const spans = Array.from(row?.querySelectorAll("span") ?? []).map((span) => span.textContent ?? "");
+    return {
+      hasSeparateDoMock: spans.includes("doMock"),
+      hasSeparateVi: spans.includes("vi"),
+      singleLineSpan: spans.length === 1 && spans[0] === lineText,
+    };
+  }, lineText);
 }
 
 async function expectRenderedNonBlankRows(file: ReturnType<Page["locator"]>, textFragment: string) {
@@ -2058,6 +2172,74 @@ test.describe("diff view", () => {
     await expectPierreDiffFirstText(file, diffHunkSeparatorsSelector, "999999 unmodified lines");
     await expectPierreDiffCount(file, "[data-expand-button]", 0);
     await expect.poll(() => previewRequests).toBe(0);
+  });
+
+  test("sparse diffs with syntax state gaps preload full context before rendering", async ({ page }) => {
+    await page.addInitScript(() => {
+      (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight = true;
+    });
+
+    const previewSides: string[] = [];
+    await mockDiffApi(page, syntaxContextDiff);
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/file-preview**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("path") !== syntaxContextPath) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "not found" }),
+        });
+        return;
+      }
+
+      const side = url.searchParams.get("side");
+      previewSides.push(side ?? "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path: syntaxContextPath,
+          media_type: "text/plain; charset=utf-8",
+          encoding: "base64",
+          content: Buffer.from(side === "old" ? syntaxContextOldText : syntaxContextNewText).toString("base64"),
+        }),
+      });
+    });
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const file = page.locator(`[data-file-path="${syntaxContextPath}"]`);
+    await expect.poll(() => [...new Set(previewSides)].sort()).toEqual(["new", "old"]);
+    await expectPierreDiffVisibleText(file, diffAdditionsSelector, "vi.doMock");
+    await expect
+      .poll(() => pierreAdditionTokenStats(file, 'vi.doMock("./worker", () => ({'))
+      .toEqual({
+        hasSeparateDoMock: true,
+        hasSeparateVi: true,
+        singleLineSpan: false,
+      });
+  });
+
+  test("sparse diffs with syntax state gaps fall back when full context fails", async ({ page }) => {
+    let previewRequests = 0;
+    await mockDiffApi(page, syntaxContextDiff);
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/file-preview**", async (route) => {
+      previewRequests++;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "preview unavailable" }),
+      });
+    });
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const file = page.locator(`[data-file-path="${syntaxContextPath}"]`);
+    await expect.poll(() => previewRequests).toBeGreaterThan(0);
+    await expect(file.getByText("Could not load more context")).toBeVisible();
+    await expectPierreDiffVisibleText(file, diffAdditionsSelector, "vi.doMock");
   });
 
   test("context expansion keeps earlier virtualized file rows rendered", async ({ page }) => {

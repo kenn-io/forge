@@ -109,6 +109,7 @@
   let fullContextRendered = false;
   let contextLoadPromise: Promise<{ oldFile: FileContents; newFile: FileContents }> | undefined;
   let contextError: string | null = $state(null);
+  let syntaxContextLoadFailedFileKey = $state("");
   let themeType = $state<ThemeTypes>(appThemeType());
   let rendered = $state(false);
   let renderedFileKey = "";
@@ -296,6 +297,7 @@
     cleanUpPierreDiff();
     contextLoadPromise = undefined;
     contextError = null;
+    syntaxContextLoadFailedFileKey = "";
     fullContext = undefined;
     fullContextFileDiff = undefined;
     fullContextRendered = false;
@@ -334,7 +336,7 @@
     if (pierreDiff instanceof VirtualizedFileDiff && isHostInScrollViewport()) {
       pierreDiff.setVisibility(true);
     }
-    if (needsFullContextForSyntax && !fullContext) {
+    if (needsFullContextForSyntax && !fullContext && syntaxContextLoadFailedFileKey !== fileKey) {
       rendered = false;
       clearRenderedDomState();
       void loadFullContextForSyntax(fileKey);
@@ -931,6 +933,7 @@
       renderFullContext(context);
     } catch (err) {
       if (fileKey !== requestFileKey) return;
+      syntaxContextLoadFailedFileKey = requestFileKey;
       contextError = err instanceof Error ? err.message : "unknown error";
     }
   }

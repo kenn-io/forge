@@ -9,7 +9,7 @@
     KanbanBoardView,
     ReviewsView,
     FocusListView,
-    normalizeMobileActivityRepoSelection,
+    normalizeRepoFilterSelection,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem, ModeVisibility } from "@middleman/ui/api/types";
@@ -534,11 +534,15 @@
   }
 
   function getNormalizedGlobalRepo(repo: string | undefined = getGlobalRepo()): string | undefined {
-    const normalized = normalizeMobileActivityRepoSelection(
+    return normalizeRepoFilterSelection(
       repo,
-      stores?.settings.getConfiguredRepos() ?? [],
+      (stores?.settings.getConfiguredRepos?.() ?? []).map((configuredRepo) => ({
+        provider: configuredRepo.provider,
+        platformHost: configuredRepo.platform_host,
+        repoPath: configuredRepo.repo_path,
+        isGlob: configuredRepo.is_glob,
+      })),
     );
-    return normalized || undefined;
   }
 
   onDestroy(() => {

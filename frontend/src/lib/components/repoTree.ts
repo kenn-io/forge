@@ -1,5 +1,5 @@
 export interface RepoTreeOption {
-  value: string; // `${platformHost}/${repoPath}`
+  value: string; // `${platformHost}/${repoPath}` or `${provider}|${platformHost}/${repoPath}`
   owner: string;
   name: string;
   provider: string; // canonical, lowercase
@@ -32,10 +32,12 @@ export interface HostNode {
 export type RepoTreeNodeData = HostNode | OwnerNode | RepoLeaf;
 
 function stripHostPrefix(value: string, platformHost: string): string {
+  const providerSeparator = value.indexOf("|");
+  const concreteValue = providerSeparator === -1 ? value : value.slice(providerSeparator + 1);
   const prefix = `${platformHost}/`;
-  if (value.startsWith(prefix)) return value.slice(prefix.length);
+  if (concreteValue.startsWith(prefix)) return concreteValue.slice(prefix.length);
   // Defensive fallback: drop everything up to and including the first slash.
-  return value.replace(/^[^/]+\//, "");
+  return concreteValue.replace(/^[^/]+\//, "");
 }
 
 export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {

@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { getStores } from "@middleman/ui";
+  import {
+    canonicalRepoFilterValue,
+    displayRepoFilterValue,
+    getStores,
+    normalizeRepoFilterSelection,
+  } from "@middleman/ui";
   import { client } from "../api/runtime.js";
   import type { ConfigRepo, Repo } from "@middleman/ui/api/types";
   import { canonicalProvider } from "@middleman/ui/api/provider-routes";
@@ -73,7 +78,7 @@
   let repoFetchVersion = 0;
   let latestRepoFetchKey = "";
 
-  type RepoOption = RepoTreeOption;
+  type RepoOption = RepoTreeOption & { repoPath: string };
 
   $effect(() => {
     const configuredRepoKey = configuredRepos
@@ -101,23 +106,28 @@
   );
 
   function optionFromRepo(repo: Repo): RepoOption {
+    const repoPath = `${repo.Owner}/${repo.Name}`;
     return {
-      value: `${repo.PlatformHost}/${repo.Owner}/${repo.Name}`,
+      value: `${repo.PlatformHost}/${repoPath}`,
       owner: repo.Owner,
       name: repo.Name,
       provider: canonicalProvider(repo.Platform),
       platformHost: repo.PlatformHost,
+      repoPath,
     };
   }
 
-  function optionFromConfigRepo(repo: ConfigRepo): RepoOption {
+  function optionFromConfigRepo(repo: ConfigRepo): RepoOption | null {
+    if (repo.is_glob) return null;
     const path = repo.repo_path || `${repo.owner}/${repo.name}`;
+    if (!repo.platform_host || !path) return null;
     return {
       value: `${repo.platform_host}/${path}`,
       owner: repo.owner,
       name: repo.name,
       provider: canonicalProvider(repo.provider),
       platformHost: repo.platform_host,
+      repoPath: path,
     };
   }
 
@@ -128,20 +138,31 @@
     const merged: RepoOption[] = [];
     const seen: string[] = [];
     const addOption = (option: RepoOption) => {
-      if (seen.includes(option.value)) return;
-      seen.push(option.value);
+      const identity = `${option.provider}|${option.platformHost}/${option.repoPath}`;
+      if (seen.includes(identity)) return;
+      seen.push(identity);
       merged.push(option);
     };
 
-    for (const repo of configured.filter((entry) => !entry.is_glob)) {
-      addOption(optionFromConfigRepo(repo));
+    for (const repo of configured) {
+      const option = optionFromConfigRepo(repo);
+      if (option) addOption(option);
     }
 
     for (const repo of fetched) {
       addOption(optionFromRepo(repo));
     }
 
-    return merged;
+    const identities = merged.map((option) => ({
+      provider: option.provider,
+      platformHost: option.platformHost,
+      repoPath: option.repoPath,
+      isGlob: false,
+    }));
+    return merged.map((option, index) => ({
+      ...option,
+      value: canonicalRepoFilterValue(identities[index]!, identities) ?? option.value,
+    }));
   }
 
   const options = $derived.by(() => {
@@ -155,7 +176,7 @@
   const selectedSet = $derived(new Set(selectedValues));
   const displayValue = $derived.by(() => {
     if (selectedValues.length === 0) return "All repos";
-    if (selectedValues.length === 1) return selectedValues[0];
+    if (selectedValues.length === 1) return displayRepoFilterValue(selectedValues[0]!);
     return `${selectedValues.length} repos`;
   });
 
@@ -168,7 +189,7 @@
   );
 
   function rowAriaLabel(row: VisibleRow): string {
-    return row.node.kind === "host" ? row.node.platformHost : row.node.id;
+    return row.node.kind === "host" ? row.node.platformHost : displayRepoFilterValue(row.node.id);
   }
 
   function toggleRowSelect(row: VisibleRow) {
@@ -181,6 +202,19 @@
 
   $effect(() => {
     if (selectedValues.length === 0 || reposLoading) return;
+    const normalized = normalizeRepoFilterSelection(
+      selected,
+      options.map((option) => ({
+        provider: option.provider,
+        platformHost: option.platformHost,
+        repoPath: option.repoPath,
+        isGlob: false,
+      })),
+    );
+    if (normalized !== selected) {
+      onchange(normalized);
+      return;
+    }
     const validValues = new Set(options.map((option) => option.value));
     const next = selectedValues.filter((value) => validValues.has(value));
     if (next.length === selectedValues.length) return;

@@ -36,6 +36,24 @@ test("repository selector filters dashboard lists by multiple selected repos", a
   );
 });
 
+test("repository selector normalizes stale provider-qualified persisted multi-select values", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("middleman-filter-repo", "github/github.com/acme/widgets,github.com/acme/tools");
+  });
+
+  await page.goto("/issues");
+  await waitForIssueList(page);
+
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("middleman-filter-repo")))
+    .toBe("github.com/acme/widgets,github.com/acme/tools");
+  await expect(page.getByTitle("Select repository").locator(".typeahead-value")).toHaveText("2 repos");
+
+  await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
+  await expect(page.getByText("Support config file loading")).toBeVisible();
+  await expect(page.getByText("GitLab read-only issue")).toHaveCount(0);
+});
+
 test("keyboard navigation survives a real checkbox click", async ({ page }) => {
   // A real click (not just mousedown) on a row checkbox must not steal focus
   // from the filter input. The checkbox is a focusable native input and its

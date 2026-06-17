@@ -29,6 +29,7 @@ vi.mock("@middleman/ui", async () => {
     KanbanBoardView: Stub,
     ReviewsView: Stub,
     FocusListView: Stub,
+    normalizeRepoFilterSelection: (repo: string | undefined) => repo,
   };
 });
 

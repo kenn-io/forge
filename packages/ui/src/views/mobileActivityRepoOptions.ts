@@ -1,4 +1,10 @@
 import type { ConfigRepo } from "../api/types.js";
+import {
+  canonicalRepoFilterValue,
+  concreteRepoFilterValue,
+  providerQualifiedRepoFilterLabel,
+  repoFilterValueNeedsProvider,
+} from "../utils/repo-filter-values.js";
 
 export interface MobileActivityRepoOption {
   value: string;
@@ -6,30 +12,19 @@ export interface MobileActivityRepoOption {
   triggerLabel?: string;
 }
 
-function concreteRepoSelectorValue(repo: ConfigRepo): string | null {
-  const repoPath = repo.repo_path?.trim();
-  const platformHost = repo.platform_host?.trim();
-  if (!repoPath || !platformHost || repo.is_glob) return null;
-  return `${platformHost}/${repoPath}`;
-}
-
-function providerRepoSelectorValue(repo: ConfigRepo): string | null {
-  const provider = repo.provider?.trim();
-  const concreteValue = concreteRepoSelectorValue(repo);
-  return provider && concreteValue ? `${provider}|${concreteValue}` : concreteValue;
-}
-
-function providerRepoSelectorLabel(repo: ConfigRepo): string | null {
-  const provider = repo.provider?.trim();
-  const concreteValue = concreteRepoSelectorValue(repo);
-  return provider && concreteValue ? `${provider}/${concreteValue}` : concreteValue;
+function repoFilterIdentity(repo: ConfigRepo) {
+  return {
+    provider: repo.provider,
+    platformHost: repo.platform_host,
+    repoPath: repo.repo_path,
+    isGlob: repo.is_glob,
+  };
 }
 
 export function buildMobileActivityRepoOptions(repos: ConfigRepo[]): MobileActivityRepoOption[] {
   const valuesByRepoPath = new Map<string, Set<string>>();
-  const providersByConcreteValue = new Map<string, Set<string>>();
   for (const repo of repos) {
-    const value = concreteRepoSelectorValue(repo);
+    const value = concreteRepoFilterValue(repoFilterIdentity(repo));
     if (!value) continue;
     const repoPath = repo.repo_path.trim();
     let values = valuesByRepoPath.get(repoPath);
@@ -38,26 +33,21 @@ export function buildMobileActivityRepoOptions(repos: ConfigRepo[]): MobileActiv
       valuesByRepoPath.set(repoPath, values);
     }
     values.add(value);
-
-    let providers = providersByConcreteValue.get(value);
-    if (!providers) {
-      providers = new Set<string>();
-      providersByConcreteValue.set(value, providers);
-    }
-    providers.add(repo.provider.trim());
   }
 
+  const identities = repos.map(repoFilterIdentity);
   const seen = new Set<string>();
   const options: MobileActivityRepoOption[] = [];
   for (const repo of repos) {
-    const concreteValue = concreteRepoSelectorValue(repo);
+    const identity = repoFilterIdentity(repo);
+    const concreteValue = concreteRepoFilterValue(identity);
     if (!concreteValue) continue;
-    const providerCollision = (providersByConcreteValue.get(concreteValue)?.size ?? 0) > 1;
-    const value = providerCollision ? providerRepoSelectorValue(repo) : concreteValue;
+    const providerCollision = repoFilterValueNeedsProvider(identity, identities);
+    const value = canonicalRepoFilterValue(identity, identities);
     if (!value || seen.has(value)) continue;
     seen.add(value);
     const repoPath = repo.repo_path.trim();
-    const label = providerCollision ? providerRepoSelectorLabel(repo) : value;
+    const label = providerCollision ? providerQualifiedRepoFilterLabel(identity) : value;
     if (!label) continue;
     const triggerLabel = providerCollision || (valuesByRepoPath.get(repoPath)?.size ?? 0) > 1 ? label : repoPath;
     options.push({ value, label, triggerLabel });
@@ -68,21 +58,4 @@ export function buildMobileActivityRepoOptions(repos: ConfigRepo[]): MobileActiv
       numeric: true,
     }),
   );
-}
-
-export function normalizeMobileActivityRepoSelection(selected: string | undefined, repos: ConfigRepo[]): string {
-  const value = selected?.trim() ?? "";
-  if (!value) return "";
-
-  const options = buildMobileActivityRepoOptions(repos);
-  if (options.some((option) => option.value === value)) return value;
-
-  const optionValues = new Set(options.map((option) => option.value));
-  for (const repo of repos) {
-    const legacyValue = providerRepoSelectorLabel(repo);
-    const nextValue = providerRepoSelectorValue(repo);
-    if (!legacyValue || !nextValue || !nextValue.includes("|")) continue;
-    if (legacyValue === value && optionValues.has(nextValue)) return nextValue;
-  }
-  return value;
 }

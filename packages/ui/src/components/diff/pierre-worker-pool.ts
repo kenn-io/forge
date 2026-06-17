@@ -1,23 +1,6 @@
 import { getOrCreateWorkerPoolSingleton, type WorkerPoolManager } from "@pierre/diffs/worker";
 
 export const diffTokenizeMaxLineLength = 180;
-export const pierreSyntaxHighlightLanguages = [
-  "bash",
-  "css",
-  "go",
-  "html",
-  "javascript",
-  "json",
-  "markdown",
-  "sql",
-  "toml",
-  "typescript",
-  "yaml",
-] as const;
-
-export function isPierreSyntaxHighlightLanguage(lang: string | undefined): boolean {
-  return pierreSyntaxHighlightLanguages.includes(lang as (typeof pierreSyntaxHighlightLanguages)[number]);
-}
 
 // Syntax highlighting is the dominant JS cost in diff-heavy e2e runs:
 // the shiki worker pool loads ~1MB of worker + wasm per page and
@@ -46,7 +29,6 @@ export function getPierreDiffWorkerPool(): WorkerPoolManager | undefined {
       theme: { dark: "pierre-dark", light: "pierre-light" },
       lineDiffType: "word",
       tokenizeMaxLineLength: diffTokenizeMaxLineLength,
-      langs: [...pierreSyntaxHighlightLanguages],
     },
   });
 }

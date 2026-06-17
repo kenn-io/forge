@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DEFAULT_TOKENIZE_MAX_LENGTH, FileDiff, VirtualizedFileDiff } from "@pierre/diffs";
+  import { FileDiff, VirtualizedFileDiff } from "@pierre/diffs";
   import type {
     DiffLineAnnotation,
     ExpansionDirections,
@@ -26,11 +26,8 @@
     renderedCodeColumns,
     renderedCodeSide as renderedPierreCodeSide,
   } from "./pierre-dom.js";
-  import {
-    diffTokenizeMaxLineLength,
-    getPierreDiffWorkerPool,
-    isPierreSyntaxHighlightLanguage,
-  } from "./pierre-worker-pool.js";
+  import { diffTokenizeMaxLineLength, getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
+  import type { WorkerPoolManager } from "@pierre/diffs/worker";
 
   interface Props {
     file: DiffFile | null | undefined;
@@ -127,6 +124,8 @@
   let lineCommentButtonHasPointerSnapshot = false;
   let lineCommentButtonWasSelectedOnPointerDown = false;
   let syntaxHighlightWorkerActive = false;
+  let syntaxHighlightWorkerPool: WorkerPoolManager | undefined;
+  let unsubscribeWorkerStats: (() => void) | undefined;
   const maxImmediateRenderRetries = 5;
 
   const renderFile = $derived(file ? diffFileWithPatch(file) : emptyFile);
@@ -163,7 +162,7 @@
     expansionLineCount: 40,
     tokenizeMaxLineLength: diffTokenizeMaxLineLength,
     onPostRender: () => {
-      finalizeRenderedDom(fullContextFileDiff ?? pierreFile);
+      finalizeRenderedDom();
     },
     unsafeCSS: `
       :host {
@@ -364,7 +363,7 @@
       if (didRender) {
         renderAttemptKey = nextRenderAttemptKey;
         renderRetryCount = 0;
-        finalizeRenderedDom(pierreFile);
+        finalizeRenderedDom();
       } else {
         scheduleRenderRetry();
       }
@@ -491,6 +490,9 @@
     renderedLineRows = new Map();
     fullContextFileDiff = undefined;
     syntaxHighlightWorkerActive = false;
+    syntaxHighlightWorkerPool = undefined;
+    unsubscribeWorkerStats?.();
+    unsubscribeWorkerStats = undefined;
     pierreDiff?.cleanUp();
     pierreDiff = undefined;
   }
@@ -498,6 +500,16 @@
   function createPierreDiff(): FileDiff<unknown> | VirtualizedFileDiff<unknown> {
     const workerPool = getPierreDiffWorkerPool();
     syntaxHighlightWorkerActive = Boolean(workerPool);
+    syntaxHighlightWorkerPool = workerPool;
+    unsubscribeWorkerStats?.();
+    unsubscribeWorkerStats = workerPool?.subscribeToStatChanges(() => {
+      if (rendered) return;
+      queueMicrotask(() => {
+        if (!rendered) {
+          finalizeRenderedDom();
+        }
+      });
+    });
     if (!virtualizer) return new FileDiff<unknown>(pierreOptions, workerPool, true);
     return new VirtualizedFileDiff<unknown>(
       pierreOptions,
@@ -800,7 +812,7 @@
     pierreDiff.setSelectedLines(selectedRange);
     if (didRender) {
       fullContextRendered = true;
-      finalizeRenderedDom(fullContextFileDiff);
+      finalizeRenderedDom();
     }
     return didRender;
   }
@@ -850,14 +862,14 @@
     return pierreDiff.render(props);
   }
 
-  function finalizeRenderedDom(fileDiff: FileDiffMetadata | undefined): boolean {
+  function finalizeRenderedDom(): boolean {
     removeStalePlaceholderPres();
     applyLineTargetAttributes();
     applyHunkHeaderLabels();
     applyLineCommentButtons();
     syncLineAnnotationWrappers();
 
-    const ready = renderedDomReady(fileDiff);
+    const ready = renderedDomReady();
     rendered = ready;
     if (!ready) return false;
 
@@ -870,20 +882,15 @@
     return true;
   }
 
-  function renderedDomReady(fileDiff: FileDiffMetadata | undefined): boolean {
-    if (!expectsSyntaxHighlight(fileDiff)) return true;
-    return host?.shadowRoot?.querySelector("[data-line] span[style]") != null;
+  function renderedDomReady(): boolean {
+    if (!syntaxHighlightWorkerActive) return true;
+    if (host?.shadowRoot?.querySelector("[data-line] span[style]") != null) return true;
+    return !syntaxHighlightWorkerHasPendingWork();
   }
 
-  function expectsSyntaxHighlight(fileDiff: FileDiffMetadata | undefined): boolean {
-    if (!syntaxHighlightWorkerActive || !fileDiff) return false;
-    if (!isPierreSyntaxHighlightLanguage(fileDiff.lang)) return false;
-    if (Math.max(fileDiff.additionLines.length, fileDiff.deletionLines.length) > DEFAULT_TOKENIZE_MAX_LENGTH) {
-      return false;
-    }
-    return [...fileDiff.additionLines, ...fileDiff.deletionLines].some((line) => {
-      return line.trim().length > 0 && line.length < diffTokenizeMaxLineLength;
-    });
+  function syntaxHighlightWorkerHasPendingWork(): boolean {
+    const stats = syntaxHighlightWorkerPool?.getStats();
+    return Boolean(stats && (stats.queuedTasks > 0 || stats.activeTasks > 0));
   }
 
   async function loadFullContext(

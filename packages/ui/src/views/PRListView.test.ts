@@ -20,7 +20,7 @@ vi.mock("../components/diff/DiffFilesLayout.svelte", async () => ({
 
 import PRListView from "./PRListView.svelte";
 
-const minSplitViewWidth = (800 + 24 + 24) * 2;
+const minSplitViewWidth = 1280;
 
 const selectedPR: PullRequestRouteRef = {
   provider: "github",
@@ -105,7 +105,7 @@ describe("PRListView split view", () => {
     vi.unstubAllGlobals();
   });
 
-  it("does not expose split view below twice the regular conversation width", async () => {
+  it("does not expose split view below the xl detail-pane width", async () => {
     observedWidth.value = minSplitViewWidth - 1;
 
     renderPRListView();

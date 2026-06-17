@@ -4203,6 +4203,58 @@ func TestWorkspaceBranchCandidatesUsesBareFallbackOnlyForLegacyWorkspace(t *test
 	assert.Equal([]string{"middleman/issue-10"}, got)
 }
 
+func TestIsGitWorktreeAbsentClassifiesCorruptGitfile(t *testing.T) {
+	// A "git worktree add" interrupted mid-write (e.g. the daemon
+	// canceling background setup at shutdown) leaves a worktree whose
+	// .git gitfile is empty or partial. Cleanup must treat such a
+	// dead worktree as absent rather than failing, so the workspace
+	// stays deletable. These are the verbatim phrases git emits,
+	// wrapped the way runGit wraps subprocess failures.
+	assert := Assert.New(t)
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			"rev-parse on corrupt gitfile",
+			fmt.Errorf(
+				"%w: %s", errors.New("exit status 128"),
+				"fatal: invalid gitfile format: /tmp/wt/.git",
+			),
+			true,
+		},
+		{
+			"worktree remove on corrupt gitfile",
+			fmt.Errorf(
+				"%w: %s", errors.New("exit status 128"),
+				"fatal: validation failed, cannot remove working "+
+					"tree: '/tmp/wt/.git' is not a .git file, error code 5",
+			),
+			true,
+		},
+		{
+			"missing worktree directory",
+			errors.New("fatal: '/tmp/wt' is not a working tree"),
+			true,
+		},
+		{"nil error", nil, false},
+		{
+			"unrelated git failure",
+			fmt.Errorf(
+				"%w: %s", errors.New("exit status 128"),
+				"fatal: could not read Username for 'https://github.com'",
+			),
+			false,
+		},
+	}
+	for _, tc := range cases {
+		assert.Equalf(
+			tc.want, isGitWorktreeAbsent(tc.err), "case %s", tc.name,
+		)
+	}
+}
+
 func TestFileLockManagerAcquireRelease(t *testing.T) {
 	require := require.New(t)
 	mgr := NewFileLockManager()

@@ -2957,7 +2957,14 @@ func isGitWorktreeAbsent(err error) bool {
 	return strings.Contains(msg, "is not a working tree") ||
 		strings.Contains(msg, "is not a worktree") ||
 		strings.Contains(msg, "not a git repository") ||
-		strings.Contains(msg, "no such file or directory")
+		strings.Contains(msg, "no such file or directory") ||
+		// A worktree whose .git gitfile was left empty or partial by
+		// an interrupted "git worktree add" is unusable: rev-parse
+		// reports "invalid gitfile format" and "worktree remove"
+		// reports "is not a .git file". Treat both as absent so
+		// cleanup skips the dead worktree instead of failing.
+		strings.Contains(msg, "invalid gitfile format") ||
+		strings.Contains(msg, "is not a .git file")
 }
 
 func isGitBranchAbsent(err error) bool {

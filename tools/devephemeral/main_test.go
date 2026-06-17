@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +19,8 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 	_ "modernc.org/sqlite"
 )
 
@@ -121,6 +125,15 @@ func TestPrepareEphemeralConfigDisablesReverseProxyTrustForDirectBackend(t *test
 	require.NoError(err)
 	assert.False(reloaded.TrustReverseProxy)
 	assert.True(source.TrustReverseProxy)
+
+	srv := server.NewWithConfig(
+		dbtest.Open(t), nil, nil, nil, reloaded, prepared.configPath, server.ServerOptions{},
+	)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
+	req.Host = "127.0.0.1:39141"
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 }
 
 func TestPrepareEphemeralConfigCopiesSourceDatabaseByDefault(t *testing.T) {

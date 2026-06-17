@@ -35,6 +35,10 @@ func TestSnapshotRoutesRegistered(t *testing.T) {
 		"/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions",
 		"/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}",
 		"/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
+		"/fleet/hosts/{host_key}/workspaces/{id}/commits",
+		"/fleet/hosts/{host_key}/workspaces/{id}/diff",
+		"/fleet/hosts/{host_key}/workspaces/{id}/file-preview",
+		"/fleet/hosts/{host_key}/workspaces/{id}/files",
 		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime",
 		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/shell",
 		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions",
@@ -60,6 +64,10 @@ func TestSnapshotRoutesRegistered(t *testing.T) {
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions"].Post, "POST fleet session not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}"].Delete, "DELETE fleet session not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec"].Get, "GET fleet session attach spec not registered")
+	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/commits"].Get, "GET fleet workspace commits not registered")
+	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/diff"].Get, "GET fleet workspace diff not registered")
+	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/file-preview"].Get, "GET fleet workspace file preview not registered")
+	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/files"].Get, "GET fleet workspace files not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime"].Get, "GET fleet project worktree runtime not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/shell"].Post, "POST fleet project worktree shell not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions"].Post, "POST fleet project worktree session not registered")

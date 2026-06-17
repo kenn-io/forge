@@ -7701,6 +7701,203 @@ paths:
       summary: Get workspace on fleet host
       tags:
         - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/commits:
+    get:
+      operationId: get-fleet-workspace-commits
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get workspace commits on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/diff:
+    get:
+      operationId: get-fleet-workspace-diff
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: Workspace diff base.
+          in: query
+          name: base
+          schema:
+            type: string
+        - description: Whitespace filtering mode.
+          in: query
+          name: whitespace
+          schema:
+            type: string
+        - description: Commit SHA scope.
+          in: query
+          name: commit
+          schema:
+            type: string
+        - description: Older range commit SHA.
+          in: query
+          name: from
+          schema:
+            type: string
+        - description: Newer range commit SHA.
+          in: query
+          name: to
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get workspace diff on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/file-preview:
+    get:
+      operationId: get-fleet-workspace-file-preview
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: Workspace diff base.
+          in: query
+          name: base
+          schema:
+            type: string
+        - description: Whitespace filtering mode.
+          in: query
+          name: whitespace
+          schema:
+            type: string
+        - description: Commit SHA scope.
+          in: query
+          name: commit
+          schema:
+            type: string
+        - description: Older range commit SHA.
+          in: query
+          name: from
+          schema:
+            type: string
+        - description: Newer range commit SHA.
+          in: query
+          name: to
+          schema:
+            type: string
+        - description: Workspace file path to preview.
+          in: query
+          name: path
+          schema:
+            type: string
+        - description: Preview side.
+          in: query
+          name: side
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get workspace file preview on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/files:
+    get:
+      operationId: get-fleet-workspace-files
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: Workspace diff base.
+          in: query
+          name: base
+          schema:
+            type: string
+        - description: Whitespace filtering mode.
+          in: query
+          name: whitespace
+          schema:
+            type: string
+        - description: Commit SHA scope.
+          in: query
+          name: commit
+          schema:
+            type: string
+        - description: Older range commit SHA.
+          in: query
+          name: from
+          schema:
+            type: string
+        - description: Newer range commit SHA.
+          in: query
+          name: to
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get workspace files on fleet host
+      tags:
+        - Fleet
   /fleet/hosts/{host_key}/workspaces/{id}/refresh:
     post:
       operationId: refresh-fleet-workspace

@@ -7,6 +7,7 @@
 
   interface Props {
     workspaceID: string;
+    workspaceHostKey?: string | undefined;
     provider: string;
     platformHost?: string | undefined;
     repoOwner: string;
@@ -19,6 +20,7 @@
 
   const {
     workspaceID,
+    workspaceHostKey = undefined,
     provider,
     platformHost,
     repoOwner,
@@ -35,10 +37,13 @@
 
   $effect(() => {
     if (!active) return;
-    const key = `${workspaceID}:${base}:${refreshToken}`;
+    const key = `${workspaceHostKey ?? "self"}:${workspaceID}:${base}:${refreshToken}`;
     if (loadedKey === key) return;
     loadedKey = key;
-    void diff.loadWorkspaceDiff(workspaceID, base, false, { refreshCommits: refreshToken > 0 });
+    void diff.loadWorkspaceDiff(workspaceID, base, false, {
+      refreshCommits: refreshToken > 0,
+      workspaceHostKey,
+    });
   });
 
   function selectBase(nextBase: WorkspaceDiffBase): void {

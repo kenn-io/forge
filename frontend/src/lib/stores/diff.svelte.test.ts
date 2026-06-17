@@ -185,6 +185,56 @@ describe("createDiffStore loadDiff", () => {
     });
   });
 
+  it("loads remote workspace files, diff, commits, and previews through the fleet host route", async () => {
+    const calls: string[] = [];
+    const files = makeFilesResult(["src/remote.go"]);
+    const diff = makeDiffResult(["src/remote.go"]);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/fleet/hosts/member/workspaces/ws-1/commits")) {
+        return Response.json({
+          commits: [
+            {
+              sha: "sha2",
+              message: "remote second",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+        });
+      }
+      if (url.includes("/fleet/hosts/member/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/fleet/hosts/member/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      if (url.includes("/fleet/hosts/member/workspaces/ws-1/file-preview")) {
+        return Response.json({
+          path: "src/remote.go",
+          content: "package remote",
+        });
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    const store = createDiffStore({ client: testClient() });
+
+    await store.loadWorkspaceDiff("ws-1", "merge-target", false, { workspaceHostKey: "member" });
+    await store.loadCommits();
+    await store.loadFilePreview("owner", "repo", 1, "src/remote.go", "new");
+
+    expect(calls).toContain("/api/v1/fleet/hosts/member/workspaces/ws-1/files?base=merge-target");
+    expect(calls).toContain("/api/v1/fleet/hosts/member/workspaces/ws-1/diff?base=merge-target");
+    expect(calls).toContain("/api/v1/fleet/hosts/member/workspaces/ws-1/commits");
+    expect(calls).toContain(
+      "/api/v1/fleet/hosts/member/workspaces/ws-1/file-preview?base=merge-target&path=src%2Fremote.go&side=new",
+    );
+    expect(calls.some((url) => url.includes("/api/v1/workspaces/ws-1/"))).toBe(false);
+  });
+
   it("loads workspace diffs against the merge target", async () => {
     const calls: string[] = [];
     const files = makeFilesResult(["src/app.go"]);

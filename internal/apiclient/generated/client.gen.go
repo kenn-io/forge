@@ -2940,6 +2940,66 @@ type DeleteFleetWorkspaceParams struct {
 	Force *bool `form:"force,omitempty" json:"force,omitempty"`
 }
 
+// GetFleetWorkspaceDiffParams defines parameters for GetFleetWorkspaceDiff.
+type GetFleetWorkspaceDiffParams struct {
+	// Base Workspace diff base.
+	Base *string `form:"base,omitempty" json:"base,omitempty"`
+
+	// Whitespace Whitespace filtering mode.
+	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+
+	// Commit Commit SHA scope.
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
+
+	// From Older range commit SHA.
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Newer range commit SHA.
+	To *string `form:"to,omitempty" json:"to,omitempty"`
+}
+
+// GetFleetWorkspaceFilePreviewParams defines parameters for GetFleetWorkspaceFilePreview.
+type GetFleetWorkspaceFilePreviewParams struct {
+	// Base Workspace diff base.
+	Base *string `form:"base,omitempty" json:"base,omitempty"`
+
+	// Whitespace Whitespace filtering mode.
+	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+
+	// Commit Commit SHA scope.
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
+
+	// From Older range commit SHA.
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Newer range commit SHA.
+	To *string `form:"to,omitempty" json:"to,omitempty"`
+
+	// Path Workspace file path to preview.
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+
+	// Side Preview side.
+	Side *string `form:"side,omitempty" json:"side,omitempty"`
+}
+
+// GetFleetWorkspaceFilesParams defines parameters for GetFleetWorkspaceFiles.
+type GetFleetWorkspaceFilesParams struct {
+	// Base Workspace diff base.
+	Base *string `form:"base,omitempty" json:"base,omitempty"`
+
+	// Whitespace Whitespace filtering mode.
+	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+
+	// Commit Commit SHA scope.
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
+
+	// From Older range commit SHA.
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Newer range commit SHA.
+	To *string `form:"to,omitempty" json:"to,omitempty"`
+}
+
 // LaunchFleetWorkspaceRuntimeSessionJSONBody defines parameters for LaunchFleetWorkspaceRuntimeSession.
 type LaunchFleetWorkspaceRuntimeSessionJSONBody map[string]interface{}
 
@@ -3753,6 +3813,18 @@ type ClientInterface interface {
 
 	// GetFleetWorkspace request
 	GetFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetWorkspaceCommits request
+	GetFleetWorkspaceCommits(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetWorkspaceDiff request
+	GetFleetWorkspaceDiff(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetWorkspaceFilePreview request
+	GetFleetWorkspaceFilePreview(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetWorkspaceFiles request
+	GetFleetWorkspaceFiles(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RefreshFleetWorkspace request
 	RefreshFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -5251,6 +5323,54 @@ func (c *Client) DeleteFleetWorkspace(ctx context.Context, hostKey string, id st
 
 func (c *Client) GetFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetFleetWorkspaceRequest(c.Server, hostKey, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetWorkspaceCommits(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetWorkspaceCommitsRequest(c.Server, hostKey, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetWorkspaceDiff(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetWorkspaceDiffRequest(c.Server, hostKey, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetWorkspaceFilePreview(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetWorkspaceFilePreviewRequest(c.Server, hostKey, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetWorkspaceFiles(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetWorkspaceFilesRequest(c.Server, hostKey, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -10924,6 +11044,419 @@ func NewGetFleetWorkspaceRequest(server string, hostKey string, id string) (*htt
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFleetWorkspaceCommitsRequest generates requests for GetFleetWorkspaceCommits
+func NewGetFleetWorkspaceCommitsRequest(server string, hostKey string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/commits", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFleetWorkspaceDiffRequest generates requests for GetFleetWorkspaceDiff
+func NewGetFleetWorkspaceDiffRequest(server string, hostKey string, id string, params *GetFleetWorkspaceDiffParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/diff", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Base != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "base", *params.Base, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Commit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFleetWorkspaceFilePreviewRequest generates requests for GetFleetWorkspaceFilePreview
+func NewGetFleetWorkspaceFilePreviewRequest(server string, hostKey string, id string, params *GetFleetWorkspaceFilePreviewParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/file-preview", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Base != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "base", *params.Base, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Commit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Side != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "side", *params.Side, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFleetWorkspaceFilesRequest generates requests for GetFleetWorkspaceFiles
+func NewGetFleetWorkspaceFilesRequest(server string, hostKey string, id string, params *GetFleetWorkspaceFilesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/files", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Base != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "base", *params.Base, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Commit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -22271,6 +22804,18 @@ type ClientWithResponsesInterface interface {
 	// GetFleetWorkspaceWithResponse request
 	GetFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceResponse, error)
 
+	// GetFleetWorkspaceCommitsWithResponse request
+	GetFleetWorkspaceCommitsWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceCommitsResponse, error)
+
+	// GetFleetWorkspaceDiffWithResponse request
+	GetFleetWorkspaceDiffWithResponse(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceDiffResponse, error)
+
+	// GetFleetWorkspaceFilePreviewWithResponse request
+	GetFleetWorkspaceFilePreviewWithResponse(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceFilePreviewResponse, error)
+
+	// GetFleetWorkspaceFilesWithResponse request
+	GetFleetWorkspaceFilesWithResponse(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceFilesResponse, error)
+
 	// RefreshFleetWorkspaceWithResponse request
 	RefreshFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*RefreshFleetWorkspaceResponse, error)
 
@@ -24058,6 +24603,98 @@ func (r GetFleetWorkspaceResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetFleetWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetWorkspaceCommitsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetWorkspaceCommitsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetWorkspaceCommitsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetWorkspaceDiffResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetWorkspaceDiffResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetWorkspaceDiffResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetWorkspaceFilePreviewResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetWorkspaceFilePreviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetWorkspaceFilePreviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetWorkspaceFilesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetWorkspaceFilesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetWorkspaceFilesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -28924,6 +29561,42 @@ func (c *ClientWithResponses) GetFleetWorkspaceWithResponse(ctx context.Context,
 	return ParseGetFleetWorkspaceResponse(rsp)
 }
 
+// GetFleetWorkspaceCommitsWithResponse request returning *GetFleetWorkspaceCommitsResponse
+func (c *ClientWithResponses) GetFleetWorkspaceCommitsWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceCommitsResponse, error) {
+	rsp, err := c.GetFleetWorkspaceCommits(ctx, hostKey, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetWorkspaceCommitsResponse(rsp)
+}
+
+// GetFleetWorkspaceDiffWithResponse request returning *GetFleetWorkspaceDiffResponse
+func (c *ClientWithResponses) GetFleetWorkspaceDiffWithResponse(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceDiffResponse, error) {
+	rsp, err := c.GetFleetWorkspaceDiff(ctx, hostKey, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetWorkspaceDiffResponse(rsp)
+}
+
+// GetFleetWorkspaceFilePreviewWithResponse request returning *GetFleetWorkspaceFilePreviewResponse
+func (c *ClientWithResponses) GetFleetWorkspaceFilePreviewWithResponse(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceFilePreviewResponse, error) {
+	rsp, err := c.GetFleetWorkspaceFilePreview(ctx, hostKey, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetWorkspaceFilePreviewResponse(rsp)
+}
+
+// GetFleetWorkspaceFilesWithResponse request returning *GetFleetWorkspaceFilesResponse
+func (c *ClientWithResponses) GetFleetWorkspaceFilesWithResponse(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceFilesResponse, error) {
+	rsp, err := c.GetFleetWorkspaceFiles(ctx, hostKey, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetWorkspaceFilesResponse(rsp)
+}
+
 // RefreshFleetWorkspaceWithResponse request returning *RefreshFleetWorkspaceResponse
 func (c *ClientWithResponses) RefreshFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*RefreshFleetWorkspaceResponse, error) {
 	rsp, err := c.RefreshFleetWorkspace(ctx, hostKey, id, reqEditors...)
@@ -32722,6 +33395,138 @@ func ParseGetFleetWorkspaceResponse(rsp *http.Response) (*GetFleetWorkspaceRespo
 	}
 
 	response := &GetFleetWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetWorkspaceCommitsResponse parses an HTTP response from a GetFleetWorkspaceCommitsWithResponse call
+func ParseGetFleetWorkspaceCommitsResponse(rsp *http.Response) (*GetFleetWorkspaceCommitsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetWorkspaceCommitsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetWorkspaceDiffResponse parses an HTTP response from a GetFleetWorkspaceDiffWithResponse call
+func ParseGetFleetWorkspaceDiffResponse(rsp *http.Response) (*GetFleetWorkspaceDiffResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetWorkspaceDiffResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetWorkspaceFilePreviewResponse parses an HTTP response from a GetFleetWorkspaceFilePreviewWithResponse call
+func ParseGetFleetWorkspaceFilePreviewResponse(rsp *http.Response) (*GetFleetWorkspaceFilePreviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetWorkspaceFilePreviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetWorkspaceFilesResponse parses an HTTP response from a GetFleetWorkspaceFilesWithResponse call
+func ParseGetFleetWorkspaceFilesResponse(rsp *http.Response) (*GetFleetWorkspaceFilesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetWorkspaceFilesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

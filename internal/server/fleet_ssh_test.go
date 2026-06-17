@@ -212,6 +212,44 @@ func TestSSHFleetProxyRelaysWrites(t *testing.T) {
 		"request body must ride the relay verbatim")
 }
 
+func TestSSHFleetProxyRelaysWorkspaceDiffReads(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	fake := &fakeSSHExec{routes: map[string]string{
+		"GET /api/v1/workspaces/ws_1/diff?base=merge-target&whitespace=hide": framedJSON(
+			http.StatusOK,
+			`{"stale":false,"files":[{"path":"remote.go","status":"modified"}]}`,
+		),
+	}}
+	srv, _ := setupTestServer(t)
+	srv.sshFleet = newSSHTestTransport(t, fake, config.FleetSSHPeer{
+		Key: "epyc", Destination: "wes@epyc.local",
+	})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp := httpDo(t, ts, http.MethodGet,
+		"/api/v1/fleet/hosts/epyc/workspaces/ws_1/diff?base=merge-target&whitespace=hide", nil)
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		require.Failf("unexpected relay status",
+			"relay status %d: %s (calls: %v)", resp.StatusCode, raw, fake.calls)
+	}
+	var diff struct {
+		Files []struct {
+			Path string `json:"path"`
+		} `json:"files"`
+	}
+	require.NoError(json.NewDecoder(resp.Body).Decode(&diff))
+	resp.Body.Close()
+
+	require.Len(diff.Files, 1)
+	assert.Equal("remote.go", diff.Files[0].Path)
+	assert.Contains(fake.calls,
+		"GET /api/v1/workspaces/ws_1/diff?base=merge-target&whitespace=hide")
+}
+
 // TestSSHFleetAttachSpecWrapped pins the attach contract: a peer's
 // attach-spec comes back wrapped in the hub's ControlMaster ssh
 // invocation and drops requires_local_host, so a client runs it from

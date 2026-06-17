@@ -2730,6 +2730,7 @@
               <WorkspaceRightSidebar
                 activeTab={sidebarTab}
                 workspaceID={workspace.id}
+                {workspaceHostKey}
                 provider={workspace.repo.provider}
                 platformHost={workspace.repo.platform_host}
                 repoOwner={workspace.repo.owner}

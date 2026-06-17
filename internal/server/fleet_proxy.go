@@ -128,6 +128,49 @@ func (s *Server) registerFleetOperationRoutes(api huma.API) {
 			},
 		},
 		{
+			operationID: "get-fleet-workspace-commits",
+			method:      http.MethodGet,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/commits",
+			summary:     "Get workspace commits on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/commits"
+			},
+		},
+		{
+			operationID: "get-fleet-workspace-diff",
+			method:      http.MethodGet,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/diff",
+			summary:     "Get workspace diff on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			queryParams: fleetWorkspaceDiffQueryParams(),
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/diff"
+			},
+		},
+		{
+			operationID: "get-fleet-workspace-file-preview",
+			method:      http.MethodGet,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/file-preview",
+			summary:     "Get workspace file preview on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			queryParams: fleetWorkspaceFilePreviewQueryParams(),
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/file-preview"
+			},
+		},
+		{
+			operationID: "get-fleet-workspace-files",
+			method:      http.MethodGet,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/files",
+			summary:     "Get workspace files on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			queryParams: fleetWorkspaceDiffQueryParams(),
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/files"
+			},
+		},
+		{
 			operationID: "launch-fleet-workspace-runtime-session",
 			method:      http.MethodPost,
 			path:        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions",
@@ -510,6 +553,33 @@ func fleetForceQueryParam() *huma.Param {
 		Schema: &huma.Schema{
 			Type: "boolean",
 		},
+	}
+}
+
+func fleetWorkspaceDiffQueryParams() []*huma.Param {
+	return []*huma.Param{
+		fleetStringQueryParam("base", "Workspace diff base."),
+		fleetStringQueryParam("whitespace", "Whitespace filtering mode."),
+		fleetStringQueryParam("commit", "Commit SHA scope."),
+		fleetStringQueryParam("from", "Older range commit SHA."),
+		fleetStringQueryParam("to", "Newer range commit SHA."),
+	}
+}
+
+func fleetWorkspaceFilePreviewQueryParams() []*huma.Param {
+	return append(
+		fleetWorkspaceDiffQueryParams(),
+		fleetStringQueryParam("path", "Workspace file path to preview."),
+		fleetStringQueryParam("side", "Preview side."),
+	)
+}
+
+func fleetStringQueryParam(name, description string) *huma.Param {
+	return &huma.Param{
+		Name:        name,
+		In:          "query",
+		Description: description,
+		Schema:      fleetStringSchema(),
 	}
 }
 

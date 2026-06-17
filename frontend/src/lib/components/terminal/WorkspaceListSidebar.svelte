@@ -272,8 +272,7 @@
     const peers = fleetHosts.filter(
       (host) =>
         host.reachable &&
-        host.kind !== "self" &&
-        host.preferredTransport === "http",
+        host.kind !== "self",
     );
     const lists = await Promise.all(
       peers.map(async (host) => {

@@ -708,6 +708,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/fleet/hosts/{host_key}/workspaces/{id}/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace commits on fleet host */
+        get: operations["get-fleet-workspace-commits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace diff on fleet host */
+        get: operations["get-fleet-workspace-diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/file-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace file preview on fleet host */
+        get: operations["get-fleet-workspace-file-preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace files on fleet host */
+        get: operations["get-fleet-workspace-files"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/fleet/hosts/{host_key}/workspaces/{id}/refresh": {
         parameters: {
             query?: never;
@@ -7807,6 +7875,147 @@ export interface operations {
             query?: {
                 /** @description Forward force deletion to the owning host. */
                 force?: boolean;
+            };
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-fleet-workspace-commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-fleet-workspace-diff": {
+        parameters: {
+            query?: {
+                /** @description Workspace diff base. */
+                base?: string;
+                /** @description Whitespace filtering mode. */
+                whitespace?: string;
+                /** @description Commit SHA scope. */
+                commit?: string;
+                /** @description Older range commit SHA. */
+                from?: string;
+                /** @description Newer range commit SHA. */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-fleet-workspace-file-preview": {
+        parameters: {
+            query?: {
+                /** @description Workspace diff base. */
+                base?: string;
+                /** @description Whitespace filtering mode. */
+                whitespace?: string;
+                /** @description Commit SHA scope. */
+                commit?: string;
+                /** @description Older range commit SHA. */
+                from?: string;
+                /** @description Newer range commit SHA. */
+                to?: string;
+                /** @description Workspace file path to preview. */
+                path?: string;
+                /** @description Preview side. */
+                side?: string;
+            };
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-fleet-workspace-files": {
+        parameters: {
+            query?: {
+                /** @description Workspace diff base. */
+                base?: string;
+                /** @description Whitespace filtering mode. */
+                whitespace?: string;
+                /** @description Commit SHA scope. */
+                commit?: string;
+                /** @description Older range commit SHA. */
+                from?: string;
+                /** @description Newer range commit SHA. */
+                to?: string;
             };
             header?: never;
             path: {

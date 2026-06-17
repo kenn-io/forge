@@ -40,6 +40,7 @@
   interface Props {
     activeTab: "diff" | "pr" | "issue" | "reviews";
     workspaceID: string;
+    workspaceHostKey?: string | undefined;
     provider: string;
     platformHost?: string | undefined;
     repoOwner: string;
@@ -56,6 +57,7 @@
   let {
     activeTab,
     workspaceID,
+    workspaceHostKey = undefined,
     provider,
     platformHost,
     repoOwner,
@@ -280,9 +282,10 @@
 
 <div class="right-sidebar-content">
   {#if activeTab === "diff"}
-    {#key `diff:${workspaceID}`}
+    {#key `diff:${workspaceHostKey ?? "self"}:${workspaceID}`}
       <WorkspaceDiffPanel
         {workspaceID}
+        {workspaceHostKey}
         {provider}
         {platformHost}
         {repoOwner}

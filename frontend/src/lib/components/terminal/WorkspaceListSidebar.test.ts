@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -221,6 +221,76 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByText("member")).toBeTruthy();
     expect(screen.getByText("self")).toBeTruthy();
     expect(screen.getByText("local")).toBeTruthy();
+  });
+
+  it("loads workspaces from reachable ssh fleet hosts", async () => {
+    mockGet.mockImplementation((path: string, options?: { params?: { path?: { host_key?: string } } }) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "epyc",
+                diagnostics: [],
+                id: "epyc",
+                kind: "remote",
+                name: "epyc",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "ssh",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      if (path === "/fleet/hosts/{host_key}/workspaces") {
+        expect(options?.params?.path?.host_key).toBe("epyc");
+        return Promise.resolve({
+          data: {
+            workspaces: [
+              workspaceFixture({
+                id: "remote-ws",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "remote",
+                name: "service",
+                number: 12,
+                title: "Remote SSH workspace",
+              }),
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { workspaces: [] } });
+    });
+
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "" },
+    });
+
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith(
+        "/fleet/hosts/{host_key}/workspaces",
+        expect.objectContaining({
+          params: { path: { host_key: "epyc" } },
+        }),
+      );
+    });
+    expect(await screen.findByText("Remote SSH workspace")).toBeTruthy();
   });
 
   it("shows provider icons in repo groups when multiple providers are present", async () => {

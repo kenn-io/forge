@@ -2384,6 +2384,7 @@ type configFile struct {
 	Tmux                      Tmux              `toml:"tmux,omitempty"`
 	Shell                     Shell             `toml:"shell,omitempty"`
 	Fleet                     Fleet             `toml:"fleet,omitempty"`
+	API                       API               `toml:"api,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -2413,6 +2414,7 @@ func (c *Config) Save(path string) error {
 		Tmux:                cfg.Tmux,
 		Shell:               cfg.Shell,
 		Fleet:               cfg.Fleet,
+		API:                 cfg.API,
 	}
 	if cfg.DefaultPlatformHost == defaultPlatformHost {
 		f.DefaultPlatformHost = ""

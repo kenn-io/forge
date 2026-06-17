@@ -343,6 +343,18 @@ trust_reverse_proxy = true
 	assert.Equal(cfg.TrustReverseProxy, cfg2.TrustReverseProxy)
 }
 
+func TestLoadRoundTripsAPIAuthConfig(t *testing.T) {
+	assert := Assert.New(t)
+
+	cfg, cfg2 := roundTripConfigString(t, `
+[api]
+require_auth = true
+`)
+
+	assert.True(cfg.API.RequireAuth)
+	assert.True(cfg2.API.RequireAuth)
+}
+
 func TestLoadNormalizesDefaultPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	cfg, cfg2 := roundTripConfigString(t, `

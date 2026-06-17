@@ -51,6 +51,11 @@ func bootFleetServer(t *testing.T, cfg *config.Config) (*httptest.Server, *dbpkg
 	return ts, database
 }
 
+const (
+	fleetSnapshotEventuallyTimeout = 6 * time.Second
+	fleetSnapshotEventuallyTick    = 25 * time.Millisecond
+)
+
 func getJSON(t *testing.T, ts *httptest.Server, path string, out any) {
 	t.Helper()
 	resp, err := ts.Client().Get(ts.URL + path)
@@ -305,7 +310,7 @@ func TestFleetSnapshotLiveTmuxEnrichmentE2E(t *testing.T) {
 	require.Eventually(func() bool {
 		getJSON(t, ts, "/api/v1/snapshot/raw", &raw)
 		return raw.Host.TmuxLastPolledAt != ""
-	}, 2*time.Second, 25*time.Millisecond)
+	}, fleetSnapshotEventuallyTimeout, fleetSnapshotEventuallyTick)
 
 	require.Len(raw.Host.TmuxSessions, 3)
 	main := rawTmuxByName(raw.Host.TmuxSessions, "middleman-main")
@@ -379,7 +384,7 @@ func TestFleetSnapshotProjectWorktreeRuntimeE2E(t *testing.T) {
 		getJSON(t, ts, "/api/v1/snapshot/raw", &raw)
 		return raw.Host.TmuxLastPolledAt != "" &&
 			rawTmuxByName(raw.Host.TmuxSessions, "middleman-project-worktree-agent") != nil
-	}, 2*time.Second, 25*time.Millisecond)
+	}, fleetSnapshotEventuallyTimeout, fleetSnapshotEventuallyTick)
 
 	worktreeAbs, err := filepath.Abs(worktreePath)
 	require.NoError(err)
@@ -425,7 +430,7 @@ func TestFleetSnapshotEmptyTmuxServerE2E(t *testing.T) {
 	require.Eventually(func() bool {
 		getJSON(t, ts, "/api/v1/snapshot/raw", &raw)
 		return raw.Host.TmuxLastPolledAt != ""
-	}, 2*time.Second, 25*time.Millisecond)
+	}, fleetSnapshotEventuallyTimeout, fleetSnapshotEventuallyTick)
 
 	require.Empty(raw.Host.TmuxProbeError)
 	require.Empty(raw.Host.TmuxSessions)
@@ -466,7 +471,7 @@ func TestFleetSnapshotTmuxProbeFailureE2E(t *testing.T) {
 	require.Eventually(func() bool {
 		getJSON(t, ts, "/api/v1/snapshot/raw", &raw)
 		return raw.Host.TmuxProbeError != ""
-	}, 2*time.Second, 25*time.Millisecond)
+	}, fleetSnapshotEventuallyTimeout, fleetSnapshotEventuallyTick)
 
 	require.Empty(raw.Host.TmuxLastPolledAt)
 	require.Empty(raw.Host.TmuxSessions)

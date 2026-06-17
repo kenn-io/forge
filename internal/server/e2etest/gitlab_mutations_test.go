@@ -358,6 +358,7 @@ func setupGitLabMutationServer(
 	t.Cleanup(syncer.Stop)
 
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	return srv, database, recorder, repoID
 }
 

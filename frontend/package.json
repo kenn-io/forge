@@ -15,7 +15,7 @@
     "test": "node ../node_modules/vite-plus/bin/vp test run --project unit",
     "test:browser": "node ../node_modules/vite-plus/bin/vp test run --project browser",
     "test:e2e": "node ./scripts/run-e2e-to-file.ts",
-    "test:e2e:mock": "node node_modules/.bin/playwright test --config=playwright.config.ts",
+    "test:e2e:mock": "node ../node_modules/vite-plus/bin/vp exec -- playwright test --config=playwright.config.ts",
     "demo-workspace": "node node_modules/.bin/playwright test --config tests/demo/playwright-demo.config.ts"
   },
   "dependencies": {

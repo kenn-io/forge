@@ -15,13 +15,12 @@
   } from "../../utils/activitySelection.js";
   import RepoTypeahead from "../RepoTypeahead.svelte";
   import HeaderIconButton from "./HeaderIconButton.svelte";
+  import ThemeToggle from "./ThemeToggle.svelte";
   import {
-    MoonIcon,
     SearchIcon,
     SettingsIcon,
     SidebarToggleIcon,
     SpinnerIcon,
-    SunIcon,
     SyncIcon,
   } from "../../icons.ts";
   import { getGlobalRepo, setGlobalRepo } from "../../stores/filter.svelte.js";
@@ -30,9 +29,7 @@
     getContainerSize,
     isNarrow,
   } from "../../stores/container.svelte.js";
-  import {
-    isDark, toggleTheme, isThemeToggleVisible,
-  } from "../../stores/theme.svelte.js";
+  import { isThemeToggleVisible } from "../../stores/theme.svelte.js";
   import {
     isSidebarCollapsed,
     toggleSidebar,
@@ -360,15 +357,7 @@
       </button>
     {/if}
     {#if isThemeToggleVisible()}
-      <HeaderIconButton onclick={toggleTheme} title="Toggle theme">
-        {#if isDark()}
-          <SunIcon size="14" aria-hidden="true" />
-        {:else}
-          <span data-filled-icon="moon">
-            <MoonIcon size="14" aria-hidden="true" />
-          </span>
-        {/if}
-      </HeaderIconButton>
+      <ThemeToggle />
     {/if}
     {#if !isEmbedded()}
       <HeaderIconButton
@@ -528,11 +517,6 @@
     margin-left: 4px;
     vertical-align: middle;
     opacity: 0.6;
-  }
-
-  [data-filled-icon="moon"] :global(svg path) {
-    fill: currentColor;
-    stroke: none;
   }
 
   :global(#app.container-medium) .app-header {

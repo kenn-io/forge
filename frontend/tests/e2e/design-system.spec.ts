@@ -122,104 +122,18 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-test("design system page renders chip matrix with shared styles", async ({ page }) => {
-  await page.goto("/design-system");
+// The chip-matrix render facts and the tabbed-panel selected-tab / split-divider
+// / scroll-overflow layout metrics that used to live here now run at the browser
+// test tier, which mounts the real Chip and TabbedPanelTree primitives directly
+// in Chromium:
+//   src/lib/components/design-system/DesignSystemChips.browser.svelte.ts
+//   src/lib/components/design-system/DesignSystemPanel.browser.svelte.ts
+// Those facts need no /design-system route or app shell, so they no longer run
+// as full e2e. This spec keeps only what genuinely needs the live route: the
+// drag-to-split / drag-to-reorder mutations, the store-backed RepoTypeahead
+// dropdown, the chip visual snapshot, and route-level keyboard handling.
 
-  await expect(page.getByRole("heading", { name: "Design system" })).toBeVisible();
-
-  const smGreenChip = page
-    .locator('[data-size="sm"] .chip--green', {
-      hasText: "Green",
-    })
-    .first();
-  const mdGreenChip = page
-    .locator('[data-size="md"] .chip--green', {
-      hasText: "Green",
-    })
-    .first();
-  const mutedChip = page
-    .locator(".chip--muted", {
-      hasText: "Muted",
-    })
-    .first();
-  const plainCaseChip = page.getByText("plain case", { exact: true }).first();
-  const descenderChip = page.getByText("team/inbox-view", { exact: true }).first();
-  const interactiveChip = page
-    .getByRole("button", {
-      name: "Interactive",
-    })
-    .first();
-
-  await expect(smGreenChip).toBeVisible();
-  await expect(mdGreenChip).toBeVisible();
-  await expect(mutedChip).toBeVisible();
-  await expect(plainCaseChip).toBeVisible();
-  await expect(descenderChip).toBeVisible();
-  await expect(interactiveChip).toBeVisible();
-
-  const styles = await Promise.all([
-    smGreenChip.evaluate((node) => {
-      const styles = getComputedStyle(node);
-      return {
-        minHeight: styles.minHeight,
-        fontSize: styles.fontSize,
-        paddingInline: `${styles.paddingLeft}/${styles.paddingRight}`,
-      };
-    }),
-    mdGreenChip.evaluate((node) => {
-      const styles = getComputedStyle(node);
-      return {
-        minHeight: styles.minHeight,
-        fontSize: styles.fontSize,
-        paddingInline: `${styles.paddingLeft}/${styles.paddingRight}`,
-        backgroundColor: styles.backgroundColor,
-        textTransform: styles.textTransform,
-      };
-    }),
-    mutedChip.evaluate((node) => {
-      const styles = getComputedStyle(node);
-      return {
-        backgroundColor: styles.backgroundColor,
-      };
-    }),
-    plainCaseChip.evaluate((node) => {
-      const styles = getComputedStyle(node);
-      return {
-        textTransform: styles.textTransform,
-        letterSpacing: styles.letterSpacing,
-      };
-    }),
-    descenderChip.evaluate((node) => {
-      const chip = node.closest(".chip");
-      const chipBox = chip?.getBoundingClientRect();
-      return {
-        chipHeight: chipBox?.height ?? 0,
-      };
-    }),
-    interactiveChip.evaluate((node) => {
-      const styles = getComputedStyle(node);
-      return {
-        cursor: styles.cursor,
-      };
-    }),
-  ]);
-
-  expect(styles[0].minHeight).toBe("18px");
-  expect(styles[0].fontSize).toBe("10px");
-  expect(styles[0].paddingInline).toBe("6px/6px");
-  expect(styles[1].minHeight).toBe("22px");
-  expect(styles[1].fontSize).toBe("11px");
-  expect(styles[1].paddingInline).toBe("8px/8px");
-  expect(styles[1].backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-  expect(styles[1].textTransform).toBe("uppercase");
-  expect(styles[2].backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-  expect(styles[3].textTransform).toBe("none");
-  expect(styles[3].letterSpacing).toBe("normal");
-  expect(styles[4].chipHeight).toBe(18);
-  expect(styles[5].cursor).toBe("pointer");
-});
-
-test("design system page renders panel and typeahead examples", async ({ page }) => {
+test("design system panel supports drag mutations and typeahead dropdown states", async ({ page }) => {
   await page.goto("/design-system");
 
   await expect(page.getByRole("heading", { name: "Tabbed workspace panels" })).toBeVisible();
@@ -229,84 +143,9 @@ test("design system page renders panel and typeahead examples", async ({ page })
   await expect(panelDemo).toBeVisible();
   await expect(panelDemo.locator(".tabbed-panel-tab-tool")).toHaveCount(0);
   await expect(page.getByTestId("design-system-panel-overview")).toBeVisible();
-  const selectedTabMetrics = await panelDemo.locator('[data-tabbed-panel-tab-key="overview"]').evaluate((tab) => {
-    const styles = getComputedStyle(tab);
-    const tabBar = tab.parentElement;
-    if (!tabBar) {
-      throw new Error("Missing tab bar for selected tab");
-    }
-    const tabBarStyles = getComputedStyle(tabBar);
-    const tabBarDividerStyles = getComputedStyle(tabBar, "::after");
-    const tabRect = tab.getBoundingClientRect();
-    const tabBarRect = tabBar.getBoundingClientRect();
-    return {
-      borderBottomWidth: styles.borderBottomWidth,
-      marginBottom: styles.marginBottom,
-      tabAfterContent: getComputedStyle(tab, "::after").content,
-      tabBarBorderBottomWidth: tabBarStyles.borderBottomWidth,
-      tabBarDividerHeight: tabBarDividerStyles.height,
-      tabExtendsBelowBar: Math.round(tabRect.bottom - tabBarRect.bottom),
-      zIndex: styles.zIndex,
-    };
-  });
-  expect(selectedTabMetrics).toEqual({
-    borderBottomWidth: "0px",
-    marginBottom: "-1px",
-    tabAfterContent: "none",
-    tabBarBorderBottomWidth: "0px",
-    tabBarDividerHeight: "1px",
-    tabExtendsBelowBar: 1,
-    zIndex: "2",
-  });
-  const splitMetrics = await panelDemo
-    .locator('[aria-label="Resize design system panel split"]')
-    .evaluate((divider) => {
-      const split = divider.closest(".tabbed-panel-split");
-      const firstLeaf = split?.querySelector(".tabbed-panel-split-child.first > .tabbed-panel-leaf");
-      const secondLeaf = split?.querySelector(".tabbed-panel-split-child.second > .tabbed-panel-leaf");
-      const dividerBox = divider.getBoundingClientRect();
-      const dividerStyles = getComputedStyle(divider);
-      const firstLeafStyles = firstLeaf ? getComputedStyle(firstLeaf) : null;
-      const secondLeafStyles = secondLeaf ? getComputedStyle(secondLeaf) : null;
-      return {
-        dividerWidth: Math.round(dividerBox.width),
-        dividerPaddingInline: `${dividerStyles.paddingLeft}/${dividerStyles.paddingRight}`,
-        firstLeafBorderTop: firstLeafStyles?.borderTopWidth,
-        firstLeafBorderRight: firstLeafStyles?.borderRightWidth,
-        secondLeafBorderTop: secondLeafStyles?.borderTopWidth,
-        secondLeafBorderLeft: secondLeafStyles?.borderLeftWidth,
-      };
-    });
-  expect(splitMetrics).toEqual({
-    dividerWidth: 3,
-    dividerPaddingInline: "0px/0px",
-    firstLeafBorderTop: "0px",
-    firstLeafBorderRight: "0px",
-    secondLeafBorderTop: "0px",
-    secondLeafBorderLeft: "0px",
-  });
 
   await panelDemo.getByRole("tab", { name: /Activity/ }).click();
   await expect(page.getByTestId("design-system-panel-activity")).toBeVisible();
-  const activityScrollMetrics = await page.getByTestId("design-system-panel-activity").evaluate((article) => {
-    const panel = article.parentElement;
-    if (!panel) {
-      throw new Error("Missing tab panel for activity article");
-    }
-    panel.scrollTop = 0;
-    const styles = getComputedStyle(panel);
-    const before = panel.scrollTop;
-    panel.scrollTop = 48;
-    return {
-      overflowY: styles.overflowY,
-      scrollHeight: panel.scrollHeight,
-      clientHeight: panel.clientHeight,
-      scrollTopChanged: panel.scrollTop > before,
-    };
-  });
-  expect(activityScrollMetrics.overflowY).toBe("auto");
-  expect(activityScrollMetrics.scrollHeight).toBeGreaterThan(activityScrollMetrics.clientHeight);
-  expect(activityScrollMetrics.scrollTopChanged).toBe(true);
 
   const rootFirstChild = panelDemo.locator(".tabbed-panel-split-child.first").first();
   const rootDivider = panelDemo.locator('[aria-label="Resize design system panel split"]').first();

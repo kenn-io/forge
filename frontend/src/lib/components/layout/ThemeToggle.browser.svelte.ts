@@ -1,38 +1,31 @@
-// Browser-tier migration of the rendering behavior that
-// frontend/tests/e2e/theme-toggle.spec.ts ("toggles dark mode from the header
-// control") verified by driving the real header toggle in Chromium.
+// Browser-tier test for the real ThemeToggle component
+// (frontend/src/lib/components/layout/ThemeToggle.svelte), which AppHeader
+// renders in the header. This replaces frontend/tests/e2e/theme-toggle.spec.ts:
+// the toggle is now a standalone component, so the four real-rendering facts the
+// Playwright e2e drove through the full app shell run here in-process against a
+// real Chromium page, and the e2e spec was deleted.
 //
-// The e2e checked four real-rendering facts about the theme control:
-//   1. the icon button centers its glyph with a real flex box
-//      (display/alignItems/justifyContent),
-//   2. clicking it toggles the html.dark class,
-//   3. the rendered SVG swaps when toggled (moon <-> sun),
-//   4. the light-mode moon path computes a filled fill / no stroke.
-//
-// Facts 1-3 are component-tier: they exercise the shipped HeaderIconButton
-// scoped CSS, the shipped lucide Moon/Sun icons, and the real theme.svelte.ts
-// store. They are migrated here against a real Chromium page (jsdom cannot
-// resolve getComputedStyle layout). Fact 4 depends on a fill rule scoped to
-// AppHeader.svelte; reproducing it here would only assert a copied stylesheet,
-// so it stays with AppHeader.test.ts / the e2e and is intentionally not
-// duplicated. See the migration report notes.
+// Facts covered (jsdom resolves none of these):
+//   1. the icon button centers its glyph with a real flex box,
+//   2. the light-mode moon path computes a filled fill / no stroke,
+//   3. clicking it toggles the html.dark class and swaps moon <-> sun,
+//   4. toggling on applies the real :root.dark design-token override.
 
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
-// app.css carries the design tokens and the :root.dark overrides the real
-// theme store toggles. A real page has native localStorage/matchMedia, so no
-// jsdom shims are needed (the browser project deliberately omits setup.ts).
+// app.css carries the design tokens and the :root.dark overrides the real theme
+// store toggles. A real page has native localStorage/matchMedia, so no jsdom
+// shims are needed (the browser project deliberately omits setup.ts).
 import "../../../app.css";
 
 import { cleanupTheme, initTheme, isDark } from "../../stores/theme.svelte.js";
-import ThemeToggleControl from "./ThemeToggleControl.svelte";
+import ThemeToggle from "./ThemeToggle.svelte";
 
 function setLightBaseline(): void {
-  // Mirror the e2e's emulateMedia({ colorScheme: "light" }) + fresh load:
-  // clear any persisted choice and force a light starting point so the first
-  // toggle deterministically goes light -> dark.
+  // Mirror the e2e's emulateMedia({ colorScheme: "light" }) + fresh load: clear
+  // any persisted choice and force a light start so the first toggle goes dark.
   try {
     localStorage.removeItem("middleman-theme");
     localStorage.setItem("middleman-theme", "light");
@@ -43,7 +36,7 @@ function setLightBaseline(): void {
   initTheme();
 }
 
-describe("theme toggle control (browser)", () => {
+describe("ThemeToggle (browser)", () => {
   beforeEach(() => {
     setLightBaseline();
   });
@@ -58,8 +51,8 @@ describe("theme toggle control (browser)", () => {
     }
   });
 
-  it("renders the toggle as a real flex-centered icon button", async () => {
-    const { container } = render(ThemeToggleControl);
+  it("renders as a real flex-centered icon button", async () => {
+    const { container } = render(ThemeToggle);
 
     const button = page.getByTitle("Toggle theme");
     await expect.element(button).toBeVisible();
@@ -68,13 +61,11 @@ describe("theme toggle control (browser)", () => {
     expect(node.tagName).toBe("BUTTON");
 
     // Real-rendering layout: HeaderIconButton centers its glyph with flexbox.
-    // jsdom returns empty strings for these; only a real engine resolves them.
     const style = getComputedStyle(node);
     expect(style.display).toBe("inline-flex");
     expect(style.alignItems).toBe("center");
     expect(style.justifyContent).toBe("center");
 
-    // The icon glyph is actually painted (non-zero box) inside the button.
     const svg = container.querySelector("button[title='Toggle theme'] svg");
     expect(svg).not.toBeNull();
     const svgBox = (svg as SVGElement).getBoundingClientRect();
@@ -82,8 +73,25 @@ describe("theme toggle control (browser)", () => {
     expect(svgBox.height).toBeGreaterThan(0);
   });
 
+  it("renders the light-mode moon as a filled glyph (fill, no stroke)", async () => {
+    const { container } = render(ThemeToggle);
+
+    await expect.element(page.getByTitle("Toggle theme")).toBeVisible();
+    expect(isDark()).toBe(false);
+
+    // The component-scoped [data-filled-icon="moon"] rule overrides lucide's
+    // stroke-only glyph. This is the assertion the old harness could not make
+    // (it carried no styling); the real component now owns the rule.
+    const path = container.querySelector("[data-filled-icon='moon'] svg path");
+    expect(path).not.toBeNull();
+    const pathStyle = getComputedStyle(path as SVGElement);
+    expect(pathStyle.stroke).toBe("none");
+    expect(pathStyle.fill).not.toBe("none");
+    expect(pathStyle.fill.length).toBeGreaterThan(0);
+  });
+
   it("toggles the html.dark class and swaps the icon when clicked", async () => {
-    const { container } = render(ThemeToggleControl);
+    const { container } = render(ThemeToggle);
 
     const root = document.documentElement;
     const button = page.getByTitle("Toggle theme");
@@ -115,7 +123,7 @@ describe("theme toggle control (browser)", () => {
   });
 
   it("applies a real dark token override to html when toggled on", async () => {
-    render(ThemeToggleControl);
+    render(ThemeToggle);
 
     const root = document.documentElement;
     const lightSurface = getComputedStyle(root).getPropertyValue("--bg-surface").trim();

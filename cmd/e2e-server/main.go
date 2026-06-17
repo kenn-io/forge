@@ -63,6 +63,11 @@ func main() {
 		"visible-imported-modes", false,
 		"show imported app modes in the seeded config",
 	)
+	providerCollision := flag.Bool(
+		"provider-collision",
+		false,
+		"seed same host/repo_path under multiple providers",
+	)
 	serverInfoFile := flag.String(
 		"server-info-file", "",
 		"path to write discovered server port info as JSON",
@@ -83,6 +88,7 @@ func main() {
 		*serverInfoFile,
 		*defaultPlatformHost,
 		*visibleImportedModes,
+		*providerCollision,
 	); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -478,6 +484,72 @@ func seedGitLabReadOnlyCapabilityFixture(
 	return nil
 }
 
+func giteaProviderCollisionIssue(now time.Time) platform.Issue {
+	return platform.Issue{
+		Repo: platform.RepoRef{
+			Platform:           platform.KindGitea,
+			Host:               "github.com",
+			Owner:              "acme",
+			Name:               "widgets",
+			RepoPath:           "acme/widgets",
+			PlatformID:         9100,
+			PlatformExternalID: "gitea-acme-widgets",
+			WebURL:             "https://github.com/acme/widgets",
+			CloneURL:           "https://github.com/acme/widgets.git",
+			DefaultBranch:      "main",
+		},
+		PlatformID:         9101,
+		PlatformExternalID: "gitea-acme-widgets-901",
+		Number:             901,
+		URL:                "https://github.com/acme/widgets/issues/901",
+		Title:              "Gitea provider collision issue",
+		Author:             "gina",
+		State:              "open",
+		Body:               "Synthetic provider-collision issue for e2e filtering.",
+		CommentCount:       0,
+		CreatedAt:          now.Add(-2 * time.Hour),
+		UpdatedAt:          now,
+		LastActivityAt:     now,
+	}
+}
+
+func seedGiteaProviderCollisionFixture(
+	ctx context.Context,
+	database *db.DB,
+	issue platform.Issue,
+) error {
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       string(issue.Repo.Platform),
+		PlatformHost:   issue.Repo.Host,
+		PlatformRepoID: issue.Repo.PlatformExternalID,
+		Owner:          issue.Repo.Owner,
+		Name:           issue.Repo.Name,
+		RepoPath:       issue.Repo.RepoPath,
+	})
+	if err != nil {
+		return fmt.Errorf("upsert gitea collision repo: %w", err)
+	}
+	if _, err := database.UpsertIssue(ctx, &db.Issue{
+		RepoID:             repoID,
+		PlatformID:         issue.PlatformID,
+		PlatformExternalID: issue.PlatformExternalID,
+		Number:             issue.Number,
+		URL:                issue.URL,
+		Title:              issue.Title,
+		Author:             issue.Author,
+		State:              issue.State,
+		Body:               issue.Body,
+		CommentCount:       issue.CommentCount,
+		CreatedAt:          issue.CreatedAt,
+		UpdatedAt:          issue.UpdatedAt,
+		LastActivityAt:     issue.LastActivityAt,
+		DetailFetchedAt:    &issue.UpdatedAt,
+	}); err != nil {
+		return fmt.Errorf("upsert gitea collision issue: %w", err)
+	}
+	return nil
+}
+
 // ciFixtureOptions controls the per-fixture choices that the
 // pr-ci-state/* endpoints feed into setPR1CIState. Centralising the
 // options struct keeps the divergent fields visible and forces every
@@ -600,6 +672,7 @@ type appOptions struct {
 	roborevEndpoint      string
 	defaultPlatformHost  string
 	visibleImportedModes bool
+	providerCollision    bool
 }
 
 // appState bundles everything one logical e2e server instance owns:
@@ -823,6 +896,15 @@ func buildAppState(
 			},
 		}
 	}
+	if opts.providerCollision {
+		repos = append(repos, config.Repo{
+			Owner:        "acme",
+			Name:         "widgets",
+			Platform:     "gitea",
+			PlatformHost: "github.com",
+			RepoPath:     "acme/widgets",
+		})
+	}
 	cfg := &config.Config{
 		SyncInterval:        "5m",
 		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
@@ -1022,10 +1104,12 @@ func buildAppState(
 		time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC),
 		gitLabCloneURL,
 	)
+	giteaCollisionIssue := giteaProviderCollisionIssue(
+		time.Date(2026, 4, 29, 12, 0, 0, 0, time.UTC),
+	)
 	forgeUpdated := time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC)
 	giteaUpdated := time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC)
-	registry, err := ghclient.NewProviderRegistry(
-		fixtureClients,
+	staticProviders := []platform.Provider{
 		e2eStaticProvider{
 			kind:        platform.KindGitLab,
 			host:        "gitlab.example.com",
@@ -1036,86 +1120,121 @@ func buildAppState(
 				ReadComments: true,
 			},
 		},
-		e2eStaticProvider{
-			kind: platform.KindForgejo,
-			host: "codeberg.org",
+	}
+	if opts.providerCollision {
+		staticProviders = append(staticProviders, e2eStaticProvider{
+			kind:  platform.KindGitea,
+			host:  "github.com",
+			issue: giteaCollisionIssue,
 			caps: platform.Capabilities{
 				ReadRepositories: true,
+				ReadIssues:       true,
 			},
-			repos: []platform.Repository{
-				{
-					Ref: platform.RepoRef{
-						Platform: platform.KindForgejo,
-						Host:     "codeberg.org",
-						Owner:    "forge-lab",
-						Name:     "service",
-						RepoPath: "forge-lab/service",
-					},
-					Description:   "Forgejo service",
-					Private:       false,
-					UpdatedAt:     forgeUpdated,
-					DefaultBranch: "main",
-					WebURL:        "https://codeberg.org/forge-lab/service",
-					CloneURL:      "https://codeberg.org/forge-lab/service.git",
+			repos: []platform.Repository{{
+				Ref: platform.RepoRef{
+					Platform: platform.KindGitea,
+					Host:     "github.com",
+					Owner:    "acme",
+					Name:     "widgets",
+					RepoPath: "acme/widgets",
 				},
-				{
-					Ref: platform.RepoRef{
-						Platform: platform.KindForgejo,
-						Host:     "codeberg.org",
-						Owner:    "forge-lab",
-						Name:     "archived",
-						RepoPath: "forge-lab/archived",
-					},
-					Archived: true,
+				PlatformID:    9100,
+				Description:   "Gitea provider collision repo",
+				Private:       false,
+				UpdatedAt:     giteaCollisionIssue.UpdatedAt,
+				DefaultBranch: "main",
+				WebURL:        "https://github.com/acme/widgets",
+				CloneURL:      "https://github.com/acme/widgets.git",
+			}},
+		})
+		if err := seedGiteaProviderCollisionFixture(ctx, database, giteaCollisionIssue); err != nil {
+			return nil, fmt.Errorf("seed gitea provider collision fixture: %w", err)
+		}
+	}
+	registry, err := ghclient.NewProviderRegistry(
+		fixtureClients,
+		append(staticProviders,
+			e2eStaticProvider{
+				kind: platform.KindForgejo,
+				host: "codeberg.org",
+				caps: platform.Capabilities{
+					ReadRepositories: true,
 				},
-			},
-		},
-		e2eStaticProvider{
-			kind: platform.KindGitea,
-			host: "gitea.com",
-			caps: platform.Capabilities{
-				ReadRepositories: true,
-			},
-			repos: []platform.Repository{
-				{
-					Ref: platform.RepoRef{
-						Platform: platform.KindGitea,
-						Host:     "gitea.com",
-						Owner:    "gitea-team",
-						Name:     "service",
-						RepoPath: "gitea-team/service",
+				repos: []platform.Repository{
+					{
+						Ref: platform.RepoRef{
+							Platform: platform.KindForgejo,
+							Host:     "codeberg.org",
+							Owner:    "forge-lab",
+							Name:     "service",
+							RepoPath: "forge-lab/service",
+						},
+						Description:   "Forgejo service",
+						Private:       false,
+						UpdatedAt:     forgeUpdated,
+						DefaultBranch: "main",
+						WebURL:        "https://codeberg.org/forge-lab/service",
+						CloneURL:      "https://codeberg.org/forge-lab/service.git",
 					},
-					Description:   "Gitea service",
-					Private:       false,
-					UpdatedAt:     giteaUpdated,
-					DefaultBranch: "main",
-					WebURL:        "https://gitea.com/gitea-team/service",
-					CloneURL:      "https://gitea.com/gitea-team/service.git",
-				},
-				{
-					Ref: platform.RepoRef{
-						Platform: platform.KindGitea,
-						Host:     "gitea.com",
-						Owner:    "gitea-team",
-						Name:     "private-service",
-						RepoPath: "gitea-team/private-service",
+					{
+						Ref: platform.RepoRef{
+							Platform: platform.KindForgejo,
+							Host:     "codeberg.org",
+							Owner:    "forge-lab",
+							Name:     "archived",
+							RepoPath: "forge-lab/archived",
+						},
+						Archived: true,
 					},
-					Description: "Private Gitea service",
-					Private:     true,
-					UpdatedAt:   giteaUpdated.Add(-time.Hour),
-				},
-				{
-					Ref: platform.RepoRef{
-						Platform: platform.KindGitea,
-						Host:     "gitea.com",
-						Owner:    "gitea-team",
-						Name:     "archived",
-						RepoPath: "gitea-team/archived",
-					},
-					Archived: true,
 				},
 			},
-		},
+			e2eStaticProvider{
+				kind: platform.KindGitea,
+				host: "gitea.com",
+				caps: platform.Capabilities{
+					ReadRepositories: true,
+				},
+				repos: []platform.Repository{
+					{
+						Ref: platform.RepoRef{
+							Platform: platform.KindGitea,
+							Host:     "gitea.com",
+							Owner:    "gitea-team",
+							Name:     "service",
+							RepoPath: "gitea-team/service",
+						},
+						Description:   "Gitea service",
+						Private:       false,
+						UpdatedAt:     giteaUpdated,
+						DefaultBranch: "main",
+						WebURL:        "https://gitea.com/gitea-team/service",
+						CloneURL:      "https://gitea.com/gitea-team/service.git",
+					},
+					{
+						Ref: platform.RepoRef{
+							Platform: platform.KindGitea,
+							Host:     "gitea.com",
+							Owner:    "gitea-team",
+							Name:     "private-service",
+							RepoPath: "gitea-team/private-service",
+						},
+						Description: "Private Gitea service",
+						Private:     true,
+						UpdatedAt:   giteaUpdated.Add(-time.Hour),
+					},
+					{
+						Ref: platform.RepoRef{
+							Platform: platform.KindGitea,
+							Host:     "gitea.com",
+							Owner:    "gitea-team",
+							Name:     "archived",
+							RepoPath: "gitea-team/archived",
+						},
+						Archived: true,
+					},
+				},
+			},
+		)...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create e2e provider registry: %w", err)
@@ -1133,6 +1252,18 @@ func buildAppState(
 			DefaultBranch: gitLabIssue.Repo.DefaultBranch,
 		},
 	)
+	if opts.providerCollision {
+		trackedRepos = append(trackedRepos, ghclient.RepoRef{
+			Platform:      platform.KindGitea,
+			PlatformHost:  "github.com",
+			Owner:         "acme",
+			Name:          "widgets",
+			RepoPath:      "acme/widgets",
+			WebURL:        "https://github.com/acme/widgets",
+			CloneURL:      "https://github.com/acme/widgets.git",
+			DefaultBranch: "main",
+		})
+	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
 		database, diffRepo.Manager, trackedRepos, time.Hour,
@@ -1586,6 +1717,7 @@ func run(
 	port int,
 	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
 	visibleImportedModes bool,
+	providerCollision bool,
 ) error {
 	assets, err := web.Assets()
 	if err != nil {
@@ -1596,6 +1728,7 @@ func run(
 		roborevEndpoint:      roborevEndpoint,
 		defaultPlatformHost:  defaultPlatformHost,
 		visibleImportedModes: visibleImportedModes,
+		providerCollision:    providerCollision,
 	}
 
 	state, err := buildAppState(ctx, assets, baseOpts)
@@ -1654,6 +1787,7 @@ func run(
 			var req struct {
 				DefaultPlatformHost  string `json:"default_platform_host"`
 				VisibleImportedModes *bool  `json:"visible_imported_modes"`
+				ProviderCollision    *bool  `json:"provider_collision"`
 			}
 			// An empty body resets to the startup options; a
 			// non-empty body must be valid JSON so option typos
@@ -1678,6 +1812,9 @@ func run(
 			}
 			if req.VisibleImportedModes != nil {
 				opts.visibleImportedModes = *req.VisibleImportedModes
+			}
+			if req.ProviderCollision != nil {
+				opts.providerCollision = *req.ProviderCollision
 			}
 
 			// Build against the process ctx, not r.Context(): a

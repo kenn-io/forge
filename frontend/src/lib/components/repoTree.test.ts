@@ -173,6 +173,31 @@ describe("visibleRows", () => {
     expect(labels).not.toContain("api");
   });
 
+  it("matches provider-qualified leaves by visible and slash display labels", () => {
+    const tree = buildRepoTree([
+      {
+        ...opt("github.com", "acme/widgets", "github"),
+        value: "github|github.com/acme/widgets",
+      },
+      {
+        ...opt("github.com", "acme/widgets", "gitea"),
+        value: "gitea|github.com/acme/widgets",
+      },
+    ]);
+
+    const visibleLabelRows = visibleRows(tree, {
+      isCollapsed: () => true,
+      query: "gitea/widgets",
+    });
+    expect(visibleLabelRows.map((row) => row.displayLabel ?? row.node.label)).toEqual(["acme", "gitea/widgets"]);
+
+    const slashValueRows = visibleRows(tree, {
+      isCollapsed: () => true,
+      query: "gitea/github.com/acme/widgets",
+    });
+    expect(slashValueRows.map((row) => row.displayLabel ?? row.node.label)).toEqual(["acme", "gitea/widgets"]);
+  });
+
   it("keeps a multi-repo owner as an owner row when a filter matches only one repo", () => {
     // acme genuinely has 3 repos; the query matches only "api". The owner must
     // stay a visible owner row (not collapse into a lone leaf), so its context

@@ -24,6 +24,7 @@ export type IsolatedE2EServer = {
 export type IsolatedE2EServerOptions = {
   defaultPlatformHost?: string;
   visibleImportedModes?: boolean;
+  providerCollision?: boolean;
   // Spawn a dedicated server process and kill it on stop() instead of
   // leasing from the per-worker pool. Required when the test depends
   // on process environment the server must inherit at spawn time
@@ -295,6 +296,9 @@ async function spawnServer(
   if (options.visibleImportedModes) {
     args.push("-visible-imported-modes");
   }
+  if (options.providerCollision) {
+    args.push("-provider-collision");
+  }
   if (process.env.ROBOREV_ENDPOINT) {
     args.push("-roborev", process.env.ROBOREV_ENDPOINT);
   }
@@ -383,6 +387,7 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
       const server = await spawnPooledServer({
         host: defaultPlatformHost,
         visibleImportedModes: true,
+        providerCollision: false,
       });
       // Permanently leased: this is the worker's shared server; the
       // isolated-server pool must never hand it out or reset it.
@@ -453,6 +458,7 @@ export async function stopE2EServer(): Promise<void> {
 type PooledServerOptions = {
   host: string;
   visibleImportedModes: boolean;
+  providerCollision: boolean;
 };
 
 type PooledServer = {
@@ -468,6 +474,7 @@ type PooledServer = {
 const defaultPooledOptions: PooledServerOptions = {
   host: defaultPlatformHost,
   visibleImportedModes: false,
+  providerCollision: false,
 };
 
 // Env vars that steer a spawned e2e server's behavior. A pooled
@@ -497,11 +504,16 @@ function normalizedPooledOptions(options: IsolatedE2EServerOptions): PooledServe
   return {
     host: options.defaultPlatformHost ?? defaultPlatformHost,
     visibleImportedModes: options.visibleImportedModes ?? false,
+    providerCollision: options.providerCollision ?? false,
   };
 }
 
 function samePooledOptions(a: PooledServerOptions, b: PooledServerOptions): boolean {
-  return a.host === b.host && a.visibleImportedModes === b.visibleImportedModes;
+  return (
+    a.host === b.host &&
+    a.visibleImportedModes === b.visibleImportedModes &&
+    a.providerCollision === b.providerCollision
+  );
 }
 
 const isolatedPool: PooledServer[] = [];
@@ -566,6 +578,7 @@ async function postReset(baseURL: string, options: PooledServerOptions): Promise
       JSON.stringify({
         default_platform_host: options.host,
         visible_imported_modes: options.visibleImportedModes,
+        provider_collision: options.providerCollision,
       }),
     );
   });
@@ -604,6 +617,7 @@ async function spawnPooledServer(options: PooledServerOptions): Promise<PooledSe
   const started = await spawnServer(infoFile, {
     ...(options.host === defaultPlatformHost ? {} : { defaultPlatformHost: options.host }),
     ...(options.visibleImportedModes ? { visibleImportedModes: true } : {}),
+    ...(options.providerCollision ? { providerCollision: true } : {}),
   });
   // The info is in memory now; the temp dir is no longer needed.
   await rm(infoDir, { force: true, recursive: true });

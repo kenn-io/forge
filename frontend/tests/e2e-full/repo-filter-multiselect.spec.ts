@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { startIsolatedE2EServerWithOptions } from "./support/e2eServer.js";
+
 async function waitForIssueList(page: Page): Promise<void> {
   await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
 }
@@ -52,6 +54,41 @@ test("repository selector normalizes stale provider-qualified persisted multi-se
   await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
   await expect(page.getByText("Support config file loading")).toBeVisible();
   await expect(page.getByText("GitLab read-only issue")).toHaveCount(0);
+});
+
+test("repository selector persists provider-qualified filters for provider collisions", async ({ browser }) => {
+  const server = await startIsolatedE2EServerWithOptions({ providerCollision: true });
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${server.info.base_url}/issues`);
+    await waitForIssueList(page);
+
+    const selector = page.getByTitle("Select repository");
+    await selector.click();
+
+    const input = page.getByPlaceholder("Filter repos...");
+    await input.fill("gitea/widgets");
+
+    const giteaRow = page.getByRole("option", {
+      name: "gitea/github.com/acme/widgets",
+      exact: true,
+    });
+    await expect(giteaRow).toBeVisible();
+    await expect(giteaRow.locator(".repo-tree-label")).toHaveText("gitea/widgets");
+    await expect(page.getByRole("option", { name: "github/github.com/acme/widgets", exact: true })).toHaveCount(0);
+
+    await giteaRow.click();
+    await page.keyboard.press("Escape");
+
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem("middleman-filter-repo")))
+      .toBe("gitea|github.com/acme/widgets");
+    await expect(page.getByText("Gitea provider collision issue")).toBeVisible();
+    await expect(page.getByText("Widget rendering broken on Safari")).toHaveCount(0);
+  } finally {
+    await page.close();
+    await server.stop();
+  }
 });
 
 test("keyboard navigation survives a real checkbox click", async ({ page }) => {

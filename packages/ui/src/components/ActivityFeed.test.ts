@@ -642,4 +642,21 @@ describe("ActivityFeed notification rows", () => {
     expect(screen.getByText("Mentioned")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Mark notification seen" })).toBeNull();
   });
+
+  it("offers Mark seen on compact unread notification rows and calls the store", async () => {
+    items.value = [
+      activityItem("ntf:42", {
+        activity_type: "notification",
+        item_state: "unread",
+        body_preview: "review_requested",
+      }),
+    ];
+
+    render(ActivityFeed, { props: { compact: true } });
+
+    const btn = screen.getByRole("button", { name: "Mark notification seen" });
+    await fireEvent.click(btn);
+    expect(markNotificationSeen).toHaveBeenCalledTimes(1);
+    expect(markNotificationSeen.mock.calls[0]![0]).toMatchObject({ id: "ntf:42" });
+  });
 });

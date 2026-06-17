@@ -697,11 +697,12 @@
                 </span>
               </button>
             {:else}
-              <button
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
                 class="activity-compact-row"
                 class:selected={isSelectedActivityItem(row)}
                 onclick={() => handleRowClick(row)}
-                type="button"
               >
                 <span class="compact-row-top">
                   {#if isDefaultBranchActivity(row)}
@@ -718,6 +719,17 @@
                     {/if}
                   {/if}
                   <span class="compact-time">{relativeTime(row.created_at)}</span>
+                  {#if isUnreadNotification(row)}
+                    <button
+                      class="link-btn mark-seen-btn"
+                      type="button"
+                      aria-label="Mark notification seen"
+                      title="Mark seen"
+                      onclick={(e) => handleMarkSeen(e, row)}
+                    >
+                      <CheckIcon size="14" strokeWidth="2" aria-hidden="true" />
+                    </button>
+                  {/if}
                 </span>
                 <span class="compact-title">
                   {isDefaultBranchActivity(row) ? branchActivityTitle(row) : row.item_title}
@@ -734,7 +746,7 @@
                   >{eventLabel(row)}</Chip>
                   <span>{activityAuthor(row)}</span>
                 </span>
-              </button>
+              </div>
             {/if}
           {/each}
         </div>

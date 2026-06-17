@@ -15,9 +15,14 @@
   } from "@middleman/ui";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import {
+    defaultWorkspaceListDisplayOptions,
+    defaultWorkspaceListSort,
+    loadWorkspaceListDisplayOptions,
     loadWorkspaceListSort,
+    saveWorkspaceListDisplayOptions,
     saveWorkspaceListSort,
     workspaceListSortOptions,
+    type WorkspaceListDisplayOptions,
     type WorkspaceListSort,
   } from "./workspaceListSort.ts";
 
@@ -101,6 +106,9 @@
   let fetchInFlight = false;
 
   const workspaceListLoadTimeoutMs = 10_000;
+  let displayOptions = $state<WorkspaceListDisplayOptions>(
+    loadWorkspaceListDisplayOptions(),
+  );
 
   type WorkspaceGroup = {
     key: string;
@@ -146,8 +154,21 @@
     )?.label ?? "Org / repo",
   );
 
-  const sortSections = $derived.by(() => [
+  const viewBadgeCount = $derived(
+    Number(sortMode !== defaultWorkspaceListSort) +
+      Number(
+        displayOptions.showOrgNames !==
+          defaultWorkspaceListDisplayOptions.showOrgNames,
+      ) +
+      Number(
+        displayOptions.showDiffStats !==
+          defaultWorkspaceListDisplayOptions.showDiffStats,
+      ),
+  );
+
+  const viewSections = $derived.by(() => [
     {
+      title: "Sorting",
       items: workspaceListSortOptions.map((option) => ({
         id: option.value,
         label: option.label,
@@ -156,6 +177,33 @@
         closeOnSelect: true,
         onSelect: () => setSort(option.value),
       })),
+    },
+    {
+      title: "Visibility",
+      items: [
+        {
+          id: "show-org-names",
+          label: "Show org names",
+          description: "Include owner or organization names in workspace repo labels.",
+          active: displayOptions.showOrgNames,
+          onSelect: () =>
+            setDisplayOption(
+              "showOrgNames",
+              !displayOptions.showOrgNames,
+            ),
+        },
+        {
+          id: "show-diff-stats",
+          label: "Show PR diff stats",
+          description: "Show additions and deletions for linked pull request workspaces.",
+          active: displayOptions.showDiffStats,
+          onSelect: () =>
+            setDisplayOption(
+              "showDiffStats",
+              !displayOptions.showDiffStats,
+            ),
+        },
+      ],
     },
   ]);
 
@@ -191,6 +239,14 @@
     saveWorkspaceListSort(sort);
   }
 
+  function setDisplayOption(
+    key: keyof WorkspaceListDisplayOptions,
+    value: boolean,
+  ): void {
+    displayOptions = { ...displayOptions, [key]: value };
+    saveWorkspaceListDisplayOptions(displayOptions);
+  }
+
   function timeValue(value: string | null | undefined): number {
     if (!value) return 0;
     const ms = Date.parse(value);
@@ -217,6 +273,13 @@
   });
 
   function flatRepoLabel(ws: Workspace): string {
+    if (!displayOptions.showOrgNames) {
+      const key = `${ws.repo_owner}/${ws.repo_name}`;
+      return ambiguousFlatRepos.has(key)
+        ? `${ws.platform_host}/${ws.repo_name}`
+        : ws.repo_name;
+    }
+
     const key = `${ws.repo_owner}/${ws.repo_name}`;
     return ambiguousFlatRepos.includes(key)
       ? `${ws.platform_host}/${key}`
@@ -399,6 +462,9 @@
     // platform/owner/name → owner/name (the platform host crowds
     // the rail and is rarely useful at a glance).
     const parts = repoKey.split("/");
+    if (!displayOptions.showOrgNames && parts.length >= 3) {
+      return parts[parts.length - 1] ?? repoKey;
+    }
     if (parts.length >= 3) {
       return parts.slice(-2).join("/");
     }
@@ -475,12 +541,14 @@
     <span class="sidebar-header-count">{sidebarCountLabel}</span>
     <div class="workspace-sort">
       <FilterDropdown
-        label={sortLabel}
-        showBadge={false}
-        sections={sortSections}
-        title="Sort workspaces"
-        minWidth="170px"
-        icon="sort"
+        label="View"
+        detail={sortLabel}
+        active={viewBadgeCount > 0}
+        badgeCount={viewBadgeCount}
+        sections={viewSections}
+        title="View workspace options"
+        minWidth="220px"
+        align="end"
       />
     </div>
     {#if isSidebarToggleEnabled && onCollapseSidebar}
@@ -695,7 +763,7 @@
                     {/if}
                   </span>
                 {/if}
-                {#if showDiff}
+                {#if displayOptions.showDiffStats && showDiff}
                   <span class="workspace-diff-stats">
                     <DiffStats
                       additions={adds ?? 0}

@@ -37,6 +37,8 @@ interface WorkspaceFixtureOptions {
   createdAt?: string;
   tmuxLastOutputAt?: string | null;
   itemLastActivityAt?: string | null;
+  additions?: number | null;
+  deletions?: number | null;
 }
 
 function workspaceFixture({
@@ -52,6 +54,8 @@ function workspaceFixture({
   createdAt = "2026-05-12T12:00:00Z",
   tmuxLastOutputAt = null,
   itemLastActivityAt = null,
+  additions = null,
+  deletions = null,
 }: WorkspaceFixtureOptions) {
   return {
     id,
@@ -76,6 +80,8 @@ function workspaceFixture({
     item_last_activity_at: itemLastActivityAt,
     mr_title: title,
     mr_state: "open",
+    mr_additions: additions,
+    mr_deletions: deletions,
   };
 }
 
@@ -510,7 +516,7 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByText("kenn-io/middleman")).toBeTruthy();
     expect(container.querySelectorAll(".repo-context")).toHaveLength(0);
 
-    await fireEvent.click(screen.getByTitle("Sort workspaces"));
+    await fireEvent.click(screen.getByTitle("View workspace options"));
     await fireEvent.click(screen.getByRole("button", { name: "Created" }));
 
     expect(rowTitles(container)).toEqual(["Newest created", "Most recently active", "Oldest without activity"]);
@@ -562,7 +568,7 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("GitHub workspace");
 
-    await fireEvent.click(screen.getByTitle("Sort workspaces"));
+    await fireEvent.click(screen.getByTitle("View workspace options"));
     await fireEvent.click(screen.getByRole("button", { name: "Created" }));
 
     // Provider icons survive the loss of group headers.
@@ -588,7 +594,7 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("Newest created");
 
-    await fireEvent.click(screen.getByTitle("Sort workspaces"));
+    await fireEvent.click(screen.getByTitle("View workspace options"));
     await fireEvent.click(screen.getByRole("button", { name: "Activity" }));
 
     // ws-old has no tmux output, so it sorts by its creation time.
@@ -641,7 +647,7 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("Newest created fallback");
 
-    await fireEvent.click(screen.getByTitle("Sort workspaces"));
+    await fireEvent.click(screen.getByTitle("View workspace options"));
     const itemActivitySort = screen.getByRole("button", { name: "Item activity" });
     expect(itemActivitySort.getAttribute("title")).toBe(
       "Sort by latest linked PR or issue activity, falling back to workspace creation.",
@@ -662,7 +668,7 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("Newest created");
 
-    await fireEvent.click(screen.getByTitle("Sort workspaces"));
+    await fireEvent.click(screen.getByTitle("View workspace options"));
     await fireEvent.click(screen.getByRole("button", { name: "Activity" }));
     first.unmount();
 
@@ -673,5 +679,81 @@ describe("WorkspaceListSidebar", () => {
 
     expect(rowTitles(container)).toEqual(["Most recently active", "Newest created", "Oldest without activity"]);
     expect(container.querySelectorAll(".group-header")).toHaveLength(0);
+  });
+
+  it("folds sort choices into the workspace view menu", async () => {
+    mockGet.mockResolvedValue({
+      data: { workspaces: sortFixtures() },
+    });
+
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-new" },
+    });
+    await screen.findByText("Newest created");
+
+    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+
+    expect(screen.getByText("Sorting")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Org / repo" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Created" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Activity" })).toBeTruthy();
+    expect(screen.getByText("Visibility")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show org names" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show PR diff stats" })).toBeTruthy();
+  });
+
+  it("can hide org names in grouped and flat workspace labels", async () => {
+    mockGet.mockResolvedValue({
+      data: { workspaces: sortFixtures() },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-new" },
+    });
+    await screen.findByText("kenn-io/middleman");
+
+    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Show org names" }));
+
+    expect(screen.queryByText("kenn-io/middleman")).toBeNull();
+    expect(screen.getByText("middleman")).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+
+    expect(container.querySelectorAll(".repo-context-name")[0]?.textContent?.trim()).toBe("middleman");
+    expect(container.querySelectorAll(".repo-context-name")[1]?.textContent?.trim()).toBe("agentsview");
+  });
+
+  it("can hide PR diff stats while keeping branch metadata visible", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-diff",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 9,
+            title: "Diff-heavy workspace",
+            additions: 42,
+            deletions: 7,
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-diff" },
+    });
+    await screen.findByText("Diff-heavy workspace");
+
+    expect(container.querySelector(".workspace-diff-stats")).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Show PR diff stats" }));
+
+    expect(container.querySelector(".workspace-diff-stats")).toBeNull();
+    expect(container.querySelector(".branch-chip")).toBeTruthy();
   });
 });

@@ -1121,3 +1121,82 @@ func TestListActivityNotificationMatchesRepoByIdentity(t *testing.T) {
 	assert.Equal("alpha", items[0].RepoName)
 	assert.Equal("merged", items[0].SubjectState)
 }
+
+func TestListActivityNotificationRepoFiltersApplyBeforeUnionLimit(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	number := 7
+
+	trackedRepoID := insertTestRepo(t, d, "alice", "alpha")
+	removedRepoID := insertTestRepo(t, d, "alice", "removed")
+	insertTestMRWithOptions(t, d, testMR(trackedRepoID, number,
+		withMRTitle("Tracked notification"),
+		withMRActivity(base)))
+	insertTestMRWithOptions(t, d, testMR(removedRepoID, number,
+		withMRTitle("Removed notification"),
+		withMRActivity(base)))
+	require.NoError(d.UpsertNotifications(ctx, []Notification{
+		{
+			Platform:               "github",
+			PlatformHost:           "github.com",
+			PlatformNotificationID: "ntf-tracked",
+			RepoOwner:              "alice",
+			RepoName:               "alpha",
+			SubjectType:            "PullRequest",
+			SubjectTitle:           "Tracked notification",
+			WebURL:                 "https://github.com/alice/alpha/pull/7",
+			ItemNumber:             &number,
+			ItemType:               "pr",
+			ItemAuthor:             "carol",
+			Reason:                 "mention",
+			Unread:                 true,
+			SourceUpdatedAt:        base.Add(10 * time.Minute),
+			SyncedAt:               base.Add(10 * time.Minute),
+		},
+		{
+			Platform:               "github",
+			PlatformHost:           "github.com",
+			PlatformNotificationID: "ntf-removed",
+			RepoOwner:              "alice",
+			RepoName:               "removed",
+			SubjectType:            "PullRequest",
+			SubjectTitle:           "Removed notification",
+			WebURL:                 "https://github.com/alice/removed/pull/7",
+			ItemNumber:             &number,
+			ItemType:               "pr",
+			ItemAuthor:             "carol",
+			Reason:                 "mention",
+			Unread:                 true,
+			SourceUpdatedAt:        base.Add(11 * time.Minute),
+			SyncedAt:               base.Add(11 * time.Minute),
+		},
+	}))
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{
+		Limit: 50,
+		Types: []string{"notification"},
+		NotificationRepoFilters: []NotificationRepoFilter{{
+			Platform:     "github",
+			PlatformHost: "github.com",
+			RepoOwner:    "alice",
+			RepoName:     "alpha",
+		}},
+	})
+	require.NoError(err)
+	require.Len(items, 1)
+	assert.Equal("notification", items[0].ActivityType)
+	assert.Equal("alice", items[0].RepoOwner)
+	assert.Equal("alpha", items[0].RepoName)
+	assert.Equal("Tracked notification", items[0].ItemTitle)
+
+	none, err := d.ListActivity(ctx, ListActivityOpts{
+		Limit:                   50,
+		Types:                   []string{"notification"},
+		NotificationRepoFilters: []NotificationRepoFilter{{}},
+	})
+	require.NoError(err)
+	assert.Empty(none)
+}

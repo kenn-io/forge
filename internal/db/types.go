@@ -692,8 +692,13 @@ type ListActivityOpts struct {
 	// nil-safety), so the safety-capped window is never spent on rows the
 	// caller will not serve.
 	ExcludeNotifications bool
-	Limit                int        // page size (default 50, max 200)
-	Since                *time.Time // only return events created at or after this time
+	// NotificationRepoFilters limits notification rows to the caller's
+	// current monitored repo set before ordering/limit. nil means no
+	// additional notification scope; an empty/non-matching set means no
+	// notification rows.
+	NotificationRepoFilters []NotificationRepoFilter
+	Limit                   int        // page size (default 50, max 200)
+	Since                   *time.Time // only return events created at or after this time
 	// Cursor fields -- decoded from opaque token by the handler.
 	BeforeTime     *time.Time
 	BeforeSource   string

@@ -327,12 +327,20 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 		ctx, cfg, mustProviderRegistry(t, nil), database,
 	)
 
-	assert.Len(repos, 2)
-	names := make([]string, len(repos))
-	for i, r := range repos {
-		names[i] = r.Name
-	}
-	assert.ElementsMatch([]string{"widgets", "tools"}, names)
+	assert.ElementsMatch([]ghclient.RepoRef{
+		{
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "widgets",
+			PlatformHost: "github.com",
+		},
+		{
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "tools",
+			PlatformHost: "github.com",
+		},
+	}, repos)
 }
 
 func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {

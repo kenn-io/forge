@@ -4013,6 +4013,14 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		opts.AfterSourceID = sourceID
 	}
 
+	if s.cfg != nil {
+		trackedRepos, err := s.trackedNotificationRepoFilters()
+		if err != nil {
+			return nil, problemInternal("load tracked notification repos failed")
+		}
+		opts.NotificationRepoFilters = trackedRepos
+	}
+
 	items, err := s.db.ListActivity(ctx, opts)
 	if err != nil {
 		slog.Error("list activity failed", "err", err)

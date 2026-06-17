@@ -170,6 +170,9 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 	startedAt := time.Now().UTC()
 	platformName := string(kind)
 	trackedReposKey := notificationTrackedReposKey(platformName, host, tracked)
+	if trackedReposKey == "" {
+		return nil
+	}
 	watermark, err := s.db.GetNotificationSyncWatermark(ctx, platformName, host, trackedReposKey)
 	if err != nil {
 		return fmt.Errorf("load notification sync watermark for %s: %w", host, err)

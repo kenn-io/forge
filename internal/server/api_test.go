@@ -841,6 +841,27 @@ func setupTestServer(t *testing.T) (*Server, *db.DB) {
 	return setupTestServerWithMock(t, &mockGH{})
 }
 
+func setupNotificationsEnabledTestServer(t *testing.T) (*Server, *db.DB) {
+	t.Helper()
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(
+		database, syncer, nil, "/",
+		notificationsEnabledConfig(), ServerOptions{},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	return srv, database
+}
+
 func setupTestServerWithDatabase(
 	t *testing.T, database *db.DB, repos []ghclient.RepoRef,
 ) *Server {
@@ -1094,6 +1115,36 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 	}
 	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 
+	return prID
+}
+
+func insertTestActivityPR(
+	t *testing.T,
+	database *db.DB,
+	repoID int64,
+	owner string,
+	name string,
+	number int,
+	title string,
+	createdAt time.Time,
+) int64 {
+	t.Helper()
+	numberText := strconv.Itoa(number)
+	prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     int64(number) * 1000,
+		Number:         number,
+		URL:            "https://github.com/" + owner + "/" + name + "/pull/" + numberText,
+		Title:          title,
+		Author:         "testuser",
+		State:          db.MergeRequestStateOpen,
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      createdAt,
+		UpdatedAt:      createdAt,
+		LastActivityAt: createdAt,
+	})
+	require.NoError(t, err)
 	return prID
 }
 
@@ -18345,8 +18396,7 @@ func TestAPIListActivity(t *testing.T) {
 func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
-	srv.cfg = notificationsEnabledConfig()
+	srv, database := setupNotificationsEnabledTestServer(t)
 	client := setupTestClient(t, srv)
 	ctx := t.Context()
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
@@ -18391,6 +18441,76 @@ func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
 	assert.Equal("widget", item.RepoName)
 	assert.NotNil(item.SubjectState)
 	assert.Equal("merged", *item.SubjectState)
+}
+
+func TestAPIListActivityScopesNotificationsToTrackedRepos(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupNotificationsEnabledTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	number := 7
+
+	trackedRepoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	removedRepoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "removed"))
+	require.NoError(err)
+	insertTestActivityPR(t, database, trackedRepoID, "acme", "widget", number, "Tracked notification", base)
+	insertTestActivityPR(t, database, removedRepoID, "acme", "removed", number, "Removed notification", base)
+
+	require.NoError(database.UpsertNotifications(ctx, []db.Notification{
+		{
+			Platform:               "github",
+			PlatformHost:           "github.com",
+			PlatformNotificationID: "thread-tracked",
+			RepoOwner:              "acme",
+			RepoName:               "widget",
+			SubjectType:            "PullRequest",
+			SubjectTitle:           "Tracked notification",
+			WebURL:                 "https://github.com/acme/widget/pull/7",
+			ItemNumber:             &number,
+			ItemType:               "pr",
+			ItemAuthor:             "reviewer",
+			Reason:                 "mention",
+			Unread:                 true,
+			SourceUpdatedAt:        base.Add(10 * time.Minute),
+			SyncedAt:               base.Add(10 * time.Minute),
+		},
+		{
+			Platform:               "github",
+			PlatformHost:           "github.com",
+			PlatformNotificationID: "thread-removed",
+			RepoOwner:              "acme",
+			RepoName:               "removed",
+			SubjectType:            "PullRequest",
+			SubjectTitle:           "Removed notification",
+			WebURL:                 "https://github.com/acme/removed/pull/7",
+			ItemNumber:             &number,
+			ItemType:               "pr",
+			ItemAuthor:             "reviewer",
+			Reason:                 "mention",
+			Unread:                 true,
+			SourceUpdatedAt:        base.Add(11 * time.Minute),
+			SyncedAt:               base.Add(11 * time.Minute),
+		},
+	}))
+
+	types := []string{"notification"}
+	since := base.Add(-time.Minute).Format(time.RFC3339)
+	resp, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since, Types: &types},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.Len(*resp.JSON200.Items, 1)
+	item := (*resp.JSON200.Items)[0]
+	assert.Equal("notification", item.ActivityType)
+	assert.Equal("acme", item.RepoOwner)
+	assert.Equal("widget", item.RepoName)
+	assert.Equal("Tracked notification", item.ItemTitle)
 }
 
 func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {

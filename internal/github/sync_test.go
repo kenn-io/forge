@@ -1467,6 +1467,8 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 	d := openTestDB(t)
 	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
+	_, err = d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("aaa.example.com", "acme", "broken"))
+	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	boom := errors.New("boom")
 	okNumber := 7
@@ -1499,6 +1501,7 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 		d,
 		nil,
 		[]RepoRef{
+			{Owner: "acme", Name: "broken", PlatformHost: "aaa.example.com"},
 			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
 		},
 		time.Minute,
@@ -2184,6 +2187,31 @@ func TestNotificationTrackedReposKeyIncludesPlatform(t *testing.T) {
 
 	require.Equal("github/github.com/acme/widget", notificationTrackedReposKey("github", "github.com", tracked))
 	require.Equal("gitlab/code.example.com/acme/widget", notificationTrackedReposKey("gitlab", "code.example.com", tracked))
+}
+
+func TestSyncNotificationsSkipsHostsWithoutTrackedRepos(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	var calls atomic.Int32
+	syncer := NewSyncer(
+		map[string]Client{
+			"github.com": &mockClient{
+				listNotificationsFn: func(context.Context, NotificationListOptions) ([]NotificationThread, bool, error) {
+					calls.Add(1)
+					return nil, false, nil
+				},
+			},
+		},
+		d,
+		nil,
+		nil,
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	require.NoError(syncer.SyncNotifications(t.Context()))
+	require.Equal(int32(0), calls.Load())
 }
 
 func TestSyncNotificationsUsesPersistedSinceWatermark(t *testing.T) {

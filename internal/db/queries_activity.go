@@ -100,7 +100,17 @@ func (d *DB) ListActivity(
 	// (only when no config is loaded) rather than after the query keeps the
 	// LIMIT window from being spent on rows the caller will not serve.
 	notificationUnion := ""
+	var notificationArgs []any
 	if !opts.ExcludeNotifications {
+		notificationScope := ""
+		if opts.NotificationRepoFilters != nil {
+			notificationScope = activityNotificationRepoFilterCondition(
+				opts.NotificationRepoFilters, &notificationArgs,
+			)
+		}
+		if notificationScope != "" {
+			notificationScope = " AND " + notificationScope
+		}
 		notificationUnion = `
 			UNION ALL
 			SELECT 'notification', 'ntf', n.id,
@@ -126,7 +136,7 @@ func (d *DB) ListActivity(
 			LEFT JOIN middleman_issues iss
 			       ON n.item_type = 'issue' AND iss.repo_id = r.id AND iss.number = n.item_number
 			WHERE n.item_type IN ('pr', 'issue') AND n.item_number IS NOT NULL
-			      AND n.reason != 'author'`
+			      AND n.reason != 'author'` + notificationScope
 	}
 
 	query := fmt.Sprintf(`
@@ -249,9 +259,12 @@ func (d *DB) ListActivity(
 		ORDER BY created_at DESC, source DESC, source_id DESC
 		LIMIT ?`, branchCommitIdentityMaxBytes, where, notificationUnion)
 
-	args = append(args, limit)
+	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
+	queryArgs = append(queryArgs, notificationArgs...)
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, limit)
 
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := d.ro.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("list activity: %w", err)
 	}
@@ -346,6 +359,25 @@ func activityRepoFilterCondition(filters []RepoFilter, args *[]any) string {
 	}
 	if len(groups) == 0 {
 		return ""
+	}
+	return "(" + strings.Join(groups, " OR ") + ")"
+}
+
+func activityNotificationRepoFilterCondition(filters []NotificationRepoFilter, args *[]any) string {
+	var groups []string
+	for _, filter := range filters {
+		platform := strings.ToLower(strings.TrimSpace(filter.Platform))
+		host, owner, name := canonicalRepoIdentifier(
+			filter.PlatformHost, filter.RepoOwner, filter.RepoName,
+		)
+		if platform == "" || owner == "" || name == "" {
+			continue
+		}
+		groups = append(groups, "(n.platform = ? AND n.platform_host = ? AND n.repo_owner = ? AND n.repo_name = ?)")
+		*args = append(*args, platform, host, owner, name)
+	}
+	if len(groups) == 0 {
+		return "0 = 1"
 	}
 	return "(" + strings.Join(groups, " OR ") + ")"
 }

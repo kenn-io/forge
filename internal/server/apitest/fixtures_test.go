@@ -21,7 +21,7 @@ import (
 )
 
 var defaultTestRepos = []ghclient.RepoRef{
-	{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+	{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 }
 
 func setupTestServer(t *testing.T) (*server.Server, *db.DB) {

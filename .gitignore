@@ -16,6 +16,8 @@ packages/*/node_modules/
 frontend/playwright-report/
 frontend/test-results/
 frontend/tests/demo/screenshots/
+frontend/.vitest-attachments/
+frontend/src/**/__screenshots__/
 .idea/
 .vscode/
 tmp/

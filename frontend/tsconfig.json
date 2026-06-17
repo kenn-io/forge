@@ -16,7 +16,10 @@
     "noImplicitReturns": true,
     "noImplicitOverride": true,
     "verbatimModuleSyntax": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "vitest": ["./node_modules/vite-plus/dist/test/index.d.ts"]
+    }
   },
   "include": [
     "src/**/*.ts",

@@ -2,7 +2,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
-import { searchForWorkspaceRoot, type Plugin, type ProxyOptions, type UserConfig } from "vite";
+import { defaultClientConditions, searchForWorkspaceRoot, type Plugin, type ProxyOptions, type UserConfig } from "vite";
+import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import type { InlineConfig } from "vite-plus/test/node";
 import { resolveDevApiUrl } from "./src/lib/dev/apiProxyTarget.ts";
 import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin.ts";
@@ -149,6 +150,61 @@ function terminalWebSocketProxy(url: string): ProxyOptions {
   return proxy;
 }
 
+// The "unit" project preserves the prior flat test config: jsdom plus the
+// localStorage/elementFromPoint shims in setup.ts. The browser glob exclude
+// keeps *.browser.svelte.ts files off this project so they never double-run.
+const unitTestProject = {
+  extends: true,
+  test: {
+    name: "unit",
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+    include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)", "../packages/ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
+    exclude: ["tests/e2e/**", "tests/e2e-full/**", "node_modules/**", "src/**/*.browser.svelte.ts"],
+  },
+} satisfies TestProjectInlineConfiguration;
+
+// The "browser" project runs *.browser.svelte.ts specs in a real headless
+// chromium page via the Playwright provider. It intentionally omits setup.ts:
+// a real page has native localStorage and elementFromPoint, so the jsdom shims
+// would be wrong here.
+//
+// The Playwright provider is loaded with a dynamic import inside an async
+// project factory rather than a top-level import on purpose: "vite-plus/test/
+// browser-playwright" transitively pulls in the browser runtime (ws's
+// WebSocketServer, the @vitest/browser client), which fails to evaluate under
+// the jsdom unit runner. src/lib/dev/viteConfig.test.ts and
+// healthcheckPlugin.test.ts import this config module directly, so a static
+// browser import would crash those unit tests. The factory body only runs when
+// the browser project itself is initialized, keeping the browser runtime out of
+// the unit project's module graph.
+//
+// resolve.conditions forces the browser/client export conditions. vite-plugin-svelte
+// only picks Svelte's "browser" export ("./src/index-client.js", which exposes
+// mount()) when the environment is named/consumed as a client; under the browser
+// test runtime it otherwise falls through to Svelte's server entry and mount()
+// throws lifecycle_function_unavailable. Spreading Vite's defaultClientConditions
+// keeps the standard "module"/"development|production" placeholders intact.
+const browserTestProject = defineProject(async () => {
+  const { playwright } = await import("vite-plus/test/browser-playwright");
+  return {
+    extends: true,
+    resolve: {
+      conditions: [...defaultClientConditions],
+    },
+    test: {
+      name: "browser",
+      include: ["src/**/*.browser.svelte.ts"],
+      browser: {
+        enabled: true,
+        provider: playwright() as never,
+        instances: [{ browser: "chromium" }],
+        headless: true,
+      },
+    },
+  };
+});
+
 const config = {
   base: "/",
   // The Go server serves this build under a configurable base_path (default
@@ -260,10 +316,7 @@ const config = {
     },
   },
   test: {
-    environment: "jsdom",
-    setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)", "../packages/ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
-    exclude: ["tests/e2e/**", "tests/e2e-full/**", "node_modules/**"],
+    projects: [defineProject(unitTestProject), browserTestProject],
   },
   build: {
     outDir: "dist",

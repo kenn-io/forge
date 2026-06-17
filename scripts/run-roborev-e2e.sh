@@ -37,7 +37,12 @@ trap 'FAILED=1' ERR
 # 1. Build frontend + e2e server (unless SKIP_BUILD=1)
 if [ "${SKIP_BUILD:-}" != "1" ]; then
   echo "--- build frontend ---"
-  cd "$REPO_ROOT" && bun install --frozen-lockfile
+  # In CI the e2e-roborev job uses setup-vp (run-install: true), which installs
+  # deps before this script runs, and bun is not on PATH there. Only bootstrap
+  # locally with bun (the repo package manager) when node_modules is missing.
+  if [ ! -x "$REPO_ROOT/node_modules/vite-plus/bin/vp" ]; then
+    cd "$REPO_ROOT" && bun install --frozen-lockfile
+  fi
   cd "$REPO_ROOT/frontend" && node ../node_modules/vite-plus/bin/vp build --logLevel warn
   rm -rf "$REPO_ROOT/internal/web/dist"
   cp -r "$REPO_ROOT/frontend/dist" "$REPO_ROOT/internal/web/dist"

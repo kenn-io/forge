@@ -653,9 +653,6 @@
     {#snippet workspaceRow(ws: Workspace, showRepo: boolean)}
           {@const adds = ws.mr_additions}
           {@const dels = ws.mr_deletions}
-          {@const showDiff =
-            ws.item_type === "pull_request" &&
-            ((adds ?? 0) > 0 || (dels ?? 0) > 0)}
           {@const ahead = ws.commits_ahead ?? 0}
           {@const behind = ws.commits_behind ?? 0}
           {@const showPush = ahead > 0 || behind > 0}
@@ -763,7 +760,9 @@
                     {/if}
                   </span>
                 {/if}
-                {#if displayOptions.showDiffStats && showDiff}
+                {#if displayOptions.showDiffStats &&
+                  ws.item_type === "pull_request" &&
+                  ((adds ?? 0) > 0 || (dels ?? 0) > 0)}
                   <span class="workspace-diff-stats">
                     <DiffStats
                       additions={adds ?? 0}

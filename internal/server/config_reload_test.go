@@ -1662,6 +1662,7 @@ destination = "wes@epyc.local"
 // config.changed event, not silently apply nothing.
 func TestConfigReload_RestartRequiredOnAuthGateChange(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, validReloadConfig, &mockGH{},
@@ -1676,10 +1677,21 @@ func TestConfigReload_RestartRequiredOnAuthGateChange(t *testing.T) {
 	assert.True(ev.Valid)
 	assert.True(ev.RestartRequired,
 		"[api].require_auth change should mark restart_required")
+
+	srv.cfgMu.Lock()
+	savedCfg := *srv.cfg
+	srv.cfgMu.Unlock()
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(savedCfg.Save(savePath))
+	reloaded, err := config.Load(savePath)
+	require.NoError(err)
+	assert.True(reloaded.API.RequireAuth,
+		"later settings saves must preserve externally reloaded API auth")
 }
 
 func TestConfigReload_RestartRequiredOnSSHPeerChange(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, validReloadConfig, &mockGH{},
@@ -1694,4 +1706,16 @@ func TestConfigReload_RestartRequiredOnSSHPeerChange(t *testing.T) {
 	assert.True(ev.Valid)
 	assert.True(ev.RestartRequired,
 		"[[fleet.ssh_peers]] change should mark restart_required")
+
+	srv.cfgMu.Lock()
+	savedCfg := *srv.cfg
+	savedCfg.Fleet.SSHPeers = slices.Clone(srv.cfg.Fleet.SSHPeers)
+	srv.cfgMu.Unlock()
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(savedCfg.Save(savePath))
+	reloaded, err := config.Load(savePath)
+	require.NoError(err)
+	require.Len(reloaded.Fleet.SSHPeers, 1)
+	assert.Equal("epyc", reloaded.Fleet.SSHPeers[0].Key)
+	assert.Equal("wes@epyc.local", reloaded.Fleet.SSHPeers[0].Destination)
 }

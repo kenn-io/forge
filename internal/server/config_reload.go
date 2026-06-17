@@ -390,6 +390,10 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	s.cfg.Agents = cloneConfigAgents(newCfg.Agents)
 	s.cfg.DocFolders = slices.Clone(newCfg.DocFolders)
 	s.cfg.Msgvault = cloneMsgvault(newCfg.Msgvault)
+	s.cfg.API = newCfg.API
+	s.cfg.Fleet = newCfg.Fleet
+	s.cfg.Fleet.Peers = slices.Clone(newCfg.Fleet.Peers)
+	s.cfg.Fleet.SSHPeers = slices.Clone(newCfg.Fleet.SSHPeers)
 	if s.docsRegistry != nil {
 		s.docsRegistry.Replace(newCfg.DocFolders)
 	}

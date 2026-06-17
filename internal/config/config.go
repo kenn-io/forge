@@ -2262,7 +2262,7 @@ func (c *Config) BudgetPerHour() int {
 }
 
 func (c *Config) ListenAddr() string {
-	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+	return net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 }
 
 // BindHostKey returns the canonical (Host, Port) key for the bind

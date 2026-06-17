@@ -343,6 +343,23 @@ trust_reverse_proxy = true
 	assert.Equal(cfg.TrustReverseProxy, cfg2.TrustReverseProxy)
 }
 
+func TestListenAddrBracketsIPv6Host(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cfg, err := Load(writeConfig(t, `
+host = "::1"
+port = 8091
+`))
+	require.NoError(err)
+
+	assert.Equal("[::1]:8091", cfg.ListenAddr())
+	assert.Equal("127.0.0.1:8091", (&Config{
+		Host: "127.0.0.1",
+		Port: 8091,
+	}).ListenAddr())
+}
+
 func TestLoadRoundTripsAPIAuthConfig(t *testing.T) {
 	assert := Assert.New(t)
 

@@ -9,6 +9,11 @@ type DiffFixtureFile = Omit<DiffFile, "patch"> & {
 type DiffFixture = Omit<DiffResult, "files"> & {
   files: DiffFixtureFile[];
 };
+type MergeRequestDetailForRoute = {
+  diff_head_sha?: string;
+  events?: unknown[] | null;
+  merge_request?: { ID?: number };
+};
 
 const gitBackedDiffTestTimeoutMs = 120_000;
 
@@ -1173,6 +1178,57 @@ async function mockFilePreviewApi(page: Page): Promise<void> {
   });
 }
 
+async function mockReviewThreadOnPreviewMarkdown(page: Page, body: string): Promise<void> {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
+    const response = await route.fetch();
+    const detail = (await response.json()) as MergeRequestDetailForRoute;
+    const timestamp = "2026-06-17T15:00:00Z";
+
+    await route.fulfill({
+      response,
+      json: {
+        ...detail,
+        events: [
+          ...(detail.events ?? []),
+          {
+            Author: "reviewer",
+            Body: body,
+            CreatedAt: timestamp,
+            DedupeKey: "review_comment:e2e-rich-preview",
+            DirectURL: "",
+            EventType: "review_comment",
+            ID: 900_001,
+            MergeRequestID: detail.merge_request?.ID ?? 1,
+            MetadataJSON: "{}",
+            PlatformExternalID: "e2e-rich-preview",
+            PlatformID: 900_001,
+            Resolvable: false,
+            Resolved: false,
+            Summary: body,
+            ThreadID: "thread-rich-preview",
+            diff_thread: {
+              author_login: "reviewer",
+              body,
+              can_resolve: false,
+              created_at: timestamp,
+              diff_head_sha: detail.diff_head_sha,
+              id: "thread-rich-preview",
+              line: 3,
+              line_type: "add",
+              new_line: 3,
+              path: "docs/preview.md",
+              provider_comment_id: "e2e-rich-preview",
+              resolved: false,
+              side: "right",
+              updated_at: timestamp,
+            },
+          },
+        ],
+      },
+    });
+  });
+}
+
 async function mockDiffApiError(page: Page, status: number, detail: string): Promise<void> {
   await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
     await route.fulfill({
@@ -1866,6 +1922,23 @@ test.describe("diff view", () => {
 
     await clickTreeFileItem(page, "assets/logo.png");
     await expect(page.locator(".diff-image-preview img[alt='assets/logo.png']")).toBeVisible();
+  });
+
+  test("rich preview shows review thread cards", async ({ page }) => {
+    const reviewBody = "Review note should show in rich preview";
+    await mockDiffApi(page, previewDiff);
+    await mockFilePreviewApi(page);
+    await mockReviewThreadOnPreviewMarkdown(page, reviewBody);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await openDiffFilterMenu(page);
+    await page.getByRole("switch", { name: "Rich preview" }).click();
+
+    const markdownFile = page.locator('[data-file-path="docs/preview.md"]');
+    await expect(markdownFile.locator(".markdown-rich-diff--unified")).toBeVisible();
+    await expect(markdownFile.locator(".inline-review-thread").filter({ hasText: reviewBody })).toBeVisible();
   });
 
   test("rich preview refetches blob content after a same-PR diff reload", async ({ page }) => {

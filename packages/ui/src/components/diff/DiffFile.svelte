@@ -255,8 +255,14 @@
     );
   }
 
+  function reviewThreadIsFileLevelCard(thread: ReviewThread): boolean {
+    return thread.line_type === "file" ||
+      !threadMatchesCurrentDiff(thread) ||
+      !hasRenderedReviewThread(thread);
+  }
+
   const fileLevelReviewThreads = $derived(
-    fileReviewThreads.filter((thread) => !hasRenderedReviewThread(thread)),
+    fileReviewThreads.filter((thread) => reviewThreadIsFileLevelCard(thread)),
   );
 
   function lineRef(
@@ -525,10 +531,15 @@
   </button>
   {#if !collapsed}
     <div class="file-content">
-      {#each fileLevelReviewThreads as thread (thread.id)}
-        <DiffReviewThreadInlineComment {thread} fileLevel={true} />
-      {/each}
       {#if showRichPreview}
+        {#each fileReviewThreads as thread (thread.id)}
+          <DiffReviewThreadInlineComment
+            {thread}
+            fileLevel={reviewThreadIsFileLevelCard(thread)}
+            canReply={canReplyToThreads}
+            onreply={replyToThread}
+          />
+        {/each}
         {#key richPreviewKey}
           <DiffRichPreview
             {file}
@@ -542,27 +553,32 @@
             {viewMode}
           />
         {/key}
-      {:else if file.is_binary}
-        <div class="binary-notice">Binary file changed</div>
       {:else}
-        {#key textDiffKey}
-          <PierreFileDiff
-            {file}
-            active={inViewport}
-            {viewMode}
-            {wordWrap}
-            {tabWidth}
-            loadFileText={contextExpansionEnabled ? loadDiffText : undefined}
-            lineAnnotations={pierreLineAnnotations}
-            transientLineAnnotation={pierreComposerAnnotation}
-            selectedRange={selectedRange}
-            selectedRanges={draftSelectedRanges}
-            enableLineSelection={reviewEnabled && !!diffHeadSHA}
-            onLineSelected={handlePierreSelection}
-            renderAnnotation={renderUnknownAnnotation}
-            {virtualizer}
-          />
-        {/key}
+        {#each fileLevelReviewThreads as thread (thread.id)}
+          <DiffReviewThreadInlineComment {thread} fileLevel={true} />
+        {/each}
+        {#if file.is_binary}
+          <div class="binary-notice">Binary file changed</div>
+        {:else}
+          {#key textDiffKey}
+            <PierreFileDiff
+              {file}
+              active={inViewport}
+              {viewMode}
+              {wordWrap}
+              {tabWidth}
+              loadFileText={contextExpansionEnabled ? loadDiffText : undefined}
+              lineAnnotations={pierreLineAnnotations}
+              transientLineAnnotation={pierreComposerAnnotation}
+              selectedRange={selectedRange}
+              selectedRanges={draftSelectedRanges}
+              enableLineSelection={reviewEnabled && !!diffHeadSHA}
+              onLineSelected={handlePierreSelection}
+              renderAnnotation={renderUnknownAnnotation}
+              {virtualizer}
+            />
+          {/key}
+        {/if}
       {/if}
     </div>
   {/if}

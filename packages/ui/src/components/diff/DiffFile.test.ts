@@ -871,6 +871,35 @@ describe("DiffFile", () => {
     expect(host).toBeTruthy();
   });
 
+  it("renders published review thread cards in markdown rich preview", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        canReplyToThreads: true,
+        reviewThreads: [
+          makeReviewThread({
+            path: "README.md",
+            old_path: "README.md",
+            body: "Published review note in rich preview",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector(".markdown-rich-diff--unified")).toBeTruthy();
+    });
+    expect(screen.getByText("Published review note in rich preview")).toBeTruthy();
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    expect(comment?.closest("[slot^='annotation-']")).toBeNull();
+  });
+
   it("lets published inline review threads be replied to", async () => {
     const replyToDiscussion = vi.fn().mockResolvedValue(true);
     renderDiffFile(makeFile(), {

@@ -218,6 +218,15 @@
           />
         </SettingsSection>
 
+        <SettingsSection title="Workspace agents" sectionId="settings-agents">
+          <AgentSettings
+            agents={settings.agents}
+            onUpdate={(agents) => {
+              settings = { ...settings!, agents };
+            }}
+          />
+        </SettingsSection>
+
         <SettingsSection title="Visible modes" sectionId="settings-modes">
           <ModeVisibilitySettings
             modes={settings.modes}
@@ -225,15 +234,6 @@
             onUpdate={(modes) => {
               settings = { ...settings!, modes };
               settingsStore.setModeVisibility(modes);
-            }}
-          />
-        </SettingsSection>
-
-        <SettingsSection title="Workspace agents" sectionId="settings-agents">
-          <AgentSettings
-            agents={settings.agents}
-            onUpdate={(agents) => {
-              settings = { ...settings!, agents };
             }}
           />
         </SettingsSection>

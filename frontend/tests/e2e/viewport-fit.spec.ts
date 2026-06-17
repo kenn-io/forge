@@ -60,6 +60,30 @@ test("settings page uses a sidebar and scrollable content pane", async ({ page }
   await expect(page.locator("#settings-agents")).toBeInViewport();
 });
 
+test("settings sidebar order matches rendered section order", async ({ page }) => {
+  await page.goto("/settings");
+
+  await expect(page.locator(".settings-page")).toBeVisible();
+  await expect(
+    page.evaluate(() => {
+      const navLabel = (label: string) =>
+        label.replace("Activity feed defaults", "Activity").replace("Workspace terminal", "Terminal");
+      const navOrder = Array.from(document.querySelectorAll<HTMLElement>(".settings-nav-item span")).map(
+        (item) => item.textContent?.trim() ?? "",
+      );
+      const sectionOrder = Array.from(document.querySelectorAll<HTMLElement>(".settings-section > h2")).map((section) =>
+        navLabel(section.textContent?.trim() ?? ""),
+      );
+
+      return { navOrder, sectionOrder, orderMatches: navOrder.join("\n") === sectionOrder.join("\n") };
+    }),
+  ).resolves.toEqual({
+    navOrder: ["Repositories", "Activity", "Terminal", "Workspace agents", "Visible modes"],
+    sectionOrder: ["Repositories", "Activity", "Terminal", "Workspace agents", "Visible modes"],
+    orderMatches: true,
+  });
+});
+
 test("settings navigation stacks below Tailwind lg breakpoint", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto("/settings");

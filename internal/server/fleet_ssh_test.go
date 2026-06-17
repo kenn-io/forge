@@ -523,6 +523,58 @@ func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 		"GET /api/v1/workspaces/ws_1/runtime/sessions/sess-1/attach-spec")
 }
 
+func TestSSHFleetWebSocketTerminalHonorsResizeActive(t *testing.T) {
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	writeFakeSSHForAttach(t)
+	remoteSpec := runtimeAttachSpecResponse{
+		Version:     1,
+		Kind:        "tmux",
+		SessionKey:  "sess-1",
+		TargetKey:   "shell",
+		TmuxSession: "mm-sess-1",
+		Command: []string{
+			"sh",
+			"-lc",
+			`while IFS= read -r line; do set -- $(stty size); printf 'size:%s:%s:%s\n' "$1" "$2" "$line"; done`,
+		},
+	}
+	remoteSpecBody, err := json.Marshal(remoteSpec)
+	require.NoError(err)
+	fake := &fakeSSHExec{routes: map[string]string{
+		"GET /api/v1/workspaces/ws_1/runtime/sessions/sess-1/attach-spec": framedJSON(200, string(remoteSpecBody)),
+	}}
+	fixture.server.sshFleet = newSSHTestTransport(
+		t, fake, config.FleetSSHPeer{
+			Key: "epyc", Destination: "wes@epyc.local",
+		},
+	)
+
+	ts := httptest.NewServer(fixture.server)
+	t.Cleanup(ts.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/ws/v1/fleet/hosts/epyc/workspaces/ws_1/runtime/sessions/sess-1/terminal?cols=80&rows=24&resize_active=0"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "test done")
+
+	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("before\n")))
+	readWebSocketBinaryUntil(t, ctx, conn, 2*time.Second, "size:30:120:before")
+
+	require.NoError(conn.Write(ctx, websocket.MessageText, []byte(`{"type":"resize","cols":81,"rows":25}`)))
+	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("inactive\n")))
+	readWebSocketBinaryUntil(t, ctx, conn, 2*time.Second, "size:30:120:inactive")
+
+	require.NoError(conn.Write(ctx, websocket.MessageText, []byte(`{"type":"resize_active","active":true}`)))
+	require.NoError(conn.Write(ctx, websocket.MessageText, []byte(`{"type":"resize","cols":82,"rows":26}`)))
+	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("active\n")))
+	readWebSocketBinaryUntil(t, ctx, conn, 2*time.Second, "size:26:82:active")
+}
+
 func writeFakeSSHForAttach(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()

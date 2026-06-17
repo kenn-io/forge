@@ -488,6 +488,55 @@ describe("WorkspaceTerminalView", () => {
     clearIntervalSpy.mockRestore();
   });
 
+  it("forces post-launch runtime refresh past an older in-flight poll", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
+    const setIntervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation((callback: TimerHandler, delay?: number) => {
+        intervalCallbacks.push({ callback: callback as () => void, delay });
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      });
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const stalePoll = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
+    mocks.getWorkspaceRuntime
+      .mockResolvedValueOnce(runtimeWithTerminalSession())
+      .mockReturnValueOnce(stalePoll.promise)
+      .mockResolvedValueOnce(runtimeWithTerminalSession(relaunchedShellSession));
+    mocks.launchWorkspaceSession.mockResolvedValue(relaunchedShellSession);
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    const terminalButton = await screen.findByRole("button", {
+      name: "Open terminal panel",
+    });
+    await fireEvent.click(terminalButton);
+    await waitFor(() => expect(sockets.some((socket) => socket.url.includes("ws-1_shell_a"))).toBe(true));
+    const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
+    expect(runtimePoll).toBeTruthy();
+
+    runtimePoll!.callback();
+    await Promise.resolve();
+    expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2);
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!);
+
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true));
+
+    stalePoll.resolve(runtimeWithTerminalSession());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sockets.filter((socket) => socket.url.includes("ws-1_shell_a"))).toHaveLength(1);
+    expect(sockets.filter((socket) => socket.url.includes("ws-1_shell_b"))).toHaveLength(1);
+    setIntervalSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
+  });
+
   it("shows a relaunched agent with the same key and a new generation", async () => {
     const relaunchedAt = "2026-04-29T00:01:00Z";
     mocks.getWorkspaceRuntime

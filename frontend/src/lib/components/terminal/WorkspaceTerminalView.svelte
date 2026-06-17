@@ -1006,11 +1006,18 @@
     }
   }
 
-  async function fetchRuntime(): Promise<WorkspaceRuntimeState | null> {
+  interface FetchRuntimeOptions {
+    force?: boolean;
+  }
+
+  async function fetchRuntime(
+    options: FetchRuntimeOptions = {},
+  ): Promise<WorkspaceRuntimeState | null> {
     if (!workspaceId) return null;
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     if (
+      !options.force &&
       runtimeFetchInFlight &&
       runtimeFetchInFlightId === id &&
       runtimeFetchInFlightHostKey === hostKey
@@ -1083,7 +1090,7 @@
         "workflow",
       );
       if (!isCurrentWorkspace(id, hostKey)) return;
-      await fetchRuntime();
+      await fetchRuntime({ force: true });
       if (!isCurrentWorkspace(id, hostKey)) return;
       clearClosedSession(session);
       moveSessionToWorkflow(session.key);
@@ -1147,7 +1154,7 @@
     try {
       await stopWorkspaceSession(id, session.key, hostKey);
       if (!isCurrentWorkspace(id, hostKey)) return;
-      await fetchRuntime();
+      await fetchRuntime({ force: true });
       if (!isCurrentWorkspace(id, hostKey)) return;
       unmountSessionTerminal(session.key);
       const terminalGroups = closeSessionInTerminalGroups(
@@ -1191,7 +1198,7 @@
     if (activeTabKey === `session:${session.key}`) {
       selectWorkspaceTab("home");
     }
-    void fetchRuntime();
+    void fetchRuntime({ force: true });
   }
 
   async function launchTerminalSession(
@@ -1235,7 +1242,7 @@
           activeGroupID,
         ),
       );
-      await fetchRuntime();
+      await fetchRuntime({ force: true });
       if (!isCurrentWorkspace(id, hostKey)) return null;
       clearClosedSession(session);
       if (terminalLayout.dock === "top") {
@@ -1616,7 +1623,7 @@
         keyMap[spec.sourceKey] = session.key;
       }
       const mappedLayout = mapPresetLayout(preset.layout, keyMap);
-      const refreshed = await fetchRuntime();
+      const refreshed = await fetchRuntime({ force: true });
       if (!isCurrentWorkspace(id, hostKey) || !refreshed) return;
       const presetActiveTab = firstWorkflowTab(mappedLayout) ?? "home";
       terminalLayout = normalizeLayoutForSessions(

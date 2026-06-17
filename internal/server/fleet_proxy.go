@@ -876,9 +876,11 @@ func attachSpecPathForFleetTerminalTarget(targetPath string) (string, bool) {
 }
 
 type fleetSSHPTYAttachment struct {
-	cmd  *os.Process
-	ptmx *os.File
-	done <-chan int
+	cmd    *os.Process
+	ptmx   *os.File
+	done   <-chan int
+	mu     sync.Mutex
+	active bool
 }
 
 func startFleetSSHAttachPTY(
@@ -889,8 +891,9 @@ func startFleetSSHAttachPTY(
 	if len(spec.Command) == 0 || strings.TrimSpace(spec.Command[0]) == "" {
 		return nil, errors.New("attach-spec command is empty")
 	}
+	active := parseRuntimeTerminalResizeActive(r)
 	cols, rows, ok := parseRuntimeTerminalSize(r)
-	if !ok {
+	if !ok || !active {
 		cols, rows = 120, 30
 	}
 	release, err := procutil.TryAcquire(ctx, "fleet ssh terminal attach")
@@ -922,9 +925,10 @@ func startFleetSSHAttachPTY(
 		close(done)
 	}()
 	return &fleetSSHPTYAttachment{
-		cmd:  cmd.Process,
-		ptmx: ptmx,
-		done: done,
+		cmd:    cmd.Process,
+		ptmx:   ptmx,
+		done:   done,
+		active: active,
 	}, nil
 }
 
@@ -938,6 +942,31 @@ func (a *fleetSSHPTYAttachment) close() {
 	if a.cmd != nil {
 		_ = a.cmd.Kill()
 	}
+}
+
+func (a *fleetSSHPTYAttachment) setActive(active bool) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.active = active
+}
+
+func (a *fleetSSHPTYAttachment) resizeIfActive(cols, rows int) {
+	if a == nil || cols <= 0 || rows <= 0 {
+		return
+	}
+	a.mu.Lock()
+	active := a.active
+	a.mu.Unlock()
+	if !active {
+		return
+	}
+	_ = pty.Setsize(a.ptmx, &pty.Winsize{
+		Cols: uint16(cols),
+		Rows: uint16(rows),
+	})
 }
 
 func bridgeFleetSSHAttachPTY(
@@ -1015,14 +1044,11 @@ func handleFleetSSHAttachControl(attach *fleetSSHPTYAttachment, data []byte) {
 	}
 	switch msg.Type {
 	case "refresh", "resize":
-		if msg.Cols > 0 && msg.Rows > 0 {
-			_ = pty.Setsize(attach.ptmx, &pty.Winsize{
-				Cols: uint16(msg.Cols),
-				Rows: uint16(msg.Rows),
-			})
-		}
+		attach.resizeIfActive(msg.Cols, msg.Rows)
 	case "resize_active":
-		return
+		if msg.Active != nil {
+			attach.setActive(*msg.Active)
+		}
 	}
 }
 

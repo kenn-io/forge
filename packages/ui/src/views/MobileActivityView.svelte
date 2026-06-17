@@ -22,6 +22,7 @@
   } from "../components/activityRows.js";
   import {
     buildMobileActivityRepoOptions,
+    normalizeMobileActivityRepoSelection,
   } from "./mobileActivityRepoOptions.js";
   import {
     createRepoLabelFormatter,
@@ -67,6 +68,14 @@
       ...buildMobileActivityRepoOptions(settings.getConfiguredRepos()),
     ],
   );
+  const normalizedSelectedRepo = $derived(
+    normalizeMobileActivityRepoSelection(selectedRepo, settings.getConfiguredRepos()),
+  );
+
+  $effect(() => {
+    if ((selectedRepo ?? "") === normalizedSelectedRepo) return;
+    onRepoChange?.(normalizedSelectedRepo || undefined);
+  });
 
   onMount(() => {
     activity.initializeFromMount();
@@ -390,7 +399,7 @@
         <SelectDropdown
           class="mobile-filter-dropdown"
           title="Repository"
-          value={selectedRepo ?? ""}
+          value={normalizedSelectedRepo}
           options={repoOptions}
           onchange={handleRepoChange}
         />

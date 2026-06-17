@@ -6171,10 +6171,12 @@ paths:
     get:
       operationId: list-activity
       parameters:
-        - explode: false
+        - description: Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches.
+          explode: false
           in: query
           name: repo
           schema:
+            description: Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches.
             type: string
         - explode: false
           in: query
@@ -10671,10 +10673,12 @@ paths:
     get:
       operationId: list-issues
       parameters:
-        - explode: false
+        - description: Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches.
+          explode: false
           in: query
           name: repo
           schema:
+            description: Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches.
             type: string
         - explode: false
           in: query
@@ -12317,10 +12321,12 @@ paths:
     get:
       operationId: list-pulls
       parameters:
-        - explode: false
+        - description: Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches.
+          explode: false
           in: query
           name: repo
           schema:
+            description: Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches.
             type: string
         - explode: false
           in: query

@@ -69,3 +69,20 @@ export function buildMobileActivityRepoOptions(repos: ConfigRepo[]): MobileActiv
     }),
   );
 }
+
+export function normalizeMobileActivityRepoSelection(selected: string | undefined, repos: ConfigRepo[]): string {
+  const value = selected?.trim() ?? "";
+  if (!value) return "";
+
+  const options = buildMobileActivityRepoOptions(repos);
+  if (options.some((option) => option.value === value)) return value;
+
+  const optionValues = new Set(options.map((option) => option.value));
+  for (const repo of repos) {
+    const legacyValue = providerRepoSelectorLabel(repo);
+    const nextValue = providerRepoSelectorValue(repo);
+    if (!legacyValue || !nextValue || !nextValue.includes("|")) continue;
+    if (legacyValue === value && optionValues.has(nextValue)) return nextValue;
+  }
+  return value;
+}

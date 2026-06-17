@@ -6409,6 +6409,7 @@ export interface operations {
     "list-activity": {
         parameters: {
             query?: {
+                /** @description Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches. */
                 repo?: string;
                 types?: string[] | null;
                 search?: string;
@@ -10134,6 +10135,7 @@ export interface operations {
     "list-issues": {
         parameters: {
             query?: {
+                /** @description Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches. */
                 repo?: string;
                 state?: string;
                 starred?: boolean;
@@ -11702,6 +11704,7 @@ export interface operations {
     "list-pulls": {
         parameters: {
             query?: {
+                /** @description Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches. */
                 repo?: string;
                 state?: string;
                 kanban?: string;

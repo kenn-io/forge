@@ -261,10 +261,13 @@ func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int6
 	return issue.ID, nil
 }
 
-// parseRepoFilter splits the repo query parameter when it is in owner/name,
-// platform_host/repo_path, or provider|platform_host/repo_path form and otherwise
-// returns empty parts so callers can ignore invalid input. Repo paths can contain
-// slashes, so hosted filters keep everything after the host together as repoPath.
+// parseRepoFilter splits the shared repo query parameter used by pull, issue,
+// and activity list endpoints. The accepted wire forms are owner/name,
+// platform_host/repo_path, and provider|platform_host/repo_path. Slash-qualified
+// provider labels such as provider/platform_host/repo_path are display-only and
+// intentionally parse as host-qualified values to keep nested repo paths
+// unambiguous. Repo paths can contain slashes, so hosted filters keep everything
+// after the host together as repoPath.
 func parseRepoFilter(repo string) (provider, platformHost, owner, name, repoPath string) {
 	repo = strings.Trim(repo, "/ ")
 	if providerPart, hostedPath, ok := strings.Cut(repo, "|"); ok {

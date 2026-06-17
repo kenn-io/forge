@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildMobileActivityRepoOptions } from "./mobileActivityRepoOptions.js";
+import { buildMobileActivityRepoOptions, normalizeMobileActivityRepoSelection } from "./mobileActivityRepoOptions.js";
 
 const baseRepo = {
   provider: "github",
@@ -128,5 +128,31 @@ describe("buildMobileActivityRepoOptions", () => {
         triggerLabel: "acme/widgets",
       },
     ]);
+  });
+
+  it("normalizes stale slash-qualified provider selections to the pipe wire value", () => {
+    const repos = [
+      { ...baseRepo, provider: "github", platform_host: "github.com" },
+      { ...baseRepo, provider: "gitea", platform_host: "github.com" },
+    ];
+
+    expect(normalizeMobileActivityRepoSelection("gitea/github.com/acme/widgets", repos)).toBe(
+      "gitea|github.com/acme/widgets",
+    );
+  });
+
+  it("keeps slash-qualified selections when they match a current host-qualified option", () => {
+    const repos = [
+      {
+        ...baseRepo,
+        provider: "github",
+        platform_host: "gitea",
+        repo_path: "github.com/acme/widgets",
+      },
+    ];
+
+    expect(normalizeMobileActivityRepoSelection("gitea/github.com/acme/widgets", repos)).toBe(
+      "gitea/github.com/acme/widgets",
+    );
   });
 });

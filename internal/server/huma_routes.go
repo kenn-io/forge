@@ -32,7 +32,7 @@ import (
 )
 
 type listPullsInput struct {
-	Repo    string `query:"repo"`
+	Repo    string `query:"repo" doc:"Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches."`
 	State   string `query:"state"`
 	Kanban  string `query:"kanban"`
 	Starred bool   `query:"starred"`
@@ -173,7 +173,7 @@ type resolveDiffReviewThreadInput struct {
 }
 
 type listIssuesInput struct {
-	Repo     string `query:"repo"`
+	Repo     string `query:"repo" doc:"Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches."`
 	State    string `query:"state"`
 	Starred  bool   `query:"starred"`
 	Q        string `query:"q"`
@@ -582,7 +582,7 @@ type workspaceDiffRequest struct {
 }
 
 type listActivityInput struct {
-	Repo   string   `query:"repo"`
+	Repo   string   `query:"repo" doc:"Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches."`
 	Types  []string `query:"types"`
 	Search string   `query:"search"`
 	After  string   `query:"after"`

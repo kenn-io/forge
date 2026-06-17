@@ -10,6 +10,7 @@ type GlobalWithCSSStyleSheet = {
 };
 
 let originalReplaceSync: unknown;
+let workerPoolEnabled = false;
 
 beforeAll(() => {
   originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype.replaceSync;
@@ -46,6 +47,7 @@ const pierre = (() => {
       }
     | undefined;
   let lastOptions: FileDiffOptions<unknown> | undefined;
+  let lastFileContainer: HTMLElement | undefined;
   let lastVirtualizer: unknown;
   const cleanUp = () => {
     counts.cleanUp += 1;
@@ -55,9 +57,18 @@ const pierre = (() => {
     const didRender = renderResults.shift() ?? true;
     events.push(`render:${String(didRender)}`);
     if (didRender && props?.fileContainer) {
+      lastFileContainer = props.fileContainer;
       const root = props.fileContainer.shadowRoot ?? props.fileContainer.attachShadow({ mode: "open" });
       root.innerHTML = `
         <pre data-diff-type="unified">
+          <code data-unified>
+            <div data-gutter>
+              <div data-line-index="0" data-line-type="change-addition"></div>
+            </div>
+            <div data-content>
+              <div data-line data-line-index="0" data-line-type="change-addition">func newName() {}</div>
+            </div>
+          </code>
           <div data-separator data-expand-index="0">
             <button type="button" data-expand-button data-expand-down>expand</button>
           </div>
@@ -109,6 +120,7 @@ const pierre = (() => {
     events: () => [...events],
     FileDiff,
     lastExpansion: () => lastExpansion,
+    lastFileContainer: () => lastFileContainer,
     lastOptions: () => lastOptions,
     lastVirtualizer: () => lastVirtualizer,
     metadata,
@@ -124,6 +136,7 @@ const pierre = (() => {
       lastExpansion = undefined;
       events = [];
       renderResults = [];
+      lastFileContainer = undefined;
       lastOptions = undefined;
       lastVirtualizer = undefined;
       parsedMetadata = metadata;
@@ -149,6 +162,13 @@ vi.doMock("@pierre/diffs", async (importOriginal) => {
     VirtualizedFileDiff: pierre.VirtualizedFileDiff,
   };
 });
+
+vi.doMock("./pierre-worker-pool.js", () => ({
+  diffTokenizeMaxLineLength: 180,
+  getPierreDiffWorkerPool: () => (workerPoolEnabled ? {} : undefined),
+  isPierreSyntaxHighlightLanguage: (lang: string | undefined) => lang === "go" || lang === "typescript",
+  syntaxHighlightingDisabledForAutomation: () => false,
+}));
 
 function makeFile(): DiffFile {
   return {
@@ -222,6 +242,7 @@ describe("PierreFileDiff", () => {
   afterEach(() => {
     vi.useRealTimers();
     cleanup();
+    workerPoolEnabled = false;
     pierre.reset();
   });
 
@@ -252,6 +273,41 @@ describe("PierreFileDiff", () => {
     await waitFor(() => {
       expect(pierre.renderCount()).toBe(2);
     });
+  });
+
+  it("keeps syntax-capable worker renders pending until highlighted tokens arrive", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    workerPoolEnabled = true;
+
+    render(PierreFileDiff, {
+      props: {
+        file: {
+          ...makeFile(),
+          path: "internal/db/queries_projects.go",
+          old_path: "internal/db/queries_projects.go",
+        },
+      },
+    });
+
+    const host = await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+      const element = document.querySelector<HTMLElement>(".pierre-diff");
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    expect(host.classList.contains("pierre-diff--pending")).toBe(true);
+    expect(document.querySelector(".pierre-diff-loading")).not.toBeNull();
+
+    const line = pierre.lastFileContainer()?.shadowRoot?.querySelector<HTMLElement>("[data-line]");
+    expect(line).toBeTruthy();
+    line!.innerHTML = '<span style="color: red">func</span> newName() {}';
+    pierre.lastOptions()?.onPostRender?.(host, pierre.FileDiff.prototype as never, "update");
+
+    await waitFor(() => {
+      expect(host.classList.contains("pierre-diff--pending")).toBe(false);
+    });
+    expect(document.querySelector(".pierre-diff-loading")).toBeNull();
   });
 
   it("renders patch text even when structured hunks are absent", async () => {
@@ -385,7 +441,7 @@ describe("PierreFileDiff", () => {
     expect(pierre.lastOptions()?.tokenizeMaxLineLength).toBe(diffTokenizeMaxLineLength);
   });
 
-  it("does not override syntax token foreground colors for changed lines", async () => {
+  it("passes changed-line foreground colors to Pierre", async () => {
     const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
 
     render(PierreFileDiff, {
@@ -397,8 +453,8 @@ describe("PierreFileDiff", () => {
     });
 
     const css = pierre.lastOptions()?.unsafeCSS ?? "";
-    expect(css).not.toContain("--diffs-addition-color-override");
-    expect(css).not.toContain("--diffs-deletion-color-override");
+    expect(css).toContain("--diffs-addition-color-override");
+    expect(css).toContain("--diffs-deletion-color-override");
     expect(css).toContain("--diffs-bg-addition-override");
     expect(css).toContain("--diffs-fg-number-addition-override");
   });

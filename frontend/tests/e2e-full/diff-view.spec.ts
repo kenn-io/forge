@@ -1479,6 +1479,105 @@ test.describe("diff view", () => {
     await expectPierreDiffCount(addedFile, diffContextSelector, 0);
   });
 
+  test("modified Go file additions tokenize language keywords", async ({ page }) => {
+    await page.addInitScript(() => {
+      (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight = true;
+    });
+
+    const path = "internal/db/queries_projects.go";
+    const modifiedGoDiff = withServerDiffData({
+      ...smallDiff,
+      files: [
+        {
+          path,
+          old_path: path,
+          status: "modified",
+          is_binary: false,
+          is_whitespace_only: false,
+          additions: 2,
+          deletions: 1,
+          hunks: [
+            {
+              old_start: 183,
+              old_count: 3,
+              new_start: 183,
+              new_count: 4,
+              section: "func (d *DB) DeleteProject(ctx context.Context, id string) error {",
+              lines: [
+                {
+                  type: "context",
+                  content: "// DeleteProject removes a registered project.",
+                  old_num: 183,
+                  new_num: 183,
+                },
+                {
+                  type: "delete",
+                  content: "func (d *DB) DeleteProject(ctx context.Context, id string) {",
+                  old_num: 184,
+                },
+                {
+                  type: "add",
+                  content: "func (d *DB) DeleteProject(ctx context.Context, id string) error {",
+                  new_num: 184,
+                },
+                {
+                  type: "add",
+                  content: '\treturn fmt.Errorf("delete project: %w", err)',
+                  new_num: 185,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    await mockDiffApi(page, modifiedGoDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const modifiedFile = page.locator(`[data-file-path="${path}"]`);
+    await modifiedFile.scrollIntoViewIfNeeded();
+    await expectPierreDiffVisibleText(modifiedFile, diffAdditionsSelector, "func (d *DB) DeleteProject");
+    await expect
+      .poll(
+        async () => {
+          return await modifiedFile.locator(".pierre-diff").evaluate((host) => {
+            const additions = Array.from(
+              host.shadowRoot?.querySelectorAll('[data-content] [data-line-type="change-addition"]') ?? [],
+            );
+            const funcRow = additions.find((element) => element.textContent?.includes("func (d *DB) DeleteProject"));
+            const token = funcRow?.querySelector("span");
+            return token?.textContent === "func";
+          });
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        async () => {
+          return await modifiedFile.locator(".pierre-diff").evaluate((host) => {
+            const additions = Array.from(
+              host.shadowRoot?.querySelectorAll('[data-content] [data-line-type="change-addition"]') ?? [],
+            );
+            const funcRow = additions.find((element): element is HTMLElement => {
+              return element instanceof HTMLElement && element.textContent?.includes("func (d *DB) DeleteProject");
+            });
+            const token = Array.from(funcRow?.querySelectorAll("span") ?? []).find(
+              (element): element is HTMLElement => {
+                return element instanceof HTMLElement && element.textContent === "func";
+              },
+            );
+            if (!funcRow || !token) return false;
+            return getComputedStyle(token).color !== getComputedStyle(funcRow).color;
+          });
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+  });
+
   test("sidebar shows folders for grouped files", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);

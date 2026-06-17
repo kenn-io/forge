@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileDiff, VirtualizedFileDiff } from "@pierre/diffs";
+  import { DEFAULT_TOKENIZE_MAX_LENGTH, FileDiff, VirtualizedFileDiff } from "@pierre/diffs";
   import type {
     DiffLineAnnotation,
     ExpansionDirections,
@@ -26,7 +26,11 @@
     renderedCodeColumns,
     renderedCodeSide as renderedPierreCodeSide,
   } from "./pierre-dom.js";
-  import { diffTokenizeMaxLineLength, getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
+  import {
+    diffTokenizeMaxLineLength,
+    getPierreDiffWorkerPool,
+    isPierreSyntaxHighlightLanguage,
+  } from "./pierre-worker-pool.js";
 
   interface Props {
     file: DiffFile | null | undefined;
@@ -122,6 +126,7 @@
   let pendingContextExpansion: PendingContextExpansion | undefined;
   let lineCommentButtonHasPointerSnapshot = false;
   let lineCommentButtonWasSelectedOnPointerDown = false;
+  let syntaxHighlightWorkerActive = false;
   const maxImmediateRenderRetries = 5;
 
   const renderFile = $derived(file ? diffFileWithPatch(file) : emptyFile);
@@ -158,15 +163,7 @@
     expansionLineCount: 40,
     tokenizeMaxLineLength: diffTokenizeMaxLineLength,
     onPostRender: () => {
-      removeStalePlaceholderPres();
-      applyLineTargetAttributes();
-      applyHunkHeaderLabels();
-      applyLineCommentButtons();
-      syncLineAnnotationWrappers();
-      rendered = true;
-      installDemandContextHandler();
-      scheduleSelectedRangesApplication();
-      restoreAnnotationFocus();
+      finalizeRenderedDom(fullContextFileDiff ?? pierreFile);
     },
     unsafeCSS: `
       :host {
@@ -184,6 +181,8 @@
           color-mix(in srgb, var(--accent-red) 14%, transparent),
           color-mix(in srgb, var(--accent-red) 54%, black)
         );
+        --diffs-addition-color-override: var(--accent-green);
+        --diffs-deletion-color-override: var(--accent-red);
         --diffs-fg-number-addition-override: var(--accent-green);
         --diffs-bg-addition-number-override: var(--accent-green);
         --diffs-fg-number-deletion-override: var(--accent-red);
@@ -365,15 +364,7 @@
       if (didRender) {
         renderAttemptKey = nextRenderAttemptKey;
         renderRetryCount = 0;
-        removeStalePlaceholderPres();
-        applyLineTargetAttributes();
-        applyHunkHeaderLabels();
-        applyLineCommentButtons();
-        syncLineAnnotationWrappers();
-        rendered = true;
-        installDemandContextHandler();
-        scheduleSelectedRangesApplication();
-        restoreAnnotationFocus();
+        finalizeRenderedDom(pierreFile);
       } else {
         scheduleRenderRetry();
       }
@@ -499,12 +490,14 @@
     clearLineAnnotationWrappers();
     renderedLineRows = new Map();
     fullContextFileDiff = undefined;
+    syntaxHighlightWorkerActive = false;
     pierreDiff?.cleanUp();
     pierreDiff = undefined;
   }
 
   function createPierreDiff(): FileDiff<unknown> | VirtualizedFileDiff<unknown> {
     const workerPool = getPierreDiffWorkerPool();
+    syntaxHighlightWorkerActive = Boolean(workerPool);
     if (!virtualizer) return new FileDiff<unknown>(pierreOptions, workerPool, true);
     return new VirtualizedFileDiff<unknown>(
       pierreOptions,
@@ -807,16 +800,7 @@
     pierreDiff.setSelectedLines(selectedRange);
     if (didRender) {
       fullContextRendered = true;
-      removeStalePlaceholderPres();
-      applyLineTargetAttributes();
-      applyHunkHeaderLabels();
-      applyLineCommentButtons();
-      syncLineAnnotationWrappers();
-      rendered = true;
-      installDemandContextHandler();
-      scheduleSelectedRangesApplication();
-      restoreAnnotationFocus();
-      replayPendingContextExpansion();
+      finalizeRenderedDom(fullContextFileDiff);
     }
     return didRender;
   }
@@ -864,6 +848,42 @@
       pierreDiff.setMetrics(undefined, true);
     }
     return pierreDiff.render(props);
+  }
+
+  function finalizeRenderedDom(fileDiff: FileDiffMetadata | undefined): boolean {
+    removeStalePlaceholderPres();
+    applyLineTargetAttributes();
+    applyHunkHeaderLabels();
+    applyLineCommentButtons();
+    syncLineAnnotationWrappers();
+
+    const ready = renderedDomReady(fileDiff);
+    rendered = ready;
+    if (!ready) return false;
+
+    installDemandContextHandler();
+    scheduleSelectedRangesApplication();
+    restoreAnnotationFocus();
+    if (fullContextRendered) {
+      replayPendingContextExpansion();
+    }
+    return true;
+  }
+
+  function renderedDomReady(fileDiff: FileDiffMetadata | undefined): boolean {
+    if (!expectsSyntaxHighlight(fileDiff)) return true;
+    return host?.shadowRoot?.querySelector("[data-line] span[style]") != null;
+  }
+
+  function expectsSyntaxHighlight(fileDiff: FileDiffMetadata | undefined): boolean {
+    if (!syntaxHighlightWorkerActive || !fileDiff) return false;
+    if (!isPierreSyntaxHighlightLanguage(fileDiff.lang)) return false;
+    if (Math.max(fileDiff.additionLines.length, fileDiff.deletionLines.length) > DEFAULT_TOKENIZE_MAX_LENGTH) {
+      return false;
+    }
+    return [...fileDiff.additionLines, ...fileDiff.deletionLines].some((line) => {
+      return line.trim().length > 0 && line.length < diffTokenizeMaxLineLength;
+    });
   }
 
   async function loadFullContext(

@@ -219,6 +219,15 @@ describe("Pierre diff parsing", () => {
     expect(full?.isPartial).toBe(false);
   });
 
+  it("keeps Go language metadata for modified Go files", () => {
+    const parsed = parsePierreFileDiff(
+      makeFile("internal/db/queries_projects.go", "-func oldName() {}\n+func newName() {}"),
+    );
+
+    expect(parsed).toBeDefined();
+    expect(parsed?.lang).toBe("go");
+  });
+
   it("falls back to patch-only parsing for huge sparse line ranges", () => {
     const parsed = parsePierreFileDiff(makeLargeLineFile(), {
       enableDemandContextExpansion: true,

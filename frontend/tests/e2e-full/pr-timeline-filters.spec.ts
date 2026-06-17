@@ -205,6 +205,7 @@ test.describe("PR timeline filters", () => {
     await openPRTimeline(page);
     const menu = await openActivityViewMenu(page);
 
+    await menu.getByRole("button", { name: "Commit details" }).click();
     await menu.getByRole("button", { name: "Compact" }).click();
 
     await expect(page.locator(".pull-detail .event-card--compact-row").first()).toBeVisible();
@@ -213,6 +214,10 @@ test.describe("PR timeline filters", () => {
     });
     await expect(compactCommitRow).toBeVisible();
     await expect(compactCommitRow).not.toContainText("Cache entries now expire");
+    await compactCommitRow.click();
+    await expect(compactCommitRow).not.toContainText("Cache entries now expire");
+    await openActivityViewMenu(page);
+    await page.getByRole("button", { name: "Commit details" }).click();
     await compactCommitRow.click();
     await expect(compactCommitRow).toContainText("Cache entries now expire");
     await expect(page.locator(".pull-detail .event-card--compact-row", { hasText: "COMMENTED" })).toBeVisible();

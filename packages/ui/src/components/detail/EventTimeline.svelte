@@ -899,7 +899,7 @@
   }
 
   function compactEntryCanExpand(entry: TimelineEntry): boolean {
-    if (entry.event.EventType === "commit") return commitDetailsBody(entry.event.Body).length > 0;
+    if (entry.event.EventType === "commit") return showCommitDetails && commitDetailsBody(entry.event.Body).length > 0;
     return (
       shouldRenderMarkdown(entry.event.EventType) &&
       (entry.event.Body.trim().length > 0 || entry.reviewThread !== undefined)

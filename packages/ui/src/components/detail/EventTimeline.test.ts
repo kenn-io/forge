@@ -1630,6 +1630,51 @@ describe("EventTimeline", () => {
     assert(screen.getByText("2h ago")).toBeTruthy();
   });
 
+  it("keeps compact cross-reference summaries navigable", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 4,
+            EventType: "cross_referenced",
+            Summary: "Referenced from kenn-io/kit#1",
+            MetadataJSON: JSON.stringify({
+              source_type: "PullRequest",
+              source_owner: "kenn-io",
+              source_repo: "kit",
+              source_number: 1,
+              source_title: "Add shared git tooling packages",
+              source_url: "https://github.com/kenn-io/kit/pull/1",
+            }),
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "kenn-io",
+        repoName: "middleman",
+        repoPath: "kenn-io/middleman",
+        activityViewMode: "compact",
+      },
+    });
+
+    const link = screen.getByRole("link", {
+      name: "Add shared git tooling packages",
+    });
+    const assert = expect.soft;
+    assert(link.closest(".event-card--compact-row")).toBeTruthy();
+    assert(link.getAttribute("href")).toBe("/pulls/github/kenn-io/kit/1");
+    assert(link.classList.contains("item-ref")).toBe(true);
+    assert(link.getAttribute("target")).toBeNull();
+    assert(link.getAttribute("rel")).toBeNull();
+    assert(link.getAttribute("data-provider")).toBe("github");
+    assert(link.getAttribute("data-platform-host")).toBe("github.com");
+    assert(link.getAttribute("data-owner")).toBe("kenn-io");
+    assert(link.getAttribute("data-name")).toBe("kit");
+    assert(link.getAttribute("data-repo-path")).toBe("kenn-io/kit");
+    assert(link.getAttribute("data-number")).toBe("1");
+    assert(link.getAttribute("data-external-url")).toBe("https://github.com/kenn-io/kit/pull/1");
+  });
+
   it("keeps external cross-reference links when item metadata is incomplete", () => {
     render(EventTimeline, {
       props: {

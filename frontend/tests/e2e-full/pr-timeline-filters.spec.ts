@@ -210,6 +210,19 @@ test.describe("PR timeline filters", () => {
     await menu.getByRole("button", { name: "Compact" }).click();
 
     await expect(page.locator(".pull-detail .event-card--compact-row").first()).toBeVisible();
+    const compactCrossReference = page.locator(".pull-detail .event-card--compact-row", {
+      hasText: "Add CLI flag parser",
+    });
+    const compactCrossReferenceLink = compactCrossReference.getByRole("link", { name: "Add CLI flag parser" });
+    await expect(compactCrossReferenceLink).toBeVisible();
+    await expect(compactCrossReferenceLink).toHaveAttribute("href", "/pulls/github/acme/tools/1");
+    await expect(compactCrossReferenceLink).toHaveClass(/item-ref/);
+    await expect(compactCrossReferenceLink).toHaveAttribute("data-provider", "github");
+    await expect(compactCrossReferenceLink).toHaveAttribute("data-platform-host", "github.com");
+    await expect(compactCrossReferenceLink).toHaveAttribute("data-owner", "acme");
+    await expect(compactCrossReferenceLink).toHaveAttribute("data-name", "tools");
+    await expect(compactCrossReferenceLink).toHaveAttribute("data-repo-path", "acme/tools");
+    await expect(compactCrossReferenceLink).toHaveAttribute("data-number", "1");
     const compactCommitRow = page.locator(".pull-detail .event-card--compact-row", {
       hasText: "feat: add cache store",
     });

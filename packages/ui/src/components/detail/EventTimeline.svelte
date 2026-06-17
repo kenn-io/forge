@@ -1362,6 +1362,9 @@
         {#if activityViewMode === "compact"}
           {@const compactContext = compactEventContext(event, entry.reviewThread)}
           {@const compactSummary = compactEventSummary(event, entry.reviewThread)}
+          {@const compactMetadata = event.EventType === "cross_referenced" ? parseMetadata(event) : null}
+          {@const compactSourceUrl = compactMetadata ? metadataString(compactMetadata, "source_url") : null}
+          {@const compactSourceLink = compactMetadata ? crossReferenceLink(compactMetadata, compactSourceUrl) : null}
           {@const canExpandCompact = compactEntryCanExpand(entry)}
           {@const compactExpanded = isCompactEntryExpanded(entry)}
           {@const canCopyCompact = compactEntryCanCopy(entry)}
@@ -1411,7 +1414,19 @@
                     {compactContext}
                   </span>
                   <span class="compact-event-summary" title={compactSummary}>
-                    {compactSummary}
+                    {#if compactSourceLink}
+                      <a
+                        class={["system-event-link", { "item-ref": compactSourceLink.internal }]}
+                        href={compactSourceLink.href}
+                        target={compactSourceLink.internal ? undefined : "_blank"}
+                        rel={compactSourceLink.internal ? undefined : "noopener noreferrer"}
+                        {...(compactSourceLink.dataAttributes ?? {})}
+                      >
+                        {compactSummary}
+                      </a>
+                    {:else}
+                      {compactSummary}
+                    {/if}
                   </span>
                   <span class="event-time compact-event-time">{timeAgo(event.CreatedAt)}</span>
                 </div>

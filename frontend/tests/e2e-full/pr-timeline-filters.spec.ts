@@ -210,15 +210,26 @@ test.describe("PR timeline filters", () => {
     await expect(page.locator(".pull-detail .event-card--compact-row").first()).toBeVisible();
     await expect(page.locator(".pull-detail .event-card--compact-row", { hasText: "COMMENTED" })).toBeVisible();
     const reviewCommentRow = page.locator(".pull-detail .event-card--compact-row", {
-      hasText: "src/cache/store.ts:42",
+      hasText: "Guard the cache fallback before returning",
+    });
+    const reviewCommentFollowUpRow = page.locator(".pull-detail .event-card--compact-row", {
+      hasText: "Follow-up compact review context for the same thread.",
     });
     await expect(reviewCommentRow).toBeVisible();
+    await expect(reviewCommentFollowUpRow).toBeVisible();
     await expect(reviewCommentRow).toContainText("Guard the cache fallback before returning");
     await expect(reviewCommentRow.getByRole("button", { name: "Copy comment" })).toBeVisible();
     await expect(page.getByText("Expanded context explains stale data handling.")).toHaveCount(0);
     await reviewCommentRow.click();
+    await reviewCommentFollowUpRow.click();
     await expect(page.getByText("Expanded context explains stale data handling.")).toBeVisible();
     await expect(reviewCommentRow.getByRole("button", { name: "Reply" })).toBeVisible();
+    await expect(reviewCommentFollowUpRow.getByRole("button", { name: "Reply" })).toBeVisible();
+    await expect(page.locator(".pull-detail .thread-reply-panel")).toHaveCount(0);
+    await reviewCommentFollowUpRow.getByRole("button", { name: "Reply" }).click();
+    await expect(page.locator(".pull-detail .thread-reply-panel")).toHaveCount(1);
+    await expect(reviewCommentRow.locator(".thread-reply-panel")).toHaveCount(0);
+    await expect(reviewCommentFollowUpRow.locator(".thread-reply-panel")).toHaveCount(1);
     await expect
       .poll(async () => await page.evaluate((key) => localStorage.getItem(key), activityViewStorageKey))
       .toBe("compact");

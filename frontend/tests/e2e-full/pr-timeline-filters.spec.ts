@@ -208,6 +208,13 @@ test.describe("PR timeline filters", () => {
     await menu.getByRole("button", { name: "Compact" }).click();
 
     await expect(page.locator(".pull-detail .event-card--compact-row").first()).toBeVisible();
+    const compactCommitRow = page.locator(".pull-detail .event-card--compact-row", {
+      hasText: "feat: add cache store",
+    });
+    await expect(compactCommitRow).toBeVisible();
+    await expect(compactCommitRow).not.toContainText("Cache entries now expire");
+    await compactCommitRow.click();
+    await expect(compactCommitRow).toContainText("Cache entries now expire");
     await expect(page.locator(".pull-detail .event-card--compact-row", { hasText: "COMMENTED" })).toBeVisible();
     const reviewCommentRow = page.locator(".pull-detail .event-card--compact-row", {
       hasText: "Guard the cache fallback before returning",

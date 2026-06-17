@@ -899,6 +899,7 @@
   }
 
   function compactEntryCanExpand(entry: TimelineEntry): boolean {
+    if (entry.event.EventType === "commit") return commitDetailsBody(entry.event.Body).length > 0;
     return (
       shouldRenderMarkdown(entry.event.EventType) &&
       (entry.event.Body.trim().length > 0 || entry.reviewThread !== undefined)
@@ -1432,7 +1433,13 @@
             </div>
             {#if canExpandCompact && compactExpanded}
               <div class="compact-expanded-content">
-                {@render eventBody(event, false, entry.reviewThread, hasReplyOnlyAction ? entry : undefined)}
+                {#if event.EventType === "commit"}
+                  <div class="event-body commit-body-details">
+                    {commitDetailsBody(event.Body)}
+                  </div>
+                {:else}
+                  {@render eventBody(event, false, entry.reviewThread, hasReplyOnlyAction ? entry : undefined)}
+                {/if}
               </div>
             {/if}
             {#if isReplyingToEntry(entry) && targetID !== null}

@@ -568,6 +568,33 @@ describe("EventTimeline", () => {
     expect(expandableRows[1]?.getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("expands compact commit rows to show the full commit message", async () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        activityViewMode: "compact",
+        events: [
+          makeEvent({
+            EventType: "commit",
+            Author: "alice",
+            Summary: "abcdef1234567890",
+            Body: "feat: add cache store\n\nCache entries now expire after refresh.",
+          }),
+        ],
+      },
+    });
+
+    const row = container.querySelector<HTMLElement>(".event-card--compact-row");
+    expect(row?.textContent).toContain("feat: add cache store");
+    expect(row?.textContent).not.toContain("Cache entries now expire after refresh.");
+
+    const toggle = row?.querySelector<HTMLButtonElement>(".compact-event-toggle");
+    expect(toggle).toBeTruthy();
+    await fireEvent.click(toggle!);
+
+    expect(row?.textContent).toContain("Cache entries now expire after refresh.");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("renders compact review verdicts and review comment context", () => {
     const { container } = render(EventTimeline, {
       props: {

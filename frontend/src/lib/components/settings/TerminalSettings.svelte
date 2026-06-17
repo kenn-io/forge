@@ -3,6 +3,7 @@
   import {
     DEFAULT_TERMINAL_SETTINGS,
     getStores,
+    SelectDropdown,
   } from "@middleman/ui";
   import XIcon from "@lucide/svelte/icons/x";
   import type { TerminalSettings as TerminalSettingsType } from "@middleman/ui/api/types";
@@ -46,6 +47,10 @@
     "Monaco",
     "Consolas",
     "Courier New",
+  ];
+  const rendererOptions = [
+    { value: "xterm", label: "xterm.js" },
+    { value: "ghostty-web", label: "ghostty-web" },
   ];
 
   let draftReady = $state(false);
@@ -375,18 +380,19 @@
       />
     </label>
 
-    <label class="renderer-field" for="terminal-renderer">
+    <div class="renderer-field">
       <span class="setting-label">Terminal renderer</span>
-      <select
-        id="terminal-renderer"
-        class="renderer-select"
-        bind:value={rendererDraft}
+      <SelectDropdown
+        class="renderer-dropdown"
+        value={rendererDraft}
+        options={rendererOptions}
+        onchange={(value) => {
+          rendererDraft = value as TerminalSettingsType["renderer"];
+        }}
+        title="Terminal renderer"
         disabled={saving}
-      >
-        <option value="xterm">xterm.js</option>
-        <option value="ghostty-web">ghostty-web</option>
-      </select>
-    </label>
+      />
+    </div>
   </div>
 
   <label class="toggle-field">
@@ -559,8 +565,7 @@
   }
 
   .font-input,
-  .number-input,
-  .renderer-select {
+  .number-input {
     width: 100%;
     height: 28px;
     border: 1px solid var(--border-default);
@@ -574,6 +579,20 @@
 
   .font-input {
     font-family: var(--font-mono);
+  }
+
+  .renderer-field :global(.renderer-dropdown) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .renderer-field :global(.select-dropdown-trigger) {
+    height: 28px;
+    background: var(--bg-primary);
+    border-color: var(--border-default);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
   }
 
   .toggle-field {

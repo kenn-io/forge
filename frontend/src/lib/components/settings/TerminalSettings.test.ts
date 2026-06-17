@@ -6,23 +6,27 @@ const { mockSetTerminalSettings, mockUpdateSettings } = vi.hoisted(() => ({
   mockUpdateSettings: vi.fn(),
 }));
 
-vi.mock("@middleman/ui", () => ({
-  DEFAULT_TERMINAL_SETTINGS: {
-    font_family: "",
-    font_size: 14,
-    scrollback: 1000,
-    line_height: 1,
-    letter_spacing: 0,
-    cursor_blink: true,
-    font_ligatures: false,
-    renderer: "xterm",
-  },
-  getStores: () => ({
-    settings: {
-      setTerminalSettings: mockSetTerminalSettings,
+vi.mock("@middleman/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@middleman/ui")>();
+  return {
+    ...actual,
+    DEFAULT_TERMINAL_SETTINGS: {
+      font_family: "",
+      font_size: 14,
+      scrollback: 1000,
+      line_height: 1,
+      letter_spacing: 0,
+      cursor_blink: true,
+      font_ligatures: false,
+      renderer: "xterm",
     },
-  }),
-}));
+    getStores: () => ({
+      settings: {
+        setTerminalSettings: mockSetTerminalSettings,
+      },
+    }),
+  };
+});
 
 vi.mock("../../api/settings.js", () => ({
   updateSettings: mockUpdateSettings,
@@ -152,9 +156,12 @@ describe("TerminalSettings", () => {
       },
     });
 
-    await fireEvent.change(screen.getByLabelText("Terminal renderer"), {
-      target: { value: "ghostty-web" },
+    expect(document.querySelector("select#terminal-renderer")).toBeNull();
+    const rendererDropdown = screen.getByRole("combobox", {
+      name: "Terminal renderer: xterm.js",
     });
+    await fireEvent.click(rendererDropdown);
+    await fireEvent.click(screen.getByRole("option", { name: "ghostty-web" }));
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {

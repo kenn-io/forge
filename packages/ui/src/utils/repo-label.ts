@@ -88,7 +88,12 @@ export function repoPath(repo: RepoLabelIdentity): string {
 }
 
 export function repoIdentityKey(repo: RepoLabelIdentity): string {
-  return [repo.provider.trim(), repo.platformHost.trim(), repoPath(repo)].join("\0");
+  // The "|" delimiter is the established thread/grouping key format
+  // (provider|host|owner/name); activity item and branch keys append
+  // ":type:number" to it and ActivityThreaded relies on that shape.
+  // None of provider, host, or repo path contains "|", so segments
+  // stay unambiguous.
+  return [repo.provider.trim(), repo.platformHost.trim(), repoPath(repo)].join("|");
 }
 
 function hostNeeded(hostsByRepoPath: ReadonlyMap<string, ReadonlySet<string>>, path: string): boolean {

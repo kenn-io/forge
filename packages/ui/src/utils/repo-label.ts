@@ -43,13 +43,15 @@ export function createRepoLabelFormatter(
     }
     hosts.add(host);
 
-    const hostRepoPath = hostRepoPathKey(host, path);
-    let providers = providersByHostRepoPath.get(hostRepoPath);
-    if (!providers) {
-      providers = new Set();
-      providersByHostRepoPath.set(hostRepoPath, providers);
+    if (provider) {
+      const hostRepoPath = hostRepoPathKey(host, path);
+      let providers = providersByHostRepoPath.get(hostRepoPath);
+      if (!providers) {
+        providers = new Set();
+        providersByHostRepoPath.set(hostRepoPath, providers);
+      }
+      providers.add(provider);
     }
-    providers.add(provider);
   }
 
   return {
@@ -60,8 +62,8 @@ export function createRepoLabelFormatter(
       const host = repo.platformHost.trim();
 
       if (!options.showOrgNames) {
-        if (providerNeeded(providersByHostRepoPath, host, path) && provider) {
-          return providerHostRepoPathLabel(provider, host, path);
+        if (providerNeeded(providersByHostRepoPath, host, path)) {
+          return provider ? providerHostRepoPathLabel(provider, host, path) : hostQualifiedRepoPathLabel(host, path);
         }
         if (hostNeeded(hostsByRepoPath, path) && host) return `${host}/${path}`;
         if ((repoPathsByName.get(name)?.size ?? 0) <= 1) {
@@ -70,8 +72,8 @@ export function createRepoLabelFormatter(
         return path || name;
       }
 
-      if (providerNeeded(providersByHostRepoPath, host, path) && provider) {
-        return providerHostRepoPathLabel(provider, host, path);
+      if (providerNeeded(providersByHostRepoPath, host, path)) {
+        return provider ? providerHostRepoPathLabel(provider, host, path) : hostQualifiedRepoPathLabel(host, path);
       }
       return hostNeeded(hostsByRepoPath, path) && host ? `${host}/${path}` : path || name;
     },
@@ -85,6 +87,10 @@ export function repoPath(repo: RepoLabelIdentity): string {
   const name = repo.name.trim();
   if (owner && name) return `${owner}/${name}`;
   return name;
+}
+
+export function repoIdentityKey(repo: RepoLabelIdentity): string {
+  return [repo.provider.trim(), repo.platformHost.trim(), repoPath(repo)].join("\0");
 }
 
 function hostNeeded(hostsByRepoPath: ReadonlyMap<string, ReadonlySet<string>>, path: string): boolean {
@@ -105,4 +111,8 @@ function hostRepoPathKey(host: string, path: string): string {
 
 function providerHostRepoPathLabel(provider: string, host: string, path: string): string {
   return host ? `${provider}/${host}/${path}` : `${provider}/${path}`;
+}
+
+function hostQualifiedRepoPathLabel(host: string, path: string): string {
+  return host ? `${host}/${path}` : path;
 }

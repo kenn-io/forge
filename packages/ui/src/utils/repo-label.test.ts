@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { createRepoLabelFormatter } from "./repo-label.js";
+import { createRepoLabelFormatter, repoIdentityKey } from "./repo-label.js";
 
 const repos = [
   {
@@ -110,5 +110,27 @@ describe("repo labels", () => {
 
     expect(formatter.format(sameHostOnDifferentProviders[0]!)).toBe("github/github.com/acme/widgets");
     expect(formatter.format(sameHostOnDifferentProviders[1]!)).toBe("gitea/github.com/acme/widgets");
+  });
+
+  it("does not treat missing provider metadata as a provider collision", () => {
+    const sameRepoWithMissingProvider = [
+      repos[0]!,
+      {
+        ...repos[0]!,
+        provider: "",
+      },
+    ];
+    const formatter = createRepoLabelFormatter(sameRepoWithMissingProvider, {
+      showOrgNames: false,
+    });
+
+    expect(formatter.format(sameRepoWithMissingProvider[0]!)).toBe("widgets");
+    expect(formatter.format(sameRepoWithMissingProvider[1]!)).toBe("widgets");
+  });
+
+  it("uses the same provider-aware identity for shared grouping keys", () => {
+    expect(repoIdentityKey(repos[0]!)).not.toBe(repoIdentityKey({ ...repos[0]!, provider: "gitea" }));
+    expect(repoIdentityKey(repos[0]!)).not.toBe(repoIdentityKey(repos[2]!));
+    expect(repoIdentityKey(repos[0]!)).toBe(repoIdentityKey({ ...repos[0]! }));
   });
 });

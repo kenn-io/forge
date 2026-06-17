@@ -15,6 +15,7 @@
   } from "@middleman/ui";
   import {
     createRepoLabelFormatter,
+    repoIdentityKey,
     type RepoLabelIdentity,
   } from "@middleman/ui/utils/repo-label";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
@@ -139,7 +140,7 @@
   const grouped = $derived.by<WorkspaceGroup[]>(() => {
     const groups: WorkspaceGroup[] = [];
     for (const ws of visibleWorkspaces) {
-      const key = workspaceGroupKey(ws);
+      const key = repoIdentityKey(workspaceRepoIdentity(ws));
       const group = groups.find((candidate) => candidate.key === key);
       if (group) {
         group.items.push(ws);
@@ -450,24 +451,6 @@
 
   function workspaceProvider(ws: Workspace): string | undefined {
     return ws.repo?.provider;
-  }
-
-  function workspaceGroupKey(ws: Workspace): string {
-    // Group on the full provider ref, not just host/owner/name, reusing
-    // the same provider-aware identity that drives the label. Two
-    // providers can share a platform host and repo path (for example a
-    // Gitea and a Forgejo instance on one domain); without the provider
-    // segment their workspaces collapse into a single group whose label
-    // and provider icon are taken from only the first item. The NUL
-    // joiner keeps GitLab's slash-bearing subgroup owners from colliding
-    // across segments.
-    const identity = workspaceRepoIdentity(ws);
-    return [
-      identity.provider,
-      identity.platformHost,
-      identity.owner,
-      identity.name,
-    ].join("\0");
   }
 
   function workspaceRoute(ws: Workspace): string {

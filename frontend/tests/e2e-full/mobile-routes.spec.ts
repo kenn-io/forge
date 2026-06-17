@@ -352,13 +352,13 @@ test.describe("phone routes", () => {
       name: "Hide org",
     });
     await expect(hideOrgToggle).toHaveAttribute("aria-pressed", "false");
-    await expect(repoLabel).toHaveText("github.com/acme/widgets");
+    await expect(repoLabel).toHaveText("acme/widgets");
 
     await hideOrgToggle.click();
 
     await expect(hideOrgToggle).toHaveAttribute("aria-pressed", "true");
     await expect(repoLabel).toHaveText("widgets");
-    await expect(repoLabel).not.toHaveText("github.com/acme/widgets");
+    await expect(repoLabel).not.toHaveText("acme/widgets");
 
     await page.reload();
 

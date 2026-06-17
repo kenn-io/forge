@@ -824,6 +824,47 @@ describe("WorkspaceListSidebar", () => {
     ]);
   });
 
+  it("keeps same-host different-provider repo groups separate", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-github-acme",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widgets",
+            number: 1,
+            title: "GitHub acme widgets",
+          }),
+          workspaceFixture({
+            id: "ws-gitea-acme",
+            provider: "gitea",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widgets",
+            number: 2,
+            title: "Gitea acme widgets",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-github-acme" },
+    });
+    await screen.findByText("GitHub acme widgets");
+
+    expect(Array.from(container.querySelectorAll(".group-label")).map((el) => el.textContent?.trim())).toEqual([
+      "github/github.com/acme/widgets",
+      "gitea/github.com/acme/widgets",
+    ]);
+    expect(Array.from(container.querySelectorAll(".group-count")).map((el) => el.textContent?.trim())).toEqual([
+      "1",
+      "1",
+    ]);
+  });
+
   it("can hide PR diff stats while keeping branch metadata visible", async () => {
     mockGet.mockResolvedValue({
       data: {

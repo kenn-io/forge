@@ -1,4 +1,6 @@
 import type { ActivityItem } from "../api/types.js";
+import { repoIdentityKey } from "../utils/repo-label.js";
+import type { RepoLabelIdentity } from "../utils/repo-label.js";
 
 export interface CollapsedActivityRun {
   kind: "collapsed";
@@ -119,15 +121,10 @@ export function collapseActivityRuns(items: ActivityItem[], options: CollapseAct
   return result;
 }
 
-export interface ActivityRepoKeyRef {
-  provider: string;
-  platformHost: string;
-  owner: string;
-  name: string;
-}
+export type ActivityRepoKeyRef = RepoLabelIdentity;
 
 export function activityRepoKey(ref: ActivityRepoKeyRef): string {
-  return `${ref.provider}|${ref.platformHost}|${ref.owner}/${ref.name}`;
+  return repoIdentityKey(ref);
 }
 
 export function activityItemKey(ref: ActivityRepoKeyRef & { itemType: string; itemNumber: number }): string {

@@ -210,23 +210,15 @@
   async function fetchWorkspaces(): Promise<void> {
     if (fetchInFlight) return;
     fetchInFlight = true;
+    const abortController = new AbortController();
     let timeoutHandle: number | undefined;
     try {
-      const timeout = new Promise<"timeout">((resolve) => {
-        timeoutHandle = window.setTimeout(
-          () => resolve("timeout"),
-          workspaceListLoadTimeoutMs,
-        );
+      timeoutHandle = window.setTimeout(() => {
+        abortController.abort();
+      }, workspaceListLoadTimeoutMs);
+      const { data } = await client.GET("/workspaces", {
+        signal: abortController.signal,
       });
-      const result = await Promise.race([
-        client.GET("/workspaces"),
-        timeout,
-      ]);
-      if (result === "timeout") {
-        if (workspaces.length === 0) workspaceListStatus = "retrying";
-        return;
-      }
-      const { data } = result;
       if (!data) {
         if (workspaces.length === 0) workspaceListStatus = "retrying";
         return;

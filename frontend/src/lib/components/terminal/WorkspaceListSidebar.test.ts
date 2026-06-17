@@ -181,7 +181,16 @@ describe("WorkspaceListSidebar", () => {
 
   it("shows a retrying state when the initial workspace list hangs", async () => {
     vi.useFakeTimers();
-    mockGet.mockReturnValue(new Promise(() => {}));
+    let aborted = false;
+    mockGet.mockImplementation(
+      (_path: string, opts?: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          opts?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        }),
+    );
 
     render(WorkspaceListSidebar, {
       props: { selectedId: "" },
@@ -191,6 +200,7 @@ describe("WorkspaceListSidebar", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await tick();
 
+    expect(aborted).toBe(true);
     expect(screen.getByText("Still loading workspaces. Retrying...")).toBeTruthy();
   });
 

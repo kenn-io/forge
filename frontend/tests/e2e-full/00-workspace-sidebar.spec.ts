@@ -101,6 +101,26 @@ async function createIssueWorkspace(api: APIRequestContext, issueNumber: number)
 test.describe("workspace sidebar full-stack", () => {
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
+  test("shows retrying copy when the workspace list request stalls", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      await page.route("**/api/v1/workspaces", async () => {
+        // Keep the first list request pending so the real app shell
+        // exercises the workspace rail's hung-request state.
+      });
+
+      await page.goto(`${isolatedServer.info.base_url}/workspaces`);
+
+      await expect(page.getByText("Loading workspaces...")).toBeVisible();
+      await expect(page.getByText("Still loading workspaces. Retrying...")).toBeVisible({
+        timeout: 12_000,
+      });
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("shows provider icons in group headers when workspaces span multiple providers", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;

@@ -40,12 +40,12 @@ describe("buildMobileActivityRepoOptions", () => {
 
     expect(options).toEqual([
       {
-        value: "gitea/github.com/acme/widgets",
+        value: "gitea|github.com/acme/widgets",
         label: "gitea/github.com/acme/widgets",
         triggerLabel: "gitea/github.com/acme/widgets",
       },
       {
-        value: "github/github.com/acme/widgets",
+        value: "github|github.com/acme/widgets",
         label: "github/github.com/acme/widgets",
         triggerLabel: "github/github.com/acme/widgets",
       },

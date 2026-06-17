@@ -110,7 +110,7 @@ test.describe("mobile activity repository selector", () => {
     await expect(page.getByRole("combobox", { name: "Repository: gitea/github.com/acme/widgets" })).toHaveText(
       "gitea/github.com/acme/widgets",
     );
-    await expect.poll(() => activityRepos).toContain("gitea/github.com/acme/widgets");
+    await expect.poll(() => activityRepos).toContain("gitea|github.com/acme/widgets");
   });
 
   test("groups and labels activity from nested repo identity", async ({ page }) => {

@@ -148,7 +148,7 @@ func TestListActivity(t *testing.T) {
 		insertTestMR(t, d, giteaRepo, 2, "gitea provider", base.Add(time.Hour))
 
 		items, err := d.ListActivity(ctx, ListActivityOpts{
-			Repo: "gitea/github.com/acme/widgets",
+			Repo: "gitea|github.com/acme/widgets",
 			RepoFilters: []RepoFilter{{
 				Platform:     "gitea",
 				PlatformHost: "github.com",

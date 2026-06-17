@@ -16,6 +16,12 @@ function concreteRepoSelectorValue(repo: ConfigRepo): string | null {
 function providerRepoSelectorValue(repo: ConfigRepo): string | null {
   const provider = repo.provider?.trim();
   const concreteValue = concreteRepoSelectorValue(repo);
+  return provider && concreteValue ? `${provider}|${concreteValue}` : concreteValue;
+}
+
+function providerRepoSelectorLabel(repo: ConfigRepo): string | null {
+  const provider = repo.provider?.trim();
+  const concreteValue = concreteRepoSelectorValue(repo);
   return provider && concreteValue ? `${provider}/${concreteValue}` : concreteValue;
 }
 
@@ -51,8 +57,10 @@ export function buildMobileActivityRepoOptions(repos: ConfigRepo[]): MobileActiv
     if (!value || seen.has(value)) continue;
     seen.add(value);
     const repoPath = repo.repo_path.trim();
-    const triggerLabel = providerCollision || (valuesByRepoPath.get(repoPath)?.size ?? 0) > 1 ? value : repoPath;
-    options.push({ value, label: value, triggerLabel });
+    const label = providerCollision ? providerRepoSelectorLabel(repo) : value;
+    if (!label) continue;
+    const triggerLabel = providerCollision || (valuesByRepoPath.get(repoPath)?.size ?? 0) > 1 ? label : repoPath;
+    options.push({ value, label, triggerLabel });
   }
   return options.sort((left, right) =>
     left.label.localeCompare(right.label, undefined, {

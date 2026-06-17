@@ -38,6 +38,7 @@ function pullDetail(
   provider = "github",
   platformHost = "github.com",
   operations?: Record<string, unknown>,
+  events?: Array<Record<string, unknown>>,
 ) {
   return {
     merge_request: {
@@ -67,7 +68,7 @@ function pullDetail(
       KanbanStatus: "reviewing",
       Starred: false,
     },
-    events: [
+    events: events ?? [
       {
         ID: 51,
         MergeRequestID: 1,
@@ -207,6 +208,50 @@ const diffResponse = {
   ],
 };
 
+const splitComposerDiffResponse = {
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "src/main.ts",
+      old_path: "src/main.ts",
+      status: "modified",
+      additions: 2,
+      deletions: 0,
+      is_binary: false,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 1,
+          new_start: 1,
+          new_count: 3,
+          section: "",
+          lines: [
+            {
+              type: "context",
+              old_num: 1,
+              new_num: 1,
+              content: "const a = 1;",
+            },
+            {
+              type: "add",
+              old_num: null,
+              new_num: 2,
+              content: "const b = 2;",
+            },
+            {
+              type: "add",
+              old_num: null,
+              new_num: 3,
+              content: "const c = 3;",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 const multiHunkDiffResponse = {
   stale: false,
   whitespace_only_count: 0,
@@ -333,6 +378,7 @@ function scrollingDiffResponse() {
 }
 
 type MockInlineReviewOptions = {
+  detailEvents?: Array<Record<string, unknown>>;
   publishStatus?: "published" | "partially_published";
   detailBody?: string;
   detailFetchedAtSequence?: string[];
@@ -363,7 +409,14 @@ async function mockInlineReviewAPI(
       await route.fallback();
       return;
     }
-    const detail = pullDetail(reviewThreadResolved, capabilities, provider, platformHost, options.operations);
+    const detail = pullDetail(
+      reviewThreadResolved,
+      capabilities,
+      provider,
+      platformHost,
+      options.operations,
+      options.detailEvents,
+    );
     if (options.detailBody !== undefined) {
       detail.merge_request.Body = options.detailBody;
     }
@@ -582,6 +635,59 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Show full comment" })).toHaveCount(0);
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(page.getByText("1 draft comment")).toBeHidden();
+});
+
+test("keeps split-mode inline composers on trailing right-side hunk lines", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("diff-view-mode", "split");
+  });
+  await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", splitComposerDiffResponse, undefined, {
+    detailEvents: [],
+  });
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  async function assertRightSideComposer(line: number): Promise<void> {
+    const button = page.getByRole("button", { name: `Comment on new line ${line}` });
+    await expect(button).toBeVisible();
+    await expect(
+      button.evaluate((element) => {
+        const code = element.closest("code");
+        const pre = code?.parentElement;
+        if (!code || !pre) return null;
+        if (code.hasAttribute("data-additions")) return "additions";
+        if (code.hasAttribute("data-deletions")) return "deletions";
+        const index = Array.from(pre.children).indexOf(code);
+        if (index === 0) return "deletions";
+        if (index === 1) return "additions";
+        return null;
+      }),
+    ).resolves.toBe("additions");
+
+    await button.click();
+    await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
+    await expect(
+      page
+        .locator(".pierre-diff")
+        .first()
+        .evaluate((host, lineNumber) => {
+          const slot = host.shadowRoot?.querySelector(`slot[name="annotation-additions-${lineNumber}"]`);
+          const code = slot?.closest("code");
+          const pre = code?.parentElement;
+          if (!code || !pre) return null;
+          if (code.hasAttribute("data-additions")) return "additions";
+          if (code.hasAttribute("data-deletions")) return "deletions";
+          const index = Array.from(pre.children).indexOf(code);
+          if (index === 0) return "deletions";
+          if (index === 1) return "additions";
+          return null;
+        }, line),
+    ).resolves.toBe("additions");
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByPlaceholder("Leave a comment")).toHaveCount(0);
+  }
+
+  await assertRightSideComposer(2);
+  await assertRightSideComposer(3);
 });
 
 test("shows a visible composer focus indicator without focus flicker", async ({ page }) => {

@@ -45,6 +45,7 @@
   type RenderedLinePair = {
     content: HTMLElement;
     gutter: HTMLElement;
+    side: PierreSide | undefined;
   };
   type TransientAnnotationRow = {
     content?: HTMLElement;
@@ -958,14 +959,26 @@
     for (const hunk of fileHunks) {
       for (const line of hunk.lines) {
         if (line.old_num != null) {
-          markLineTarget(pre, getLineIndex(line.old_num, "deletions"), split, {
-            "data-diff-old-line": String(line.old_num),
-          });
+          markLineTarget(
+            pre,
+            getLineIndex(line.old_num, "deletions"),
+            split,
+            "deletions",
+            {
+              "data-diff-old-line": String(line.old_num),
+            },
+          );
         }
         if (line.new_num != null) {
-          markLineTarget(pre, getLineIndex(line.new_num, "additions"), split, {
-            "data-diff-new-line": String(line.new_num),
-          });
+          markLineTarget(
+            pre,
+            getLineIndex(line.new_num, "additions"),
+            split,
+            "additions",
+            {
+              "data-diff-new-line": String(line.new_num),
+            },
+          );
         }
       }
     }
@@ -1217,7 +1230,7 @@
     if (!indexes) return undefined;
 
     const lineIndex = split ? indexes[1] : indexes[0];
-    const target = renderedLinePair(pre, lineIndex, split);
+    const target = renderedLinePair(pre, lineIndex, split, annotation.side as PierreSide);
     if (!target) return undefined;
 
     const gutter = document.createElement("div");
@@ -1247,12 +1260,13 @@
     pre: HTMLPreElement,
     indexes: [number, number] | undefined,
     split: boolean,
+    side: PierreSide,
     attributes: Record<string, string>,
   ): void {
     if (!indexes) return;
     const lineIndex = split ? indexes[1] : indexes[0];
     if (!Number.isFinite(lineIndex)) return;
-    const pair = renderedLinePair(pre, lineIndex, split);
+    const pair = renderedLinePair(pre, lineIndex, split, side);
     if (!pair) return;
     pair.content.tabIndex = -1;
     pair.gutter.tabIndex = -1;
@@ -1309,7 +1323,8 @@
 
   function refreshRenderedLineRows(pre: HTMLPreElement, split: boolean): void {
     const next = new Map<number, RenderedLinePair[]>();
-    for (const code of Array.from(pre.children)) {
+    for (const [codeIndex, code] of Array.from(pre.children).entries()) {
+      const side = split ? renderedCodeSide(code, codeIndex) : undefined;
       const [gutter, content] = Array.from(code.children);
       if (!gutter || !content) continue;
       const contentRows = Array.from(content.children);
@@ -1323,21 +1338,42 @@
         const lineIndex = parseRenderedLineIndex(contentElement, split);
         if (lineIndex == null) continue;
         const rows = next.get(lineIndex) ?? [];
-        rows.push({ content: contentElement, gutter: gutterElement });
+        rows.push({ content: contentElement, gutter: gutterElement, side });
         next.set(lineIndex, rows);
       }
     }
     renderedLineRows = next;
   }
 
+  function renderedCodeSide(code: Element, codeIndex: number): PierreSide | undefined {
+    if (code.hasAttribute("data-deletions")) return "deletions";
+    if (code.hasAttribute("data-additions")) return "additions";
+    if (codeIndex === 0) return "deletions";
+    if (codeIndex === 1) return "additions";
+    return undefined;
+  }
+
+  function linePairMatchesSide(
+    pair: RenderedLinePair,
+    split: boolean,
+    side: PierreSide | undefined,
+  ): boolean {
+    return !split || side == null || pair.side === side;
+  }
+
   function renderedLinePair(
     pre: HTMLPreElement,
     targetIndex: number,
     split: boolean,
+    side?: PierreSide,
   ): RenderedLinePair | undefined {
-    const cached = renderedLineRows.get(targetIndex)?.[0];
+    const cached = renderedLineRows.get(targetIndex)?.find((pair) =>
+      linePairMatchesSide(pair, split, side)
+    );
     if (cached) return cached;
-    for (const code of Array.from(pre.children)) {
+    for (const [codeIndex, code] of Array.from(pre.children).entries()) {
+      const codeSide = split ? renderedCodeSide(code, codeIndex) : undefined;
+      if (split && side != null && codeSide !== side) continue;
       const [gutter, content] = Array.from(code.children);
       if (!gutter || !content) continue;
       const gutterRows = Array.from(gutter.children);
@@ -1348,7 +1384,7 @@
           const index = Array.prototype.indexOf.call(content.children, contentElement);
           const gutterElement = gutterRows[index];
           if (gutterElement instanceof HTMLElement) {
-            return { content: contentElement, gutter: gutterElement };
+            return { content: contentElement, gutter: gutterElement, side: codeSide };
           }
         }
         if ((lineIndex ?? 0) > targetIndex) return undefined;

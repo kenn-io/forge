@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/procutil"
@@ -50,6 +51,9 @@ func run(ctx context.Context, args []string) error {
 			return fmt.Errorf("create %s: %w", path, err)
 		}
 	}
+	if err := ensureWorkspaceGitFixture(ctx, *worktreePath); err != nil {
+		return err
+	}
 
 	database, err := db.Open(*dbPath)
 	if err != nil {
@@ -59,6 +63,34 @@ func run(ctx context.Context, args []string) error {
 
 	if err := resetFixtureRows(ctx, database, *projectPath); err != nil {
 		return err
+	}
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "fleet-widget",
+		RepoPath:     "acme/fleet-widget",
+	})
+	if err != nil {
+		return fmt.Errorf("upsert repo: %w", err)
+	}
+	now := time.Now().UTC()
+	if _, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		Number:          7,
+		URL:             "https://github.com/acme/fleet-widget/pull/7",
+		Title:           "Fleet widget",
+		Author:          "fleet",
+		State:           db.MergeRequestStateOpen,
+		HeadBranch:      "feature/fleet-read",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "fleet-head",
+		PlatformBaseSHA: "fleet-base",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	}); err != nil {
+		return fmt.Errorf("upsert merge request: %w", err)
 	}
 	project, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName:   "fleet-widget",
@@ -104,6 +136,73 @@ func run(ctx context.Context, args []string) error {
 		}
 	}
 
+	return nil
+}
+
+func ensureWorkspaceGitFixture(ctx context.Context, worktreePath string) error {
+	root := filepath.Dir(worktreePath)
+	remotePath := filepath.Join(root, "origin.git")
+	if err := os.RemoveAll(remotePath); err != nil {
+		return fmt.Errorf("reset origin: %w", err)
+	}
+	if err := os.RemoveAll(worktreePath); err != nil {
+		return fmt.Errorf("reset worktree: %w", err)
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return fmt.Errorf("create worktree root: %w", err)
+	}
+	if err := runGit(ctx, root, "init", "--bare", "--initial-branch=main", remotePath); err != nil {
+		return err
+	}
+	if err := runGit(ctx, root, "clone", remotePath, worktreePath); err != nil {
+		return err
+	}
+	if err := runGit(ctx, worktreePath, "config", "user.email", "fleet@example.test"); err != nil {
+		return err
+	}
+	if err := runGit(ctx, worktreePath, "config", "user.name", "Fleet Fixture"); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(worktreePath, "base.txt"), []byte("base\n"), 0o600); err != nil {
+		return fmt.Errorf("write base: %w", err)
+	}
+	if err := runGit(ctx, worktreePath, "add", "."); err != nil {
+		return err
+	}
+	if err := runGit(ctx, worktreePath, "commit", "-m", "base"); err != nil {
+		return err
+	}
+	if err := runGit(ctx, worktreePath, "push", "origin", "main"); err != nil {
+		return err
+	}
+	if err := runGit(ctx, worktreePath, "checkout", "-b", "feature/fleet-read"); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o600); err != nil {
+		return fmt.Errorf("write feature: %w", err)
+	}
+	if err := runGit(ctx, worktreePath, "add", "."); err != nil {
+		return err
+	}
+	if err := runGit(ctx, worktreePath, "commit", "-m", "feature commit"); err != nil {
+		return err
+	}
+	if err := runGit(ctx, worktreePath, "push", "-u", "origin", "feature/fleet-read"); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(worktreePath, "dirty.txt"), []byte("dirty\n"), 0o600); err != nil {
+		return fmt.Errorf("write dirty: %w", err)
+	}
+	return nil
+}
+
+func runGit(ctx context.Context, dir string, args ...string) error {
+	cmd := procutil.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git %v in %s: %w: %s", args, dir, err, output)
+	}
 	return nil
 }
 

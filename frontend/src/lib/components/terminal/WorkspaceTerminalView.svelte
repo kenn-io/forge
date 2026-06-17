@@ -145,6 +145,13 @@
   let workspace = $state<Workspace | null>(null);
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
   let runtimeFetchSeq = 0;
+  let runtimeFetchInFlight:
+    | Promise<WorkspaceRuntimeState | null>
+    | null = null;
+  let runtimeFetchInFlightId = "";
+  let runtimeFetchInFlightHostKey:
+    | string
+    | undefined = undefined;
   // The workspace ID that `runtime` was fetched for. Stored
   // alongside the payload so we never render or operate on
   // sessions/targets that belong to a previous workspace
@@ -1003,39 +1010,62 @@
     if (!workspaceId) return null;
     const id = workspaceId;
     const hostKey = workspaceHostKey;
+    if (
+      runtimeFetchInFlight &&
+      runtimeFetchInFlightId === id &&
+      runtimeFetchInFlightHostKey === hostKey
+    ) {
+      return runtimeFetchInFlight;
+    }
     const seq = runtimeFetchSeq + 1;
     runtimeFetchSeq = seq;
-    try {
-      const data = await getWorkspaceRuntime(id, hostKey);
-      if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
-      runtime = data;
-      runtimeForId = id;
-      runtimeForHostKey = hostKey;
-      runtimeError = null;
-      terminalLayout = normalizeLayoutForSessions(data.sessions);
-      if (
-        activeTabKey.startsWith("session:") &&
-        !data.sessions.some(
-          (session) =>
-            session.key === activeTabKey.slice("session:".length) &&
-            sessionRegion(session) === "workflow",
-        )
-      ) {
-        selectWorkspaceTab("home");
+    const fetchPromise = (async () => {
+      try {
+        const data = await getWorkspaceRuntime(id, hostKey);
+        if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
+        runtime = data;
+        runtimeForId = id;
+        runtimeForHostKey = hostKey;
+        runtimeError = null;
+        terminalLayout = normalizeLayoutForSessions(data.sessions);
+        if (
+          activeTabKey.startsWith("session:") &&
+          !data.sessions.some(
+            (session) =>
+              session.key === activeTabKey.slice("session:".length) &&
+              sessionRegion(session) === "workflow",
+          )
+        ) {
+          selectWorkspaceTab("home");
+        }
+        mountedSessionKeys = mountedSessionKeys.filter(
+          (key) =>
+            data.sessions.some((session) => session.key === key),
+        );
+        return data;
+      } catch (err) {
+        if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
+        runtimeError =
+          err instanceof Error
+            ? err.message
+            : "Runtime load failed";
+        return null;
+      } finally {
+        if (
+          runtimeFetchSeq === seq &&
+          runtimeFetchInFlightId === id &&
+          runtimeFetchInFlightHostKey === hostKey
+        ) {
+          runtimeFetchInFlight = null;
+          runtimeFetchInFlightId = "";
+          runtimeFetchInFlightHostKey = undefined;
+        }
       }
-      mountedSessionKeys = mountedSessionKeys.filter(
-        (key) =>
-          data.sessions.some((session) => session.key === key),
-      );
-      return data;
-    } catch (err) {
-      if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
-      runtimeError =
-        err instanceof Error
-          ? err.message
-          : "Runtime load failed";
-      return null;
-    }
+    })();
+    runtimeFetchInFlight = fetchPromise;
+    runtimeFetchInFlightId = id;
+    runtimeFetchInFlightHostKey = hostKey;
+    return fetchPromise;
   }
 
   async function handleLaunch(targetKey: string): Promise<void> {

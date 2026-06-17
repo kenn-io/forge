@@ -24,3 +24,9 @@ base_url = "http://member:18091"
 key = "down"
 name = "down"
 base_url = "http://127.0.0.1:1"
+
+[[fleet.ssh_peers]]
+key = "member-ssh"
+name = "member-ssh"
+destination = "root@member-ssh"
+remote_command = "/app/scripts/e2e/fleet/remote-middleman-member-ssh.sh"

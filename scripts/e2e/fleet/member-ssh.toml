@@ -1,10 +1,6 @@
 host = "127.0.0.1"
 port = 8091
-# The hub fans out to this member at http://member:18091 (Docker service
-# name + socat port), so the member's host-authority guard must accept the
-# member:18091 authority in addition to its loopback listen address.
-allowed_hosts = ["member:18091"]
-data_dir = "/data/member"
+data_dir = "/data/member-ssh"
 sync_interval = "1h"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E"
 
@@ -16,7 +12,7 @@ time_range = "7d"
 renderer = "xterm"
 
 [fleet]
-key = "member"
+key = "member-ssh"
 peer_timeout = "1s"
 
 [[agents]]

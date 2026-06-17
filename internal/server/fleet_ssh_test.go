@@ -8,12 +8,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -478,16 +481,25 @@ func TestSSHFleetRelayAutoStartsRemoteDaemon(t *testing.T) {
 	mu.Unlock()
 }
 
-// TestSSHFleetWebSocketProxyRejectsExplicitly pins, over the REAL
-// registered route on a workspace-enabled server, that a terminal
-// WebSocket request for an ssh peer answers with a stable problem
-// pointing at the attach-spec path, instead of falling through the
-// HTTP peer proxy with a zero base URL.
-func TestSSHFleetWebSocketProxyRejectsExplicitly(t *testing.T) {
+func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
-	fake := &fakeSSHExec{routes: map[string]string{}}
+	writeFakeSSHForAttach(t)
+	remoteSpec := runtimeAttachSpecResponse{
+		Version:           1,
+		Kind:              "tmux",
+		SessionKey:        "sess-1",
+		TargetKey:         "shell",
+		TmuxSession:       "mm-sess-1",
+		Command:           serverRuntimeHelperCommand("echo"),
+		RequiresLocalHost: true,
+	}
+	remoteSpecBody, err := json.Marshal(remoteSpec)
+	require.NoError(err)
+	fake := &fakeSSHExec{routes: map[string]string{
+		"GET /api/v1/workspaces/ws_1/runtime/sessions/sess-1/attach-spec": framedJSON(200, string(remoteSpecBody)),
+	}}
 	fixture.server.sshFleet = newSSHTestTransport(
 		t, fake, config.FleetSSHPeer{
 			Key: "epyc", Destination: "wes@epyc.local",
@@ -496,21 +508,55 @@ func TestSSHFleetWebSocketProxyRejectsExplicitly(t *testing.T) {
 
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
-	resp := httpDo(t, ts, http.MethodGet,
-		"/ws/v1/fleet/hosts/epyc/workspaces/ws_1/terminal", nil)
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(err)
-	require.Equal(http.StatusNotImplemented, resp.StatusCode, string(body))
 
-	var problem struct {
-		Code    string `json:"code"`
-		Details struct {
-			HostKey string `json:"hostKey"`
-		} `json:"details"`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/ws/v1/fleet/hosts/epyc/workspaces/ws_1/runtime/sessions/sess-1/terminal?cols=80&rows=24"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "test done")
+
+	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("ping\n")))
+	readWebSocketBinaryUntil(t, ctx, conn, 2*time.Second, "echo:ping")
+	require.Contains(fake.calls,
+		"GET /api/v1/workspaces/ws_1/runtime/sessions/sess-1/attach-spec")
+}
+
+func writeFakeSSHForAttach(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ssh")
+	script := `#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o)
+      shift 2
+      ;;
+    -t)
+      shift
+      if [ "$#" -gt 0 ]; then
+        shift
+      fi
+      break
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+exec "$@"
+`
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestServerRuntimeHelperProcessForFleetSSH(t *testing.T) {
+	args := os.Args
+	if sep := slices.Index(args, "--"); sep >= 0 {
+		args = args[sep+1:]
 	}
-	require.NoError(json.Unmarshal(body, &problem), string(body))
-	require.Equal("unsupportedCapability", problem.Code)
-	require.Equal("epyc", problem.Details.HostKey)
-	require.Contains(string(body), "attach-spec")
+	if len(args) > 0 && args[0] == serverRuntimeHelperMarker {
+		TestServerRuntimeHelperProcess(t)
+	}
 }

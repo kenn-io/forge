@@ -446,6 +446,48 @@ describe("WorkspaceTerminalView", () => {
     clearIntervalSpy.mockRestore();
   });
 
+  it("does not overlap runtime polling while a slow fetch is in flight", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");
+    const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
+    const setIntervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation((callback: TimerHandler, delay?: number) => {
+        intervalCallbacks.push({ callback: callback as () => void, delay });
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      });
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    let resolveFirst: (value: ReturnType<typeof runtimeWithStaleSession>) => void = () => undefined;
+    const firstFetch = new Promise<ReturnType<typeof runtimeWithStaleSession>>((resolve) => {
+      resolveFirst = resolve;
+    });
+    mocks.getWorkspaceRuntime
+      .mockReturnValueOnce(firstFetch)
+      .mockResolvedValueOnce(runtimeWithSession("2026-04-29T00:03:00Z"));
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        workspaceHostKey: "member",
+      },
+    });
+
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", "member"));
+    const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
+    expect(runtimePoll).toBeTruthy();
+
+    runtimePoll!.callback();
+    await Promise.resolve();
+    expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(1);
+
+    resolveFirst({ launch_targets: [], sessions: [] });
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Home/ })).toBeTruthy());
+
+    runtimePoll!.callback();
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
+    setIntervalSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
+  });
+
   it("shows a relaunched agent with the same key and a new generation", async () => {
     const relaunchedAt = "2026-04-29T00:01:00Z";
     mocks.getWorkspaceRuntime

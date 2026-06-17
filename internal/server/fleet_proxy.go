@@ -3,18 +3,24 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
+	"github.com/creack/pty/v2"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 type fleetRESTProxyRoute struct {
@@ -736,17 +742,7 @@ func (s *Server) serveFleetWebSocketProxy(
 	}
 
 	if target.sshPeer != nil {
-		// Terminals for ssh peers attach natively through the peer's
-		// ControlMaster (the attach-spec carries the wrapped ssh
-		// command); the hub does not bridge them over WebSocket.
-		writeProblemResponse(w, newProblem(
-			http.StatusNotImplemented,
-			CodeUnsupportedCapability,
-			"WebSocket terminals are not supported for ssh fleet hosts;"+
-				" fetch the session's attach-spec and run the returned"+
-				" command instead",
-			map[string]any{"hostKey": target.sshPeer.Key},
-		))
+		s.serveSSHFleetWebSocketTerminal(w, r, *target.sshPeer, targetPath)
 		return
 	}
 
@@ -782,6 +778,262 @@ func (s *Server) serveFleetWebSocketProxy(
 	defer clientConn.Close(websocket.StatusNormalClosure, "hub detached")
 
 	bridgeWebSocketProxy(r.Context(), clientConn, peerConn)
+}
+
+func (s *Server) serveSSHFleetWebSocketTerminal(
+	w http.ResponseWriter,
+	r *http.Request,
+	peer config.FleetSSHPeer,
+	targetPath string,
+) {
+	attachSpecPath, ok := attachSpecPathForFleetTerminalTarget(targetPath)
+	if !ok {
+		writeProblemResponse(w, newProblem(
+			http.StatusNotImplemented,
+			CodeUnsupportedCapability,
+			"workspace-level WebSocket terminals are not supported for ssh fleet hosts; use a runtime session terminal",
+			map[string]any{"hostKey": peer.Key},
+		))
+		return
+	}
+	if s.sshFleet == nil {
+		writeProblemResponse(w, fleetHostNotFoundProblem(peer.Key))
+		return
+	}
+
+	resp, err := s.sshFleet.relay(r.Context(), peer, http.MethodGet, attachSpecPath, nil)
+	if err != nil {
+		writeProblemResponse(w, newProblem(
+			http.StatusBadGateway,
+			CodeUpstreamError,
+			"fleet ssh relay failed: "+err.Error(),
+			map[string]any{"hostKey": peer.Key},
+		))
+		return
+	}
+	out := resp.Body
+	if resp.Status/100 == 2 {
+		if wrapped, ok := wrapAttachSpecForSSH(
+			out, s.sshFleet.conns.SocketPath(peer.Key), peer.Destination,
+		); ok {
+			out = wrapped
+		}
+	}
+	if resp.Status/100 != 2 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.Status)
+		_, _ = w.Write(out)
+		return
+	}
+
+	var spec runtimeAttachSpecResponse
+	if err := json.Unmarshal(out, &spec); err != nil {
+		writeProblemResponse(w, newProblem(
+			http.StatusBadGateway,
+			CodeUpstreamError,
+			"fleet ssh attach-spec was invalid: "+err.Error(),
+			map[string]any{"hostKey": peer.Key},
+		))
+		return
+	}
+	attach, err := startFleetSSHAttachPTY(r.Context(), spec, r)
+	if err != nil {
+		writeProblemResponse(w, newProblem(
+			http.StatusBadGateway,
+			CodeUpstreamError,
+			"start fleet ssh terminal attach: "+err.Error(),
+			map[string]any{"hostKey": peer.Key},
+		))
+		return
+	}
+
+	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+	})
+	if err != nil {
+		attach.close()
+		slog.Debug(
+			"fleet ssh websocket accept failed",
+			"host_key", peer.Key,
+			"err", err,
+		)
+		return
+	}
+	defer clientConn.Close(websocket.StatusNormalClosure, "hub detached")
+	bridgeFleetSSHAttachPTY(r.Context(), clientConn, attach)
+}
+
+func attachSpecPathForFleetTerminalTarget(targetPath string) (string, bool) {
+	const wsPrefix = "/ws/v1/"
+	if !strings.HasPrefix(targetPath, wsPrefix) ||
+		!strings.HasSuffix(targetPath, "/terminal") ||
+		!strings.Contains(targetPath, "/runtime/sessions/") {
+		return "", false
+	}
+	path := "/api/v1/" + strings.TrimPrefix(targetPath, wsPrefix)
+	path = strings.TrimSuffix(path, "/terminal") + "/attach-spec"
+	return path, true
+}
+
+type fleetSSHPTYAttachment struct {
+	cmd  *os.Process
+	ptmx *os.File
+	done <-chan int
+}
+
+func startFleetSSHAttachPTY(
+	ctx context.Context,
+	spec runtimeAttachSpecResponse,
+	r *http.Request,
+) (*fleetSSHPTYAttachment, error) {
+	if len(spec.Command) == 0 || strings.TrimSpace(spec.Command[0]) == "" {
+		return nil, errors.New("attach-spec command is empty")
+	}
+	cols, rows, ok := parseRuntimeTerminalSize(r)
+	if !ok {
+		cols, rows = 120, 30
+	}
+	release, err := procutil.TryAcquire(ctx, "fleet ssh terminal attach")
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := procutil.Command(spec.Command[0], spec.Command[1:]...)
+	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
+		Cols: uint16(cols),
+		Rows: uint16(rows),
+	})
+	if err != nil {
+		release()
+		return nil, fmt.Errorf("start attach pty: %w", err)
+	}
+	done := make(chan int, 1)
+	go func() {
+		err := cmd.Wait()
+		release()
+		code := -1
+		if cmd.ProcessState != nil {
+			code = cmd.ProcessState.ExitCode()
+		} else if err == nil {
+			code = 0
+		}
+		done <- code
+		close(done)
+	}()
+	return &fleetSSHPTYAttachment{
+		cmd:  cmd.Process,
+		ptmx: ptmx,
+		done: done,
+	}, nil
+}
+
+func (a *fleetSSHPTYAttachment) close() {
+	if a == nil {
+		return
+	}
+	if a.ptmx != nil {
+		_ = a.ptmx.Close()
+	}
+	if a.cmd != nil {
+		_ = a.cmd.Kill()
+	}
+}
+
+func bridgeFleetSSHAttachPTY(
+	ctx context.Context,
+	conn *websocket.Conn,
+	attach *fleetSSHPTYAttachment,
+) {
+	defer attach.close()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	inputDone := make(chan struct{})
+	go func() {
+		defer close(inputDone)
+		for {
+			typ, data, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			switch typ {
+			case websocket.MessageBinary:
+				if _, err := attach.ptmx.Write(data); err != nil {
+					return
+				}
+			case websocket.MessageText:
+				handleFleetSSHAttachControl(attach, data)
+			}
+		}
+	}()
+
+	outputDone := make(chan struct{})
+	go func() {
+		defer close(outputDone)
+		buf := make([]byte, 32*1024)
+		for {
+			n, err := attach.ptmx.Read(buf)
+			if n > 0 {
+				if writeErr := conn.Write(ctx, websocket.MessageBinary, buf[:n]); writeErr != nil {
+					return
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	select {
+	case code := <-attach.done:
+		select {
+		case <-outputDone:
+		case <-time.After(100 * time.Millisecond):
+		}
+		writeTerminalExitFrame(conn, code)
+		cancel()
+	case <-inputDone:
+		cancel()
+	case <-outputDone:
+		select {
+		case code := <-attach.done:
+			writeTerminalExitFrame(conn, code)
+		default:
+		}
+		cancel()
+	case <-ctx.Done():
+	}
+}
+
+func handleFleetSSHAttachControl(attach *fleetSSHPTYAttachment, data []byte) {
+	var msg runtimeTerminalControlMsg
+	if err := json.Unmarshal(data, &msg); err != nil {
+		slog.Warn("bad fleet ssh terminal control message", "err", err)
+		return
+	}
+	switch msg.Type {
+	case "refresh", "resize":
+		if msg.Cols > 0 && msg.Rows > 0 {
+			_ = pty.Setsize(attach.ptmx, &pty.Winsize{
+				Cols: uint16(msg.Cols),
+				Rows: uint16(msg.Rows),
+			})
+		}
+	case "resize_active":
+		return
+	}
+}
+
+func writeTerminalExitFrame(conn *websocket.Conn, code int) {
+	exitMsg, _ := json.Marshal(map[string]any{
+		"type": "exited",
+		"code": code,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = conn.Write(ctx, websocket.MessageText, exitMsg)
 }
 
 func bridgeWebSocketProxy(ctx context.Context, client, peer *websocket.Conn) {

@@ -236,9 +236,25 @@
     );
   }
 
+  function readLocalStorage(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  function writeLocalStorage(key: string, value: string): void {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Best-effort UI preference persistence; keep the in-memory state.
+    }
+  }
+
   function loadWorkspaceListWidth(): number {
     const value = parseInt(
-      localStorage.getItem(WORKSPACE_LIST_WIDTH_KEY) ?? "",
+      readLocalStorage(WORKSPACE_LIST_WIDTH_KEY) ?? "",
       10,
     );
     return Number.isFinite(value)
@@ -247,7 +263,7 @@
   }
 
   function loadSidebarTab(): SidebarTab {
-    const v = localStorage.getItem(SIDEBAR_TAB_KEY);
+    const v = readLocalStorage(SIDEBAR_TAB_KEY);
     if (v === "diff") return "diff";
     if (v === "pr") return "pr";
     if (v === "issue") return "issue";
@@ -256,7 +272,7 @@
   }
 
   function loadSidebarOpen(): boolean {
-    return localStorage.getItem(SIDEBAR_OPEN_KEY) === "true";
+    return readLocalStorage(SIDEBAR_OPEN_KEY) === "true";
   }
 
   const MIN_SIDEBAR_WIDTH = 280;
@@ -266,7 +282,7 @@
 
   function loadSidebarWidth(): number {
     const v = parseInt(
-      localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? "",
+      readLocalStorage(SIDEBAR_WIDTH_KEY) ?? "",
       10,
     );
     return Number.isFinite(v)
@@ -399,23 +415,23 @@
   );
 
   $effect(() => {
-    localStorage.setItem(SIDEBAR_TAB_KEY, sidebarTab);
+    writeLocalStorage(SIDEBAR_TAB_KEY, sidebarTab);
   });
   $effect(() => {
-    localStorage.setItem(
+    writeLocalStorage(
       SIDEBAR_OPEN_KEY,
       String(sidebarOpen),
     );
   });
   $effect(() => {
-    localStorage.setItem(
+    writeLocalStorage(
       SIDEBAR_WIDTH_KEY,
       String(sidebarWidth),
     );
   });
   $effect(() => {
     if (externalWorkspaceListWidth !== undefined) return;
-    localStorage.setItem(
+    writeLocalStorage(
       WORKSPACE_LIST_WIDTH_KEY,
       String(workspaceListWidth),
     );
@@ -424,13 +440,13 @@
     if (!workspaceId) return;
     const storageId = workspaceStorageId(workspaceId, workspaceHostKey);
     if (terminalLayoutWorkspaceId !== storageId) return;
-    localStorage.setItem(
+    writeLocalStorage(
       terminalLayoutStorageKey(storageId),
       JSON.stringify(terminalLayout),
     );
   });
   $effect(() => {
-    localStorage.setItem(WORKFLOW_PRESETS_KEY, JSON.stringify(workflowPresets));
+    writeLocalStorage(WORKFLOW_PRESETS_KEY, JSON.stringify(workflowPresets));
   });
 
   function handleSegmentClick(tab: SidebarTab): void {
@@ -664,11 +680,13 @@
   }
 
   function loadTerminalLayout(storageId: string): TerminalLayoutState {
-    return parseTerminalLayout(localStorage.getItem(terminalLayoutStorageKey(storageId)));
+    return parseTerminalLayout(
+      readLocalStorage(terminalLayoutStorageKey(storageId)),
+    );
   }
 
   function loadWorkflowPresets(): WorkflowPreset[] {
-    const raw = localStorage.getItem(WORKFLOW_PRESETS_KEY);
+    const raw = readLocalStorage(WORKFLOW_PRESETS_KEY);
     if (!raw) return [];
     try {
       const parsed = JSON.parse(raw) as unknown;
@@ -849,7 +867,7 @@
 
   function rememberActiveTab(key: WorkflowTabKey): void {
     if (!workspaceId) return;
-    localStorage.setItem(
+    writeLocalStorage(
       `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${workspaceStorageId(workspaceId)}`,
       key,
     );
@@ -873,7 +891,7 @@
   }
 
   function restoreWorkspaceTab(storageId: string): WorkflowTabKey {
-    const remembered = localStorage.getItem(
+    const remembered = readLocalStorage(
       `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${storageId}`,
     );
     if (remembered === "diff") return "home";

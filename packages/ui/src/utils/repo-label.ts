@@ -48,10 +48,11 @@ export function createRepoLabelFormatter(
       const host = repo.platformHost.trim();
 
       if (!options.showOrgNames) {
+        if (hostNeeded(hostsByRepoPath, path) && host) return `${host}/${path}`;
         if ((repoPathsByName.get(name)?.size ?? 0) <= 1) {
           return name || path || host;
         }
-        return hostNeeded(hostsByRepoPath, path) && host ? `${host}/${path}` : path || name;
+        return path || name;
       }
 
       return hostNeeded(hostsByRepoPath, path) && host ? `${host}/${path}` : path || name;

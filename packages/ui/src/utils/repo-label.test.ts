@@ -65,4 +65,14 @@ describe("repo labels", () => {
     expect(formatter.format(sameRepo[0]!)).toBe("widgets");
     expect(formatter.format(sameRepo[1]!)).toBe("widgets");
   });
+
+  it("keeps same owner/name repos on different hosts distinguishable when hiding orgs", () => {
+    const samePathOnDifferentHosts = [repos[0]!, repos[2]!];
+    const formatter = createRepoLabelFormatter(samePathOnDifferentHosts, {
+      showOrgNames: false,
+    });
+
+    expect(formatter.format(samePathOnDifferentHosts[0]!)).toBe("github.com/acme/widgets");
+    expect(formatter.format(samePathOnDifferentHosts[1]!)).toBe("ghe.example.com/acme/widgets");
+  });
 });

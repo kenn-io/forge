@@ -92,6 +92,7 @@ export { default as PRListView } from "./views/PRListView.svelte";
 export { default as IssueListView } from "./views/IssueListView.svelte";
 export { default as ActivityFeedView } from "./views/ActivityFeedView.svelte";
 export { default as MobileActivityView } from "./views/MobileActivityView.svelte";
+export { normalizeMobileActivityRepoSelection } from "./views/mobileActivityRepoOptions.js";
 export { default as KanbanBoardView } from "./views/KanbanBoardView.svelte";
 export { default as ReviewsView } from "./views/ReviewsView.svelte";
 export { default as FocusListView } from "./views/FocusListView.svelte";

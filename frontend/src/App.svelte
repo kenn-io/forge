@@ -9,6 +9,7 @@
     KanbanBoardView,
     ReviewsView,
     FocusListView,
+    normalizeMobileActivityRepoSelection,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem, ModeVisibility } from "@middleman/ui/api/types";
@@ -532,13 +533,25 @@
     replaceUrl(`${desktopPathForMobileRoute()}${searchWithDesktopOptOut()}`);
   }
 
+  function getNormalizedGlobalRepo(repo: string | undefined = getGlobalRepo()): string | undefined {
+    const normalized = normalizeMobileActivityRepoSelection(
+      repo,
+      stores?.settings.getConfiguredRepos() ?? [],
+    );
+    return normalized || undefined;
+  }
+
   onDestroy(() => {
     stopFullAppShell();
     stores?.events.disconnect();
   });
 
   $effect(() => {
-    const repo = getGlobalRepo();
+    const repo = getNormalizedGlobalRepo();
+    if (repo !== getGlobalRepo()) {
+      setGlobalRepo(repo);
+      return;
+    }
     if (!appReady || !stores) {
       lastRepo = repo;
       return;
@@ -896,7 +909,7 @@
       })),
     }}
     hostState={{
-      getGlobalRepo,
+      getGlobalRepo: getNormalizedGlobalRepo,
       getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
       getView,
       getActiveWorktreeKey,
@@ -1054,7 +1067,7 @@
           <FocusListView listType="issues" />
         {:else}
           <MobileActivityView
-            selectedRepo={getGlobalRepo()}
+            selectedRepo={getNormalizedGlobalRepo()}
             onRepoChange={setGlobalRepo}
             onSelectItem={handleActivitySelect}
           />

@@ -1478,6 +1478,70 @@ func buildAppState(
 			return
 		}
 		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-review-thread-regroup/add-reply" {
+			repo, err := database.GetRepoByOwnerName(
+				r.Context(), "acme", "widgets",
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repo not found", http.StatusNotFound)
+				return
+			}
+			mr, err := database.GetMergeRequestByRepoIDAndNumber(r.Context(), repo.ID, 1)
+			if err != nil {
+				http.Error(w, "get merge request", http.StatusInternalServerError)
+				return
+			}
+			if mr == nil {
+				http.Error(w, "merge request not found", http.StatusNotFound)
+				return
+			}
+			threadID := "PRRT_reply_regroup"
+			platformID := int64(6014)
+			createdAt := time.Now().UTC()
+			event := db.MREvent{
+				MergeRequestID:     mr.ID,
+				PlatformID:         &platformID,
+				PlatformExternalID: "6014",
+				EventType:          "review_comment",
+				Author:             "fixture-bot",
+				Body:               "Regroup reply added during detail refresh.",
+				CreatedAt:          createdAt,
+				DedupeKey:          "review_comment:6014",
+				DirectURL:          "https://github.com/acme/widgets/pull/1#discussion_r6014",
+				ThreadID:           &threadID,
+				Resolvable:         true,
+			}
+			if err := database.UpsertMREvents(r.Context(), []db.MREvent{event}); err != nil {
+				http.Error(w, "upsert regroup reply", http.StatusInternalServerError)
+				return
+			}
+			headSHA := mr.PlatformHeadSHA
+			if headSHA == "" {
+				headSHA = fc.PullRequestHeadSHA("acme", "widgets", 1)
+			}
+			srv.Hub().Broadcast(server.Event{
+				Type: "pr_detail_refreshed",
+				Data: map[string]any{
+					"provider":      repo.Platform,
+					"platform_host": repo.PlatformHost,
+					"repo_path":     repo.RepoPath,
+					"owner":         repo.Owner,
+					"name":          repo.Name,
+					"number":        1,
+					"head_sha":      headSHA,
+					"synced_at":     createdAt.Format(time.RFC3339),
+					"warnings":      []string{},
+				},
+			})
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"status": "reply-added",
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
 			strings.Contains(r.URL.Path, "/api/v1/repo/") &&
 			strings.Contains(r.URL.Path, "/roborev-dev/") &&
 			strings.HasSuffix(r.URL.Path, "/refresh") {

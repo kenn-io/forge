@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { startIsolatedE2EServer } from "./support/e2eServer";
 
 const storageKey = "middleman-pr-timeline-filter";
 const activityViewStorageKey = "middleman-detail-activity-view";
@@ -255,5 +256,40 @@ test.describe("PR timeline filters", () => {
     );
     await openActivityViewMenu(page, ".issue-detail");
     await expect(page.locator(".filter-dropdown").getByRole("button", { name: "Messages" })).toHaveCount(0);
+  });
+
+  test("keeps normal reply composer open when refreshed detail regroups a review thread", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await gotoWithWebKitRetry(page, `${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+
+      const threadCard = page.locator(".pull-detail .event-card--reply-inline", {
+        hasText: "Regroup root review thread comment.",
+      });
+      await expect(threadCard).toBeVisible();
+      await expect(threadCard).not.toContainText("Regroup reply added during detail refresh.");
+
+      await threadCard.hover();
+      const replyButton = threadCard.locator(".thread-reply-action--inline");
+      await expect(replyButton).toBeAttached();
+      await replyButton.click();
+      const replyEditor = page.locator(".pull-detail .thread-reply-panel .comment-editor-input");
+      await expect(replyEditor).toBeVisible();
+      await replyEditor.fill("Draft survives regroup");
+      await expect(replyEditor).toHaveText("Draft survives regroup");
+
+      const response = await page.request.post(`${server.info.base_url}/__e2e/pr-review-thread-regroup/add-reply`);
+      expect(response.ok()).toBe(true);
+
+      const regroupedThreadCard = page.locator(".pull-detail .event-card", {
+        hasText: "Regroup root review thread comment.",
+      });
+      await expect(regroupedThreadCard).toContainText("Regroup reply added during detail refresh.");
+      await expect(page.locator(".pull-detail .thread-reply-panel")).toHaveCount(1);
+      await expect(replyEditor).toHaveText("Draft survives regroup");
+    } finally {
+      await server.stop();
+    }
   });
 });

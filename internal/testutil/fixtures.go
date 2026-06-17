@@ -979,6 +979,30 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 					},
 				},
 			},
+			{
+				NodeID:     "PRRT_reply_regroup",
+				IsResolved: false,
+				Path:       "src/cache/store.ts",
+				Side:       "RIGHT",
+				Line:       43,
+				Comments: []ghclient.PullRequestReviewThreadComment{
+					{
+						NodeID:           "PRRC_reply_regroup_root",
+						DatabaseID:       6013,
+						ReviewDatabaseID: 5012,
+						SubjectType:      "LINE",
+						Body:             "Regroup root review thread comment.",
+						AuthorLogin:      "bob",
+						Path:             "src/cache/store.ts",
+						Line:             43,
+						URL:              "https://github.com/acme/widgets/pull/1#discussion_r6013",
+						CommitID:         widgetsPR1HeadSHA,
+						OriginalCommitID: widgetsPR1HeadSHA,
+						CreatedAt:        w1Created.Add(3*time.Hour + 25*time.Minute),
+						UpdatedAt:        w1Created.Add(3*time.Hour + 25*time.Minute),
+					},
+				},
+			},
 		},
 	}
 

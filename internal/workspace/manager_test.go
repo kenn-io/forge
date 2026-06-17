@@ -157,6 +157,31 @@ func TestCreate(t *testing.T) {
 	assert.Equal("creating", got.Status)
 }
 
+func TestListSummariesKeepsLastKnownNonEmptyCache(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 7, "feature/cache-workspace")
+	mgr := NewManager(d, t.TempDir())
+
+	ws, err := mgr.Create(ctx, "github.com", "acme", "widget", 7)
+	require.NoError(err)
+	first, err := mgr.ListSummaries(ctx)
+	require.NoError(err)
+	require.Len(first, 1)
+	assert.Equal(ws.ID, first[0].ID)
+
+	require.NoError(d.DeleteWorkspace(ctx, ws.ID))
+	second, err := mgr.ListSummaries(ctx)
+	require.NoError(err)
+	require.Len(second, 1)
+	assert.Equal(ws.ID, second[0].ID)
+}
+
 func TestCreatePRHeadRepoClassification(t *testing.T) {
 	tests := []struct {
 		name           string

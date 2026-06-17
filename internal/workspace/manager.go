@@ -42,6 +42,8 @@ type Manager struct {
 	retryQueued            map[string]bool
 	runtimeTmuxMu          sync.Mutex
 	issueBranchSlugEnabled bool
+	summaryCacheMu         sync.RWMutex
+	summaryCache           []WorkspaceSummary
 }
 
 // CreateIssueOptions controls how issue-backed workspaces choose their branch.
@@ -746,6 +748,7 @@ func (m *Manager) Delete(
 	if err := m.db.DeleteWorkspace(ctx, id); err != nil {
 		return nil, fmt.Errorf("delete workspace record: %w", err)
 	}
+	m.removeWorkspaceSummaryFromCache(id)
 	return nil, nil
 }
 
@@ -1113,7 +1116,40 @@ func (m *Manager) GetSummary(
 func (m *Manager) ListSummaries(
 	ctx context.Context,
 ) ([]WorkspaceSummary, error) {
-	return m.db.ListWorkspaceSummaries(ctx)
+	summaries, err := m.db.ListWorkspaceSummaries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(summaries) == 0 {
+		return m.cachedWorkspaceSummaries(), nil
+	}
+	m.setWorkspaceSummaryCache(summaries)
+	return summaries, nil
+}
+
+func (m *Manager) cachedWorkspaceSummaries() []WorkspaceSummary {
+	m.summaryCacheMu.RLock()
+	defer m.summaryCacheMu.RUnlock()
+	return slices.Clone(m.summaryCache)
+}
+
+func (m *Manager) setWorkspaceSummaryCache(
+	summaries []WorkspaceSummary,
+) {
+	m.summaryCacheMu.Lock()
+	defer m.summaryCacheMu.Unlock()
+	m.summaryCache = slices.Clone(summaries)
+}
+
+func (m *Manager) removeWorkspaceSummaryFromCache(id string) {
+	m.summaryCacheMu.Lock()
+	defer m.summaryCacheMu.Unlock()
+	m.summaryCache = slices.DeleteFunc(
+		m.summaryCache,
+		func(summary WorkspaceSummary) bool {
+			return summary.ID == id
+		},
+	)
 }
 
 // ReapOrphanTmuxSessions kills middleman-managed tmux sessions that no longer

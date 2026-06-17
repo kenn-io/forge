@@ -167,6 +167,16 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByRole("img", { name: "GitLab" })).toBeTruthy();
   });
 
+  it("does not render a blank rail while the workspace list is loading", async () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "" },
+    });
+
+    expect(screen.getByText("Loading workspaces...")).toBeTruthy();
+  });
+
   it("hides provider icons in repo groups when one provider is present", async () => {
     mockGet.mockResolvedValue({
       data: {

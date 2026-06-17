@@ -83,6 +83,7 @@
   let collapsedGroups = $state<Set<string>>(new Set());
   let searchQuery = $state("");
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
+  let hasLoadedWorkspaces = $state(false);
 
   type GroupedWorkspaces = Map<string, Workspace[]>;
 
@@ -208,6 +209,7 @@
       const { data } = await client.GET("/workspaces");
       if (!data) return;
       workspaces = (data.workspaces ?? []) as Workspace[];
+      hasLoadedWorkspaces = true;
     } catch {
       // Network error; keep stale list.
     }
@@ -554,8 +556,12 @@
             </button>
           </div>
     {/snippet}
-    {#if visibleWorkspaces.length === 0 && normalizedSearchQuery}
+    {#if !hasLoadedWorkspaces && workspaces.length === 0}
+      <p class="filter-empty">Loading workspaces...</p>
+    {:else if visibleWorkspaces.length === 0 && normalizedSearchQuery}
       <p class="filter-empty">No workspaces match.</p>
+    {:else if visibleWorkspaces.length === 0}
+      <p class="filter-empty">No workspaces yet.</p>
     {/if}
   </div>
 </div>

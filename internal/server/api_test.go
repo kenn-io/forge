@@ -23864,6 +23864,45 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	require.Equal(http.StatusNotFound, getResp2.StatusCode())
 }
 
+func TestWorkspaceListE2EKeepsLastKnownSummariesOnEmptyStoreRead(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	srv, database := setupTestServer(t)
+	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	seedPR(t, database, "acme", "widget", 7)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "cachedlist000001",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		GitHeadRef:   "feature/cache-workspace",
+		WorktreePath: filepath.Join(t.TempDir(), "workspace"),
+		TmuxSession:  "middleman-cachedlist000001",
+		Status:       "ready",
+		CreatedAt:    time.Now().UTC(),
+	}))
+
+	rawFirst := doJSON(t, srv, http.MethodGet, "/api/v1/workspaces", nil)
+	require.Equal(http.StatusOK, rawFirst.Code, rawFirst.Body.String())
+	var first listWorkspacesOutputBody
+	require.NoError(json.NewDecoder(rawFirst.Body).Decode(&first))
+	require.Len(first.Workspaces, 1)
+	assert.Equal("cachedlist000001", first.Workspaces[0].ID)
+
+	require.NoError(database.DeleteWorkspace(ctx, "cachedlist000001"))
+	rawSecond := doJSON(t, srv, http.MethodGet, "/api/v1/workspaces", nil)
+	require.Equal(http.StatusOK, rawSecond.Code, rawSecond.Body.String())
+	var second listWorkspacesOutputBody
+	require.NoError(json.NewDecoder(rawSecond.Body).Decode(&second))
+	require.Len(second.Workspaces, 1)
+	assert.Equal("cachedlist000001", second.Workspaces[0].ID)
+}
+
 func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
 	t.Parallel()
 

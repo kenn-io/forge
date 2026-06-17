@@ -998,18 +998,19 @@ func bridgeFleetSSHAttachPTY(
 		}
 	}()
 
-	outputDone := make(chan struct{})
+	outputDone := make(chan bool, 1)
 	go func() {
-		defer close(outputDone)
 		buf := make([]byte, 32*1024)
 		for {
 			n, err := attach.ptmx.Read(buf)
 			if n > 0 {
 				if writeErr := conn.Write(ctx, websocket.MessageBinary, buf[:n]); writeErr != nil {
+					outputDone <- false
 					return
 				}
 			}
 			if err != nil {
+				outputDone <- true
 				return
 			}
 		}
@@ -1025,11 +1026,16 @@ func bridgeFleetSSHAttachPTY(
 		cancel()
 	case <-inputDone:
 		cancel()
-	case <-outputDone:
+	case ptyEOF := <-outputDone:
+		if !ptyEOF {
+			cancel()
+			return
+		}
 		select {
 		case code := <-attach.done:
 			writeTerminalExitFrame(conn, code)
-		default:
+		case <-time.After(100 * time.Millisecond):
+			writeTerminalExitFrame(conn, -1)
 		}
 		cancel()
 	case <-ctx.Done():

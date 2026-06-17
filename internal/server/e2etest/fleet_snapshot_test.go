@@ -429,7 +429,7 @@ func TestFleetSnapshotEmptyTmuxServerE2E(t *testing.T) {
 	var raw fleet.RawSnapshot
 	require.Eventually(func() bool {
 		getJSON(t, ts, "/api/v1/snapshot/raw", &raw)
-		return raw.Host.TmuxLastPolledAt != ""
+		return raw.Host.TmuxLastPolledAt != "" && raw.Host.TmuxProbeError == ""
 	}, fleetSnapshotEventuallyTimeout, fleetSnapshotEventuallyTick)
 
 	require.Empty(raw.Host.TmuxProbeError)

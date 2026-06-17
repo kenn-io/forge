@@ -575,6 +575,83 @@ func TestSSHFleetWebSocketTerminalHonorsResizeActive(t *testing.T) {
 	readWebSocketBinaryUntil(t, ctx, conn, 2*time.Second, "size:26:82:active")
 }
 
+func TestSSHFleetAttachPTYWritesExitFrameWhenPTYEOFPrecedesWait(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	ptyReader, ptyWriter, err := os.Pipe()
+	require.NoError(err)
+	done := make(chan int, 1)
+	attach := &fleetSSHPTYAttachment{
+		ptmx:   ptyReader,
+		done:   done,
+		active: true,
+	}
+
+	bridgeDone := make(chan struct{})
+	acceptErrors := make(chan error, 1)
+	srv := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+				InsecureSkipVerify: true,
+			})
+			if err != nil {
+				acceptErrors <- err
+				return
+			}
+			bridgeFleetSSHAttachPTY(r.Context(), conn, attach)
+			conn.Close(websocket.StatusNormalClosure, "test done")
+			close(bridgeDone)
+		},
+	))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	_, err = ptyWriter.Write([]byte("ssh-output"))
+	require.NoError(err)
+	require.NoError(ptyWriter.Close())
+	time.AfterFunc(25*time.Millisecond, func() {
+		done <- 7
+		close(done)
+	})
+
+	var sawOutput bool
+	for {
+		typ, data, readErr := conn.Read(ctx)
+		require.NoError(readErr)
+		if typ == websocket.MessageBinary {
+			sawOutput = sawOutput || strings.Contains(string(data), "ssh-output")
+			continue
+		}
+		if typ != websocket.MessageText {
+			continue
+		}
+		var msg struct {
+			Type string `json:"type"`
+			Code int    `json:"code"`
+		}
+		require.NoError(json.Unmarshal(data, &msg))
+		assert.True(sawOutput)
+		assert.Equal("exited", msg.Type)
+		assert.Equal(7, msg.Code)
+		break
+	}
+
+	select {
+	case <-bridgeDone:
+	case err := <-acceptErrors:
+		require.NoError(err)
+	case <-ctx.Done():
+		require.NoError(ctx.Err())
+	}
+}
+
 func writeFakeSSHForAttach(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()

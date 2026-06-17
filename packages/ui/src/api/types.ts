@@ -88,7 +88,10 @@ export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {
 
 export type AgentSettings = components["schemas"]["Agent"];
 export type ConfigRepo = components["schemas"]["ConfiguredRepoStatus"];
-export type Settings = components["schemas"]["SettingsResponse"];
+type SettingsResponse = components["schemas"]["SettingsResponse"];
+export type Settings = Omit<SettingsResponse, "notifications"> & {
+  notifications?: SettingsResponse["notifications"];
+};
 export type FleetSettings = components["schemas"]["FleetSettingsResponse"];
 export type FleetSettingsUpdate = components["schemas"]["UpdateFleetSettingsInputBody"];
 export type FleetPeer = components["schemas"]["FleetPeer"];

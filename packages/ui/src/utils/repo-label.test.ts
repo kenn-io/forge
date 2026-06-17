@@ -3,24 +3,28 @@ import { createRepoLabelFormatter } from "./repo-label.js";
 
 const repos = [
   {
+    provider: "github",
     platformHost: "github.com",
     owner: "acme",
     name: "widgets",
     repoPath: "acme/widgets",
   },
   {
+    provider: "gitlab",
     platformHost: "gitlab.example.com",
     owner: "platform",
     name: "widgets",
     repoPath: "platform/widgets",
   },
   {
+    provider: "github",
     platformHost: "ghe.example.com",
     owner: "acme",
     name: "widgets",
     repoPath: "acme/widgets",
   },
   {
+    provider: "github",
     platformHost: "github.com",
     owner: "acme",
     name: "api",
@@ -74,5 +78,37 @@ describe("repo labels", () => {
 
     expect(formatter.format(samePathOnDifferentHosts[0]!)).toBe("github.com/acme/widgets");
     expect(formatter.format(samePathOnDifferentHosts[1]!)).toBe("ghe.example.com/acme/widgets");
+  });
+
+  it("keeps same host owner/name repos on different providers distinguishable", () => {
+    const sameHostOnDifferentProviders = [
+      repos[0]!,
+      {
+        ...repos[0]!,
+        provider: "gitea",
+      },
+    ];
+    const formatter = createRepoLabelFormatter(sameHostOnDifferentProviders, {
+      showOrgNames: true,
+    });
+
+    expect(formatter.format(sameHostOnDifferentProviders[0]!)).toBe("github/github.com/acme/widgets");
+    expect(formatter.format(sameHostOnDifferentProviders[1]!)).toBe("gitea/github.com/acme/widgets");
+  });
+
+  it("keeps same host owner/name repos on different providers distinguishable when hiding orgs", () => {
+    const sameHostOnDifferentProviders = [
+      repos[0]!,
+      {
+        ...repos[0]!,
+        provider: "gitea",
+      },
+    ];
+    const formatter = createRepoLabelFormatter(sameHostOnDifferentProviders, {
+      showOrgNames: false,
+    });
+
+    expect(formatter.format(sameHostOnDifferentProviders[0]!)).toBe("github/github.com/acme/widgets");
+    expect(formatter.format(sameHostOnDifferentProviders[1]!)).toBe("gitea/github.com/acme/widgets");
   });
 });

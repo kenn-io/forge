@@ -438,6 +438,7 @@
 
   function workspaceRepoIdentity(ws: Workspace): RepoLabelIdentity {
     return {
+      provider: ws.repo?.provider ?? "",
       platformHost: ws.platform_host,
       owner: ws.repo_owner,
       name: ws.repo_name,

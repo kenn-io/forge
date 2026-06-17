@@ -270,6 +270,7 @@
 
   function activityRepoIdentity(item: ActivityItem): RepoLabelIdentity {
     return {
+      provider: item.repo?.provider ?? "",
       platformHost: item.repo?.platform_host ?? item.platform_host,
       owner: item.repo?.owner ?? item.repo_owner,
       name: item.repo?.name ?? item.repo_name,

@@ -19,7 +19,6 @@
     renameWorkspaceSession,
     stopWorkspaceSession,
     workspaceSessionWebSocketPath,
-    workspaceTmuxWebSocketPath,
     type WorkspaceRuntimeState,
   } from "../../api/workspace-runtime.js";
   import {
@@ -100,6 +99,7 @@
     mr_state?: string | null;
     mr_is_draft?: boolean | null;
     associated_pr_number?: number | null;
+    fleet_host_key?: string;
   }
 
   interface ClosedRuntimeSession {
@@ -116,6 +116,7 @@
   // /workspaces and /terminal/{id} layout.
   interface Props {
     workspaceId: string;
+    workspaceHostKey?: string | undefined;
     isSidebarCollapsed?: boolean;
     sidebarWidth?: number;
     onSidebarResize?: (width: number) => void;
@@ -127,6 +128,7 @@
 
   const {
     workspaceId,
+    workspaceHostKey = undefined,
     isSidebarCollapsed = false,
     sidebarWidth: externalWorkspaceListWidth = undefined,
     onSidebarResize = undefined,
@@ -149,6 +151,7 @@
   // (during the in-place transition between workspaces, runtime
   // briefly outlives the workspace it was fetched for).
   let runtimeForId = $state<string>("");
+  let runtimeForHostKey = $state<string | undefined>(undefined);
   let loadError = $state<string | null>(null);
   let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
@@ -178,10 +181,11 @@
   let pollTimer = $state<ReturnType<
     typeof setInterval
   > | null>(null);
+  let runtimePollTimer = $state<ReturnType<
+    typeof setInterval
+  > | null>(null);
   let eventSource = $state<EventSource | null>(null);
   let activeTabKey = $state<WorkflowTabKey>("home");
-  let shellTabOpen = $state(false);
-  let shellTerminalMounted = $state(false);
   let mountedSessionKeys = $state<string[]>([]);
   let closedSessions = $state<ClosedRuntimeSession[]>([]);
   let launchingKey = $state<string | null>(null);
@@ -281,6 +285,7 @@
   const runtimeLive = $derived(
     runtime !== null &&
       runtimeForId === workspaceId &&
+      runtimeForHostKey === workspaceHostKey &&
       workspace?.id === workspaceId,
   );
   const runtimeSessions = $derived(
@@ -338,14 +343,6 @@
         kind: "home",
       },
     ];
-    if (shellTabOpen) {
-      tabs.push({
-        key: "shell",
-        label: "Shell",
-        kind: "shell",
-        closable: true,
-      });
-    }
     if (
       terminalLayout.dock === "top" &&
       (terminalLayout.open || terminalSessions.length > 0)
@@ -383,7 +380,8 @@
   const transitioning = $derived(
     workspaceId !== "" &&
       workspace !== null &&
-      workspace.id !== workspaceId,
+      (workspace.id !== workspaceId ||
+        workspaceHostKey !== selectedWorkspaceHostKey(workspace)),
   );
   const actionsBlocked = $derived(transitioning);
   const modalOpen = $derived(
@@ -416,9 +414,10 @@
   });
   $effect(() => {
     if (!workspaceId) return;
-    if (terminalLayoutWorkspaceId !== workspaceId) return;
+    const storageId = workspaceStorageId(workspaceId);
+    if (terminalLayoutWorkspaceId !== storageId) return;
     localStorage.setItem(
-      terminalLayoutStorageKey(workspaceId),
+      terminalLayoutStorageKey(storageId),
       JSON.stringify(terminalLayout),
     );
   });
@@ -435,13 +434,26 @@
     }
   }
 
-  function openItemSidebar(targetId: string, tab: SidebarTab): void {
+  function openItemSidebar(
+    targetId: string,
+    tab: SidebarTab,
+    targetHostKey?: string,
+  ): void {
     // Cross-workspace click: navigate first, then ensure
     // the sidebar is open for the target tab.
-    if (targetId !== workspaceId) {
+    if (
+      targetId !== workspaceId ||
+      (targetHostKey ?? undefined) !== workspaceHostKey
+    ) {
       sidebarTab = tab;
       sidebarOpen = true;
-      navigate(`/terminal/${targetId}`);
+      if (targetHostKey) {
+        navigate(
+          `/terminal/fleet/${encodeURIComponent(targetHostKey)}/${encodeURIComponent(targetId)}`,
+        );
+      } else {
+        navigate(`/terminal/${encodeURIComponent(targetId)}`);
+      }
       return;
     }
 
@@ -610,6 +622,9 @@
   }
 
   function defaultSessionRegion(session: RuntimeSession): SessionRegion {
+    if (session.display_region === "workflow" || session.display_region === "terminal") {
+      return session.display_region;
+    }
     return session.target_key === PLAIN_SHELL_TARGET ? "terminal" : "workflow";
   }
 
@@ -629,12 +644,19 @@
     return tabKey.startsWith("session:") ? tabKey.slice("session:".length) : null;
   }
 
-  function terminalLayoutStorageKey(id: string): string {
-    return `${TERMINAL_LAYOUT_KEY_PREFIX}${id}`;
+  function workspaceStorageId(
+    id: string,
+    hostKey: string | undefined = workspaceHostKey,
+  ): string {
+    return hostKey ? `fleet:${encodeURIComponent(hostKey)}:${id}` : id;
   }
 
-  function loadTerminalLayout(id: string): TerminalLayoutState {
-    return parseTerminalLayout(localStorage.getItem(terminalLayoutStorageKey(id)));
+  function terminalLayoutStorageKey(storageId: string): string {
+    return `${TERMINAL_LAYOUT_KEY_PREFIX}${storageId}`;
+  }
+
+  function loadTerminalLayout(storageId: string): TerminalLayoutState {
+    return parseTerminalLayout(localStorage.getItem(terminalLayoutStorageKey(storageId)));
   }
 
   function loadWorkflowPresets(): WorkflowPreset[] {
@@ -716,9 +738,6 @@
     layout: TerminalLayoutState = terminalLayout,
   ): WorkflowTabKey[] {
     const keys: WorkflowTabKey[] = ["home"];
-    if (shellTabOpen) {
-      keys.push("shell");
-    }
     if (
       layout.dock === "top" &&
       (layout.open || terminalSessionKeysFrom(sessions, layout).length > 0)
@@ -752,12 +771,13 @@
     let terminalGroups = next.terminalGroups.filter((group) =>
       collectTerminalGroupKeys(group).some((key) => terminalKeys.includes(key)),
     );
-    const groupedKeys = new Set(
-      terminalGroups.flatMap((group) => collectTerminalGroupKeys(group)),
+    const groupedKeys = terminalGroups.flatMap((group) =>
+      collectTerminalGroupKeys(group),
     );
     for (const key of terminalKeys) {
-      if (!groupedKeys.has(key)) {
+      if (!groupedKeys.includes(key)) {
         terminalGroups = [...terminalGroups, createTerminalGroup(key)];
+        groupedKeys.push(key);
       }
     }
     const activeGroup =
@@ -822,7 +842,7 @@
   function rememberActiveTab(key: WorkflowTabKey): void {
     if (!workspaceId) return;
     localStorage.setItem(
-      `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${workspaceId}`,
+      `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${workspaceStorageId(workspaceId)}`,
       key,
     );
   }
@@ -844,14 +864,13 @@
     rememberActiveTab(key);
   }
 
-  function restoreWorkspaceTab(id: string): WorkflowTabKey {
+  function restoreWorkspaceTab(storageId: string): WorkflowTabKey {
     const remembered = localStorage.getItem(
-      `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${id}`,
+      `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${storageId}`,
     );
     if (remembered === "diff") return "home";
     if (
       remembered === "home" ||
-      remembered === "shell" ||
       remembered === "terminal" ||
       remembered?.startsWith("session:")
     ) {
@@ -889,6 +908,19 @@
     return ws.associated_pr_number ?? null;
   }
 
+  function terminalRoute(id: string): string {
+    if (!workspaceHostKey) return `/terminal/${encodeURIComponent(id)}`;
+    return `/terminal/fleet/${encodeURIComponent(workspaceHostKey)}/${encodeURIComponent(id)}`;
+  }
+
+  function isCurrentWorkspace(id: string, hostKey: string | undefined): boolean {
+    return id === workspaceId && hostKey === workspaceHostKey;
+  }
+
+  function selectedWorkspaceHostKey(ws: Workspace): string | undefined {
+    return ws.fleet_host_key;
+  }
+
   async function fetchWorkspace(): Promise<void> {
     // Capture the id at call time. With workspaceId changing across
     // navigations, a slow in-flight fetch for the previous id could
@@ -896,14 +928,47 @@
     // workspace's data with stale content (causing a perceived flash
     // back to the previous workspace).
     const id = workspaceId;
+    const hostKey = workspaceHostKey;
     try {
+      if (hostKey) {
+        const { data, error, response } = await client.GET(
+          "/fleet/hosts/{host_key}/workspaces/{id}",
+          {
+            params: { path: { host_key: hostKey, id } },
+          },
+        );
+        if (!isCurrentWorkspace(id, hostKey)) return;
+        if (!data) {
+          loadError = apiErrorMessage(
+            error,
+            `Failed to load workspace (${response.status})`,
+          );
+          return;
+        }
+        const nextWorkspace = { ...(data as Workspace), fleet_host_key: hostKey };
+        workspace = nextWorkspace;
+        syncSidebarTabForWorkspace(nextWorkspace);
+        loadError = null;
+        actionError = null;
+
+        if (nextWorkspace.status !== "creating") {
+          stopPolling();
+        }
+        if (nextWorkspace.status === "ready") {
+          startRuntimePolling();
+          void fetchRuntime();
+        } else {
+          stopRuntimePolling();
+        }
+        return;
+      }
       const { data, error, response } = await client.GET(
         "/workspaces/{id}",
         {
           params: { path: { id } },
         },
       );
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       if (!data) {
         loadError = apiErrorMessage(
           error,
@@ -920,10 +985,13 @@
         stopPolling();
       }
       if (data.status === "ready") {
+        startRuntimePolling();
         void fetchRuntime();
+      } else {
+        stopRuntimePolling();
       }
     } catch (err) {
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       loadError =
         err instanceof Error
           ? err.message
@@ -934,13 +1002,15 @@
   async function fetchRuntime(): Promise<WorkspaceRuntimeState | null> {
     if (!workspaceId) return null;
     const id = workspaceId;
+    const hostKey = workspaceHostKey;
     const seq = runtimeFetchSeq + 1;
     runtimeFetchSeq = seq;
     try {
-      const data = await getWorkspaceRuntime(id);
-      if (id !== workspaceId || seq !== runtimeFetchSeq) return null;
+      const data = await getWorkspaceRuntime(id, hostKey);
+      if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
       runtime = data;
       runtimeForId = id;
+      runtimeForHostKey = hostKey;
       runtimeError = null;
       terminalLayout = normalizeLayoutForSessions(data.sessions);
       if (
@@ -959,7 +1029,7 @@
       );
       return data;
     } catch (err) {
-      if (id !== workspaceId || seq !== runtimeFetchSeq) return null;
+      if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
       runtimeError =
         err instanceof Error
           ? err.message
@@ -970,41 +1040,31 @@
 
   async function handleLaunch(targetKey: string): Promise<void> {
     if (!workspaceId || launchingKey || actionsBlocked) return;
-    const target = launchTargets.find((t) => t.key === targetKey);
-    if (target?.kind === "shell") {
-      shellTabOpen = true;
-      shellTerminalMounted = true;
-      terminalLayout = normalizeLayoutForSessions(runtimeSessions, terminalLayout);
-      selectWorkspaceTab("shell");
-      return;
-    }
-
     // Capture id so post-await steps bail if workspace changes mid-launch.
     const id = workspaceId;
+    const hostKey = workspaceHostKey;
     launchingKey = targetKey;
     runtimeError = null;
     try {
       const session = await launchWorkspaceSession(
         id,
         targetKey,
+        hostKey,
+        "workflow",
       );
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       await fetchRuntime();
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       clearClosedSession(session);
-      if (session.target_key === PLAIN_SHELL_TARGET) {
-        moveSessionToTerminal(session.key);
-      } else {
-        moveSessionToWorkflow(session.key);
-        mountSessionTerminal(session.key);
-        selectWorkspaceTab(workflowTabKeyForSession(session.key));
-      }
+      moveSessionToWorkflow(session.key);
+      mountSessionTerminal(session.key);
+      selectWorkspaceTab(workflowTabKeyForSession(session.key));
     } catch (err) {
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       runtimeError =
         err instanceof Error ? err.message : "Launch failed";
     } finally {
-      if (id === workspaceId) launchingKey = null;
+      if (isCurrentWorkspace(id, hostKey)) launchingKey = null;
     }
   }
 
@@ -1053,11 +1113,12 @@
 
   async function stopSession(session: RuntimeSession): Promise<void> {
     const id = workspaceId;
+    const hostKey = workspaceHostKey;
     try {
-      await stopWorkspaceSession(id, session.key);
-      if (id !== workspaceId) return;
+      await stopWorkspaceSession(id, session.key, hostKey);
+      if (!isCurrentWorkspace(id, hostKey)) return;
       await fetchRuntime();
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       unmountSessionTerminal(session.key);
       const terminalGroups = closeSessionInTerminalGroups(
         terminalLayout.terminalGroups,
@@ -1075,7 +1136,7 @@
         selectWorkspaceTab("home");
       }
     } catch (err) {
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       runtimeError =
         err instanceof Error ? err.message : "Stop failed";
     }
@@ -1108,11 +1169,17 @@
   ): Promise<RuntimeSession | null> {
     if (!workspaceId || terminalLaunching || actionsBlocked) return null;
     const id = workspaceId;
+    const hostKey = workspaceHostKey;
     terminalLaunching = true;
     runtimeError = null;
     try {
-      const session = await launchWorkspaceSession(id, PLAIN_SHELL_TARGET);
-      if (id !== workspaceId) return null;
+      const session = await launchWorkspaceSession(
+        id,
+        PLAIN_SHELL_TARGET,
+        hostKey,
+        "terminal",
+      );
+      if (!isCurrentWorkspace(id, hostKey)) return null;
       const sessionsWithLaunch = upsertRuntimeSession(session);
       if (!insertIntoTree) {
         clearClosedSession(session);
@@ -1139,20 +1206,20 @@
         ),
       );
       await fetchRuntime();
-      if (id !== workspaceId) return null;
+      if (!isCurrentWorkspace(id, hostKey)) return null;
       clearClosedSession(session);
       if (terminalLayout.dock === "top") {
         selectWorkspaceTab("terminal");
       }
       return session;
     } catch (err) {
-      if (id !== workspaceId) return null;
+      if (!isCurrentWorkspace(id, hostKey)) return null;
       runtimeError =
         err instanceof Error
           ? err.message
           : "Terminal launch failed";
     } finally {
-      if (id === workspaceId) terminalLaunching = false;
+      if (isCurrentWorkspace(id, hostKey)) terminalLaunching = false;
     }
     return null;
   }
@@ -1265,11 +1332,6 @@
     tabKey: WorkflowTabKey,
     base: TerminalLayoutState,
   ): TerminalLayoutState {
-    if (tabKey === "shell") {
-      shellTabOpen = true;
-      shellTerminalMounted = true;
-      return base;
-    }
     if (tabKey === "terminal") {
       return { ...base, open: true, dock: "top" };
     }
@@ -1359,15 +1421,6 @@
   }
 
   function closeWorkflowTab(tabKey: WorkflowTabKey): void {
-    if (tabKey === "shell") {
-      shellTabOpen = false;
-      shellTerminalMounted = false;
-      terminalLayout = normalizeLayoutForSessions(runtimeSessions);
-      if (activeTabKey === "shell") {
-        selectWorkspaceTab("home");
-      }
-      return;
-    }
     if (tabKey === "terminal") {
       terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
         ...terminalLayout,
@@ -1424,12 +1477,18 @@
     }
 
     const id = workspaceId;
+    const hostKey = workspaceHostKey;
     const sessionKey = renamePrompt.sessionKey;
     renameSaving = true;
     runtimeError = null;
     try {
-      const updated = await renameWorkspaceSession(id, sessionKey, trimmed);
-      if (id !== workspaceId) return;
+      const updated = await renameWorkspaceSession(
+        id,
+        sessionKey,
+        trimmed,
+        hostKey,
+      );
+      if (!isCurrentWorkspace(id, hostKey)) return;
       runtime = runtime
         ? {
             ...runtime,
@@ -1441,11 +1500,11 @@
       renamePrompt = null;
       renameInputValue = "";
     } catch (err) {
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       runtimeError =
         err instanceof Error ? err.message : "Rename failed";
     } finally {
-      if (id === workspaceId) renameSaving = false;
+      if (isCurrentWorkspace(id, hostKey)) renameSaving = false;
     }
   }
 
@@ -1502,25 +1561,34 @@
     const preset = workflowPresets.find((candidate) => candidate.id === presetID);
     if (!preset) return;
     const id = workspaceId;
+    const hostKey = workspaceHostKey;
     applyingWorkflowPreset = true;
     runtimeError = null;
     try {
-      const keyMap = new Map<string, string>();
+      const keyMap: Record<string, string> = {};
       for (const spec of preset.sessions) {
-        let session = await launchWorkspaceSession(id, spec.targetKey);
-        if (id !== workspaceId) return;
+        let session = await launchWorkspaceSession(
+          id,
+          spec.targetKey,
+          hostKey,
+          spec.region,
+        );
+        if (!isCurrentWorkspace(id, hostKey)) return;
         if (spec.label.trim() && spec.label !== session.label) {
-          session = await renameWorkspaceSession(id, session.key, spec.label.trim());
-          if (id !== workspaceId) return;
+          session = await renameWorkspaceSession(
+            id,
+            session.key,
+            spec.label.trim(),
+            hostKey,
+          );
+          if (!isCurrentWorkspace(id, hostKey)) return;
         }
-        keyMap.set(spec.sourceKey, session.key);
+        keyMap[spec.sourceKey] = session.key;
       }
       const mappedLayout = mapPresetLayout(preset.layout, keyMap);
       const refreshed = await fetchRuntime();
-      if (id !== workspaceId || !refreshed) return;
+      if (!isCurrentWorkspace(id, hostKey) || !refreshed) return;
       const presetActiveTab = firstWorkflowTab(mappedLayout) ?? "home";
-      shellTabOpen = collectPresetTabs(mappedLayout).includes("shell");
-      shellTerminalMounted = shellTabOpen;
       terminalLayout = normalizeLayoutForSessions(
         refreshed.sessions,
         mappedLayout,
@@ -1532,11 +1600,11 @@
       selectedWorkflowPresetId = preset.id;
       selectWorkspaceTab(firstWorkflowTab(terminalLayout) ?? "home");
     } catch (err) {
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       runtimeError =
         err instanceof Error ? err.message : "Preset launch failed";
     } finally {
-      if (id === workspaceId) applyingWorkflowPreset = false;
+      if (isCurrentWorkspace(id, hostKey)) applyingWorkflowPreset = false;
     }
   }
 
@@ -1549,17 +1617,17 @@
 
   function mapPresetLayout(
     layout: TerminalLayoutState,
-    keyMap: ReadonlyMap<string, string>,
+    keyMap: Record<string, string>,
   ): TerminalLayoutState {
     const sessionRegions: Record<string, SessionRegion> = {};
     for (const [sourceKey, region] of Object.entries(layout.sessionRegions)) {
-      const mappedKey = keyMap.get(sourceKey);
+      const mappedKey = keyMap[sourceKey];
       if (mappedKey) sessionRegions[mappedKey] = region;
     }
     return {
       ...layout,
       activeSessionKey:
-        layout.activeSessionKey ? keyMap.get(layout.activeSessionKey) ?? null : null,
+        layout.activeSessionKey ? keyMap[layout.activeSessionKey] ?? null : null,
       tree: mapPaneNodeSessionKeys(layout.tree, keyMap),
       terminalGroups: mapTerminalGroupSessionKeys(layout.terminalGroups, keyMap),
       workflowTree: mapWorkflowNodeSessionKeys(layout.workflowTree, keyMap),
@@ -1570,7 +1638,7 @@
 
   function mapTerminalGroupSessionKeys(
     groups: TerminalGroup[],
-    keyMap: ReadonlyMap<string, string>,
+    keyMap: Record<string, string>,
   ): TerminalGroup[] {
     return groups.flatMap((group) => {
       const tree = mapPaneNodeSessionKeys(group.tree, keyMap);
@@ -1579,7 +1647,7 @@
         {
           ...group,
           activeSessionKey: group.activeSessionKey
-            ? keyMap.get(group.activeSessionKey) ?? firstLeaf(tree)?.sessionKey ?? null
+            ? keyMap[group.activeSessionKey] ?? firstLeaf(tree)?.sessionKey ?? null
             : firstLeaf(tree)?.sessionKey ?? null,
           tree,
         },
@@ -1589,11 +1657,11 @@
 
   function mapPaneNodeSessionKeys(
     node: PaneNode | null,
-    keyMap: ReadonlyMap<string, string>,
+    keyMap: Record<string, string>,
   ): PaneNode | null {
     if (!node) return null;
     if (node.type === "leaf") {
-      const mappedKey = keyMap.get(node.sessionKey);
+      const mappedKey = keyMap[node.sessionKey];
       return mappedKey ? { ...node, sessionKey: mappedKey } : null;
     }
     const first = mapPaneNodeSessionKeys(node.first, keyMap);
@@ -1601,21 +1669,6 @@
     if (!first) return second;
     if (!second) return first;
     return { ...node, first, second };
-  }
-
-  function collectPresetTabs(layout: TerminalLayoutState): WorkflowTabKey[] {
-    if (!layout.workflowTree) return [];
-    const keys: WorkflowTabKey[] = [];
-    function visit(node: NonNullable<TerminalLayoutState["workflowTree"]>): void {
-      if (node.type === "leaf") {
-        keys.push(...node.tabs);
-        return;
-      }
-      visit(node.first);
-      visit(node.second);
-    }
-    visit(layout.workflowTree);
-    return keys;
   }
 
   function firstWorkflowTab(layout: TerminalLayoutState): WorkflowTabKey | null {
@@ -1833,16 +1886,55 @@
     }
   }
 
+  function startRuntimePolling(): void {
+    if (runtimePollTimer) return;
+    runtimePollTimer = setInterval(() => {
+      void fetchRuntime();
+    }, 3000);
+  }
+
+  function stopRuntimePolling(): void {
+    if (runtimePollTimer) {
+      clearInterval(runtimePollTimer);
+      runtimePollTimer = null;
+    }
+  }
+
   async function handleRetrySetup(): Promise<void> {
     if (!workspace || retryingSetup || actionsBlocked) return;
 
+    const id = workspaceId;
+    const hostKey = workspaceHostKey;
     retryingSetup = true;
     actionError = null;
     try {
+      if (hostKey) {
+        const { data, error, response } = await client.POST(
+          "/fleet/hosts/{host_key}/workspaces/{id}/retry",
+          {
+            params: { path: { host_key: hostKey, id } },
+          },
+        );
+        if (!data) {
+          actionError = apiErrorMessage(
+            error,
+            `Retry failed (${response.status})`,
+          );
+          return;
+        }
+        const nextWorkspace = { ...(data as Workspace), fleet_host_key: hostKey };
+        if (!isCurrentWorkspace(id, hostKey) || nextWorkspace.id !== id) return;
+        workspace = nextWorkspace;
+        if (workspace.status === "creating") {
+          startPolling();
+          await fetchWorkspace();
+        }
+        return;
+      }
       const { data, error, response } = await client.POST(
         "/workspaces/{id}/retry",
         {
-          params: { path: { id: workspaceId } },
+          params: { path: { id } },
         },
       );
       if (!data) {
@@ -1852,18 +1944,20 @@
         );
         return;
       }
+      if (!isCurrentWorkspace(id, hostKey)) return;
       workspace = data as Workspace;
       if (workspace.status === "creating") {
         startPolling();
         await fetchWorkspace();
       }
     } catch (err) {
+      if (!isCurrentWorkspace(id, hostKey)) return;
       actionError =
         err instanceof Error
           ? err.message
           : "Retry failed";
     } finally {
-      retryingSetup = false;
+      if (isCurrentWorkspace(id, hostKey)) retryingSetup = false;
     }
   }
 
@@ -1871,16 +1965,40 @@
     if (!workspace || refreshingWorkspace || actionsBlocked) return;
 
     const id = workspace.id;
+    const hostKey = workspaceHostKey;
     refreshingWorkspace = true;
     actionError = null;
     try {
+      if (hostKey) {
+        const { data, error, response } = await client.POST(
+          "/fleet/hosts/{host_key}/workspaces/{id}/refresh",
+          {
+            params: { path: { host_key: hostKey, id } },
+          },
+        );
+        if (!isCurrentWorkspace(id, hostKey)) return;
+        if (!data) {
+          actionError = apiErrorMessage(
+            error,
+            `Refresh failed (${response.status})`,
+          );
+          return;
+        }
+        workspace = { ...(data as Workspace), fleet_host_key: hostKey };
+        syncSidebarTabForWorkspace(workspace);
+        sidebarRefreshToken += 1;
+        if (workspace.status === "ready") {
+          void fetchRuntime();
+        }
+        return;
+      }
       const { data, error, response } = await client.POST(
         "/workspaces/{id}/refresh",
         {
           params: { path: { id } },
         },
       );
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       if (!data) {
         const message = apiErrorMessage(
           error,
@@ -1897,7 +2015,7 @@
         void fetchRuntime();
       }
     } catch (err) {
-      if (id !== workspaceId) return;
+      if (!isCurrentWorkspace(id, hostKey)) return;
       const message =
         err instanceof Error
           ? err.message
@@ -1905,7 +2023,7 @@
       actionError = message;
       showFlash(message);
     } finally {
-      refreshingWorkspace = false;
+      if (isCurrentWorkspace(id, hostKey)) refreshingWorkspace = false;
     }
   }
 
@@ -1915,6 +2033,7 @@
     if (actionsBlocked) return;
     actionError = null;
     const targetId = workspaceId;
+    const targetHostKey = workspaceHostKey;
     const targetGen = workspaceGen;
     // Capture the trigger synchronously: the click handler runs
     // before `inert` is applied to .terminal-view, so this is the
@@ -1925,15 +2044,16 @@
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    const { error, response } = await client.DELETE(
-      "/workspaces/{id}",
-      {
-        params: { path: { id: targetId } },
-      },
-    );
+    const { error, response } = targetHostKey
+      ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
+          params: { path: { host_key: targetHostKey, id: targetId } },
+        })
+      : await client.DELETE("/workspaces/{id}", {
+          params: { path: { id: targetId } },
+        });
     // Different workspace now: the user has moved on and nothing
     // about this response applies.
-    if (targetId !== workspaceId) return;
+    if (!isCurrentWorkspace(targetId, targetHostKey)) return;
     if (response.status === 409) {
       // A 409 that lands after the user briefly left and returned
       // to the same workspace would feel like an unrequested
@@ -1942,9 +2062,10 @@
       if (targetGen !== workspaceGen) return;
       previouslyFocusedEl = triggerEl;
       forcePromptForId = targetId;
-      forcePromptMessage =
-        error?.detail ??
-        "Workspace has uncommitted changes.";
+      forcePromptMessage = apiErrorMessage(
+        error,
+        "Workspace has uncommitted changes.",
+      );
       return;
     }
     if (!response.ok && response.status !== 204) {
@@ -1964,31 +2085,36 @@
   }
 
   function isCurrentTerminalRoute(targetId: string): boolean {
-    return window.location.pathname.endsWith(`/terminal/${targetId}`);
+    return window.location.pathname.endsWith(terminalRoute(targetId));
   }
 
   async function confirmForceDelete(): Promise<void> {
     if (forceDeleting) return;
     const targetId = forcePromptForId;
     if (targetId === null) return;
+    const targetHostKey = workspaceHostKey;
     const targetGen = workspaceGen;
     forceDeleting = true;
     actionError = null;
     try {
-      const { error, response } = await client.DELETE(
-        "/workspaces/{id}",
-        {
-          params: {
-            path: { id: targetId },
-            query: { force: true },
-          },
-        },
-      );
+      const { error, response } = targetHostKey
+        ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
+            params: {
+              path: { host_key: targetHostKey, id: targetId },
+              query: { force: true },
+            },
+          })
+        : await client.DELETE("/workspaces/{id}", {
+            params: {
+              path: { id: targetId },
+              query: { force: true },
+            },
+          });
       // The force-delete on the server is destructive and runs to
       // completion either way; once the user has moved to a
       // different workspace we just drop the response on the
       // floor so navigate() doesn't pull them away.
-      if (targetId !== workspaceId) return;
+      if (!isCurrentWorkspace(targetId, targetHostKey)) return;
       if (!response.ok && response.status !== 204) {
         if (targetGen !== workspaceGen) return;
         actionError = apiErrorMessage(
@@ -2129,8 +2255,9 @@
   // it in place.
   $effect(() => {
     const id = workspaceId;
-    const restoredLayout = id ? loadTerminalLayout(id) : defaultTerminalLayout();
-    const restoredTab = restoreWorkspaceTab(id);
+    const storageId = id ? workspaceStorageId(id, workspaceHostKey) : "";
+    const restoredLayout = id ? loadTerminalLayout(storageId) : defaultTerminalLayout();
+    const restoredTab = restoreWorkspaceTab(storageId);
     const restoredActiveTab =
       restoredTab === "terminal" &&
       !(restoredLayout.open && restoredLayout.dock === "top")
@@ -2145,9 +2272,8 @@
     // different workspace's runtime, so reset these even though
     // workspace/runtime themselves are kept.
     restoreWorkspaceTabSelection(restoredActiveTab);
-    shellTabOpen = restoredActiveTab === "shell";
     terminalLayout = layoutForActiveTab;
-    terminalLayoutWorkspaceId = id;
+    terminalLayoutWorkspaceId = storageId;
     launchingKey = null;
     terminalLaunching = false;
     closedSessions = [];
@@ -2171,7 +2297,6 @@
     renameInputValue = "";
     renameSaving = false;
     workspaceGen += 1;
-    shellTerminalMounted = restoredActiveTab === "shell";
     mountedSessionKeys = restoredActiveTab.startsWith("session:")
       ? [restoredActiveTab.slice("session:".length)]
       : [];
@@ -2183,6 +2308,8 @@
       workspace = null;
       runtime = null;
       runtimeForId = "";
+      runtimeForHostKey = undefined;
+      stopRuntimePolling();
       return;
     }
 
@@ -2228,11 +2355,14 @@
     void fetchWorkspace().then(() => {
       if (workspace?.status === "creating") {
         startPolling();
+      } else if (workspace?.status === "ready") {
+        startRuntimePolling();
       }
     });
 
     return () => {
       stopPolling();
+      stopRuntimePolling();
       source.close();
       if (eventSource === source) {
         eventSource = null;
@@ -2452,7 +2582,6 @@
                       tabs={workflowTabDescriptors}
                       {activeTabKey}
                       onSelectTab={(tabKey) => {
-                        if (tabKey === "shell") shellTerminalMounted = true;
                         if (tabKey === "terminal") {
                           terminalLayout = { ...terminalLayout, open: true };
                         }
@@ -2490,19 +2619,10 @@
                               onOpenSession={openSession}
                             />
                           {/if}
-                        {:else if tabKey === "shell"}
-                          {#if shellTerminalMounted}
-                            <TerminalPane
-                              websocketPath={workspaceTmuxWebSocketPath(
-                                workspaceId,
-                              )}
-                              reconnectOnExit={true}
-                              {active}
-                            />
-                          {/if}
                         {:else if tabKey === "terminal" && terminalPanelInStage}
                           <DockedTerminalPanel
                             {workspaceId}
+                            {workspaceHostKey}
                             sessions={terminalSessions}
                             displayLabels={sessionDisplayLabels}
                             tree={terminalLayout.tree}
@@ -2544,6 +2664,7 @@
                                 websocketPath={workspaceSessionWebSocketPath(
                                   workspaceId,
                                   session.key,
+                                  workspaceHostKey,
                                 )}
                                 reconnectOnExit={false}
                                 {active}
@@ -2561,6 +2682,7 @@
               {#if terminalLayout.dock === "bottom"}
                 <DockedTerminalPanel
                   {workspaceId}
+                  {workspaceHostKey}
                   sessions={terminalSessions}
                   displayLabels={sessionDisplayLabels}
                   tree={terminalLayout.tree}
@@ -2643,6 +2765,7 @@
       {#snippet sidebar()}
         <WorkspaceListSidebar
           selectedId={workspaceId}
+          selectedHostKey={workspaceHostKey}
           {isSidebarToggleEnabled}
           onCollapseSidebar={onToggleSidebar}
           onOpenItemSidebar={openItemSidebar}

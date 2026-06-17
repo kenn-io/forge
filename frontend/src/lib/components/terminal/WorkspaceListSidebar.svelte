@@ -7,6 +7,7 @@
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import SearchIcon from "@lucide/svelte/icons/search";
   import { client } from "../../api/runtime.js";
+  import type { components } from "@middleman/ui/api/schema";
   import {
     DiffStats,
     FilterDropdown,
@@ -59,17 +60,27 @@
     mr_deletions?: number | null;
     commits_ahead?: number | null;
     commits_behind?: number | null;
+    fleet_host_key?: string;
+    fleet_host_name?: string;
   }
+
+  type HostSummary = components["schemas"]["HostSummary"];
 
   interface Props {
     selectedId: string;
-    onOpenItemSidebar?: (workspaceId: string, tab: "pr" | "issue") => void;
+    selectedHostKey?: string | undefined;
+    onOpenItemSidebar?: (
+      workspaceId: string,
+      tab: "pr" | "issue",
+      hostKey?: string,
+    ) => void;
     isSidebarToggleEnabled?: boolean;
     onCollapseSidebar?: (() => void) | undefined;
   }
 
   const {
     selectedId,
+    selectedHostKey = undefined,
     onOpenItemSidebar,
     isSidebarToggleEnabled = false,
     onCollapseSidebar,
@@ -80,7 +91,10 @@
   ).replace(/\/$/, "");
 
   let workspaces = $state.raw<Workspace[]>([]);
-  let collapsedGroups = $state<Set<string>>(new Set());
+  let fleetHosts = $state.raw<HostSummary[]>([]);
+  let fleetError = $state<string | null>(null);
+  let fleetLoaded = $state(false);
+  let collapsedGroups = $state<string[]>([]);
   let searchQuery = $state("");
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
   let workspaceListStatus = $state<"loading" | "retrying" | "loaded">("loading");
@@ -88,7 +102,10 @@
 
   const workspaceListLoadTimeoutMs = 10_000;
 
-  type GroupedWorkspaces = Map<string, Workspace[]>;
+  type WorkspaceGroup = {
+    key: string;
+    items: Workspace[];
+  };
 
   const normalizedSearchQuery = $derived(
     searchQuery.trim().toLowerCase(),
@@ -107,20 +124,20 @@
       : `${workspaces.length}`,
   );
 
-  const grouped: GroupedWorkspaces = $derived.by(() => {
-    const map = new Map<string, Workspace[]>();
+  const grouped = $derived.by<WorkspaceGroup[]>(() => {
+    const groups: WorkspaceGroup[] = [];
     for (const ws of visibleWorkspaces) {
       const key =
         `${ws.platform_host}/${ws.repo_owner}` +
         `/${ws.repo_name}`;
-      const list = map.get(key);
-      if (list) {
-        list.push(ws);
+      const group = groups.find((candidate) => candidate.key === key);
+      if (group) {
+        group.items.push(ws);
       } else {
-        map.set(key, [ws]);
+        groups.push({ key, items: [ws] });
       }
     }
-    return map;
+    return groups;
   });
 
   const sortLabel = $derived(
@@ -141,6 +158,14 @@
       })),
     },
   ]);
+
+  const reachableFleetHosts = $derived(
+    fleetHosts.filter((host) => host.reachable).length,
+  );
+
+  const showFleetStatus = $derived(
+    fleetError !== null || (fleetLoaded && fleetHosts.length > 0),
+  );
 
   // Flat ordering for timestamp sorts. The org/repo mode keeps
   // the API order (created_at DESC) inside each repo group.
@@ -177,15 +202,15 @@
   // different hosts stay distinguishable; repo identity is always
   // (platform, host, owner, name), never owner/name alone.
   const ambiguousFlatRepos = $derived.by(() => {
-    const hostByRepo = new Map<string, string>();
-    const ambiguous = new Set<string>();
+    const hostByRepo: Record<string, string> = {};
+    const ambiguous: string[] = [];
     for (const ws of workspaces) {
       const key = `${ws.repo_owner}/${ws.repo_name}`;
-      const seen = hostByRepo.get(key);
+      const seen = hostByRepo[key];
       if (seen === undefined) {
-        hostByRepo.set(key, ws.platform_host);
-      } else if (seen !== ws.platform_host) {
-        ambiguous.add(key);
+        hostByRepo[key] = ws.platform_host;
+      } else if (seen !== ws.platform_host && !ambiguous.includes(key)) {
+        ambiguous.push(key);
       }
     }
     return ambiguous;
@@ -193,18 +218,21 @@
 
   function flatRepoLabel(ws: Workspace): string {
     const key = `${ws.repo_owner}/${ws.repo_name}`;
-    return ambiguousFlatRepos.has(key)
+    return ambiguousFlatRepos.includes(key)
       ? `${ws.platform_host}/${key}`
       : key;
   }
 
   const showProviderIcons = $derived.by(() => {
-    const providers = new Set<string>();
+    const providers: string[] = [];
     for (const ws of workspaces) {
       const provider = workspaceProvider(ws);
-      if (provider) providers.add(provider.toLowerCase());
+      const normalized = provider?.toLowerCase();
+      if (normalized && !providers.includes(normalized)) {
+        providers.push(normalized);
+      }
     }
-    return providers.size > 1;
+    return providers.length > 1;
   });
 
   async function fetchWorkspaces(): Promise<void> {
@@ -223,7 +251,11 @@
         if (workspaces.length === 0) workspaceListStatus = "retrying";
         return;
       }
-      workspaces = (data.workspaces ?? []) as Workspace[];
+      const local = (data.workspaces ?? []) as Workspace[];
+      const remote = fleetLoaded && !fleetError
+        ? await fetchPeerWorkspaces()
+        : [];
+      workspaces = [...local, ...remote];
       workspaceListStatus = "loaded";
     } catch {
       // Network error; keep stale list.
@@ -236,14 +268,60 @@
     }
   }
 
-  function toggleGroup(key: string): void {
-    const next = new Set(collapsedGroups);
-    if (next.has(key)) {
-      next.delete(key);
-    } else {
-      next.add(key);
+  async function fetchPeerWorkspaces(): Promise<Workspace[]> {
+    const peers = fleetHosts.filter(
+      (host) =>
+        host.reachable &&
+        host.kind !== "self" &&
+        host.preferredTransport === "http",
+    );
+    const lists = await Promise.all(
+      peers.map(async (host) => {
+        try {
+          const { data } = await client.GET(
+            "/fleet/hosts/{host_key}/workspaces",
+            {
+              params: { path: { host_key: host.configKey } },
+            },
+          );
+          const workspaces = (data as { workspaces?: Workspace[] } | undefined)?.workspaces ?? [];
+          return workspaces.map((ws) => ({
+            ...ws,
+            fleet_host_key: host.configKey,
+            fleet_host_name: host.name,
+          }));
+        } catch {
+          return [];
+        }
+      }),
+    );
+    return lists.flat();
+  }
+
+  async function fetchFleetStatus(): Promise<void> {
+    try {
+      const { data, error } = await client.GET("/snapshot", {
+        params: { query: { include_peers: true } },
+      });
+      if (error) {
+        fleetError = error.detail ?? error.title ?? "Fleet unavailable";
+        fleetLoaded = true;
+        return;
+      }
+      fleetHosts = (data?.hosts ?? []) as HostSummary[];
+      fleetError = null;
+      fleetLoaded = true;
+      void fetchWorkspaces();
+    } catch {
+      fleetError = "Fleet unavailable";
+      fleetLoaded = true;
     }
-    collapsedGroups = next;
+  }
+
+  function toggleGroup(key: string): void {
+    collapsedGroups = collapsedGroups.includes(key)
+      ? collapsedGroups.filter((candidate) => candidate !== key)
+      : [...collapsedGroups, key];
   }
 
   function displayName(ws: Workspace): string {
@@ -329,6 +407,24 @@
     return ws.repo?.provider;
   }
 
+  function workspaceRoute(ws: Workspace): string {
+    if (ws.fleet_host_key) {
+      return `/terminal/fleet/${encodeURIComponent(ws.fleet_host_key)}/${encodeURIComponent(ws.id)}`;
+    }
+    return `/terminal/${encodeURIComponent(ws.id)}`;
+  }
+
+  function workspaceRowKey(ws: Workspace): string {
+    return `${ws.fleet_host_key ?? "self"}:${ws.id}`;
+  }
+
+  function isSelectedWorkspace(ws: Workspace): boolean {
+    return (
+      ws.id === selectedId &&
+      (ws.fleet_host_key ?? undefined) === selectedHostKey
+    );
+  }
+
   function handleItemBubbleClick(
     e: MouseEvent | KeyboardEvent,
     ws: Workspace,
@@ -338,17 +434,21 @@
     const tab = ws.item_type === "issue" ? "issue" : "pr";
 
     if (onOpenItemSidebar) {
-      onOpenItemSidebar(ws.id, tab);
+      onOpenItemSidebar(ws.id, tab, ws.fleet_host_key);
       return;
     }
-    navigate(`/terminal/${ws.id}`);
+    navigate(workspaceRoute(ws));
   }
 
   onMount(() => {
     void fetchWorkspaces();
+    void fetchFleetStatus();
     const pollHandle = window.setInterval(() => {
       void fetchWorkspaces();
     }, 5_000);
+    const fleetPollHandle = window.setInterval(() => {
+      void fetchFleetStatus();
+    }, 15_000);
 
     const evtUrl = `${basePath}/api/v1/events`;
     const source = new EventSource(evtUrl);
@@ -361,6 +461,7 @@
 
     return () => {
       window.clearInterval(pollHandle);
+      window.clearInterval(fleetPollHandle);
       source.close();
     };
   });
@@ -407,11 +508,46 @@
       oninput={updateSearch}
     />
   </label>
+  {#if showFleetStatus}
+    <section class="fleet-status" aria-label="Fleet hosts">
+      <div class="fleet-status-heading">
+        <span class="fleet-status-title">Fleet</span>
+        {#if fleetError}
+          <span class="fleet-status-count error">degraded</span>
+        {:else}
+          <span class="fleet-status-count">
+            {reachableFleetHosts}/{fleetHosts.length}
+          </span>
+        {/if}
+      </div>
+      {#if fleetError}
+        <p class="fleet-status-error">{fleetError}</p>
+      {:else}
+        <div class="fleet-hosts">
+          {#each fleetHosts as host (host.configKey)}
+            <span
+              class={[
+                "fleet-host",
+                host.kind === "self" ? "self" : "remote",
+                { unreachable: !host.reachable },
+              ]}
+              title={`${host.name} - ${host.kind} - ${host.preferredTransport}`}
+            >
+              <span class="fleet-host-dot" aria-hidden="true"></span>
+              <span class="fleet-host-name">{host.configKey}</span>
+              <span class="fleet-host-kind">{host.kind}</span>
+              <span class="fleet-host-transport">{host.preferredTransport}</span>
+            </span>
+          {/each}
+        </div>
+      {/if}
+    </section>
+  {/if}
   <div class="sidebar-list">
     {#if sortMode === "repo"}
-    {#each [...grouped] as [repoKey, items] (repoKey)}
+    {#each grouped as { key: repoKey, items } (repoKey)}
       {@const collapsed =
-        !normalizedSearchQuery && collapsedGroups.has(repoKey)}
+        !normalizedSearchQuery && collapsedGroups.includes(repoKey)}
       <button
         class={["group-header", { collapsed }]}
         onclick={() => toggleGroup(repoKey)}
@@ -433,13 +569,13 @@
         <span class="group-count">{items.length}</span>
       </button>
       {#if !collapsed}
-        {#each items as ws (ws.id)}
+        {#each items as ws (workspaceRowKey(ws))}
           {@render workspaceRow(ws, false)}
         {/each}
       {/if}
     {/each}
     {:else}
-      {#each sortedFlat as ws (ws.id)}
+      {#each sortedFlat as ws (workspaceRowKey(ws))}
         {@render workspaceRow(ws, true)}
       {/each}
     {/if}
@@ -454,7 +590,7 @@
           {@const behind = ws.commits_behind ?? 0}
           {@const showPush = ahead > 0 || behind > 0}
           <div
-            class={["ws-row", { selected: ws.id === selectedId }]}
+            class={["ws-row", { selected: isSelectedWorkspace(ws) }]}
             onclick={(e) => {
               // The PR/issue bubble is a focusable child button; let
               // its own click handler run without the row also
@@ -464,7 +600,7 @@
                 e.target.closest(".item-bubble")) {
                 return;
               }
-              navigate(`/terminal/${ws.id}`);
+              navigate(workspaceRoute(ws));
             }}
             onkeydown={(e) => {
               // Ignore keydowns that originate inside a nested
@@ -475,7 +611,7 @@
               if (e.target !== e.currentTarget) return;
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                navigate(`/terminal/${ws.id}`);
+                navigate(workspaceRoute(ws));
               }
             }}
             tabindex="0"
@@ -498,6 +634,14 @@
                 {/if}
               </div>
               <div class="ws-row-meta">
+                {#if ws.fleet_host_key}
+                  <span
+                    class="fleet-context"
+                    title={`Fleet host: ${ws.fleet_host_name ?? ws.fleet_host_key}`}
+                  >
+                    {ws.fleet_host_key}
+                  </span>
+                {/if}
                 {#if showRepo}
                   <span
                     class="repo-context"
@@ -691,6 +835,123 @@
   .workspace-filter:focus-within {
     border-color: var(--accent-blue);
     box-shadow: 0 0 0 1px var(--accent-blue);
+  }
+
+  .fleet-status {
+    flex-shrink: 0;
+    margin: 4px 8px 6px;
+    padding: 7px 8px 8px;
+    border-top: 1px solid var(--border-muted);
+    border-bottom: 1px solid var(--border-muted);
+    background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+  }
+
+  .fleet-status-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .fleet-status-title {
+    font-size: var(--font-size-2xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .fleet-status-count {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-2xs);
+    color: var(--accent-green);
+  }
+
+  .fleet-status-count.error {
+    color: var(--accent-amber);
+  }
+
+  .fleet-status-error {
+    margin: 0;
+    color: var(--accent-amber);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
+  }
+
+  .fleet-hosts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .fleet-host {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    min-width: 0;
+    padding: 2px 6px;
+    border: 1px solid var(--border-muted);
+    border-radius: 999px;
+    background: var(--bg-inset);
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.25;
+  }
+
+  .fleet-host.self {
+    border-color: color-mix(in srgb, var(--accent-blue) 38%, var(--border-muted));
+  }
+
+  .fleet-host.unreachable {
+    color: var(--text-muted);
+    opacity: 0.78;
+  }
+
+  .fleet-host-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    flex-shrink: 0;
+  }
+
+  .fleet-host.unreachable .fleet-host-dot {
+    background: var(--accent-red);
+  }
+
+  .fleet-host-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  .fleet-host-kind {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-2xs);
+  }
+
+  .fleet-host-transport {
+    flex-shrink: 0;
+    color: var(--text-subtle);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-2xs);
+  }
+
+  .fleet-context {
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--accent-blue);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-2xs);
+    font-weight: 600;
   }
 
   .sidebar-list {

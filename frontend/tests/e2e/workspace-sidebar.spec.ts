@@ -739,12 +739,20 @@ function hasWorkspaceDiffRequest(
 }
 
 function shellWorkflowPreset() {
+  const shellSourceKey = "preset-shell";
   return {
     id: "preset-shell",
     name: "Shell focus",
     createdAt: "2026-04-10T12:00:00.000Z",
     updatedAt: "2026-04-10T12:00:00.000Z",
-    sessions: [],
+    sessions: [
+      {
+        sourceKey: shellSourceKey,
+        targetKey: "plain_shell",
+        region: "workflow",
+        label: "Shell",
+      },
+    ],
     layout: {
       version: 1,
       open: false,
@@ -754,13 +762,15 @@ function shellWorkflowPreset() {
       tree: null,
       terminalGroups: [],
       activeTerminalGroupID: null,
-      sessionRegions: {},
+      sessionRegions: {
+        [shellSourceKey]: "workflow",
+      },
       workflowMode: "tabs",
       workflowTree: {
         type: "leaf",
         id: "workflow-root",
-        tabs: ["home", "shell"],
-        activeTabKey: "shell",
+        tabs: ["home", `session:${shellSourceKey}`],
+        activeTabKey: `session:${shellSourceKey}`,
       },
       activeWorkflowLeafID: "workflow-root",
       recentWorkflowLeafIDs: ["workflow-root"],
@@ -1429,7 +1439,7 @@ test.describe("workspace launch home", () => {
     await expect(page.getByRole("tab", { name: "Home" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Launch" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Codex" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Shell" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Shell", exact: true })).toBeEnabled();
     await expect(
       page.getByRole("button", {
         name: "Open terminal panel",
@@ -2729,6 +2739,172 @@ test.describe("sidebar toggle behavior", () => {
   });
 });
 
+test.describe("workspace list fleet inventory", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem("middleman-workspace-list-sidebar-width");
+      localStorage.removeItem("middleman-workspace-sidebar-tab");
+      localStorage.removeItem("middleman-workspace-sidebar-open");
+      localStorage.removeItem("middleman-workspace-sidebar-width");
+    });
+    await mockApi(page);
+    await page.route("**/api/v1/events", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: "",
+      });
+    });
+  });
+
+  test("shows remote workspaces from reachable fleet peers", async ({ page }) => {
+    const remoteWorkspace = {
+      ...testIssueWorkspace,
+      id: "member-ws-23",
+      item_number: 23,
+      git_head_ref: "middleman/issue-23-federation-test",
+      worktree_path: "/data/member/worktrees/github.com/kenn-io/kit/issue-23",
+      mr_title: "Member workspace",
+      repo_owner: "kenn-io",
+      repo_name: "kit",
+      repo: workspaceRepoRef("kenn-io", "kit"),
+    };
+
+    await page.route("**/api/v1/workspaces", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaces: [] }),
+      });
+    });
+    await page.route(
+      (url) => url.pathname === "/api/v1/snapshot",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "member",
+                diagnostics: [],
+                id: "member",
+                kind: "remote",
+                name: "member",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          }),
+        });
+      },
+    );
+    await page.route("**/api/v1/fleet/hosts/member/workspaces", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaces: [remoteWorkspace] }),
+      });
+    });
+    await page.route("**/api/v1/fleet/hosts/member/workspaces/member-ws-23", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(remoteWorkspace),
+      });
+    });
+    await page.route("**/api/v1/fleet/hosts/member/workspaces/member-ws-23/runtime", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          launch_targets: [],
+          sessions: [],
+        }),
+      });
+    });
+
+    await page.goto("/workspaces");
+
+    const sidebar = page.locator(".workspace-list-sidebar");
+    await expect(sidebar).toContainText("Fleet");
+    await expect(sidebar).toContainText("2/2");
+    await expect(sidebar).toContainText("hub");
+    await expect(sidebar).toContainText("self");
+    await expect(sidebar).toContainText("local");
+    await expect(sidebar).toContainText("member");
+    await expect(sidebar).toContainText("remote");
+    await expect(sidebar).toContainText("http");
+
+    const row = sidebar.locator(".ws-row", { hasText: "Member workspace" });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText("member");
+    await row.click();
+
+    await expect(page).toHaveURL(/\/terminal\/fleet\/member\/member-ws-23$/);
+    await expect(page.locator(".workspace-home")).toContainText("Member workspace");
+  });
+
+  test("shows singleton self fleet host status", async ({ page }) => {
+    await page.route("**/api/v1/workspaces", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaces: [] }),
+      });
+    });
+    await page.route(
+      (url) => url.pathname === "/api/v1/snapshot",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            hosts: [
+              {
+                configKey: "member",
+                diagnostics: [],
+                id: "member",
+                kind: "self",
+                name: "member",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          }),
+        });
+      },
+    );
+
+    await page.goto("/workspaces");
+
+    const sidebar = page.locator(".workspace-list-sidebar");
+    await expect(sidebar).toContainText("Fleet");
+    await expect(sidebar).toContainText("1/1");
+    await expect(sidebar).toContainText("member");
+    await expect(sidebar).toContainText("self");
+    await expect(sidebar).toContainText("local");
+  });
+});
+
 // -------------------------------------------------------
 // Group 2: Persistence
 // -------------------------------------------------------
@@ -3307,7 +3483,7 @@ test.describe("workspace list sorting", () => {
     await expect(page.locator(".workspace-list-sidebar .repo-context").first()).toContainText("acme/widgets");
 
     await sortTrigger.click();
-    await page.locator(".filter-dropdown").getByRole("button", { name: "Activity" }).click();
+    await page.locator(".filter-dropdown").getByRole("button", { name: "Activity", exact: true }).click();
 
     // ws-old has no tmux output and falls back to creation time.
     await expect(names).toHaveText(["Most recently active", "Newest created", "Oldest without activity"]);

@@ -15,13 +15,10 @@
     activeKey: string;
     sessions: RuntimeSession[];
     displayLabels?: Record<string, string>;
-    shellOpen?: boolean;
     terminalOpen?: boolean;
     onSelectHome?: () => void;
-    onSelectShell?: () => void;
     onSelectTerminal?: () => void;
     onSelectSession?: (sessionKey: string) => void;
-    onCloseShell?: () => void;
     onCloseTerminal?: () => void;
     onMoveSessionToTerminal?: (sessionKey: string) => void;
     onCloseSession?: (sessionKey: string) => void;
@@ -32,13 +29,10 @@
     activeKey,
     sessions,
     displayLabels = {},
-    shellOpen = false,
     terminalOpen = false,
     onSelectHome,
-    onSelectShell,
     onSelectTerminal,
     onSelectSession,
-    onCloseShell,
     onCloseTerminal,
     onMoveSessionToTerminal,
     onCloseSession,
@@ -75,37 +69,6 @@
     </span>
     <span class="tab-label">Home</span>
   </button>
-
-  {#if shellOpen}
-    <div
-      class={[
-        "tab-with-close",
-        "tab",
-        "tab-shell",
-        { active: activeKey === "shell" },
-      ]}
-    >
-      <button
-        role="tab"
-        aria-selected={activeKey === "shell"}
-        class="tab-button"
-        onclick={() => onSelectShell?.()}
-      >
-        <span class="tab-icon" aria-hidden="true">
-          <TerminalIcon size="13" strokeWidth="2" />
-        </span>
-        <span class="tab-label">Shell</span>
-      </button>
-      <button
-        class="tab-close"
-        aria-label="Close Shell"
-        title="Close tab"
-        onclick={() => onCloseShell?.()}
-      >
-        <XIcon size="12" strokeWidth="2.25" aria-hidden="true" />
-      </button>
-    </div>
-  {/if}
 
   {#if terminalOpen}
     <div

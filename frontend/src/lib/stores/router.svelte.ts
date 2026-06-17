@@ -45,7 +45,7 @@ export type Route =
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
   | { page: "reviews"; jobId?: number }
-  | { page: "terminal"; workspaceId: string }
+  | { page: "terminal"; workspaceId: string; hostKey?: string }
   // Embed-targetable workspace surfaces. Hosts mount these
   // routes to render a single component of the workspaces UX
   // (list, terminal, per-item detail, empty placeholder, the
@@ -332,11 +332,19 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "reviews" };
   }
+  const fleetTerminalMatch = path.match(/^\/terminal\/fleet\/([^/]+)\/([^/]+)$/);
+  if (fleetTerminalMatch) {
+    return {
+      page: "terminal",
+      hostKey: decodeRouteSegment(fleetTerminalMatch[1]!) ?? fleetTerminalMatch[1]!,
+      workspaceId: decodeRouteSegment(fleetTerminalMatch[2]!) ?? fleetTerminalMatch[2]!,
+    };
+  }
   const terminalMatch = path.match(/^\/terminal\/([^/]+)$/);
   if (terminalMatch) {
     return {
       page: "terminal",
-      workspaceId: terminalMatch[1]!,
+      workspaceId: decodeRouteSegment(terminalMatch[1]!) ?? terminalMatch[1]!,
     };
   }
   // Embed routes must be matched before the generic /workspaces

@@ -27,6 +27,7 @@
 
   interface Props {
     workspaceId: string;
+    workspaceHostKey?: string | undefined;
     sessions: RuntimeSession[];
     displayLabels: Record<string, string>;
     tree: PaneNode | null;
@@ -59,6 +60,7 @@
 
   const {
     workspaceId,
+    workspaceHostKey = undefined,
     sessions,
     displayLabels,
     tree,
@@ -224,6 +226,7 @@
         {#if tree && sessions.length > 0}
           <TerminalSplitTree
             {workspaceId}
+            {workspaceHostKey}
             node={tree}
             {sessions}
             {displayLabels}
@@ -412,7 +415,7 @@
   }
 
   .panel-body.with-selector {
-    grid-template-columns: minmax(0, 1fr) 180px;
+    grid-template-columns: minmax(0, 1fr) minmax(132px, 160px);
   }
 
   .terminal-tree {
@@ -513,11 +516,16 @@
 
   @media (max-width: 760px) {
     .panel-body.with-selector {
-      grid-template-columns: minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) minmax(96px, 116px);
     }
 
     .terminal-selector {
-      display: none;
+      padding: 3px;
+    }
+
+    .selector-row {
+      gap: 5px;
+      padding: 0 5px;
     }
   }
 </style>

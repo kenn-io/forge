@@ -41,7 +41,7 @@
   }: WorkspaceHomeProps = $props();
 
   const visibleTargets = $derived(
-    launchTargets.filter((target) => target.kind !== "plain_shell"),
+    launchTargets.filter((target) => target.kind !== "shell"),
   );
 
   function title(): string {
@@ -50,12 +50,12 @@
 
   function sourceLabel(target: LaunchTarget): string {
     if (target.source === "config") return "configured";
-    if (target.kind === "shell") return "shell";
+    if (target.kind === "plain_shell") return "shell";
     return "detected";
   }
 
   function targetLabel(target: LaunchTarget): string {
-    return target.kind === "shell" ? "Shell" : target.label;
+    return target.kind === "plain_shell" ? "Shell" : target.label;
   }
 
   function statusLabel(status: string): string {

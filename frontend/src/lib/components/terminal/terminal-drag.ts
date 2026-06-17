@@ -76,7 +76,7 @@ export function readWorkflowTabDrag(event: DragEvent, workspaceId: string): Work
 }
 
 export function isWorkflowTabKey(value: string): value is WorkflowTabKey {
-  return value === "home" || value === "shell" || value === "terminal" || value.startsWith("session:");
+  return value === "home" || value === "terminal" || value.startsWith("session:");
 }
 
 function readWorkflowTabDragPayload(event: DragEvent): WorkflowTabDragPayload | null {

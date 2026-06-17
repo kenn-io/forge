@@ -31,6 +31,7 @@
 
   interface Props {
     workspaceId: string;
+    workspaceHostKey?: string | undefined;
     node: PaneNode;
     sessions: RuntimeSession[];
     displayLabels: Record<string, string>;
@@ -54,6 +55,7 @@
 
   const {
     workspaceId,
+    workspaceHostKey = undefined,
     node,
     sessions,
     displayLabels,
@@ -309,7 +311,11 @@
           ondrop={dropSplit}
         >
           <TerminalPane
-            websocketPath={workspaceSessionWebSocketPath(workspaceId, session.key)}
+            websocketPath={workspaceSessionWebSocketPath(
+              workspaceId,
+              session.key,
+              workspaceHostKey,
+            )}
             reconnectOnExit={false}
             active={activeSessionKey === session.key}
             onExit={() => onExit?.(session)}
@@ -338,6 +344,7 @@
     <div class="split-child first">
       <Self
         {workspaceId}
+        {workspaceHostKey}
         node={node.first}
         {sessions}
         {displayLabels}
@@ -360,6 +367,7 @@
     <div class="split-child second">
       <Self
         {workspaceId}
+        {workspaceHostKey}
         node={node.second}
         {sessions}
         {displayLabels}

@@ -16,7 +16,7 @@
 
   export interface WorkflowTabDescriptor extends TabbedPanelDescriptor {
     key: WorkflowTabKey;
-    kind: "home" | "shell" | "terminal" | "agent" | "plain_shell";
+    kind: "home" | "terminal" | "agent" | "plain_shell";
     renamable?: boolean | undefined;
     movableToTerminal?: boolean | undefined;
     closable?: boolean | undefined;
@@ -120,7 +120,7 @@
   {#snippet tabIcon(tab)}
     {#if tabKind(tab) === "home"}
       <HouseIcon size="13" strokeWidth="2" />
-    {:else if tabKind(tab) === "plain_shell" || tabKind(tab) === "terminal" || tabKind(tab) === "shell"}
+    {:else if tabKind(tab) === "plain_shell" || tabKind(tab) === "terminal"}
       <TerminalIcon size="13" strokeWidth="2" />
     {:else}
       <SparklesIcon size="13" strokeWidth="2" />

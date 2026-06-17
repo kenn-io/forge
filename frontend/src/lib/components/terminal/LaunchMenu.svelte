@@ -22,7 +22,7 @@
   let rootEl = $state<HTMLDivElement | null>(null);
 
   const visibleTargets = $derived(
-    launchTargets.filter((target) => target.kind !== "plain_shell"),
+    launchTargets.filter((target) => target.kind !== "shell"),
   );
 
   function launch(targetKey: string): void {
@@ -31,13 +31,13 @@
   }
 
   function sourceLabel(target: LaunchTarget): string {
-    if (target.kind === "shell") return "shell";
+    if (target.kind === "plain_shell") return "shell";
     if (target.source === "config") return "configured";
     return target.source;
   }
 
   function targetLabel(target: LaunchTarget): string {
-    return target.kind === "shell" ? "Shell" : target.label;
+    return target.kind === "plain_shell" ? "Shell" : target.label;
   }
 
   $effect(() => {

@@ -1178,11 +1178,14 @@
         {@const r = getRoute()}
         {@const wsId =
           r.page === "terminal" ? r.workspaceId : ""}
+        {@const wsHostKey =
+          r.page === "terminal" ? r.hostKey : undefined}
         <!-- Single mount across /workspaces and /terminal/{id};
              WorkspaceTerminalView reacts to workspaceId changes
              internally so the page doesn't flash on navigation. -->
         <WorkspaceTerminalView
           workspaceId={wsId}
+          workspaceHostKey={wsHostKey}
           isSidebarCollapsed={isSidebarCollapsed()}
           sidebarWidth={getSidebarWidth()}
           onSidebarResize={handleSidebarResize}

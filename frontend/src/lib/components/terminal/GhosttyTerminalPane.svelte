@@ -103,7 +103,8 @@
     rows: number,
   ): string {
     const sep = url.includes("?") ? "&" : "?";
-    return `${url}${sep}cols=${cols}&rows=${rows}`;
+    const resizeActive = active ? "1" : "0";
+    return `${url}${sep}cols=${cols}&rows=${rows}&resize_active=${resizeActive}`;
   }
 
   function buildWsUrl(
@@ -160,6 +161,12 @@
 
   function sendRefresh(cols: number, rows: number): void {
     sendControl("refresh", cols, rows);
+  }
+
+  function sendResizeActive(nextActive: boolean): void {
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "resize_active", active: nextActive }));
+    }
   }
 
   function sendControl(
@@ -242,6 +249,7 @@
 
     socket.onopen = () => {
       reconnectDelay = 1000;
+      sendResizeActive(active);
       if (active) scheduleTerminalRefresh();
     };
 
@@ -359,8 +367,9 @@
   });
 
   $effect(() => {
-    if (!terminal || !active) return;
-    scheduleTerminalRefresh();
+    if (!terminal) return;
+    sendResizeActive(active);
+    if (active) scheduleTerminalRefresh();
   });
 
   onMount(() => {
@@ -400,7 +409,7 @@
       });
 
       resizeObserver = new ResizeObserver(() => {
-        if (!fitAddon || !terminal) return;
+        if (!fitAddon || !terminal || !active) return;
         fitAddon.fit();
         sendResize(terminal.cols, terminal.rows);
       });

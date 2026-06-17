@@ -270,6 +270,25 @@ describe("TerminalPane", () => {
     expect(xtermInstances[0]!.clearTextureAtlas).not.toHaveBeenCalled();
   });
 
+  it("only lets active panes claim terminal resize authority", async () => {
+    const { rerender } = render(TerminalPane, {
+      props: { workspaceId: "ws-123", active: false },
+    });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    expect(mockSockets[0]!.url).toContain("resize_active=0");
+
+    mockSockets[0]!.onopen?.();
+    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: false }));
+
+    mockSockets[0]!.sent = [];
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    expect(mockSockets[0]!.sent).toHaveLength(0);
+
+    await rerender({ workspaceId: "ws-123", active: true });
+    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: true }));
+  });
+
   it("repaints after container resize without rebuilding the WebGL atlas", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 

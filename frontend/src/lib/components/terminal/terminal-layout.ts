@@ -2,7 +2,7 @@ export type TerminalDock = "bottom" | "top";
 export type SplitDirection = "horizontal" | "vertical";
 export type SplitEdge = "top" | "right" | "bottom" | "left";
 export type SessionRegion = "workflow" | "terminal";
-export type WorkflowTabKey = "home" | "shell" | "terminal" | `session:${string}`;
+export type WorkflowTabKey = "home" | "terminal" | `session:${string}`;
 
 export interface PaneLeaf {
   type: "leaf";
@@ -515,7 +515,7 @@ export function parseTerminalLayout(raw: string | null): TerminalLayoutState {
 }
 
 export function isWorkflowTabKey(value: string): value is WorkflowTabKey {
-  return value === "home" || value === "shell" || value === "terminal" || value.startsWith("session:");
+  return value === "home" || value === "terminal" || value.startsWith("session:");
 }
 
 function parsePaneNode(value: unknown): PaneNode | null {

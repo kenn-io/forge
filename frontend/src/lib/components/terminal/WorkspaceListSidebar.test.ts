@@ -136,6 +136,93 @@ describe("WorkspaceListSidebar", () => {
     vi.useRealTimers();
   });
 
+  it("shows fleet hosts when peers are present", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "member",
+                diagnostics: [],
+                id: "member",
+                kind: "remote",
+                name: "member",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { workspaces: [] } });
+    });
+
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "" },
+    });
+
+    await screen.findByText("Fleet");
+    expect(screen.getByText("2/2")).toBeTruthy();
+    expect(screen.getByText("hub")).toBeTruthy();
+    expect(screen.getByText("self")).toBeTruthy();
+    expect(screen.getByText("local")).toBeTruthy();
+    expect(screen.getByText("member")).toBeTruthy();
+    expect(screen.getByText("remote")).toBeTruthy();
+    expect(screen.getByText("http")).toBeTruthy();
+  });
+
+  it("shows the local fleet host even without peers", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "member",
+                diagnostics: [],
+                id: "member",
+                kind: "self",
+                name: "member",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { workspaces: [] } });
+    });
+
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "" },
+    });
+
+    await screen.findByText("Fleet");
+    expect(screen.getByText("1/1")).toBeTruthy();
+    expect(screen.getByText("member")).toBeTruthy();
+    expect(screen.getByText("self")).toBeTruthy();
+    expect(screen.getByText("local")).toBeTruthy();
+  });
+
   it("shows provider icons in repo groups when multiple providers are present", async () => {
     mockGet.mockResolvedValue({
       data: {

@@ -18,18 +18,18 @@ export interface WorkflowPreset {
 
 export function mapWorkflowNodeSessionKeys(
   node: WorkflowNode | null,
-  keyMap: ReadonlyMap<string, string>,
+  keyMap: Record<string, string>,
 ): WorkflowNode | null {
   if (!node) return null;
   if (node.type === "leaf") {
     const tabs = node.tabs.flatMap((tab) => {
       if (!tab.startsWith("session:")) return [tab];
-      const mapped = keyMap.get(tab.slice("session:".length));
+      const mapped = keyMap[tab.slice("session:".length)];
       return mapped ? ([`session:${mapped}`] as const) : [];
     });
     if (tabs.length === 0) return null;
     const activeTabKey = node.activeTabKey.startsWith("session:")
-      ? keyMap.get(node.activeTabKey.slice("session:".length))
+      ? keyMap[node.activeTabKey.slice("session:".length)]
       : node.activeTabKey;
     return {
       ...node,

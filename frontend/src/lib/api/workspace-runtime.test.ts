@@ -95,6 +95,39 @@ describe("workspace-runtime api", () => {
     });
   });
 
+  it("includes display region when launching a workspace session", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            key: "ws-1:shell",
+            workspace_id: "ws-1",
+            target_key: "plain_shell",
+            label: "Shell",
+            kind: "plain_shell",
+            status: "running",
+            display_region: "workflow",
+            created_at: "2026-04-25T00:00:00Z",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    );
+
+    await launchWorkspaceSession("ws-1", "plain_shell", undefined, "workflow", fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/workspaces/ws-1/runtime/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_key: "plain_shell",
+        display_region: "workflow",
+      }),
+    });
+  });
+
   it("builds runtime websocket paths", () => {
     expect(workspaceSessionWebSocketPath("ws-1", "ws-1:helper")).toBe(
       "/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",

@@ -2315,6 +2315,12 @@
     launchingKey = null;
     terminalLaunching = false;
     closedSessions = [];
+    // Retry/refresh requests guard their own state mutations on
+    // isCurrentWorkspace, so an in-flight one that resolves after a
+    // route change skips its finally cleanup and would otherwise
+    // leave these flags stuck true on the next workspace.
+    retryingSetup = false;
+    refreshingWorkspace = false;
 
     // Errors/transient flags from the prior workspace should not
     // bleed across — clear them but don't touch workspace/runtime.

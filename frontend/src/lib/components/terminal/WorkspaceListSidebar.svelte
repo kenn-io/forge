@@ -253,7 +253,7 @@
       }
       const local = (data.workspaces ?? []) as Workspace[];
       const remote = fleetLoaded && !fleetError
-        ? await fetchPeerWorkspaces()
+        ? await fetchPeerWorkspaces(abortController.signal)
         : [];
       workspaces = [...local, ...remote];
       workspaceListStatus = "loaded";
@@ -268,7 +268,9 @@
     }
   }
 
-  async function fetchPeerWorkspaces(): Promise<Workspace[]> {
+  async function fetchPeerWorkspaces(
+    signal: AbortSignal,
+  ): Promise<Workspace[]> {
     const peers = fleetHosts.filter(
       (host) =>
         host.reachable &&
@@ -281,6 +283,7 @@
             "/fleet/hosts/{host_key}/workspaces",
             {
               params: { path: { host_key: host.configKey } },
+              signal,
             },
           );
           const workspaces = (data as { workspaces?: Workspace[] } | undefined)?.workspaces ?? [];

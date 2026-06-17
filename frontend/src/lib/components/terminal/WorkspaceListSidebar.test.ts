@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
@@ -132,6 +133,7 @@ describe("WorkspaceListSidebar", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("shows provider icons in repo groups when multiple providers are present", async () => {
@@ -175,6 +177,21 @@ describe("WorkspaceListSidebar", () => {
     });
 
     expect(screen.getByText("Loading workspaces...")).toBeTruthy();
+  });
+
+  it("shows a retrying state when the initial workspace list hangs", async () => {
+    vi.useFakeTimers();
+    mockGet.mockReturnValue(new Promise(() => {}));
+
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "" },
+    });
+
+    expect(screen.getByText("Loading workspaces...")).toBeTruthy();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await tick();
+
+    expect(screen.getByText("Still loading workspaces. Retrying...")).toBeTruthy();
   });
 
   it("hides provider icons in repo groups when one provider is present", async () => {

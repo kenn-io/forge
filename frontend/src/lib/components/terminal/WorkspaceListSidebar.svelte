@@ -83,7 +83,10 @@
   let collapsedGroups = $state<Set<string>>(new Set());
   let searchQuery = $state("");
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
-  let hasLoadedWorkspaces = $state(false);
+  let workspaceListStatus = $state<"loading" | "retrying" | "loaded">("loading");
+  let fetchInFlight = false;
+
+  const workspaceListLoadTimeoutMs = 10_000;
 
   type GroupedWorkspaces = Map<string, Workspace[]>;
 
@@ -205,13 +208,39 @@
   });
 
   async function fetchWorkspaces(): Promise<void> {
+    if (fetchInFlight) return;
+    fetchInFlight = true;
+    let timeoutHandle: number | undefined;
     try {
-      const { data } = await client.GET("/workspaces");
-      if (!data) return;
+      const timeout = new Promise<"timeout">((resolve) => {
+        timeoutHandle = window.setTimeout(
+          () => resolve("timeout"),
+          workspaceListLoadTimeoutMs,
+        );
+      });
+      const result = await Promise.race([
+        client.GET("/workspaces"),
+        timeout,
+      ]);
+      if (result === "timeout") {
+        if (workspaces.length === 0) workspaceListStatus = "retrying";
+        return;
+      }
+      const { data } = result;
+      if (!data) {
+        if (workspaces.length === 0) workspaceListStatus = "retrying";
+        return;
+      }
       workspaces = (data.workspaces ?? []) as Workspace[];
-      hasLoadedWorkspaces = true;
+      workspaceListStatus = "loaded";
     } catch {
       // Network error; keep stale list.
+      if (workspaces.length === 0) workspaceListStatus = "retrying";
+    } finally {
+      if (timeoutHandle !== undefined) {
+        window.clearTimeout(timeoutHandle);
+      }
+      fetchInFlight = false;
     }
   }
 
@@ -556,8 +585,10 @@
             </button>
           </div>
     {/snippet}
-    {#if !hasLoadedWorkspaces && workspaces.length === 0}
+    {#if workspaceListStatus === "loading" && workspaces.length === 0}
       <p class="filter-empty">Loading workspaces...</p>
+    {:else if workspaceListStatus === "retrying" && workspaces.length === 0}
+      <p class="filter-empty">Still loading workspaces. Retrying...</p>
     {:else if visibleWorkspaces.length === 0 && normalizedSearchQuery}
       <p class="filter-empty">No workspaces match.</p>
     {:else if visibleWorkspaces.length === 0}

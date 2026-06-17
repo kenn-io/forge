@@ -10,6 +10,7 @@ export interface RepoLeaf {
   kind: "repo";
   id: string;
   label: string;
+  displayLabel?: string;
   value: string;
 }
 
@@ -40,6 +41,10 @@ function stripHostPrefix(value: string, platformHost: string): string {
   return concreteValue.replace(/^[^/]+\//, "");
 }
 
+function providerQualifiedLeafLabel(option: RepoTreeOption, name: string): string | undefined {
+  return option.value.includes("|") ? `${option.provider}/${name}` : undefined;
+}
+
 export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
   const hosts = new Map<string, HostNode>();
 
@@ -61,6 +66,8 @@ export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
         children: [],
       };
       hosts.set(option.platformHost, host);
+    } else if (host.provider !== option.provider) {
+      host.provider = "";
     }
 
     let owner = host.children.find((node) => node.label === ownerPath);
@@ -74,10 +81,12 @@ export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
       host.children.push(owner);
     }
 
+    const displayLabel = providerQualifiedLeafLabel(option, name);
     owner.children.push({
       kind: "repo",
       id: option.value,
       label: name,
+      ...(displayLabel ? { displayLabel } : {}),
       value: option.value,
     });
   }
@@ -86,7 +95,7 @@ export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
   for (const host of sorted) {
     host.children.sort((a, b) => a.label.localeCompare(b.label));
     for (const owner of host.children) {
-      owner.children.sort((a, b) => a.label.localeCompare(b.label));
+      owner.children.sort((a, b) => (a.displayLabel ?? a.label).localeCompare(b.displayLabel ?? b.label));
     }
   }
   return sorted;
@@ -160,7 +169,7 @@ export function visibleRows(tree: readonly HostNode[], { isCollapsed, query }: V
           depth: ownerDepth,
           hasChildren: false,
           expanded: false,
-          displayLabel: `${owner.original.label}/${leaf.label}`,
+          displayLabel: `${owner.original.label}/${leaf.displayLabel ?? leaf.label}`,
         });
         continue;
       }
@@ -178,6 +187,7 @@ export function visibleRows(tree: readonly HostNode[], { isCollapsed, query }: V
           depth: ownerDepth + 1,
           hasChildren: false,
           expanded: false,
+          ...(leaf.displayLabel ? { displayLabel: leaf.displayLabel } : {}),
         });
       }
     }

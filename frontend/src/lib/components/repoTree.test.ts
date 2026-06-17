@@ -61,9 +61,25 @@ describe("buildRepoTree", () => {
     expect(tree.map((h) => h.label)).toEqual(["github.com", "gitlab.com"]);
   });
 
-  it("uses the first option's provider when a host's providers disagree", () => {
+  it("omits the host provider when a host's providers disagree", () => {
     const tree = buildRepoTree([opt("ghe.example.com", "a/x", "github"), opt("ghe.example.com", "b/y", "gitlab")]);
-    expect(tree[0]!.provider).toBe("github");
+    expect(tree[0]!.provider).toBe("");
+  });
+
+  it("gives provider-qualified leaves visible provider labels", () => {
+    const tree = buildRepoTree([
+      {
+        ...opt("github.com", "acme/widgets", "github"),
+        value: "github|github.com/acme/widgets",
+      },
+      {
+        ...opt("github.com", "acme/widgets", "gitea"),
+        value: "gitea|github.com/acme/widgets",
+      },
+    ]);
+
+    const acme = tree[0]!.children[0]!;
+    expect(acme.children.map((repo) => repo.displayLabel)).toEqual(["gitea/widgets", "github/widgets"]);
   });
 
   it("returns an empty array for no options", () => {

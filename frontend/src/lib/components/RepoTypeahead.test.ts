@@ -552,6 +552,17 @@ describe("RepoTypeahead", () => {
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
 
     await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    const giteaRow = screen.getByRole("option", {
+      name: "gitea/github.com/acme/widgets",
+    });
+    expect(giteaRow.querySelector(".repo-tree-label")?.textContent).toBe("gitea/widgets");
+    expect(
+      screen
+        .getByRole("option", {
+          name: "github/github.com/acme/widgets",
+        })
+        .querySelector(".repo-tree-label")?.textContent,
+    ).toBe("github/widgets");
     await fireEvent.mouseDown(
       screen.getByRole("option", {
         name: "gitea/github.com/acme/widgets",

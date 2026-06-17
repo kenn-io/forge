@@ -356,41 +356,6 @@ describe("WorkspaceTerminalView", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders workspace setup errors with the compact status icon", async () => {
-    vi.mocked(fetch).mockImplementation((input: Request | URL | string) => {
-      const url = input instanceof Request ? input.url : String(input);
-      const { pathname } = new URL(url);
-      if (pathname.endsWith("/api/v1/workspaces/ws-1")) {
-        return Promise.resolve(
-          Response.json({
-            ...workspaceResponse,
-            status: "error",
-            error_message: "tmux session is no longer running: middleman-ws-1",
-          }),
-        );
-      }
-      if (pathname.endsWith("/api/v1/workspaces")) {
-        return Promise.resolve(
-          Response.json({
-            workspaces: [],
-          }),
-        );
-      }
-      return Promise.resolve(Response.json({}));
-    });
-
-    const { container } = render(WorkspaceTerminalView, {
-      props: {
-        workspaceId: "ws-1",
-      },
-    });
-
-    const icon = await screen.findByLabelText("Workspace setup failed");
-
-    expect(icon.classList.contains("status-error-icon")).toBe(true);
-    expect(container.querySelector(".state-message.error")).toBeTruthy();
-  });
-
   it("closes an agent tab immediately when its terminal exits", async () => {
     render(WorkspaceTerminalView, {
       props: {

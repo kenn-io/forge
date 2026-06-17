@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -128,4 +129,27 @@ func TestWorktreeDiffTotalsEmptyDirErrors(t *testing.T) {
 	_, _, ok, err := WorktreeDiffTotals(t.Context(), "", "main")
 	require.Error(t, err)
 	require.False(t, ok)
+}
+
+// TestWorktreeNumstatArgsCarriesDiffHardening pins the totals sampler to
+// gitclone.DiffArgs so it keeps the --no-ext-diff/--no-textconv flags every
+// other worktree diff in this package carries. A behavioral marker test (assert
+// a repo-local diff.external/textconv script never runs) cannot distinguish the
+// fix here: a plain `git diff --numstat` never invokes those drivers regardless
+// of the flags, so such a test would pass with or without the hardening and be a
+// tautology. This pins the argument construction instead — it fails if the path
+// reverts to hand-built args that drop the hardening.
+func TestWorktreeNumstatArgsCarriesDiffHardening(t *testing.T) {
+	assert := assert.New(t)
+	args := worktreeNumstatArgs("--merge-base", "origin/main")
+
+	require.NotEmpty(t, args)
+	assert.Equal("diff", args[0], "first token must be the git subcommand")
+	assert.Contains(args, "--no-ext-diff", "external diff drivers must stay disabled")
+	assert.Contains(args, "--no-textconv", "textconv filters must stay disabled")
+	assert.Contains(args, "--numstat")
+	// Base refs and the directory pathspec still thread through unchanged.
+	assert.Contains(args, "--merge-base")
+	assert.Contains(args, "origin/main")
+	assert.Equal([]string{"--", "."}, args[len(args)-2:], "pathspec must terminate the args")
 }

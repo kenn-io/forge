@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/procutil"
 )
 
@@ -98,6 +99,24 @@ func mergeBaseRefs(defaultBranch string) []string {
 	return []string{"origin/" + defaultBranch, defaultBranch}
 }
 
+// worktreeNumstatArgs builds the `git diff --numstat -z <baseArgs> -- .`
+// argument list for the totals sampler, scoped to the current directory. It
+// uses the same rename/copy detection flags as the sidebar diff path so a
+// renamed or copied file counts its content delta instead of full delete/add
+// churn. The flags are threaded through gitclone.DiffArgs so this sampling path
+// stays compliant with the documented invariant that every worktree diff in
+// internal/workspace carries the --no-ext-diff/--no-textconv hardening. (A
+// plain --numstat does not itself invoke external diff or textconv drivers, so
+// this is defense-in-depth against a future patch-producing flag, not a fix for
+// active command execution on this path.)
+func worktreeNumstatArgs(baseArgs ...string) []string {
+	args := append(
+		gitclone.DiffArgs("--numstat", "-z", "-M", "-C", "--find-copies-harder"),
+		baseArgs...,
+	)
+	return append(args, "--", ".")
+}
+
 // worktreeNumstatAgainst runs `git diff --numstat -z <baseArgs> -- .` and sums
 // the per-file counts. hit is true when git exited cleanly; noMergeBase reports
 // the "no merge base" failure so the caller can fall back to the empty tree.
@@ -108,15 +127,7 @@ func mergeBaseRefs(defaultBranch string) []string {
 func worktreeNumstatAgainst(
 	ctx context.Context, dir string, baseArgs ...string,
 ) (added, removed int, hit, noMergeBase bool, err error) {
-	// The same rename/copy detection flags as the sidebar diff path, so a
-	// renamed or copied file counts its content delta instead of full
-	// delete/add churn.
-	args := append(
-		[]string{"diff", "--numstat", "-z", "-M", "-C", "--find-copies-harder"},
-		baseArgs...,
-	)
-	args = append(args, "--", ".")
-	cmd := gitcmd.New().Command(ctx, dir, args...)
+	cmd := gitcmd.New().Command(ctx, dir, worktreeNumstatArgs(baseArgs...)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

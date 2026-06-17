@@ -315,3 +315,17 @@ func assertWorkspaceRuntimeTarget(
 	}
 	require.Failf(t, "runtime target not found", "key %q", key)
 }
+
+func assertWorkspaceRuntimeTargetAbsent(
+	t *testing.T,
+	targets []generated.LaunchTarget,
+	key string,
+) {
+	t.Helper()
+
+	for _, target := range targets {
+		if target.Key == key {
+			require.Failf(t, "runtime target should be hidden", "key %q", key)
+		}
+	}
+}

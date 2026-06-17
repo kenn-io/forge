@@ -38,10 +38,10 @@ func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
 	assertWorkspaceRuntimeTarget(
 		t, *resp.JSON200.LaunchTargets, "plain_shell",
 	)
-	assertWorkspaceRuntimeTarget(t, *resp.JSON200.LaunchTargets, "shell")
+	assertWorkspaceRuntimeTargetAbsent(t, *resp.JSON200.LaunchTargets, "shell")
 }
 
-func TestWorkspaceRuntimeTargetsUseConfiguredTmuxCommandE2E(t *testing.T) {
+func TestWorkspaceRuntimeTargetsHideInternalShellTargetE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -65,15 +65,17 @@ func TestWorkspaceRuntimeTargetsUseConfiguredTmuxCommandE2E(t *testing.T) {
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.LaunchTargets)
 
-	var shell generated.LaunchTarget
+	foundPlainShell := false
 	for _, target := range *resp.JSON200.LaunchTargets {
-		if target.Key == "shell" {
-			shell = target
-			break
+		if target.Key == string(localruntime.LaunchTargetShell) {
+			require.Fail("internal shell target should not be exposed")
+		}
+		if target.Key == string(localruntime.LaunchTargetPlainShell) {
+			foundPlainShell = true
+			assert.True(target.Available)
 		}
 	}
-	assert.Equal([]string{tmuxPath, "--scope", "tmux"}, *shell.Command)
-	assert.True(shell.Available)
+	assert.True(foundPlainShell, "plain shell target should be exposed")
 }
 
 func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {

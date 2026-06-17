@@ -5,7 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, request as playwrightRequest, test, type APIRequestContext, type Locator } from "@playwright/test";
+import { expect, request as playwrightRequest, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 type WorkspaceStatusResponse = {
@@ -94,13 +94,20 @@ async function pierreDiffText(file: Locator): Promise<string> {
   return await file.locator(".pierre-diff").evaluate((host) => host.shadowRoot?.textContent ?? "");
 }
 
+async function openTerminalWorkflowTab(page: Page): Promise<void> {
+  const terminalPanel = page.getByRole("region", { name: "Terminal panel" });
+  await terminalPanel.getByRole("button", { name: "New terminal" }).click();
+  await expect(terminalPanel.getByRole("button", { name: "Move terminal panel to workflow" })).toBeVisible();
+  await terminalPanel.getByRole("button", { name: "Move terminal panel to workflow" }).click();
+}
+
 test.describe("workspace tab persistence", () => {
   test.describe.configure({
     mode: "serial",
     timeout: lockedWorkspaceTestTimeoutMs,
   });
 
-  test("opening shell tab keeps Home pane mounted across tab switches", async ({ page }) => {
+  test("opening terminal tab keeps Home pane mounted across tab switches", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -126,41 +133,39 @@ test.describe("workspace tab persistence", () => {
       const workflow = page.getByRole("region", { name: "Workflow panes" });
       const panes = workflow.locator(".tabbed-panel-tab-panel");
       const homeTab = workflow.getByRole("tab", { name: "Home" });
-      const tmuxTab = workflow.getByRole("tab", { name: "Shell" });
+      const terminalTab = workflow.getByRole("tab", { name: "Terminal" });
 
       // Initial state: only the Home pane is in the stage.
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
       await expect(panes).toHaveCount(1);
 
-      // Open the shell tab. It is backed by tmux when available and is
-      // available because tmux is a built-in launch target.
-      await workflow.getByRole("button", { name: "Shell" }).click();
+      await openTerminalWorkflowTab(page);
 
-      // After opening Shell, both Home and Shell panes should be in
-      // the DOM, with Shell marked active.
+      // After opening Terminal, both Home and Terminal panes should be
+      // in the DOM, with Terminal marked active.
       await expect(panes).toHaveCount(2);
-      await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
-      const tmuxPane = workflow.locator(".tabbed-panel-tab-panel.active");
-      await expect(tmuxPane).toHaveCount(1);
+      await expect(terminalTab).toHaveAttribute("aria-selected", "true");
+      const terminalPane = workflow.locator(".tabbed-panel-tab-panel.active");
+      await expect(terminalPane).toHaveCount(1);
 
-      // Mark the shell pane so we can later confirm it's the same
+      // Mark the terminal pane so we can later confirm it's the same
       // DOM element rather than a fresh remount.
-      await tmuxPane.evaluate((el) => {
-        el.setAttribute("data-test-tmux-id", "preserved");
+      await terminalPane.evaluate((el) => {
+        el.setAttribute("data-test-terminal-id", "preserved");
       });
 
-      // Switch to Home: shell pane must remain mounted.
+      // Switch to Home: terminal pane must remain mounted.
       await homeTab.click();
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
       await expect(panes).toHaveCount(2);
-      await expect(workflow.locator('.tabbed-panel-tab-panel[data-test-tmux-id="preserved"]')).toHaveCount(1);
+      await expect(workflow.locator('.tabbed-panel-tab-panel[data-test-terminal-id="preserved"]')).toHaveCount(1);
 
-      // Switch back to Shell: must be the same DOM element, not a
+      // Switch back to Terminal: must be the same DOM element, not a
       // freshly mounted one.
-      await tmuxTab.click();
+      await terminalTab.click();
       await expect(panes).toHaveCount(2);
       const reactivated = workflow.locator(".tabbed-panel-tab-panel.active");
-      await expect(reactivated).toHaveAttribute("data-test-tmux-id", "preserved");
+      await expect(reactivated).toHaveAttribute("data-test-terminal-id", "preserved");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -190,18 +195,18 @@ test.describe("workspace tab persistence", () => {
         name: "Workflow panes",
       });
       const homeTab = workflow.getByRole("tab", { name: "Home" });
-      const tmuxTab = workflow.getByRole("tab", { name: "Shell" });
+      const terminalTab = workflow.getByRole("tab", { name: "Terminal" });
 
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 
-      await workflow.getByRole("button", { name: "Shell" }).click();
-      await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
+      await openTerminalWorkflowTab(page);
+      await expect(terminalTab).toHaveAttribute("aria-selected", "true");
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${secondWorkspace.id}`);
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`);
-      await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
+      await expect(terminalTab).toHaveAttribute("aria-selected", "true");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -377,8 +382,8 @@ test.describe("workspace tab persistence", () => {
       await expect(panes).toHaveCount(1);
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 
-      await workflow.getByRole("button", { name: "Shell" }).click();
-      await expect(workflow.getByRole("tab", { name: "Shell" })).toHaveAttribute("aria-selected", "true");
+      await openTerminalWorkflowTab(page);
+      await expect(workflow.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       await expect(panes).toHaveCount(2);
 
@@ -387,7 +392,7 @@ test.describe("workspace tab persistence", () => {
         await page.keyboard.press(key);
       }
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
-      await expect(workflow.getByRole("tab", { name: "Shell" })).toHaveAttribute("aria-selected", "true");
+      await expect(workflow.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
       await expect(alphaDiffFile).toBeVisible();
     } finally {
       await api?.dispose();

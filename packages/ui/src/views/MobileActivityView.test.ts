@@ -258,10 +258,7 @@ describe("MobileActivityView hide closed/merged", () => {
   });
 
   it("keeps every notification when hide closed/merged is off", () => {
-    items.value = [
-      notificationItem("1", "Open subject", "open"),
-      notificationItem("2", "Merged subject", "merged"),
-    ];
+    items.value = [notificationItem("1", "Open subject", "open"), notificationItem("2", "Merged subject", "merged")];
 
     const { container } = render(MobileActivityView, {
       props: { onSelectItem },

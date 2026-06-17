@@ -295,6 +295,8 @@ func TestRegistryFindsNotificationReaderAndMutator(t *testing.T) {
 // so the registry must gate on the declared capability rather than
 // interface satisfaction alone.
 func TestRegistryReturnsUnsupportedCapabilityForStubNotificationProvider(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	registry, err := NewRegistry(testNotificationProvider{
 		testProvider: testProvider{
 			kind: KindGitLab,
@@ -302,17 +304,16 @@ func TestRegistryReturnsUnsupportedCapabilityForStubNotificationProvider(t *test
 			caps: Capabilities{},
 		},
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	_, err = registry.NotificationReader(KindGitLab, "gitlab.com")
 	var platformErr *Error
-	require.ErrorAs(t, err, &platformErr)
-	require.ErrorIs(t, err, ErrUnsupportedCapability)
-	assert := assert.New(t)
+	require.ErrorAs(err, &platformErr)
+	require.ErrorIs(err, ErrUnsupportedCapability)
 	assert.Equal("read_notifications", platformErr.Capability)
 
 	_, err = registry.NotificationMutator(KindGitLab, "gitlab.com")
-	require.ErrorAs(t, err, &platformErr)
-	require.ErrorIs(t, err, ErrUnsupportedCapability)
+	require.ErrorAs(err, &platformErr)
+	require.ErrorIs(err, ErrUnsupportedCapability)
 	assert.Equal("notification_mutation", platformErr.Capability)
 }

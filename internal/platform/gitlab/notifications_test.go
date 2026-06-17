@@ -13,7 +13,8 @@ import (
 // both the error shape and the undeclared capability flags.
 func TestNotificationStubsReturnUnsupportedCapability(t *testing.T) {
 	client, err := NewClient("gitlab.example.com", testTokenSource("token"))
-	Require.NoError(t, err)
+	require := Require.New(t)
+	require.NoError(err)
 
 	assert := Assert.New(t)
 	caps := client.Capabilities()
@@ -22,14 +23,14 @@ func TestNotificationStubsReturnUnsupportedCapability(t *testing.T) {
 
 	_, _, err = client.ListNotifications(t.Context(), platform.NotificationListOptions{})
 	var platformErr *platform.Error
-	Require.ErrorAs(t, err, &platformErr)
-	Require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+	require.ErrorAs(err, &platformErr)
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
 	assert.Equal("read_notifications", platformErr.Capability)
 	assert.Equal(platform.KindGitLab, platformErr.Provider)
 	assert.Equal("gitlab.example.com", platformErr.PlatformHost)
 
 	err = client.MarkNotificationThreadRead(t.Context(), "1")
-	Require.ErrorAs(t, err, &platformErr)
-	Require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+	require.ErrorAs(err, &platformErr)
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
 	assert.Equal("notification_mutation", platformErr.Capability)
 }

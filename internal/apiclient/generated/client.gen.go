@@ -153,9 +153,13 @@ func (e MergeRequestResponseState) Valid() bool {
 const (
 	BadRequest            ProblemErrorCode = "badRequest"
 	BranchConflict        ProblemErrorCode = "branchConflict"
+	BranchInUse           ProblemErrorCode = "branchInUse"
+	BranchProtected       ProblemErrorCode = "branchProtected"
 	CommentNotFound       ProblemErrorCode = "commentNotFound"
 	Conflict              ProblemErrorCode = "conflict"
+	DestinationExists     ProblemErrorCode = "destinationExists"
 	Forbidden             ProblemErrorCode = "forbidden"
+	HookFailed            ProblemErrorCode = "hookFailed"
 	InternalError         ProblemErrorCode = "internalError"
 	IssueNotFound         ProblemErrorCode = "issueNotFound"
 	NotFound              ProblemErrorCode = "notFound"
@@ -166,11 +170,14 @@ const (
 	RepoNotFound          ProblemErrorCode = "repoNotFound"
 	ServiceUnavailable    ProblemErrorCode = "serviceUnavailable"
 	SettingsUnavailable   ProblemErrorCode = "settingsUnavailable"
+	ToolMissing           ProblemErrorCode = "toolMissing"
+	ToolUnauthenticated   ProblemErrorCode = "toolUnauthenticated"
 	Unauthorized          ProblemErrorCode = "unauthorized"
 	UnsupportedCapability ProblemErrorCode = "unsupportedCapability"
 	UpstreamError         ProblemErrorCode = "upstreamError"
 	ValidationError       ProblemErrorCode = "validationError"
 	WorkspaceNotFound     ProblemErrorCode = "workspaceNotFound"
+	WorktreeDirty         ProblemErrorCode = "worktreeDirty"
 )
 
 // Valid indicates whether the value is a known member of the ProblemErrorCode enum.
@@ -180,11 +187,19 @@ func (e ProblemErrorCode) Valid() bool {
 		return true
 	case BranchConflict:
 		return true
+	case BranchInUse:
+		return true
+	case BranchProtected:
+		return true
 	case CommentNotFound:
 		return true
 	case Conflict:
 		return true
+	case DestinationExists:
+		return true
 	case Forbidden:
+		return true
+	case HookFailed:
 		return true
 	case InternalError:
 		return true
@@ -206,6 +221,10 @@ func (e ProblemErrorCode) Valid() bool {
 		return true
 	case SettingsUnavailable:
 		return true
+	case ToolMissing:
+		return true
+	case ToolUnauthenticated:
+		return true
 	case Unauthorized:
 		return true
 	case UnsupportedCapability:
@@ -215,6 +234,8 @@ func (e ProblemErrorCode) Valid() bool {
 	case ValidationError:
 		return true
 	case WorkspaceNotFound:
+		return true
+	case WorktreeDirty:
 		return true
 	default:
 		return false
@@ -513,6 +534,43 @@ type BulkAddReposRequest struct {
 	Repos  []BulkAddRepoRequest `json:"repos"`
 }
 
+// Capabilities defines model for Capabilities.
+type Capabilities struct {
+	Commands     CommandCapabilities    `json:"commands"`
+	Dependencies DependencyCapabilities `json:"dependencies"`
+	Features     FeatureCapabilities    `json:"features"`
+}
+
+// CheckDetail defines model for CheckDetail.
+type CheckDetail struct {
+	Conclusion *string `json:"conclusion,omitempty"`
+	Name       string  `json:"name"`
+	Status     string  `json:"status"`
+	Url        *string `json:"url,omitempty"`
+}
+
+// CloneProjectInputBody defines model for CloneProjectInputBody.
+type CloneProjectInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string `json:"$schema,omitempty"`
+	Branch      *string `json:"branch,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
+	Path        string  `json:"path"`
+	Url         string  `json:"url"`
+}
+
+// CommandCapabilities defines model for CommandCapabilities.
+type CommandCapabilities struct {
+	ProjectAdd                bool `json:"projectAdd"`
+	ProjectRemove             bool `json:"projectRemove"`
+	RepositoryClone           bool `json:"repositoryClone"`
+	SessionEnsure             bool `json:"sessionEnsure"`
+	SessionKill               bool `json:"sessionKill"`
+	WorktreeCreate            bool `json:"worktreeCreate"`
+	WorktreeDelete            bool `json:"worktreeDelete"`
+	WorktreeImportPullRequest bool `json:"worktreeImportPullRequest"`
+}
+
 // CommentAutocompleteReference defines model for CommentAutocompleteReference.
 type CommentAutocompleteReference struct {
 	Kind   string `json:"kind"`
@@ -637,6 +695,18 @@ type CreateWorkspaceInputBody struct {
 	Name         string  `json:"name"`
 	Owner        string  `json:"owner"`
 	PlatformHost string  `json:"platform_host"`
+}
+
+// CreateWorktreeFromMergeRequestInputBody defines model for CreateWorktreeFromMergeRequestInputBody.
+type CreateWorktreeFromMergeRequestInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string `json:"$schema,omitempty"`
+	BaseDir      *string `json:"base_dir,omitempty"`
+	Branch       string  `json:"branch"`
+	Number       int64   `json:"number"`
+	Path         *string `json:"path,omitempty"`
+	SetupScript  *string `json:"setup_script,omitempty"`
+	WorktreeName *string `json:"worktree_name,omitempty"`
 }
 
 // CrossFolderHit defines model for CrossFolderHit.
@@ -948,6 +1018,15 @@ type ErrorDetail struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
+// FeatureCapabilities defines model for FeatureCapabilities.
+type FeatureCapabilities struct {
+	MoshAttach      bool    `json:"moshAttach"`
+	ResourceMetrics bool    `json:"resourceMetrics"`
+	SetupHook       bool    `json:"setupHook"`
+	TeardownHook    bool    `json:"teardownHook"`
+	TmuxVersion     *string `json:"tmuxVersion,omitempty"`
+}
+
 // FilePreviewResponse defines model for FilePreviewResponse.
 type FilePreviewResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -966,6 +1045,39 @@ type FilesResponse struct {
 	Files               *[]DiffFile `json:"files"`
 	Stale               bool        `json:"stale"`
 	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
+}
+
+// FilesystemCompleteOutputBody defines model for FilesystemCompleteOutputBody.
+type FilesystemCompleteOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string   `json:"$schema,omitempty"`
+	Completions *[]string `json:"completions"`
+}
+
+// FilesystemValidateRepoOutputBody defines model for FilesystemValidateRepoOutputBody.
+type FilesystemValidateRepoOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	IsValid  bool    `json:"is_valid"`
+	Message  *string `json:"message,omitempty"`
+	RootPath *string `json:"root_path,omitempty"`
+}
+
+// FleetSSHPeer defines model for FleetSSHPeer.
+type FleetSSHPeer struct {
+	Destination   string  `json:"destination"`
+	Key           string  `json:"key"`
+	Name          *string `json:"name,omitempty"`
+	Platform      *string `json:"platform,omitempty"`
+	RemoteCommand *string `json:"remote_command,omitempty"`
+}
+
+// FleetSSHPeersBody defines model for FleetSSHPeersBody.
+type FleetSSHPeersBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string        `json:"$schema,omitempty"`
+	RestartRequired bool           `json:"restart_required"`
+	SshPeers        []FleetSSHPeer `json:"ssh_peers"`
 }
 
 // GitChangesResponse defines model for GitChangesResponse.
@@ -1022,6 +1134,59 @@ type Hit struct {
 	Score   int64  `json:"score"`
 }
 
+// HostDiagnostic defines model for HostDiagnostic.
+type HostDiagnostic struct {
+	BlocksOperations   *[]string `json:"blocksOperations"`
+	Code               string    `json:"code"`
+	RecoverySuggestion string    `json:"recoverySuggestion"`
+	Severity           string    `json:"severity"`
+	Summary            string    `json:"summary"`
+}
+
+// HostOperationAvailability defines model for HostOperationAvailability.
+type HostOperationAvailability struct {
+	Available         bool    `json:"available"`
+	UnavailableReason *string `json:"unavailableReason,omitempty"`
+}
+
+// HostRuntimeSession defines model for HostRuntimeSession.
+type HostRuntimeSession struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string    `json:"$schema,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ExitCode    *int64     `json:"exit_code,omitempty"`
+	ExitedAt    *time.Time `json:"exited_at,omitempty"`
+	Key         string     `json:"key"`
+	Kind        string     `json:"kind"`
+	Label       string     `json:"label"`
+	Status      string     `json:"status"`
+	TmuxSession *string    `json:"tmux_session,omitempty"`
+}
+
+// HostSummary defines model for HostSummary.
+type HostSummary struct {
+	Capabilities          *Capabilities                        `json:"capabilities,omitempty"`
+	ConfigKey             string                               `json:"configKey"`
+	ConnectionState       *string                              `json:"connectionState,omitempty"`
+	Diagnostics           *[]HostDiagnostic                    `json:"diagnostics"`
+	Error                 *string                              `json:"error,omitempty"`
+	Hostname              *string                              `json:"hostname,omitempty"`
+	Id                    string                               `json:"id"`
+	Kind                  string                               `json:"kind"`
+	LastSeenAt            *string                              `json:"lastSeenAt,omitempty"`
+	Name                  string                               `json:"name"`
+	OperationAvailability map[string]HostOperationAvailability `json:"operationAvailability"`
+	Platform              string                               `json:"platform"`
+	PreferredTransport    string                               `json:"preferredTransport"`
+	Reachable             bool                                 `json:"reachable"`
+	SshDestination        *string                              `json:"sshDestination,omitempty"`
+	TmuxLastPolledAt      *string                              `json:"tmuxLastPolledAt,omitempty"`
+	TmuxMetricsError      *string                              `json:"tmuxMetricsError,omitempty"`
+	TmuxProbeError        *string                              `json:"tmuxProbeError,omitempty"`
+	TmuxSessions          *[]TmuxSessionInfo                   `json:"tmuxSessions"`
+	Version               *string                              `json:"version,omitempty"`
+}
+
 // Hunk defines model for Hunk.
 type Hunk struct {
 	Lines    *[]Line `json:"lines"`
@@ -1030,6 +1195,18 @@ type Hunk struct {
 	OldCount int64   `json:"old_count"`
 	OldStart int64   `json:"old_start"`
 	Section  *string `json:"section,omitempty"`
+}
+
+// InspectProjectWorktreeOutputBody defines model for InspectProjectWorktreeOutputBody.
+type InspectProjectWorktreeOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema                    *string   `json:"$schema,omitempty"`
+	AliveSessionCount         int64     `json:"alive_session_count"`
+	BranchDeleteBlockedReason *string   `json:"branch_delete_blocked_reason,omitempty"`
+	CanDeleteBranch           bool      `json:"can_delete_branch"`
+	DirtyFileCount            int64     `json:"dirty_file_count"`
+	IsDirty                   bool      `json:"is_dirty"`
+	SiblingWorktreeIds        *[]string `json:"sibling_worktree_ids,omitempty"`
 }
 
 // Issue defines model for Issue.
@@ -1167,6 +1344,29 @@ type Label struct {
 	Name        string  `json:"name"`
 }
 
+// LaunchHostRuntimeSessionInputBody defines model for LaunchHostRuntimeSessionInputBody.
+type LaunchHostRuntimeSessionInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string            `json:"$schema,omitempty"`
+	Command    *[]string          `json:"command"`
+	Cwd        string             `json:"cwd"`
+	Env        *map[string]string `json:"env,omitempty"`
+	Label      *string            `json:"label,omitempty"`
+	SessionKey *string            `json:"session_key,omitempty"`
+}
+
+// LaunchProjectWorktreeRuntimeSessionInputBody defines model for LaunchProjectWorktreeRuntimeSessionInputBody.
+type LaunchProjectWorktreeRuntimeSessionInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string            `json:"$schema,omitempty"`
+	Command    *[]string          `json:"command,omitempty"`
+	Cwd        *string            `json:"cwd,omitempty"`
+	Env        *map[string]string `json:"env,omitempty"`
+	Label      *string            `json:"label,omitempty"`
+	SessionKey *string            `json:"session_key,omitempty"`
+	TargetKey  *string            `json:"target_key,omitempty"`
+}
+
 // LaunchTarget defines model for LaunchTarget.
 type LaunchTarget struct {
 	Available      bool      `json:"available"`
@@ -1181,8 +1381,9 @@ type LaunchTarget struct {
 // LaunchWorkspaceRuntimeSessionInputBody defines model for LaunchWorkspaceRuntimeSessionInputBody.
 type LaunchWorkspaceRuntimeSessionInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string `json:"$schema,omitempty"`
-	TargetKey string  `json:"target_key"`
+	Schema        *string `json:"$schema,omitempty"`
+	DisplayRegion *string `json:"display_region,omitempty"`
+	TargetKey     string  `json:"target_key"`
 }
 
 // Line defines model for Line.
@@ -1201,6 +1402,13 @@ type ListDocsFoldersOutputBody struct {
 	Folders *[]DocsFolderResponse `json:"folders"`
 }
 
+// ListHostRuntimeSessionsOutputBody defines model for ListHostRuntimeSessionsOutputBody.
+type ListHostRuntimeSessionsOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string               `json:"$schema,omitempty"`
+	Sessions *[]HostRuntimeSession `json:"sessions"`
+}
+
 // ListLaunchTargetsOutputBody defines model for ListLaunchTargetsOutputBody.
 type ListLaunchTargetsOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1208,11 +1416,25 @@ type ListLaunchTargetsOutputBody struct {
 	LaunchTargets *[]LaunchTarget `json:"launch_targets"`
 }
 
+// ListProjectBranchesOutputBody defines model for ListProjectBranchesOutputBody.
+type ListProjectBranchesOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string   `json:"$schema,omitempty"`
+	Branches *[]string `json:"branches"`
+}
+
 // ListProjectsOutputBody defines model for ListProjectsOutputBody.
 type ListProjectsOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema   *string            `json:"$schema,omitempty"`
 	Projects *[]ProjectResponse `json:"projects"`
+}
+
+// ListUserRepositoriesOutputBody defines model for ListUserRepositoriesOutputBody.
+type ListUserRepositoriesOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string           `json:"$schema,omitempty"`
+	Repositories *[]UserRepository `json:"repositories"`
 }
 
 // ListWorkspacesOutputBody defines model for ListWorkspacesOutputBody.
@@ -1392,6 +1614,15 @@ type MergeRequestResponseKanbanStatus string
 
 // MergeRequestResponseState defines model for MergeRequestResponse.State.
 type MergeRequestResponseState string
+
+// MergeRequestSummary defines model for MergeRequestSummary.
+type MergeRequestSummary struct {
+	IsDraft *bool   `json:"is_draft,omitempty"`
+	Number  int64   `json:"number"`
+	State   *string `json:"state,omitempty"`
+	Title   *string `json:"title,omitempty"`
+	Url     *string `json:"url,omitempty"`
+}
 
 // MessageSummary defines model for MessageSummary.
 type MessageSummary struct {
@@ -1693,6 +1924,49 @@ type ProjectResponse struct {
 	UpdatedAt        time.Time                `json:"updated_at"`
 }
 
+// ProjectSummary defines model for ProjectSummary.
+type ProjectSummary struct {
+	DefaultBranch    string  `json:"defaultBranch"`
+	HostID           string  `json:"hostID"`
+	Id               string  `json:"id"`
+	IsStale          *bool   `json:"isStale,omitempty"`
+	IsSynthesized    *bool   `json:"isSynthesized,omitempty"`
+	Name             string  `json:"name"`
+	Platform         *string `json:"platform,omitempty"`
+	PlatformCoverage *string `json:"platformCoverage,omitempty"`
+	PlatformURL      *string `json:"platformURL,omitempty"`
+	RegistryID       *string `json:"registryID,omitempty"`
+	RepositoryKind   string  `json:"repositoryKind"`
+	RootPath         string  `json:"rootPath"`
+	ScopedKey        string  `json:"scopedKey"`
+}
+
+// ProjectWorktreeRuntimeResponse defines model for ProjectWorktreeRuntimeResponse.
+type ProjectWorktreeRuntimeResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string                          `json:"$schema,omitempty"`
+	LaunchTargets *[]LaunchTarget                  `json:"launch_targets"`
+	Sessions      *[]ProjectWorktreeRuntimeSession `json:"sessions"`
+	ShellSession  *ProjectWorktreeRuntimeSession   `json:"shell_session,omitempty"`
+}
+
+// ProjectWorktreeRuntimeSession defines model for ProjectWorktreeRuntimeSession.
+type ProjectWorktreeRuntimeSession struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string    `json:"$schema,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ExitCode    *int64     `json:"exit_code,omitempty"`
+	ExitedAt    *time.Time `json:"exited_at,omitempty"`
+	Key         string     `json:"key"`
+	Kind        string     `json:"kind"`
+	Label       string     `json:"label"`
+	ProjectId   string     `json:"project_id"`
+	Status      string     `json:"status"`
+	TargetKey   string     `json:"target_key"`
+	TmuxSession *string    `json:"tmux_session,omitempty"`
+	WorktreeId  string     `json:"worktree_id"`
+}
+
 // ProviderCapabilitiesResponse defines model for ProviderCapabilitiesResponse.
 type ProviderCapabilitiesResponse struct {
 	AssigneeMutation       bool      `json:"assignee_mutation"`
@@ -1786,6 +2060,127 @@ type RateLimitsResponse struct {
 	Hosts  map[string]RateLimitHostStatus `json:"hosts"`
 }
 
+// RawHost defines model for RawHost.
+type RawHost struct {
+	Hostname         string             `json:"hostname"`
+	LastSeenAt       *string            `json:"lastSeenAt,omitempty"`
+	Platform         string             `json:"platform"`
+	TmuxLastPolledAt *string            `json:"tmuxLastPolledAt,omitempty"`
+	TmuxMetricsError *string            `json:"tmuxMetricsError,omitempty"`
+	TmuxProbeError   *string            `json:"tmuxProbeError,omitempty"`
+	TmuxSessions     *[]TmuxSessionInfo `json:"tmuxSessions,omitempty"`
+	Version          *string            `json:"version,omitempty"`
+}
+
+// RawProject defines model for RawProject.
+type RawProject struct {
+	BackendReady   *bool   `json:"backendReady,omitempty"`
+	DefaultBranch  *string `json:"defaultBranch,omitempty"`
+	HostKey        *string `json:"hostKey,omitempty"`
+	IsStale        *bool   `json:"isStale,omitempty"`
+	IsSynthesized  *bool   `json:"isSynthesized,omitempty"`
+	Name           string  `json:"name"`
+	Platform       *string `json:"platform,omitempty"`
+	PlatformHost   *string `json:"platformHost,omitempty"`
+	PlatformRepo   *string `json:"platformRepo,omitempty"`
+	RegistryId     *string `json:"registryId,omitempty"`
+	RepositoryKind *string `json:"repositoryKind,omitempty"`
+	RootPath       string  `json:"rootPath"`
+	ScopedKey      string  `json:"scopedKey"`
+}
+
+// RawRemoteHost defines model for RawRemoteHost.
+type RawRemoteHost struct {
+	BaseURL               *string            `json:"baseURL,omitempty"`
+	Capabilities          *Capabilities      `json:"capabilities,omitempty"`
+	Error                 *string            `json:"error,omitempty"`
+	Generation            *int64             `json:"generation,omitempty"`
+	HostKey               string             `json:"hostKey"`
+	LastSeenAt            *string            `json:"lastSeenAt,omitempty"`
+	Name                  string             `json:"name"`
+	Platform              *string            `json:"platform,omitempty"`
+	PlatformAuthenticated *bool              `json:"platformAuthenticated,omitempty"`
+	PreferredTransport    *string            `json:"preferredTransport,omitempty"`
+	Reachable             bool               `json:"reachable"`
+	SshDestination        *string            `json:"sshDestination,omitempty"`
+	TmuxLastPolledAt      *string            `json:"tmuxLastPolledAt,omitempty"`
+	TmuxMetricsError      *string            `json:"tmuxMetricsError,omitempty"`
+	TmuxProbeError        *string            `json:"tmuxProbeError,omitempty"`
+	TmuxSessions          *[]TmuxSessionInfo `json:"tmuxSessions,omitempty"`
+	Version               *string            `json:"version,omitempty"`
+}
+
+// RawSession defines model for RawSession.
+type RawSession struct {
+	AgentKind      *string  `json:"agentKind,omitempty"`
+	CpuPercent     *float64 `json:"cpuPercent,omitempty"`
+	ExecutableName *string  `json:"executableName,omitempty"`
+	HostKey        *string  `json:"hostKey,omitempty"`
+	Label          *string  `json:"label,omitempty"`
+	LastActiveAt   *string  `json:"lastActiveAt,omitempty"`
+	LastOutputAt   *string  `json:"lastOutputAt,omitempty"`
+	ProcessCount   *int64   `json:"processCount,omitempty"`
+	ResidentMB     *int64   `json:"residentMB,omitempty"`
+	Role           *string  `json:"role,omitempty"`
+	RuntimeKind    *string  `json:"runtimeKind,omitempty"`
+	ScopedKey      string   `json:"scopedKey"`
+	SessionKind    *string  `json:"sessionKind,omitempty"`
+	Status         string   `json:"status"`
+	WorktreeKey    *string  `json:"worktreeKey,omitempty"`
+}
+
+// RawSnapshot defines model for RawSnapshot.
+type RawSnapshot struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema                *string          `json:"$schema,omitempty"`
+	Capabilities          *Capabilities    `json:"capabilities,omitempty"`
+	Generation            int64            `json:"generation"`
+	Host                  RawHost          `json:"host"`
+	PlatformAuthenticated *bool            `json:"platformAuthenticated,omitempty"`
+	Projects              *[]RawProject    `json:"projects,omitempty"`
+	RemoteHosts           *[]RawRemoteHost `json:"remoteHosts,omitempty"`
+	SchemaVersion         int64            `json:"schemaVersion"`
+	Sessions              *[]RawSession    `json:"sessions,omitempty"`
+	Worktrees             *[]RawWorktree   `json:"worktrees,omitempty"`
+}
+
+// RawWorktree defines model for RawWorktree.
+type RawWorktree struct {
+	Branch             *string        `json:"branch,omitempty"`
+	ChecksDetail       *[]CheckDetail `json:"checksDetail,omitempty"`
+	ChecksStatus       *string        `json:"checksStatus,omitempty"`
+	DiffAdded          *int64         `json:"diffAdded,omitempty"`
+	DiffRemoved        *int64         `json:"diffRemoved,omitempty"`
+	HostKey            *string        `json:"hostKey,omitempty"`
+	IsHidden           *bool          `json:"isHidden,omitempty"`
+	IsPrimary          *bool          `json:"isPrimary,omitempty"`
+	IsStale            *bool          `json:"isStale,omitempty"`
+	LastPolledAt       *string        `json:"lastPolledAt,omitempty"`
+	LinkedIssueNumbers *[]int64       `json:"linkedIssueNumbers,omitempty"`
+	LinkedPRNumber     *int64         `json:"linkedPRNumber,omitempty"`
+	Name               string         `json:"name"`
+	Path               string         `json:"path"`
+	PrState            *string        `json:"prState,omitempty"`
+	PrTitle            *string        `json:"prTitle,omitempty"`
+	PrURL              *string        `json:"prURL,omitempty"`
+	PrUpdatedAt        *string        `json:"prUpdatedAt,omitempty"`
+	ProjectKey         string         `json:"projectKey"`
+	RegistryId         *string        `json:"registryId,omitempty"`
+	ScopedKey          string         `json:"scopedKey"`
+	SessionBackend     *string        `json:"sessionBackend,omitempty"`
+	SyncAhead          *int64         `json:"syncAhead,omitempty"`
+	SyncBehind         *int64         `json:"syncBehind,omitempty"`
+}
+
+// RefreshFleetStatsOutputBody defines model for RefreshFleetStatsOutputBody.
+type RefreshFleetStatsOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Refreshed True once the synchronous stats pass has completed.
+	Refreshed bool `json:"refreshed"`
+}
+
 // RegisterProjectInputBody defines model for RegisterProjectInputBody.
 type RegisterProjectInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1799,9 +2194,40 @@ type RegisterProjectInputBody struct {
 // RegisterWorktreeInputBody defines model for RegisterWorktreeInputBody.
 type RegisterWorktreeInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Branch string  `json:"branch"`
-	Path   string  `json:"path"`
+	Schema       *string `json:"$schema,omitempty"`
+	BaseDir      *string `json:"base_dir,omitempty"`
+	BaseRef      *string `json:"base_ref,omitempty"`
+	Branch       string  `json:"branch"`
+	CreateOnDisk *bool   `json:"create_on_disk,omitempty"`
+	Path         *string `json:"path,omitempty"`
+	SetupScript  *string `json:"setup_script,omitempty"`
+	WorktreeName *string `json:"worktree_name,omitempty"`
+}
+
+// RemoveStaleWorktreeInputBody defines model for RemoveStaleWorktreeInputBody.
+type RemoveStaleWorktreeInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string `json:"$schema,omitempty"`
+	RemoveBranch *bool   `json:"removeBranch,omitempty"`
+	ScopedKey    string  `json:"scopedKey"`
+}
+
+// RemoveStaleWorktreeOutputBody defines model for RemoveStaleWorktreeOutputBody.
+type RemoveStaleWorktreeOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Removed bool    `json:"removed"`
+}
+
+// RemoveWorktreeInputBody defines model for RemoveWorktreeInputBody.
+type RemoveWorktreeInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string `json:"$schema,omitempty"`
+	Force          *bool   `json:"force,omitempty"`
+	RemoveBranch   *bool   `json:"remove_branch,omitempty"`
+	RemoveFromDisk *bool   `json:"remove_from_disk,omitempty"`
+	TeardownScript *string `json:"teardown_script,omitempty"`
+	WorktreeName   *string `json:"worktree_name,omitempty"`
 }
 
 // RenameWorkspaceRuntimeSessionInputBody defines model for RenameWorkspaceRuntimeSessionInputBody.
@@ -2034,6 +2460,19 @@ type RoborevStatusResponse struct {
 	Version   string  `json:"version"`
 }
 
+// RuntimeAttachSpecResponse defines model for RuntimeAttachSpecResponse.
+type RuntimeAttachSpecResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema            *string   `json:"$schema,omitempty"`
+	Command           *[]string `json:"command"`
+	Kind              string    `json:"kind"`
+	RequiresLocalHost bool      `json:"requires_local_host"`
+	SessionKey        string    `json:"session_key"`
+	TargetKey         string    `json:"target_key"`
+	TmuxSession       string    `json:"tmux_session"`
+	Version           int64     `json:"version"`
+}
+
 // SavedSearch defines model for SavedSearch.
 type SavedSearch struct {
 	Name  string `json:"name"`
@@ -2043,16 +2482,43 @@ type SavedSearch struct {
 // SessionInfo defines model for SessionInfo.
 type SessionInfo struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string    `json:"$schema,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	ExitCode    *int64     `json:"exit_code,omitempty"`
-	ExitedAt    *time.Time `json:"exited_at,omitempty"`
-	Key         string     `json:"key"`
-	Kind        string     `json:"kind"`
-	Label       string     `json:"label"`
-	Status      string     `json:"status"`
-	TargetKey   string     `json:"target_key"`
-	WorkspaceId string     `json:"workspace_id"`
+	Schema        *string    `json:"$schema,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	DisplayRegion string     `json:"display_region"`
+	ExitCode      *int64     `json:"exit_code,omitempty"`
+	ExitedAt      *time.Time `json:"exited_at,omitempty"`
+	Key           string     `json:"key"`
+	Kind          string     `json:"kind"`
+	Label         string     `json:"label"`
+	Status        string     `json:"status"`
+	TargetKey     string     `json:"target_key"`
+	WorkspaceId   string     `json:"workspace_id"`
+}
+
+// SessionSummary defines model for SessionSummary.
+type SessionSummary struct {
+	AgentKind      *string  `json:"agentKind,omitempty"`
+	CpuPercent     *float64 `json:"cpuPercent,omitempty"`
+	ExecutableName *string  `json:"executableName,omitempty"`
+	HostID         string   `json:"hostID"`
+	Id             string   `json:"id"`
+	LastActiveAt   *string  `json:"lastActiveAt,omitempty"`
+	LastOutputAt   *string  `json:"lastOutputAt,omitempty"`
+	ProcessCount   *int64   `json:"processCount,omitempty"`
+	ResidentMB     *int64   `json:"residentMB,omitempty"`
+	Role           *string  `json:"role,omitempty"`
+	RuntimeKind    string   `json:"runtimeKind"`
+	ScopedKey      string   `json:"scopedKey"`
+	SessionKind    *string  `json:"sessionKind,omitempty"`
+	Status         string   `json:"status"`
+	WorktreeID     *string  `json:"worktreeID,omitempty"`
+}
+
+// SetActiveWorktreeInputBody defines model for SetActiveWorktreeInputBody.
+type SetActiveWorktreeInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Key    string  `json:"key"`
 }
 
 // SetAssigneesRequest defines model for SetAssigneesRequest.
@@ -2090,6 +2556,27 @@ type SetReviewersRequest struct {
 	Reviewers []string `json:"reviewers"`
 }
 
+// SetWorktreeHiddenInputBody defines model for SetWorktreeHiddenInputBody.
+type SetWorktreeHiddenInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Hidden bool    `json:"hidden"`
+}
+
+// SetWorktreeLinkedIssuesInputBody defines model for SetWorktreeLinkedIssuesInputBody.
+type SetWorktreeLinkedIssuesInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema             *string  `json:"$schema,omitempty"`
+	LinkedIssueNumbers *[]int64 `json:"linked_issue_numbers"`
+}
+
+// SetWorktreeSessionBackendInputBody defines model for SetWorktreeSessionBackendInputBody.
+type SetWorktreeSessionBackendInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string `json:"$schema,omitempty"`
+	SessionBackend *string `json:"session_backend"`
+}
+
 // SettingsResponse defines model for SettingsResponse.
 type SettingsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -2100,6 +2587,21 @@ type SettingsResponse struct {
 	Notifications NotificationsSettingsResponse `json:"notifications"`
 	Repos         []ConfiguredRepoStatus        `json:"repos"`
 	Terminal      Terminal                      `json:"terminal"`
+}
+
+// Snapshot defines model for Snapshot.
+type Snapshot struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema                *string            `json:"$schema,omitempty"`
+	ActivePlatformHost    *string            `json:"activePlatformHost,omitempty"`
+	Generation            int64              `json:"generation"`
+	Hosts                 *[]HostSummary     `json:"hosts"`
+	PlatformAuthenticated *bool              `json:"platformAuthenticated,omitempty"`
+	ProjectMap            *map[string]string `json:"projectMap,omitempty"`
+	Projects              *[]ProjectSummary  `json:"projects"`
+	SchemaVersion         int64              `json:"schemaVersion"`
+	Sessions              *[]SessionSummary  `json:"sessions"`
+	Worktrees             *[]WorktreeSummary `json:"worktrees"`
 }
 
 // SnippetRange defines model for SnippetRange.
@@ -2197,11 +2699,60 @@ type Terminal struct {
 // TerminalRenderer defines model for Terminal.Renderer.
 type TerminalRenderer string
 
+// TmuxSessionInfo defines model for TmuxSessionInfo.
+type TmuxSessionInfo struct {
+	CreatedAt        *string           `json:"createdAt,omitempty"`
+	Managed          bool              `json:"managed"`
+	Name             string            `json:"name"`
+	SessionScopedKey *string           `json:"sessionScopedKey,omitempty"`
+	WindowCount      int64             `json:"windowCount"`
+	Windows          *[]TmuxWindowInfo `json:"windows"`
+	WorktreeKey      *string           `json:"worktreeKey,omitempty"`
+}
+
+// TmuxWindowInfo defines model for TmuxWindowInfo.
+type TmuxWindowInfo struct {
+	Activity *string `json:"activity,omitempty"`
+	Id       string  `json:"id"`
+	Index    int64   `json:"index"`
+	Name     string  `json:"name"`
+}
+
+// ToolingCLIStatus defines model for ToolingCLIStatus.
+type ToolingCLIStatus struct {
+	Authenticated bool    `json:"authenticated"`
+	Available     bool    `json:"available"`
+	Host          *string `json:"host,omitempty"`
+	User          *string `json:"user,omitempty"`
+}
+
+// ToolingGitStatus defines model for ToolingGitStatus.
+type ToolingGitStatus struct {
+	Available bool    `json:"available"`
+	Version   *string `json:"version,omitempty"`
+}
+
+// ToolingStatusBody defines model for ToolingStatusBody.
+type ToolingStatusBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string          `json:"$schema,omitempty"`
+	Gh     ToolingCLIStatus `json:"gh"`
+	Git    ToolingGitStatus `json:"git"`
+	Glab   ToolingCLIStatus `json:"glab"`
+}
+
 // UpdateDocsFolderInputBody defines model for UpdateDocsFolderInputBody.
 type UpdateDocsFolderInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Name   *string `json:"name,omitempty"`
+}
+
+// UpdateFleetSSHPeersInputBody defines model for UpdateFleetSSHPeersInputBody.
+type UpdateFleetSSHPeersInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string        `json:"$schema,omitempty"`
+	SshPeers []FleetSSHPeer `json:"ssh_peers"`
 }
 
 // UpdateSettingsRequest defines model for UpdateSettingsRequest.
@@ -2212,6 +2763,13 @@ type UpdateSettingsRequest struct {
 	Agents   *[]Agent        `json:"agents,omitempty"`
 	Modes    *ModeVisibility `json:"modes,omitempty"`
 	Terminal *Terminal       `json:"terminal,omitempty"`
+}
+
+// UserRepository defines model for UserRepository.
+type UserRepository struct {
+	DefaultBranch *string `json:"default_branch,omitempty"`
+	NameWithOwner string  `json:"name_with_owner"`
+	SshUrl        *string `json:"ssh_url,omitempty"`
 }
 
 // VersionOutputBody defines model for VersionOutputBody.
@@ -2276,6 +2834,23 @@ type WorkspaceRuntimeResponse struct {
 	Sessions      *[]SessionInfo  `json:"sessions"`
 }
 
+// WorktreeFromMergeRequestResponse defines model for WorktreeFromMergeRequestResponse.
+type WorktreeFromMergeRequestResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema             *string             `json:"$schema,omitempty"`
+	Branch             string              `json:"branch"`
+	CreatedAt          time.Time           `json:"created_at"`
+	Id                 string              `json:"id"`
+	IsHidden           bool                `json:"is_hidden"`
+	IsPrimary          bool                `json:"is_primary"`
+	LinkedIssueNumbers *[]int64            `json:"linked_issue_numbers"`
+	MergeRequest       MergeRequestSummary `json:"merge_request"`
+	Path               string              `json:"path"`
+	ProjectId          string              `json:"project_id"`
+	SessionBackend     string              `json:"session_backend"`
+	UpdatedAt          time.Time           `json:"updated_at"`
+}
+
 // WorktreeLinkResponse defines model for WorktreeLinkResponse.
 type WorktreeLinkResponse struct {
 	WorktreeBranch *string `json:"worktree_branch,omitempty"`
@@ -2286,13 +2861,46 @@ type WorktreeLinkResponse struct {
 // WorktreeResponse defines model for WorktreeResponse.
 type WorktreeResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string   `json:"$schema,omitempty"`
-	Branch    string    `json:"branch"`
-	CreatedAt time.Time `json:"created_at"`
-	Id        string    `json:"id"`
-	Path      string    `json:"path"`
-	ProjectId string    `json:"project_id"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Schema             *string   `json:"$schema,omitempty"`
+	Branch             string    `json:"branch"`
+	CreatedAt          time.Time `json:"created_at"`
+	Id                 string    `json:"id"`
+	IsHidden           bool      `json:"is_hidden"`
+	IsPrimary          bool      `json:"is_primary"`
+	LinkedIssueNumbers *[]int64  `json:"linked_issue_numbers"`
+	Path               string    `json:"path"`
+	ProjectId          string    `json:"project_id"`
+	SessionBackend     string    `json:"session_backend"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+// WorktreeSummary defines model for WorktreeSummary.
+type WorktreeSummary struct {
+	Branch             string         `json:"branch"`
+	ChecksDetail       *[]CheckDetail `json:"checksDetail,omitempty"`
+	ChecksStatus       *string        `json:"checksStatus,omitempty"`
+	DiffAdded          *int64         `json:"diffAdded,omitempty"`
+	DiffRemoved        *int64         `json:"diffRemoved,omitempty"`
+	HostID             string         `json:"hostID"`
+	Id                 string         `json:"id"`
+	IsHidden           *bool          `json:"isHidden,omitempty"`
+	IsPrimary          *bool          `json:"isPrimary,omitempty"`
+	IsStale            *bool          `json:"isStale,omitempty"`
+	LastPolledAt       *string        `json:"lastPolledAt,omitempty"`
+	LinkedIssueNumbers *[]int64       `json:"linkedIssueNumbers"`
+	LinkedPRNumber     *int64         `json:"linkedPRNumber,omitempty"`
+	Name               string         `json:"name"`
+	Path               string         `json:"path"`
+	PrState            *string        `json:"prState,omitempty"`
+	PrTitle            *string        `json:"prTitle,omitempty"`
+	PrURL              *string        `json:"prURL,omitempty"`
+	PrUpdatedAt        *string        `json:"prUpdatedAt,omitempty"`
+	ProjectID          string         `json:"projectID"`
+	RegistryID         *string        `json:"registryID,omitempty"`
+	ScopedKey          string         `json:"scopedKey"`
+	SessionBackend     string         `json:"sessionBackend"`
+	SyncAhead          *int64         `json:"syncAhead,omitempty"`
+	SyncBehind         *int64         `json:"syncBehind,omitempty"`
 }
 
 // ListActivityParams defines parameters for ListActivity.
@@ -2345,6 +2953,76 @@ type SearchDocsParams struct {
 	Q     *string `form:"q,omitempty" json:"q,omitempty"`
 	Limit *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 }
+
+// CompleteFilesystemPathParams defines parameters for CompleteFilesystemPath.
+type CompleteFilesystemPathParams struct {
+	Path string `form:"path" json:"path"`
+}
+
+// ValidateFilesystemRepoParams defines parameters for ValidateFilesystemRepo.
+type ValidateFilesystemRepoParams struct {
+	Path string `form:"path" json:"path"`
+}
+
+// CompleteFleetFilesystemPathParams defines parameters for CompleteFleetFilesystemPath.
+type CompleteFleetFilesystemPathParams struct {
+	// Path The partial path to complete on the owning host.
+	Path string `form:"path" json:"path"`
+}
+
+// ValidateFleetFilesystemRepoParams defines parameters for ValidateFleetFilesystemRepo.
+type ValidateFleetFilesystemRepoParams struct {
+	// Path The path to resolve to a repository root on the owning host.
+	Path string `form:"path" json:"path"`
+}
+
+// CreateFleetIssueWorkspaceOnPlatformHostJSONBody defines parameters for CreateFleetIssueWorkspaceOnPlatformHost.
+type CreateFleetIssueWorkspaceOnPlatformHostJSONBody map[string]interface{}
+
+// CreateFleetIssueWorkspaceJSONBody defines parameters for CreateFleetIssueWorkspace.
+type CreateFleetIssueWorkspaceJSONBody map[string]interface{}
+
+// RegisterFleetProjectJSONBody defines parameters for RegisterFleetProject.
+type RegisterFleetProjectJSONBody map[string]interface{}
+
+// CloneFleetProjectJSONBody defines parameters for CloneFleetProject.
+type CloneFleetProjectJSONBody map[string]interface{}
+
+// CreateFleetProjectWorktreeJSONBody defines parameters for CreateFleetProjectWorktree.
+type CreateFleetProjectWorktreeJSONBody map[string]interface{}
+
+// CreateFleetProjectWorktreeFromMergeRequestJSONBody defines parameters for CreateFleetProjectWorktreeFromMergeRequest.
+type CreateFleetProjectWorktreeFromMergeRequestJSONBody map[string]interface{}
+
+// RemoveFleetProjectWorktreeJSONBody defines parameters for RemoveFleetProjectWorktree.
+type RemoveFleetProjectWorktreeJSONBody map[string]interface{}
+
+// SetFleetProjectWorktreeLinksJSONBody defines parameters for SetFleetProjectWorktreeLinks.
+type SetFleetProjectWorktreeLinksJSONBody map[string]interface{}
+
+// LaunchFleetProjectWorktreeRuntimeSessionJSONBody defines parameters for LaunchFleetProjectWorktreeRuntimeSession.
+type LaunchFleetProjectWorktreeRuntimeSessionJSONBody map[string]interface{}
+
+// SetFleetProjectWorktreeSessionBackendJSONBody defines parameters for SetFleetProjectWorktreeSessionBackend.
+type SetFleetProjectWorktreeSessionBackendJSONBody map[string]interface{}
+
+// LaunchFleetHostRuntimeSessionJSONBody defines parameters for LaunchFleetHostRuntimeSession.
+type LaunchFleetHostRuntimeSessionJSONBody map[string]interface{}
+
+// CreateFleetWorkspaceJSONBody defines parameters for CreateFleetWorkspace.
+type CreateFleetWorkspaceJSONBody map[string]interface{}
+
+// DeleteFleetWorkspaceParams defines parameters for DeleteFleetWorkspace.
+type DeleteFleetWorkspaceParams struct {
+	// Force Forward force deletion to the owning host.
+	Force *bool `form:"force,omitempty" json:"force,omitempty"`
+}
+
+// LaunchFleetWorkspaceRuntimeSessionJSONBody defines parameters for LaunchFleetWorkspaceRuntimeSession.
+type LaunchFleetWorkspaceRuntimeSessionJSONBody map[string]interface{}
+
+// RenameFleetWorkspaceRuntimeSessionJSONBody defines parameters for RenameFleetWorkspaceRuntimeSession.
+type RenameFleetWorkspaceRuntimeSessionJSONBody map[string]interface{}
 
 // GetPullDiffOnHostParams defines parameters for GetPullDiffOnHost.
 type GetPullDiffOnHostParams struct {
@@ -2466,6 +3144,13 @@ type ListNotificationsParams struct {
 	Offset *int64    `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// ListUserRepositoriesParams defines parameters for ListUserRepositories.
+type ListUserRepositoriesParams struct {
+	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+	Limit        *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListPullsParams defines parameters for ListPulls.
 type ListPullsParams struct {
 	Repo    *string `form:"repo,omitempty" json:"repo,omitempty"`
@@ -2532,6 +3217,12 @@ type ResolveRepoItemParams struct {
 
 // ResolveRepoItemParamsItemType defines parameters for ResolveRepoItem.
 type ResolveRepoItemParamsItemType string
+
+// GetSnapshotParams defines parameters for GetSnapshot.
+type GetSnapshotParams struct {
+	// IncludePeers Fan out to configured fleet peers and include their hosts/worktrees.
+	IncludePeers *bool `form:"include_peers,omitempty" json:"include_peers,omitempty"`
+}
 
 // ListStacksParams defines parameters for ListStacks.
 type ListStacksParams struct {
@@ -2638,6 +3329,48 @@ type RenameDocsFileJSONRequestBody = DocsRenameFileInputBody
 
 // PublishDocsGitJSONRequestBody defines body for PublishDocsGit for application/json ContentType.
 type PublishDocsGitJSONRequestBody = DocsGitPublishInputBody
+
+// CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody defines body for CreateFleetIssueWorkspaceOnPlatformHost for application/json ContentType.
+type CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody CreateFleetIssueWorkspaceOnPlatformHostJSONBody
+
+// CreateFleetIssueWorkspaceJSONRequestBody defines body for CreateFleetIssueWorkspace for application/json ContentType.
+type CreateFleetIssueWorkspaceJSONRequestBody CreateFleetIssueWorkspaceJSONBody
+
+// RegisterFleetProjectJSONRequestBody defines body for RegisterFleetProject for application/json ContentType.
+type RegisterFleetProjectJSONRequestBody RegisterFleetProjectJSONBody
+
+// CloneFleetProjectJSONRequestBody defines body for CloneFleetProject for application/json ContentType.
+type CloneFleetProjectJSONRequestBody CloneFleetProjectJSONBody
+
+// CreateFleetProjectWorktreeJSONRequestBody defines body for CreateFleetProjectWorktree for application/json ContentType.
+type CreateFleetProjectWorktreeJSONRequestBody CreateFleetProjectWorktreeJSONBody
+
+// CreateFleetProjectWorktreeFromMergeRequestJSONRequestBody defines body for CreateFleetProjectWorktreeFromMergeRequest for application/json ContentType.
+type CreateFleetProjectWorktreeFromMergeRequestJSONRequestBody CreateFleetProjectWorktreeFromMergeRequestJSONBody
+
+// RemoveFleetProjectWorktreeJSONRequestBody defines body for RemoveFleetProjectWorktree for application/json ContentType.
+type RemoveFleetProjectWorktreeJSONRequestBody RemoveFleetProjectWorktreeJSONBody
+
+// SetFleetProjectWorktreeLinksJSONRequestBody defines body for SetFleetProjectWorktreeLinks for application/json ContentType.
+type SetFleetProjectWorktreeLinksJSONRequestBody SetFleetProjectWorktreeLinksJSONBody
+
+// LaunchFleetProjectWorktreeRuntimeSessionJSONRequestBody defines body for LaunchFleetProjectWorktreeRuntimeSession for application/json ContentType.
+type LaunchFleetProjectWorktreeRuntimeSessionJSONRequestBody LaunchFleetProjectWorktreeRuntimeSessionJSONBody
+
+// SetFleetProjectWorktreeSessionBackendJSONRequestBody defines body for SetFleetProjectWorktreeSessionBackend for application/json ContentType.
+type SetFleetProjectWorktreeSessionBackendJSONRequestBody SetFleetProjectWorktreeSessionBackendJSONBody
+
+// LaunchFleetHostRuntimeSessionJSONRequestBody defines body for LaunchFleetHostRuntimeSession for application/json ContentType.
+type LaunchFleetHostRuntimeSessionJSONRequestBody LaunchFleetHostRuntimeSessionJSONBody
+
+// CreateFleetWorkspaceJSONRequestBody defines body for CreateFleetWorkspace for application/json ContentType.
+type CreateFleetWorkspaceJSONRequestBody CreateFleetWorkspaceJSONBody
+
+// LaunchFleetWorkspaceRuntimeSessionJSONRequestBody defines body for LaunchFleetWorkspaceRuntimeSession for application/json ContentType.
+type LaunchFleetWorkspaceRuntimeSessionJSONRequestBody LaunchFleetWorkspaceRuntimeSessionJSONBody
+
+// RenameFleetWorkspaceRuntimeSessionJSONRequestBody defines body for RenameFleetWorkspaceRuntimeSession for application/json ContentType.
+type RenameFleetWorkspaceRuntimeSessionJSONRequestBody RenameFleetWorkspaceRuntimeSessionJSONBody
 
 // CreateIssueOnHostJSONRequestBody defines body for CreateIssueOnHost for application/json ContentType.
 type CreateIssueOnHostJSONRequestBody = CreateIssueHostInputBody
@@ -2753,8 +3486,29 @@ type MarkNotificationsUndoneJSONRequestBody = NotificationBulkInputBody
 // RegisterProjectJSONRequestBody defines body for RegisterProject for application/json ContentType.
 type RegisterProjectJSONRequestBody = RegisterProjectInputBody
 
+// CloneProjectJSONRequestBody defines body for CloneProject for application/json ContentType.
+type CloneProjectJSONRequestBody = CloneProjectInputBody
+
 // RegisterWorktreeJSONRequestBody defines body for RegisterWorktree for application/json ContentType.
 type RegisterWorktreeJSONRequestBody = RegisterWorktreeInputBody
+
+// CreateWorktreeFromMergeRequestJSONRequestBody defines body for CreateWorktreeFromMergeRequest for application/json ContentType.
+type CreateWorktreeFromMergeRequestJSONRequestBody = CreateWorktreeFromMergeRequestInputBody
+
+// RemoveWorktreeJSONRequestBody defines body for RemoveWorktree for application/json ContentType.
+type RemoveWorktreeJSONRequestBody = RemoveWorktreeInputBody
+
+// SetWorktreeHiddenJSONRequestBody defines body for SetWorktreeHidden for application/json ContentType.
+type SetWorktreeHiddenJSONRequestBody = SetWorktreeHiddenInputBody
+
+// SetWorktreeLinksJSONRequestBody defines body for SetWorktreeLinks for application/json ContentType.
+type SetWorktreeLinksJSONRequestBody = SetWorktreeLinkedIssuesInputBody
+
+// LaunchProjectWorktreeRuntimeSessionJSONRequestBody defines body for LaunchProjectWorktreeRuntimeSession for application/json ContentType.
+type LaunchProjectWorktreeRuntimeSessionJSONRequestBody = LaunchProjectWorktreeRuntimeSessionInputBody
+
+// SetWorktreeSessionBackendJSONRequestBody defines body for SetWorktreeSessionBackend for application/json ContentType.
+type SetWorktreeSessionBackendJSONRequestBody = SetWorktreeSessionBackendInputBody
 
 // EditPrContentJSONRequestBody defines body for EditPrContent for application/json ContentType.
 type EditPrContentJSONRequestBody = EditPRContentInputBody
@@ -2813,8 +3567,14 @@ type BulkAddReposJSONRequestBody = BulkAddReposRequest
 // PreviewReposJSONRequestBody defines body for PreviewRepos for application/json ContentType.
 type PreviewReposJSONRequestBody = RepoPreviewRequest
 
+// LaunchHostRuntimeSessionJSONRequestBody defines body for LaunchHostRuntimeSession for application/json ContentType.
+type LaunchHostRuntimeSessionJSONRequestBody = LaunchHostRuntimeSessionInputBody
+
 // UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
 type UpdateSettingsJSONRequestBody = UpdateSettingsRequest
+
+// UpdateFleetSshPeersJSONRequestBody defines body for UpdateFleetSshPeers for application/json ContentType.
+type UpdateFleetSshPeersJSONRequestBody = UpdateFleetSSHPeersInputBody
 
 // UnsetStarredJSONRequestBody defines body for UnsetStarred for application/json ContentType.
 type UnsetStarredJSONRequestBody = StarredRequest
@@ -2825,6 +3585,9 @@ type SetStarredJSONRequestBody = StarredRequest
 // CaptureTelemetryEventJSONRequestBody defines body for CaptureTelemetryEvent for application/json ContentType.
 type CaptureTelemetryEventJSONRequestBody = TelemetryEventInputBody
 
+// SetActiveWorktreeJSONRequestBody defines body for SetActiveWorktree for application/json ContentType.
+type SetActiveWorktreeJSONRequestBody = SetActiveWorktreeInputBody
+
 // CreateWorkspaceJSONRequestBody defines body for CreateWorkspace for application/json ContentType.
 type CreateWorkspaceJSONRequestBody = CreateWorkspaceInputBody
 
@@ -2833,6 +3596,9 @@ type LaunchWorkspaceRuntimeSessionJSONRequestBody = LaunchWorkspaceRuntimeSessio
 
 // RenameWorkspaceRuntimeSessionJSONRequestBody defines body for RenameWorkspaceRuntimeSession for application/json ContentType.
 type RenameWorkspaceRuntimeSessionJSONRequestBody = RenameWorkspaceRuntimeSessionInputBody
+
+// RemoveStaleWorktreeJSONRequestBody defines body for RemoveStaleWorktree for application/json ContentType.
+type RemoveStaleWorktreeJSONRequestBody = RemoveStaleWorktreeInputBody
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -2975,6 +3741,142 @@ type ClientInterface interface {
 
 	// StreamEvents request
 	StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CompleteFilesystemPath request
+	CompleteFilesystemPath(ctx context.Context, params *CompleteFilesystemPathParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ValidateFilesystemRepo request
+	ValidateFilesystemRepo(ctx context.Context, params *ValidateFilesystemRepoParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CompleteFleetFilesystemPath request
+	CompleteFleetFilesystemPath(ctx context.Context, hostKey string, params *CompleteFleetFilesystemPathParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ValidateFleetFilesystemRepo request
+	ValidateFleetFilesystemRepo(ctx context.Context, hostKey string, params *ValidateFleetFilesystemRepoParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateFleetIssueWorkspaceOnPlatformHostWithBody request with any body
+	CreateFleetIssueWorkspaceOnPlatformHostWithBody(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, number string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateFleetIssueWorkspaceOnPlatformHost(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateFleetIssueWorkspaceWithBody request with any body
+	CreateFleetIssueWorkspaceWithBody(ctx context.Context, hostKey string, provider string, owner string, name string, number string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateFleetIssueWorkspace(ctx context.Context, hostKey string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegisterFleetProjectWithBody request with any body
+	RegisterFleetProjectWithBody(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RegisterFleetProject(ctx context.Context, hostKey string, body RegisterFleetProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CloneFleetProjectWithBody request with any body
+	CloneFleetProjectWithBody(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CloneFleetProject(ctx context.Context, hostKey string, body CloneFleetProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteFleetProject request
+	DeleteFleetProject(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListFleetProjectBranches request
+	ListFleetProjectBranches(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateFleetProjectWorktreeWithBody request with any body
+	CreateFleetProjectWorktreeWithBody(ctx context.Context, hostKey string, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateFleetProjectWorktree(ctx context.Context, hostKey string, projectId string, body CreateFleetProjectWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateFleetProjectWorktreeFromMergeRequestWithBody request with any body
+	CreateFleetProjectWorktreeFromMergeRequestWithBody(ctx context.Context, hostKey string, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateFleetProjectWorktreeFromMergeRequest(ctx context.Context, hostKey string, projectId string, body CreateFleetProjectWorktreeFromMergeRequestJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveFleetProjectWorktreeWithBody request with any body
+	RemoveFleetProjectWorktreeWithBody(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RemoveFleetProjectWorktree(ctx context.Context, hostKey string, projectId string, worktreeId string, body RemoveFleetProjectWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// InspectFleetProjectWorktree request
+	InspectFleetProjectWorktree(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetFleetProjectWorktreeLinksWithBody request with any body
+	SetFleetProjectWorktreeLinksWithBody(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetFleetProjectWorktreeLinks(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeLinksJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshFleetProjectWorktreeStats request
+	RefreshFleetProjectWorktreeStats(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetProjectWorktreeRuntime request
+	GetFleetProjectWorktreeRuntime(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LaunchFleetProjectWorktreeRuntimeSessionWithBody request with any body
+	LaunchFleetProjectWorktreeRuntimeSessionWithBody(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	LaunchFleetProjectWorktreeRuntimeSession(ctx context.Context, hostKey string, projectId string, worktreeId string, body LaunchFleetProjectWorktreeRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StopFleetProjectWorktreeRuntimeSession request
+	StopFleetProjectWorktreeRuntimeSession(ctx context.Context, hostKey string, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetProjectWorktreeRuntimeSessionAttachSpec request
+	GetFleetProjectWorktreeRuntimeSessionAttachSpec(ctx context.Context, hostKey string, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnsureFleetProjectWorktreeRuntimeShell request
+	EnsureFleetProjectWorktreeRuntimeShell(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetFleetProjectWorktreeSessionBackendWithBody request with any body
+	SetFleetProjectWorktreeSessionBackendWithBody(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetFleetProjectWorktreeSessionBackend(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LaunchFleetHostRuntimeSessionWithBody request with any body
+	LaunchFleetHostRuntimeSessionWithBody(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	LaunchFleetHostRuntimeSession(ctx context.Context, hostKey string, body LaunchFleetHostRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StopFleetHostRuntimeSession request
+	StopFleetHostRuntimeSession(ctx context.Context, hostKey string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetHostRuntimeSessionAttachSpec request
+	GetFleetHostRuntimeSessionAttachSpec(ctx context.Context, hostKey string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListFleetWorkspaces request
+	ListFleetWorkspaces(ctx context.Context, hostKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateFleetWorkspaceWithBody request with any body
+	CreateFleetWorkspaceWithBody(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateFleetWorkspace(ctx context.Context, hostKey string, body CreateFleetWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteFleetWorkspace request
+	DeleteFleetWorkspace(ctx context.Context, hostKey string, id string, params *DeleteFleetWorkspaceParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetWorkspace request
+	GetFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshFleetWorkspace request
+	RefreshFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetryFleetWorkspace request
+	RetryFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetWorkspaceRuntime request
+	GetFleetWorkspaceRuntime(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LaunchFleetWorkspaceRuntimeSessionWithBody request with any body
+	LaunchFleetWorkspaceRuntimeSessionWithBody(ctx context.Context, hostKey string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	LaunchFleetWorkspaceRuntimeSession(ctx context.Context, hostKey string, id string, body LaunchFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StopFleetWorkspaceRuntimeSession request
+	StopFleetWorkspaceRuntimeSession(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RenameFleetWorkspaceRuntimeSessionWithBody request with any body
+	RenameFleetWorkspaceRuntimeSessionWithBody(ctx context.Context, hostKey string, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RenameFleetWorkspaceRuntimeSession(ctx context.Context, hostKey string, id string, sessionKey string, body RenameFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetWorkspaceRuntimeSessionAttachSpec request
+	GetFleetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateIssueOnHostWithBody request with any body
 	CreateIssueOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3287,6 +4189,9 @@ type ClientInterface interface {
 
 	MarkNotificationsUndone(ctx context.Context, body MarkNotificationsUndoneJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListUserRepositories request
+	ListUserRepositories(ctx context.Context, params *ListUserRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListProjects request
 	ListProjects(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -3295,8 +4200,19 @@ type ClientInterface interface {
 
 	RegisterProject(ctx context.Context, body RegisterProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CloneProjectWithBody request with any body
+	CloneProjectWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CloneProject(ctx context.Context, body CloneProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteProject request
+	DeleteProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetProject request
 	GetProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListProjectBranches request
+	ListProjectBranches(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListLaunchTargets request
 	ListLaunchTargets(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3308,6 +4224,57 @@ type ClientInterface interface {
 	RegisterWorktreeWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	RegisterWorktree(ctx context.Context, projectId string, body RegisterWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateWorktreeFromMergeRequestWithBody request with any body
+	CreateWorktreeFromMergeRequestWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateWorktreeFromMergeRequest(ctx context.Context, projectId string, body CreateWorktreeFromMergeRequestJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteWorktree request
+	DeleteWorktree(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveWorktreeWithBody request with any body
+	RemoveWorktreeWithBody(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RemoveWorktree(ctx context.Context, projectId string, worktreeId string, body RemoveWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetWorktreeHiddenWithBody request with any body
+	SetWorktreeHiddenWithBody(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetWorktreeHidden(ctx context.Context, projectId string, worktreeId string, body SetWorktreeHiddenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// InspectProjectWorktree request
+	InspectProjectWorktree(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetWorktreeLinksWithBody request with any body
+	SetWorktreeLinksWithBody(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetWorktreeLinks(ctx context.Context, projectId string, worktreeId string, body SetWorktreeLinksJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshWorktreeStats request
+	RefreshWorktreeStats(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProjectWorktreeRuntime request
+	GetProjectWorktreeRuntime(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LaunchProjectWorktreeRuntimeSessionWithBody request with any body
+	LaunchProjectWorktreeRuntimeSessionWithBody(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	LaunchProjectWorktreeRuntimeSession(ctx context.Context, projectId string, worktreeId string, body LaunchProjectWorktreeRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StopProjectWorktreeRuntimeSession request
+	StopProjectWorktreeRuntimeSession(ctx context.Context, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProjectWorktreeRuntimeSessionAttachSpec request
+	GetProjectWorktreeRuntimeSessionAttachSpec(ctx context.Context, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnsureProjectWorktreeRuntimeShell request
+	EnsureProjectWorktreeRuntimeShell(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetWorktreeSessionBackendWithBody request with any body
+	SetWorktreeSessionBackendWithBody(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetWorktreeSessionBackend(ctx context.Context, projectId string, worktreeId string, body SetWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPulls request
 	ListPulls(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3491,6 +4458,20 @@ type ClientInterface interface {
 	// GetRoborevStatus request
 	GetRoborevStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListHostRuntimeSessions request
+	ListHostRuntimeSessions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LaunchHostRuntimeSessionWithBody request with any body
+	LaunchHostRuntimeSessionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	LaunchHostRuntimeSession(ctx context.Context, body LaunchHostRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StopHostRuntimeSession request
+	StopHostRuntimeSession(ctx context.Context, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostRuntimeSessionAttachSpec request
+	GetHostRuntimeSessionAttachSpec(ctx context.Context, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetSettings request
 	GetSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -3498,6 +4479,23 @@ type ClientInterface interface {
 	UpdateSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateSettings(ctx context.Context, body UpdateSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetSshPeers request
+	GetFleetSshPeers(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateFleetSshPeersWithBody request with any body
+	UpdateFleetSshPeersWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateFleetSshPeers(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSnapshot request
+	GetSnapshot(ctx context.Context, params *GetSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSnapshotRaw request
+	GetSnapshotRaw(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshFleetStats request
+	RefreshFleetStats(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListStacks request
 	ListStacks(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3522,6 +4520,14 @@ type ClientInterface interface {
 	CaptureTelemetryEventWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CaptureTelemetryEvent(ctx context.Context, body CaptureTelemetryEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetToolingStatus request
+	GetToolingStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetActiveWorktreeWithBody request with any body
+	SetActiveWorktreeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetActiveWorktree(ctx context.Context, body SetActiveWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetVersion request
 	GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3573,6 +4579,14 @@ type ClientInterface interface {
 	RenameWorkspaceRuntimeSessionWithBody(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	RenameWorkspaceRuntimeSession(ctx context.Context, id string, sessionKey string, body RenameWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspaceRuntimeSessionAttachSpec request
+	GetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveStaleWorktreeWithBody request with any body
+	RemoveStaleWorktreeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RemoveStaleWorktree(ctx context.Context, body RemoveStaleWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3865,6 +4879,606 @@ func (c *Client) SearchDocs(ctx context.Context, params *SearchDocsParams, reqEd
 
 func (c *Client) StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStreamEventsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CompleteFilesystemPath(ctx context.Context, params *CompleteFilesystemPathParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCompleteFilesystemPathRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ValidateFilesystemRepo(ctx context.Context, params *ValidateFilesystemRepoParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewValidateFilesystemRepoRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CompleteFleetFilesystemPath(ctx context.Context, hostKey string, params *CompleteFleetFilesystemPathParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCompleteFleetFilesystemPathRequest(c.Server, hostKey, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ValidateFleetFilesystemRepo(ctx context.Context, hostKey string, params *ValidateFleetFilesystemRepoParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewValidateFleetFilesystemRepoRequest(c.Server, hostKey, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateFleetIssueWorkspaceOnPlatformHostWithBody(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, number string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetIssueWorkspaceOnPlatformHostRequestWithBody(c.Server, hostKey, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateFleetIssueWorkspaceOnPlatformHost(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetIssueWorkspaceOnPlatformHostRequest(c.Server, hostKey, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateFleetIssueWorkspaceWithBody(ctx context.Context, hostKey string, provider string, owner string, name string, number string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetIssueWorkspaceRequestWithBody(c.Server, hostKey, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateFleetIssueWorkspace(ctx context.Context, hostKey string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetIssueWorkspaceRequest(c.Server, hostKey, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RegisterFleetProjectWithBody(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterFleetProjectRequestWithBody(c.Server, hostKey, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RegisterFleetProject(ctx context.Context, hostKey string, body RegisterFleetProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterFleetProjectRequest(c.Server, hostKey, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CloneFleetProjectWithBody(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCloneFleetProjectRequestWithBody(c.Server, hostKey, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CloneFleetProject(ctx context.Context, hostKey string, body CloneFleetProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCloneFleetProjectRequest(c.Server, hostKey, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteFleetProject(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteFleetProjectRequest(c.Server, hostKey, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListFleetProjectBranches(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListFleetProjectBranchesRequest(c.Server, hostKey, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateFleetProjectWorktreeWithBody(ctx context.Context, hostKey string, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetProjectWorktreeRequestWithBody(c.Server, hostKey, projectId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateFleetProjectWorktree(ctx context.Context, hostKey string, projectId string, body CreateFleetProjectWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetProjectWorktreeRequest(c.Server, hostKey, projectId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateFleetProjectWorktreeFromMergeRequestWithBody(ctx context.Context, hostKey string, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetProjectWorktreeFromMergeRequestRequestWithBody(c.Server, hostKey, projectId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateFleetProjectWorktreeFromMergeRequest(ctx context.Context, hostKey string, projectId string, body CreateFleetProjectWorktreeFromMergeRequestJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetProjectWorktreeFromMergeRequestRequest(c.Server, hostKey, projectId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RemoveFleetProjectWorktreeWithBody(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveFleetProjectWorktreeRequestWithBody(c.Server, hostKey, projectId, worktreeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RemoveFleetProjectWorktree(ctx context.Context, hostKey string, projectId string, worktreeId string, body RemoveFleetProjectWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveFleetProjectWorktreeRequest(c.Server, hostKey, projectId, worktreeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) InspectFleetProjectWorktree(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInspectFleetProjectWorktreeRequest(c.Server, hostKey, projectId, worktreeId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetFleetProjectWorktreeLinksWithBody(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetFleetProjectWorktreeLinksRequestWithBody(c.Server, hostKey, projectId, worktreeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetFleetProjectWorktreeLinks(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeLinksJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetFleetProjectWorktreeLinksRequest(c.Server, hostKey, projectId, worktreeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshFleetProjectWorktreeStats(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshFleetProjectWorktreeStatsRequest(c.Server, hostKey, projectId, worktreeId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetProjectWorktreeRuntime(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetProjectWorktreeRuntimeRequest(c.Server, hostKey, projectId, worktreeId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchFleetProjectWorktreeRuntimeSessionWithBody(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchFleetProjectWorktreeRuntimeSessionRequestWithBody(c.Server, hostKey, projectId, worktreeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchFleetProjectWorktreeRuntimeSession(ctx context.Context, hostKey string, projectId string, worktreeId string, body LaunchFleetProjectWorktreeRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchFleetProjectWorktreeRuntimeSessionRequest(c.Server, hostKey, projectId, worktreeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StopFleetProjectWorktreeRuntimeSession(ctx context.Context, hostKey string, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStopFleetProjectWorktreeRuntimeSessionRequest(c.Server, hostKey, projectId, worktreeId, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetProjectWorktreeRuntimeSessionAttachSpec(ctx context.Context, hostKey string, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetProjectWorktreeRuntimeSessionAttachSpecRequest(c.Server, hostKey, projectId, worktreeId, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnsureFleetProjectWorktreeRuntimeShell(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnsureFleetProjectWorktreeRuntimeShellRequest(c.Server, hostKey, projectId, worktreeId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetFleetProjectWorktreeSessionBackendWithBody(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetFleetProjectWorktreeSessionBackendRequestWithBody(c.Server, hostKey, projectId, worktreeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetFleetProjectWorktreeSessionBackend(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetFleetProjectWorktreeSessionBackendRequest(c.Server, hostKey, projectId, worktreeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchFleetHostRuntimeSessionWithBody(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchFleetHostRuntimeSessionRequestWithBody(c.Server, hostKey, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchFleetHostRuntimeSession(ctx context.Context, hostKey string, body LaunchFleetHostRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchFleetHostRuntimeSessionRequest(c.Server, hostKey, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StopFleetHostRuntimeSession(ctx context.Context, hostKey string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStopFleetHostRuntimeSessionRequest(c.Server, hostKey, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetHostRuntimeSessionAttachSpec(ctx context.Context, hostKey string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetHostRuntimeSessionAttachSpecRequest(c.Server, hostKey, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListFleetWorkspaces(ctx context.Context, hostKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListFleetWorkspacesRequest(c.Server, hostKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateFleetWorkspaceWithBody(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetWorkspaceRequestWithBody(c.Server, hostKey, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateFleetWorkspace(ctx context.Context, hostKey string, body CreateFleetWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetWorkspaceRequest(c.Server, hostKey, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteFleetWorkspace(ctx context.Context, hostKey string, id string, params *DeleteFleetWorkspaceParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteFleetWorkspaceRequest(c.Server, hostKey, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetWorkspaceRequest(c.Server, hostKey, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshFleetWorkspaceRequest(c.Server, hostKey, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RetryFleetWorkspace(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetryFleetWorkspaceRequest(c.Server, hostKey, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetWorkspaceRuntime(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetWorkspaceRuntimeRequest(c.Server, hostKey, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchFleetWorkspaceRuntimeSessionWithBody(ctx context.Context, hostKey string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchFleetWorkspaceRuntimeSessionRequestWithBody(c.Server, hostKey, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchFleetWorkspaceRuntimeSession(ctx context.Context, hostKey string, id string, body LaunchFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchFleetWorkspaceRuntimeSessionRequest(c.Server, hostKey, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StopFleetWorkspaceRuntimeSession(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStopFleetWorkspaceRuntimeSessionRequest(c.Server, hostKey, id, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RenameFleetWorkspaceRuntimeSessionWithBody(ctx context.Context, hostKey string, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenameFleetWorkspaceRuntimeSessionRequestWithBody(c.Server, hostKey, id, sessionKey, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RenameFleetWorkspaceRuntimeSession(ctx context.Context, hostKey string, id string, sessionKey string, body RenameFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenameFleetWorkspaceRuntimeSessionRequest(c.Server, hostKey, id, sessionKey, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetWorkspaceRuntimeSessionAttachSpecRequest(c.Server, hostKey, id, sessionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -5267,6 +6881,18 @@ func (c *Client) MarkNotificationsUndone(ctx context.Context, body MarkNotificat
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListUserRepositories(ctx context.Context, params *ListUserRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListUserRepositoriesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListProjects(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListProjectsRequest(c.Server)
 	if err != nil {
@@ -5303,8 +6929,56 @@ func (c *Client) RegisterProject(ctx context.Context, body RegisterProjectJSONRe
 	return c.Client.Do(req)
 }
 
+func (c *Client) CloneProjectWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCloneProjectRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CloneProject(ctx context.Context, body CloneProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCloneProjectRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteProjectRequest(c.Server, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetProjectRequest(c.Server, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListProjectBranches(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListProjectBranchesRequest(c.Server, projectId)
 	if err != nil {
 		return nil, err
 	}
@@ -5353,6 +7027,234 @@ func (c *Client) RegisterWorktreeWithBody(ctx context.Context, projectId string,
 
 func (c *Client) RegisterWorktree(ctx context.Context, projectId string, body RegisterWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRegisterWorktreeRequest(c.Server, projectId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateWorktreeFromMergeRequestWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWorktreeFromMergeRequestRequestWithBody(c.Server, projectId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateWorktreeFromMergeRequest(ctx context.Context, projectId string, body CreateWorktreeFromMergeRequestJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWorktreeFromMergeRequestRequest(c.Server, projectId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteWorktree(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteWorktreeRequest(c.Server, projectId, worktreeId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RemoveWorktreeWithBody(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveWorktreeRequestWithBody(c.Server, projectId, worktreeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RemoveWorktree(ctx context.Context, projectId string, worktreeId string, body RemoveWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveWorktreeRequest(c.Server, projectId, worktreeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetWorktreeHiddenWithBody(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorktreeHiddenRequestWithBody(c.Server, projectId, worktreeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetWorktreeHidden(ctx context.Context, projectId string, worktreeId string, body SetWorktreeHiddenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorktreeHiddenRequest(c.Server, projectId, worktreeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) InspectProjectWorktree(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInspectProjectWorktreeRequest(c.Server, projectId, worktreeId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetWorktreeLinksWithBody(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorktreeLinksRequestWithBody(c.Server, projectId, worktreeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetWorktreeLinks(ctx context.Context, projectId string, worktreeId string, body SetWorktreeLinksJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorktreeLinksRequest(c.Server, projectId, worktreeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshWorktreeStats(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshWorktreeStatsRequest(c.Server, projectId, worktreeId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetProjectWorktreeRuntime(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProjectWorktreeRuntimeRequest(c.Server, projectId, worktreeId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchProjectWorktreeRuntimeSessionWithBody(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchProjectWorktreeRuntimeSessionRequestWithBody(c.Server, projectId, worktreeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchProjectWorktreeRuntimeSession(ctx context.Context, projectId string, worktreeId string, body LaunchProjectWorktreeRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchProjectWorktreeRuntimeSessionRequest(c.Server, projectId, worktreeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StopProjectWorktreeRuntimeSession(ctx context.Context, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStopProjectWorktreeRuntimeSessionRequest(c.Server, projectId, worktreeId, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetProjectWorktreeRuntimeSessionAttachSpec(ctx context.Context, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProjectWorktreeRuntimeSessionAttachSpecRequest(c.Server, projectId, worktreeId, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnsureProjectWorktreeRuntimeShell(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnsureProjectWorktreeRuntimeShellRequest(c.Server, projectId, worktreeId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetWorktreeSessionBackendWithBody(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorktreeSessionBackendRequestWithBody(c.Server, projectId, worktreeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetWorktreeSessionBackend(ctx context.Context, projectId string, worktreeId string, body SetWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorktreeSessionBackendRequest(c.Server, projectId, worktreeId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -6167,6 +8069,66 @@ func (c *Client) GetRoborevStatus(ctx context.Context, reqEditors ...RequestEdit
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListHostRuntimeSessions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListHostRuntimeSessionsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchHostRuntimeSessionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchHostRuntimeSessionRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchHostRuntimeSession(ctx context.Context, body LaunchHostRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchHostRuntimeSessionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StopHostRuntimeSession(ctx context.Context, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStopHostRuntimeSessionRequest(c.Server, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostRuntimeSessionAttachSpec(ctx context.Context, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostRuntimeSessionAttachSpecRequest(c.Server, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSettingsRequest(c.Server)
 	if err != nil {
@@ -6193,6 +8155,78 @@ func (c *Client) UpdateSettingsWithBody(ctx context.Context, contentType string,
 
 func (c *Client) UpdateSettings(ctx context.Context, body UpdateSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateSettingsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetSshPeers(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetSshPeersRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateFleetSshPeersWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateFleetSshPeersRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateFleetSshPeers(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateFleetSshPeersRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSnapshot(ctx context.Context, params *GetSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSnapshotRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSnapshotRaw(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSnapshotRawRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshFleetStats(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshFleetStatsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -6301,6 +8335,42 @@ func (c *Client) CaptureTelemetryEventWithBody(ctx context.Context, contentType 
 
 func (c *Client) CaptureTelemetryEvent(ctx context.Context, body CaptureTelemetryEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCaptureTelemetryEventRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetToolingStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetToolingStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetActiveWorktreeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetActiveWorktreeRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetActiveWorktree(ctx context.Context, body SetActiveWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetActiveWorktreeRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -6517,6 +8587,42 @@ func (c *Client) RenameWorkspaceRuntimeSessionWithBody(ctx context.Context, id s
 
 func (c *Client) RenameWorkspaceRuntimeSession(ctx context.Context, id string, sessionKey string, body RenameWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRenameWorkspaceRuntimeSessionRequest(c.Server, id, sessionKey, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspaceRuntimeSessionAttachSpecRequest(c.Server, id, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RemoveStaleWorktreeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveStaleWorktreeRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RemoveStaleWorktree(ctx context.Context, body RemoveStaleWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveStaleWorktreeRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -7507,6 +9613,1860 @@ func NewStreamEventsRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCompleteFilesystemPathRequest generates requests for CompleteFilesystemPath
+func NewCompleteFilesystemPathRequest(server string, params *CompleteFilesystemPathParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/filesystem/complete")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewValidateFilesystemRepoRequest generates requests for ValidateFilesystemRepo
+func NewValidateFilesystemRepoRequest(server string, params *ValidateFilesystemRepoParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/filesystem/validate-repo")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCompleteFleetFilesystemPathRequest generates requests for CompleteFleetFilesystemPath
+func NewCompleteFleetFilesystemPathRequest(server string, hostKey string, params *CompleteFleetFilesystemPathParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/filesystem/complete", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "path", params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewValidateFleetFilesystemRepoRequest generates requests for ValidateFleetFilesystemRepo
+func NewValidateFleetFilesystemRepoRequest(server string, hostKey string, params *ValidateFleetFilesystemRepoParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/filesystem/validate-repo", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "path", params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateFleetIssueWorkspaceOnPlatformHostRequest calls the generic CreateFleetIssueWorkspaceOnPlatformHost builder with application/json body
+func NewCreateFleetIssueWorkspaceOnPlatformHostRequest(server string, hostKey string, platformHost string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateFleetIssueWorkspaceOnPlatformHostRequestWithBody(server, hostKey, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreateFleetIssueWorkspaceOnPlatformHostRequestWithBody generates requests for CreateFleetIssueWorkspaceOnPlatformHost with any type of body
+func NewCreateFleetIssueWorkspaceOnPlatformHostRequestWithBody(server string, hostKey string, platformHost string, provider string, owner string, name string, number string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/host/%s/issues/%s/%s/%s/%s/workspace", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateFleetIssueWorkspaceRequest calls the generic CreateFleetIssueWorkspace builder with application/json body
+func NewCreateFleetIssueWorkspaceRequest(server string, hostKey string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateFleetIssueWorkspaceRequestWithBody(server, hostKey, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreateFleetIssueWorkspaceRequestWithBody generates requests for CreateFleetIssueWorkspace with any type of body
+func NewCreateFleetIssueWorkspaceRequestWithBody(server string, hostKey string, provider string, owner string, name string, number string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/issues/%s/%s/%s/%s/workspace", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRegisterFleetProjectRequest calls the generic RegisterFleetProject builder with application/json body
+func NewRegisterFleetProjectRequest(server string, hostKey string, body RegisterFleetProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRegisterFleetProjectRequestWithBody(server, hostKey, "application/json", bodyReader)
+}
+
+// NewRegisterFleetProjectRequestWithBody generates requests for RegisterFleetProject with any type of body
+func NewRegisterFleetProjectRequestWithBody(server string, hostKey string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCloneFleetProjectRequest calls the generic CloneFleetProject builder with application/json body
+func NewCloneFleetProjectRequest(server string, hostKey string, body CloneFleetProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCloneFleetProjectRequestWithBody(server, hostKey, "application/json", bodyReader)
+}
+
+// NewCloneFleetProjectRequestWithBody generates requests for CloneFleetProject with any type of body
+func NewCloneFleetProjectRequestWithBody(server string, hostKey string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/clone", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteFleetProjectRequest generates requests for DeleteFleetProject
+func NewDeleteFleetProjectRequest(server string, hostKey string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListFleetProjectBranchesRequest generates requests for ListFleetProjectBranches
+func NewListFleetProjectBranchesRequest(server string, hostKey string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/branches", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateFleetProjectWorktreeRequest calls the generic CreateFleetProjectWorktree builder with application/json body
+func NewCreateFleetProjectWorktreeRequest(server string, hostKey string, projectId string, body CreateFleetProjectWorktreeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateFleetProjectWorktreeRequestWithBody(server, hostKey, projectId, "application/json", bodyReader)
+}
+
+// NewCreateFleetProjectWorktreeRequestWithBody generates requests for CreateFleetProjectWorktree with any type of body
+func NewCreateFleetProjectWorktreeRequestWithBody(server string, hostKey string, projectId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateFleetProjectWorktreeFromMergeRequestRequest calls the generic CreateFleetProjectWorktreeFromMergeRequest builder with application/json body
+func NewCreateFleetProjectWorktreeFromMergeRequestRequest(server string, hostKey string, projectId string, body CreateFleetProjectWorktreeFromMergeRequestJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateFleetProjectWorktreeFromMergeRequestRequestWithBody(server, hostKey, projectId, "application/json", bodyReader)
+}
+
+// NewCreateFleetProjectWorktreeFromMergeRequestRequestWithBody generates requests for CreateFleetProjectWorktreeFromMergeRequest with any type of body
+func NewCreateFleetProjectWorktreeFromMergeRequestRequestWithBody(server string, hostKey string, projectId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/from-merge-request", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRemoveFleetProjectWorktreeRequest calls the generic RemoveFleetProjectWorktree builder with application/json body
+func NewRemoveFleetProjectWorktreeRequest(server string, hostKey string, projectId string, worktreeId string, body RemoveFleetProjectWorktreeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRemoveFleetProjectWorktreeRequestWithBody(server, hostKey, projectId, worktreeId, "application/json", bodyReader)
+}
+
+// NewRemoveFleetProjectWorktreeRequestWithBody generates requests for RemoveFleetProjectWorktree with any type of body
+func NewRemoveFleetProjectWorktreeRequestWithBody(server string, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/%s/delete", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewInspectFleetProjectWorktreeRequest generates requests for InspectFleetProjectWorktree
+func NewInspectFleetProjectWorktreeRequest(server string, hostKey string, projectId string, worktreeId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/%s/inspect", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetFleetProjectWorktreeLinksRequest calls the generic SetFleetProjectWorktreeLinks builder with application/json body
+func NewSetFleetProjectWorktreeLinksRequest(server string, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeLinksJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetFleetProjectWorktreeLinksRequestWithBody(server, hostKey, projectId, worktreeId, "application/json", bodyReader)
+}
+
+// NewSetFleetProjectWorktreeLinksRequestWithBody generates requests for SetFleetProjectWorktreeLinks with any type of body
+func NewSetFleetProjectWorktreeLinksRequestWithBody(server string, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/%s/linked-issues", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRefreshFleetProjectWorktreeStatsRequest generates requests for RefreshFleetProjectWorktreeStats
+func NewRefreshFleetProjectWorktreeStatsRequest(server string, hostKey string, projectId string, worktreeId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/%s/refresh-stats", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFleetProjectWorktreeRuntimeRequest generates requests for GetFleetProjectWorktreeRuntime
+func NewGetFleetProjectWorktreeRuntimeRequest(server string, hostKey string, projectId string, worktreeId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/%s/runtime", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewLaunchFleetProjectWorktreeRuntimeSessionRequest calls the generic LaunchFleetProjectWorktreeRuntimeSession builder with application/json body
+func NewLaunchFleetProjectWorktreeRuntimeSessionRequest(server string, hostKey string, projectId string, worktreeId string, body LaunchFleetProjectWorktreeRuntimeSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLaunchFleetProjectWorktreeRuntimeSessionRequestWithBody(server, hostKey, projectId, worktreeId, "application/json", bodyReader)
+}
+
+// NewLaunchFleetProjectWorktreeRuntimeSessionRequestWithBody generates requests for LaunchFleetProjectWorktreeRuntimeSession with any type of body
+func NewLaunchFleetProjectWorktreeRuntimeSessionRequestWithBody(server string, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/%s/runtime/sessions", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStopFleetProjectWorktreeRuntimeSessionRequest generates requests for StopFleetProjectWorktreeRuntimeSession
+func NewStopFleetProjectWorktreeRuntimeSessionRequest(server string, hostKey string, projectId string, worktreeId string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/%s/runtime/sessions/%s", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFleetProjectWorktreeRuntimeSessionAttachSpecRequest generates requests for GetFleetProjectWorktreeRuntimeSessionAttachSpec
+func NewGetFleetProjectWorktreeRuntimeSessionAttachSpecRequest(server string, hostKey string, projectId string, worktreeId string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/%s/runtime/sessions/%s/attach-spec", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnsureFleetProjectWorktreeRuntimeShellRequest generates requests for EnsureFleetProjectWorktreeRuntimeShell
+func NewEnsureFleetProjectWorktreeRuntimeShellRequest(server string, hostKey string, projectId string, worktreeId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/%s/runtime/shell", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetFleetProjectWorktreeSessionBackendRequest calls the generic SetFleetProjectWorktreeSessionBackend builder with application/json body
+func NewSetFleetProjectWorktreeSessionBackendRequest(server string, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeSessionBackendJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetFleetProjectWorktreeSessionBackendRequestWithBody(server, hostKey, projectId, worktreeId, "application/json", bodyReader)
+}
+
+// NewSetFleetProjectWorktreeSessionBackendRequestWithBody generates requests for SetFleetProjectWorktreeSessionBackend with any type of body
+func NewSetFleetProjectWorktreeSessionBackendRequestWithBody(server string, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees/%s/session-backend", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewLaunchFleetHostRuntimeSessionRequest calls the generic LaunchFleetHostRuntimeSession builder with application/json body
+func NewLaunchFleetHostRuntimeSessionRequest(server string, hostKey string, body LaunchFleetHostRuntimeSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLaunchFleetHostRuntimeSessionRequestWithBody(server, hostKey, "application/json", bodyReader)
+}
+
+// NewLaunchFleetHostRuntimeSessionRequestWithBody generates requests for LaunchFleetHostRuntimeSession with any type of body
+func NewLaunchFleetHostRuntimeSessionRequestWithBody(server string, hostKey string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/runtime/sessions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStopFleetHostRuntimeSessionRequest generates requests for StopFleetHostRuntimeSession
+func NewStopFleetHostRuntimeSessionRequest(server string, hostKey string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/runtime/sessions/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFleetHostRuntimeSessionAttachSpecRequest generates requests for GetFleetHostRuntimeSessionAttachSpec
+func NewGetFleetHostRuntimeSessionAttachSpecRequest(server string, hostKey string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/runtime/sessions/%s/attach-spec", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListFleetWorkspacesRequest generates requests for ListFleetWorkspaces
+func NewListFleetWorkspacesRequest(server string, hostKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateFleetWorkspaceRequest calls the generic CreateFleetWorkspace builder with application/json body
+func NewCreateFleetWorkspaceRequest(server string, hostKey string, body CreateFleetWorkspaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateFleetWorkspaceRequestWithBody(server, hostKey, "application/json", bodyReader)
+}
+
+// NewCreateFleetWorkspaceRequestWithBody generates requests for CreateFleetWorkspace with any type of body
+func NewCreateFleetWorkspaceRequestWithBody(server string, hostKey string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteFleetWorkspaceRequest generates requests for DeleteFleetWorkspace
+func NewDeleteFleetWorkspaceRequest(server string, hostKey string, id string, params *DeleteFleetWorkspaceParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Force != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "force", *params.Force, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFleetWorkspaceRequest generates requests for GetFleetWorkspace
+func NewGetFleetWorkspaceRequest(server string, hostKey string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRefreshFleetWorkspaceRequest generates requests for RefreshFleetWorkspace
+func NewRefreshFleetWorkspaceRequest(server string, hostKey string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/refresh", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRetryFleetWorkspaceRequest generates requests for RetryFleetWorkspace
+func NewRetryFleetWorkspaceRequest(server string, hostKey string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/retry", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetFleetWorkspaceRuntimeRequest generates requests for GetFleetWorkspaceRuntime
+func NewGetFleetWorkspaceRuntimeRequest(server string, hostKey string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/runtime", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewLaunchFleetWorkspaceRuntimeSessionRequest calls the generic LaunchFleetWorkspaceRuntimeSession builder with application/json body
+func NewLaunchFleetWorkspaceRuntimeSessionRequest(server string, hostKey string, id string, body LaunchFleetWorkspaceRuntimeSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLaunchFleetWorkspaceRuntimeSessionRequestWithBody(server, hostKey, id, "application/json", bodyReader)
+}
+
+// NewLaunchFleetWorkspaceRuntimeSessionRequestWithBody generates requests for LaunchFleetWorkspaceRuntimeSession with any type of body
+func NewLaunchFleetWorkspaceRuntimeSessionRequestWithBody(server string, hostKey string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/runtime/sessions", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStopFleetWorkspaceRuntimeSessionRequest generates requests for StopFleetWorkspaceRuntimeSession
+func NewStopFleetWorkspaceRuntimeSessionRequest(server string, hostKey string, id string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/runtime/sessions/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRenameFleetWorkspaceRuntimeSessionRequest calls the generic RenameFleetWorkspaceRuntimeSession builder with application/json body
+func NewRenameFleetWorkspaceRuntimeSessionRequest(server string, hostKey string, id string, sessionKey string, body RenameFleetWorkspaceRuntimeSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRenameFleetWorkspaceRuntimeSessionRequestWithBody(server, hostKey, id, sessionKey, "application/json", bodyReader)
+}
+
+// NewRenameFleetWorkspaceRuntimeSessionRequestWithBody generates requests for RenameFleetWorkspaceRuntimeSession with any type of body
+func NewRenameFleetWorkspaceRuntimeSessionRequestWithBody(server string, hostKey string, id string, sessionKey string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/runtime/sessions/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetFleetWorkspaceRuntimeSessionAttachSpecRequest generates requests for GetFleetWorkspaceRuntimeSessionAttachSpec
+func NewGetFleetWorkspaceRuntimeSessionAttachSpecRequest(server string, hostKey string, id string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/runtime/sessions/%s/attach-spec", pathParam0, pathParam1, pathParam2)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -12957,6 +16917,84 @@ func NewMarkNotificationsUndoneRequestWithBody(server string, contentType string
 	return req, nil
 }
 
+// NewListUserRepositoriesRequest generates requests for ListUserRepositories
+func NewListUserRepositoriesRequest(server string, params *ListUserRepositoriesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform/user-repositories")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListProjectsRequest generates requests for ListProjects
 func NewListProjectsRequest(server string) (*http.Request, error) {
 	var err error
@@ -13024,6 +17062,80 @@ func NewRegisterProjectRequestWithBody(server string, contentType string, body i
 	return req, nil
 }
 
+// NewCloneProjectRequest calls the generic CloneProject builder with application/json body
+func NewCloneProjectRequest(server string, body CloneProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCloneProjectRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCloneProjectRequestWithBody generates requests for CloneProject with any type of body
+func NewCloneProjectRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/clone")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteProjectRequest generates requests for DeleteProject
+func NewDeleteProjectRequest(server string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetProjectRequest generates requests for GetProject
 func NewGetProjectRequest(server string, projectId string) (*http.Request, error) {
 	var err error
@@ -13041,6 +17153,40 @@ func NewGetProjectRequest(server string, projectId string) (*http.Request, error
 	}
 
 	operationPath := fmt.Sprintf("/projects/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListProjectBranchesRequest generates requests for ListProjectBranches
+func NewListProjectBranchesRequest(server string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/branches", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -13164,6 +17310,624 @@ func NewRegisterWorktreeRequestWithBody(server string, projectId string, content
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateWorktreeFromMergeRequestRequest calls the generic CreateWorktreeFromMergeRequest builder with application/json body
+func NewCreateWorktreeFromMergeRequestRequest(server string, projectId string, body CreateWorktreeFromMergeRequestJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateWorktreeFromMergeRequestRequestWithBody(server, projectId, "application/json", bodyReader)
+}
+
+// NewCreateWorktreeFromMergeRequestRequestWithBody generates requests for CreateWorktreeFromMergeRequest with any type of body
+func NewCreateWorktreeFromMergeRequestRequestWithBody(server string, projectId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/from-merge-request", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteWorktreeRequest generates requests for DeleteWorktree
+func NewDeleteWorktreeRequest(server string, projectId string, worktreeId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRemoveWorktreeRequest calls the generic RemoveWorktree builder with application/json body
+func NewRemoveWorktreeRequest(server string, projectId string, worktreeId string, body RemoveWorktreeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRemoveWorktreeRequestWithBody(server, projectId, worktreeId, "application/json", bodyReader)
+}
+
+// NewRemoveWorktreeRequestWithBody generates requests for RemoveWorktree with any type of body
+func NewRemoveWorktreeRequestWithBody(server string, projectId string, worktreeId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/delete", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSetWorktreeHiddenRequest calls the generic SetWorktreeHidden builder with application/json body
+func NewSetWorktreeHiddenRequest(server string, projectId string, worktreeId string, body SetWorktreeHiddenJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetWorktreeHiddenRequestWithBody(server, projectId, worktreeId, "application/json", bodyReader)
+}
+
+// NewSetWorktreeHiddenRequestWithBody generates requests for SetWorktreeHidden with any type of body
+func NewSetWorktreeHiddenRequestWithBody(server string, projectId string, worktreeId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/hidden", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewInspectProjectWorktreeRequest generates requests for InspectProjectWorktree
+func NewInspectProjectWorktreeRequest(server string, projectId string, worktreeId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/inspect", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetWorktreeLinksRequest calls the generic SetWorktreeLinks builder with application/json body
+func NewSetWorktreeLinksRequest(server string, projectId string, worktreeId string, body SetWorktreeLinksJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetWorktreeLinksRequestWithBody(server, projectId, worktreeId, "application/json", bodyReader)
+}
+
+// NewSetWorktreeLinksRequestWithBody generates requests for SetWorktreeLinks with any type of body
+func NewSetWorktreeLinksRequestWithBody(server string, projectId string, worktreeId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/linked-issues", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRefreshWorktreeStatsRequest generates requests for RefreshWorktreeStats
+func NewRefreshWorktreeStatsRequest(server string, projectId string, worktreeId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/refresh-stats", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetProjectWorktreeRuntimeRequest generates requests for GetProjectWorktreeRuntime
+func NewGetProjectWorktreeRuntimeRequest(server string, projectId string, worktreeId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/runtime", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewLaunchProjectWorktreeRuntimeSessionRequest calls the generic LaunchProjectWorktreeRuntimeSession builder with application/json body
+func NewLaunchProjectWorktreeRuntimeSessionRequest(server string, projectId string, worktreeId string, body LaunchProjectWorktreeRuntimeSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLaunchProjectWorktreeRuntimeSessionRequestWithBody(server, projectId, worktreeId, "application/json", bodyReader)
+}
+
+// NewLaunchProjectWorktreeRuntimeSessionRequestWithBody generates requests for LaunchProjectWorktreeRuntimeSession with any type of body
+func NewLaunchProjectWorktreeRuntimeSessionRequestWithBody(server string, projectId string, worktreeId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/runtime/sessions", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStopProjectWorktreeRuntimeSessionRequest generates requests for StopProjectWorktreeRuntimeSession
+func NewStopProjectWorktreeRuntimeSessionRequest(server string, projectId string, worktreeId string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/runtime/sessions/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetProjectWorktreeRuntimeSessionAttachSpecRequest generates requests for GetProjectWorktreeRuntimeSessionAttachSpec
+func NewGetProjectWorktreeRuntimeSessionAttachSpecRequest(server string, projectId string, worktreeId string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/runtime/sessions/%s/attach-spec", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnsureProjectWorktreeRuntimeShellRequest generates requests for EnsureProjectWorktreeRuntimeShell
+func NewEnsureProjectWorktreeRuntimeShellRequest(server string, projectId string, worktreeId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/runtime/shell", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetWorktreeSessionBackendRequest calls the generic SetWorktreeSessionBackend builder with application/json body
+func NewSetWorktreeSessionBackendRequest(server string, projectId string, worktreeId string, body SetWorktreeSessionBackendJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetWorktreeSessionBackendRequestWithBody(server, projectId, worktreeId, "application/json", bodyReader)
+}
+
+// NewSetWorktreeSessionBackendRequestWithBody generates requests for SetWorktreeSessionBackend with any type of body
+func NewSetWorktreeSessionBackendRequestWithBody(server string, projectId string, worktreeId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "worktree_id", worktreeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees/%s/session-backend", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -16192,6 +20956,141 @@ func NewGetRoborevStatusRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListHostRuntimeSessionsRequest generates requests for ListHostRuntimeSessions
+func NewListHostRuntimeSessionsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/sessions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewLaunchHostRuntimeSessionRequest calls the generic LaunchHostRuntimeSession builder with application/json body
+func NewLaunchHostRuntimeSessionRequest(server string, body LaunchHostRuntimeSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLaunchHostRuntimeSessionRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewLaunchHostRuntimeSessionRequestWithBody generates requests for LaunchHostRuntimeSession with any type of body
+func NewLaunchHostRuntimeSessionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/sessions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStopHostRuntimeSessionRequest generates requests for StopHostRuntimeSession
+func NewStopHostRuntimeSessionRequest(server string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/sessions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetHostRuntimeSessionAttachSpecRequest generates requests for GetHostRuntimeSessionAttachSpec
+func NewGetHostRuntimeSessionAttachSpecRequest(server string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/sessions/%s/attach-spec", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetSettingsRequest generates requests for GetSettings
 func NewGetSettingsRequest(server string) (*http.Request, error) {
 	var err error
@@ -16255,6 +21154,181 @@ func NewUpdateSettingsRequestWithBody(server string, contentType string, body io
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetFleetSshPeersRequest generates requests for GetFleetSshPeers
+func NewGetFleetSshPeersRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/fleet/ssh-peers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateFleetSshPeersRequest calls the generic UpdateFleetSshPeers builder with application/json body
+func NewUpdateFleetSshPeersRequest(server string, body UpdateFleetSshPeersJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateFleetSshPeersRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewUpdateFleetSshPeersRequestWithBody generates requests for UpdateFleetSshPeers with any type of body
+func NewUpdateFleetSshPeersRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/fleet/ssh-peers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetSnapshotRequest generates requests for GetSnapshot
+func NewGetSnapshotRequest(server string, params *GetSnapshotParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/snapshot")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.IncludePeers != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "include_peers", *params.IncludePeers, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSnapshotRawRequest generates requests for GetSnapshotRaw
+func NewGetSnapshotRawRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/snapshot/raw")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRefreshFleetStatsRequest generates requests for RefreshFleetStats
+func NewRefreshFleetStatsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/snapshot/refresh-stats")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -16505,6 +21579,73 @@ func NewCaptureTelemetryEventRequestWithBody(server string, contentType string, 
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetToolingStatusRequest generates requests for GetToolingStatus
+func NewGetToolingStatusRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/tooling-status")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetActiveWorktreeRequest calls the generic SetActiveWorktree builder with application/json body
+func NewSetActiveWorktreeRequest(server string, body SetActiveWorktreeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetActiveWorktreeRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSetActiveWorktreeRequestWithBody generates requests for SetActiveWorktree with any type of body
+func NewSetActiveWorktreeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/ui/active-worktree")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -17344,6 +22485,87 @@ func NewRenameWorkspaceRuntimeSessionRequestWithBody(server string, id string, s
 	return req, nil
 }
 
+// NewGetWorkspaceRuntimeSessionAttachSpecRequest generates requests for GetWorkspaceRuntimeSessionAttachSpec
+func NewGetWorkspaceRuntimeSessionAttachSpecRequest(server string, id string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime/sessions/%s/attach-spec", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRemoveStaleWorktreeRequest calls the generic RemoveStaleWorktree builder with application/json body
+func NewRemoveStaleWorktreeRequest(server string, body RemoveStaleWorktreeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRemoveStaleWorktreeRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRemoveStaleWorktreeRequestWithBody generates requests for RemoveStaleWorktree with any type of body
+func NewRemoveStaleWorktreeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/worktrees/remove-stale")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -17452,6 +22674,142 @@ type ClientWithResponsesInterface interface {
 
 	// SearchDocsWithResponse request
 	SearchDocsWithResponse(ctx context.Context, params *SearchDocsParams, reqEditors ...RequestEditorFn) (*SearchDocsResponse, error)
+
+	// CompleteFilesystemPathWithResponse request
+	CompleteFilesystemPathWithResponse(ctx context.Context, params *CompleteFilesystemPathParams, reqEditors ...RequestEditorFn) (*CompleteFilesystemPathResponse, error)
+
+	// ValidateFilesystemRepoWithResponse request
+	ValidateFilesystemRepoWithResponse(ctx context.Context, params *ValidateFilesystemRepoParams, reqEditors ...RequestEditorFn) (*ValidateFilesystemRepoResponse, error)
+
+	// CompleteFleetFilesystemPathWithResponse request
+	CompleteFleetFilesystemPathWithResponse(ctx context.Context, hostKey string, params *CompleteFleetFilesystemPathParams, reqEditors ...RequestEditorFn) (*CompleteFleetFilesystemPathResponse, error)
+
+	// ValidateFleetFilesystemRepoWithResponse request
+	ValidateFleetFilesystemRepoWithResponse(ctx context.Context, hostKey string, params *ValidateFleetFilesystemRepoParams, reqEditors ...RequestEditorFn) (*ValidateFleetFilesystemRepoResponse, error)
+
+	// CreateFleetIssueWorkspaceOnPlatformHostWithBodyWithResponse request with any body
+	CreateFleetIssueWorkspaceOnPlatformHostWithBodyWithResponse(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, number string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceOnPlatformHostResponse, error)
+
+	CreateFleetIssueWorkspaceOnPlatformHostWithResponse(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceOnPlatformHostResponse, error)
+
+	// CreateFleetIssueWorkspaceWithBodyWithResponse request with any body
+	CreateFleetIssueWorkspaceWithBodyWithResponse(ctx context.Context, hostKey string, provider string, owner string, name string, number string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceResponse, error)
+
+	CreateFleetIssueWorkspaceWithResponse(ctx context.Context, hostKey string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceResponse, error)
+
+	// RegisterFleetProjectWithBodyWithResponse request with any body
+	RegisterFleetProjectWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterFleetProjectResponse, error)
+
+	RegisterFleetProjectWithResponse(ctx context.Context, hostKey string, body RegisterFleetProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterFleetProjectResponse, error)
+
+	// CloneFleetProjectWithBodyWithResponse request with any body
+	CloneFleetProjectWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CloneFleetProjectResponse, error)
+
+	CloneFleetProjectWithResponse(ctx context.Context, hostKey string, body CloneFleetProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*CloneFleetProjectResponse, error)
+
+	// DeleteFleetProjectWithResponse request
+	DeleteFleetProjectWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*DeleteFleetProjectResponse, error)
+
+	// ListFleetProjectBranchesWithResponse request
+	ListFleetProjectBranchesWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*ListFleetProjectBranchesResponse, error)
+
+	// CreateFleetProjectWorktreeWithBodyWithResponse request with any body
+	CreateFleetProjectWorktreeWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetProjectWorktreeResponse, error)
+
+	CreateFleetProjectWorktreeWithResponse(ctx context.Context, hostKey string, projectId string, body CreateFleetProjectWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetProjectWorktreeResponse, error)
+
+	// CreateFleetProjectWorktreeFromMergeRequestWithBodyWithResponse request with any body
+	CreateFleetProjectWorktreeFromMergeRequestWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetProjectWorktreeFromMergeRequestResponse, error)
+
+	CreateFleetProjectWorktreeFromMergeRequestWithResponse(ctx context.Context, hostKey string, projectId string, body CreateFleetProjectWorktreeFromMergeRequestJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetProjectWorktreeFromMergeRequestResponse, error)
+
+	// RemoveFleetProjectWorktreeWithBodyWithResponse request with any body
+	RemoveFleetProjectWorktreeWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveFleetProjectWorktreeResponse, error)
+
+	RemoveFleetProjectWorktreeWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, body RemoveFleetProjectWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveFleetProjectWorktreeResponse, error)
+
+	// InspectFleetProjectWorktreeWithResponse request
+	InspectFleetProjectWorktreeWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*InspectFleetProjectWorktreeResponse, error)
+
+	// SetFleetProjectWorktreeLinksWithBodyWithResponse request with any body
+	SetFleetProjectWorktreeLinksWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetFleetProjectWorktreeLinksResponse, error)
+
+	SetFleetProjectWorktreeLinksWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeLinksJSONRequestBody, reqEditors ...RequestEditorFn) (*SetFleetProjectWorktreeLinksResponse, error)
+
+	// RefreshFleetProjectWorktreeStatsWithResponse request
+	RefreshFleetProjectWorktreeStatsWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*RefreshFleetProjectWorktreeStatsResponse, error)
+
+	// GetFleetProjectWorktreeRuntimeWithResponse request
+	GetFleetProjectWorktreeRuntimeWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*GetFleetProjectWorktreeRuntimeResponse, error)
+
+	// LaunchFleetProjectWorktreeRuntimeSessionWithBodyWithResponse request with any body
+	LaunchFleetProjectWorktreeRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchFleetProjectWorktreeRuntimeSessionResponse, error)
+
+	LaunchFleetProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, body LaunchFleetProjectWorktreeRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchFleetProjectWorktreeRuntimeSessionResponse, error)
+
+	// StopFleetProjectWorktreeRuntimeSessionWithResponse request
+	StopFleetProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*StopFleetProjectWorktreeRuntimeSessionResponse, error)
+
+	// GetFleetProjectWorktreeRuntimeSessionAttachSpecWithResponse request
+	GetFleetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse, error)
+
+	// EnsureFleetProjectWorktreeRuntimeShellWithResponse request
+	EnsureFleetProjectWorktreeRuntimeShellWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*EnsureFleetProjectWorktreeRuntimeShellResponse, error)
+
+	// SetFleetProjectWorktreeSessionBackendWithBodyWithResponse request with any body
+	SetFleetProjectWorktreeSessionBackendWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetFleetProjectWorktreeSessionBackendResponse, error)
+
+	SetFleetProjectWorktreeSessionBackendWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*SetFleetProjectWorktreeSessionBackendResponse, error)
+
+	// LaunchFleetHostRuntimeSessionWithBodyWithResponse request with any body
+	LaunchFleetHostRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchFleetHostRuntimeSessionResponse, error)
+
+	LaunchFleetHostRuntimeSessionWithResponse(ctx context.Context, hostKey string, body LaunchFleetHostRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchFleetHostRuntimeSessionResponse, error)
+
+	// StopFleetHostRuntimeSessionWithResponse request
+	StopFleetHostRuntimeSessionWithResponse(ctx context.Context, hostKey string, sessionKey string, reqEditors ...RequestEditorFn) (*StopFleetHostRuntimeSessionResponse, error)
+
+	// GetFleetHostRuntimeSessionAttachSpecWithResponse request
+	GetFleetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, hostKey string, sessionKey string, reqEditors ...RequestEditorFn) (*GetFleetHostRuntimeSessionAttachSpecResponse, error)
+
+	// ListFleetWorkspacesWithResponse request
+	ListFleetWorkspacesWithResponse(ctx context.Context, hostKey string, reqEditors ...RequestEditorFn) (*ListFleetWorkspacesResponse, error)
+
+	// CreateFleetWorkspaceWithBodyWithResponse request with any body
+	CreateFleetWorkspaceWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetWorkspaceResponse, error)
+
+	CreateFleetWorkspaceWithResponse(ctx context.Context, hostKey string, body CreateFleetWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetWorkspaceResponse, error)
+
+	// DeleteFleetWorkspaceWithResponse request
+	DeleteFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, params *DeleteFleetWorkspaceParams, reqEditors ...RequestEditorFn) (*DeleteFleetWorkspaceResponse, error)
+
+	// GetFleetWorkspaceWithResponse request
+	GetFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceResponse, error)
+
+	// RefreshFleetWorkspaceWithResponse request
+	RefreshFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*RefreshFleetWorkspaceResponse, error)
+
+	// RetryFleetWorkspaceWithResponse request
+	RetryFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*RetryFleetWorkspaceResponse, error)
+
+	// GetFleetWorkspaceRuntimeWithResponse request
+	GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceRuntimeResponse, error)
+
+	// LaunchFleetWorkspaceRuntimeSessionWithBodyWithResponse request with any body
+	LaunchFleetWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchFleetWorkspaceRuntimeSessionResponse, error)
+
+	LaunchFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, hostKey string, id string, body LaunchFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchFleetWorkspaceRuntimeSessionResponse, error)
+
+	// StopFleetWorkspaceRuntimeSessionWithResponse request
+	StopFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*StopFleetWorkspaceRuntimeSessionResponse, error)
+
+	// RenameFleetWorkspaceRuntimeSessionWithBodyWithResponse request with any body
+	RenameFleetWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResponse, error)
+
+	RenameFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, body RenameFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResponse, error)
+
+	// GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse request
+	GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceRuntimeSessionAttachSpecResponse, error)
 
 	// CreateIssueOnHostWithBodyWithResponse request with any body
 	CreateIssueOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueOnHostResponse, error)
@@ -17764,6 +23122,9 @@ type ClientWithResponsesInterface interface {
 
 	MarkNotificationsUndoneWithResponse(ctx context.Context, body MarkNotificationsUndoneJSONRequestBody, reqEditors ...RequestEditorFn) (*MarkNotificationsUndoneResponse, error)
 
+	// ListUserRepositoriesWithResponse request
+	ListUserRepositoriesWithResponse(ctx context.Context, params *ListUserRepositoriesParams, reqEditors ...RequestEditorFn) (*ListUserRepositoriesResponse, error)
+
 	// ListProjectsWithResponse request
 	ListProjectsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListProjectsResponse, error)
 
@@ -17772,8 +23133,19 @@ type ClientWithResponsesInterface interface {
 
 	RegisterProjectWithResponse(ctx context.Context, body RegisterProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterProjectResponse, error)
 
+	// CloneProjectWithBodyWithResponse request with any body
+	CloneProjectWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CloneProjectResponse, error)
+
+	CloneProjectWithResponse(ctx context.Context, body CloneProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*CloneProjectResponse, error)
+
+	// DeleteProjectWithResponse request
+	DeleteProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*DeleteProjectResponse, error)
+
 	// GetProjectWithResponse request
 	GetProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*GetProjectResponse, error)
+
+	// ListProjectBranchesWithResponse request
+	ListProjectBranchesWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*ListProjectBranchesResponse, error)
 
 	// ListLaunchTargetsWithResponse request
 	ListLaunchTargetsWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*ListLaunchTargetsResponse, error)
@@ -17785,6 +23157,57 @@ type ClientWithResponsesInterface interface {
 	RegisterWorktreeWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterWorktreeResponse, error)
 
 	RegisterWorktreeWithResponse(ctx context.Context, projectId string, body RegisterWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterWorktreeResponse, error)
+
+	// CreateWorktreeFromMergeRequestWithBodyWithResponse request with any body
+	CreateWorktreeFromMergeRequestWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorktreeFromMergeRequestResponse, error)
+
+	CreateWorktreeFromMergeRequestWithResponse(ctx context.Context, projectId string, body CreateWorktreeFromMergeRequestJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWorktreeFromMergeRequestResponse, error)
+
+	// DeleteWorktreeWithResponse request
+	DeleteWorktreeWithResponse(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*DeleteWorktreeResponse, error)
+
+	// RemoveWorktreeWithBodyWithResponse request with any body
+	RemoveWorktreeWithBodyWithResponse(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveWorktreeResponse, error)
+
+	RemoveWorktreeWithResponse(ctx context.Context, projectId string, worktreeId string, body RemoveWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveWorktreeResponse, error)
+
+	// SetWorktreeHiddenWithBodyWithResponse request with any body
+	SetWorktreeHiddenWithBodyWithResponse(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorktreeHiddenResponse, error)
+
+	SetWorktreeHiddenWithResponse(ctx context.Context, projectId string, worktreeId string, body SetWorktreeHiddenJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorktreeHiddenResponse, error)
+
+	// InspectProjectWorktreeWithResponse request
+	InspectProjectWorktreeWithResponse(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*InspectProjectWorktreeResponse, error)
+
+	// SetWorktreeLinksWithBodyWithResponse request with any body
+	SetWorktreeLinksWithBodyWithResponse(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorktreeLinksResponse, error)
+
+	SetWorktreeLinksWithResponse(ctx context.Context, projectId string, worktreeId string, body SetWorktreeLinksJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorktreeLinksResponse, error)
+
+	// RefreshWorktreeStatsWithResponse request
+	RefreshWorktreeStatsWithResponse(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*RefreshWorktreeStatsResponse, error)
+
+	// GetProjectWorktreeRuntimeWithResponse request
+	GetProjectWorktreeRuntimeWithResponse(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*GetProjectWorktreeRuntimeResponse, error)
+
+	// LaunchProjectWorktreeRuntimeSessionWithBodyWithResponse request with any body
+	LaunchProjectWorktreeRuntimeSessionWithBodyWithResponse(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchProjectWorktreeRuntimeSessionResponse, error)
+
+	LaunchProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, projectId string, worktreeId string, body LaunchProjectWorktreeRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchProjectWorktreeRuntimeSessionResponse, error)
+
+	// StopProjectWorktreeRuntimeSessionWithResponse request
+	StopProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*StopProjectWorktreeRuntimeSessionResponse, error)
+
+	// GetProjectWorktreeRuntimeSessionAttachSpecWithResponse request
+	GetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx context.Context, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*GetProjectWorktreeRuntimeSessionAttachSpecResponse, error)
+
+	// EnsureProjectWorktreeRuntimeShellWithResponse request
+	EnsureProjectWorktreeRuntimeShellWithResponse(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*EnsureProjectWorktreeRuntimeShellResponse, error)
+
+	// SetWorktreeSessionBackendWithBodyWithResponse request with any body
+	SetWorktreeSessionBackendWithBodyWithResponse(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorktreeSessionBackendResponse, error)
+
+	SetWorktreeSessionBackendWithResponse(ctx context.Context, projectId string, worktreeId string, body SetWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorktreeSessionBackendResponse, error)
 
 	// ListPullsWithResponse request
 	ListPullsWithResponse(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*ListPullsResponse, error)
@@ -17968,6 +23391,20 @@ type ClientWithResponsesInterface interface {
 	// GetRoborevStatusWithResponse request
 	GetRoborevStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRoborevStatusResponse, error)
 
+	// ListHostRuntimeSessionsWithResponse request
+	ListHostRuntimeSessionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListHostRuntimeSessionsResponse, error)
+
+	// LaunchHostRuntimeSessionWithBodyWithResponse request with any body
+	LaunchHostRuntimeSessionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchHostRuntimeSessionResponse, error)
+
+	LaunchHostRuntimeSessionWithResponse(ctx context.Context, body LaunchHostRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchHostRuntimeSessionResponse, error)
+
+	// StopHostRuntimeSessionWithResponse request
+	StopHostRuntimeSessionWithResponse(ctx context.Context, sessionKey string, reqEditors ...RequestEditorFn) (*StopHostRuntimeSessionResponse, error)
+
+	// GetHostRuntimeSessionAttachSpecWithResponse request
+	GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, sessionKey string, reqEditors ...RequestEditorFn) (*GetHostRuntimeSessionAttachSpecResponse, error)
+
 	// GetSettingsWithResponse request
 	GetSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSettingsResponse, error)
 
@@ -17975,6 +23412,23 @@ type ClientWithResponsesInterface interface {
 	UpdateSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error)
 
 	UpdateSettingsWithResponse(ctx context.Context, body UpdateSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error)
+
+	// GetFleetSshPeersWithResponse request
+	GetFleetSshPeersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFleetSshPeersResponse, error)
+
+	// UpdateFleetSshPeersWithBodyWithResponse request with any body
+	UpdateFleetSshPeersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFleetSshPeersResponse, error)
+
+	UpdateFleetSshPeersWithResponse(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFleetSshPeersResponse, error)
+
+	// GetSnapshotWithResponse request
+	GetSnapshotWithResponse(ctx context.Context, params *GetSnapshotParams, reqEditors ...RequestEditorFn) (*GetSnapshotResponse, error)
+
+	// GetSnapshotRawWithResponse request
+	GetSnapshotRawWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSnapshotRawResponse, error)
+
+	// RefreshFleetStatsWithResponse request
+	RefreshFleetStatsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*RefreshFleetStatsResponse, error)
 
 	// ListStacksWithResponse request
 	ListStacksWithResponse(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*ListStacksResponse, error)
@@ -17999,6 +23453,14 @@ type ClientWithResponsesInterface interface {
 	CaptureTelemetryEventWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CaptureTelemetryEventResponse, error)
 
 	CaptureTelemetryEventWithResponse(ctx context.Context, body CaptureTelemetryEventJSONRequestBody, reqEditors ...RequestEditorFn) (*CaptureTelemetryEventResponse, error)
+
+	// GetToolingStatusWithResponse request
+	GetToolingStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetToolingStatusResponse, error)
+
+	// SetActiveWorktreeWithBodyWithResponse request with any body
+	SetActiveWorktreeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetActiveWorktreeResponse, error)
+
+	SetActiveWorktreeWithResponse(ctx context.Context, body SetActiveWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*SetActiveWorktreeResponse, error)
 
 	// GetVersionWithResponse request
 	GetVersionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVersionResponse, error)
@@ -18050,6 +23512,14 @@ type ClientWithResponsesInterface interface {
 	RenameWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameWorkspaceRuntimeSessionResponse, error)
 
 	RenameWorkspaceRuntimeSessionWithResponse(ctx context.Context, id string, sessionKey string, body RenameWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameWorkspaceRuntimeSessionResponse, error)
+
+	// GetWorkspaceRuntimeSessionAttachSpecWithResponse request
+	GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeSessionAttachSpecResponse, error)
+
+	// RemoveStaleWorktreeWithBodyWithResponse request with any body
+	RemoveStaleWorktreeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveStaleWorktreeResponse, error)
+
+	RemoveStaleWorktreeWithResponse(ctx context.Context, body RemoveStaleWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveStaleWorktreeResponse, error)
 }
 
 type ListActivityResponse struct {
@@ -18457,6 +23927,834 @@ func (r SearchDocsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r SearchDocsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CompleteFilesystemPathResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FilesystemCompleteOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CompleteFilesystemPathResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CompleteFilesystemPathResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ValidateFilesystemRepoResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FilesystemValidateRepoOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ValidateFilesystemRepoResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ValidateFilesystemRepoResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CompleteFleetFilesystemPathResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CompleteFleetFilesystemPathResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CompleteFleetFilesystemPathResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ValidateFleetFilesystemRepoResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ValidateFleetFilesystemRepoResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ValidateFleetFilesystemRepoResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateFleetIssueWorkspaceOnPlatformHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateFleetIssueWorkspaceOnPlatformHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateFleetIssueWorkspaceOnPlatformHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateFleetIssueWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateFleetIssueWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateFleetIssueWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RegisterFleetProjectResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RegisterFleetProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RegisterFleetProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CloneFleetProjectResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CloneFleetProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CloneFleetProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteFleetProjectResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteFleetProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteFleetProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListFleetProjectBranchesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListFleetProjectBranchesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListFleetProjectBranchesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateFleetProjectWorktreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateFleetProjectWorktreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateFleetProjectWorktreeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateFleetProjectWorktreeFromMergeRequestResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateFleetProjectWorktreeFromMergeRequestResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateFleetProjectWorktreeFromMergeRequestResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RemoveFleetProjectWorktreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveFleetProjectWorktreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveFleetProjectWorktreeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type InspectFleetProjectWorktreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r InspectFleetProjectWorktreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r InspectFleetProjectWorktreeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetFleetProjectWorktreeLinksResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetFleetProjectWorktreeLinksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetFleetProjectWorktreeLinksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RefreshFleetProjectWorktreeStatsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshFleetProjectWorktreeStatsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshFleetProjectWorktreeStatsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetProjectWorktreeRuntimeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetProjectWorktreeRuntimeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetProjectWorktreeRuntimeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type LaunchFleetProjectWorktreeRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r LaunchFleetProjectWorktreeRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LaunchFleetProjectWorktreeRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StopFleetProjectWorktreeRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r StopFleetProjectWorktreeRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StopFleetProjectWorktreeRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnsureFleetProjectWorktreeRuntimeShellResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r EnsureFleetProjectWorktreeRuntimeShellResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnsureFleetProjectWorktreeRuntimeShellResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetFleetProjectWorktreeSessionBackendResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetFleetProjectWorktreeSessionBackendResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetFleetProjectWorktreeSessionBackendResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type LaunchFleetHostRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r LaunchFleetHostRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LaunchFleetHostRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StopFleetHostRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r StopFleetHostRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StopFleetHostRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetHostRuntimeSessionAttachSpecResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetHostRuntimeSessionAttachSpecResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetHostRuntimeSessionAttachSpecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListFleetWorkspacesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListFleetWorkspacesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListFleetWorkspacesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateFleetWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateFleetWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateFleetWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteFleetWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteFleetWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteFleetWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RefreshFleetWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshFleetWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshFleetWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RetryFleetWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RetryFleetWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RetryFleetWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetWorkspaceRuntimeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetWorkspaceRuntimeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetWorkspaceRuntimeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type LaunchFleetWorkspaceRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r LaunchFleetWorkspaceRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LaunchFleetWorkspaceRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StopFleetWorkspaceRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r StopFleetWorkspaceRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StopFleetWorkspaceRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RenameFleetWorkspaceRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RenameFleetWorkspaceRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RenameFleetWorkspaceRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetWorkspaceRuntimeSessionAttachSpecResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetWorkspaceRuntimeSessionAttachSpecResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetWorkspaceRuntimeSessionAttachSpecResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -20267,6 +26565,29 @@ func (r MarkNotificationsUndoneResponse) StatusCode() int {
 	return 0
 }
 
+type ListUserRepositoriesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListUserRepositoriesOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListUserRepositoriesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListUserRepositoriesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListProjectsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -20313,6 +26634,51 @@ func (r RegisterProjectResponse) StatusCode() int {
 	return 0
 }
 
+type CloneProjectResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *ProjectResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CloneProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CloneProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteProjectResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetProjectResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -20330,6 +26696,29 @@ func (r GetProjectResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListProjectBranchesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListProjectBranchesOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListProjectBranchesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListProjectBranchesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -20399,6 +26788,302 @@ func (r RegisterWorktreeResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r RegisterWorktreeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateWorktreeFromMergeRequestResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *WorktreeFromMergeRequestResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateWorktreeFromMergeRequestResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateWorktreeFromMergeRequestResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteWorktreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteWorktreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteWorktreeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RemoveWorktreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveWorktreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveWorktreeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetWorktreeHiddenResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorktreeResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetWorktreeHiddenResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetWorktreeHiddenResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type InspectProjectWorktreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *InspectProjectWorktreeOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r InspectProjectWorktreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r InspectProjectWorktreeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetWorktreeLinksResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorktreeResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetWorktreeLinksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetWorktreeLinksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RefreshWorktreeStatsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorktreeResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshWorktreeStatsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshWorktreeStatsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetProjectWorktreeRuntimeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProjectWorktreeRuntimeResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProjectWorktreeRuntimeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProjectWorktreeRuntimeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type LaunchProjectWorktreeRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProjectWorktreeRuntimeSession
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r LaunchProjectWorktreeRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LaunchProjectWorktreeRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StopProjectWorktreeRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r StopProjectWorktreeRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StopProjectWorktreeRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetProjectWorktreeRuntimeSessionAttachSpecResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RuntimeAttachSpecResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProjectWorktreeRuntimeSessionAttachSpecResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProjectWorktreeRuntimeSessionAttachSpecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnsureProjectWorktreeRuntimeShellResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProjectWorktreeRuntimeSession
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r EnsureProjectWorktreeRuntimeShellResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnsureProjectWorktreeRuntimeShellResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetWorktreeSessionBackendResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorktreeResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetWorktreeSessionBackendResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetWorktreeSessionBackendResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -21501,6 +28186,97 @@ func (r GetRoborevStatusResponse) StatusCode() int {
 	return 0
 }
 
+type ListHostRuntimeSessionsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListHostRuntimeSessionsOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListHostRuntimeSessionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListHostRuntimeSessionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type LaunchHostRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *HostRuntimeSession
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r LaunchHostRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LaunchHostRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StopHostRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r StopHostRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StopHostRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostRuntimeSessionAttachSpecResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RuntimeAttachSpecResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostRuntimeSessionAttachSpecResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostRuntimeSessionAttachSpecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetSettingsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -21541,6 +28317,121 @@ func (r UpdateSettingsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r UpdateSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFleetSshPeersResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FleetSSHPeersBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetSshPeersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetSshPeersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateFleetSshPeersResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FleetSSHPeersBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateFleetSshPeersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateFleetSshPeersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetSnapshotResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *Snapshot
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSnapshotResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSnapshotResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetSnapshotRawResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RawSnapshot
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSnapshotRawResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSnapshotRawResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RefreshFleetStatsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RefreshFleetStatsOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshFleetStatsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshFleetStatsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -21676,6 +28567,51 @@ func (r CaptureTelemetryEventResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CaptureTelemetryEventResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetToolingStatusResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ToolingStatusBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetToolingStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetToolingStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetActiveWorktreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetActiveWorktreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetActiveWorktreeResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -22025,6 +28961,52 @@ func (r RenameWorkspaceRuntimeSessionResponse) StatusCode() int {
 	return 0
 }
 
+type GetWorkspaceRuntimeSessionAttachSpecResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RuntimeAttachSpecResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspaceRuntimeSessionAttachSpecResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspaceRuntimeSessionAttachSpecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RemoveStaleWorktreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RemoveStaleWorktreeOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveStaleWorktreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveStaleWorktreeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // ListActivityWithResponse request returning *ListActivityResponse
 func (c *ClientWithResponses) ListActivityWithResponse(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*ListActivityResponse, error) {
 	rsp, err := c.ListActivity(ctx, params, reqEditors...)
@@ -22233,6 +29215,442 @@ func (c *ClientWithResponses) SearchDocsWithResponse(ctx context.Context, params
 		return nil, err
 	}
 	return ParseSearchDocsResponse(rsp)
+}
+
+// CompleteFilesystemPathWithResponse request returning *CompleteFilesystemPathResponse
+func (c *ClientWithResponses) CompleteFilesystemPathWithResponse(ctx context.Context, params *CompleteFilesystemPathParams, reqEditors ...RequestEditorFn) (*CompleteFilesystemPathResponse, error) {
+	rsp, err := c.CompleteFilesystemPath(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCompleteFilesystemPathResponse(rsp)
+}
+
+// ValidateFilesystemRepoWithResponse request returning *ValidateFilesystemRepoResponse
+func (c *ClientWithResponses) ValidateFilesystemRepoWithResponse(ctx context.Context, params *ValidateFilesystemRepoParams, reqEditors ...RequestEditorFn) (*ValidateFilesystemRepoResponse, error) {
+	rsp, err := c.ValidateFilesystemRepo(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseValidateFilesystemRepoResponse(rsp)
+}
+
+// CompleteFleetFilesystemPathWithResponse request returning *CompleteFleetFilesystemPathResponse
+func (c *ClientWithResponses) CompleteFleetFilesystemPathWithResponse(ctx context.Context, hostKey string, params *CompleteFleetFilesystemPathParams, reqEditors ...RequestEditorFn) (*CompleteFleetFilesystemPathResponse, error) {
+	rsp, err := c.CompleteFleetFilesystemPath(ctx, hostKey, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCompleteFleetFilesystemPathResponse(rsp)
+}
+
+// ValidateFleetFilesystemRepoWithResponse request returning *ValidateFleetFilesystemRepoResponse
+func (c *ClientWithResponses) ValidateFleetFilesystemRepoWithResponse(ctx context.Context, hostKey string, params *ValidateFleetFilesystemRepoParams, reqEditors ...RequestEditorFn) (*ValidateFleetFilesystemRepoResponse, error) {
+	rsp, err := c.ValidateFleetFilesystemRepo(ctx, hostKey, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseValidateFleetFilesystemRepoResponse(rsp)
+}
+
+// CreateFleetIssueWorkspaceOnPlatformHostWithBodyWithResponse request with arbitrary body returning *CreateFleetIssueWorkspaceOnPlatformHostResponse
+func (c *ClientWithResponses) CreateFleetIssueWorkspaceOnPlatformHostWithBodyWithResponse(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, number string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceOnPlatformHostResponse, error) {
+	rsp, err := c.CreateFleetIssueWorkspaceOnPlatformHostWithBody(ctx, hostKey, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetIssueWorkspaceOnPlatformHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateFleetIssueWorkspaceOnPlatformHostWithResponse(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceOnPlatformHostResponse, error) {
+	rsp, err := c.CreateFleetIssueWorkspaceOnPlatformHost(ctx, hostKey, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetIssueWorkspaceOnPlatformHostResponse(rsp)
+}
+
+// CreateFleetIssueWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateFleetIssueWorkspaceResponse
+func (c *ClientWithResponses) CreateFleetIssueWorkspaceWithBodyWithResponse(ctx context.Context, hostKey string, provider string, owner string, name string, number string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceResponse, error) {
+	rsp, err := c.CreateFleetIssueWorkspaceWithBody(ctx, hostKey, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetIssueWorkspaceResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateFleetIssueWorkspaceWithResponse(ctx context.Context, hostKey string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceResponse, error) {
+	rsp, err := c.CreateFleetIssueWorkspace(ctx, hostKey, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetIssueWorkspaceResponse(rsp)
+}
+
+// RegisterFleetProjectWithBodyWithResponse request with arbitrary body returning *RegisterFleetProjectResponse
+func (c *ClientWithResponses) RegisterFleetProjectWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterFleetProjectResponse, error) {
+	rsp, err := c.RegisterFleetProjectWithBody(ctx, hostKey, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterFleetProjectResponse(rsp)
+}
+
+func (c *ClientWithResponses) RegisterFleetProjectWithResponse(ctx context.Context, hostKey string, body RegisterFleetProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterFleetProjectResponse, error) {
+	rsp, err := c.RegisterFleetProject(ctx, hostKey, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterFleetProjectResponse(rsp)
+}
+
+// CloneFleetProjectWithBodyWithResponse request with arbitrary body returning *CloneFleetProjectResponse
+func (c *ClientWithResponses) CloneFleetProjectWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CloneFleetProjectResponse, error) {
+	rsp, err := c.CloneFleetProjectWithBody(ctx, hostKey, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCloneFleetProjectResponse(rsp)
+}
+
+func (c *ClientWithResponses) CloneFleetProjectWithResponse(ctx context.Context, hostKey string, body CloneFleetProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*CloneFleetProjectResponse, error) {
+	rsp, err := c.CloneFleetProject(ctx, hostKey, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCloneFleetProjectResponse(rsp)
+}
+
+// DeleteFleetProjectWithResponse request returning *DeleteFleetProjectResponse
+func (c *ClientWithResponses) DeleteFleetProjectWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*DeleteFleetProjectResponse, error) {
+	rsp, err := c.DeleteFleetProject(ctx, hostKey, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteFleetProjectResponse(rsp)
+}
+
+// ListFleetProjectBranchesWithResponse request returning *ListFleetProjectBranchesResponse
+func (c *ClientWithResponses) ListFleetProjectBranchesWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*ListFleetProjectBranchesResponse, error) {
+	rsp, err := c.ListFleetProjectBranches(ctx, hostKey, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListFleetProjectBranchesResponse(rsp)
+}
+
+// CreateFleetProjectWorktreeWithBodyWithResponse request with arbitrary body returning *CreateFleetProjectWorktreeResponse
+func (c *ClientWithResponses) CreateFleetProjectWorktreeWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetProjectWorktreeResponse, error) {
+	rsp, err := c.CreateFleetProjectWorktreeWithBody(ctx, hostKey, projectId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetProjectWorktreeResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateFleetProjectWorktreeWithResponse(ctx context.Context, hostKey string, projectId string, body CreateFleetProjectWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetProjectWorktreeResponse, error) {
+	rsp, err := c.CreateFleetProjectWorktree(ctx, hostKey, projectId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetProjectWorktreeResponse(rsp)
+}
+
+// CreateFleetProjectWorktreeFromMergeRequestWithBodyWithResponse request with arbitrary body returning *CreateFleetProjectWorktreeFromMergeRequestResponse
+func (c *ClientWithResponses) CreateFleetProjectWorktreeFromMergeRequestWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetProjectWorktreeFromMergeRequestResponse, error) {
+	rsp, err := c.CreateFleetProjectWorktreeFromMergeRequestWithBody(ctx, hostKey, projectId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetProjectWorktreeFromMergeRequestResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateFleetProjectWorktreeFromMergeRequestWithResponse(ctx context.Context, hostKey string, projectId string, body CreateFleetProjectWorktreeFromMergeRequestJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetProjectWorktreeFromMergeRequestResponse, error) {
+	rsp, err := c.CreateFleetProjectWorktreeFromMergeRequest(ctx, hostKey, projectId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetProjectWorktreeFromMergeRequestResponse(rsp)
+}
+
+// RemoveFleetProjectWorktreeWithBodyWithResponse request with arbitrary body returning *RemoveFleetProjectWorktreeResponse
+func (c *ClientWithResponses) RemoveFleetProjectWorktreeWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveFleetProjectWorktreeResponse, error) {
+	rsp, err := c.RemoveFleetProjectWorktreeWithBody(ctx, hostKey, projectId, worktreeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveFleetProjectWorktreeResponse(rsp)
+}
+
+func (c *ClientWithResponses) RemoveFleetProjectWorktreeWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, body RemoveFleetProjectWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveFleetProjectWorktreeResponse, error) {
+	rsp, err := c.RemoveFleetProjectWorktree(ctx, hostKey, projectId, worktreeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveFleetProjectWorktreeResponse(rsp)
+}
+
+// InspectFleetProjectWorktreeWithResponse request returning *InspectFleetProjectWorktreeResponse
+func (c *ClientWithResponses) InspectFleetProjectWorktreeWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*InspectFleetProjectWorktreeResponse, error) {
+	rsp, err := c.InspectFleetProjectWorktree(ctx, hostKey, projectId, worktreeId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseInspectFleetProjectWorktreeResponse(rsp)
+}
+
+// SetFleetProjectWorktreeLinksWithBodyWithResponse request with arbitrary body returning *SetFleetProjectWorktreeLinksResponse
+func (c *ClientWithResponses) SetFleetProjectWorktreeLinksWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetFleetProjectWorktreeLinksResponse, error) {
+	rsp, err := c.SetFleetProjectWorktreeLinksWithBody(ctx, hostKey, projectId, worktreeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetFleetProjectWorktreeLinksResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetFleetProjectWorktreeLinksWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeLinksJSONRequestBody, reqEditors ...RequestEditorFn) (*SetFleetProjectWorktreeLinksResponse, error) {
+	rsp, err := c.SetFleetProjectWorktreeLinks(ctx, hostKey, projectId, worktreeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetFleetProjectWorktreeLinksResponse(rsp)
+}
+
+// RefreshFleetProjectWorktreeStatsWithResponse request returning *RefreshFleetProjectWorktreeStatsResponse
+func (c *ClientWithResponses) RefreshFleetProjectWorktreeStatsWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*RefreshFleetProjectWorktreeStatsResponse, error) {
+	rsp, err := c.RefreshFleetProjectWorktreeStats(ctx, hostKey, projectId, worktreeId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshFleetProjectWorktreeStatsResponse(rsp)
+}
+
+// GetFleetProjectWorktreeRuntimeWithResponse request returning *GetFleetProjectWorktreeRuntimeResponse
+func (c *ClientWithResponses) GetFleetProjectWorktreeRuntimeWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*GetFleetProjectWorktreeRuntimeResponse, error) {
+	rsp, err := c.GetFleetProjectWorktreeRuntime(ctx, hostKey, projectId, worktreeId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetProjectWorktreeRuntimeResponse(rsp)
+}
+
+// LaunchFleetProjectWorktreeRuntimeSessionWithBodyWithResponse request with arbitrary body returning *LaunchFleetProjectWorktreeRuntimeSessionResponse
+func (c *ClientWithResponses) LaunchFleetProjectWorktreeRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchFleetProjectWorktreeRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchFleetProjectWorktreeRuntimeSessionWithBody(ctx, hostKey, projectId, worktreeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchFleetProjectWorktreeRuntimeSessionResponse(rsp)
+}
+
+func (c *ClientWithResponses) LaunchFleetProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, body LaunchFleetProjectWorktreeRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchFleetProjectWorktreeRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchFleetProjectWorktreeRuntimeSession(ctx, hostKey, projectId, worktreeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchFleetProjectWorktreeRuntimeSessionResponse(rsp)
+}
+
+// StopFleetProjectWorktreeRuntimeSessionWithResponse request returning *StopFleetProjectWorktreeRuntimeSessionResponse
+func (c *ClientWithResponses) StopFleetProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*StopFleetProjectWorktreeRuntimeSessionResponse, error) {
+	rsp, err := c.StopFleetProjectWorktreeRuntimeSession(ctx, hostKey, projectId, worktreeId, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStopFleetProjectWorktreeRuntimeSessionResponse(rsp)
+}
+
+// GetFleetProjectWorktreeRuntimeSessionAttachSpecWithResponse request returning *GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse
+func (c *ClientWithResponses) GetFleetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse, error) {
+	rsp, err := c.GetFleetProjectWorktreeRuntimeSessionAttachSpec(ctx, hostKey, projectId, worktreeId, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetProjectWorktreeRuntimeSessionAttachSpecResponse(rsp)
+}
+
+// EnsureFleetProjectWorktreeRuntimeShellWithResponse request returning *EnsureFleetProjectWorktreeRuntimeShellResponse
+func (c *ClientWithResponses) EnsureFleetProjectWorktreeRuntimeShellWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*EnsureFleetProjectWorktreeRuntimeShellResponse, error) {
+	rsp, err := c.EnsureFleetProjectWorktreeRuntimeShell(ctx, hostKey, projectId, worktreeId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnsureFleetProjectWorktreeRuntimeShellResponse(rsp)
+}
+
+// SetFleetProjectWorktreeSessionBackendWithBodyWithResponse request with arbitrary body returning *SetFleetProjectWorktreeSessionBackendResponse
+func (c *ClientWithResponses) SetFleetProjectWorktreeSessionBackendWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetFleetProjectWorktreeSessionBackendResponse, error) {
+	rsp, err := c.SetFleetProjectWorktreeSessionBackendWithBody(ctx, hostKey, projectId, worktreeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetFleetProjectWorktreeSessionBackendResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetFleetProjectWorktreeSessionBackendWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*SetFleetProjectWorktreeSessionBackendResponse, error) {
+	rsp, err := c.SetFleetProjectWorktreeSessionBackend(ctx, hostKey, projectId, worktreeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetFleetProjectWorktreeSessionBackendResponse(rsp)
+}
+
+// LaunchFleetHostRuntimeSessionWithBodyWithResponse request with arbitrary body returning *LaunchFleetHostRuntimeSessionResponse
+func (c *ClientWithResponses) LaunchFleetHostRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchFleetHostRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchFleetHostRuntimeSessionWithBody(ctx, hostKey, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchFleetHostRuntimeSessionResponse(rsp)
+}
+
+func (c *ClientWithResponses) LaunchFleetHostRuntimeSessionWithResponse(ctx context.Context, hostKey string, body LaunchFleetHostRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchFleetHostRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchFleetHostRuntimeSession(ctx, hostKey, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchFleetHostRuntimeSessionResponse(rsp)
+}
+
+// StopFleetHostRuntimeSessionWithResponse request returning *StopFleetHostRuntimeSessionResponse
+func (c *ClientWithResponses) StopFleetHostRuntimeSessionWithResponse(ctx context.Context, hostKey string, sessionKey string, reqEditors ...RequestEditorFn) (*StopFleetHostRuntimeSessionResponse, error) {
+	rsp, err := c.StopFleetHostRuntimeSession(ctx, hostKey, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStopFleetHostRuntimeSessionResponse(rsp)
+}
+
+// GetFleetHostRuntimeSessionAttachSpecWithResponse request returning *GetFleetHostRuntimeSessionAttachSpecResponse
+func (c *ClientWithResponses) GetFleetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, hostKey string, sessionKey string, reqEditors ...RequestEditorFn) (*GetFleetHostRuntimeSessionAttachSpecResponse, error) {
+	rsp, err := c.GetFleetHostRuntimeSessionAttachSpec(ctx, hostKey, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetHostRuntimeSessionAttachSpecResponse(rsp)
+}
+
+// ListFleetWorkspacesWithResponse request returning *ListFleetWorkspacesResponse
+func (c *ClientWithResponses) ListFleetWorkspacesWithResponse(ctx context.Context, hostKey string, reqEditors ...RequestEditorFn) (*ListFleetWorkspacesResponse, error) {
+	rsp, err := c.ListFleetWorkspaces(ctx, hostKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListFleetWorkspacesResponse(rsp)
+}
+
+// CreateFleetWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateFleetWorkspaceResponse
+func (c *ClientWithResponses) CreateFleetWorkspaceWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetWorkspaceResponse, error) {
+	rsp, err := c.CreateFleetWorkspaceWithBody(ctx, hostKey, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetWorkspaceResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateFleetWorkspaceWithResponse(ctx context.Context, hostKey string, body CreateFleetWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetWorkspaceResponse, error) {
+	rsp, err := c.CreateFleetWorkspace(ctx, hostKey, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetWorkspaceResponse(rsp)
+}
+
+// DeleteFleetWorkspaceWithResponse request returning *DeleteFleetWorkspaceResponse
+func (c *ClientWithResponses) DeleteFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, params *DeleteFleetWorkspaceParams, reqEditors ...RequestEditorFn) (*DeleteFleetWorkspaceResponse, error) {
+	rsp, err := c.DeleteFleetWorkspace(ctx, hostKey, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteFleetWorkspaceResponse(rsp)
+}
+
+// GetFleetWorkspaceWithResponse request returning *GetFleetWorkspaceResponse
+func (c *ClientWithResponses) GetFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceResponse, error) {
+	rsp, err := c.GetFleetWorkspace(ctx, hostKey, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetWorkspaceResponse(rsp)
+}
+
+// RefreshFleetWorkspaceWithResponse request returning *RefreshFleetWorkspaceResponse
+func (c *ClientWithResponses) RefreshFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*RefreshFleetWorkspaceResponse, error) {
+	rsp, err := c.RefreshFleetWorkspace(ctx, hostKey, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshFleetWorkspaceResponse(rsp)
+}
+
+// RetryFleetWorkspaceWithResponse request returning *RetryFleetWorkspaceResponse
+func (c *ClientWithResponses) RetryFleetWorkspaceWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*RetryFleetWorkspaceResponse, error) {
+	rsp, err := c.RetryFleetWorkspace(ctx, hostKey, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetryFleetWorkspaceResponse(rsp)
+}
+
+// GetFleetWorkspaceRuntimeWithResponse request returning *GetFleetWorkspaceRuntimeResponse
+func (c *ClientWithResponses) GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, hostKey string, id string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceRuntimeResponse, error) {
+	rsp, err := c.GetFleetWorkspaceRuntime(ctx, hostKey, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetWorkspaceRuntimeResponse(rsp)
+}
+
+// LaunchFleetWorkspaceRuntimeSessionWithBodyWithResponse request with arbitrary body returning *LaunchFleetWorkspaceRuntimeSessionResponse
+func (c *ClientWithResponses) LaunchFleetWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchFleetWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchFleetWorkspaceRuntimeSessionWithBody(ctx, hostKey, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchFleetWorkspaceRuntimeSessionResponse(rsp)
+}
+
+func (c *ClientWithResponses) LaunchFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, hostKey string, id string, body LaunchFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchFleetWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchFleetWorkspaceRuntimeSession(ctx, hostKey, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchFleetWorkspaceRuntimeSessionResponse(rsp)
+}
+
+// StopFleetWorkspaceRuntimeSessionWithResponse request returning *StopFleetWorkspaceRuntimeSessionResponse
+func (c *ClientWithResponses) StopFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*StopFleetWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.StopFleetWorkspaceRuntimeSession(ctx, hostKey, id, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStopFleetWorkspaceRuntimeSessionResponse(rsp)
+}
+
+// RenameFleetWorkspaceRuntimeSessionWithBodyWithResponse request with arbitrary body returning *RenameFleetWorkspaceRuntimeSessionResponse
+func (c *ClientWithResponses) RenameFleetWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.RenameFleetWorkspaceRuntimeSessionWithBody(ctx, hostKey, id, sessionKey, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenameFleetWorkspaceRuntimeSessionResponse(rsp)
+}
+
+func (c *ClientWithResponses) RenameFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, body RenameFleetWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.RenameFleetWorkspaceRuntimeSession(ctx, hostKey, id, sessionKey, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenameFleetWorkspaceRuntimeSessionResponse(rsp)
+}
+
+// GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse request returning *GetFleetWorkspaceRuntimeSessionAttachSpecResponse
+func (c *ClientWithResponses) GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceRuntimeSessionAttachSpecResponse, error) {
+	rsp, err := c.GetFleetWorkspaceRuntimeSessionAttachSpec(ctx, hostKey, id, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetWorkspaceRuntimeSessionAttachSpecResponse(rsp)
 }
 
 // CreateIssueOnHostWithBodyWithResponse request with arbitrary body returning *CreateIssueOnHostResponse
@@ -23242,6 +30660,15 @@ func (c *ClientWithResponses) MarkNotificationsUndoneWithResponse(ctx context.Co
 	return ParseMarkNotificationsUndoneResponse(rsp)
 }
 
+// ListUserRepositoriesWithResponse request returning *ListUserRepositoriesResponse
+func (c *ClientWithResponses) ListUserRepositoriesWithResponse(ctx context.Context, params *ListUserRepositoriesParams, reqEditors ...RequestEditorFn) (*ListUserRepositoriesResponse, error) {
+	rsp, err := c.ListUserRepositories(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListUserRepositoriesResponse(rsp)
+}
+
 // ListProjectsWithResponse request returning *ListProjectsResponse
 func (c *ClientWithResponses) ListProjectsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListProjectsResponse, error) {
 	rsp, err := c.ListProjects(ctx, reqEditors...)
@@ -23268,6 +30695,32 @@ func (c *ClientWithResponses) RegisterProjectWithResponse(ctx context.Context, b
 	return ParseRegisterProjectResponse(rsp)
 }
 
+// CloneProjectWithBodyWithResponse request with arbitrary body returning *CloneProjectResponse
+func (c *ClientWithResponses) CloneProjectWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CloneProjectResponse, error) {
+	rsp, err := c.CloneProjectWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCloneProjectResponse(rsp)
+}
+
+func (c *ClientWithResponses) CloneProjectWithResponse(ctx context.Context, body CloneProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*CloneProjectResponse, error) {
+	rsp, err := c.CloneProject(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCloneProjectResponse(rsp)
+}
+
+// DeleteProjectWithResponse request returning *DeleteProjectResponse
+func (c *ClientWithResponses) DeleteProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*DeleteProjectResponse, error) {
+	rsp, err := c.DeleteProject(ctx, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteProjectResponse(rsp)
+}
+
 // GetProjectWithResponse request returning *GetProjectResponse
 func (c *ClientWithResponses) GetProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*GetProjectResponse, error) {
 	rsp, err := c.GetProject(ctx, projectId, reqEditors...)
@@ -23275,6 +30728,15 @@ func (c *ClientWithResponses) GetProjectWithResponse(ctx context.Context, projec
 		return nil, err
 	}
 	return ParseGetProjectResponse(rsp)
+}
+
+// ListProjectBranchesWithResponse request returning *ListProjectBranchesResponse
+func (c *ClientWithResponses) ListProjectBranchesWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*ListProjectBranchesResponse, error) {
+	rsp, err := c.ListProjectBranches(ctx, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListProjectBranchesResponse(rsp)
 }
 
 // ListLaunchTargetsWithResponse request returning *ListLaunchTargetsResponse
@@ -23310,6 +30772,171 @@ func (c *ClientWithResponses) RegisterWorktreeWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseRegisterWorktreeResponse(rsp)
+}
+
+// CreateWorktreeFromMergeRequestWithBodyWithResponse request with arbitrary body returning *CreateWorktreeFromMergeRequestResponse
+func (c *ClientWithResponses) CreateWorktreeFromMergeRequestWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorktreeFromMergeRequestResponse, error) {
+	rsp, err := c.CreateWorktreeFromMergeRequestWithBody(ctx, projectId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWorktreeFromMergeRequestResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateWorktreeFromMergeRequestWithResponse(ctx context.Context, projectId string, body CreateWorktreeFromMergeRequestJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWorktreeFromMergeRequestResponse, error) {
+	rsp, err := c.CreateWorktreeFromMergeRequest(ctx, projectId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWorktreeFromMergeRequestResponse(rsp)
+}
+
+// DeleteWorktreeWithResponse request returning *DeleteWorktreeResponse
+func (c *ClientWithResponses) DeleteWorktreeWithResponse(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*DeleteWorktreeResponse, error) {
+	rsp, err := c.DeleteWorktree(ctx, projectId, worktreeId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteWorktreeResponse(rsp)
+}
+
+// RemoveWorktreeWithBodyWithResponse request with arbitrary body returning *RemoveWorktreeResponse
+func (c *ClientWithResponses) RemoveWorktreeWithBodyWithResponse(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveWorktreeResponse, error) {
+	rsp, err := c.RemoveWorktreeWithBody(ctx, projectId, worktreeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveWorktreeResponse(rsp)
+}
+
+func (c *ClientWithResponses) RemoveWorktreeWithResponse(ctx context.Context, projectId string, worktreeId string, body RemoveWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveWorktreeResponse, error) {
+	rsp, err := c.RemoveWorktree(ctx, projectId, worktreeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveWorktreeResponse(rsp)
+}
+
+// SetWorktreeHiddenWithBodyWithResponse request with arbitrary body returning *SetWorktreeHiddenResponse
+func (c *ClientWithResponses) SetWorktreeHiddenWithBodyWithResponse(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorktreeHiddenResponse, error) {
+	rsp, err := c.SetWorktreeHiddenWithBody(ctx, projectId, worktreeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorktreeHiddenResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetWorktreeHiddenWithResponse(ctx context.Context, projectId string, worktreeId string, body SetWorktreeHiddenJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorktreeHiddenResponse, error) {
+	rsp, err := c.SetWorktreeHidden(ctx, projectId, worktreeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorktreeHiddenResponse(rsp)
+}
+
+// InspectProjectWorktreeWithResponse request returning *InspectProjectWorktreeResponse
+func (c *ClientWithResponses) InspectProjectWorktreeWithResponse(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*InspectProjectWorktreeResponse, error) {
+	rsp, err := c.InspectProjectWorktree(ctx, projectId, worktreeId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseInspectProjectWorktreeResponse(rsp)
+}
+
+// SetWorktreeLinksWithBodyWithResponse request with arbitrary body returning *SetWorktreeLinksResponse
+func (c *ClientWithResponses) SetWorktreeLinksWithBodyWithResponse(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorktreeLinksResponse, error) {
+	rsp, err := c.SetWorktreeLinksWithBody(ctx, projectId, worktreeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorktreeLinksResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetWorktreeLinksWithResponse(ctx context.Context, projectId string, worktreeId string, body SetWorktreeLinksJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorktreeLinksResponse, error) {
+	rsp, err := c.SetWorktreeLinks(ctx, projectId, worktreeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorktreeLinksResponse(rsp)
+}
+
+// RefreshWorktreeStatsWithResponse request returning *RefreshWorktreeStatsResponse
+func (c *ClientWithResponses) RefreshWorktreeStatsWithResponse(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*RefreshWorktreeStatsResponse, error) {
+	rsp, err := c.RefreshWorktreeStats(ctx, projectId, worktreeId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshWorktreeStatsResponse(rsp)
+}
+
+// GetProjectWorktreeRuntimeWithResponse request returning *GetProjectWorktreeRuntimeResponse
+func (c *ClientWithResponses) GetProjectWorktreeRuntimeWithResponse(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*GetProjectWorktreeRuntimeResponse, error) {
+	rsp, err := c.GetProjectWorktreeRuntime(ctx, projectId, worktreeId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProjectWorktreeRuntimeResponse(rsp)
+}
+
+// LaunchProjectWorktreeRuntimeSessionWithBodyWithResponse request with arbitrary body returning *LaunchProjectWorktreeRuntimeSessionResponse
+func (c *ClientWithResponses) LaunchProjectWorktreeRuntimeSessionWithBodyWithResponse(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchProjectWorktreeRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchProjectWorktreeRuntimeSessionWithBody(ctx, projectId, worktreeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchProjectWorktreeRuntimeSessionResponse(rsp)
+}
+
+func (c *ClientWithResponses) LaunchProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, projectId string, worktreeId string, body LaunchProjectWorktreeRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchProjectWorktreeRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchProjectWorktreeRuntimeSession(ctx, projectId, worktreeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchProjectWorktreeRuntimeSessionResponse(rsp)
+}
+
+// StopProjectWorktreeRuntimeSessionWithResponse request returning *StopProjectWorktreeRuntimeSessionResponse
+func (c *ClientWithResponses) StopProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*StopProjectWorktreeRuntimeSessionResponse, error) {
+	rsp, err := c.StopProjectWorktreeRuntimeSession(ctx, projectId, worktreeId, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStopProjectWorktreeRuntimeSessionResponse(rsp)
+}
+
+// GetProjectWorktreeRuntimeSessionAttachSpecWithResponse request returning *GetProjectWorktreeRuntimeSessionAttachSpecResponse
+func (c *ClientWithResponses) GetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx context.Context, projectId string, worktreeId string, sessionKey string, reqEditors ...RequestEditorFn) (*GetProjectWorktreeRuntimeSessionAttachSpecResponse, error) {
+	rsp, err := c.GetProjectWorktreeRuntimeSessionAttachSpec(ctx, projectId, worktreeId, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProjectWorktreeRuntimeSessionAttachSpecResponse(rsp)
+}
+
+// EnsureProjectWorktreeRuntimeShellWithResponse request returning *EnsureProjectWorktreeRuntimeShellResponse
+func (c *ClientWithResponses) EnsureProjectWorktreeRuntimeShellWithResponse(ctx context.Context, projectId string, worktreeId string, reqEditors ...RequestEditorFn) (*EnsureProjectWorktreeRuntimeShellResponse, error) {
+	rsp, err := c.EnsureProjectWorktreeRuntimeShell(ctx, projectId, worktreeId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnsureProjectWorktreeRuntimeShellResponse(rsp)
+}
+
+// SetWorktreeSessionBackendWithBodyWithResponse request with arbitrary body returning *SetWorktreeSessionBackendResponse
+func (c *ClientWithResponses) SetWorktreeSessionBackendWithBodyWithResponse(ctx context.Context, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorktreeSessionBackendResponse, error) {
+	rsp, err := c.SetWorktreeSessionBackendWithBody(ctx, projectId, worktreeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorktreeSessionBackendResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetWorktreeSessionBackendWithResponse(ctx context.Context, projectId string, worktreeId string, body SetWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorktreeSessionBackendResponse, error) {
+	rsp, err := c.SetWorktreeSessionBackend(ctx, projectId, worktreeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorktreeSessionBackendResponse(rsp)
 }
 
 // ListPullsWithResponse request returning *ListPullsResponse
@@ -23896,6 +31523,50 @@ func (c *ClientWithResponses) GetRoborevStatusWithResponse(ctx context.Context, 
 	return ParseGetRoborevStatusResponse(rsp)
 }
 
+// ListHostRuntimeSessionsWithResponse request returning *ListHostRuntimeSessionsResponse
+func (c *ClientWithResponses) ListHostRuntimeSessionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListHostRuntimeSessionsResponse, error) {
+	rsp, err := c.ListHostRuntimeSessions(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListHostRuntimeSessionsResponse(rsp)
+}
+
+// LaunchHostRuntimeSessionWithBodyWithResponse request with arbitrary body returning *LaunchHostRuntimeSessionResponse
+func (c *ClientWithResponses) LaunchHostRuntimeSessionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchHostRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchHostRuntimeSessionWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchHostRuntimeSessionResponse(rsp)
+}
+
+func (c *ClientWithResponses) LaunchHostRuntimeSessionWithResponse(ctx context.Context, body LaunchHostRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchHostRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchHostRuntimeSession(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchHostRuntimeSessionResponse(rsp)
+}
+
+// StopHostRuntimeSessionWithResponse request returning *StopHostRuntimeSessionResponse
+func (c *ClientWithResponses) StopHostRuntimeSessionWithResponse(ctx context.Context, sessionKey string, reqEditors ...RequestEditorFn) (*StopHostRuntimeSessionResponse, error) {
+	rsp, err := c.StopHostRuntimeSession(ctx, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStopHostRuntimeSessionResponse(rsp)
+}
+
+// GetHostRuntimeSessionAttachSpecWithResponse request returning *GetHostRuntimeSessionAttachSpecResponse
+func (c *ClientWithResponses) GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, sessionKey string, reqEditors ...RequestEditorFn) (*GetHostRuntimeSessionAttachSpecResponse, error) {
+	rsp, err := c.GetHostRuntimeSessionAttachSpec(ctx, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostRuntimeSessionAttachSpecResponse(rsp)
+}
+
 // GetSettingsWithResponse request returning *GetSettingsResponse
 func (c *ClientWithResponses) GetSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSettingsResponse, error) {
 	rsp, err := c.GetSettings(ctx, reqEditors...)
@@ -23920,6 +31591,59 @@ func (c *ClientWithResponses) UpdateSettingsWithResponse(ctx context.Context, bo
 		return nil, err
 	}
 	return ParseUpdateSettingsResponse(rsp)
+}
+
+// GetFleetSshPeersWithResponse request returning *GetFleetSshPeersResponse
+func (c *ClientWithResponses) GetFleetSshPeersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFleetSshPeersResponse, error) {
+	rsp, err := c.GetFleetSshPeers(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetSshPeersResponse(rsp)
+}
+
+// UpdateFleetSshPeersWithBodyWithResponse request with arbitrary body returning *UpdateFleetSshPeersResponse
+func (c *ClientWithResponses) UpdateFleetSshPeersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFleetSshPeersResponse, error) {
+	rsp, err := c.UpdateFleetSshPeersWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateFleetSshPeersResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateFleetSshPeersWithResponse(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFleetSshPeersResponse, error) {
+	rsp, err := c.UpdateFleetSshPeers(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateFleetSshPeersResponse(rsp)
+}
+
+// GetSnapshotWithResponse request returning *GetSnapshotResponse
+func (c *ClientWithResponses) GetSnapshotWithResponse(ctx context.Context, params *GetSnapshotParams, reqEditors ...RequestEditorFn) (*GetSnapshotResponse, error) {
+	rsp, err := c.GetSnapshot(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSnapshotResponse(rsp)
+}
+
+// GetSnapshotRawWithResponse request returning *GetSnapshotRawResponse
+func (c *ClientWithResponses) GetSnapshotRawWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSnapshotRawResponse, error) {
+	rsp, err := c.GetSnapshotRaw(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSnapshotRawResponse(rsp)
+}
+
+// RefreshFleetStatsWithResponse request returning *RefreshFleetStatsResponse
+func (c *ClientWithResponses) RefreshFleetStatsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*RefreshFleetStatsResponse, error) {
+	rsp, err := c.RefreshFleetStats(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshFleetStatsResponse(rsp)
 }
 
 // ListStacksWithResponse request returning *ListStacksResponse
@@ -23998,6 +31722,32 @@ func (c *ClientWithResponses) CaptureTelemetryEventWithResponse(ctx context.Cont
 		return nil, err
 	}
 	return ParseCaptureTelemetryEventResponse(rsp)
+}
+
+// GetToolingStatusWithResponse request returning *GetToolingStatusResponse
+func (c *ClientWithResponses) GetToolingStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetToolingStatusResponse, error) {
+	rsp, err := c.GetToolingStatus(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetToolingStatusResponse(rsp)
+}
+
+// SetActiveWorktreeWithBodyWithResponse request with arbitrary body returning *SetActiveWorktreeResponse
+func (c *ClientWithResponses) SetActiveWorktreeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetActiveWorktreeResponse, error) {
+	rsp, err := c.SetActiveWorktreeWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetActiveWorktreeResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetActiveWorktreeWithResponse(ctx context.Context, body SetActiveWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*SetActiveWorktreeResponse, error) {
+	rsp, err := c.SetActiveWorktree(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetActiveWorktreeResponse(rsp)
 }
 
 // GetVersionWithResponse request returning *GetVersionResponse
@@ -24157,6 +31907,32 @@ func (c *ClientWithResponses) RenameWorkspaceRuntimeSessionWithResponse(ctx cont
 		return nil, err
 	}
 	return ParseRenameWorkspaceRuntimeSessionResponse(rsp)
+}
+
+// GetWorkspaceRuntimeSessionAttachSpecWithResponse request returning *GetWorkspaceRuntimeSessionAttachSpecResponse
+func (c *ClientWithResponses) GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeSessionAttachSpecResponse, error) {
+	rsp, err := c.GetWorkspaceRuntimeSessionAttachSpec(ctx, id, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspaceRuntimeSessionAttachSpecResponse(rsp)
+}
+
+// RemoveStaleWorktreeWithBodyWithResponse request with arbitrary body returning *RemoveStaleWorktreeResponse
+func (c *ClientWithResponses) RemoveStaleWorktreeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveStaleWorktreeResponse, error) {
+	rsp, err := c.RemoveStaleWorktreeWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveStaleWorktreeResponse(rsp)
+}
+
+func (c *ClientWithResponses) RemoveStaleWorktreeWithResponse(ctx context.Context, body RemoveStaleWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveStaleWorktreeResponse, error) {
+	rsp, err := c.RemoveStaleWorktree(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveStaleWorktreeResponse(rsp)
 }
 
 // ParseListActivityResponse parses an HTTP response from a ListActivityWithResponse call
@@ -24721,6 +32497,1194 @@ func ParseSearchDocsResponse(rsp *http.Response) (*SearchDocsResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCompleteFilesystemPathResponse parses an HTTP response from a CompleteFilesystemPathWithResponse call
+func ParseCompleteFilesystemPathResponse(rsp *http.Response) (*CompleteFilesystemPathResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CompleteFilesystemPathResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FilesystemCompleteOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseValidateFilesystemRepoResponse parses an HTTP response from a ValidateFilesystemRepoWithResponse call
+func ParseValidateFilesystemRepoResponse(rsp *http.Response) (*ValidateFilesystemRepoResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ValidateFilesystemRepoResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FilesystemValidateRepoOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCompleteFleetFilesystemPathResponse parses an HTTP response from a CompleteFleetFilesystemPathWithResponse call
+func ParseCompleteFleetFilesystemPathResponse(rsp *http.Response) (*CompleteFleetFilesystemPathResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CompleteFleetFilesystemPathResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseValidateFleetFilesystemRepoResponse parses an HTTP response from a ValidateFleetFilesystemRepoWithResponse call
+func ParseValidateFleetFilesystemRepoResponse(rsp *http.Response) (*ValidateFleetFilesystemRepoResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ValidateFleetFilesystemRepoResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateFleetIssueWorkspaceOnPlatformHostResponse parses an HTTP response from a CreateFleetIssueWorkspaceOnPlatformHostWithResponse call
+func ParseCreateFleetIssueWorkspaceOnPlatformHostResponse(rsp *http.Response) (*CreateFleetIssueWorkspaceOnPlatformHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateFleetIssueWorkspaceOnPlatformHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateFleetIssueWorkspaceResponse parses an HTTP response from a CreateFleetIssueWorkspaceWithResponse call
+func ParseCreateFleetIssueWorkspaceResponse(rsp *http.Response) (*CreateFleetIssueWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateFleetIssueWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRegisterFleetProjectResponse parses an HTTP response from a RegisterFleetProjectWithResponse call
+func ParseRegisterFleetProjectResponse(rsp *http.Response) (*RegisterFleetProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RegisterFleetProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCloneFleetProjectResponse parses an HTTP response from a CloneFleetProjectWithResponse call
+func ParseCloneFleetProjectResponse(rsp *http.Response) (*CloneFleetProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CloneFleetProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteFleetProjectResponse parses an HTTP response from a DeleteFleetProjectWithResponse call
+func ParseDeleteFleetProjectResponse(rsp *http.Response) (*DeleteFleetProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteFleetProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListFleetProjectBranchesResponse parses an HTTP response from a ListFleetProjectBranchesWithResponse call
+func ParseListFleetProjectBranchesResponse(rsp *http.Response) (*ListFleetProjectBranchesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListFleetProjectBranchesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateFleetProjectWorktreeResponse parses an HTTP response from a CreateFleetProjectWorktreeWithResponse call
+func ParseCreateFleetProjectWorktreeResponse(rsp *http.Response) (*CreateFleetProjectWorktreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateFleetProjectWorktreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateFleetProjectWorktreeFromMergeRequestResponse parses an HTTP response from a CreateFleetProjectWorktreeFromMergeRequestWithResponse call
+func ParseCreateFleetProjectWorktreeFromMergeRequestResponse(rsp *http.Response) (*CreateFleetProjectWorktreeFromMergeRequestResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateFleetProjectWorktreeFromMergeRequestResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemoveFleetProjectWorktreeResponse parses an HTTP response from a RemoveFleetProjectWorktreeWithResponse call
+func ParseRemoveFleetProjectWorktreeResponse(rsp *http.Response) (*RemoveFleetProjectWorktreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveFleetProjectWorktreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseInspectFleetProjectWorktreeResponse parses an HTTP response from a InspectFleetProjectWorktreeWithResponse call
+func ParseInspectFleetProjectWorktreeResponse(rsp *http.Response) (*InspectFleetProjectWorktreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &InspectFleetProjectWorktreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetFleetProjectWorktreeLinksResponse parses an HTTP response from a SetFleetProjectWorktreeLinksWithResponse call
+func ParseSetFleetProjectWorktreeLinksResponse(rsp *http.Response) (*SetFleetProjectWorktreeLinksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetFleetProjectWorktreeLinksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshFleetProjectWorktreeStatsResponse parses an HTTP response from a RefreshFleetProjectWorktreeStatsWithResponse call
+func ParseRefreshFleetProjectWorktreeStatsResponse(rsp *http.Response) (*RefreshFleetProjectWorktreeStatsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshFleetProjectWorktreeStatsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetProjectWorktreeRuntimeResponse parses an HTTP response from a GetFleetProjectWorktreeRuntimeWithResponse call
+func ParseGetFleetProjectWorktreeRuntimeResponse(rsp *http.Response) (*GetFleetProjectWorktreeRuntimeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetProjectWorktreeRuntimeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLaunchFleetProjectWorktreeRuntimeSessionResponse parses an HTTP response from a LaunchFleetProjectWorktreeRuntimeSessionWithResponse call
+func ParseLaunchFleetProjectWorktreeRuntimeSessionResponse(rsp *http.Response) (*LaunchFleetProjectWorktreeRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LaunchFleetProjectWorktreeRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStopFleetProjectWorktreeRuntimeSessionResponse parses an HTTP response from a StopFleetProjectWorktreeRuntimeSessionWithResponse call
+func ParseStopFleetProjectWorktreeRuntimeSessionResponse(rsp *http.Response) (*StopFleetProjectWorktreeRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StopFleetProjectWorktreeRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetProjectWorktreeRuntimeSessionAttachSpecResponse parses an HTTP response from a GetFleetProjectWorktreeRuntimeSessionAttachSpecWithResponse call
+func ParseGetFleetProjectWorktreeRuntimeSessionAttachSpecResponse(rsp *http.Response) (*GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnsureFleetProjectWorktreeRuntimeShellResponse parses an HTTP response from a EnsureFleetProjectWorktreeRuntimeShellWithResponse call
+func ParseEnsureFleetProjectWorktreeRuntimeShellResponse(rsp *http.Response) (*EnsureFleetProjectWorktreeRuntimeShellResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnsureFleetProjectWorktreeRuntimeShellResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetFleetProjectWorktreeSessionBackendResponse parses an HTTP response from a SetFleetProjectWorktreeSessionBackendWithResponse call
+func ParseSetFleetProjectWorktreeSessionBackendResponse(rsp *http.Response) (*SetFleetProjectWorktreeSessionBackendResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetFleetProjectWorktreeSessionBackendResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLaunchFleetHostRuntimeSessionResponse parses an HTTP response from a LaunchFleetHostRuntimeSessionWithResponse call
+func ParseLaunchFleetHostRuntimeSessionResponse(rsp *http.Response) (*LaunchFleetHostRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LaunchFleetHostRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStopFleetHostRuntimeSessionResponse parses an HTTP response from a StopFleetHostRuntimeSessionWithResponse call
+func ParseStopFleetHostRuntimeSessionResponse(rsp *http.Response) (*StopFleetHostRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StopFleetHostRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetHostRuntimeSessionAttachSpecResponse parses an HTTP response from a GetFleetHostRuntimeSessionAttachSpecWithResponse call
+func ParseGetFleetHostRuntimeSessionAttachSpecResponse(rsp *http.Response) (*GetFleetHostRuntimeSessionAttachSpecResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetHostRuntimeSessionAttachSpecResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListFleetWorkspacesResponse parses an HTTP response from a ListFleetWorkspacesWithResponse call
+func ParseListFleetWorkspacesResponse(rsp *http.Response) (*ListFleetWorkspacesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListFleetWorkspacesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateFleetWorkspaceResponse parses an HTTP response from a CreateFleetWorkspaceWithResponse call
+func ParseCreateFleetWorkspaceResponse(rsp *http.Response) (*CreateFleetWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateFleetWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteFleetWorkspaceResponse parses an HTTP response from a DeleteFleetWorkspaceWithResponse call
+func ParseDeleteFleetWorkspaceResponse(rsp *http.Response) (*DeleteFleetWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteFleetWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetWorkspaceResponse parses an HTTP response from a GetFleetWorkspaceWithResponse call
+func ParseGetFleetWorkspaceResponse(rsp *http.Response) (*GetFleetWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshFleetWorkspaceResponse parses an HTTP response from a RefreshFleetWorkspaceWithResponse call
+func ParseRefreshFleetWorkspaceResponse(rsp *http.Response) (*RefreshFleetWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshFleetWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRetryFleetWorkspaceResponse parses an HTTP response from a RetryFleetWorkspaceWithResponse call
+func ParseRetryFleetWorkspaceResponse(rsp *http.Response) (*RetryFleetWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RetryFleetWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetWorkspaceRuntimeResponse parses an HTTP response from a GetFleetWorkspaceRuntimeWithResponse call
+func ParseGetFleetWorkspaceRuntimeResponse(rsp *http.Response) (*GetFleetWorkspaceRuntimeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetWorkspaceRuntimeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLaunchFleetWorkspaceRuntimeSessionResponse parses an HTTP response from a LaunchFleetWorkspaceRuntimeSessionWithResponse call
+func ParseLaunchFleetWorkspaceRuntimeSessionResponse(rsp *http.Response) (*LaunchFleetWorkspaceRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LaunchFleetWorkspaceRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStopFleetWorkspaceRuntimeSessionResponse parses an HTTP response from a StopFleetWorkspaceRuntimeSessionWithResponse call
+func ParseStopFleetWorkspaceRuntimeSessionResponse(rsp *http.Response) (*StopFleetWorkspaceRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StopFleetWorkspaceRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRenameFleetWorkspaceRuntimeSessionResponse parses an HTTP response from a RenameFleetWorkspaceRuntimeSessionWithResponse call
+func ParseRenameFleetWorkspaceRuntimeSessionResponse(rsp *http.Response) (*RenameFleetWorkspaceRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RenameFleetWorkspaceRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetWorkspaceRuntimeSessionAttachSpecResponse parses an HTTP response from a GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse call
+func ParseGetFleetWorkspaceRuntimeSessionAttachSpecResponse(rsp *http.Response) (*GetFleetWorkspaceRuntimeSessionAttachSpecResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetWorkspaceRuntimeSessionAttachSpecResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
@@ -27248,6 +36212,39 @@ func ParseMarkNotificationsUndoneResponse(rsp *http.Response) (*MarkNotification
 	return response, nil
 }
 
+// ParseListUserRepositoriesResponse parses an HTTP response from a ListUserRepositoriesWithResponse call
+func ParseListUserRepositoriesResponse(rsp *http.Response) (*ListUserRepositoriesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListUserRepositoriesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListUserRepositoriesOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListProjectsResponse parses an HTTP response from a ListProjectsWithResponse call
 func ParseListProjectsResponse(rsp *http.Response) (*ListProjectsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -27314,6 +36311,65 @@ func ParseRegisterProjectResponse(rsp *http.Response) (*RegisterProjectResponse,
 	return response, nil
 }
 
+// ParseCloneProjectResponse parses an HTTP response from a CloneProjectWithResponse call
+func ParseCloneProjectResponse(rsp *http.Response) (*CloneProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CloneProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ProjectResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteProjectResponse parses an HTTP response from a DeleteProjectWithResponse call
+func ParseDeleteProjectResponse(rsp *http.Response) (*DeleteProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetProjectResponse parses an HTTP response from a GetProjectWithResponse call
 func ParseGetProjectResponse(rsp *http.Response) (*GetProjectResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -27330,6 +36386,39 @@ func ParseGetProjectResponse(rsp *http.Response) (*GetProjectResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ProjectResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListProjectBranchesResponse parses an HTTP response from a ListProjectBranchesWithResponse call
+func ParseListProjectBranchesResponse(rsp *http.Response) (*ListProjectBranchesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListProjectBranchesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListProjectBranchesOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -27433,6 +36522,414 @@ func ParseRegisterWorktreeResponse(rsp *http.Response) (*RegisterWorktreeRespons
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateWorktreeFromMergeRequestResponse parses an HTTP response from a CreateWorktreeFromMergeRequestWithResponse call
+func ParseCreateWorktreeFromMergeRequestResponse(rsp *http.Response) (*CreateWorktreeFromMergeRequestResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateWorktreeFromMergeRequestResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest WorktreeFromMergeRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteWorktreeResponse parses an HTTP response from a DeleteWorktreeWithResponse call
+func ParseDeleteWorktreeResponse(rsp *http.Response) (*DeleteWorktreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteWorktreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemoveWorktreeResponse parses an HTTP response from a RemoveWorktreeWithResponse call
+func ParseRemoveWorktreeResponse(rsp *http.Response) (*RemoveWorktreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveWorktreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetWorktreeHiddenResponse parses an HTTP response from a SetWorktreeHiddenWithResponse call
+func ParseSetWorktreeHiddenResponse(rsp *http.Response) (*SetWorktreeHiddenResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetWorktreeHiddenResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorktreeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseInspectProjectWorktreeResponse parses an HTTP response from a InspectProjectWorktreeWithResponse call
+func ParseInspectProjectWorktreeResponse(rsp *http.Response) (*InspectProjectWorktreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &InspectProjectWorktreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest InspectProjectWorktreeOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetWorktreeLinksResponse parses an HTTP response from a SetWorktreeLinksWithResponse call
+func ParseSetWorktreeLinksResponse(rsp *http.Response) (*SetWorktreeLinksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetWorktreeLinksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorktreeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshWorktreeStatsResponse parses an HTTP response from a RefreshWorktreeStatsWithResponse call
+func ParseRefreshWorktreeStatsResponse(rsp *http.Response) (*RefreshWorktreeStatsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshWorktreeStatsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorktreeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProjectWorktreeRuntimeResponse parses an HTTP response from a GetProjectWorktreeRuntimeWithResponse call
+func ParseGetProjectWorktreeRuntimeResponse(rsp *http.Response) (*GetProjectWorktreeRuntimeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProjectWorktreeRuntimeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectWorktreeRuntimeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLaunchProjectWorktreeRuntimeSessionResponse parses an HTTP response from a LaunchProjectWorktreeRuntimeSessionWithResponse call
+func ParseLaunchProjectWorktreeRuntimeSessionResponse(rsp *http.Response) (*LaunchProjectWorktreeRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LaunchProjectWorktreeRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectWorktreeRuntimeSession
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStopProjectWorktreeRuntimeSessionResponse parses an HTTP response from a StopProjectWorktreeRuntimeSessionWithResponse call
+func ParseStopProjectWorktreeRuntimeSessionResponse(rsp *http.Response) (*StopProjectWorktreeRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StopProjectWorktreeRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProjectWorktreeRuntimeSessionAttachSpecResponse parses an HTTP response from a GetProjectWorktreeRuntimeSessionAttachSpecWithResponse call
+func ParseGetProjectWorktreeRuntimeSessionAttachSpecResponse(rsp *http.Response) (*GetProjectWorktreeRuntimeSessionAttachSpecResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProjectWorktreeRuntimeSessionAttachSpecResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeAttachSpecResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnsureProjectWorktreeRuntimeShellResponse parses an HTTP response from a EnsureProjectWorktreeRuntimeShellWithResponse call
+func ParseEnsureProjectWorktreeRuntimeShellResponse(rsp *http.Response) (*EnsureProjectWorktreeRuntimeShellResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnsureProjectWorktreeRuntimeShellResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectWorktreeRuntimeSession
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetWorktreeSessionBackendResponse parses an HTTP response from a SetWorktreeSessionBackendWithResponse call
+func ParseSetWorktreeSessionBackendResponse(rsp *http.Response) (*SetWorktreeSessionBackendResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetWorktreeSessionBackendResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorktreeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
@@ -28974,6 +38471,131 @@ func ParseGetRoborevStatusResponse(rsp *http.Response) (*GetRoborevStatusRespons
 	return response, nil
 }
 
+// ParseListHostRuntimeSessionsResponse parses an HTTP response from a ListHostRuntimeSessionsWithResponse call
+func ParseListHostRuntimeSessionsResponse(rsp *http.Response) (*ListHostRuntimeSessionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListHostRuntimeSessionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListHostRuntimeSessionsOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLaunchHostRuntimeSessionResponse parses an HTTP response from a LaunchHostRuntimeSessionWithResponse call
+func ParseLaunchHostRuntimeSessionResponse(rsp *http.Response) (*LaunchHostRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LaunchHostRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HostRuntimeSession
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStopHostRuntimeSessionResponse parses an HTTP response from a StopHostRuntimeSessionWithResponse call
+func ParseStopHostRuntimeSessionResponse(rsp *http.Response) (*StopHostRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StopHostRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostRuntimeSessionAttachSpecResponse parses an HTTP response from a GetHostRuntimeSessionAttachSpecWithResponse call
+func ParseGetHostRuntimeSessionAttachSpecResponse(rsp *http.Response) (*GetHostRuntimeSessionAttachSpecResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostRuntimeSessionAttachSpecResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeAttachSpecResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetSettingsResponse parses an HTTP response from a GetSettingsWithResponse call
 func ParseGetSettingsResponse(rsp *http.Response) (*GetSettingsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -29023,6 +38645,171 @@ func ParseUpdateSettingsResponse(rsp *http.Response) (*UpdateSettingsResponse, e
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetSshPeersResponse parses an HTTP response from a GetFleetSshPeersWithResponse call
+func ParseGetFleetSshPeersResponse(rsp *http.Response) (*GetFleetSshPeersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetSshPeersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FleetSSHPeersBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateFleetSshPeersResponse parses an HTTP response from a UpdateFleetSshPeersWithResponse call
+func ParseUpdateFleetSshPeersResponse(rsp *http.Response) (*UpdateFleetSshPeersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateFleetSshPeersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FleetSSHPeersBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSnapshotResponse parses an HTTP response from a GetSnapshotWithResponse call
+func ParseGetSnapshotResponse(rsp *http.Response) (*GetSnapshotResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSnapshotResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Snapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSnapshotRawResponse parses an HTTP response from a GetSnapshotRawWithResponse call
+func ParseGetSnapshotRawResponse(rsp *http.Response) (*GetSnapshotRawResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSnapshotRawResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RawSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshFleetStatsResponse parses an HTTP response from a RefreshFleetStatsWithResponse call
+func ParseRefreshFleetStatsResponse(rsp *http.Response) (*RefreshFleetStatsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshFleetStatsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RefreshFleetStatsOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -29205,6 +38992,65 @@ func ParseCaptureTelemetryEventResponse(rsp *http.Response) (*CaptureTelemetryEv
 		}
 		response.JSON202 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetToolingStatusResponse parses an HTTP response from a GetToolingStatusWithResponse call
+func ParseGetToolingStatusResponse(rsp *http.Response) (*GetToolingStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetToolingStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ToolingStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetActiveWorktreeResponse parses an HTTP response from a SetActiveWorktreeWithResponse call
+func ParseSetActiveWorktreeResponse(rsp *http.Response) (*SetActiveWorktreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetActiveWorktreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -29681,6 +39527,72 @@ func ParseRenameWorkspaceRuntimeSessionResponse(rsp *http.Response) (*RenameWork
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest SessionInfo
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspaceRuntimeSessionAttachSpecResponse parses an HTTP response from a GetWorkspaceRuntimeSessionAttachSpecWithResponse call
+func ParseGetWorkspaceRuntimeSessionAttachSpecResponse(rsp *http.Response) (*GetWorkspaceRuntimeSessionAttachSpecResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspaceRuntimeSessionAttachSpecResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeAttachSpecResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemoveStaleWorktreeResponse parses an HTTP response from a RemoveStaleWorktreeWithResponse call
+func ParseRemoveStaleWorktreeResponse(rsp *http.Response) (*RemoveStaleWorktreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveStaleWorktreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RemoveStaleWorktreeOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

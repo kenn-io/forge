@@ -2,7 +2,6 @@ package apitest
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -157,7 +156,7 @@ func TestActivityNotificationsFullStack(t *testing.T) {
 		// A notifications-only filter must not reintroduce new_pr/new_issue
 		// "Opened" anchor rows.
 		assert.Equal("notification", it.ActivityType,
-			fmt.Sprintf("notifications-only feed leaked a %q row", it.ActivityType))
+			"notifications-only feed leaked a %q row", it.ActivityType)
 		assert.NotZero(it.ItemNumber, "unanchored notification leaked into activity")
 		notifByKey[activityItemKey(it)] = it
 	}

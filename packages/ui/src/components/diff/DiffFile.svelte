@@ -258,9 +258,6 @@
   const fileLevelReviewThreads = $derived(
     fileReviewThreads.filter((thread) => !hasRenderedReviewThread(thread)),
   );
-  const visibleFileLevelReviewThreads = $derived(
-    showRichPreview ? [] : fileLevelReviewThreads,
-  );
 
   function lineRef(
     line: DiffFileType["hunks"][number]["lines"][number],
@@ -528,7 +525,7 @@
   </button>
   {#if !collapsed}
     <div class="file-content">
-      {#each visibleFileLevelReviewThreads as thread (thread.id)}
+      {#each fileLevelReviewThreads as thread (thread.id)}
         <DiffReviewThreadInlineComment {thread} fileLevel={true} />
       {/each}
       {#if showRichPreview}

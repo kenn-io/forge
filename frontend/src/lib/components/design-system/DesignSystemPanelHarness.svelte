@@ -1,82 +1,32 @@
 <!--
   Browser-tier test harness. Mounts the real TabbedPanelTree UI primitive with
-  the same node tree, tabs, labels, scrollPanels flag, and renderTab content
-  that DesignSystemTabbedPanelDemo.svelte ships on /design-system (including the
-  nine Activity rows whose overflow drives the scroll assertion). It imports
-  TabbedPanelTree and activateTabbedPanelTab from their source files rather than
-  the @middleman/ui barrel: the barrel re-exports the whole UI package (tiptap,
-  pierre, dozens of lucide icons), which the browser project would optimize
-  mid-run and reload over, making a cold run flaky. The geometry/scroll under
-  test belongs to the real TabbedPanelTree, so this stays a faithful equivalent
-  of the shipped demo without the heavy module graph.
+  the exact same node tree, tabs, labels, scrollPanels flag, and renderTab
+  content that DesignSystemTabbedPanelDemo.svelte ships on /design-system: both
+  read that configuration from the shared tabbedPanelDemoData.ts (including the
+  nine Activity rows whose overflow drives the scroll assertion), so the demo and
+  this harness cannot drift apart. It imports TabbedPanelTree and
+  activateTabbedPanelTab from their source files rather than the @middleman/ui
+  barrel: the barrel re-exports the whole UI package (tiptap, pierre, dozens of
+  lucide icons), which the browser project would optimize mid-run and reload
+  over, making a cold run flaky. The geometry/scroll under test belongs to the
+  real TabbedPanelTree, so this stays a faithful equivalent of the shipped demo
+  without the heavy module graph.
 -->
 <script lang="ts">
   import TabbedPanelTree from "../../../../../packages/ui/src/components/shared/TabbedPanelTree.svelte";
   import {
     activateTabbedPanelTab,
-    type TabbedPanelDescriptor,
     type TabbedPanelNode,
   } from "../../../../../packages/ui/src/components/shared/tabbed-panel-layout.ts";
 
-  const tabs: TabbedPanelDescriptor[] = [
-    { key: "overview", label: "Overview", status: "success" },
-    { key: "activity", label: "Activity", status: "running" },
-    { key: "terminal", label: "Terminal", status: "warning" },
-  ];
-
-  const panelCopy: Record<
-    string,
-    { eyebrow: string; title: string; body: string; details?: string[] }
-  > = {
-    overview: {
-      eyebrow: "PR #442",
-      title: "Resizable split view",
-      body: "Conversation and files stay side by side with a persisted divider.",
-      details: ["Conversation", "Files", "Checks", "Review threads", "Merge queue", "Release notes"],
-    },
-    activity: {
-      eyebrow: "Workspace",
-      title: "Review activity",
-      body: "New comments, CI updates, and review decisions land in one panel.",
-      details: [
-        "09:42 Review requested",
-        "10:15 CI started",
-        "10:21 Lint passed",
-        "10:24 Unit tests passed",
-        "10:27 E2E tests passed",
-        "10:31 Comment added",
-        "10:40 Changes requested",
-        "11:03 Fix pushed",
-        "11:12 Review approved",
-      ],
-    },
-    terminal: {
-      eyebrow: "Shell",
-      title: "Local session",
-      body: "A compact terminal surface can live beside PR context.",
-      details: ["$ git status", "$ bun run lint", "$ bun run typecheck", "$ git diff --stat", "$ gh pr checks"],
-    },
-  };
+  import {
+    createTabbedPanelDemoNode,
+    tabbedPanelDemoCopy as panelCopy,
+    tabbedPanelDemoTabs as tabs,
+  } from "./tabbedPanelDemoData.ts";
 
   let activeTabKey = $state("overview");
-  let node = $state<TabbedPanelNode>({
-    type: "split",
-    id: "demo-root",
-    direction: "horizontal",
-    ratio: 0.58,
-    first: {
-      type: "leaf",
-      id: "demo-left",
-      tabs: ["overview", "activity"],
-      activeTabKey: "overview",
-    },
-    second: {
-      type: "leaf",
-      id: "demo-right",
-      tabs: ["terminal"],
-      activeTabKey: "terminal",
-    },
-  });
+  let node = $state<TabbedPanelNode>(createTabbedPanelDemoNode());
 
   function selectTab(tabKey: string): void {
     activeTabKey = tabKey;

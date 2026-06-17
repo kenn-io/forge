@@ -5,89 +5,19 @@
     moveTabbedPanelTabBefore,
     splitTabbedPanelTabIntoLeaf,
     TabbedPanelTree,
-    type TabbedPanelDescriptor,
     type TabbedPanelDirection,
     type TabbedPanelNode,
     updateTabbedPanelSplitRatio,
   } from "@middleman/ui";
 
-  const tabs: TabbedPanelDescriptor[] = [
-    { key: "overview", label: "Overview", status: "success" },
-    { key: "activity", label: "Activity", status: "running" },
-    { key: "terminal", label: "Terminal", status: "warning" },
-  ];
-
-  const panelCopy: Record<
-    string,
-    {
-      eyebrow: string;
-      title: string;
-      body: string;
-      details?: string[];
-    }
-  > = {
-    overview: {
-      eyebrow: "PR #442",
-      title: "Resizable split view",
-      body: "Conversation and files stay side by side with a persisted divider.",
-      details: [
-        "Conversation",
-        "Files",
-        "Checks",
-        "Review threads",
-        "Merge queue",
-        "Release notes",
-      ],
-    },
-    activity: {
-      eyebrow: "Workspace",
-      title: "Review activity",
-      body: "New comments, CI updates, and review decisions land in one panel.",
-      details: [
-        "09:42 Review requested",
-        "10:15 CI started",
-        "10:21 Lint passed",
-        "10:24 Unit tests passed",
-        "10:27 E2E tests passed",
-        "10:31 Comment added",
-        "10:40 Changes requested",
-        "11:03 Fix pushed",
-        "11:12 Review approved",
-      ],
-    },
-    terminal: {
-      eyebrow: "Shell",
-      title: "Local session",
-      body: "A compact terminal surface can live beside PR context.",
-      details: [
-        "$ git status",
-        "$ bun run lint",
-        "$ bun run typecheck",
-        "$ git diff --stat",
-        "$ gh pr checks",
-      ],
-    },
-  };
+  import {
+    createTabbedPanelDemoNode,
+    tabbedPanelDemoCopy as panelCopy,
+    tabbedPanelDemoTabs as tabs,
+  } from "./tabbedPanelDemoData.ts";
 
   let activeTabKey = $state("overview");
-  let node = $state<TabbedPanelNode>({
-    type: "split",
-    id: "demo-root",
-    direction: "horizontal",
-    ratio: 0.58,
-    first: {
-      type: "leaf",
-      id: "demo-left",
-      tabs: ["overview", "activity"],
-      activeTabKey: "overview",
-    },
-    second: {
-      type: "leaf",
-      id: "demo-right",
-      tabs: ["terminal"],
-      activeTabKey: "terminal",
-    },
-  });
+  let node = $state<TabbedPanelNode>(createTabbedPanelDemoNode());
 
   function updateNode(next: TabbedPanelNode | null): void {
     if (next) node = next;

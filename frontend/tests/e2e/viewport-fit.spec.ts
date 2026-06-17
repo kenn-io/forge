@@ -6,18 +6,24 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-test("settings page scrolls from the full-width main pane", async ({ page }) => {
+test("settings page uses a sidebar and scrollable content pane", async ({ page }) => {
   await page.goto("/settings");
 
   await expect(page.locator(".settings-page")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Settings sections" })).toBeVisible();
+  await expect(page.getByPlaceholder("Search settings...")).toBeVisible();
   await expect(
     page.evaluate(() => {
       const main = document.querySelector<HTMLElement>(".app-main");
+      const shell = document.querySelector<HTMLElement>(".settings-shell");
+      const sidebar = document.querySelector<HTMLElement>(".settings-sidebar");
       const pane = document.querySelector<HTMLElement>(".settings-scroll-pane");
       const content = document.querySelector<HTMLElement>(".settings-page");
-      if (!main || !pane || !content) return null;
+      if (!main || !shell || !sidebar || !pane || !content) return null;
 
       const mainRect = main.getBoundingClientRect();
+      const shellRect = shell.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
       const paneRect = pane.getBoundingClientRect();
       const contentRect = content.getBoundingClientRect();
       const beforeTop = contentRect.top;
@@ -25,20 +31,63 @@ test("settings page scrolls from the full-width main pane", async ({ page }) => 
       const afterTop = content.getBoundingClientRect().top;
 
       return {
-        paneFillsMain:
-          Math.round(paneRect.left) === Math.round(mainRect.left) &&
+        shellFillsMain:
+          Math.round(shellRect.left) === Math.round(mainRect.left) &&
+          Math.round(shellRect.right) === Math.round(mainRect.right),
+        sidebarStartsAtMainEdge: Math.round(sidebarRect.left) === Math.round(mainRect.left),
+        paneFillsRemainingWidth:
+          Math.round(paneRect.left) >= Math.round(sidebarRect.right) &&
           Math.round(paneRect.right) === Math.round(mainRect.right),
         contentIsCentered:
-          Math.abs(contentRect.left + contentRect.width / 2 - (mainRect.left + mainRect.width / 2)) < 1,
+          Math.abs(contentRect.left + contentRect.width / 2 - (paneRect.left + paneRect.width / 2)) < 1,
         paneCanScroll: pane.scrollHeight > pane.clientHeight,
         contentMovesWithPane: afterTop < beforeTop,
       };
     }),
   ).resolves.toEqual({
-    paneFillsMain: true,
+    shellFillsMain: true,
+    sidebarStartsAtMainEdge: true,
+    paneFillsRemainingWidth: true,
     contentIsCentered: true,
     paneCanScroll: true,
     contentMovesWithPane: true,
+  });
+
+  await page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("button", { name: "Workspace agents" })
+    .click();
+  await expect(page.locator("#settings-agents")).toBeInViewport();
+});
+
+test("settings navigation stacks below Tailwind lg breakpoint", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/settings");
+
+  await expect(page.locator(".settings-page")).toBeVisible();
+  await expect(
+    page.evaluate(() => {
+      const shell = document.querySelector<HTMLElement>(".settings-shell");
+      const sidebar = document.querySelector<HTMLElement>(".settings-sidebar");
+      const pane = document.querySelector<HTMLElement>(".settings-scroll-pane");
+      if (!shell || !sidebar || !pane) return null;
+
+      const shellRect = shell.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+      const paneRect = pane.getBoundingClientRect();
+
+      return {
+        navStacksAboveContent: Math.round(sidebarRect.bottom) <= Math.round(paneRect.top),
+        navFitsViewport: Math.round(sidebarRect.left) >= 0 && Math.round(sidebarRect.right) <= window.innerWidth,
+        contentFitsViewport: document.documentElement.scrollWidth <= window.innerWidth,
+        shellFillsViewport: Math.round(shellRect.width) === window.innerWidth,
+      };
+    }),
+  ).resolves.toEqual({
+    navStacksAboveContent: true,
+    navFitsViewport: true,
+    contentFitsViewport: true,
+    shellFillsViewport: true,
   });
 });
 

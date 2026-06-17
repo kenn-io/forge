@@ -3,13 +3,14 @@
 
   interface Props {
     title: string;
+    sectionId?: string;
     children: Snippet;
   }
 
-  let { title, children }: Props = $props();
+  let { title, sectionId, children }: Props = $props();
 </script>
 
-<section class="settings-section">
+<section class="settings-section" id={sectionId}>
   <h2 class="section-title">{title}</h2>
   <div class="section-body">
     {@render children()}

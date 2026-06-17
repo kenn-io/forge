@@ -20,6 +20,19 @@ CREATE TABLE middleman_project_worktree_runtime_sessions (
 CREATE INDEX middleman_project_worktree_runtime_sessions_worktree_id_idx
     ON middleman_project_worktree_runtime_sessions(worktree_id);
 
+-- Workspace runtime session placement is a branch-local schema addition for
+-- federated viewers. Migration 000029 is already on main, so the new column is
+-- added here, in this PR's single unapplied migration.
+ALTER TABLE middleman_workspace_runtime_sessions
+    ADD COLUMN display_region TEXT NOT NULL DEFAULT '';
+
+UPDATE middleman_workspace_runtime_sessions
+SET display_region = CASE
+    WHEN target_key = 'plain_shell' THEN 'terminal'
+    ELSE 'workflow'
+END
+WHERE display_region = '';
+
 -- Project/worktree discovery columns, folded into this branch migration to
 -- keep a single migration delta vs main. The background discovery refresher
 -- reconciles on-disk git state into the registry tables: is_stale marks rows

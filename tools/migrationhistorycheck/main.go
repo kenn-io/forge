@@ -96,11 +96,26 @@ func changedMainBranchMigrations(ctx context.Context, baseRef, migrationDir, dif
 				continue
 			}
 			if _, err := git(ctx, "cat-file", "-e", baseRef+":"+path); err == nil {
+				if stagedPathMatchesBase(ctx, baseRef, path) {
+					continue
+				}
 				violations = append(violations, path)
 			}
 		}
 	}
 	return violations
+}
+
+func stagedPathMatchesBase(ctx context.Context, baseRef, path string) bool {
+	baseContent, err := git(ctx, "show", baseRef+":"+path)
+	if err != nil {
+		return false
+	}
+	stagedContent, err := git(ctx, "show", ":"+path)
+	if err != nil {
+		return false
+	}
+	return stagedContent == baseContent
 }
 
 func changedPaths(fields []string) []string {

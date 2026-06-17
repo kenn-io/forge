@@ -1563,11 +1563,26 @@ func removeDiscussionColumnsForTest(raw *sql.DB) error {
 	return err
 }
 
-// removeProjectDiscoveryColumnsForTest strips the project/worktree schema
-// folded into migration 000034 so a downgraded fixture can replay the forward
-// migrations without hitting duplicate schema errors.
+// removeProjectDiscoveryColumnsForTest strips schema folded into migration
+// 000034 so a rewound fixture can replay the forward migrations without
+// hitting duplicate schema errors.
 func removeProjectDiscoveryColumnsForTest(raw *sql.DB) error {
-	_, err := raw.Exec(`
+	hasDisplayRegion, err := hasColumn(
+		raw,
+		"middleman_workspace_runtime_sessions",
+		"display_region",
+	)
+	if err != nil {
+		return err
+	}
+	if hasDisplayRegion {
+		if _, err := raw.Exec(
+			`ALTER TABLE middleman_workspace_runtime_sessions DROP COLUMN display_region`,
+		); err != nil {
+			return err
+		}
+	}
+	_, err = raw.Exec(`
 		DROP TABLE middleman_host_runtime_sessions;
 		DROP TABLE middleman_worktree_stats;
 		DROP INDEX middleman_project_worktree_runtime_sessions_worktree_id_idx;

@@ -93,6 +93,7 @@ import type { DiffFile as DiffFileType, FilePreview } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { DiffReviewDraftComment, DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
+import { renderedCodeSide } from "./pierre-dom.js";
 import type { ReviewThread } from "./review-thread-context.js";
 
 function makeFile(overrides: Partial<DiffFileType> = {}): DiffFileType {
@@ -494,14 +495,7 @@ describe("DiffFile", () => {
 
   function splitColumnSide(element: Element | null | undefined): "additions" | "deletions" | null {
     const code = element?.closest("code");
-    const pre = code?.parentElement;
-    if (!code || !pre) return null;
-    if (code.hasAttribute("data-additions")) return "additions";
-    if (code.hasAttribute("data-deletions")) return "deletions";
-    const index = Array.from(pre.children).indexOf(code);
-    if (index === 0) return "deletions";
-    if (index === 1) return "additions";
-    return null;
+    return code ? (renderedCodeSide(code) ?? null) : null;
   }
 
   function expandedContextLineTexts(): string[] {
@@ -586,6 +580,17 @@ describe("DiffFile", () => {
 
     await assertRightSideComposer(2);
     await assertRightSideComposer(3);
+  });
+
+  it("infers split column side from code-column order when non-code siblings are present", () => {
+    const pre = document.createElement("pre");
+    const deletions = document.createElement("code");
+    const separator = document.createElement("span");
+    const additions = document.createElement("code");
+    pre.append(deletions, separator, additions);
+
+    expect(renderedCodeSide(deletions)).toBe("deletions");
+    expect(renderedCodeSide(additions)).toBe("additions");
   });
 
   it("focuses the inline composer textarea exactly once after opening", async () => {

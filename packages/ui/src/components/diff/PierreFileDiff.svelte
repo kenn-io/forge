@@ -22,6 +22,10 @@
     pierreDiffDebugEnabled,
     pierreFileContents,
   } from "./pierre-diff.js";
+  import {
+    renderedCodeColumns,
+    renderedCodeSide as renderedPierreCodeSide,
+  } from "./pierre-dom.js";
   import { diffTokenizeMaxLineLength, getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
 
   interface Props {
@@ -1323,8 +1327,8 @@
 
   function refreshRenderedLineRows(pre: HTMLPreElement, split: boolean): void {
     const next = new Map<number, RenderedLinePair[]>();
-    for (const [codeIndex, code] of Array.from(pre.children).entries()) {
-      const side = split ? renderedCodeSide(code, codeIndex) : undefined;
+    for (const code of renderedCodeColumns(pre)) {
+      const side = split ? renderedPierreCodeSide(code) : undefined;
       const [gutter, content] = Array.from(code.children);
       if (!gutter || !content) continue;
       const contentRows = Array.from(content.children);
@@ -1345,14 +1349,6 @@
     renderedLineRows = next;
   }
 
-  function renderedCodeSide(code: Element, codeIndex: number): PierreSide | undefined {
-    if (code.hasAttribute("data-deletions")) return "deletions";
-    if (code.hasAttribute("data-additions")) return "additions";
-    if (codeIndex === 0) return "deletions";
-    if (codeIndex === 1) return "additions";
-    return undefined;
-  }
-
   function linePairMatchesSide(
     pair: RenderedLinePair,
     split: boolean,
@@ -1371,8 +1367,8 @@
       linePairMatchesSide(pair, split, side)
     );
     if (cached) return cached;
-    for (const [codeIndex, code] of Array.from(pre.children).entries()) {
-      const codeSide = split ? renderedCodeSide(code, codeIndex) : undefined;
+    for (const code of renderedCodeColumns(pre)) {
+      const codeSide = split ? renderedPierreCodeSide(code) : undefined;
       if (split && side != null && codeSide !== side) continue;
       const [gutter, content] = Array.from(code.children);
       if (!gutter || !content) continue;

@@ -656,7 +656,9 @@ test("keeps split-mode inline composers on trailing right-side hunk lines", asyn
         if (!code || !pre) return null;
         if (code.hasAttribute("data-additions")) return "additions";
         if (code.hasAttribute("data-deletions")) return "deletions";
-        const index = Array.from(pre.children).indexOf(code);
+        const index = Array.from(pre.children)
+          .filter((child) => child.tagName.toLowerCase() === "code")
+          .indexOf(code);
         if (index === 0) return "deletions";
         if (index === 1) return "additions";
         return null;
@@ -676,7 +678,9 @@ test("keeps split-mode inline composers on trailing right-side hunk lines", asyn
           if (!code || !pre) return null;
           if (code.hasAttribute("data-additions")) return "additions";
           if (code.hasAttribute("data-deletions")) return "deletions";
-          const index = Array.from(pre.children).indexOf(code);
+          const index = Array.from(pre.children)
+            .filter((child) => child.tagName.toLowerCase() === "code")
+            .indexOf(code);
           if (index === 0) return "deletions";
           if (index === 1) return "additions";
           return null;

@@ -586,15 +586,6 @@
     min-width: 0;
   }
 
-  .renderer-field :global(.select-dropdown-trigger) {
-    height: 28px;
-    background: var(--bg-primary);
-    border-color: var(--border-default);
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    font-weight: 400;
-  }
-
   .toggle-field {
     display: inline-flex;
     align-items: center;

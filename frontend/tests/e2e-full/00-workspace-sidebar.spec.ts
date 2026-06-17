@@ -231,7 +231,7 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(rows).toHaveCount(2);
       await expect(headers).toHaveCount(2);
 
-      await page.getByTitle("Sort workspaces").click();
+      await page.getByTitle("View workspace options").click();
       await page.locator(".filter-dropdown .filter-item", { hasText: "Created" }).click();
 
       // Flat list ordered by the real created_at column: the
@@ -251,7 +251,7 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(headers).toHaveCount(0);
       await expect(rows.first().locator(".repo-context")).toContainText("group/project");
 
-      await page.getByTitle("Sort workspaces").click();
+      await page.getByTitle("View workspace options").click();
       await page.locator(".filter-dropdown .filter-item", { hasText: "Item activity" }).click();
 
       await expect(headers).toHaveCount(0);

@@ -3564,7 +3564,7 @@ test.describe("workspace list sorting", () => {
     await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
     await expect(headers).toHaveCount(2);
 
-    const sortTrigger = page.getByTitle("Sort workspaces");
+    const sortTrigger = page.getByTitle("View workspace options");
     await sortTrigger.click();
     await page.locator(".filter-dropdown").getByRole("button", { name: "Created" }).click();
 
@@ -3591,10 +3591,10 @@ test.describe("workspace list sorting", () => {
     await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
   });
 
-  test("sort trigger hugs the collapse toggle and the dropdown opens left-aligned", async ({ page }) => {
+  test("view trigger hugs the collapse toggle and the dropdown opens end-aligned", async ({ page }) => {
     await page.goto("/workspaces");
 
-    const trigger = page.getByTitle("Sort workspaces");
+    const trigger = page.getByTitle("View workspace options");
     const toggle = page.getByRole("button", { name: "Collapse Workspaces sidebar" });
     await expect(trigger).toBeVisible();
     await expect(toggle).toBeVisible();
@@ -3618,9 +3618,11 @@ test.describe("workspace list sorting", () => {
     const dropdownBox = await dropdown.boundingBox();
     expect(dropdownBox).not.toBeNull();
 
-    // Regression: align="end" used to hang the panel out to the
-    // left over the filter input. Left edges must align instead.
-    expect(Math.abs(dropdownBox!.x - triggerBox!.x)).toBeLessThanOrEqual(1.5);
+    // The wider View menu is end-aligned so it stays inside the
+    // rail while the trigger remains beside the collapse toggle.
+    expect(Math.abs(dropdownBox!.x + dropdownBox!.width - (triggerBox!.x + triggerBox!.width))).toBeLessThanOrEqual(
+      1.5,
+    );
   });
 });
 

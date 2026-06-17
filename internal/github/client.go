@@ -419,8 +419,8 @@ func (c *liveClient) ListNotifications(ctx context.Context, opts NotificationLis
 	if opts.Since != nil {
 		ghOpts.Since = opts.Since.UTC()
 	}
-	notifications, resp, err := c.gh.Activity.ListNotifications(ctx, ghOpts)
-	c.trackRate(resp)
+	notifications, resp, err := c.writeGH().Activity.ListNotifications(ctx, ghOpts)
+	c.trackWriteRate(resp)
 	if err != nil {
 		return nil, false, err
 	}
@@ -432,8 +432,8 @@ func (c *liveClient) ListNotifications(ctx context.Context, opts NotificationLis
 }
 
 func (c *liveClient) GetNotificationThread(ctx context.Context, threadID string) (NotificationThread, error) {
-	notification, resp, err := c.gh.Activity.GetThread(ctx, threadID)
-	c.trackRate(resp)
+	notification, resp, err := c.writeGH().Activity.GetThread(ctx, threadID)
+	c.trackWriteRate(resp)
 	if err != nil {
 		return NotificationThread{}, err
 	}
@@ -441,8 +441,8 @@ func (c *liveClient) GetNotificationThread(ctx context.Context, threadID string)
 }
 
 func (c *liveClient) MarkNotificationThreadRead(ctx context.Context, threadID string) error {
-	resp, err := c.gh.Activity.MarkThreadRead(ctx, threadID)
-	c.trackRate(resp)
+	resp, err := c.writeGH().Activity.MarkThreadRead(ctx, threadID)
+	c.trackWriteRate(resp)
 	return err
 }
 

@@ -1080,3 +1080,44 @@ func TestListActivityNotificationCarriesSubjectState(t *testing.T) {
 	assert.Equal("unread", items[0].ItemState)
 	assert.Equal("merged", items[0].SubjectState)
 }
+
+func TestListActivityNotificationMatchesRepoByIdentity(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	number := 7
+
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform:               "github",
+		PlatformHost:           "github.com",
+		PlatformNotificationID: "ntf-before-repo",
+		RepoOwner:              "alice",
+		RepoName:               "alpha",
+		SubjectType:            "PullRequest",
+		SubjectTitle:           "Matched after repo sync",
+		WebURL:                 "https://github.com/alice/alpha/pull/7",
+		ItemNumber:             &number,
+		ItemType:               "pr",
+		ItemAuthor:             "carol",
+		Reason:                 "mention",
+		Unread:                 true,
+		SourceUpdatedAt:        base.Add(10 * time.Minute),
+		SyncedAt:               base.Add(10 * time.Minute),
+	}}))
+
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	insertTestMRWithOptions(t, d, testMR(repoID, number,
+		withMRTitle("Matched after repo sync"),
+		withMRState(MergeRequestStateMerged),
+		withMRActivity(base)))
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50, Types: []string{"notification"}})
+	require.NoError(err)
+	require.Len(items, 1)
+	assert.Equal("notification", items[0].ActivityType)
+	assert.Equal("alice", items[0].RepoOwner)
+	assert.Equal("alpha", items[0].RepoName)
+	assert.Equal("merged", items[0].SubjectState)
+}

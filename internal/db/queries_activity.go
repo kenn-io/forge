@@ -116,11 +116,15 @@ func (d *DB) ListActivity(
 			       n.web_url,
 			       COALESCE(mr.state, iss.state, '')
 			FROM middleman_notification_items n
-			JOIN middleman_repos r ON n.repo_id = r.id
+			JOIN middleman_repos r
+			       ON r.platform = n.platform
+			      AND r.platform_host = n.platform_host
+			      AND r.owner = n.repo_owner
+			      AND r.name = n.repo_name
 			LEFT JOIN middleman_merge_requests mr
-			       ON n.item_type = 'pr' AND mr.repo_id = n.repo_id AND mr.number = n.item_number
+			       ON n.item_type = 'pr' AND mr.repo_id = r.id AND mr.number = n.item_number
 			LEFT JOIN middleman_issues iss
-			       ON n.item_type = 'issue' AND iss.repo_id = n.repo_id AND iss.number = n.item_number
+			       ON n.item_type = 'issue' AND iss.repo_id = r.id AND iss.number = n.item_number
 			WHERE n.item_type IN ('pr', 'issue') AND n.item_number IS NOT NULL
 			      AND n.reason != 'author'`
 	}

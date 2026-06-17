@@ -18342,6 +18342,57 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Equal("github.com", (*resp.JSON200.Items)[0].PlatformHost)
 }
 
+func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	srv.cfg = notificationsEnabledConfig()
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	number := 7
+
+	require.NoError(database.UpsertNotifications(ctx, []db.Notification{{
+		Platform:               "github",
+		PlatformHost:           "github.com",
+		PlatformNotificationID: "thread-before-repo",
+		RepoOwner:              "acme",
+		RepoName:               "widget",
+		SubjectType:            "PullRequest",
+		SubjectTitle:           "Review before repo sync",
+		WebURL:                 "https://github.com/acme/widget/pull/7",
+		ItemNumber:             &number,
+		ItemType:               "pr",
+		ItemAuthor:             "reviewer",
+		Reason:                 "mention",
+		Unread:                 true,
+		SourceUpdatedAt:        base.Add(10 * time.Minute),
+		SyncedAt:               base.Add(10 * time.Minute),
+	}}))
+	mergedAt := base.Add(20 * time.Minute)
+	seedPR(t, database, "acme", "widget", number,
+		withSeedPRTitle("Review before repo sync"),
+		withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, nil),
+		withSeedPRTimes(base, mergedAt, mergedAt))
+
+	types := []string{"notification"}
+	since := base.Add(-time.Minute).Format(time.RFC3339)
+	resp, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since, Types: &types},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.Len(*resp.JSON200.Items, 1)
+	item := (*resp.JSON200.Items)[0]
+	assert.Equal("notification", item.ActivityType)
+	assert.Equal("acme", item.RepoOwner)
+	assert.Equal("widget", item.RepoName)
+	assert.NotNil(item.SubjectState)
+	assert.Equal("merged", *item.SubjectState)
+}
+
 func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

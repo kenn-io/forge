@@ -148,8 +148,13 @@ huma-route-check:
 script-tests: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node --test scripts/*.test.mjs scripts/*.test.ts
 
-# Run lightweight generated-client/Huma guardrails
-guardrail-check: frontend-deps
+# Run lightweight generated-client/Huma guardrails.
+# Guard on vite-plus being present (check-vite-plus-bin) rather than running
+# frontend-deps: every sub-target either is Go-only or runs through
+# `vp exec -- node`, so this needs node_modules + vp, never a standalone `bun`.
+# Under setup-vp (CI) bun is not on PATH, so a `bun install` prerequisite here
+# fails with exit 127 even though deps are already installed.
+guardrail-check: check-vite-plus-bin
 	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check script-tests
 
 

@@ -884,7 +884,8 @@
 
   function isReplyingToEntry(entry: TimelineEntry): boolean {
     const targetID = replyTargetID(entry);
-    return targetID !== null && replyingThreadID === targetID && replyingEntryKey === entry.key;
+    if (targetID === null || replyingThreadID !== targetID) return false;
+    return activityViewMode === "compact" ? replyingEntryKey === entry.key : true;
   }
 
   function isThreadCollapsed(entry: TimelineEntry): boolean {

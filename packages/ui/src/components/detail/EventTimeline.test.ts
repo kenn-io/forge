@@ -734,6 +734,68 @@ describe("EventTimeline", () => {
     expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
   });
 
+  it("keeps normal review thread reply composer visible when thread entries regroup", async () => {
+    const rootComment = makeReviewThreadEvent({
+      ID: 1,
+      Body: "Root review thread comment",
+      CreatedAt: "2024-06-01T12:01:00Z",
+      diff_thread: {
+        ...makeReviewThreadEvent().diff_thread!,
+        id: "thread-regroup",
+        provider_comment_id: "1",
+        body: "Root review thread comment",
+      },
+    });
+    const replyComment = makeReviewThreadEvent({
+      ID: 2,
+      Body: "Existing reply after regroup",
+      CreatedAt: "2024-06-01T12:02:00Z",
+      diff_thread: {
+        ...makeReviewThreadEvent().diff_thread!,
+        id: "thread-regroup",
+        provider_comment_id: "2",
+        body: "Existing reply after regroup",
+      },
+    });
+    const props = {
+      events: [rootComment],
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widget",
+      repoPath: "acme/widget",
+      number: 7,
+      canReplyToThreads: true,
+    } as const;
+    const { container, rerender } = render(EventTimeline, {
+      props,
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            detail: {
+              replyToDiscussion: vi.fn().mockResolvedValue(true),
+              getDetailError: vi.fn(),
+            },
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    await fireEvent.click(container.querySelector<HTMLButtonElement>(".thread-reply-action--inline")!);
+    expect(container.querySelectorAll(".thread-reply-panel")).toHaveLength(1);
+
+    await rerender({ ...props, events: [rootComment, replyComment] });
+
+    expect(container.querySelectorAll(".thread-reply-panel")).toHaveLength(1);
+    expect(screen.getByText("Existing reply after regroup")).toBeTruthy();
+  });
+
   it("can collapse and expand threaded replies", async () => {
     const { container } = render(EventTimeline, {
       props: {

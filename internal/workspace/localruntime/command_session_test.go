@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	shellquote "github.com/kballard/go-shellquote"
 	Assert "github.com/stretchr/testify/assert"
@@ -133,6 +134,13 @@ func TestEnsureCommandSessionReturnsExistingLiveSession(t *testing.T) {
 		ctx, "scope-1", commandSessionTestSpec("client:key one", cwd),
 	)
 	require.NoError(err)
+	require.Eventually(func() bool {
+		data, err := os.ReadFile(recordPath)
+		if err != nil {
+			return false
+		}
+		return strings.Contains(string(data), "attach-session\x00")
+	}, 2*time.Second, 20*time.Millisecond)
 	callsAfterFirst := len(readNullArgvRecord(t, recordPath))
 
 	second, err := mgr.EnsureCommandSession(

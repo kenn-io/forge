@@ -347,16 +347,31 @@ function hasCollapsedGap(
 }
 
 function hunkMayCarrySyntaxState(hunk: NonNullable<DiffFile["hunks"]>[number]): boolean {
+  const oldState = syntaxStateAfterHunkSide(hunk, "old");
+  const newState = syntaxStateAfterHunkSide(hunk, "new");
+
+  return syntaxStateOpen(oldState) || syntaxStateOpen(newState);
+}
+
+function syntaxStateAfterHunkSide(
+  hunk: NonNullable<DiffFile["hunks"]>[number],
+  side: "old" | "new",
+): { templateBacktickCount: number; blockCommentOpen: boolean } {
   let templateBacktickCount = 0;
   let blockCommentOpen = false;
-
   for (const line of hunk.lines) {
+    if (side === "old" && line.type === "add") continue;
+    if (side === "new" && line.type === "delete") continue;
     const content = line.content;
     templateBacktickCount += countUnescapedBackticks(content);
     blockCommentOpen = blockCommentStateAfterLine(content, blockCommentOpen);
   }
 
-  return templateBacktickCount % 2 === 1 || blockCommentOpen;
+  return { templateBacktickCount, blockCommentOpen };
+}
+
+function syntaxStateOpen(state: { templateBacktickCount: number; blockCommentOpen: boolean }): boolean {
+  return state.templateBacktickCount % 2 === 1 || state.blockCommentOpen;
 }
 
 function countUnescapedBackticks(line: string): number {

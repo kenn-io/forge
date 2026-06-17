@@ -180,6 +180,55 @@ function makeSparseTemplateGapFile(): DiffFile {
   };
 }
 
+function makeSparseTemplateGapFileWithBothSidesOpen(): DiffFile {
+  const path = "src/example.test.ts";
+  return {
+    ...makeFile(path, "-old line\n+new line"),
+    additions: 4,
+    deletions: 1,
+    patch: `diff --git a/${path} b/${path}
+--- a/${path}
++++ b/${path}
+@@ -10,2 +10,2 @@ function render() {
+-const oldHtml = \`
++const newHtml = \`
+   <div>
+@@ -80,2 +80,4 @@ afterRender();
++vi.doMock("./worker", () => ({
++  run: () => undefined,
++}));
+ function makeFile() {}
+`,
+    hunks: [
+      {
+        old_start: 10,
+        old_count: 2,
+        new_start: 10,
+        new_count: 2,
+        section: "function render() {",
+        lines: [
+          { type: "delete", content: "const oldHtml = `", old_num: 10 },
+          { type: "add", content: "const newHtml = `", new_num: 10 },
+          { type: "context", content: "  <div>", old_num: 11, new_num: 11 },
+        ],
+      },
+      {
+        old_start: 80,
+        old_count: 2,
+        new_start: 80,
+        new_count: 4,
+        section: "afterRender();",
+        lines: [
+          { type: "add", content: 'vi.doMock("./worker", () => ({', new_num: 80 },
+          { type: "add", content: "  run: () => undefined,", new_num: 81 },
+          { type: "add", content: "}));", new_num: 82 },
+          { type: "context", content: "function makeFile() {}", old_num: 80, new_num: 83 },
+        ],
+      },
+    ],
+  };
+}
+
 describe("Pierre diff parsing", () => {
   it("uses distinct cache keys for different patch contents", () => {
     const first = parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"));
@@ -280,6 +329,7 @@ describe("Pierre diff parsing", () => {
 
   it("detects sparse context gaps that can carry syntax state", () => {
     expect(sparseContextMayDistortSyntax(makeSparseTemplateGapFile())).toBe(true);
+    expect(sparseContextMayDistortSyntax(makeSparseTemplateGapFileWithBothSidesOpen())).toBe(true);
     expect(sparseContextMayDistortSyntax(makeFile("src/foo.ts", "-old line\n+new line"))).toBe(false);
   });
 

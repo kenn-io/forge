@@ -3984,8 +3984,9 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		RepoFilters: parseRepoFilters(input.Repo),
 		Types:       input.Types,
 		Search:      input.Search,
-		// Drop notification rows in SQL when disabled so the safety-cap
-		// window is filled by real activity, not stale notifications.
+		// Notifications are always on; this only drops notification rows in
+		// SQL when no config is loaded (the nil-config safety guard), so the
+		// safety-cap window is filled by real activity, not stale notifications.
 		ExcludeNotifications: !s.notificationsEnabled(),
 	}
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import { collapseActivityRuns, isCollapsedActivityRow } from "./activityRows.js";
 import { activityBranchKey, activityItemKey, activityRepoKey } from "./activityRows.js";
+import { activitySubjectState, isClosedOrMergedActivity } from "./activityRows.js";
 
 function item(id: string, activity_type: string, author: string): ActivityItem {
   return {
@@ -272,5 +273,44 @@ describe("activityRepoKey / activityItemKey", () => {
     const release = { ...base, branchName: "release" };
     expect(activityBranchKey(main)).toBe(`${activityRepoKey(base)}:branch:main`);
     expect(activityBranchKey(main)).not.toBe(activityBranchKey(release));
+  });
+});
+
+describe("activitySubjectState / isClosedOrMergedActivity", () => {
+  function notification(overrides: Partial<ActivityItem>): ActivityItem {
+    return {
+      ...item("1", "notification", "alice"),
+      // Notifications carry unread/read in item_state, never a lifecycle state.
+      item_state: "unread",
+      ...overrides,
+    } as ActivityItem;
+  }
+
+  it("reads item_state for non-notification rows", () => {
+    expect(activitySubjectState(item("1", "comment", "alice"))).toBe("open");
+    expect(isClosedOrMergedActivity(item("1", "comment", "alice"))).toBe(false);
+    const merged = { ...item("1", "comment", "alice"), item_state: "merged" } as ActivityItem;
+    expect(isClosedOrMergedActivity(merged)).toBe(true);
+  });
+
+  it("reads subject_state for notification rows, not their unread/read item_state", () => {
+    const merged = notification({ subject_state: "merged" });
+    expect(activitySubjectState(merged)).toBe("merged");
+    // A notifications-only feed has no sibling PR row, yet the merged subject
+    // is still hidden because subject_state rides on the notification row.
+    expect(isClosedOrMergedActivity(merged)).toBe(true);
+
+    const open = notification({ subject_state: "open" });
+    expect(isClosedOrMergedActivity(open)).toBe(false);
+
+    const closed = notification({ subject_state: "closed" });
+    expect(isClosedOrMergedActivity(closed)).toBe(true);
+  });
+
+  it("falls back to item_state when a notification has no subject_state", () => {
+    // Unanchored or unknown-subject notification: empty subject_state, unread
+    // item_state, so it is treated as not closed/merged.
+    expect(isClosedOrMergedActivity(notification({ subject_state: "" }))).toBe(false);
+    expect(activitySubjectState(notification({ subject_state: undefined }))).toBe("unread");
   });
 });

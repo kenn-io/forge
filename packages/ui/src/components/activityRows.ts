@@ -35,6 +35,28 @@ export function isDefaultBranchActivity(item: ActivityItem): boolean {
   return isDefaultBranchCommitActivity(item) || isDefaultBranchForcePushActivity(item);
 }
 
+// Resolve the open/closed/merged lifecycle state that the "Hide closed/merged"
+// filter should test for a row. Notification rows carry unread/read in
+// item_state; their linked PR/issue's lifecycle state rides in subject_state
+// (an empty string when the row is unanchored or the subject is unknown), so
+// the filter must read subject_state for notifications and fall back to
+// item_state only when no subject link is present. Every other row uses
+// item_state directly. Allowed values: "open" | "closed" | "merged" | "".
+export function activitySubjectState(item: ActivityItem): string {
+  if (item.activity_type === "notification") {
+    return item.subject_state || item.item_state;
+  }
+  return item.item_state;
+}
+
+// Shared predicate for the "Hide closed/merged" filter so desktop, threaded,
+// and mobile activity surfaces all hide the same rows, including notifications
+// whose linked PR/issue is closed/merged even when no sibling PR row is loaded.
+export function isClosedOrMergedActivity(item: ActivityItem): boolean {
+  const state = activitySubjectState(item);
+  return state === "merged" || state === "closed";
+}
+
 export function shortSha(sha: string | undefined): string {
   return sha ? sha.slice(0, 7) : "";
 }

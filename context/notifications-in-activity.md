@@ -161,6 +161,7 @@ Rules:
 - The "Notifications" toggle lives in the activity filter dropdown's event-type group, is always present (notifications are always enabled), and defaults on. It is persisted by its own `notif` URL param, NOT by membership in the `types` list — a legacy `types` URL that lists every event but no `notification` must still mean "show everything", so the toggle cannot be inferred from list membership.
 - `buildActivityFilterTypes` turns the dropdown state into the `/activity` `types` list (the backend filters by inclusion, so exclusion is an explicit list): the all-selected case stays the empty `[]` (backend returns everything); a partial event selection appends `notification` when the toggle is on; hiding notifications drops it from the list. Deselecting every event type while leaving Notifications on collapses to exactly `["notification"]` — a notifications-only feed where the PR/issue `Opened` anchor rows (`new_pr`/`new_issue`) do not leak in.
 - Clicking a notification row opens its PR/issue in the detail pane when `(item_type, item_number)` resolve; otherwise it follows `web_url`.
+- "Hide closed/merged" uses the shared `isClosedOrMergedActivity` helper (`packages/ui/src/components/activityRows.ts`) on every activity surface — flat, threaded, and the mobile activity view (`packages/ui/src/views/MobileActivityView.svelte`) — so a notification whose linked PR/issue is closed/merged is hidden everywhere, not just on desktop. The helper tests `subject_state` for notification rows (their `item_state` is unread/read, not a lifecycle state) and `item_state` for all other rows.
 - Unread notification rows (and only notification rows) carry a "Mark seen" control in both the flat and threaded layouts. It calls `POST /notifications/read` with the row's notification id (parsed from the `ntf:<id>` activity item id), which flips the row to read locally and queues the GitHub read propagation; the control then clears. Non-notification activity rows never get this control.
 - The notification list/sync/triage API endpoints still exist for backend propagation; "Mark seen" is the only triage action surfaced in the feed. Bulk read/done/undone remain backend-only and are an intentional non-goal for the feed.
 - Feed inclusion is historical: notification rows appear regardless of unread/read/done state within the Activity time window. `done_at` excludes a notification from the notification list API, not from the Activity feed; the feed is immutable history, not a triage queue.
@@ -184,6 +185,7 @@ Rules:
 - API payload remains GitHub-shaped for now where existing clients depend on fields like `platform_thread_id` and `github_*` timestamps.
 - Provider-neutral storage and DB naming must not leak through API accidentally; translate at server boundary.
 - Generated OpenAPI clients must be regenerated after API shape changes.
+- Activity notification rows carry the linked PR/issue lifecycle state in `subject_state` (allowed values `open` | `closed` | `merged`, or `""` when the row is unanchored or its subject is not loaded). `item_state` keeps carrying the notification's own `unread`/`read` triage state. `listActivity` populates `subject_state` via a `LEFT JOIN` to the merge-request/issue tables on `(repo_id, item_number)`, so the Hide closed/merged filter works in a notifications-only feed with no sibling PR/issue row present.
 
 ## Testing Expectations
 
@@ -191,7 +193,7 @@ Use full-stack coverage for user-visible notification behavior.
 
 - DB tests: state filters, monitored repo scope, host-qualified identity, read generation guards, retry metadata, closed-linked auto-done.
 - GitHub tests: notification normalization, PR issue-style URL parsing, participating flag, host pagination/watermarks, rate-limit behavior.
-- Server tests: nil-config nil-safety (notifications served whenever a config is loaded), bulk mutation result shape, sync status, real SQLite API behavior.
+- Server tests: nil-config nil-safety (notifications served whenever a config is loaded), bulk mutation result shape, sync status, real SQLite API behavior. `internal/server/apitest/activity_notifications_test.go` is the full-stack guard: over real `/api/v1/activity` it asserts a notifications-only filter returns only notification rows, persisted unanchored ("ISSUE #0") and `author` notifications never surface, and a notification on a merged PR reports `item_state = unread` with `subject_state = merged`.
 - Frontend/store tests: activity filter type construction (notification toggle on/off, notifications-only collapse to `["notification"]`, legacy URL normalization), feed rendering of notification rows.
 - Playwright e2e (`frontend/tests/e2e-full/activity-notifications.spec.ts`): notifications appear as feed rows, the Notifications filter hides them, and "Mark seen" posts the read and clears the control.
 

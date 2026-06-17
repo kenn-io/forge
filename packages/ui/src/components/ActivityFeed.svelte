@@ -15,6 +15,7 @@
     isDefaultBranchCommitActivity,
     isDefaultBranchForcePushActivity,
     isCollapsedActivityRow,
+    isClosedOrMergedActivity,
     collapseActivityRuns,
     shortSha,
   } from "./activityRows.js";
@@ -271,15 +272,7 @@
       result = result.filter((it) => it.item_type === "issue");
     }
     if (activity.getHideClosedMerged()) {
-      result = result.filter((it) => {
-        // Notification rows carry unread/read in item_state; their linked
-        // PR/issue's open/closed/merged state rides in subject_state so the
-        // filter works even in a notifications-only feed with no sibling
-        // PR rows present.
-        const state =
-          it.activity_type === "notification" ? (it.subject_state || it.item_state) : it.item_state;
-        return state !== "merged" && state !== "closed";
-      });
+      result = result.filter((it) => !isClosedOrMergedActivity(it));
     }
     if (activity.getHideBots()) {
       result = result.filter((it) => !isBot(it.author));

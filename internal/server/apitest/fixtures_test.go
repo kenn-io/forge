@@ -114,6 +114,20 @@ func withSeedPRHeadSHA(headSHA string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.PlatformHeadSHA = headSHA }
 }
 
+func withSeedPRState(state db.MergeRequestState) seedPROpt {
+	return func(pr *db.MergeRequest) {
+		pr.State = state
+		if state == db.MergeRequestStateMerged || state == db.MergeRequestStateClosed {
+			closed := pr.UpdatedAt
+			pr.ClosedAt = &closed
+		}
+		if state == db.MergeRequestStateMerged {
+			merged := pr.UpdatedAt
+			pr.MergedAt = &merged
+		}
+	}
+}
+
 func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts ...seedPROpt) int64 {
 	t.Helper()
 	ctx := t.Context()

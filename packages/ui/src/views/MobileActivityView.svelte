@@ -16,6 +16,7 @@
   import {
     activityBranchKey,
     activityItemKey,
+    isClosedOrMergedActivity,
     isDefaultBranchActivity,
     isDefaultBranchForcePushActivity,
     shortSha,
@@ -97,9 +98,7 @@
     }
 
     if (activity.getHideClosedMerged()) {
-      result = result.filter(
-        (item) => item.item_state !== "merged" && item.item_state !== "closed",
-      );
+      result = result.filter((item) => !isClosedOrMergedActivity(item));
     }
 
     if (activity.getHideBots()) {

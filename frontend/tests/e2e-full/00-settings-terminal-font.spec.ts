@@ -224,11 +224,8 @@ test.describe("terminal options popover", () => {
       const workspace = (await createResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(workspaceApi, workspace.id);
 
-      await page.addInitScript((workspaceId) => {
-        localStorage.setItem(`middleman-workspace-active-tab:${workspaceId}`, "shell");
-      }, workspace.id);
-
       await page.goto(`${workspaceServer.info.base_url}/terminal/${workspace.id}`);
+      await page.getByRole("button", { name: "Open terminal panel" }).click();
       await expect(page.locator(".terminal-container .xterm-screen")).toBeVisible();
       await expect.poll(() => terminalScreenSizeKey(page)).not.toBe("0pxx0px");
       const initialScreenSize = await terminalScreenSizeKey(page);

@@ -222,7 +222,8 @@ describe("GhosttyTerminalPane", () => {
       active: false,
     });
 
-    expect(socketAt(0).sent).toEqual([]);
+    expect(socketAt(0).sent).toEqual([JSON.stringify({ type: "resize_active", active: false })]);
+    socketAt(0).sent = [];
 
     await rerender({
       websocketPath: "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",

@@ -83,7 +83,7 @@ jobs:
           echo ok > internal/web/dist/stub.html
 
       - name: Run frontend unit tests
-        run: cd frontend && vp test run
+        run: cd frontend && vp test run --project unit
 
       - name: Run tests
         run: |

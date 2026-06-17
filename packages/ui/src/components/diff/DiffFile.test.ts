@@ -977,6 +977,41 @@ describe("DiffFile", () => {
     expect(comment?.parentElement?.classList.contains("file-content")).toBe(true);
   });
 
+  it("hides review thread cards while markdown rich preview is active", async () => {
+    const file = makeFile({
+      path: "README.md",
+      old_path: "README.md",
+    });
+    const thread = makeReviewThread({
+      id: "thread-preview-hidden",
+      path: "README.md",
+      line: 99,
+      new_line: 99,
+      body: "Review note should stay out of rich preview",
+    });
+
+    const { unmount } = renderDiffFile(file, {
+      richPreview: true,
+      reviewThreads: [thread],
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector(".markdown-rich-diff--unified")).toBeTruthy();
+    });
+    expect(screen.queryByText("Review note should stay out of rich preview")).toBeNull();
+
+    unmount();
+    renderDiffFile(file, {
+      richPreview: true,
+      richPreviewEnabled: false,
+      reviewThreads: [thread],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Review note should stay out of rich preview")).toBeTruthy();
+    });
+  });
+
   it("clears an open inline composer when review context changes", async () => {
     const file = makeFile();
     const owner = uniqueOwner();

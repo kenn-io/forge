@@ -280,6 +280,7 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	cfg.Host = "127.0.0.1"
 	cfg.Port = opts.backendPort
 	cfg.DataDir = dataDir
+	cfg.TrustReverseProxy = false
 
 	configPath := filepath.Join(opts.workDir, "config.toml")
 	if err := cfg.Save(configPath); err != nil {

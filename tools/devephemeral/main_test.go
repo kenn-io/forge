@@ -90,6 +90,39 @@ func TestPrepareEphemeralConfigForcesBackendToLoopback(t *testing.T) {
 	assert.Equal("::1", source.Host)
 }
 
+func TestPrepareEphemeralConfigDisablesReverseProxyTrustForDirectBackend(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.toml")
+
+	source := config.Config{
+		SyncInterval:        "5m",
+		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		DefaultPlatformHost: "github.com",
+		Host:                "127.0.0.1",
+		Port:                8091,
+		DataDir:             filepath.Join(dir, "source-data"),
+		AllowedHosts:        []string{"middleman.example.test"},
+		TrustReverseProxy:   true,
+		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
+	}
+	require.NoError(source.Save(sourcePath))
+
+	prepared, err := prepareEphemeralConfig(ephemeralOptions{
+		sourceConfigPath: sourcePath,
+		workDir:          filepath.Join(dir, "run"),
+		backendPort:      39141,
+		frontendPort:     39142,
+	})
+	require.NoError(err)
+
+	reloaded, err := config.Load(prepared.configPath)
+	require.NoError(err)
+	assert.False(reloaded.TrustReverseProxy)
+	assert.True(source.TrustReverseProxy)
+}
+
 func TestPrepareEphemeralConfigCopiesSourceDatabaseByDefault(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()

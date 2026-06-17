@@ -453,11 +453,17 @@
   }
 
   function workspaceGroupKey(ws: Workspace): string {
-    // Group on the full provider ref, not just host/owner/name. Two
-    // providers can share a platform host and repo path.
+    // Group on the full provider ref, not just host/owner/name, reusing
+    // the same provider-aware identity that drives the label. Two
+    // providers can share a platform host and repo path (for example a
+    // Gitea and a Forgejo instance on one domain); without the provider
+    // segment their workspaces collapse into a single group whose label
+    // and provider icon are taken from only the first item. The NUL
+    // joiner keeps GitLab's slash-bearing subgroup owners from colliding
+    // across segments.
     const identity = workspaceRepoIdentity(ws);
     return [
-      workspaceProvider(ws) ?? "",
+      identity.provider,
       identity.platformHost,
       identity.owner,
       identity.name,

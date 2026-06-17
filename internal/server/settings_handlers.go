@@ -280,11 +280,21 @@ func repoProvider(repo ghclient.RepoRef) string {
 	return strings.ToLower(provider)
 }
 
+func trackedRepoHost(repo ghclient.RepoRef) string {
+	host := strings.TrimSpace(repo.PlatformHost)
+	if host != "" {
+		return strings.ToLower(host)
+	}
+	if defaultHost, ok := platform.DefaultHost(platform.Kind(repoProvider(repo))); ok {
+		return defaultHost
+	}
+	return ""
+}
+
 func trackedRepoKey(repo ghclient.RepoRef) string {
 	return repoProvider(repo) + "\x00" +
-		strings.ToLower(repo.PlatformHost) + "\x00" +
-		strings.ToLower(repo.Owner) + "\x00" +
-		strings.ToLower(repo.Name)
+		trackedRepoHost(repo) + "\x00" +
+		strings.ToLower(strings.Trim(trackedRepoPath(repo), "/ "))
 }
 
 func (s *Server) persistResolvedRepos(

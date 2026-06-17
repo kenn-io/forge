@@ -3430,6 +3430,58 @@ func TestAPIListRepos(t *testing.T) {
 	require.Equal("widget", (*resp.JSON200)[0].Name)
 }
 
+func TestAPIConfiguredRepoFiltersUseProviderIdentity(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	srv, database, _ := setupTestServerWithConfig(t)
+	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+
+	_, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	_, err = database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	}})
+
+	reposResp, err := client.HTTP.ListReposWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, reposResp.StatusCode())
+	require.NotNil(reposResp.JSON200)
+	require.Len(*reposResp.JSON200, 1)
+	assert.Equal("github", (*reposResp.JSON200)[0].Platform)
+	assert.Equal("github.com", (*reposResp.JSON200)[0].PlatformHost)
+	assert.Equal("acme", (*reposResp.JSON200)[0].Owner)
+	assert.Equal("widget", (*reposResp.JSON200)[0].Name)
+
+	summariesResp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, summariesResp.StatusCode())
+	require.NotNil(summariesResp.JSON200)
+	require.Len(*summariesResp.JSON200, 1)
+	assert.Equal("github", (*summariesResp.JSON200)[0].Repo.Provider)
+	assert.Equal("github.com", (*summariesResp.JSON200)[0].PlatformHost)
+	assert.Equal("acme", (*summariesResp.JSON200)[0].Owner)
+	assert.Equal("widget", (*summariesResp.JSON200)[0].Name)
+}
+
 func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

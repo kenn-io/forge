@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 )
 
@@ -140,9 +141,10 @@ func (s *Server) lookupRepoMap(ctx context.Context) (map[int64]db.Repo, error) {
 
 // filterConfiguredRepos returns only repos that are currently tracked.
 func (s *Server) filterConfiguredRepos(repos []db.Repo) []db.Repo {
+	tracked := s.trackedConfiguredRepoSet()
 	filtered := make([]db.Repo, 0, len(repos))
 	for _, r := range repos {
-		if s.syncer.IsTrackedRepoOnHost(r.Owner, r.Name, r.PlatformHost) {
+		if _, ok := tracked[configuredDBRepoKey(r)]; ok {
 			filtered = append(filtered, r)
 		}
 	}
@@ -177,14 +179,39 @@ func (s *Server) lookupRepo(
 func (s *Server) filterConfiguredRepoSummaries(
 	summaries []db.RepoSummary,
 ) []db.RepoSummary {
+	tracked := s.trackedConfiguredRepoSet()
 	filtered := make([]db.RepoSummary, 0, len(summaries))
 	for _, summary := range summaries {
 		repo := summary.Repo
-		if s.syncer.IsTrackedRepoOnHost(repo.Owner, repo.Name, repo.PlatformHost) {
+		if _, ok := tracked[configuredDBRepoKey(repo)]; ok {
 			filtered = append(filtered, summary)
 		}
 	}
 	return filtered
+}
+
+func (s *Server) trackedConfiguredRepoSet() map[string]struct{} {
+	trackedRepos := s.syncer.TrackedRepos()
+	tracked := make(map[string]struct{}, len(trackedRepos))
+	for _, repo := range trackedRepos {
+		tracked[trackedRepoKey(repo)] = struct{}{}
+	}
+	return tracked
+}
+
+func configuredDBRepoKey(repo db.Repo) string {
+	return trackedRepoKey(ghclient.RepoRef{
+		Platform:     repoProviderKind(repo),
+		PlatformHost: repoProviderHost(repo),
+		Owner:        repo.Owner,
+		Name:         repo.Name,
+		RepoPath:     repo.RepoPath,
+	})
+}
+
+func (s *Server) isConfiguredRepoTracked(repo db.Repo) bool {
+	_, ok := s.trackedConfiguredRepoSet()[configuredDBRepoKey(repo)]
+	return ok
 }
 
 // lookupRepoID resolves a repository from owner/name inputs and returns a

@@ -21,24 +21,24 @@ const issueSelected = {
 };
 
 describe("globalRepoForSelectedRoute", () => {
-  it("returns platformHost/repoPath for a pulls route with a selected PR", () => {
+  it("returns provider|platformHost/repoPath for a pulls route with a selected PR", () => {
     const route: Route = {
       page: "pulls",
       view: "list",
       selected: prSelected,
     };
-    expect(globalRepoForSelectedRoute(route)).toBe("github.com/acme/tools");
+    expect(globalRepoForSelectedRoute(route)).toBe("github|github.com/acme/tools");
   });
 
-  it("returns platformHost/repoPath for an issues route with a selected issue", () => {
+  it("returns provider|platformHost/repoPath for an issues route with a selected issue", () => {
     const route: Route = {
       page: "issues",
       selected: issueSelected,
     };
-    expect(globalRepoForSelectedRoute(route)).toBe("gitlab.example.com/team/infra");
+    expect(globalRepoForSelectedRoute(route)).toBe("gitlab|gitlab.example.com/team/infra");
   });
 
-  it("returns platformHost/repoPath for a focus PR route", () => {
+  it("returns provider|platformHost/repoPath for a focus PR route", () => {
     const route: Route = {
       page: "focus",
       itemType: "pr",
@@ -49,10 +49,10 @@ describe("globalRepoForSelectedRoute", () => {
       repoPath: "acme/tools",
       number: 42,
     };
-    expect(globalRepoForSelectedRoute(route)).toBe("github.com/acme/tools");
+    expect(globalRepoForSelectedRoute(route)).toBe("github|github.com/acme/tools");
   });
 
-  it("returns platformHost/repoPath for a focus issue route", () => {
+  it("returns provider|platformHost/repoPath for a focus issue route", () => {
     const route: Route = {
       page: "focus",
       itemType: "issue",
@@ -63,7 +63,7 @@ describe("globalRepoForSelectedRoute", () => {
       repoPath: "team/infra",
       number: 7,
     };
-    expect(globalRepoForSelectedRoute(route)).toBe("gitlab.example.com/team/infra");
+    expect(globalRepoForSelectedRoute(route)).toBe("gitlab|gitlab.example.com/team/infra");
   });
 
   it("keeps nested repo paths intact", () => {
@@ -78,7 +78,35 @@ describe("globalRepoForSelectedRoute", () => {
         number: 17,
       },
     };
-    expect(globalRepoForSelectedRoute(route)).toBe("gitlab.example.com/Group/SubGroup/Project.Special");
+    expect(globalRepoForSelectedRoute(route)).toBe("gitlab|gitlab.example.com/Group/SubGroup/Project.Special");
+  });
+
+  it("keeps same-host same-path provider collisions distinct", () => {
+    const githubRoute: Route = {
+      page: "issues",
+      selected: {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+        number: 101,
+      },
+    };
+    const giteaRoute: Route = {
+      page: "issues",
+      selected: {
+        provider: "gitea",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+        number: 901,
+      },
+    };
+
+    expect(globalRepoForSelectedRoute(githubRoute)).toBe("github|github.com/acme/widgets");
+    expect(globalRepoForSelectedRoute(giteaRoute)).toBe("gitea|github.com/acme/widgets");
   });
 
   it("returns undefined for a pulls list route without a selection", () => {
@@ -119,7 +147,7 @@ describe("globalRepoForSelectedRoute", () => {
     ).toBeUndefined();
   });
 
-  it("returns undefined when platformHost is missing on the selected item", () => {
+  it("throws when platformHost is missing on the selected item", () => {
     const route: Route = {
       page: "pulls",
       view: "list",
@@ -131,6 +159,21 @@ describe("globalRepoForSelectedRoute", () => {
         number: 42,
       },
     };
-    expect(globalRepoForSelectedRoute(route)).toBeUndefined();
+    expect(() => globalRepoForSelectedRoute(route)).toThrow("selected route is missing platformHost");
+  });
+
+  it("throws when provider is missing on the selected item", () => {
+    const route = {
+      page: "pulls",
+      view: "list",
+      selected: {
+        platformHost: "github.com",
+        owner: "acme",
+        name: "tools",
+        repoPath: "acme/tools",
+        number: 42,
+      },
+    } as unknown as Route;
+    expect(() => globalRepoForSelectedRoute(route)).toThrow("selected route is missing provider");
   });
 });

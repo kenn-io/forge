@@ -4006,7 +4006,7 @@ func (s *Server) resolveItem(
 	if providerKind != platform.KindGitLab {
 		itemTypeHint = ""
 	}
-	if !s.syncer.IsTrackedRepoOnHost(repo.Owner, repo.Name, repoProviderHost(*repo)) {
+	if !s.isConfiguredRepoTracked(*repo) {
 		return &resolveItemOutput{
 			Body: resolveItemResponse{
 				Number:      number,

@@ -777,7 +777,13 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     }
     if (shouldRefreshCommits) {
       await loadCommits({ force: true });
-      if (currentWorkspaceID !== workspaceID || currentWorkspaceBase !== base) return;
+      if (
+        currentWorkspaceID !== workspaceID ||
+        currentWorkspaceHostKey !== workspaceHostKey ||
+        currentWorkspaceBase !== base
+      ) {
+        return;
+      }
       resetScopeIfMissingFromLoadedCommits();
     }
 

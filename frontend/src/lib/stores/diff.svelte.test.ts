@@ -530,6 +530,78 @@ describe("createDiffStore loadDiff", () => {
     expect(store.getFilePreviewGeneration()).toBe(generationBeforeRefresh + 1);
   });
 
+  it("drops a workspace refresh when the fleet host changes during commit refresh", async () => {
+    const calls: string[] = [];
+    let memberACommitRequests = 0;
+    let resolveRefreshCommits: () => void = () => {};
+    let refreshCommitsStarted: () => void = () => {};
+    const refreshCommitsStartedPromise = new Promise<void>((resolve) => {
+      refreshCommitsStarted = resolve;
+    });
+    const refreshCommitsGate = new Promise<void>((resolve) => {
+      resolveRefreshCommits = resolve;
+    });
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/fleet/hosts/member-a/workspaces/ws-1/commits")) {
+        memberACommitRequests += 1;
+        if (memberACommitRequests === 2) {
+          refreshCommitsStarted();
+          await refreshCommitsGate;
+        }
+        return Response.json({
+          commits: [
+            {
+              sha: "sha2",
+              message: "second",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+        });
+      }
+      if (url.includes("/fleet/hosts/member-a/workspaces/ws-1/files")) {
+        return Response.json(makeFilesResult(["member-a.ts"]));
+      }
+      if (url.includes("/fleet/hosts/member-a/workspaces/ws-1/diff")) {
+        return Response.json(makeDiffResult(["member-a.ts"]));
+      }
+      if (url.includes("/fleet/hosts/member-b/workspaces/ws-1/files")) {
+        return Response.json(makeFilesResult(["member-b.ts"]));
+      }
+      if (url.includes("/fleet/hosts/member-b/workspaces/ws-1/diff")) {
+        return Response.json(makeDiffResult(["member-b.ts"]));
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    const store = createDiffStore({ client: testClient() });
+    await store.loadWorkspaceDiff("ws-1", "merge-target", false, { workspaceHostKey: "member-a" });
+    await store.loadCommits();
+    calls.length = 0;
+
+    const staleRefresh = store.loadWorkspaceDiff("ws-1", "merge-target", false, {
+      workspaceHostKey: "member-a",
+      refreshCommits: true,
+    });
+    await refreshCommitsStartedPromise;
+
+    await store.loadWorkspaceDiff("ws-1", "merge-target", false, { workspaceHostKey: "member-b" });
+    expect(store.getDiff()?.files[0]?.path).toBe("member-b.ts");
+
+    resolveRefreshCommits();
+    await staleRefresh;
+
+    expect(calls).toContain("/api/v1/fleet/hosts/member-a/workspaces/ws-1/commits");
+    expect(calls).toContain("/api/v1/fleet/hosts/member-b/workspaces/ws-1/files?base=merge-target");
+    expect(calls).toContain("/api/v1/fleet/hosts/member-b/workspaces/ws-1/diff?base=merge-target");
+    expect(calls).not.toContain("/api/v1/fleet/hosts/member-a/workspaces/ws-1/files?base=merge-target");
+    expect(calls).not.toContain("/api/v1/fleet/hosts/member-a/workspaces/ws-1/diff?base=merge-target");
+    expect(store.getDiff()?.files[0]?.path).toBe("member-b.ts");
+  });
+
   it("resets workspace commit scope when refresh removes the selected commit", async () => {
     const calls: string[] = [];
     const commitResponses = [

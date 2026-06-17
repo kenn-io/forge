@@ -197,6 +197,35 @@ describe("ActivityFeed compact mode", () => {
     expect(container.textContent).not.toContain("acme/widgets");
   });
 
+  it("keeps hidden-org flat activity repo labels distinguishable", () => {
+    hideOrgName.value = true;
+    items.value = [
+      activityItem("acme-widgets"),
+      activityItem("platform-widgets", {
+        id: "platform-widgets",
+        item_number: 2,
+        repo_owner: "platform",
+        repo_name: "widgets",
+        repo: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com",
+          owner: "platform",
+          name: "widgets",
+          repo_path: "platform/widgets",
+        },
+      }),
+    ];
+
+    const { container } = render(ActivityFeed, {
+      props: { compact: false },
+    });
+
+    const repoCells = Array.from(container.querySelectorAll(".activity-row .col-repo")).map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(repoCells).toEqual(["acme/widgets", "platform/widgets"]);
+  });
+
   it("highlights all compact rows for the selected item", () => {
     items.value = [
       activityItem("comment", { activity_type: "comment" }),

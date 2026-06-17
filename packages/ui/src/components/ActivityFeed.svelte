@@ -22,6 +22,10 @@
     localDateLabel,
     parseAPITimestamp,
   } from "../utils/time.js";
+  import {
+    createRepoLabelFormatter,
+    type RepoLabelIdentity,
+  } from "../utils/repo-label.js";
   import { repoColor } from "../utils/repo-color.js";
   import Chip from "./shared/Chip.svelte";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
@@ -226,10 +230,6 @@
     return item.activity_url || item.item_url;
   }
 
-  function repoLabel(owner: string, name: string): string {
-    return grouping.getHideOrgName() ? name : `${owner}/${name}`;
-  }
-
   function handleLinkClick(e: Event, url: string): void {
     e.stopPropagation();
     if (url) window.open(url, "_blank", "noopener");
@@ -260,6 +260,26 @@
     rollUpCommits: activity.getRollUpCommits(),
     rollUpNonCommitActivity: false,
   }));
+
+  const repoLabelFormatter = $derived.by(() =>
+    createRepoLabelFormatter(
+      displayItems.map(activityRepoIdentity),
+      { showOrgNames: !grouping.getHideOrgName() },
+    ),
+  );
+
+  function activityRepoIdentity(item: ActivityItem): RepoLabelIdentity {
+    return {
+      platformHost: item.repo?.platform_host ?? item.platform_host,
+      owner: item.repo?.owner ?? item.repo_owner,
+      name: item.repo?.name ?? item.repo_name,
+      repoPath: item.repo?.repo_path,
+    };
+  }
+
+  function repoLabel(item: ActivityItem): string {
+    return repoLabelFormatter.format(activityRepoIdentity(item));
+  }
 
   function resetFilters(): void {
     activity.setEnabledEvents(new Set(EVENT_TYPES));
@@ -603,7 +623,7 @@
                   {/if}
                 </span>
                 <span class="compact-meta">
-                  <span>{repoLabel(row.representative.repo_owner, row.representative.repo_name)}</span>
+                  <span>{repoLabel(row.representative)}</span>
                   <Chip
                     size="sm"
                     uppercase={false}
@@ -639,7 +659,7 @@
                   {isDefaultBranchActivity(row) ? branchActivityTitle(row) : row.item_title}
                 </span>
                 <span class="compact-meta">
-                  <span>{repoLabel(row.repo_owner, row.repo_name)}</span>
+                  <span>{repoLabel(row)}</span>
                   {#if isDefaultBranchActivity(row) && branchActivityDetail(row)}
                     <span class="sha">{branchActivityDetail(row)}</span>
                   {/if}
@@ -701,7 +721,7 @@
                     style={repoStyle}
                   >
                     <span class="repo-chip__label"
-                      >{repoLabel(row.representative.repo_owner, row.representative.repo_name)}</span>
+                      >{repoLabel(row.representative)}</span>
                   </Chip>
                 </span>
                 <span class="cell cell--author col-author">{row.author}</span>
@@ -756,7 +776,7 @@
                     style={repoStyle}
                   >
                     <span class="repo-chip__label"
-                      >{repoLabel(row.repo_owner, row.repo_name)}</span>
+                      >{repoLabel(row)}</span>
                   </Chip>
                 </span>
                 <span class="cell cell--author col-author">{activityAuthor(row)}</span>

@@ -16,6 +16,10 @@
     localDateLabel,
     parseAPITimestamp,
   } from "../utils/time.js";
+  import {
+    createRepoLabelFormatter,
+    type RepoLabelIdentity,
+  } from "../utils/repo-label.js";
   import Chip from "./shared/Chip.svelte";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
@@ -113,6 +117,13 @@
     latestTime: string;
     items: ThreadedEntry[];
   }
+
+  const repoLabelFormatter = $derived.by(() =>
+    createRepoLabelFormatter(
+      items.map(activityRepoIdentity),
+      { showOrgNames: !grouping.getHideOrgName() },
+    ),
+  );
 
   const grouped = $derived.by(() => {
     const byRepo = grouping.getGroupByRepo();
@@ -216,7 +227,7 @@
         owner: entryRepoOwner(entry),
         name: entryRepoName(entry),
       });
-      repoLabels.set(repoKey, repoLabel(entryRepoOwner(entry), entryRepoName(entry)));
+      repoLabels.set(repoKey, repoLabel(entryRepoIdentity(entry)));
       let bucket = repoMap.get(repoKey);
       if (!bucket) {
         bucket = [];
@@ -442,8 +453,30 @@
     return event.item_author || eventAuthor(event);
   }
 
-  function repoLabel(owner: string, name: string): string {
-    return grouping.getHideOrgName() ? name : `${owner}/${name}`;
+  function activityRepoIdentity(item: ActivityItem): RepoLabelIdentity {
+    return {
+      platformHost: item.repo?.platform_host ?? item.platform_host,
+      owner: item.repo?.owner ?? item.repo_owner,
+      name: item.repo?.name ?? item.repo_name,
+      repoPath: item.repo?.repo_path,
+    };
+  }
+
+  function entryRepoIdentity(entry: ThreadedEntry): RepoLabelIdentity {
+    return {
+      platformHost: entryPlatformHost(entry),
+      owner: entryRepoOwner(entry),
+      name: entryRepoName(entry),
+      repoPath: entryRepoPath(entry),
+    };
+  }
+
+  function entryRepoPath(entry: ThreadedEntry): string {
+    return entry.kind === "item" ? entry.group.repoPath : entry.repoPath;
+  }
+
+  function repoLabel(repo: RepoLabelIdentity): string {
+    return repoLabelFormatter.format(repo);
   }
 
   function branchRowAuthor(row: ActivityRow): string {
@@ -554,7 +587,7 @@
                   class="repo-chip repo-tag"
                   style="color: {repoColor(`${entry.repoOwner}/${entry.repoName}`)}; background: color-mix(in srgb, {repoColor(`${entry.repoOwner}/${entry.repoName}`)} 15%, transparent);"
                 >
-                  <span class="repo-chip__label">{repoLabel(entry.repoOwner, entry.repoName)}</span>
+                  <span class="repo-chip__label">{repoLabel(entryRepoIdentity(entry))}</span>
                 </Chip>
               </span>
             {/if}
@@ -619,7 +652,7 @@
                 class="repo-chip repo-tag"
                 style="color: {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)}; background: color-mix(in srgb, {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)} 15%, transparent);"
               >
-                <span class="repo-chip__label">{repoLabel(itemGroup.repoOwner, itemGroup.repoName)}</span>
+                <span class="repo-chip__label">{repoLabel(entryRepoIdentity(entry))}</span>
               </Chip>
             </span>
           {/if}

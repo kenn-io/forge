@@ -337,6 +337,38 @@ describe("ActivityThreaded collapse", () => {
     expect(container.textContent).not.toContain("acme/widgets");
   });
 
+  it("keeps hidden-org grouped activity headers distinguishable", () => {
+    groupByRepo.value = true;
+    hideOrgName.value = true;
+
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [
+          activityItem("acme-widgets"),
+          activityItem("platform-widgets", {
+            id: "platform-widgets",
+            item_number: 2,
+            repo_owner: "platform",
+            repo_name: "widgets",
+            repo: {
+              provider: "gitlab",
+              platform_host: "gitlab.example.com",
+              owner: "platform",
+              name: "widgets",
+              repo_path: "platform/widgets",
+            },
+          }),
+        ],
+        onSelectItem: undefined,
+      },
+    });
+
+    const repoNames = Array.from(container.querySelectorAll(".repo-header .repo-name")).map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(repoNames).toEqual(["acme/widgets", "platform/widgets"]);
+  });
+
   it("keeps force-push rows as provider compare links", async () => {
     const onSelectBranchCommit = vi.fn();
     const open = vi.spyOn(window, "open").mockImplementation(() => null);

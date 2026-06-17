@@ -17,9 +17,13 @@ describe("vite config", () => {
     const uiSubpathAlias = aliases.find(
       (alias) => alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui\\/api\\/client$",
     );
+    const repoLabelAlias = aliases.find(
+      (alias) => alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui\\/utils\\/repo-label$",
+    );
 
     expect(uiRootAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/index.ts"));
     expect(uiSubpathAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/api/generated/client.ts"));
+    expect(repoLabelAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/utils/repo-label.ts"));
   });
 
   it("pins the dev server host to IPv4 loopback", () => {

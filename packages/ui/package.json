@@ -41,6 +41,9 @@
     "./utils/repo-color": {
       "default": "./src/utils/repo-color.ts"
     },
+    "./utils/repo-label": {
+      "default": "./src/utils/repo-label.ts"
+    },
     "./routes": {
       "default": "./src/routes.ts"
     },

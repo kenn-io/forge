@@ -724,6 +724,67 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelectorAll(".repo-context-name")[1]?.textContent?.trim()).toBe("agentsview");
   });
 
+  it("keeps hidden-org workspace repo labels distinguishable", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-github-acme",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widgets",
+            number: 1,
+            title: "GitHub acme widgets",
+            createdAt: "2026-05-12T12:00:00Z",
+          }),
+          workspaceFixture({
+            id: "ws-ghe-acme",
+            provider: "github",
+            platformHost: "ghe.example.com",
+            owner: "acme",
+            name: "widgets",
+            number: 2,
+            title: "GHE acme widgets",
+            createdAt: "2026-05-11T12:00:00Z",
+          }),
+          workspaceFixture({
+            id: "ws-platform",
+            provider: "gitlab",
+            platformHost: "gitlab.example.com",
+            owner: "platform",
+            name: "widgets",
+            number: 3,
+            title: "Platform widgets",
+            createdAt: "2026-05-10T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-github-acme" },
+    });
+    await screen.findByText("GitHub acme widgets");
+
+    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Show org names" }));
+
+    expect(Array.from(container.querySelectorAll(".group-label")).map((el) => el.textContent?.trim())).toEqual([
+      "github.com/acme/widgets",
+      "ghe.example.com/acme/widgets",
+      "platform/widgets",
+    ]);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+
+    expect(Array.from(container.querySelectorAll(".repo-context-name")).map((el) => el.textContent?.trim())).toEqual([
+      "github.com/acme/widgets",
+      "ghe.example.com/acme/widgets",
+      "platform/widgets",
+    ]);
+  });
+
   it("can hide PR diff stats while keeping branch metadata visible", async () => {
     mockGet.mockResolvedValue({
       data: {

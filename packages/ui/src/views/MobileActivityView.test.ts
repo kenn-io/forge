@@ -111,13 +111,13 @@ describe("MobileActivityView branch activity", () => {
     expect(card?.querySelector(".chip--kind-issue")).toBeNull();
   });
 
-  it("uses the full hosted repo path by default", () => {
+  it("uses the shared repo path by default", () => {
     const { container } = render(MobileActivityView, {
       props: { onSelectItem },
     });
 
     const repoLabel = container.querySelector(".mobile-activity-card__meta span");
-    expect(repoLabel?.textContent).toBe("github.com/acme/widgets");
+    expect(repoLabel?.textContent).toBe("acme/widgets");
   });
 
   it("respects hide org name in mobile activity cards", () => {
@@ -129,7 +129,35 @@ describe("MobileActivityView branch activity", () => {
 
     const repoLabel = container.querySelector(".mobile-activity-card__meta span");
     expect(repoLabel?.textContent).toBe("widgets");
-    expect(container.textContent).not.toContain("github.com/acme/widgets");
+    expect(container.textContent).not.toContain("acme/widgets");
+  });
+
+  it("keeps hidden-org mobile activity repo labels distinguishable", () => {
+    hideOrgName.value = true;
+    items.value = [
+      branchActivityItem("acme-widgets"),
+      branchActivityItem("platform-widgets", {
+        id: "platform-widgets",
+        repo_owner: "platform",
+        repo_name: "widgets",
+        repo: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com",
+          owner: "platform",
+          name: "widgets",
+          repo_path: "platform/widgets",
+        },
+      }),
+    ];
+
+    const { container } = render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    const repoLabels = Array.from(container.querySelectorAll(".mobile-activity-card__meta span:first-child")).map(
+      (el) => el.textContent?.trim(),
+    );
+    expect(repoLabels).toEqual(["acme/widgets", "platform/widgets"]);
   });
 
   it("exposes a mobile hide org toggle", async () => {

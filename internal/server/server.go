@@ -715,7 +715,7 @@ func newServer(
 	tmuxAvailable := tmuxCommandAvailable(tmuxCmd)
 	includeUnmanagedTmuxDetails := false
 	if cfg != nil {
-		includeUnmanagedTmuxDetails = cfg.Fleet.Tmux.IncludeUnmanagedDetails
+		includeUnmanagedTmuxDetails = cfg.Fleet.Sessions.IncludeUnmanagedDetails
 	}
 	s.fleetTmuxMonitor = newFleetTmuxMonitor(
 		tmuxCmd, includeUnmanagedTmuxDetails, nil,

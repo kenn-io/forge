@@ -667,7 +667,7 @@ type FleetPeer struct {
 	BaseURL string `toml:"base_url" json:"base_url"`
 }
 
-type FleetTmux struct {
+type FleetSessions struct {
 	IncludeUnmanagedDetails bool `toml:"include_unmanaged_details,omitempty" json:"include_unmanaged_details,omitempty"`
 }
 
@@ -700,7 +700,7 @@ func (p FleetSSHPeer) RemoteCommandOrDefault() string {
 type Fleet struct {
 	Key         string         `toml:"key,omitempty" json:"key,omitempty"`
 	PeerTimeout string         `toml:"peer_timeout,omitempty" json:"peer_timeout,omitempty"`
-	Tmux        FleetTmux      `toml:"tmux" json:"tmux"`
+	Sessions    FleetSessions  `toml:"sessions" json:"sessions"`
 	Peers       []FleetPeer    `toml:"peers,omitempty" json:"peers,omitempty"`
 	SSHPeers    []FleetSSHPeer `toml:"ssh_peers,omitempty" json:"ssh_peers,omitempty"`
 }

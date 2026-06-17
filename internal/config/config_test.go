@@ -2941,7 +2941,7 @@ func TestSavePreservesTmuxCommand(t *testing.T) {
 
 // TestSaveRoundTripsFleet guards against Save silently dropping the
 // [fleet] section: peers, the local host key, peer timeout, and the
-// [fleet.tmux] toggle must all survive a Save/Load round trip.
+// [fleet.sessions] toggle must all survive a Save/Load round trip.
 func TestSaveRoundTripsFleet(t *testing.T) {
 	assert := Assert.New(t)
 	dir := t.TempDir()
@@ -2957,7 +2957,7 @@ func TestSaveRoundTripsFleet(t *testing.T) {
 		Fleet: Fleet{
 			Key:         "studio",
 			PeerTimeout: "3s",
-			Tmux:        FleetTmux{IncludeUnmanagedDetails: true},
+			Sessions:    FleetSessions{IncludeUnmanagedDetails: true},
 			Peers: []FleetPeer{
 				{Key: "laptop", Name: "Laptop", BaseURL: "http://laptop:8091"},
 				{Key: "server", BaseURL: "http://10.0.0.2:8091"},
@@ -2970,7 +2970,7 @@ func TestSaveRoundTripsFleet(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal("studio", reloaded.Fleet.Key)
 	assert.Equal("3s", reloaded.Fleet.PeerTimeout)
-	assert.True(reloaded.Fleet.Tmux.IncludeUnmanagedDetails)
+	assert.True(reloaded.Fleet.Sessions.IncludeUnmanagedDetails)
 	assert.Equal(cfg.Fleet.Peers, reloaded.Fleet.Peers)
 }
 
@@ -3547,7 +3547,7 @@ func TestFleetConfigParsesAndValidates(t *testing.T) {
 [fleet]
 key = "studio"
 peer_timeout = "2s"
-[fleet.tmux]
+[fleet.sessions]
 include_unmanaged_details = true
 [[fleet.peers]]
 key = "mbp"
@@ -3561,17 +3561,17 @@ base_url = "http://mbp:8091"
 	require.Equal("mbp", cfg.Fleet.Peers[0].Key)
 	require.Equal("http://mbp:8091", cfg.Fleet.Peers[0].BaseURL)
 	require.Equal("2s", cfg.Fleet.PeerTimeoutOrDefault().String())
-	require.True(cfg.Fleet.Tmux.IncludeUnmanagedDetails)
+	require.True(cfg.Fleet.Sessions.IncludeUnmanagedDetails)
 }
 
-func TestFleetTmuxConfigDefaultsToRedactedUnmanagedDetails(t *testing.T) {
+func TestFleetSessionsConfigDefaultsToRedactedUnmanagedDetails(t *testing.T) {
 	path := writeConfig(t, `
 [fleet]
 key = "studio"
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
-	require.False(t, cfg.Fleet.Tmux.IncludeUnmanagedDetails)
+	require.False(t, cfg.Fleet.Sessions.IncludeUnmanagedDetails)
 }
 
 func TestFleetRejectsDuplicatePeerKeys(t *testing.T) {

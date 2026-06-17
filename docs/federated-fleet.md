@@ -51,7 +51,7 @@ key = "studio"
 # snapshot.
 peer_timeout = "2s"
 
-[fleet.tmux]
+[fleet.sessions]
 # Unmanaged tmux sessions are redacted to summary-only (name + window
 # count) unless the operator opts in to full window details.
 include_unmanaged_details = false

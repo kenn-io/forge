@@ -448,9 +448,14 @@ func (s *Server) refreshRuntimeTargetsLocked() {
 	if s.runtime == nil || s.cfg == nil {
 		return
 	}
-	tmuxCmd := s.cfg.TmuxCommand()
+	tmuxCmd := s.bootTmuxCommand()
 	targets := localruntime.ResolveLaunchTargets(s.cfg.Agents, tmuxCmd, nil)
 	s.runtime.UpdateTargetsAndStripEnvVars(targets, s.cfg.TokenEnvNames())
+}
+
+func (s *Server) bootTmuxCommand() []string {
+	cfg := &config.Config{Tmux: s.bootCfgSnapshot.Tmux}
+	return cfg.TmuxCommand()
 }
 
 func (s *Server) updateRuntimeStripEnvVars(cfg *config.Config) {

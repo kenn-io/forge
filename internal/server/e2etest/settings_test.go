@@ -185,6 +185,83 @@ api_key_env = "MSGVAULT_API_KEY_TEST"
 	assert.NotContains(content, "api_key =", "settings save must not persist inline msgvault secrets")
 }
 
+func TestSettingsAPIE2EPreservesStartupConfigThroughSettingsSave(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+sync_interval = "10m"
+github_token_env = "MIDDLEMAN_RELOADED_GITHUB_TOKEN"
+host = "127.0.0.2"
+port = 9191
+base_path = "/middleman"
+allowed_hosts = ["middleman.test:9191"]
+trust_reverse_proxy = false
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[api]
+require_auth = true
+
+[fleet.sessions]
+include_unmanaged_details = true
+
+[[fleet.ssh_peers]]
+key = "studio"
+destination = "marius@studio.local"
+
+[roborev]
+endpoint = "http://127.0.0.1:7374"
+
+[tmux]
+command = ["systemd-run", "--user", "--scope", "tmux"]
+
+[shell]
+command = ["systemd-run", "--user", "--scope", "--pty", "bash"]
+`, &mockGH{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	updateResp := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/middleman/api/v1/settings",
+		generated.UpdateSettingsRequest{
+			Activity: &generated.Activity{
+				ViewMode:  "flat",
+				TimeRange: "30d",
+			},
+		},
+	)
+	defer updateResp.Body.Close()
+	require.Equal(http.StatusOK, updateResp.StatusCode)
+
+	cfgAfterUpdate, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal("10m", cfgAfterUpdate.SyncInterval)
+	assert.Equal("MIDDLEMAN_RELOADED_GITHUB_TOKEN", cfgAfterUpdate.GitHubTokenEnv)
+	assert.Equal("127.0.0.2", cfgAfterUpdate.Host)
+	assert.Equal(9191, cfgAfterUpdate.Port)
+	assert.Equal("/middleman/", cfgAfterUpdate.BasePath)
+	assert.Equal([]string{"middleman.test:9191"}, cfgAfterUpdate.AllowedHosts)
+	assert.False(cfgAfterUpdate.TrustReverseProxy)
+	assert.True(cfgAfterUpdate.API.RequireAuth)
+	assert.True(cfgAfterUpdate.Fleet.Sessions.IncludeUnmanagedDetails)
+	require.Len(cfgAfterUpdate.Fleet.SSHPeers, 1)
+	assert.Equal("studio", cfgAfterUpdate.Fleet.SSHPeers[0].Key)
+	assert.Equal("http://127.0.0.1:7374", cfgAfterUpdate.Roborev.Endpoint)
+	assert.Equal(
+		[]string{"systemd-run", "--user", "--scope", "tmux"},
+		cfgAfterUpdate.Tmux.Command,
+	)
+	assert.Equal(
+		[]string{"systemd-run", "--user", "--scope", "--pty", "bash"},
+		cfgAfterUpdate.Shell.Command,
+	)
+	assert.Equal("flat", cfgAfterUpdate.Activity.ViewMode)
+	assert.Equal("30d", cfgAfterUpdate.Activity.TimeRange)
+}
+
 func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

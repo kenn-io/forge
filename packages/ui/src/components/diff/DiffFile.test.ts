@@ -170,6 +170,47 @@ function makeTwoAdditionFile(): DiffFileType {
   });
 }
 
+function makeAddedConfigFile(): DiffFileType {
+  return makeFile({
+    path: ".github/ISSUE_TEMPLATE/config.yml",
+    old_path: ".github/ISSUE_TEMPLATE/config.yml",
+    status: "added",
+    additions: 4,
+    deletions: 0,
+    patch: `diff --git a/.github/ISSUE_TEMPLATE/config.yml b/.github/ISSUE_TEMPLATE/config.yml
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/config.yml
+@@ -0,0 +1,4 @@
++# Route every new issue through one of the templates above.
++# Discussions is enabled for this repo, add a contact_links entry pointing
++# usage/"how do I" questions there instead of the issue tracker.
++blank_issues_enabled: false
+`,
+    hunks: [
+      {
+        old_start: 0,
+        old_count: 0,
+        new_start: 1,
+        new_count: 4,
+        lines: [
+          { type: "add", content: "# Route every new issue through one of the templates above.", new_num: 1 },
+          {
+            type: "add",
+            content: "# Discussions is enabled for this repo, add a contact_links entry pointing",
+            new_num: 2,
+          },
+          {
+            type: "add",
+            content: '# usage/"how do I" questions there instead of the issue tracker.',
+            new_num: 3,
+          },
+          { type: "add", content: "blank_issues_enabled: false", new_num: 4 },
+        ],
+      },
+    ],
+  });
+}
+
 function makeReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
   return {
     id: "thread-1",
@@ -551,6 +592,26 @@ describe("DiffFile", () => {
 
     expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
     expect(selectedPierreLines()).toHaveLength(0);
+  });
+
+  it("keeps the final line visible when opening an inline composer", async () => {
+    renderDiffFile(makeAddedConfigFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+    });
+
+    await clickLineCommentButton(4, "right");
+    await waitFor(() => expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy());
+
+    const root = document.querySelector(".pierre-diff")?.shadowRoot;
+    const lineTargets = Array.from(root?.querySelectorAll<HTMLElement>('[data-diff-new-line="4"]') ?? []);
+    expect(lineTargets.some((line) => line.textContent?.includes("blank_issues_enabled: false"))).toBe(true);
+
+    await waitFor(() => {
+      const slot = root?.querySelector<HTMLSlotElement>('slot[name="annotation-additions-4"]');
+      expect(slot).toBeTruthy();
+      expect(slot?.closest('[data-diff-new-line="4"]')).toBeNull();
+    });
   });
 
   it("keeps right-side inline composers in the additions column in split mode", async () => {

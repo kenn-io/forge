@@ -51,9 +51,14 @@
     gutter: HTMLElement;
     side: PierreSide | undefined;
   };
+  type TransientInsertedAnnotationRow = {
+    content: HTMLElement;
+    gutter: HTMLElement;
+  };
   type TransientAnnotationRow = {
     content?: HTMLElement;
     gutter?: HTMLElement;
+    insertedRows?: TransientInsertedAnnotationRow[];
     key: string;
     wrapper: HTMLElement;
   };
@@ -1165,9 +1170,19 @@
   }
 
   function clearTransientLineAnnotation(): void {
-    transientAnnotationRow?.wrapper.remove();
-    transientAnnotationRow?.content?.remove();
-    transientAnnotationRow?.gutter?.remove();
+    const row = transientAnnotationRow;
+    row?.wrapper.remove();
+    const insertedRows = row?.insertedRows ?? (
+      row?.content && row.gutter ? [{ content: row.content, gutter: row.gutter }] : []
+    );
+    const adjustedColumns = new Map<HTMLElement, number>();
+    for (const insertedRow of insertedRows) {
+      queueColumnSpanAdjustment(adjustedColumns, insertedRow.content.parentElement, -1);
+      queueColumnSpanAdjustment(adjustedColumns, insertedRow.gutter.parentElement, -1);
+      insertedRow.content.remove();
+      insertedRow.gutter.remove();
+    }
+    applyColumnSpanAdjustments(adjustedColumns);
     transientAnnotationRow = undefined;
   }
 
@@ -1221,7 +1236,7 @@
 
   function insertTransientAnnotationRow(
     annotation: DiffLineAnnotation<unknown>,
-  ): { content: HTMLElement; gutter: HTMLElement } | undefined {
+  ): { content: HTMLElement; gutter: HTMLElement; insertedRows: TransientInsertedAnnotationRow[] } | undefined {
     const root = host?.shadowRoot;
     const pre = renderedDiffPre(root);
     if (!pre || !pierreDiff) return undefined;
@@ -1237,23 +1252,107 @@
     const target = renderedLinePair(pre, lineIndex, split, annotation.side as PierreSide);
     if (!target) return undefined;
 
+    const insertedRows: TransientInsertedAnnotationRow[] = [];
+    const adjustedColumns = new Map<HTMLElement, number>();
+    const targets = transientAnnotationInsertionTargets(pre, target, split);
+    const annotationLine = `0,${lineIndex}`;
+    const slotName = annotationSlotName(annotation);
+    let primaryRow: TransientInsertedAnnotationRow | undefined;
+    for (const insertionTarget of targets) {
+      const insertedRow = insertAnnotationRowAfter(
+        insertionTarget,
+        annotationLine,
+        insertionTarget.content === target.content ? slotName : undefined,
+      );
+      if (!insertedRow) continue;
+      insertedRows.push(insertedRow);
+      if (insertionTarget.content === target.content) {
+        primaryRow = insertedRow;
+      }
+      queueColumnSpanAdjustment(adjustedColumns, insertedRow.content.parentElement, 1);
+      queueColumnSpanAdjustment(adjustedColumns, insertedRow.gutter.parentElement, 1);
+    }
+    applyColumnSpanAdjustments(adjustedColumns);
+    primaryRow ??= insertedRows[0];
+    if (!primaryRow) return undefined;
+    return { ...primaryRow, insertedRows };
+  }
+
+  function transientAnnotationInsertionTargets(
+    pre: HTMLPreElement,
+    target: RenderedLinePair,
+    split: boolean,
+  ): RenderedLinePair[] {
+    if (!split) return [target];
+    const targetContentColumn = target.content.parentElement;
+    if (!targetContentColumn) return [target];
+    const rowIndex = Array.prototype.indexOf.call(targetContentColumn.children, target.content);
+    if (rowIndex < 0) return [target];
+
+    const targets: RenderedLinePair[] = [];
+    for (const code of renderedCodeColumns(pre)) {
+      const [gutter, content] = Array.from(code.children);
+      if (!(gutter instanceof HTMLElement) || !(content instanceof HTMLElement)) continue;
+      const contentElement = content.children[rowIndex];
+      const gutterElement = gutter.children[rowIndex];
+      if (!(contentElement instanceof HTMLElement) || !(gutterElement instanceof HTMLElement)) continue;
+      targets.push({
+        content: contentElement,
+        gutter: gutterElement,
+        side: renderedPierreCodeSide(code),
+      });
+    }
+    return targets.length > 0 ? targets : [target];
+  }
+
+  function insertAnnotationRowAfter(
+    target: RenderedLinePair,
+    annotationLine: string,
+    slotName: string | undefined,
+  ): TransientInsertedAnnotationRow | undefined {
+    if (!target.content.parentElement || !target.gutter.parentElement) return undefined;
     const gutter = document.createElement("div");
     gutter.setAttribute("data-gutter-buffer", "annotation");
     gutter.setAttribute("data-buffer-size", "1");
     gutter.style.gridRow = "span 1";
 
     const content = document.createElement("div");
-    content.setAttribute("data-line-annotation", `0,${lineIndex}`);
+    content.setAttribute("data-line-annotation", annotationLine);
     const annotationContent = document.createElement("div");
     annotationContent.setAttribute("data-annotation-content", "");
-    const slot = document.createElement("slot");
-    slot.name = annotationSlotName(annotation);
-    annotationContent.appendChild(slot);
+    if (slotName) {
+      const slot = document.createElement("slot");
+      slot.name = slotName;
+      annotationContent.appendChild(slot);
+    }
     content.appendChild(annotationContent);
 
     target.gutter.after(gutter);
     target.content.after(content);
     return { content, gutter };
+  }
+
+  function queueColumnSpanAdjustment(
+    adjustments: Map<HTMLElement, number>,
+    column: Element | null,
+    delta: number,
+  ): void {
+    if (!(column instanceof HTMLElement)) return;
+    adjustments.set(column, (adjustments.get(column) ?? 0) + delta);
+  }
+
+  function applyColumnSpanAdjustments(adjustments: Map<HTMLElement, number>): void {
+    for (const [column, delta] of adjustments) {
+      const nextSpan = Math.max(1, currentGridRowSpan(column) + delta);
+      column.style.setProperty("grid-row", `span ${nextSpan}`);
+    }
+  }
+
+  function currentGridRowSpan(column: HTMLElement): number {
+    const span = /^span\s+(\d+)/.exec(column.style.getPropertyValue("grid-row").trim());
+    const rowSpan = span?.[1];
+    if (rowSpan) return Number.parseInt(rowSpan, 10);
+    return Math.max(1, column.children.length);
   }
 
   function annotationSlotName(annotation: DiffLineAnnotation<unknown>): string {

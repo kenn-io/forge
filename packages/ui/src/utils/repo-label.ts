@@ -43,15 +43,13 @@ export function createRepoLabelFormatter(
     }
     hosts.add(host);
 
-    if (provider) {
-      const hostRepoPath = hostRepoPathKey(host, path);
-      let providers = providersByHostRepoPath.get(hostRepoPath);
-      if (!providers) {
-        providers = new Set();
-        providersByHostRepoPath.set(hostRepoPath, providers);
-      }
-      providers.add(provider);
+    const hostRepoPath = hostRepoPathKey(host, path);
+    let providers = providersByHostRepoPath.get(hostRepoPath);
+    if (!providers) {
+      providers = new Set();
+      providersByHostRepoPath.set(hostRepoPath, providers);
     }
+    providers.add(provider);
   }
 
   return {

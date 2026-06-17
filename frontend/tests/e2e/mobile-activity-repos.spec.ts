@@ -154,6 +154,27 @@ test.describe("mobile activity repository selector", () => {
                 capabilities: {},
               },
             },
+            {
+              id: "c1",
+              cursor: "c1",
+              activity_type: "comment",
+              author: "sam",
+              body_preview: "Same host, different provider",
+              created_at: "2026-03-30T12:00:00Z",
+              item_number: 42,
+              item_state: "open",
+              item_title: "Add browser regression coverage",
+              item_type: "pr",
+              item_url: "https://github.com/acme/widgets/pull/42",
+              repo: {
+                provider: "gitea",
+                platform_host: "github.com",
+                owner: "acme",
+                name: "widgets",
+                repo_path: "acme/widgets",
+                capabilities: {},
+              },
+            },
           ],
         }),
       });
@@ -161,10 +182,15 @@ test.describe("mobile activity repository selector", () => {
 
     await page.goto("/m?range=30d&view=threaded");
 
-    await expect(page.locator(".mobile-activity-card")).toHaveCount(2);
+    await expect(page.locator(".mobile-activity-card")).toHaveCount(3);
     await expect(
       page.locator(".mobile-activity-card__meta", {
-        hasText: "github.com/acme/widgets",
+        hasText: "github/github.com/acme/widgets",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".mobile-activity-card__meta", {
+        hasText: "gitea/github.com/acme/widgets",
       }),
     ).toBeVisible();
     await expect(

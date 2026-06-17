@@ -112,7 +112,7 @@ describe("repo labels", () => {
     expect(formatter.format(sameHostOnDifferentProviders[1]!)).toBe("gitea/github.com/acme/widgets");
   });
 
-  it("does not treat missing provider metadata as a provider collision", () => {
+  it("keeps missing provider metadata distinguishable from a known provider", () => {
     const sameRepoWithMissingProvider = [
       repos[0]!,
       {
@@ -124,8 +124,8 @@ describe("repo labels", () => {
       showOrgNames: false,
     });
 
-    expect(formatter.format(sameRepoWithMissingProvider[0]!)).toBe("widgets");
-    expect(formatter.format(sameRepoWithMissingProvider[1]!)).toBe("widgets");
+    expect(formatter.format(sameRepoWithMissingProvider[0]!)).toBe("github/github.com/acme/widgets");
+    expect(formatter.format(sameRepoWithMissingProvider[1]!)).toBe("github.com/acme/widgets");
   });
 
   it("uses the same provider-aware identity for shared grouping keys", () => {

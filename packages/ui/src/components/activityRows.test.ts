@@ -41,6 +41,20 @@ function branchItem(id: string, activity_type: string, author: string, branchNam
   } as ActivityItem;
 }
 
+function providerItem(id: string, provider: string): ActivityItem {
+  return {
+    ...item(id, "commit", "alice"),
+    platform_host: "github.com",
+    repo: {
+      provider,
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    },
+  } as ActivityItem;
+}
+
 describe("collapseActivityRuns", () => {
   it("collapses three consecutive commits from the same author", () => {
     const rows = collapseActivityRuns(
@@ -191,6 +205,24 @@ describe("collapseActivityRuns", () => {
         branchItem("6", "default_branch_commit", "alice", "release"),
         branchItem("5", "default_branch_commit", "alice", "release"),
         branchItem("4", "default_branch_commit", "alice", "release"),
+      ],
+      { rollUpCommits: true },
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
+    expect(isCollapsedActivityRow(rows[1]!)).toBe(true);
+  });
+
+  it("does not collapse commit runs across providers with the same host and repo path", () => {
+    const rows = collapseActivityRuns(
+      [
+        providerItem("9", "github"),
+        providerItem("8", "github"),
+        providerItem("7", "github"),
+        providerItem("6", "gitea"),
+        providerItem("5", "gitea"),
+        providerItem("4", "gitea"),
       ],
       { rollUpCommits: true },
     );

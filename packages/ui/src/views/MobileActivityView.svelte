@@ -15,6 +15,7 @@
   import WorkspaceIndicator from "../components/shared/WorkspaceIndicator.svelte";
   import {
     activityBranchKey,
+    activityItemKey,
     isDefaultBranchActivity,
     isDefaultBranchForcePushActivity,
     shortSha,
@@ -123,9 +124,18 @@
             platformHost: item.repo.platform_host,
             owner: item.repo.owner,
             name: item.repo.name,
+            repoPath: item.repo.repo_path,
             branchName: item.branch_name || "default branch",
           })
-        : `${item.repo.platform_host}|${item.repo.repo_path}:${item.item_type}:${item.item_number}`;
+        : activityItemKey({
+            provider: item.repo.provider,
+            platformHost: item.repo.platform_host,
+            owner: item.repo.owner,
+            name: item.repo.name,
+            repoPath: item.repo.repo_path,
+            itemType: item.item_type,
+            itemNumber: item.item_number,
+          });
       const bucket = map.get(key);
       if (bucket) bucket.push(item);
       else map.set(key, [item]);

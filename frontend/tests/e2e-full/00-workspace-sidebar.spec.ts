@@ -271,6 +271,85 @@ test.describe("workspace sidebar full-stack", () => {
     }
   });
 
+  test("view menu hides org names and PR diff stats against the real backend and persists", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      // acme/widgets PR #1 ships real +240/-30 diff stats in the seeded
+      // fixture, so the rail renders its diff-stats chip from backend
+      // data rather than a route mock.
+      const createResponse = await api.post("/api/v1/workspaces", {
+        data: {
+          platform_host: "github.com",
+          owner: "acme",
+          name: "widgets",
+          mr_number: 1,
+        },
+      });
+      expect(createResponse.status()).toBe(202);
+      const workspace = (await createResponse.json()) as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(api, workspace.id);
+
+      const workspacesResponse = await api.get("/api/v1/workspaces");
+      expect(workspacesResponse.ok()).toBe(true);
+      const workspacesPayload = (await workspacesResponse.json()) as {
+        workspaces: Array<{ id: string; mr_additions?: number | null; mr_deletions?: number | null }>;
+      };
+      const seeded = workspacesPayload.workspaces.find((entry) => entry.id === workspace.id);
+      expect(seeded?.mr_additions).toBe(240);
+      expect(seeded?.mr_deletions).toBe(30);
+
+      // The terminal route derives the rail width from the global
+      // sidebar width (clamped to 420px). Pin it wide so the 260px
+      // container query that hides diff stats can never fire and mask
+      // the toggle's effect.
+      await page.addInitScript(() => {
+        window.localStorage.setItem("middleman-sidebar-width", "420");
+      });
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+
+      const groupLabel = page.locator(".workspace-list-sidebar .group-header .group-label");
+      const diffStats = page.locator(".workspace-list-sidebar .workspace-diff-stats");
+      const viewTrigger = page.getByTitle("View workspace options");
+      const viewBadge = viewTrigger.locator(".filter-badge");
+
+      // Defaults: org name shown in the repo label, diff stats visible.
+      await expect(groupLabel).toHaveText("acme/widgets");
+      await expect(diffStats).toBeVisible();
+      await expect(page.getByLabel("240 additions, 30 deletions")).toBeVisible();
+      await expect(viewBadge).toHaveCount(0);
+
+      // Visibility toggles do not close the menu, so both can be flipped
+      // in a single pass before dismissing it.
+      await viewTrigger.click();
+      await page.locator(".filter-dropdown .filter-item", { hasText: "Show org names" }).click();
+      await page.locator(".filter-dropdown .filter-item", { hasText: "Show PR diff stats" }).click();
+      await page.keyboard.press("Escape");
+
+      await expect(groupLabel).toHaveText("widgets");
+      await expect(diffStats).toHaveCount(0);
+      // Branch metadata survives hiding the diff stats.
+      await expect(page.locator(".workspace-list-sidebar .ws-row .branch-chip")).toBeVisible();
+      // Both deviations from default register on the trigger badge.
+      await expect(viewBadge).toHaveText("2");
+
+      // Both choices persist against the real backend across a reload.
+      await page.reload();
+      await expect(groupLabel).toHaveText("widgets");
+      await expect(diffStats).toHaveCount(0);
+      await expect(viewBadge).toHaveText("2");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("filters real workspace API results and expands collapsed matches during search", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;

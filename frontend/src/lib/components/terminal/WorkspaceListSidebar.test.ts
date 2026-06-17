@@ -399,6 +399,45 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.queryByRole("img", { name: "GitHub" })).toBeNull();
   });
 
+  it("keeps same-host repos from different providers in separate groups", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-gitea",
+            provider: "gitea",
+            platformHost: "code.example.com",
+            owner: "acme",
+            name: "widgets",
+            number: 1,
+            title: "Gitea widgets",
+          }),
+          workspaceFixture({
+            id: "ws-forgejo",
+            provider: "forgejo",
+            platformHost: "code.example.com",
+            owner: "acme",
+            name: "widgets",
+            number: 2,
+            title: "Forgejo widgets",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-gitea" },
+    });
+    await screen.findByText("Gitea widgets");
+
+    // Identical host and repo path, different providers: the rows must
+    // not collapse into a single group whose label and icon come from
+    // only the first item. Each provider keeps its own group + icon.
+    expect(container.querySelectorAll(".group-header")).toHaveLength(2);
+    expect(screen.getByRole("img", { name: "Gitea" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Forgejo" })).toBeTruthy();
+  });
+
   it("filters workspaces by title, repo, and item number", async () => {
     mockGet.mockResolvedValue({
       data: {

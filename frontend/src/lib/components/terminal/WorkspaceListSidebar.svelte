@@ -139,9 +139,7 @@
   const grouped = $derived.by<WorkspaceGroup[]>(() => {
     const groups: WorkspaceGroup[] = [];
     for (const ws of visibleWorkspaces) {
-      const key =
-        `${ws.platform_host}/${ws.repo_owner}` +
-        `/${ws.repo_name}`;
+      const key = workspaceGroupKey(ws);
       const group = groups.find((candidate) => candidate.key === key);
       if (group) {
         group.items.push(ws);
@@ -452,6 +450,18 @@
 
   function workspaceProvider(ws: Workspace): string | undefined {
     return ws.repo?.provider;
+  }
+
+  function workspaceGroupKey(ws: Workspace): string {
+    // Group on the full provider ref, not just host/owner/name. Two
+    // providers can share a platform host and repo path.
+    const identity = workspaceRepoIdentity(ws);
+    return [
+      workspaceProvider(ws) ?? "",
+      identity.platformHost,
+      identity.owner,
+      identity.name,
+    ].join("\0");
   }
 
   function workspaceRoute(ws: Workspace): string {

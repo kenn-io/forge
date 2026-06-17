@@ -102,7 +102,7 @@
     </div>
     <div class="launch-grid">
       {#each visibleTargets as target (target.key)}
-        {@const isShell = target.kind === "shell"}
+        {@const isShell = target.kind === "plain_shell"}
         {@const isAgent = target.kind === "agent"}
         {@const isLaunching = launchingKey === target.key}
         <button

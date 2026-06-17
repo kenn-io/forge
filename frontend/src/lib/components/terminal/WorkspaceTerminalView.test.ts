@@ -446,6 +446,68 @@ describe("WorkspaceTerminalView", () => {
     clearIntervalSpy.mockRestore();
   });
 
+  it("does not show remote runtime while same-id local workspace data is still cached", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");
+    const remoteWorkspace = deferred<typeof workspaceResponse>();
+    const eventListeners: Record<string, () => void> = {};
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const { pathname } = new URL(url, "http://localhost");
+        if (pathname === "/api/v1/workspaces/ws-1") {
+          return Promise.resolve(Response.json(workspaceResponse));
+        }
+        if (pathname === "/api/v1/fleet/hosts/member/workspaces/ws-1") {
+          return remoteWorkspace.promise.then((workspace) => Response.json({ ...workspace, fleet_host_key: "member" }));
+        }
+        if (pathname === "/api/v1/workspaces") {
+          return Promise.resolve(
+            Response.json({
+              workspaces: [workspaceResponse],
+            }),
+          );
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener(type: string, callback: () => void): void {
+          eventListeners[type] = callback;
+        }
+        close(): void {}
+      },
+    );
+
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+    const { rerender } = render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("tab", { name: /Helper/ });
+
+    mocks.getWorkspaceRuntime.mockClear();
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+    await rerender({
+      workspaceId: "ws-1",
+      workspaceHostKey: "member",
+    });
+
+    eventListeners["reconnect.stale"]?.();
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", "member"));
+    expect(screen.queryByRole("tab", { name: /Reviewer/ })).toBeNull();
+
+    remoteWorkspace.resolve(workspaceResponse);
+
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Reviewer/ })).toBeTruthy());
+  });
+
   it("does not overlap runtime polling while a slow fetch is in flight", async () => {
     localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];

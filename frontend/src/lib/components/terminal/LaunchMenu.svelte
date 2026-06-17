@@ -91,7 +91,7 @@
     <div class="launch-popover">
       <div class="popover-heading">Run configurations</div>
       {#each visibleTargets as target (target.key)}
-        {@const isShell = target.kind === "shell"}
+        {@const isShell = target.kind === "plain_shell"}
         {@const isAgent = target.kind === "agent"}
         <button
           class="launch-option"

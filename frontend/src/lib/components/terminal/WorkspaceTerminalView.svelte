@@ -293,7 +293,8 @@
     runtime !== null &&
       runtimeForId === workspaceId &&
       runtimeForHostKey === workspaceHostKey &&
-      workspace?.id === workspaceId,
+      workspace?.id === workspaceId &&
+      selectedWorkspaceHostKey(workspace) === workspaceHostKey,
   );
   const runtimeSessions = $derived(
     runtimeLive

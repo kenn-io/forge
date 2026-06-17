@@ -422,7 +422,7 @@
   });
   $effect(() => {
     if (!workspaceId) return;
-    const storageId = workspaceStorageId(workspaceId);
+    const storageId = workspaceStorageId(workspaceId, workspaceHostKey);
     if (terminalLayoutWorkspaceId !== storageId) return;
     localStorage.setItem(
       terminalLayoutStorageKey(storageId),

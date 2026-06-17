@@ -446,6 +446,27 @@ describe("WorkspaceTerminalView", () => {
     clearIntervalSpy.mockRestore();
   });
 
+  it("persists remote terminal layout under the fleet-scoped workspace key", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");
+    localStorage.removeItem("middleman-workspace-terminal-layout:ws-1");
+    mocks.getWorkspaceRuntime.mockResolvedValue({ launch_targets: [], sessions: [] });
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        workspaceHostKey: "member",
+      },
+    });
+
+    await screen.findByRole("tab", { name: "Home" });
+    await waitFor(() =>
+      expect(localStorage.getItem("middleman-workspace-terminal-layout:fleet:member:ws-1")).toContain(
+        '"workflowMode":"tabs"',
+      ),
+    );
+    expect(localStorage.getItem("middleman-workspace-terminal-layout:ws-1")).toBeNull();
+  });
+
   it("does not show remote runtime while same-id local workspace data is still cached", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
     localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");

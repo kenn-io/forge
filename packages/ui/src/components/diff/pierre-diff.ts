@@ -104,6 +104,17 @@ export function diffFileWithPatch(file: DiffFile): DiffFile {
   return patchedFile;
 }
 
+export function sparseContextMayDistortSyntax(file: DiffFile): boolean {
+  const hunks = file.hunks ?? [];
+  for (let index = 0; index < hunks.length - 1; index += 1) {
+    const current = hunks[index];
+    const next = hunks[index + 1];
+    if (!current || !next || !hasCollapsedGap(current, next)) continue;
+    if (hunkMayCarrySyntaxState(current)) return true;
+  }
+  return false;
+}
+
 function processPatchWithContext(
   file: DiffFile,
   contents: { oldFile: FileContents; newFile: FileContents },
@@ -324,6 +335,62 @@ function canBuildSparsePatchContents(file: DiffFile): boolean {
     }
   }
   return true;
+}
+
+function hasCollapsedGap(
+  current: NonNullable<DiffFile["hunks"]>[number],
+  next: NonNullable<DiffFile["hunks"]>[number],
+): boolean {
+  const oldGap = next.old_start - (current.old_start + current.old_count);
+  const newGap = next.new_start - (current.new_start + current.new_count);
+  return oldGap > 0 || newGap > 0;
+}
+
+function hunkMayCarrySyntaxState(hunk: NonNullable<DiffFile["hunks"]>[number]): boolean {
+  let templateBacktickCount = 0;
+  let blockCommentOpen = false;
+
+  for (const line of hunk.lines) {
+    const content = line.content;
+    templateBacktickCount += countUnescapedBackticks(content);
+    blockCommentOpen = blockCommentStateAfterLine(content, blockCommentOpen);
+  }
+
+  return templateBacktickCount % 2 === 1 || blockCommentOpen;
+}
+
+function countUnescapedBackticks(line: string): number {
+  let count = 0;
+  let backslashes = 0;
+  for (const char of line) {
+    if (char === "\\") {
+      backslashes += 1;
+      continue;
+    }
+    if (char === "`" && backslashes % 2 === 0) count += 1;
+    backslashes = 0;
+  }
+  return count;
+}
+
+function blockCommentStateAfterLine(line: string, open: boolean): boolean {
+  let index = 0;
+  while (index < line.length) {
+    if (open) {
+      const close = line.indexOf("*/", index);
+      if (close < 0) return true;
+      open = false;
+      index = close + 2;
+      continue;
+    }
+
+    const start = line.indexOf("/*", index);
+    if (start < 0) return false;
+    const close = line.indexOf("*/", start + 2);
+    if (close < 0) return true;
+    index = close + 2;
+  }
+  return open;
 }
 
 function lineRangeFits(start: number, count: number): boolean {

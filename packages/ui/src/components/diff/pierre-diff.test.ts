@@ -6,6 +6,7 @@ import {
   parsePierreFileDiffWithContents,
   patchPath,
   pierreFileContents,
+  sparseContextMayDistortSyntax,
 } from "./pierre-diff.js";
 
 function makeFile(path: string, patchBody: string): DiffFile {
@@ -130,6 +131,55 @@ ${patchBody}
   };
 }
 
+function makeSparseTemplateGapFile(): DiffFile {
+  const path = "src/example.test.ts";
+  return {
+    ...makeFile(path, "-old line\n+new line"),
+    additions: 5,
+    deletions: 0,
+    patch: `diff --git a/${path} b/${path}
+--- a/${path}
++++ b/${path}
+@@ -10,3 +10,4 @@ function render() {
+ const html = \`
++  <span>new</span>
+   <div>
+@@ -80,2 +81,5 @@ afterRender();
++vi.doMock("./worker", () => ({
++  run: () => undefined,
++}));
+ function makeFile() {}
+`,
+    hunks: [
+      {
+        old_start: 10,
+        old_count: 3,
+        new_start: 10,
+        new_count: 4,
+        section: "function render() {",
+        lines: [
+          { type: "context", content: "const html = `", old_num: 10, new_num: 10 },
+          { type: "add", content: "  <span>new</span>", new_num: 11 },
+          { type: "context", content: "  <div>", old_num: 11, new_num: 12 },
+        ],
+      },
+      {
+        old_start: 80,
+        old_count: 2,
+        new_start: 81,
+        new_count: 5,
+        section: "afterRender();",
+        lines: [
+          { type: "add", content: 'vi.doMock("./worker", () => ({', new_num: 81 },
+          { type: "add", content: "  run: () => undefined,", new_num: 82 },
+          { type: "add", content: "}));", new_num: 83 },
+          { type: "context", content: "function makeFile() {}", old_num: 80, new_num: 84 },
+        ],
+      },
+    ],
+  };
+}
+
 describe("Pierre diff parsing", () => {
   it("uses distinct cache keys for different patch contents", () => {
     const first = parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"));
@@ -226,6 +276,11 @@ describe("Pierre diff parsing", () => {
 
     expect(parsed).toBeDefined();
     expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(true);
+  });
+
+  it("detects sparse context gaps that can carry syntax state", () => {
+    expect(sparseContextMayDistortSyntax(makeSparseTemplateGapFile())).toBe(true);
+    expect(sparseContextMayDistortSyntax(makeFile("src/foo.ts", "-old line\n+new line"))).toBe(false);
   });
 
   it("handles nullable hunk payloads when sparse context expansion is enabled", () => {

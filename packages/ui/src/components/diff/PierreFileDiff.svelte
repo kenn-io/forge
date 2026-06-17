@@ -21,6 +21,7 @@
     parsePierreFileDiffWithContents,
     pierreDiffDebugEnabled,
     pierreFileContents,
+    sparseContextMayDistortSyntax,
   } from "./pierre-diff.js";
   import {
     renderedCodeColumns,
@@ -146,6 +147,9 @@
     ),
   );
   const emptyTextualDiff = $derived(!renderFile.patch.trim() || !hasRenderablePierreDiff);
+  const needsFullContextForSyntax = $derived(
+    Boolean(loadFileText) && hasCollapsedContext(renderFile) && sparseContextMayDistortSyntax(renderFile),
+  );
 
   const pierreOptions = $derived.by<FileDiffOptions<unknown>>(() => ({
     diffStyle: viewMode,
@@ -329,6 +333,12 @@
     pierreDiff.setOptions(pierreOptions);
     if (pierreDiff instanceof VirtualizedFileDiff && isHostInScrollViewport()) {
       pierreDiff.setVisibility(true);
+    }
+    if (needsFullContextForSyntax && !fullContext) {
+      rendered = false;
+      clearRenderedDomState();
+      void loadFullContextForSyntax(fileKey);
+      return;
     }
     const nextRenderAttemptKey = [
       fileKey,
@@ -910,6 +920,19 @@
       throw err;
     }
     return fullContext;
+  }
+
+  async function loadFullContextForSyntax(requestFileKey: string): Promise<void> {
+    try {
+      const context = await loadFullContext(requestFileKey);
+      if (!context || fileKey !== requestFileKey) return;
+      await tick();
+      if (fileKey !== requestFileKey || fullContextRendered) return;
+      renderFullContext(context);
+    } catch (err) {
+      if (fileKey !== requestFileKey) return;
+      contextError = err instanceof Error ? err.message : "unknown error";
+    }
   }
 
   async function fetchFullContext(): Promise<{ oldFile: FileContents; newFile: FileContents }> {

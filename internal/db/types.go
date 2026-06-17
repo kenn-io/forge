@@ -365,6 +365,7 @@ type ListMergeRequestsOpts struct {
 }
 
 type RepoFilter struct {
+	Platform     string
 	PlatformHost string
 	RepoOwner    string
 	RepoName     string

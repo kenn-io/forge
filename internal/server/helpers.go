@@ -261,20 +261,24 @@ func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int6
 	return issue.ID, nil
 }
 
-// parseRepoFilter splits the repo query parameter when it is in owner/name or
-// platform_host/repo_path form and otherwise returns empty parts so callers can
-// ignore invalid input. Repo paths can contain slashes, so hosted filters keep
-// everything after the host together as repoPath.
-func parseRepoFilter(repo string) (platformHost, owner, name, repoPath string) {
+// parseRepoFilter splits the repo query parameter when it is in owner/name,
+// platform_host/repo_path, or provider/platform_host/repo_path form and otherwise
+// returns empty parts so callers can ignore invalid input. Repo paths can contain
+// slashes, so hosted filters keep everything after the host together as repoPath.
+func parseRepoFilter(repo string) (provider, platformHost, owner, name, repoPath string) {
 	parts := strings.Split(strings.Trim(repo, "/ "), "/")
 	switch len(parts) {
 	case 2:
-		return "", parts[0], parts[1], ""
+		return "", "", parts[0], parts[1], ""
 	default:
 		if len(parts) >= 3 {
-			return parts[0], "", "", strings.Join(parts[1:], "/")
+			provider := strings.ToLower(strings.TrimSpace(parts[0]))
+			if _, ok := platform.MetadataFor(platform.Kind(provider)); ok && len(parts) >= 4 {
+				return provider, parts[1], "", "", strings.Join(parts[2:], "/")
+			}
+			return "", parts[0], "", "", strings.Join(parts[1:], "/")
 		}
-		return "", "", "", ""
+		return "", "", "", "", ""
 	}
 }
 
@@ -282,14 +286,16 @@ func parseRepoFilters(repo string) []db.RepoFilter {
 	parts := strings.Split(repo, ",")
 	filters := make([]db.RepoFilter, 0, len(parts))
 	for _, part := range parts {
-		platformHost, owner, name, repoPath := parseRepoFilter(part)
+		provider, platformHost, owner, name, repoPath := parseRepoFilter(part)
 		if repoPath != "" {
 			filters = append(filters, db.RepoFilter{
+				Platform:     provider,
 				PlatformHost: platformHost,
 				RepoPath:     repoPath,
 			})
 		} else if owner != "" {
 			filters = append(filters, db.RepoFilter{
+				Platform:     provider,
 				PlatformHost: platformHost,
 				RepoOwner:    owner,
 				RepoName:     name,

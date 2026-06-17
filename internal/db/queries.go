@@ -122,6 +122,10 @@ func repoListFilterCondition(repoAlias string, filters []RepoFilter, args *[]any
 	for _, filter := range filters {
 		var clauses []string
 		if filter.RepoPath != "" {
+			if filter.Platform != "" {
+				clauses = append(clauses, repoAlias+".platform = ?")
+				*args = append(*args, strings.ToLower(strings.TrimSpace(filter.Platform)))
+			}
 			if filter.PlatformHost != "" {
 				host, _, _ := canonicalRepoLookupIdentifier(filter.PlatformHost, "", "")
 				clauses = append(clauses, repoAlias+".platform_host = ?")
@@ -133,6 +137,10 @@ func repoListFilterCondition(repoAlias string, filters []RepoFilter, args *[]any
 			_, owner, name := canonicalRepoLookupIdentifier(
 				"", filter.RepoOwner, filter.RepoName,
 			)
+			if filter.Platform != "" {
+				clauses = append(clauses, repoAlias+".platform = ?")
+				*args = append(*args, strings.ToLower(strings.TrimSpace(filter.Platform)))
+			}
 			if filter.PlatformHost != "" {
 				host, _, _ := canonicalRepoLookupIdentifier(filter.PlatformHost, "", "")
 				clauses = append(clauses, repoAlias+".platform_host = ?")

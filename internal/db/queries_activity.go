@@ -272,6 +272,10 @@ func activityRepoFilterCondition(filters []RepoFilter, args *[]any) string {
 			if pathKey == "" {
 				continue
 			}
+			if filter.Platform != "" {
+				clauses = append(clauses, "platform = ?")
+				*args = append(*args, strings.ToLower(strings.TrimSpace(filter.Platform)))
+			}
 			if filter.PlatformHost != "" {
 				host, _, _ := canonicalRepoLookupIdentifier(filter.PlatformHost, "", "")
 				clauses = append(clauses, "platform_host = ?")
@@ -280,6 +284,10 @@ func activityRepoFilterCondition(filters []RepoFilter, args *[]any) string {
 			clauses = append(clauses, "repo_path_key = ?")
 			*args = append(*args, pathKey)
 		} else if filter.RepoOwner != "" && filter.RepoName != "" {
+			if filter.Platform != "" {
+				clauses = append(clauses, "platform = ?")
+				*args = append(*args, strings.ToLower(strings.TrimSpace(filter.Platform)))
+			}
 			if filter.PlatformHost != "" {
 				host, _, _ := canonicalRepoLookupIdentifier(filter.PlatformHost, "", "")
 				clauses = append(clauses, "platform_host = ?")

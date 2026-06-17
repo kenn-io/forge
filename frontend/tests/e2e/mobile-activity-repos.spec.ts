@@ -31,6 +31,15 @@ async function mockMobileRepoSettings(page: Page): Promise<string[]> {
             matched_repo_count: 1,
           },
           {
+            provider: "gitea",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+          {
             provider: "github",
             platform_host: "github.com",
             owner: "acme",
@@ -88,7 +97,8 @@ test.describe("mobile activity repository selector", () => {
 
     await repoSelect.click();
     await expect(page.getByRole("option", { name: "All repos" })).toBeVisible();
-    await expect(page.getByRole("option", { name: "github.com/acme/widgets" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "github/github.com/acme/widgets" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "gitea/github.com/acme/widgets" })).toBeVisible();
     await expect(
       page.getByRole("option", {
         name: "ghe.example.com/acme/widgets",
@@ -96,11 +106,11 @@ test.describe("mobile activity repository selector", () => {
     ).toBeVisible();
     await expect(page.getByRole("option", { name: "acme/*" })).toHaveCount(0);
 
-    await page.getByRole("option", { name: "ghe.example.com/acme/widgets" }).click();
-    await expect(page.getByRole("combobox", { name: "Repository: ghe.example.com/acme/widgets" })).toHaveText(
-      "ghe.example.com/acme/widgets",
+    await page.getByRole("option", { name: "gitea/github.com/acme/widgets" }).click();
+    await expect(page.getByRole("combobox", { name: "Repository: gitea/github.com/acme/widgets" })).toHaveText(
+      "gitea/github.com/acme/widgets",
     );
-    await expect.poll(() => activityRepos).toContain("ghe.example.com/acme/widgets");
+    await expect.poll(() => activityRepos).toContain("gitea/github.com/acme/widgets");
   });
 
   test("groups and labels activity from nested repo identity", async ({ page }) => {

@@ -1230,7 +1230,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		RepoFilters: parseRepoFilters(input.Repo),
 	}
 	if len(opts.RepoFilters) == 0 {
-		if platformHost, owner, name, repoPath := parseRepoFilter(input.Repo); repoPath != "" {
+		if _, platformHost, owner, name, repoPath := parseRepoFilter(input.Repo); repoPath != "" {
 			opts.PlatformHost = platformHost
 			opts.RepoPath = repoPath
 		} else if owner != "" {
@@ -2186,7 +2186,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		RepoFilters: parseRepoFilters(input.Repo),
 	}
 	if len(opts.RepoFilters) == 0 {
-		if platformHost, owner, name, repoPath := parseRepoFilter(input.Repo); repoPath != "" {
+		if _, platformHost, owner, name, repoPath := parseRepoFilter(input.Repo); repoPath != "" {
 			opts.PlatformHost = platformHost
 			opts.RepoPath = repoPath
 		} else if owner != "" {

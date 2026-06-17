@@ -123,6 +123,46 @@ func TestListActivity(t *testing.T) {
 		})
 	})
 
+	t.Run("provider qualified repo filter", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+
+		githubRepo, err := d.UpsertRepo(ctx, RepoIdentity{
+			Platform:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widgets",
+		})
+		require.NoError(err)
+		giteaRepo, err := d.UpsertRepo(ctx, RepoIdentity{
+			Platform:     "gitea",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widgets",
+		})
+		require.NoError(err)
+		insertTestMR(t, d, githubRepo, 1, "github provider", base)
+		insertTestMR(t, d, giteaRepo, 2, "gitea provider", base.Add(time.Hour))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{
+			Repo: "gitea/github.com/acme/widgets",
+			RepoFilters: []RepoFilter{{
+				Platform:     "gitea",
+				PlatformHost: "github.com",
+				RepoPath:     "acme/widgets",
+			}},
+			Limit: 50,
+		})
+		require.NoError(err)
+		require.Len(items, 1)
+		assert.Equal("gitea", items[0].Platform)
+		assert.Equal("github.com", items[0].PlatformHost)
+		assert.Equal(2, items[0].ItemNumber)
+	})
+
 	t.Run("type filter", func(t *testing.T) {
 		assert := Assert.New(t)
 		items, err := d.ListActivity(ctx, ListActivityOpts{

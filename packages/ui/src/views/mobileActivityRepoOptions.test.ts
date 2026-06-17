@@ -32,6 +32,26 @@ describe("buildMobileActivityRepoOptions", () => {
     ]);
   });
 
+  it("uses provider-qualified values when the same host and repo path exist on different providers", () => {
+    const options = buildMobileActivityRepoOptions([
+      { ...baseRepo, provider: "github", platform_host: "github.com" },
+      { ...baseRepo, provider: "gitea", platform_host: "github.com" },
+    ]);
+
+    expect(options).toEqual([
+      {
+        value: "gitea/github.com/acme/widgets",
+        label: "gitea/github.com/acme/widgets",
+        triggerLabel: "gitea/github.com/acme/widgets",
+      },
+      {
+        value: "github/github.com/acme/widgets",
+        label: "github/github.com/acme/widgets",
+        triggerLabel: "github/github.com/acme/widgets",
+      },
+    ]);
+  });
+
   it("shortens trigger labels when repo paths are unique", () => {
     const options = buildMobileActivityRepoOptions([
       {

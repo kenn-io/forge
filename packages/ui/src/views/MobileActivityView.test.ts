@@ -37,6 +37,7 @@ function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): 
 
 const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
 const onSelectItem = vi.hoisted(() => vi.fn());
+const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const setHideOrgName = vi.hoisted(() =>
   vi.fn((value: boolean) => {
@@ -58,7 +59,7 @@ vi.mock("../context.js", () => ({
       getItemFilter: () => "all",
       getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push"]),
       getShowNotifications: () => true,
-      getHideClosedMerged: () => false,
+      getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => false,
       isActivityLoading: () => false,
@@ -91,6 +92,7 @@ describe("MobileActivityView branch activity", () => {
   beforeEach(() => {
     items.value = [branchActivityItem("branch-commit")];
     hideOrgName.value = false;
+    hideClosedMerged.value = false;
     onSelectItem.mockClear();
     setHideOrgName.mockClear();
   });
@@ -193,5 +195,79 @@ describe("MobileActivityView branch activity", () => {
       "noopener",
     );
     open.mockRestore();
+  });
+});
+
+function notificationItem(id: string, title: string, subjectState: string): ActivityItem {
+  return {
+    id,
+    cursor: id,
+    activity_type: "notification",
+    author: "carol",
+    body_preview: "review_requested",
+    created_at: "2026-04-27T12:00:00Z",
+    // Notifications carry unread/read in item_state, never a lifecycle state;
+    // the linked PR's lifecycle rides in subject_state.
+    item_number: Number(id),
+    item_state: "unread",
+    subject_state: subjectState,
+    item_title: title,
+    item_type: "pr",
+    item_url: `https://github.com/acme/widgets/pull/${id}`,
+    platform_host: "github.com",
+    repo_owner: "acme",
+    repo_name: "widgets",
+    repo: {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    },
+  } as ActivityItem;
+}
+
+describe("MobileActivityView hide closed/merged", () => {
+  beforeEach(() => {
+    hideClosedMerged.value = false;
+    onSelectItem.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("hides notifications on merged/closed subjects but keeps open ones", () => {
+    hideClosedMerged.value = true;
+    items.value = [
+      notificationItem("1", "Open subject", "open"),
+      notificationItem("2", "Merged subject", "merged"),
+      notificationItem("3", "Closed subject", "closed"),
+    ];
+
+    const { container } = render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    // A notifications-only mobile feed has no sibling PR row, yet the
+    // merged/closed notifications are dropped because the filter reads
+    // subject_state, not the notification's unread/read item_state.
+    expect(container.textContent).toContain("Open subject");
+    expect(container.textContent).not.toContain("Merged subject");
+    expect(container.textContent).not.toContain("Closed subject");
+  });
+
+  it("keeps every notification when hide closed/merged is off", () => {
+    items.value = [
+      notificationItem("1", "Open subject", "open"),
+      notificationItem("2", "Merged subject", "merged"),
+    ];
+
+    const { container } = render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    expect(container.textContent).toContain("Open subject");
+    expect(container.textContent).toContain("Merged subject");
   });
 });

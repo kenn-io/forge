@@ -71,38 +71,42 @@ const {
   };
 });
 
-vi.mock("@middleman/ui", () => ({
-  DEFAULT_MODE_VISIBILITY: {
-    activity: true,
-    repos: true,
-    kata: false,
-    docs: false,
-    messages: false,
-    pulls: true,
-    issues: true,
-    board: true,
-    reviews: true,
-    workspaces: true,
-  },
-  DEFAULT_TERMINAL_SETTINGS: {
-    font_family: "",
-    font_size: 14,
-    scrollback: 1000,
-    line_height: 1,
-    letter_spacing: 0,
-    cursor_blink: true,
-    font_ligatures: false,
-    renderer: "xterm",
-  },
-  getStores: () => ({
-    settings: {
-      getTerminalSettings: () => currentTerminal.value,
-      getModeVisibility: () => currentModes.value,
-      setModeVisibility: mockSetModeVisibility,
-      setTerminalSettings: mockSetTerminalSettings,
+vi.mock("@middleman/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@middleman/ui")>();
+  return {
+    ...actual,
+    DEFAULT_MODE_VISIBILITY: {
+      activity: true,
+      repos: true,
+      kata: false,
+      docs: false,
+      messages: false,
+      pulls: true,
+      issues: true,
+      board: true,
+      reviews: true,
+      workspaces: true,
     },
-  }),
-}));
+    DEFAULT_TERMINAL_SETTINGS: {
+      font_family: "",
+      font_size: 14,
+      scrollback: 1000,
+      line_height: 1,
+      letter_spacing: 0,
+      cursor_blink: true,
+      font_ligatures: false,
+      renderer: "xterm",
+    },
+    getStores: () => ({
+      settings: {
+        getTerminalSettings: () => currentTerminal.value,
+        getModeVisibility: () => currentModes.value,
+        setModeVisibility: mockSetModeVisibility,
+        setTerminalSettings: mockSetTerminalSettings,
+      },
+    }),
+  };
+});
 
 vi.mock("../../api/settings.js", () => ({
   updateSettings: mockUpdateSettings,

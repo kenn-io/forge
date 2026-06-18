@@ -18,6 +18,9 @@
     "svelte-check": "4.6.0",
     "vite-plus": "0.1.24"
   },
+  "overrides": {
+    "dompurify": "3.4.11"
+  },
   "devEngines": {
     "packageManager": {
       "name": "bun",

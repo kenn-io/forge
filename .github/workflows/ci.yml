@@ -297,7 +297,11 @@ jobs:
           cp -r frontend/dist internal/web/dist
 
       - name: Build E2E server
-        run: go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
+        # -buildvcs=false: inside the Playwright container the checked-out
+        # workspace has a git ownership mismatch, so VCS stamping fails with
+        # "error obtaining VCS status: exit status 128". This test binary has no
+        # use for stamped VCS info anyway (matches the huma-route-check target).
+        run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
       - name: Run E2E tests
         run: cd frontend && vp exec -- playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }}

@@ -1519,12 +1519,14 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 	check.Equal("thread-ok", items[0].PlatformNotificationID)
 }
 
-func TestSyncNotificationsStopsBeforeListingWhenRateReserveExhausted(t *testing.T) {
+func TestSyncNotificationsIgnoresReadRateReserveWhenUsingNotificationBudget(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	d := openTestDB(t)
 	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
+	number := 7
+	now := time.Now().UTC()
 	rt := NewRateTracker(d, "github.com", "rest")
 	rt.UpdateFromRate(Rate{
 		Limit:     5000,
@@ -1537,7 +1539,19 @@ func TestSyncNotificationsStopsBeforeListingWhenRateReserveExhausted(t *testing.
 			"github.com": &mockClient{
 				listNotificationsFn: func(context.Context, NotificationListOptions) ([]NotificationThread, bool, error) {
 					calls.Add(1)
-					return nil, false, nil
+					return []NotificationThread{{
+						ID:           "thread-7",
+						RepoOwner:    "acme",
+						RepoName:     "widget",
+						SubjectType:  "PullRequest",
+						SubjectTitle: "Review requested",
+						WebURL:       "https://github.com/acme/widget/pull/7",
+						ItemNumber:   &number,
+						ItemType:     "pr",
+						Reason:       "mention",
+						Unread:       true,
+						UpdatedAt:    now,
+					}}, false, nil
 				},
 			},
 		},
@@ -1546,14 +1560,17 @@ func TestSyncNotificationsStopsBeforeListingWhenRateReserveExhausted(t *testing.
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		map[string]*RateTracker{"github.com": rt},
-		nil,
+		map[string]*SyncBudget{"github.com": NewSyncBudget(10)},
 	)
 
 	syncErr := syncer.SyncNotifications(t.Context())
 
-	require.Error(syncErr)
-	require.ErrorContains(syncErr, "rate reserve exhausted")
-	assert.Equal(int32(0), calls.Load())
+	require.NoError(syncErr)
+	assert.Equal(int32(2), calls.Load())
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 1)
+	assert.Equal("thread-7", items[0].PlatformNotificationID)
 }
 
 func TestSyncNotificationsStopsBeforeListingWhenSyncBudgetExhausted(t *testing.T) {

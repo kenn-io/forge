@@ -326,9 +326,6 @@ func (s *Syncer) listParticipatingNotificationIDs(
 }
 
 func (s *Syncer) ensureNotificationPageBudget(host string) error {
-	if rt := s.rateTrackers[host]; rt != nil && rt.IsPaused() {
-		return fmt.Errorf("notification sync paused for %s: rate reserve exhausted", host)
-	}
 	if budget := s.budgets[host]; budget != nil && !budget.CanSpend(1) {
 		return fmt.Errorf("notification sync paused for %s: sync budget exhausted", host)
 	}

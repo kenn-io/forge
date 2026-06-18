@@ -288,6 +288,16 @@ jobs:
           cache: true
           run-install: true
 
+      - name: Install tmux for workspace PTY sessions
+        # The minimal Playwright image ships browsers but not tmux, which the
+        # full-stack workspace e2e specs need to start real PTY sessions
+        # (ubuntu-latest had it pre-installed). This is one small package, not
+        # the 48MB firefox browser-deps download the container already removed.
+        timeout-minutes: 5
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends tmux
+
       - name: Build frontend
         run: cd frontend && vp build --logLevel warn
 

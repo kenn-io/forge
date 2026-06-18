@@ -108,6 +108,7 @@ func TestResolveDaemonLocalIgnoresTokenFields(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_TEST_TOKEN", "")
 
 	daemon, err := ResolveDaemon(Daemon{
@@ -120,6 +121,42 @@ func TestResolveDaemonLocalIgnoresTokenFields(t *testing.T) {
 	require.NoError(err)
 	assert.True(daemon.Local)
 	assert.Empty(daemon.Token)
+	assert.Empty(daemon.TokenEnv)
+}
+
+func TestResolveDaemonLocalUsesKataAuthTokenEnv(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	t.Setenv("KATA_AUTH_TOKEN", "local-secret")
+
+	daemon, err := ResolveDaemon(Daemon{ID: "local", Local: true})
+	require.NoError(err)
+
+	assert.Equal("local-secret", daemon.Token)
+	assert.Empty(daemon.TokenEnv)
+}
+
+func TestResolveDaemonLocalUsesKataAuthConfig(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
+	writeCatalog(t, home, `
+[auth]
+token = "local-config-secret"
+
+[[daemon]]
+name = "local"
+local = true
+`)
+
+	daemon, err := ResolveDaemon(Daemon{ID: "local", Local: true})
+	require.NoError(err)
+
+	assert.Equal("local-config-secret", daemon.Token)
 	assert.Empty(daemon.TokenEnv)
 }
 
@@ -144,6 +181,8 @@ func TestResolveDaemonInlineTokenPreserved(t *testing.T) {
 func TestResolveDaemonAllowsDynamicLocalEntry(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
+
+	t.Setenv("KATA_AUTH_TOKEN", "")
 
 	daemon, err := ResolveDaemon(Daemon{ID: "local", Local: true})
 	require.NoError(err)

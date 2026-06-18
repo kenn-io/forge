@@ -27,8 +27,9 @@ type catalogEntry struct {
 	AllowInsecure bool   `toml:"allow_insecure"`
 }
 
-// LoadCatalog reads Kata's shared daemon catalog. Auth fields are retained
-// only for remote daemons; local entries are tokenless at the catalog boundary.
+// LoadCatalog reads Kata's shared daemon catalog. Per-daemon auth fields are
+// retained only for remote daemons; local entries are tokenless at the catalog
+// boundary and pick up Kata's global local auth during resolution.
 func LoadCatalog() (Catalog, error) {
 	path, err := CatalogPath()
 	if err != nil {

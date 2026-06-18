@@ -91,7 +91,7 @@ func (s *Server) listKataDaemons(context.Context, *struct{}) (*listKataDaemonsOu
 	for i, configured := range catalog.Daemons {
 		d := resolved[i]
 		auth := "none"
-		if !d.Local && kataDaemonForwardToken(d) != "" {
+		if kataDaemonForwardToken(d) != "" {
 			auth = "token"
 		}
 		hint := ""
@@ -168,10 +168,11 @@ func (s *Server) kataDaemonHealth(id string, d kata.Daemon) string {
 }
 
 func kataDaemonHealthCacheKey(id string, d kata.Daemon) string {
+	mode := "remote"
 	if d.Local {
-		return strings.Join([]string{id, d.URL, "local", ""}, kataDaemonCacheKeyDelim)
+		mode = "local"
 	}
-	return strings.Join([]string{id, d.URL, "remote", kataDaemonForwardToken(d)}, kataDaemonCacheKeyDelim)
+	return strings.Join([]string{id, d.URL, mode, kataDaemonForwardToken(d)}, kataDaemonCacheKeyDelim)
 }
 
 func probeKataDaemon(id string, d kata.Daemon) string {
@@ -192,10 +193,8 @@ func probeKataDaemon(id string, d kata.Daemon) string {
 	if err != nil {
 		return "down"
 	}
-	if !d.Local {
-		if token := kataDaemonForwardToken(d); token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
+	if token := kataDaemonForwardToken(d); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	client := &http.Client{
@@ -231,13 +230,12 @@ func probeKataDaemon(id string, d kata.Daemon) string {
 }
 
 func isKataLocalDaemonChallenge(d kata.Daemon, statusCode int) bool {
-	return d.Local && (statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden)
+	return d.Local &&
+		kataDaemonForwardToken(d) == "" &&
+		(statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden)
 }
 
 func kataDaemonForwardToken(d kata.Daemon) string {
-	if d.Local {
-		return ""
-	}
 	return d.Token
 }
 

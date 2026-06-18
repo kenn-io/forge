@@ -483,6 +483,7 @@ func TestKataProxyLocalDaemonResolvesRuntimeAfterServerStart(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	writeKataProxyCatalog(t, home, `
 active_daemon = "local"
@@ -533,6 +534,7 @@ func TestKataProxyLocalNoAuthDoesNotForwardAuthChallenge(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	writeKataProxyCatalog(t, home, `
 active_daemon = "local"
@@ -568,6 +570,7 @@ func TestKataProxyLocalDaemonStripsAuthorization(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	writeKataProxyCatalog(t, home, `
 active_daemon = "local"
@@ -594,6 +597,42 @@ token = "local-secret"
 	assert.Equal([]string{"", ""}, authorizations)
 }
 
+func TestKataProxyLocalDaemonUsesKataAuthTokenEnv(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	var receivedAuthorization string
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuthorization = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"instance":"local"}`))
+	}))
+	defer daemon.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "local-secret")
+	t.Setenv("KATA_DB", "")
+	writeKataProxyCatalog(t, home, `
+active_daemon = "local"
+
+[[daemon]]
+name = "local"
+local = true
+`)
+	writeKataProxyRuntimeRecord(t, daemon.URL)
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
+	req.Header.Set("Authorization", "Bearer caller-secret")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.JSONEq(`{"instance":"local"}`, rr.Body.String())
+	assert.Equal("Bearer local-secret", receivedAuthorization)
+}
+
 func TestKataProxyCacheSeparatesLocalAndRemoteDaemonMode(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -610,6 +649,7 @@ func TestKataProxyCacheSeparatesLocalAndRemoteDaemonMode(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	writeKataProxyCatalog(t, home, `
 active_daemon = "home"
@@ -657,6 +697,7 @@ func TestKataProxyLocalDaemonIgnoresTokenEnv(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	t.Setenv("MIDDLEMAN_KATA_MISSING_TOKEN", "")
 	writeKataProxyCatalog(t, home, `

@@ -202,6 +202,7 @@ func TestKataDaemonsEndpointReportsDownLocalWithHint(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	writeKataServerCatalog(t, home, `
 [[daemon]]
@@ -231,6 +232,7 @@ func TestKataDaemonsEndpointDoesNotReportAuthRequiredForLocalNoAuthDaemon(t *tes
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	writeKataServerCatalog(t, home, `
 [[daemon]]
@@ -257,6 +259,7 @@ func TestKataDaemonsEndpointLocalDaemonDoesNotUseTokenAuth(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	writeKataServerCatalog(t, home, `
 [[daemon]]
@@ -273,6 +276,39 @@ token = "local-secret"
 	assert.Equal("connected", got["local"].Health)
 }
 
+func TestKataDaemonsEndpointLocalDaemonUsesKataAuthTokenEnv(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("Bearer local-secret", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer daemon.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "local-secret")
+	t.Setenv("KATA_DB", "")
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "local"
+local = true
+`)
+	writeKataProxyRuntimeRecord(t, daemon.URL)
+	srv, _ := setupTestServer(t)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/daemons", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.NotContains(rr.Body.String(), "local-secret")
+
+	var body kataDaemonRosterWire
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(body.Daemons, 1)
+	assert.Equal("token", body.Daemons[0].Auth)
+	assert.Equal("connected", body.Daemons[0].Health)
+}
+
 func TestKataDaemonsEndpointLocalDaemonIgnoresTokenEnv(t *testing.T) {
 	assert := Assert.New(t)
 
@@ -284,6 +320,7 @@ func TestKataDaemonsEndpointLocalDaemonIgnoresTokenEnv(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	t.Setenv("MIDDLEMAN_KATA_MISSING_TOKEN", "")
 	writeKataServerCatalog(t, home, `
@@ -452,6 +489,7 @@ func TestKataDaemonsEndpointHealthCacheSeparatesLocalAndRemoteMode(t *testing.T)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	writeKataServerCatalog(t, home, `
 [[daemon]]

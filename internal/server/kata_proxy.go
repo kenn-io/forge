@@ -199,6 +199,9 @@ func newKataDaemonProxyEntry(d kata.Daemon) (kataProxyCacheEntry, error) {
 			pr.Out.Header.Del(kataDaemonHeaderName)
 			if d.Local {
 				pr.Out.Header.Del("Authorization")
+				if token := kataDaemonForwardToken(d); token != "" {
+					pr.Out.Header.Set("Authorization", "Bearer "+token)
+				}
 				return
 			}
 			if token := kataDaemonForwardToken(d); token != "" && pr.Out.Header.Get("Authorization") == "" {

@@ -38,6 +38,7 @@ func TestKataLocalDaemonChallengeIsDownAndProxyUpstreamErrorE2E(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	writeKataE2ECatalog(t, home, `
 active_daemon = "local"
@@ -107,6 +108,7 @@ func TestKataLocalDaemonTokenEnvIsNotUsedForRosterOrProxyE2E(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
 	t.Setenv("MIDDLEMAN_KATA_MISSING_TOKEN", "")
 	writeKataE2ECatalog(t, home, `

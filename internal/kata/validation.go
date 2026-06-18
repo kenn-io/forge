@@ -77,11 +77,15 @@ func ValidateLocalTarget(d Daemon) error {
 	return nil
 }
 
-// ResolveDaemon resolves TokenEnv for remote daemons and validates the daemon target.
+// ResolveDaemon resolves auth material and validates the daemon target.
 func ResolveDaemon(d Daemon) (Daemon, error) {
 	if d.Local {
-		d.Token = ""
 		d.TokenEnv = ""
+		token, err := ResolveLocalAuthToken()
+		if err != nil {
+			return d, err
+		}
+		d.Token = token
 		return d, ValidateLocalTarget(d)
 	}
 	if d.TokenEnv != "" {

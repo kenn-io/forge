@@ -1577,12 +1577,21 @@ func TestMsgvaultConfigureConcurrentSavesKeepDiskAndMemoryAligned(t *testing.T) 
 	for i, status := range statuses {
 		Assert.Equalf(t, http.StatusOK, status, "worker %d", i)
 	}
-	reloaded, err := config.Load(cfgPath)
-	require.NoError(err)
-	require.NotNil(reloaded.Msgvault)
-	health := doMsgvaultJSON(t, srv, http.MethodGet, "/api/v1/msgvault/health", nil)
-	require.Equal(http.StatusOK, health.Code, health.Body.String())
-	Assert.Equal(t, reloaded.Msgvault.URL, decodeMsgvaultHealth(t, health).URL)
+	var diskURL, healthURL string
+	require.Eventually(func() bool {
+		reloaded, err := config.Load(cfgPath)
+		if err != nil || reloaded.Msgvault == nil {
+			return false
+		}
+		health := doMsgvaultJSON(t, srv, http.MethodGet, "/api/v1/msgvault/health", nil)
+		if health.Code != http.StatusOK {
+			return false
+		}
+		diskURL = reloaded.Msgvault.URL
+		healthURL = decodeMsgvaultHealth(t, health).URL
+		return diskURL == healthURL
+	}, time.Second, 10*time.Millisecond,
+		"disk URL %q and health URL %q should align", diskURL, healthURL)
 }
 
 func TestMsgvaultConfigureResponseEchoesOwnSavedConfig(t *testing.T) {

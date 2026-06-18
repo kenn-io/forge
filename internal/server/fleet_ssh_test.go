@@ -310,10 +310,13 @@ func TestSSHFleetSnapshotDegradesColdPeerFast(t *testing.T) {
 	raw := `{"schemaVersion":2,"host":{"hostname":"epyc","platform":"linux"}}`
 	release := make(chan struct{})
 	var fetches atomic.Int32
+	started := make(chan struct{})
+	var startedOnce sync.Once
 	exec := func(
 		_ context.Context, argv []string, _ []byte,
 	) ([]byte, []byte, int, error) {
 		fetches.Add(1)
+		startedOnce.Do(func() { close(started) })
 		<-release
 		return []byte(framedJSON(200, raw)), nil, 0, nil
 	}
@@ -387,6 +390,12 @@ func TestSSHFleetSnapshotDegradesColdPeerFast(t *testing.T) {
 	assert.False(epyc.Reachable)
 	require.NotNil(epyc.Error)
 	assert.Contains(*epyc.Error, "warming")
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		require.Fail("cold snapshot fetch did not start")
+	}
 
 	// A second read while the fetch is still blocked must not start
 	// another fetch.

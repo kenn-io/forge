@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	Assert "github.com/stretchr/testify/assert"
 	_ "modernc.org/sqlite"
 
 	"github.com/stretchr/testify/require"
@@ -93,6 +94,53 @@ func TestOpenAndSchema(t *testing.T) {
 			require.Equal(column, found)
 		}
 	}
+}
+
+func TestOpenRepairsFleetSchemaSkippedByBranchNotificationMigrationCollision(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "collision.db")
+
+	d, err := Open(dbPath)
+	require.NoError(err)
+	require.NoError(d.Close())
+
+	raw, err := sql.Open("sqlite", dbPath)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_workspace_runtime_sessions
+		    (workspace_id, session_key, target_key, label, kind, scope, tmux_session)
+		VALUES ('ws-1', 'session-1', 'plain_shell', 'Terminal', 'terminal', 'session', '');
+	`)
+	require.NoError(err)
+	require.NoError(removeProjectDiscoveryColumnsForTest(raw))
+	_, err = raw.Exec(`UPDATE schema_migrations SET version = 34, dirty = FALSE`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := Open(dbPath)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	var version int
+	var dirty bool
+	err = reopened.ReadDB().QueryRow(
+		`SELECT version, dirty FROM schema_migrations LIMIT 1`,
+	).Scan(&version, &dirty)
+	require.NoError(err)
+	assert.Equal(latestMigrationVersionForTest(t), version)
+	assert.False(dirty)
+	assertFleetIntegrationSchemaForTest(t, reopened.ReadDB())
+
+	var displayRegion string
+	err = reopened.ReadDB().QueryRow(`
+		SELECT display_region
+		FROM middleman_workspace_runtime_sessions
+		WHERE session_key = 'session-1'
+	`).Scan(&displayRegion)
+	require.NoError(err)
+	assert.Equal("terminal", displayRegion)
 }
 
 func TestOpenCreatesFile(t *testing.T) {
@@ -1329,6 +1377,56 @@ func tableExistsForTest(t *testing.T, db *sql.DB, name string) bool {
 	).Scan(&count)
 	require.NoError(t, err)
 	return count > 0
+}
+
+func indexExistsForTest(t *testing.T, db *sql.DB, name string) bool {
+	t.Helper()
+	var count int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`,
+		name,
+	).Scan(&count)
+	require.NoError(t, err)
+	return count > 0
+}
+
+func assertFleetIntegrationSchemaForTest(t *testing.T, db *sql.DB) {
+	t.Helper()
+	assert := Assert.New(t)
+	for _, table := range []string{
+		"middleman_project_worktree_runtime_sessions",
+		"middleman_worktree_stats",
+		"middleman_host_runtime_sessions",
+	} {
+		assert.True(tableExistsForTest(t, db, table), "%s should exist", table)
+	}
+	assert.True(
+		indexExistsForTest(
+			t,
+			db,
+			"middleman_project_worktree_runtime_sessions_worktree_id_idx",
+		),
+	)
+
+	for table, columns := range map[string][]string{
+		"middleman_workspace_runtime_sessions": {"display_region"},
+		"middleman_projects": {
+			"is_stale",
+			"repository_kind",
+		},
+		"middleman_project_worktrees": {
+			"is_stale",
+			"is_hidden",
+			"session_backend",
+			"linked_issue_numbers",
+		},
+	} {
+		for _, column := range columns {
+			hasColumn, err := hasColumn(db, table, column)
+			require.NoError(t, err)
+			assert.True(hasColumn, "%s.%s should exist", table, column)
+		}
+	}
 }
 
 func rewriteWorkspacesToVersion11ForTest(raw *sql.DB) error {

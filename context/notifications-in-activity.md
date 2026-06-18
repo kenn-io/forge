@@ -70,7 +70,7 @@ Rules:
 - `done_at` and `done_reason` remain middleman-local triage state.
 - `source_*` fields track provider-side activity and acknowledgement propagation state.
 - `sync_cursor` is opaque provider-owned watermark state. GitHub currently leaves it empty.
-- The notification schema ships as a single migration, `000035_notifications.*`; do not split future assumptions across deleted branch-only migrations.
+- The notification schema ships as a single migration, `000035_notifications.*`; do not split future assumptions across deleted branch-only migrations. Branch databases that already applied the abandoned notification migration at version 34 are repaired at startup by ensuring the current `000034_fleet_integration` artifacts exist before the database is accepted.
 
 ## Triage State Model
 

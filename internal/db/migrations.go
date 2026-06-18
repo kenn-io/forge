@@ -138,6 +138,11 @@ func runMigrations(rw *sql.DB) (int, error) {
 			fmt.Errorf("repair workspace terminal backend column: %w", err),
 		)
 	}
+	if err := reconcileFleetIntegrationSchema(rw); err != nil {
+		return migratedb.NilVersion, wrapMigrationError(
+			fmt.Errorf("repair fleet integration schema: %w", err),
+		)
+	}
 
 	return startVersion, nil
 }
@@ -251,6 +256,117 @@ func reconcileWorkspaceTerminalBackendColumn(rw *sql.DB) error {
 		ALTER TABLE middleman_workspaces
 		    ADD COLUMN terminal_backend TEXT NOT NULL DEFAULT ''
 	`)
+	return err
+}
+
+func reconcileFleetIntegrationSchema(rw *sql.DB) error {
+	if !hasTable(rw, "middleman_projects") ||
+		!hasTable(rw, "middleman_project_worktrees") ||
+		!hasTable(rw, "middleman_workspace_runtime_sessions") {
+		return nil
+	}
+
+	projectColumns := map[string]string{
+		"is_stale":        "INTEGER NOT NULL DEFAULT 0",
+		"repository_kind": "TEXT NOT NULL DEFAULT 'standard'",
+	}
+	for column, definition := range projectColumns {
+		if err := ensureColumn(rw, "middleman_projects", column, definition); err != nil {
+			return err
+		}
+	}
+
+	worktreeColumns := map[string]string{
+		"is_stale":             "INTEGER NOT NULL DEFAULT 0",
+		"is_hidden":            "INTEGER NOT NULL DEFAULT 0",
+		"session_backend":      "TEXT NOT NULL DEFAULT ''",
+		"linked_issue_numbers": "TEXT NOT NULL DEFAULT '[]'",
+	}
+	for column, definition := range worktreeColumns {
+		if err := ensureColumn(rw, "middleman_project_worktrees", column, definition); err != nil {
+			return err
+		}
+	}
+
+	if err := ensureColumn(rw, "middleman_workspace_runtime_sessions", "display_region", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err := rw.Exec(`
+		UPDATE middleman_workspace_runtime_sessions
+		SET display_region = CASE
+		    WHEN target_key = 'plain_shell' THEN 'terminal'
+		    ELSE 'workflow'
+		END
+		WHERE display_region = ''
+	`); err != nil {
+		return err
+	}
+
+	if _, err := rw.Exec(`
+		CREATE TABLE IF NOT EXISTS middleman_project_worktree_runtime_sessions (
+		    worktree_id         TEXT NOT NULL REFERENCES middleman_project_worktrees(id) ON DELETE CASCADE,
+		    session_key         TEXT NOT NULL,
+		    target_key          TEXT NOT NULL,
+		    runtime_backend     TEXT NOT NULL,
+		    backend_session_key TEXT,
+		    label               TEXT NOT NULL DEFAULT '',
+		    created_at          DATETIME NOT NULL DEFAULT (datetime('now')),
+		    PRIMARY KEY (worktree_id, session_key),
+		    UNIQUE (session_key),
+		    UNIQUE (runtime_backend, backend_session_key)
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := rw.Exec(`
+		CREATE INDEX IF NOT EXISTS middleman_project_worktree_runtime_sessions_worktree_id_idx
+		    ON middleman_project_worktree_runtime_sessions(worktree_id)
+	`); err != nil {
+		return err
+	}
+	if _, err := rw.Exec(`
+		CREATE TABLE IF NOT EXISTS middleman_worktree_stats (
+		    path         TEXT PRIMARY KEY,
+		    diff_added   INTEGER NOT NULL DEFAULT 0,
+		    diff_removed INTEGER NOT NULL DEFAULT 0,
+		    sync_ahead   INTEGER NOT NULL DEFAULT 0,
+		    sync_behind  INTEGER NOT NULL DEFAULT 0,
+		    sampled_at   DATETIME NOT NULL DEFAULT (datetime('now'))
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := rw.Exec(`
+		CREATE TABLE IF NOT EXISTS middleman_host_runtime_sessions (
+		    session_key         TEXT PRIMARY KEY,
+		    runtime_backend     TEXT NOT NULL,
+		    backend_session_key TEXT,
+		    label               TEXT NOT NULL DEFAULT '',
+		    cwd                 TEXT NOT NULL DEFAULT '',
+		    created_at          DATETIME NOT NULL DEFAULT (datetime('now')),
+		    UNIQUE (runtime_backend, backend_session_key)
+		)
+	`); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureColumn(rw *sql.DB, tableName, columnName, definition string) error {
+	hasExistingColumn, err := hasColumn(rw, tableName, columnName)
+	if err != nil {
+		return err
+	}
+	if hasExistingColumn {
+		return nil
+	}
+	_, err = rw.Exec(fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN %s %s",
+		tableName,
+		columnName,
+		definition,
+	))
 	return err
 }
 

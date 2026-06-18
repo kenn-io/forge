@@ -1103,8 +1103,8 @@ func proxyWebSocketMessages(
 // addresses the local host: a daemon with no fleet.key (anonymous,
 // hostname-derived self key) cannot put an empty key in a
 // /fleet/hosts/{host_key}/... path, so clients route local operations
-// through this alias instead. A configured peer key takes precedence
-// over the alias.
+// through this alias instead. Config validation reserves this key so
+// configured peers cannot shadow local self routing.
 const fleetSelfHostAlias = "self"
 
 func (s *Server) resolveFleetHostTarget(hostKey string) (fleetHostTarget, bool) {

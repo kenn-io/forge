@@ -3606,6 +3606,51 @@ base_url = "http://b:8091"
 	require.Error(t, err, "expected duplicate peer key to fail validation")
 }
 
+func TestFleetRejectsReservedSelfKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name: "local key",
+			content: `
+[fleet]
+key = "self"
+`,
+			want: "fleet.key",
+		},
+		{
+			name: "http peer",
+			content: `
+[[fleet.peers]]
+key = "self"
+base_url = "http://middleman.local:8091"
+`,
+			want: "fleet.peers[0]",
+		},
+		{
+			name: "ssh peer",
+			content: `
+[[fleet.ssh_peers]]
+key = "self"
+destination = "dev@middleman.local"
+`,
+			want: "fleet.ssh_peers[0]",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfig(t, tc.content)
+			_, err := Load(path)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.want)
+			require.Contains(t, err.Error(), "reserved")
+		})
+	}
+}
+
 func TestFleetRejectsSchemelessBaseURL(t *testing.T) {
 	path := writeConfig(t, "[[fleet.peers]]\nkey = \"p\"\nbase_url = \"localhost:8091\"\n")
 	_, err := Load(path)

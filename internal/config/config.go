@@ -809,8 +809,8 @@ func isBareExecutable(s string) bool {
 
 // validateFleetSSHPeers rejects ssh peers that would later produce
 // unroutable hosts or merge collisions: empty keys/destinations,
-// duplicate keys, and keys colliding with HTTP peers or the local
-// fleet key.
+// duplicate keys, the reserved self alias, and keys colliding with
+// HTTP peers or the local fleet key.
 func (c *Config) validateFleetSSHPeers() error {
 	seen := make(map[string]string, len(c.Fleet.Peers))
 	for _, p := range c.Fleet.Peers {
@@ -821,6 +821,12 @@ func (c *Config) validateFleetSSHPeers() error {
 		if key == "" {
 			return fmt.Errorf(
 				"config: fleet.ssh_peers[%d]: key is required", i,
+			)
+		}
+		if key == "self" {
+			return fmt.Errorf(
+				"config: fleet.ssh_peers[%d]: key %q is reserved for local self routing",
+				i, key,
 			)
 		}
 		// Destination is passed to ssh(1) as a single positional
@@ -1496,14 +1502,22 @@ func (c *Config) validate(skipAppCoverage bool) error {
 }
 
 // Validate checks the fleet section: peer keys must be unique, non-empty,
-// and distinct from the local fleet key; base URLs must be absolute
-// http(s); peer_timeout must parse when set. Embedders that supply peers
-// through Options share this validation with the config-file path.
+// distinct from the local fleet key, and not shadow the reserved self alias;
+// base URLs must be absolute http(s); peer_timeout must parse when set.
+// Embedders that supply peers through Options share this validation with the
+// config-file path.
 func (f Fleet) Validate() error {
+	const reservedSelfKey = "self"
+	if strings.TrimSpace(f.Key) == reservedSelfKey {
+		return fmt.Errorf("fleet.key %q is reserved for local self routing", reservedSelfKey)
+	}
 	seenFleetPeers := map[string]bool{}
 	for i, p := range f.Peers {
 		if p.Key == "" {
 			return fmt.Errorf("fleet.peers[%d]: key is required", i)
+		}
+		if strings.TrimSpace(p.Key) == reservedSelfKey {
+			return fmt.Errorf("fleet.peers[%d]: key %q is reserved for local self routing", i, reservedSelfKey)
 		}
 		if seenFleetPeers[p.Key] {
 			return fmt.Errorf("fleet.peers: duplicate key %q", p.Key)

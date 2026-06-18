@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"slices"
 
 	"go.kenn.io/middleman/internal/config"
 
@@ -136,7 +135,7 @@ func (s *Server) buildFleetSettingsResponseLocked() fleetSettingsResponse {
 
 func (s *Server) fleetSettingsRestartRequiredLocked(fleet config.Fleet) bool {
 	return fleet.Sessions != s.bootCfgSnapshot.FleetSessions ||
-		!slices.Equal(fleet.SSHPeers, s.bootCfgSnapshot.SSHPeers)
+		s.fleetSSHPeersRestartRequired(fleet.SSHPeers)
 }
 
 // getFleetSettings returns the complete fleet federation settings shape.

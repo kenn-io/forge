@@ -2903,6 +2903,84 @@ test.describe("workspace list fleet inventory", () => {
     await expect(sidebar).toContainText("self");
     await expect(sidebar).toContainText("local");
   });
+
+  test("a hung fleet peer does not freeze local workspace updates", async ({ page }) => {
+    // Regression: the workspace-list load timeout only aborted the
+    // local /workspaces request. A reachable-but-hung peer left
+    // fetchPeerWorkspaces awaiting forever, so fetchInFlight stayed
+    // true and the sidebar never picked up local workspace changes.
+    const localWorkspace = {
+      ...testWorkspace,
+      id: "ws-local-late",
+      mr_title: "Late local workspace",
+    };
+
+    // The local list is empty until the fleet snapshot has loaded, so
+    // the workspace only appears via a post-fleet fetch — the path
+    // that has to wait on the hung peer.
+    let workspaceListCalls = 0;
+    await page.route("**/api/v1/workspaces", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fulfill({ status: 200 });
+        return;
+      }
+      workspaceListCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          workspaces: workspaceListCalls === 1 ? [] : [localWorkspace],
+        }),
+      });
+    });
+    await page.route(
+      (url) => url.pathname === "/api/v1/snapshot",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "member",
+                diagnostics: [],
+                id: "member",
+                kind: "remote",
+                name: "member",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          }),
+        });
+      },
+    );
+    // Peer request never responds. The 10s list timeout's abort signal
+    // must reach it so the fetch settles and polling continues.
+    await page.route("**/api/v1/fleet/hosts/member/workspaces", async () => {
+      await new Promise(() => {});
+    });
+
+    await page.goto("/workspaces");
+
+    const sidebar = page.locator(".workspace-list-sidebar");
+    await expect(sidebar.locator(".ws-row", { hasText: "Late local workspace" })).toBeVisible({ timeout: 25_000 });
+  });
 });
 
 // -------------------------------------------------------
@@ -3873,6 +3951,97 @@ test.describe("delayed-response navigation", () => {
 
     // Once B's runtime resolves, the loading state goes away.
     await expect(page.locator(".workspace-stage .state-message")).toHaveCount(0);
+  });
+
+  test("an in-flight retry does not leave the next workspace's controls stuck", async ({ page }) => {
+    // Regression: retryingSetup is only cleared in its finally block
+    // when the workspace is still current. Navigating away while a
+    // retry is in flight skipped that cleanup, leaving the flag stuck
+    // true and disabling the next workspace's Retry control.
+    const wsA = {
+      ...testWorkspace,
+      id: "ws-aaa",
+      item_number: 1,
+      mr_title: "A title",
+      status: "error",
+      error_message: "setup failed A",
+    };
+    const wsB = {
+      ...testWorkspace,
+      id: "ws-bbb",
+      item_number: 2,
+      mr_title: "B title",
+      status: "error",
+      error_message: "setup failed B",
+    };
+
+    await mockApi(page);
+    await page.route("**/api/v1/events", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: "",
+      });
+    });
+    await page.route("**/api/v1/workspaces", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ workspaces: [wsA, wsB] }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200 });
+    });
+    for (const ws of [wsA, wsB]) {
+      await page.route(`**/api/v1/workspaces/${ws.id}`, async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(ws),
+          });
+          return;
+        }
+        await route.fulfill({ status: 204 });
+      });
+      await page.route(`**/api/v1/workspaces/${ws.id}/runtime`, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ launch_targets: [], sessions: [] }),
+        });
+      });
+    }
+    // A's retry never resolves so retryingSetup stays true across the
+    // navigation to B.
+    await page.route(`**/api/v1/workspaces/${wsA.id}/retry`, async () => {
+      await new Promise(() => {});
+    });
+
+    await page.goto(`/terminal/${wsA.id}`);
+
+    const errorA = page.locator(".terminal-main .state-message.error");
+    await expect(errorA).toContainText("setup failed A");
+    const retryA = errorA.getByRole("button", { name: "Retry" });
+    await expect(retryA).toBeEnabled();
+    await retryA.click();
+    // The in-flight retry disables A's own Retry control.
+    await expect(retryA).toBeDisabled();
+
+    // Switch to workspace B while A's retry is still in flight.
+    await page
+      .locator(".workspace-list-sidebar .ws-row", {
+        hasText: `#${wsB.item_number}`,
+      })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`/terminal/${wsB.id}$`));
+
+    const errorB = page.locator(".terminal-main .state-message.error");
+    await expect(errorB).toContainText("setup failed B");
+    // B's Retry control must not inherit A's stale in-flight state.
+    await expect(errorB.getByRole("button", { name: "Retry" })).toBeEnabled();
   });
 });
 

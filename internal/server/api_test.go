@@ -21666,6 +21666,43 @@ func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 	assert.Empty(srv.runtime.ListSessions(ws.Id))
 }
 
+// TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E verifies a
+// workspace whose worktree .git gitfile was left empty by an
+// interrupted "git worktree add" (the daemon canceling background
+// setup at shutdown) can still be force-deleted through the API. Git
+// rejects such a worktree with "invalid gitfile format", which the
+// delete path's worktree-ownership probe surfaced as a 500 before the
+// fix — leaving the workspace permanently undeletable.
+func TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, database, _, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	gitfile := filepath.Join(ws.WorktreePath, ".git")
+	require.FileExists(gitfile)
+	// Truncate the worktree's .git gitfile to reproduce the corrupt
+	// state an interrupted "git worktree add" leaves behind.
+	require.NoError(os.Truncate(gitfile, 0))
+
+	force := true
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusNoContent, delResp.StatusCode(), string(delResp.Body),
+	)
+
+	got, err := database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(got)
+}
+
 // TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E covers the case where the
 // workspace is dirty and delete is rejected with 409. Runtime sessions must
 // survive — killing them on a delete that didn't actually happen would leave

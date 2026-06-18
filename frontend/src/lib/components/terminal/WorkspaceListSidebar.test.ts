@@ -128,6 +128,16 @@ function rowTitles(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll(".ws-name")).map((el) => el.textContent?.trim() ?? "");
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, reject, resolve };
+}
+
 describe("WorkspaceListSidebar", () => {
   beforeEach(() => {
     mockGet.mockReset();
@@ -305,6 +315,120 @@ describe("WorkspaceListSidebar", () => {
       );
     });
     expect(await screen.findByText("Remote SSH workspace")).toBeTruthy();
+  });
+
+  it("removes remote workspaces when the fleet snapshot becomes local-only", async () => {
+    vi.useFakeTimers();
+    const stalledLocalRefresh = deferred<{ data: { workspaces: unknown[] } }>();
+    let localWorkspaceCalls = 0;
+    let snapshotCalls = 0;
+
+    mockGet.mockImplementation((path: string, options?: { params?: { path?: { host_key?: string } } }) => {
+      if (path === "/snapshot") {
+        snapshotCalls += 1;
+        return Promise.resolve({
+          data: {
+            hosts:
+              snapshotCalls === 1
+                ? [
+                    {
+                      configKey: "hub",
+                      diagnostics: [],
+                      id: "hub",
+                      kind: "self",
+                      name: "hub",
+                      operationAvailability: {},
+                      platform: "darwin",
+                      preferredTransport: "local",
+                      reachable: true,
+                      tmuxSessions: [],
+                    },
+                    {
+                      configKey: "epyc",
+                      diagnostics: [],
+                      id: "epyc",
+                      kind: "remote",
+                      name: "epyc",
+                      operationAvailability: {},
+                      platform: "linux",
+                      preferredTransport: "ssh",
+                      reachable: true,
+                      tmuxSessions: [],
+                    },
+                  ]
+                : [
+                    {
+                      configKey: "hub",
+                      diagnostics: [],
+                      id: "hub",
+                      kind: "self",
+                      name: "hub",
+                      operationAvailability: {},
+                      platform: "darwin",
+                      preferredTransport: "local",
+                      reachable: true,
+                      tmuxSessions: [],
+                    },
+                  ],
+          },
+        });
+      }
+      if (path === "/fleet/hosts/{host_key}/workspaces") {
+        expect(options?.params?.path?.host_key).toBe("epyc");
+        return Promise.resolve({
+          data: {
+            workspaces: [
+              workspaceFixture({
+                id: "remote-ws",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "remote",
+                name: "service",
+                number: 12,
+                title: "Remote SSH workspace",
+              }),
+            ],
+          },
+        });
+      }
+      if (path === "/workspaces") {
+        localWorkspaceCalls += 1;
+        if (localWorkspaceCalls >= 3) {
+          return stalledLocalRefresh.promise;
+        }
+        return Promise.resolve({
+          data: {
+            workspaces: [
+              workspaceFixture({
+                id: "local-ws",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "local",
+                name: "service",
+                number: 1,
+                title: "Local workspace",
+              }),
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { workspaces: [] } });
+    });
+
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "" },
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await screen.findByText("Remote SSH workspace")).toBeTruthy();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await tick();
+
+    await waitFor(() => {
+      expect(screen.queryByText("Remote SSH workspace")).toBeNull();
+    });
+    expect(screen.getByText("Local workspace")).toBeTruthy();
   });
 
   it("shows provider icons in repo groups when multiple providers are present", async () => {

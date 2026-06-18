@@ -175,18 +175,17 @@ func (s *Server) updateFleetSettings(
 	}
 
 	s.cfgMu.Lock()
-	prev := s.cfg.Fleet
-	s.cfg.Fleet = next
-	if err := s.cfg.Validate(); err != nil {
-		s.cfg.Fleet = prev
+	candidate := cloneReloadedConfig(s.cfg)
+	candidate.Fleet = next
+	if err := candidate.Validate(); err != nil {
 		s.cfgMu.Unlock()
 		return nil, problemBadRequest(CodeBadRequest, err.Error(), nil)
 	}
-	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.Fleet = prev
+	if err := candidate.Save(s.cfgPath); err != nil {
 		s.cfgMu.Unlock()
 		return nil, problemInternal("save config: " + err.Error())
 	}
+	s.cfg.Fleet = candidate.Fleet
 	out := s.buildFleetSettingsResponseLocked()
 	s.cfgMu.Unlock()
 	return &getFleetSettingsOutput{Body: out}, nil
@@ -213,8 +212,7 @@ func (s *Server) getFleetSSHPeers(
 }
 
 // updateFleetSSHPeers replaces the configured ssh peer set. The set
-// is validated as a whole and persisted; a failed validation or save
-// rolls the in-memory config back.
+// is validated as a whole and persisted before updating live config.
 func (s *Server) updateFleetSSHPeers(
 	_ context.Context, input *updateFleetSSHPeersInput,
 ) (*fleetSSHPeersOutput, error) {
@@ -227,19 +225,18 @@ func (s *Server) updateFleetSSHPeers(
 		[]config.FleetSSHPeer(nil), input.Body.SSHPeers...,
 	)
 	s.cfgMu.Lock()
-	prev := s.cfg.Fleet.SSHPeers
-	s.cfg.Fleet.SSHPeers = next
-	if err := s.cfg.Validate(); err != nil {
-		s.cfg.Fleet.SSHPeers = prev
+	candidate := cloneReloadedConfig(s.cfg)
+	candidate.Fleet.SSHPeers = next
+	if err := candidate.Validate(); err != nil {
 		s.cfgMu.Unlock()
 		return nil, problemBadRequest(CodeBadRequest, err.Error(), nil)
 	}
-	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.Fleet.SSHPeers = prev
+	if err := candidate.Save(s.cfgPath); err != nil {
 		s.cfgMu.Unlock()
 		return nil, problemInternal("save config: " + err.Error())
 	}
-	persisted := append([]config.FleetSSHPeer(nil), s.cfg.Fleet.SSHPeers...)
+	s.cfg.Fleet.SSHPeers = candidate.Fleet.SSHPeers
+	persisted := append([]config.FleetSSHPeer(nil), candidate.Fleet.SSHPeers...)
 	s.cfgMu.Unlock()
 	return &fleetSSHPeersOutput{Body: fleetSSHPeersBody{
 		SSHPeers:        persisted,

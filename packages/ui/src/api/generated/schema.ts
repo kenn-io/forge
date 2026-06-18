@@ -708,6 +708,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/fleet/hosts/{host_key}/workspaces/{id}/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace commits on fleet host */
+        get: operations["get-fleet-workspace-commits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace diff on fleet host */
+        get: operations["get-fleet-workspace-diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/file-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace file preview on fleet host */
+        get: operations["get-fleet-workspace-file-preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace files on fleet host */
+        get: operations["get-fleet-workspace-files"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/fleet/hosts/{host_key}/workspaces/{id}/refresh": {
         parameters: {
             query?: never;
@@ -1592,6 +1660,23 @@ export interface paths {
         put?: never;
         /** Resolve repository item */
         post: operations["resolve-repo-item-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/worktree-base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update repository worktree base */
+        put: operations["update-repo-worktree-base-on-host"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3035,6 +3120,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repo/{provider}/{owner}/{name}/worktree-base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update repository worktree base */
+        put: operations["update-repo-worktree-base"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos": {
         parameters: {
             query?: never;
@@ -3860,6 +3962,7 @@ export interface components {
             platform_host: string;
             provider: string;
             repo_path: string;
+            worktree_base_path?: string;
         };
         CreateDiffReviewDraftCommentHostInputBody: {
             /**
@@ -3954,6 +4057,7 @@ export interface components {
             name: string;
             owner: string;
             platform_host: string;
+            provider?: string;
         };
         CreateWorktreeFromMergeRequestInputBody: {
             /**
@@ -5945,6 +6049,15 @@ export interface components {
             repo: components["schemas"]["RepoRefResponse"];
             timeline_updated_at?: string;
         };
+        RepoWorktreeBaseRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoWorktreeBaseRequest.json
+             */
+            readonly $schema?: string;
+            worktree_base_path: string;
+        };
         ResolveDiscussionHostInputBody: {
             /**
              * Format: uri
@@ -6510,6 +6623,7 @@ export interface operations {
     "list-activity": {
         parameters: {
             query?: {
+                /** @description Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches. */
                 repo?: string;
                 types?: string[] | null;
                 search?: string;
@@ -7976,6 +8090,147 @@ export interface operations {
             query?: {
                 /** @description Forward force deletion to the owning host. */
                 force?: boolean;
+            };
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-fleet-workspace-commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-fleet-workspace-diff": {
+        parameters: {
+            query?: {
+                /** @description Workspace diff base. */
+                base?: string;
+                /** @description Whitespace filtering mode. */
+                whitespace?: string;
+                /** @description Commit SHA scope. */
+                commit?: string;
+                /** @description Older range commit SHA. */
+                from?: string;
+                /** @description Newer range commit SHA. */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-fleet-workspace-file-preview": {
+        parameters: {
+            query?: {
+                /** @description Workspace diff base. */
+                base?: string;
+                /** @description Whitespace filtering mode. */
+                whitespace?: string;
+                /** @description Commit SHA scope. */
+                commit?: string;
+                /** @description Older range commit SHA. */
+                from?: string;
+                /** @description Newer range commit SHA. */
+                to?: string;
+                /** @description Workspace file path to preview. */
+                path?: string;
+                /** @description Preview side. */
+                side?: string;
+            };
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-fleet-workspace-files": {
+        parameters: {
+            query?: {
+                /** @description Workspace diff base. */
+                base?: string;
+                /** @description Whitespace filtering mode. */
+                whitespace?: string;
+                /** @description Commit SHA scope. */
+                commit?: string;
+                /** @description Older range commit SHA. */
+                from?: string;
+                /** @description Newer range commit SHA. */
+                to?: string;
             };
             header?: never;
             path: {
@@ -10092,9 +10347,48 @@ export interface operations {
             };
         };
     };
+    "update-repo-worktree-base-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoWorktreeBaseRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "list-issues": {
         parameters: {
             query?: {
+                /** @description Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches. */
                 repo?: string;
                 state?: string;
                 starred?: boolean;
@@ -11827,6 +12121,7 @@ export interface operations {
     "list-pulls": {
         parameters: {
             query?: {
+                /** @description Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches. */
                 repo?: string;
                 state?: string;
                 kanban?: string;
@@ -13328,6 +13623,43 @@ export interface operations {
             };
         };
     };
+    "update-repo-worktree-base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoWorktreeBaseRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "list-repos": {
         parameters: {
             query?: never;
@@ -13946,7 +14278,7 @@ export interface operations {
     "trigger-sync": {
         parameters: {
             query?: {
-                /** @description Optional repository filters to sync first. Accepts repeated values or comma-separated values. Each value may be host-qualified as platform_host/owner/name or bare as owner/name; bare values match the first tracked repo with that repo path. */
+                /** @description Optional repository filters to sync first. Accepts repeated values or comma-separated values. Each value may be provider-qualified as provider|platform_host/owner/name, host-qualified as platform_host/owner/name, or bare as owner/name; bare values match the first tracked repo with that repo path. */
                 priority_repo?: string[] | null;
             };
             header?: never;

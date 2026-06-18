@@ -17,6 +17,7 @@ const (
 	defaultNotificationPropagationMaxAttempts = 10
 	notificationSyncSinceOverlap              = 5 * time.Minute
 	notificationFullSyncInterval              = time.Hour
+	notificationSyncMaxPages                  = 5
 )
 
 type NotificationSyncStatus struct {
@@ -92,6 +93,7 @@ func (s *Syncer) NotificationSyncStatus() NotificationSyncStatus {
 }
 
 func (s *Syncer) SyncNotifications(ctx context.Context) error {
+	ctx = WithSyncBudget(ctx)
 	repos := s.TrackedRepos()
 	tracked := make(map[string]RepoRef, len(repos))
 	for _, repo := range repos {
@@ -176,7 +178,8 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 	startedAt := time.Now().UTC()
 	platformName := string(kind)
 	trackedReposKey := notificationTrackedReposKey(platformName, host, tracked)
-	if trackedReposKey == "" {
+	trackedRepos := notificationTrackedRepos(platformName, host, tracked)
+	if len(trackedRepos) == 0 {
 		return nil
 	}
 	watermark, err := s.db.GetNotificationSyncWatermark(ctx, platformName, host, trackedReposKey)
@@ -189,80 +192,133 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 		value := watermark.LastSuccessfulSyncAt.Add(-notificationSyncSinceOverlap).UTC()
 		since = &value
 	}
-	participatingIDs, err := listParticipatingNotificationIDs(ctx, host, client, since)
+	participatingIDs, err := s.listParticipatingNotificationIDs(ctx, host, client, trackedRepos, since)
 	if err != nil {
 		return err
 	}
-	page := 1
-	for {
-		threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{All: true, Since: since, Page: page})
-		if err != nil {
-			return fmt.Errorf("list notifications for %s page %d: %w", host, page, err)
-		}
-		notifications := make([]db.Notification, 0, len(threads))
-		now := time.Now().UTC()
-		for _, thread := range threads {
-			if participatingIDs[thread.ID] {
-				thread.Participating = true
+	for _, repo := range trackedRepos {
+		page := 1
+		for {
+			if page > notificationSyncMaxPages {
+				return fmt.Errorf("notification sync page cap reached for %s/%s on %s after %d pages", repo.Owner, repo.Name, host, notificationSyncMaxPages)
 			}
-			key := notificationRepoKey(platformName, host, thread.RepoOwner, thread.RepoName)
-			repo, ok := tracked[key]
-			if !ok {
-				continue
+			if err := s.ensureNotificationPageBudget(host); err != nil {
+				return err
 			}
-			// Only notifications anchored to a PR or issue have an in-app
-			// destination and meaningful triage. CI/check-suite, discussion,
-			// release, and other subjects are worthless in middleman, so do
-			// not persist them.
-			if (thread.ItemType != "pr" && thread.ItemType != "issue") || thread.ItemNumber == nil {
-				continue
-			}
-			// "author" notifications fire for any activity on a thread the
-			// user opened ("Your thread"); the triggering comment/review/state
-			// change is already its own row in the feed, so they are pure
-			// duplication. Drop them while keeping comment, subscribed, and
-			// the attention-requesting reasons (mention, review_requested, …).
-			if thread.Reason == "author" {
-				continue
-			}
-			notification, err := s.notificationToDB(ctx, host, repo, thread, now)
+			threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
+				All:       true,
+				Since:     since,
+				Page:      page,
+				RepoOwner: repo.Owner,
+				RepoName:  repo.Name,
+			})
 			if err != nil {
-				return fmt.Errorf("normalize notification %s for %s page %d: %w", thread.ID, host, page, err)
+				return fmt.Errorf("list notifications for %s/%s on %s page %d: %w", repo.Owner, repo.Name, host, page, err)
 			}
-			notifications = append(notifications, notification)
-		}
-		if err := s.db.UpsertNotifications(ctx, notifications); err != nil {
-			return fmt.Errorf("upsert notifications for %s page %d: %w", host, page, err)
-		}
-		if !hasNext {
-			lastFullSyncAt := watermarkLastFullSyncAt(watermark, startedAt, fullSync)
-			if err := s.db.UpdateNotificationSyncWatermark(ctx, platformName, host, startedAt, lastFullSyncAt, "", trackedReposKey); err != nil {
-				return fmt.Errorf("store notification sync watermark for %s: %w", host, err)
+			notifications := make([]db.Notification, 0, len(threads))
+			now := time.Now().UTC()
+			for _, thread := range threads {
+				if thread.RepoOwner == "" {
+					thread.RepoOwner = repo.Owner
+				}
+				if thread.RepoName == "" {
+					thread.RepoName = repo.Name
+				}
+				if participatingIDs[thread.ID] {
+					thread.Participating = true
+				}
+				key := notificationRepoKey(platformName, host, thread.RepoOwner, thread.RepoName)
+				repo, ok := tracked[key]
+				if !ok {
+					continue
+				}
+				// Only notifications anchored to a PR or issue have an in-app
+				// destination and meaningful triage. CI/check-suite, discussion,
+				// release, and other subjects are worthless in middleman, so do
+				// not persist them.
+				if (thread.ItemType != "pr" && thread.ItemType != "issue") || thread.ItemNumber == nil {
+					continue
+				}
+				// "author" notifications fire for any activity on a thread the
+				// user opened ("Your thread"); the triggering comment/review/state
+				// change is already its own row in the feed, so they are pure
+				// duplication. Drop them while keeping comment, subscribed, and
+				// the attention-requesting reasons (mention, review_requested, ...).
+				if thread.Reason == "author" {
+					continue
+				}
+				notification, err := s.notificationToDB(ctx, host, repo, thread, now)
+				if err != nil {
+					return fmt.Errorf("normalize notification %s for %s/%s on %s page %d: %w", thread.ID, repo.Owner, repo.Name, host, page, err)
+				}
+				notifications = append(notifications, notification)
 			}
-			return nil
+			if err := s.db.UpsertNotifications(ctx, notifications); err != nil {
+				return fmt.Errorf("upsert notifications for %s/%s on %s page %d: %w", repo.Owner, repo.Name, host, page, err)
+			}
+			if !hasNext {
+				break
+			}
+			page++
 		}
-		page++
 	}
+	lastFullSyncAt := watermarkLastFullSyncAt(watermark, startedAt, fullSync)
+	if err := s.db.UpdateNotificationSyncWatermark(ctx, platformName, host, startedAt, lastFullSyncAt, "", trackedReposKey); err != nil {
+		return fmt.Errorf("store notification sync watermark for %s: %w", host, err)
+	}
+	return nil
 }
 
-func listParticipatingNotificationIDs(ctx context.Context, host string, client notificationClient, since *time.Time) (map[string]bool, error) {
+func (s *Syncer) listParticipatingNotificationIDs(
+	ctx context.Context,
+	host string,
+	client notificationClient,
+	trackedRepos []RepoRef,
+	since *time.Time,
+) (map[string]bool, error) {
 	participating := map[string]bool{}
-	page := 1
-	for {
-		threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{All: true, Participating: true, Since: since, Page: page})
-		if err != nil {
-			return nil, fmt.Errorf("list participating notifications for %s page %d: %w", host, page, err)
-		}
-		for _, thread := range threads {
-			if thread.ID != "" {
-				participating[thread.ID] = true
+	for _, repo := range trackedRepos {
+		page := 1
+		for {
+			if page > notificationSyncMaxPages {
+				return nil, fmt.Errorf("participating notification page cap reached for %s/%s on %s after %d pages", repo.Owner, repo.Name, host, notificationSyncMaxPages)
 			}
+			if err := s.ensureNotificationPageBudget(host); err != nil {
+				return nil, err
+			}
+			threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
+				All:           true,
+				Participating: true,
+				Since:         since,
+				Page:          page,
+				RepoOwner:     repo.Owner,
+				RepoName:      repo.Name,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list participating notifications for %s/%s on %s page %d: %w", repo.Owner, repo.Name, host, page, err)
+			}
+			for _, thread := range threads {
+				if thread.ID != "" {
+					participating[thread.ID] = true
+				}
+			}
+			if !hasNext {
+				break
+			}
+			page++
 		}
-		if !hasNext {
-			return participating, nil
-		}
-		page++
 	}
+	return participating, nil
+}
+
+func (s *Syncer) ensureNotificationPageBudget(host string) error {
+	if rt := s.rateTrackers[host]; rt != nil && rt.IsPaused() {
+		return fmt.Errorf("notification sync paused for %s: rate reserve exhausted", host)
+	}
+	if budget := s.budgets[host]; budget != nil && !budget.CanSpend(1) {
+		return fmt.Errorf("notification sync paused for %s: sync budget exhausted", host)
+	}
+	return nil
 }
 
 func shouldFullSyncNotifications(now time.Time, watermark *db.NotificationSyncWatermark) bool {
@@ -294,6 +350,22 @@ func notificationTrackedReposKey(platformName, host string, tracked map[string]R
 	}
 	sort.Strings(keys)
 	return strings.Join(keys, "\n")
+}
+
+func notificationTrackedRepos(platformName, host string, tracked map[string]RepoRef) []RepoRef {
+	prefix := platformName + "/" + normalizedPlatformHost(host) + "/"
+	keys := make([]string, 0, len(tracked))
+	for key := range tracked {
+		if strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	repos := make([]RepoRef, 0, len(keys))
+	for _, key := range keys {
+		repos = append(repos, tracked[key])
+	}
+	return repos
 }
 
 func notificationRepoKey(platformName, host, owner, name string) string {
@@ -351,6 +423,7 @@ func notificationToDB(host string, repo RepoRef, thread NotificationThread, sync
 }
 
 func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platform.Kind, host string, batchSize int) error {
+	ctx = WithSyncBudget(ctx)
 	if batchSize <= 0 {
 		batchSize = 25
 	}

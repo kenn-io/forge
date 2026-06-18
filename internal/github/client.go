@@ -257,6 +257,17 @@ func NewClient(
 	writeHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
 		mutationAuthTransport{base: authRT},
 	)}
+	notificationTransport := mutationAuthTransport{base: authRT}
+	var notificationRoundTripper http.RoundTripper = notificationTransport
+	if budget != nil {
+		notificationRoundTripper = &budgetTransport{
+			base:   notificationRoundTripper,
+			budget: budget,
+		}
+	}
+	notificationHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
+		notificationRoundTripper,
+	)}
 
 	newGHClient := func(hc *http.Client) (*gh.Client, error) {
 		if options.baseURLOverride != "" {
@@ -284,20 +295,26 @@ func NewClient(
 	if err != nil {
 		return nil, err
 	}
+	ghNotificationClient, err := newGHClient(notificationHTTPClient)
+	if err != nil {
+		return nil, err
+	}
 	graphQLEndpoint := graphQLEndpointForHost(platformHost)
 	if options.baseURLOverride != "" {
 		graphQLEndpoint = options.baseURLOverride + "/api/graphql"
 	}
 	return &liveClient{
-		gh:              ghClient,
-		ghWrite:         ghWriteClient,
-		source:          source,
-		httpClient:      httpClient,
-		httpWriteClient: writeHTTPClient,
-		rateTracker:     rateTracker,
-		platformHost:    normalizedPlatformHost(platformHost),
-		graphQLEndpoint: graphQLEndpoint,
-		etag:            et,
+		gh:                     ghClient,
+		ghWrite:                ghWriteClient,
+		ghNotifications:        ghNotificationClient,
+		source:                 source,
+		httpClient:             httpClient,
+		httpWriteClient:        writeHTTPClient,
+		httpNotificationClient: notificationHTTPClient,
+		rateTracker:            rateTracker,
+		platformHost:           normalizedPlatformHost(platformHost),
+		graphQLEndpoint:        graphQLEndpoint,
+		etag:                   et,
 	}, nil
 }
 
@@ -333,6 +350,12 @@ type liveClient struct {
 	// credential's budget. Nil in hand-built test clients; accessors
 	// fall back to the read client.
 	ghWrite *gh.Client
+	// ghNotifications/httpNotificationClient carry user-scoped
+	// notification APIs on the user's own credential, but through the
+	// background sync budget transport and read/background rate tracker.
+	// That keeps automatic notification pagination from consuming the
+	// write tracker that gates maintainer mutations.
+	ghNotifications *gh.Client
 	// source is the credential chain reads resolve through. Split
 	// behavior (the viewer-permission overlay in GetRepository) is
 	// derived from its current descriptor on every call, so a config
@@ -342,6 +365,7 @@ type liveClient struct {
 	source                  tokenauth.Source
 	httpClient              *http.Client
 	httpWriteClient         *http.Client
+	httpNotificationClient  *http.Client
 	rateTracker             *RateTracker
 	writeRateTracker        *RateTracker
 	graphQLRateTracker      *RateTracker
@@ -358,6 +382,13 @@ func (c *liveClient) writeGH() *gh.Client {
 		return c.ghWrite
 	}
 	return c.gh
+}
+
+func (c *liveClient) notificationGH() *gh.Client {
+	if c.ghNotifications != nil {
+		return c.ghNotifications
+	}
+	return c.writeGH()
 }
 
 func (c *liveClient) writeHTTPClient() *http.Client {
@@ -419,8 +450,15 @@ func (c *liveClient) ListNotifications(ctx context.Context, opts NotificationLis
 	if opts.Since != nil {
 		ghOpts.Since = opts.Since.UTC()
 	}
-	notifications, resp, err := c.writeGH().Activity.ListNotifications(ctx, ghOpts)
-	c.trackWriteRate(resp)
+	var notifications []*gh.Notification
+	var resp *gh.Response
+	var err error
+	if opts.RepoOwner != "" && opts.RepoName != "" {
+		notifications, resp, err = c.notificationGH().Activity.ListRepositoryNotifications(ctx, opts.RepoOwner, opts.RepoName, ghOpts)
+	} else {
+		notifications, resp, err = c.notificationGH().Activity.ListNotifications(ctx, ghOpts)
+	}
+	c.trackRate(resp)
 	if err != nil {
 		return nil, false, err
 	}
@@ -432,8 +470,8 @@ func (c *liveClient) ListNotifications(ctx context.Context, opts NotificationLis
 }
 
 func (c *liveClient) GetNotificationThread(ctx context.Context, threadID string) (NotificationThread, error) {
-	notification, resp, err := c.writeGH().Activity.GetThread(ctx, threadID)
-	c.trackWriteRate(resp)
+	notification, resp, err := c.notificationGH().Activity.GetThread(ctx, threadID)
+	c.trackRate(resp)
 	if err != nil {
 		return NotificationThread{}, err
 	}
@@ -441,8 +479,8 @@ func (c *liveClient) GetNotificationThread(ctx context.Context, threadID string)
 }
 
 func (c *liveClient) MarkNotificationThreadRead(ctx context.Context, threadID string) error {
-	resp, err := c.writeGH().Activity.MarkThreadRead(ctx, threadID)
-	c.trackWriteRate(resp)
+	resp, err := c.notificationGH().Activity.MarkThreadRead(ctx, threadID)
+	c.trackRate(resp)
 	return err
 }
 

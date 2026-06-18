@@ -200,6 +200,8 @@ type NotificationListOptions struct {
 	All           bool
 	Participating bool
 	Page          int
+	RepoOwner     string
+	RepoName      string
 }
 
 type NotificationThread struct {

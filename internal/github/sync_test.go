@@ -1519,6 +1519,123 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 	check.Equal("thread-ok", items[0].PlatformNotificationID)
 }
 
+func TestSyncNotificationsStopsBeforeListingWhenRateReserveExhausted(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	rt := NewRateTracker(d, "github.com", "rest")
+	rt.UpdateFromRate(Rate{
+		Limit:     5000,
+		Remaining: RateReserveBuffer,
+		Reset:     time.Now().UTC().Add(time.Hour),
+	})
+	var calls atomic.Int32
+	syncer := NewSyncer(
+		map[string]Client{
+			"github.com": &mockClient{
+				listNotificationsFn: func(context.Context, NotificationListOptions) ([]NotificationThread, bool, error) {
+					calls.Add(1)
+					return nil, false, nil
+				},
+			},
+		},
+		d,
+		nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		map[string]*RateTracker{"github.com": rt},
+		nil,
+	)
+
+	syncErr := syncer.SyncNotifications(t.Context())
+
+	require.Error(syncErr)
+	require.ErrorContains(syncErr, "rate reserve exhausted")
+	assert.Equal(int32(0), calls.Load())
+}
+
+func TestSyncNotificationsStopsBeforeListingWhenSyncBudgetExhausted(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	var calls atomic.Int32
+	syncer := NewSyncer(
+		map[string]Client{
+			"github.com": &mockClient{
+				listNotificationsFn: func(context.Context, NotificationListOptions) ([]NotificationThread, bool, error) {
+					calls.Add(1)
+					return nil, false, nil
+				},
+			},
+		},
+		d,
+		nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		map[string]*SyncBudget{"github.com": NewSyncBudget(0)},
+	)
+
+	syncErr := syncer.SyncNotifications(t.Context())
+
+	require.Error(syncErr)
+	require.ErrorContains(syncErr, "sync budget exhausted")
+	assert.Equal(int32(0), calls.Load())
+}
+
+func TestSyncNotificationsCapsRepositoryNotificationPages(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	var participatingCalls atomic.Int32
+	var listCalls atomic.Int32
+	var seen []NotificationListOptions
+	syncer := NewSyncer(
+		map[string]Client{
+			"github.com": &mockClient{
+				listNotificationsFn: func(_ context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+					seen = append(seen, opts)
+					if opts.Participating {
+						participatingCalls.Add(1)
+						return nil, false, nil
+					}
+					listCalls.Add(1)
+					return nil, true, nil
+				},
+			},
+		},
+		d,
+		nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		map[string]*SyncBudget{"github.com": NewSyncBudget(100)},
+	)
+
+	syncErr := syncer.SyncNotifications(t.Context())
+
+	require.Error(syncErr)
+	require.ErrorContains(syncErr, "notification sync page cap reached for acme/widget on github.com after 5 pages")
+	assert.Equal(int32(1), participatingCalls.Load())
+	assert.Equal(int32(notificationSyncMaxPages), listCalls.Load())
+	if assert.Len(seen, notificationSyncMaxPages+1) {
+		assert.Equal("acme", seen[0].RepoOwner)
+		assert.Equal("widget", seen[0].RepoName)
+		assert.True(seen[0].Participating)
+		last := seen[len(seen)-1]
+		assert.Equal(notificationSyncMaxPages, last.Page)
+		assert.Equal("acme", last.RepoOwner)
+		assert.Equal("widget", last.RepoName)
+		assert.False(last.Participating)
+	}
+}
+
 func TestSyncMRMarksLinkedNotificationDone(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -2475,12 +2592,16 @@ func TestSyncNotificationsUsesPersistedSinceWatermark(t *testing.T) {
 	assert.True(seen[0].All)
 	assert.True(seen[0].Participating)
 	assert.Equal(1, seen[0].Page)
+	assert.Equal("acme", seen[0].RepoOwner)
+	assert.Equal("widget", seen[0].RepoName)
 	if assert.NotNil(seen[0].Since) {
 		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[0].Since))
 	}
 	assert.True(seen[1].All)
 	assert.False(seen[1].Participating)
 	assert.Equal(1, seen[1].Page)
+	assert.Equal("acme", seen[1].RepoOwner)
+	assert.Equal("widget", seen[1].RepoName)
 	if assert.NotNil(seen[1].Since) {
 		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[1].Since))
 	}
@@ -2519,10 +2640,14 @@ func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
 	assert.True(seen[0].All)
 	assert.True(seen[0].Participating)
 	assert.Equal(1, seen[0].Page)
+	assert.Equal("acme", seen[0].RepoOwner)
+	assert.Equal("widget", seen[0].RepoName)
 	assert.Nil(seen[0].Since)
 	assert.True(seen[1].All)
 	assert.False(seen[1].Participating)
 	assert.Equal(1, seen[1].Page)
+	assert.Equal("acme", seen[1].RepoOwner)
+	assert.Equal("widget", seen[1].RepoName)
 	assert.Nil(seen[1].Since)
 }
 
@@ -2560,15 +2685,31 @@ func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
 	)
 
 	require.NoError(syncer.SyncNotifications(t.Context()))
-	require.Len(seen, 2)
+	require.Len(seen, 4)
 	assert.True(seen[0].All)
 	assert.True(seen[0].Participating)
 	assert.Equal(1, seen[0].Page)
+	assert.Equal("acme", seen[0].RepoOwner)
+	assert.Equal("new-repo", seen[0].RepoName)
 	assert.Nil(seen[0].Since)
 	assert.True(seen[1].All)
-	assert.False(seen[1].Participating)
+	assert.True(seen[1].Participating)
 	assert.Equal(1, seen[1].Page)
+	assert.Equal("acme", seen[1].RepoOwner)
+	assert.Equal("widget", seen[1].RepoName)
 	assert.Nil(seen[1].Since)
+	assert.True(seen[2].All)
+	assert.False(seen[2].Participating)
+	assert.Equal(1, seen[2].Page)
+	assert.Equal("acme", seen[2].RepoOwner)
+	assert.Equal("new-repo", seen[2].RepoName)
+	assert.Nil(seen[2].Since)
+	assert.True(seen[3].All)
+	assert.False(seen[3].Participating)
+	assert.Equal(1, seen[3].Page)
+	assert.Equal("acme", seen[3].RepoOwner)
+	assert.Equal("widget", seen[3].RepoName)
+	assert.Nil(seen[3].Since)
 }
 
 func TestRepoSyncMarksClosedLinkedNotificationsDone(t *testing.T) {

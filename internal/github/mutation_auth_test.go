@@ -196,7 +196,7 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	assert.Equal(4321, writeGQLRT.Remaining())
 }
 
-func TestNotificationAPIsUseUserAuthAndWriteRateTracker(t *testing.T) {
+func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	t.Setenv("TEST_NOTIFICATION_AUTH_PAT", "user-pat")
@@ -215,9 +215,9 @@ func TestNotificationAPIsUseUserAuthAndWriteRateTracker(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v3/notifications",
+	mux.HandleFunc("GET /api/v3/repos/acme/widgets/notifications",
 		func(w http.ResponseWriter, r *http.Request) {
-			record("notifications:list", r)
+			record("notifications:list-repo", r)
 			setRate(w, "4990")
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`[{
@@ -271,30 +271,46 @@ func TestNotificationAPIsUseUserAuthAndWriteRateTracker(t *testing.T) {
 			return "ghs_app_token", time.Now().Add(time.Hour), nil
 		},
 	})
-	c := newSplitAuthTestClient(t, srv, source)
 	database := openTestDB(t)
 	readRT := NewRateTracker(database, "github.example.com", "rest")
 	writeRT := NewRateTracker(database, "github.example.com", "rest_write")
-	c.rateTracker = readRT
+	budget := NewSyncBudget(100)
+	client, err := NewClient(
+		source,
+		"github.example.com",
+		readRT,
+		budget,
+		WithBaseURLForTesting(srv.URL),
+	)
+	require.NoError(err)
+	c, ok := client.(*liveClient)
+	require.True(ok)
 	c.SetWriteRateTracker(writeRT)
 
-	threads, hasNext, err := c.ListNotifications(t.Context(), NotificationListOptions{All: true})
+	syncCtx := WithSyncBudget(t.Context())
+	threads, hasNext, err := c.ListNotifications(syncCtx, NotificationListOptions{
+		All:       true,
+		RepoOwner: "acme",
+		RepoName:  "widgets",
+	})
 	require.NoError(err)
 	require.False(hasNext)
 	require.Len(threads, 1)
-	_, err = c.GetNotificationThread(t.Context(), "ntf-1")
+	_, err = c.GetNotificationThread(syncCtx, "ntf-1")
 	require.NoError(err)
-	require.NoError(c.MarkNotificationThreadRead(t.Context(), "ntf-1"))
+	require.NoError(c.MarkNotificationThreadRead(syncCtx, "ntf-1"))
 
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Equal("Bearer user-pat", authByCall["notifications:list"])
+	assert.Equal("Bearer user-pat", authByCall["notifications:list-repo"])
 	assert.Equal("Bearer user-pat", authByCall["notifications:get"])
 	assert.Equal("Bearer user-pat", authByCall["notifications:mark-read"])
 	assert.Equal(int64(0), mints.Load(), "notification APIs must not mint app tokens")
-	assert.Equal(0, readRT.RequestsThisHour())
-	assert.Equal(3, writeRT.RequestsThisHour())
-	assert.Equal(4988, writeRT.Remaining())
+	assert.Equal(3, readRT.RequestsThisHour())
+	assert.Equal(4988, readRT.Remaining())
+	assert.Equal(0, writeRT.RequestsThisHour())
+	assert.Equal(-1, writeRT.Remaining())
+	assert.Equal(3, budget.Spent())
 }
 
 // TestMutationAuthFallsBackToReadClientWhenUnsplit pins the hand-built

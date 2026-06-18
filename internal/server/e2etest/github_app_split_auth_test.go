@@ -345,13 +345,14 @@ repository_selection = "all"
 		"the viewer permission overlay must use the user's PAT")
 	assert.Equal("Bearer ghs_app_token_e2e", authByCall["read:repo-metadata"],
 		"repository metadata must stay on the app token")
-	assert.Equal("Bearer user-pat-e2e", authByCall["read:other GET /api/v3/notifications"],
+	notificationCall := "read:other GET /api/v3/repos/kenn-io/middleman/notifications"
+	assert.Equal("Bearer user-pat-e2e", authByCall[notificationCall],
 		"notification APIs are user-scoped and must use the user's PAT")
 	for name, auth := range authByCall {
 		if strings.HasPrefix(name, "write:") {
 			continue
 		}
-		if name == "read:other GET /api/v3/notifications" {
+		if name == notificationCall {
 			continue
 		}
 		assert.Equal("Bearer ghs_app_token_e2e", auth, "call %s", name)

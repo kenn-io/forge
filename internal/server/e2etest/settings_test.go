@@ -348,16 +348,37 @@ platform = "linux"
 				"name":     "Mac mini",
 				"base_url": "http://mini.tail:8091",
 			}},
-			"ssh_peers": []map[string]any{{
-				"key":         "epyc",
-				"name":        "EPYC",
-				"destination": "wes@epyc.tail",
-				"platform":    "linux",
-			}},
+			"ssh_peers": []map[string]any{
+				{
+					"key":         "studio-mac",
+					"name":        "Studio Mac",
+					"destination": "dev@studio.local",
+					"platform":    "macos",
+				},
+				{
+					"key":         "freebsd-box",
+					"name":        "FreeBSD box",
+					"destination": "dev@freebsd.local",
+					"platform":    "freebsd",
+				},
+			},
 		},
 	)
 	defer updateResp.Body.Close()
 	require.Equal(http.StatusOK, updateResp.StatusCode)
+
+	var updatedSettings struct {
+		SSHPeers []struct {
+			Key      string `json:"key"`
+			Platform string `json:"platform"`
+		} `json:"ssh_peers"`
+	}
+	require.NoError(json.NewDecoder(updateResp.Body).Decode(&updatedSettings))
+	require.Len(updatedSettings.SSHPeers, 2)
+	assert.Equal("studio-mac", updatedSettings.SSHPeers[0].Key)
+	assert.Equal("macos", updatedSettings.SSHPeers[0].Platform)
+	assert.Equal("freebsd-box", updatedSettings.SSHPeers[1].Key)
+	assert.Equal("freebsd", updatedSettings.SSHPeers[1].Platform)
 
 	cfgAfterUpdate, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -366,8 +387,11 @@ platform = "linux"
 	assert.Equal("4s", cfgAfterUpdate.Fleet.PeerTimeout)
 	require.Len(cfgAfterUpdate.Fleet.Peers, 1)
 	assert.Equal("mini", cfgAfterUpdate.Fleet.Peers[0].Key)
-	require.Len(cfgAfterUpdate.Fleet.SSHPeers, 1)
-	assert.Equal("epyc", cfgAfterUpdate.Fleet.SSHPeers[0].Key)
+	require.Len(cfgAfterUpdate.Fleet.SSHPeers, 2)
+	assert.Equal("studio-mac", cfgAfterUpdate.Fleet.SSHPeers[0].Key)
+	assert.Equal("macos", cfgAfterUpdate.Fleet.SSHPeers[0].Platform)
+	assert.Equal("freebsd-box", cfgAfterUpdate.Fleet.SSHPeers[1].Key)
+	assert.Equal("freebsd", cfgAfterUpdate.Fleet.SSHPeers[1].Platform)
 
 	invalidResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,

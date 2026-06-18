@@ -58,6 +58,16 @@ hooks = [
     priority = 0,
   },
   {
+    id = "playwright-version-check",
+    name = "playwright container image matches pinned version",
+    language = "system",
+    entry = "make playwright-version-check",
+    files = "^(scripts/check-playwright-version\\.mjs|\\.github/workflows/ci\\.yml|frontend/package\\.json|packages/github-app-ui/package\\.json)$",
+    pass_filenames = false,
+    require_serial = true,
+    priority = 0,
+  },
+  {
     id = "migration-history-check",
     name = "prevent edits to main-branch migrations",
     language = "system",

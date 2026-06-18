@@ -35,7 +35,7 @@ VITE_PLUS_PACKAGE_BIN := node ../../node_modules/vite-plus/bin/vp
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
-        frontend-api-client-check font-size-token-check huma-route-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
+        frontend-api-client-check font-size-token-check huma-route-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
 
 # gotestsum prints package names on success and full output on failure,
 # while persisting raw `go test -json` events for downstream reporters.
@@ -144,6 +144,10 @@ font-size-token-check: check-vite-plus-bin
 huma-route-check:
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/nohttpmux ./...
 
+# Keep the CI Playwright container image tag in lockstep with the @playwright/test pin
+playwright-version-check: check-vite-plus-bin
+	$(VITE_PLUS_BIN) exec -- node scripts/check-playwright-version.mjs
+
 # Run lightweight script regression tests
 script-tests: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node --test scripts/*.test.mjs scripts/*.test.ts
@@ -155,7 +159,7 @@ script-tests: check-vite-plus-bin
 # Under setup-vp (CI) bun is not on PATH, so a `bun install` prerequisite here
 # fails with exit 127 even though deps are already installed.
 guardrail-check: check-vite-plus-bin
-	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check script-tests
+	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check playwright-version-check script-tests
 
 
 # Regenerate the checked-in OpenAPI document and generated clients

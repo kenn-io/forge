@@ -261,6 +261,12 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    # Run inside the official Playwright image: browsers and their OS deps are
+    # pre-baked at $PLAYWRIGHT_BROWSERS_PATH, so there is no apt download to
+    # time out on (the firefox `--with-deps` install repeatedly flirted with the
+    # old 10m cap off a slow mirror). The image tag is version-coupled to the
+    # @playwright/test pin and kept honest by `make playwright-version-check`.
+    container: mcr.microsoft.com/playwright:v1.60.0-noble
     strategy:
       fail-fast: false
       matrix:
@@ -282,14 +288,6 @@ jobs:
           cache: true
           run-install: true
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
-
       - name: Build frontend
         run: cd frontend && vp build --logLevel warn
 
@@ -300,10 +298,6 @@ jobs:
 
       - name: Build E2E server
         run: go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
-
-      - name: Install Playwright browser
-        timeout-minutes: 10
-        run: cd frontend && vp exec -- playwright install --with-deps ${{ matrix.browser }}
 
       - name: Run E2E tests
         run: cd frontend && vp exec -- playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }}

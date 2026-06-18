@@ -68,6 +68,7 @@ describe("FleetSettings", () => {
     expect(screen.getByLabelText("HTTP peer mini base URL")).toBeTruthy();
     expect(screen.getByLabelText("SSH peer epyc key")).toBeTruthy();
     expect(screen.getByLabelText("SSH peer epyc destination")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "SSH peer epyc platform: linux" })).toBeTruthy();
   });
 
   it("saves edited federation settings", async () => {
@@ -100,6 +101,8 @@ describe("FleetSettings", () => {
     await fireEvent.input(screen.getByLabelText("SSH peer epyc remote command"), {
       target: { value: "middleman" },
     });
+    await fireEvent.click(screen.getByRole("combobox", { name: "SSH peer epyc platform: linux" }));
+    await fireEvent.click(screen.getByRole("option", { name: "darwin" }));
     await fireEvent.click(screen.getByRole("button", { name: "Save fleet federation" }));
 
     await waitFor(() => {
@@ -120,7 +123,7 @@ describe("FleetSettings", () => {
             key: "epyc",
             name: "EPYC",
             destination: "wes@epyc.tail",
-            platform: "linux",
+            platform: "darwin",
             remote_command: "middleman",
           },
         ],

@@ -192,6 +192,7 @@ theme overrides, or Shadow DOM CSS into another component.
 Use semantic variables instead of hard-coded values whenever possible.
 
 - Surfaces and borders come from the app token set in `frontend/src/app.css`
+- Spacing uses the shared `--space-*` scale in `frontend/src/app.css` before local pixel values
 - Text uses the shared primary / secondary / muted hierarchy
 - Accent colors carry meaning, not decoration
 

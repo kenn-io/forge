@@ -2,6 +2,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
+  import { SelectDropdown } from "@middleman/ui";
   import type {
     FleetPeer,
     FleetSSHPeer,
@@ -32,9 +33,22 @@
     remoteCommand: string;
   }
 
+  interface DropdownOption {
+    value: string;
+    label: string;
+    triggerLabel?: string;
+    disabled?: boolean;
+  }
+
   let { fleet, onUpdate }: Props = $props();
 
   const embedded = isEmbedded();
+  const basePlatformOptions: DropdownOption[] = [
+    { value: "", label: "Unspecified", triggerLabel: "Unspecified" },
+    { value: "darwin", label: "darwin" },
+    { value: "linux", label: "linux" },
+    { value: "windows", label: "windows" },
+  ];
   // svelte-ignore state_referenced_locally
   let currentFleet = $state(fleet);
   let nextID = 0;
@@ -199,6 +213,14 @@
     return trimmed === "" ? `${prefix} ${index + 1}` : trimmed;
   }
 
+  function platformOptions(value: string): DropdownOption[] {
+    const trimmed = value.trim();
+    if (trimmed === "" || basePlatformOptions.some((option) => option.value === trimmed)) {
+      return basePlatformOptions;
+    }
+    return [...basePlatformOptions, { value: trimmed, label: trimmed }];
+  }
+
   async function save(): Promise<void> {
     if (!canSave) return;
     saving = true;
@@ -307,6 +329,12 @@
     {:else}
       <div class="peer-table-wrap">
         <table class="peer-table http" aria-label="HTTP peer membership">
+          <colgroup>
+            <col class="http-key-col" />
+            <col class="http-name-col" />
+            <col class="http-url-col" />
+            <col class="peer-action-col" />
+          </colgroup>
           <thead>
             <tr>
               <th scope="col">Key</th>
@@ -382,6 +410,14 @@
     {:else}
       <div class="peer-table-wrap">
         <table class="peer-table ssh" aria-label="SSH peer membership">
+          <colgroup>
+            <col class="ssh-key-col" />
+            <col class="ssh-name-col" />
+            <col class="ssh-destination-col" />
+            <col class="ssh-platform-col" />
+            <col class="ssh-command-col" />
+            <col class="peer-action-col" />
+          </colgroup>
           <thead>
             <tr>
               <th scope="col">Key</th>
@@ -417,11 +453,16 @@
                     aria-label={`SSH peer ${label} destination`}
                   />
                 </td>
-                <td>
-                  <input
-                    bind:value={peer.platform}
+                <td class="platform-cell">
+                  <SelectDropdown
+                    class="platform-dropdown"
+                    value={peer.platform}
+                    options={platformOptions(peer.platform)}
+                    onchange={(value) => {
+                      peer.platform = value;
+                    }}
+                    title={`SSH peer ${label} platform`}
                     disabled={embedded || saving}
-                    aria-label={`SSH peer ${label} platform`}
                   />
                 </td>
                 <td>
@@ -477,7 +518,7 @@
   .fleet-settings {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space-3-5);
   }
 
   .toggle-row,
@@ -485,7 +526,7 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   .check-row {
@@ -494,7 +535,7 @@
 
   .toggle-row input,
   .check-row input {
-    margin-top: 2px;
+    margin-top: var(--space-0-5);
   }
 
   .field-label {
@@ -515,38 +556,51 @@
   .settings-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .field {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: var(--space-1);
     min-width: 0;
   }
 
   .field input,
-  .peer-table input {
+  .peer-table input,
+  .platform-cell :global(.select-dropdown-trigger) {
     width: 100%;
     min-height: 30px;
-    padding: 5px 8px;
+    padding: var(--space-1) var(--space-2);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     background: var(--bg-primary);
     color: var(--text-primary);
     font-size: var(--font-size-sm);
+    font-weight: 400;
   }
 
   .field input:disabled,
-  .peer-table input:disabled {
+  .peer-table input:disabled,
+  .platform-cell :global(.select-dropdown-trigger:disabled) {
     color: var(--text-muted);
     background: var(--bg-inset);
+  }
+
+  .platform-cell :global(.select-dropdown) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .platform-cell :global(.select-dropdown-trigger) {
+    height: 30px;
+    justify-content: space-between;
   }
 
   .restart-banner,
   .settings-error {
     margin: 0;
-    padding: 8px 10px;
+    padding: var(--space-2) var(--space-2-5);
     border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);
   }
@@ -566,8 +620,8 @@
   .peer-section {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding-top: 12px;
+    gap: var(--space-2-5);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border-muted);
   }
 
@@ -575,7 +629,7 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .peer-section-header h3 {
@@ -586,7 +640,7 @@
   }
 
   .peer-section-header p {
-    margin: 3px 0 0;
+    margin: var(--space-0-5) 0 0;
   }
 
   .peer-table-wrap {
@@ -608,7 +662,7 @@
 
   .peer-table th,
   .peer-table td {
-    padding: 7px 8px;
+    padding: var(--space-2);
     border-bottom: 1px solid var(--border-muted);
     vertical-align: top;
   }
@@ -625,45 +679,47 @@
     background: var(--bg-inset);
   }
 
-  .peer-table.http th:nth-child(1),
-  .peer-table.http td:nth-child(1) {
+  .http-key-col {
     width: 20%;
   }
 
-  .peer-table.http th:nth-child(2),
-  .peer-table.http td:nth-child(2) {
+  .http-name-col {
     width: 26%;
   }
 
-  .peer-table.ssh th:nth-child(1),
-  .peer-table.ssh td:nth-child(1) {
+  .http-url-col,
+  .ssh-command-col {
+    width: auto;
+  }
+
+  .ssh-key-col {
     width: 14%;
   }
 
-  .peer-table.ssh th:nth-child(2),
-  .peer-table.ssh td:nth-child(2) {
+  .ssh-name-col {
     width: 18%;
   }
 
-  .peer-table.ssh th:nth-child(4),
-  .peer-table.ssh td:nth-child(4) {
-    width: 13%;
+  .ssh-destination-col {
+    width: 24%;
   }
 
-  .peer-table.ssh th:nth-child(5),
-  .peer-table.ssh td:nth-child(5) {
-    width: 19%;
+  .ssh-platform-col {
+    width: 15%;
+  }
+
+  .peer-action-col {
+    width: 46px;
   }
 
   .action-cell {
-    width: 40px;
     text-align: right;
   }
 
   .settings-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .primary-button,
@@ -672,7 +728,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     min-height: 30px;
     border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);
@@ -680,13 +736,13 @@
   }
 
   .primary-button {
-    padding: 0 12px;
+    padding: 0 var(--space-3);
     background: var(--accent-blue);
     color: white;
   }
 
   .secondary-button {
-    padding: 0 10px;
+    padding: 0 var(--space-2-5);
     border: 1px solid var(--border-default);
     background: var(--bg-primary);
     color: var(--text-secondary);

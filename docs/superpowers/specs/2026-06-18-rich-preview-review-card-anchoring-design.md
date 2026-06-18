@@ -27,6 +27,11 @@ Introduce a small Markdown rich-preview model layer near the existing Markdown u
 
 The component should no longer split raw Markdown by blank lines or code fences. It should not call `renderMarkdown()` on arbitrary fragments as a placement strategy.
 
+The model has two explicit boundaries:
+
+- The reconstructed hunk document is the complete Markdown input available to rich preview. It is made from the diff hunk lines that belong to each side.
+- The render block is a top-level Marked token/container derived from that hunk document. Blocks are display and anchoring units; they are not separate Markdown documents with independent parser semantics.
+
 The model should expose block records with this minimum shape:
 
 ```ts
@@ -65,9 +70,15 @@ This is intentional: preserving valid rendered Markdown takes priority over plac
 
 If a block cannot be mapped confidently, keep the rendered Markdown correct and leave related review threads in the fallback area. Correct rendering is more important than guessed inline placement.
 
+`renderMarkdownBlocks(raw, repo)` is the only block-rendering API this feature should use. It must parse once with the configured Marked instance, keep document-level Marked behavior such as in-document reference definitions intact for the visible block output, render only visible top-level tokens as blocks, and sanitize every block through the same DOMPurify allow-list used by `renderMarkdown()`. Reference-link resolution inside the reconstructed hunk document is a required regression test for this API boundary.
+
+Multiple hunks are joined in backend hunk order with an explicit anchorless separator: blank line, thematic break line `---`, blank line. The separator prevents accidental list/table merging across unrelated hunks, can influence Markdown parsing the same way a visible thematic break does, has no old/new source-line mapping, and cannot receive review cards. Definitions inside the reconstructed hunk document may resolve across that separator; definitions outside loaded hunks remain unavailable.
+
 Repeated paragraphs, headings, or list items are resolved by source order, not rendered text identity alone. The generated-line cursor makes identical text in different source locations produce distinct ranges.
 
 Definitions outside the loaded diff hunks are outside this feature's available input. They may not resolve until the preview is backed by full-file content. Definitions inside the reconstructed hunk document must keep working.
+
+Deleted-only comments anchor against old-side block ranges. Added/current comments anchor against new-side block ranges. Multi-line review ranges use the same target side and line that the source diff uses for card placement; if the target range crosses multiple top-level Markdown containers, the card anchors to the first containing top-level block for that target line. If no containing block exists, the card becomes a file-level fallback card rather than guessing.
 
 ## Visual Behavior
 
@@ -78,6 +89,12 @@ For added or removed block-level content, use quiet block background and border 
 Review cards should sit between rendered blocks without introducing artificial paragraph breaks, isolated list fragments, or source-diff-style clutter.
 
 For structured containers, the card sits after the whole top-level container. It must not become a child of `<ul>`, `<ol>`, `<table>`, `<tbody>`, `<tr>`, `<blockquote>`, or similar elements unless the implementation has a valid, tested container-specific insertion model.
+
+Wrapper elements around rendered blocks are acceptable only when they preserve the readable Markdown layout. They must not force one-off margin, table, list, or heading behavior that differs materially from the normal rich preview. Layout regressions for lists, headings, paragraphs, and tables should be covered by component or browser assertions when wrappers change.
+
+## Performance
+
+Markdown rich preview should avoid unbounded quadratic work. Block alignment may use an LCS only below a fixed block-product threshold; above that threshold it must fall back to a coarse delete/insert projection or another bounded strategy. Parsing, token mapping, sanitization, and block diffing should be derived from stable inputs so Svelte recomputation only happens when the file, repository context, or relevant review-thread inputs change.
 
 ## Acceptance Criteria
 
@@ -90,6 +107,8 @@ For structured containers, the card sits after the whole top-level container. It
 - Split rich preview anchors cards to the matching old or new side rather than dumping all cards above the preview.
 - Block-level additions and deletions use block diff styling without per-word underline decoration.
 - The rendered DOM remains valid for lists, tables, and blockquotes.
+- Large Markdown diffs do not allocate an unbounded block comparison matrix.
+- The block-rendering path preserves centralized Markdown sanitization and the allowed attribute policy.
 
 ## Testing
 
@@ -110,12 +129,13 @@ Keep browser e2e coverage for the PR files page rich preview toggle, including a
 
 ## Implementation Staging
 
-1. Add pure model tests and a `markdown-rich-preview` utility.
-2. Implement generated-line to source-line mapping from Marked tokens.
-3. Wire unified rich preview to the model.
-4. Wire split rich preview to the same model.
-5. Adjust block-level diff styling.
-6. Add component and Playwright coverage.
+1. Define the pure rich-preview model contract and fixtures.
+2. Add failing model tests for reference definitions, loose lists, block ranges, structured container anchoring, and large-block fallback.
+3. Implement generated-line to source-line mapping from Marked tokens through the shared block-rendering API.
+4. Wire unified rich preview to the model with component coverage.
+5. Wire split rich preview to the same model with component coverage.
+6. Adjust block-level diff styling.
+7. Add full PR files Playwright coverage before finalizing the branch.
 
 ## Implementation Boundaries
 
@@ -123,3 +143,4 @@ Keep browser e2e coverage for the PR files page rich preview toggle, including a
 - The Markdown rich-preview model should be pure enough to test without Svelte.
 - The component should receive a simple render model and avoid knowing parser details.
 - Any fallback should be explicit and tested, not silent semantic drift.
+- Sanitization must stay centralized through the existing Markdown utility policy; no new unsanitized token/block HTML path is allowed.

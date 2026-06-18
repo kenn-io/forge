@@ -901,6 +901,101 @@ describe("DiffFile", () => {
     expect(comment?.closest(".markdown-rich-diff--unified")).toBeTruthy();
   });
 
+  it("keeps markdown document semantics when review cards are anchored in rich preview", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 6,
+            new_start: 1,
+            new_count: 7,
+            lines: [
+              { type: "context", content: "- first", old_num: 1, new_num: 1 },
+              { type: "context", content: "", old_num: 2, new_num: 2 },
+              { type: "context", content: "- second", old_num: 3, new_num: 3 },
+              { type: "context", content: "", old_num: 4, new_num: 4 },
+              { type: "context", content: "[ref]: https://example.com", old_num: 5, new_num: 5 },
+              { type: "context", content: "", old_num: 6, new_num: 6 },
+              { type: "add", content: "See [the ref][ref]", new_num: 7 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            path: "README.md",
+            old_path: "README.md",
+            line: 7,
+            new_line: 7,
+            body: "Anchored semantic note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Anchored semantic note")).toBeTruthy();
+    });
+    const preview = document.querySelector(".markdown-rich-diff--unified");
+    expect(preview?.querySelectorAll("ul")).toHaveLength(1);
+    expect(preview?.querySelector('a[href="https://example.com"]')?.textContent).toBe("the ref");
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    expect(comment?.previousElementSibling?.classList.contains("markdown-rich-diff__anchored-block")).toBe(true);
+  });
+
+  it("anchors markdown rich preview review cards in the matching split pane", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 2,
+            new_start: 1,
+            new_count: 3,
+            lines: [
+              { type: "context", content: "## Title", old_num: 1, new_num: 1 },
+              { type: "context", content: "", old_num: 2, new_num: 2 },
+              { type: "add", content: "Added split-pane paragraph", new_num: 3 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        viewMode: "split",
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            path: "README.md",
+            old_path: "README.md",
+            line: 3,
+            new_line: 3,
+            body: "Split pane review note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Split pane review note")).toBeTruthy();
+    });
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    expect(comment?.closest('[aria-label="Before markdown preview"]')).toBeNull();
+    expect(comment?.closest('[aria-label="After markdown preview"]')).toBeTruthy();
+    expect(comment?.previousElementSibling?.classList.contains("markdown-rich-diff__anchored-block")).toBe(true);
+    expect(document.querySelector(".preview-shell > .inline-review-thread")).toBeNull();
+  });
+
   it("lets published inline review threads be replied to", async () => {
     const replyToDiscussion = vi.fn().mockResolvedValue(true);
     renderDiffFile(makeFile(), {

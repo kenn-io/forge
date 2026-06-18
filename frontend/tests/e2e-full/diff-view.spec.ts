@@ -1938,9 +1938,18 @@ test.describe("diff view", () => {
 
     const markdownFile = page.locator('[data-file-path="docs/preview.md"]');
     await expect(markdownFile.locator(".markdown-rich-diff--unified")).toBeVisible();
-    await expect(
-      markdownFile.locator(".markdown-rich-diff--unified .inline-review-thread").filter({ hasText: reviewBody }),
-    ).toBeVisible();
+    const reviewCard = markdownFile
+      .locator(".markdown-rich-diff--unified .inline-review-thread")
+      .filter({ hasText: reviewBody });
+    await expect(reviewCard).toBeVisible();
+    await expect
+      .poll(() =>
+        reviewCard.evaluate(
+          (element) =>
+            element.previousElementSibling?.classList.contains("markdown-rich-diff__anchored-block") ?? false,
+        ),
+      )
+      .toBe(true);
   });
 
   test("rich preview refetches blob content after a same-PR diff reload", async ({ page }) => {

@@ -5,7 +5,7 @@ import { canonicalProvider } from "../api/provider-routes.js";
 import { itemReferenceAnchorAttributes } from "./item-reference.js";
 import type { ItemReferenceType } from "./item-reference.js";
 
-interface RepoContext {
+export interface RepoContext {
   provider: string;
   platformHost?: string | undefined;
   owner: string;
@@ -167,6 +167,19 @@ let renderState: {
 
 const htmlCache = new Map<string, string>();
 const markedCache = new Map<string, Marked>();
+const MARKDOWN_ALLOWED_ATTRS = [
+  "target",
+  "data-provider",
+  "data-platform-host",
+  "data-owner",
+  "data-name",
+  "data-repo-path",
+  "data-number",
+  "data-item-type",
+  "data-external-url",
+  "data-task-index",
+  "draggable",
+];
 
 // Six-dot drag handle SVG used to grab a task-list item. Inlined so
 // the rendered markdown is self-contained and no extra fetch is needed.
@@ -263,6 +276,70 @@ function getMarked(repo?: RepoContext): Marked {
   return instance;
 }
 
+export interface RenderedMarkdownBlock {
+  key: string;
+  startLine: number;
+  endLine: number;
+  html: string;
+}
+
+function resetRenderState(opts: RenderMarkdownOpts): void {
+  renderState = {
+    taskIndex: 0,
+    interactiveTasks: !!opts.interactiveTasks,
+    itemStack: [],
+    blockquoteDepth: 0,
+  };
+}
+
+function sanitizeMarkdownHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ADD_ATTR: MARKDOWN_ALLOWED_ATTRS,
+  });
+}
+
+function visibleTokenLineCount(raw: string): number {
+  if (!raw) return 0;
+  const visibleRaw = raw.endsWith("\n") ? raw.slice(0, -1) : raw;
+  if (!visibleRaw) return 0;
+  return visibleRaw.split("\n").length;
+}
+
+function tokenLineBreakCount(raw: string): number {
+  return raw.match(/\n/g)?.length ?? 0;
+}
+
+function tokenRendersVisibleBlock(token: Tokens.Generic): boolean {
+  return token.type !== "space" && token.type !== "def";
+}
+
+export function renderMarkdownBlocks(
+  raw: string,
+  repo?: RepoContext,
+  opts: RenderMarkdownOpts = {},
+): RenderedMarkdownBlock[] {
+  if (!raw) return [];
+  const marked = getMarked(repo);
+  const tokens = marked.lexer(raw) as Tokens.Generic[];
+  resetRenderState(opts);
+  const blocks: RenderedMarkdownBlock[] = [];
+  let line = 1;
+  for (const token of tokens) {
+    const startLine = line;
+    const lineCount = visibleTokenLineCount(token.raw);
+    if (tokenRendersVisibleBlock(token) && lineCount > 0) {
+      blocks.push({
+        key: `${blocks.length}:${token.type}:${startLine}`,
+        startLine,
+        endLine: startLine + lineCount - 1,
+        html: sanitizeMarkdownHtml(marked.parser([token]) as string),
+      });
+    }
+    line += tokenLineBreakCount(token.raw);
+  }
+  return blocks;
+}
+
 export function renderMarkdown(raw: string, repo?: RepoContext, opts: RenderMarkdownOpts = {}): string {
   if (!raw) return "";
   const interactiveTasks = !!opts.interactiveTasks;
@@ -271,27 +348,8 @@ export function renderMarkdown(raw: string, repo?: RepoContext, opts: RenderMark
   const cached = htmlCache.get(key);
   if (cached !== undefined) return cached;
 
-  renderState = {
-    taskIndex: 0,
-    interactiveTasks,
-    itemStack: [],
-    blockquoteDepth: 0,
-  };
-  const html = DOMPurify.sanitize(getMarked(repo).parse(raw) as string, {
-    ADD_ATTR: [
-      "target",
-      "data-provider",
-      "data-platform-host",
-      "data-owner",
-      "data-name",
-      "data-repo-path",
-      "data-number",
-      "data-item-type",
-      "data-external-url",
-      "data-task-index",
-      "draggable",
-    ],
-  });
+  resetRenderState(opts);
+  const html = sanitizeMarkdownHtml(getMarked(repo).parse(raw) as string);
   if (htmlCache.size > 500) htmlCache.clear();
   htmlCache.set(key, html);
   return html;

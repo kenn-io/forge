@@ -545,7 +545,7 @@
             {viewMode}
             reviewThreads={fileReviewThreads}
             {canReplyToThreads}
-            {reviewThreadIsFileLevelCard}
+            {diffHeadSHA}
             onreply={replyToThread}
           />
         {/key}

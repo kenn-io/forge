@@ -2,8 +2,11 @@
   import type { DiffFile, FilePreview } from "../../api/types.js";
   import { getStores } from "../../context.js";
   import type { DiffViewMode } from "../../stores/diff.svelte.js";
-  import { renderMarkdownDiff, renderMarkdownSplitDiff } from "../../utils/markdown-diff.js";
   import { renderMarkdown } from "../../utils/markdown.js";
+  import {
+    buildMarkdownRichPreview,
+    type MarkdownRichPreviewBlock,
+  } from "../../utils/markdown-rich-preview.js";
   import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
   import {
     reviewThreadTargetLine,
@@ -23,7 +26,7 @@
     viewMode?: DiffViewMode;
     reviewThreads?: ReviewThread[];
     canReplyToThreads?: boolean;
-    reviewThreadIsFileLevelCard?: ((thread: ReviewThread) => boolean) | undefined;
+    diffHeadSHA?: string | undefined;
     onreply?: ((thread: ReviewThread, body: string) => Promise<boolean>) | undefined;
   }
 
@@ -39,32 +42,23 @@
     viewMode = "unified",
     reviewThreads = [],
     canReplyToThreads = false,
-    reviewThreadIsFileLevelCard,
+    diffHeadSHA,
     onreply,
   }: Props = $props();
   const { diff: diffStore } = getStores();
 
-  interface MarkdownComparison {
-    diffHtml?: string;
-    oldHtml: string;
-    newHtml: string;
-  }
-  type SourceLine = DiffFile["hunks"][number]["lines"][number];
-  type MarkdownLineBlock = {
-    key: string;
-    lines: SourceLine[];
-    oldStart?: number | undefined;
-    oldEnd?: number | undefined;
-    newStart?: number | undefined;
-    newEnd?: number | undefined;
+  type ReviewThreadPlacement = {
+    thread: ReviewThread;
+    fileLevel: boolean;
   };
-  type MarkdownRenderedBlock = MarkdownLineBlock & {
-    diffHtml: string;
-    reviewThreads: ReviewThread[];
+  type AnchoredMarkdownBlock = MarkdownRichPreviewBlock & {
+    leftReviewThreads: ReviewThreadPlacement[];
+    rightReviewThreads: ReviewThreadPlacement[];
+    reviewThreads: ReviewThreadPlacement[];
   };
-  interface AnchoredMarkdownComparison {
-    blocks: MarkdownRenderedBlock[];
-    unanchoredReviewThreads: ReviewThread[];
+  interface AnchoredMarkdownPreview {
+    blocks: AnchoredMarkdownBlock[];
+    fallbackReviewThreads: ReviewThreadPlacement[];
   }
 
   let loading = $state(false);
@@ -73,20 +67,16 @@
   let requestVersion = 0;
 
   const isMarkdownFile = $derived(isMarkdownPath(file.path));
-  const markdownComparison = $derived.by(() =>
-    active && isMarkdownFile ? buildMarkdownComparison(file, viewMode) : null,
-  );
-  const anchoredMarkdownComparison = $derived.by(() =>
-    active && isMarkdownFile && viewMode !== "split"
-      ? buildAnchoredMarkdownComparison(file, reviewThreads)
-      : null,
+  const markdownPreview = $derived.by(() =>
+    active && isMarkdownFile ? buildAnchoredMarkdownPreview(file, reviewThreads) : null,
   );
   const text = $derived(preview ? decodeText(preview.content) : "");
   const dataURL = $derived(preview ? `data:${preview.media_type};base64,${preview.content}` : "");
   const kind = $derived(previewKind(file.path, preview?.media_type ?? ""));
   const displayText = $derived(formatText(file.path, text));
-  const fallbackReviewThreads = $derived(
-    anchoredMarkdownComparison?.unanchoredReviewThreads ?? reviewThreads,
+  const fallbackReviewThreads = $derived<ReviewThreadPlacement[]>(
+    markdownPreview?.fallbackReviewThreads ??
+      reviewThreads.map((thread) => ({ thread, fileLevel: threadLineIsFileLevelCard(thread) })),
   );
 
   $effect(() => {
@@ -158,105 +148,46 @@
     }
   }
 
-  function buildMarkdownComparison(source: DiffFile, mode: DiffViewMode): MarkdownComparison {
-    const oldLines: string[] = [];
-    const newLines: string[] = [];
-    for (const hunk of source.hunks) {
-      if (oldLines.length > 0 || newLines.length > 0) {
-        oldLines.push("", "---", "");
-        newLines.push("", "---", "");
-      }
-      for (const line of hunk.lines) {
-        if (line.type !== "add") oldLines.push(line.content);
-        if (line.type !== "delete") newLines.push(line.content);
-      }
-    }
-    const repo = { provider, platformHost, owner, name, repoPath };
-    const oldHtml = renderMarkdown(`${oldLines.join("\n")}\n`, repo);
-    const newHtml = renderMarkdown(`${newLines.join("\n")}\n`, repo);
-    const splitHtml = mode === "split" ? renderMarkdownSplitDiff(oldHtml, newHtml) : null;
-    return {
-      ...(mode === "split" ? {} : { diffHtml: renderMarkdownDiff(oldHtml, newHtml) }),
-      oldHtml: splitHtml?.beforeHtml ?? oldHtml,
-      newHtml: splitHtml?.afterHtml ?? newHtml,
-    };
-  }
-
-  function buildAnchoredMarkdownComparison(
+  function buildAnchoredMarkdownPreview(
     source: DiffFile,
     threads: ReviewThread[],
-  ): AnchoredMarkdownComparison {
-    const blocks: MarkdownRenderedBlock[] = markdownLineBlocks(source).map((block): MarkdownRenderedBlock => {
-      const oldMarkdown = block.lines
-        .filter((line) => line.type !== "add")
-        .map((line) => line.content)
-        .join("\n");
-      const newMarkdown = block.lines
-        .filter((line) => line.type !== "delete")
-        .map((line) => line.content)
-        .join("\n");
-      const repo = { provider, platformHost, owner, name, repoPath };
-      const oldHtml = renderMarkdown(`${oldMarkdown}\n`, repo);
-      const newHtml = renderMarkdown(`${newMarkdown}\n`, repo);
-      return {
-        ...block,
-        diffHtml: renderMarkdownDiff(oldHtml, newHtml),
-        reviewThreads: [],
-      };
-    });
-    const unanchoredReviewThreads: ReviewThread[] = [];
+  ): AnchoredMarkdownPreview {
+    const blocks: AnchoredMarkdownBlock[] = buildMarkdownRichPreview(source, {
+      provider,
+      platformHost,
+      owner,
+      name,
+      repoPath,
+    }).blocks.map((block) => ({
+      ...block,
+      leftReviewThreads: [],
+      rightReviewThreads: [],
+      reviewThreads: [],
+    }));
+    const fallbackReviewThreads: ReviewThreadPlacement[] = [];
     for (const thread of threads) {
+      const fileLevel = threadLineIsFileLevelCard(thread);
+      if (fileLevel) {
+        fallbackReviewThreads.push({ thread, fileLevel });
+        continue;
+      }
       const block = blocks.find((candidate) => blockContainsReviewThread(candidate, thread));
-      if (block) block.reviewThreads.push(thread);
-      else unanchoredReviewThreads.push(thread);
-    }
-    return { blocks, unanchoredReviewThreads };
-  }
-
-  function markdownLineBlocks(source: DiffFile): MarkdownLineBlock[] {
-    const blocks: MarkdownLineBlock[] = [];
-    let current: SourceLine[] = [];
-    let inFence = false;
-    for (const hunk of source.hunks) {
-      if (current.length > 0) {
-        pushMarkdownLineBlock(blocks, current);
-        current = [];
+      if (!block) {
+        fallbackReviewThreads.push({ thread, fileLevel });
+        continue;
       }
-      for (const line of hunk.lines) {
-        current.push(line);
-        if (isFenceLine(line.content)) {
-          inFence = !inFence;
-          continue;
-        }
-        if (!inFence && line.content.trim() === "") {
-          pushMarkdownLineBlock(blocks, current);
-          current = [];
-        }
+      const placement = { thread, fileLevel };
+      block.reviewThreads.push(placement);
+      if (reviewThreadTargetSide(thread) === "left") {
+        block.leftReviewThreads.push(placement);
+      } else {
+        block.rightReviewThreads.push(placement);
       }
     }
-    pushMarkdownLineBlock(blocks, current);
-    return blocks;
+    return { blocks, fallbackReviewThreads };
   }
 
-  function isFenceLine(content: string): boolean {
-    return /^\s*(```|~~~)/.test(content);
-  }
-
-  function pushMarkdownLineBlock(blocks: MarkdownLineBlock[], lines: SourceLine[]): void {
-    if (lines.length === 0) return;
-    const oldNumbers = lines.map((line) => line.old_num).filter((line): line is number => line != null);
-    const newNumbers = lines.map((line) => line.new_num).filter((line): line is number => line != null);
-    blocks.push({
-      key: `${blocks.length}:${oldNumbers[0] ?? ""}:${newNumbers[0] ?? ""}`,
-      lines,
-      oldStart: oldNumbers[0],
-      oldEnd: oldNumbers.at(-1),
-      newStart: newNumbers[0],
-      newEnd: newNumbers.at(-1),
-    });
-  }
-
-  function blockContainsReviewThread(block: MarkdownLineBlock, thread: ReviewThread): boolean {
+  function blockContainsReviewThread(block: MarkdownRichPreviewBlock, thread: ReviewThread): boolean {
     if (threadLineIsFileLevelCard(thread)) return false;
     const line = reviewThreadTargetLine(thread);
     return reviewThreadTargetSide(thread) === "left"
@@ -273,22 +204,26 @@
   }
 
   function threadLineIsFileLevelCard(thread: ReviewThread): boolean {
-    return reviewThreadIsFileLevelCard?.(thread) ?? thread.line_type === "file";
+    return thread.line_type === "file" || !threadMatchesCurrentDiff(thread);
+  }
+
+  function threadMatchesCurrentDiff(thread: ReviewThread): boolean {
+    return !thread.diff_head_sha || !diffHeadSHA || thread.diff_head_sha === diffHeadSHA;
   }
 </script>
 
 <div class="preview-shell">
   {#if isMarkdownFile}
-    {#if markdownComparison}
+    {#if markdownPreview}
+      {#each fallbackReviewThreads as placement (placement.thread.id)}
+        <DiffReviewThreadInlineComment
+          thread={placement.thread}
+          fileLevel={placement.fileLevel}
+          canReply={canReplyToThreads}
+          {onreply}
+        />
+      {/each}
       {#if viewMode === "split"}
-        {#each fallbackReviewThreads as thread (thread.id)}
-          <DiffReviewThreadInlineComment
-            {thread}
-            fileLevel={threadLineIsFileLevelCard(thread)}
-            canReply={canReplyToThreads}
-            {onreply}
-          />
-        {/each}
         <div class="diff-rich-preview markdown-rich-diff markdown-rich-diff--split">
           <div
             class="markdown-rich-diff__pane markdown-rich-diff__block--delete"
@@ -296,7 +231,19 @@
           >
             <div class="markdown-rich-diff__label">Before</div>
             <div class="markdown-body">
-              {@html markdownComparison.oldHtml}
+              {#each markdownPreview.blocks as block (block.key)}
+                <div class="markdown-rich-diff__anchored-block">
+                  {@html block.beforeHtml ?? ""}
+                </div>
+                {#each block.leftReviewThreads as placement (placement.thread.id)}
+                  <DiffReviewThreadInlineComment
+                    thread={placement.thread}
+                    fileLevel={placement.fileLevel}
+                    canReply={canReplyToThreads}
+                    {onreply}
+                  />
+                {/each}
+              {/each}
             </div>
           </div>
           <div
@@ -305,37 +252,37 @@
           >
             <div class="markdown-rich-diff__label">After</div>
             <div class="markdown-body">
-              {@html markdownComparison.newHtml}
+              {#each markdownPreview.blocks as block (block.key)}
+                <div class="markdown-rich-diff__anchored-block">
+                  {@html block.afterHtml ?? ""}
+                </div>
+                {#each block.rightReviewThreads as placement (placement.thread.id)}
+                  <DiffReviewThreadInlineComment
+                    thread={placement.thread}
+                    fileLevel={placement.fileLevel}
+                    canReply={canReplyToThreads}
+                    {onreply}
+                  />
+                {/each}
+              {/each}
             </div>
           </div>
         </div>
       {:else}
         <div class="diff-rich-preview markdown-rich-diff markdown-rich-diff--unified markdown-body">
-          {#if anchoredMarkdownComparison}
-            {#each anchoredMarkdownComparison.unanchoredReviewThreads as thread (thread.id)}
+          {#each markdownPreview.blocks as block (block.key)}
+            <div class="markdown-rich-diff__anchored-block">
+              {@html block.unifiedHtml}
+            </div>
+            {#each block.reviewThreads as placement (placement.thread.id)}
               <DiffReviewThreadInlineComment
-                {thread}
-                fileLevel={threadLineIsFileLevelCard(thread)}
+                thread={placement.thread}
+                fileLevel={placement.fileLevel}
                 canReply={canReplyToThreads}
                 {onreply}
               />
             {/each}
-            {#each anchoredMarkdownComparison.blocks as block (block.key)}
-              <div class="markdown-rich-diff__anchored-block">
-                {@html block.diffHtml}
-              </div>
-              {#each block.reviewThreads as thread (thread.id)}
-                <DiffReviewThreadInlineComment
-                  {thread}
-                  fileLevel={threadLineIsFileLevelCard(thread)}
-                  canReply={canReplyToThreads}
-                  {onreply}
-                />
-              {/each}
-            {/each}
-          {:else}
-            {@html markdownComparison.diffHtml ?? markdownComparison.newHtml}
-          {/if}
+          {/each}
         </div>
       {/if}
     {:else}
@@ -346,10 +293,10 @@
   {:else if error}
     <div class="preview-state preview-state--error">{error}</div>
   {:else if preview}
-    {#each fallbackReviewThreads as thread (thread.id)}
+    {#each fallbackReviewThreads as placement (placement.thread.id)}
       <DiffReviewThreadInlineComment
-        {thread}
-        fileLevel={threadLineIsFileLevelCard(thread)}
+        thread={placement.thread}
+        fileLevel={placement.fileLevel}
         canReply={canReplyToThreads}
         {onreply}
       />
@@ -450,37 +397,25 @@
     pointer-events: none;
   }
 
-  .markdown-rich-diff__block--delete :global(p),
-  .markdown-rich-diff__block--delete :global(li),
-  .markdown-rich-diff__block--delete :global(h1),
-  .markdown-rich-diff__block--delete :global(h2),
-  .markdown-rich-diff__block--delete :global(h3),
-  .markdown-rich-diff__block--delete :global(h4),
-  .markdown-rich-diff__block--delete :global(h5),
-  .markdown-rich-diff__block--delete :global(h6) {
-    text-decoration: line-through;
-    text-decoration-color: color-mix(in srgb, var(--diff-del-text) 70%, transparent);
-  }
-
   .markdown-rich-diff--unified {
     max-width: 920px;
   }
 
-  .markdown-rich-diff--unified :global(ins),
-  .markdown-rich-diff--unified :global(del) {
+  .markdown-rich-diff--unified :global(ins:not(.markdown-diff__block)),
+  .markdown-rich-diff--unified :global(del:not(.markdown-diff__block)) {
     padding: 0 0.16em;
     border-radius: 3px;
     text-decoration-thickness: 1px;
     text-underline-offset: 0.12em;
   }
 
-  .markdown-rich-diff--unified :global(ins) {
+  .markdown-rich-diff--unified :global(ins:not(.markdown-diff__block)) {
     color: var(--text-primary);
     background: color-mix(in srgb, var(--diff-add-bg) 80%, transparent);
     text-decoration-color: color-mix(in srgb, var(--diff-add-text) 65%, transparent);
   }
 
-  .markdown-rich-diff--unified :global(del) {
+  .markdown-rich-diff--unified :global(del:not(.markdown-diff__block)) {
     color: var(--text-primary);
     background: color-mix(in srgb, var(--diff-del-bg) 82%, transparent);
     text-decoration-color: color-mix(in srgb, var(--diff-del-text) 70%, transparent);
@@ -491,6 +426,7 @@
     margin: 0.55rem 0;
     padding: 0.45rem 0.6rem;
     border: 1px solid transparent;
+    text-decoration: none;
   }
 
   .markdown-rich-diff--unified :global(ins.markdown-diff__block) {
@@ -499,6 +435,13 @@
 
   .markdown-rich-diff--unified :global(del.markdown-diff__block) {
     border-color: color-mix(in srgb, var(--diff-del-text) 36%, transparent);
+  }
+
+  .markdown-rich-diff :global(.markdown-diff__structural > ins),
+  .markdown-rich-diff :global(.markdown-diff__structural > del) {
+    padding: 0;
+    background: transparent;
+    text-decoration: none;
   }
 
   @media (max-width: 760px) {

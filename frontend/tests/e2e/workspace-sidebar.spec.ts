@@ -2908,34 +2908,30 @@ test.describe("workspace list fleet inventory", () => {
     // Regression: the workspace-list load timeout only aborted the
     // local /workspaces request. A reachable-but-hung peer left
     // fetchPeerWorkspaces awaiting forever, so fetchInFlight stayed
-    // true and the sidebar never picked up local workspace changes.
+    // true and the sidebar never rendered the local workspace.
+    //
+    // page.clock makes this deterministic: the only timer that matters
+    // is the 10s list-load abort, which fastForward fires explicitly
+    // instead of waiting on wall-clock time or the 5s poll.
     const localWorkspace = {
       ...testWorkspace,
       id: "ws-local-late",
       mr_title: "Late local workspace",
     };
 
-    // The local list is empty until the fleet snapshot has loaded, so
-    // the workspace only appears via a post-fleet fetch — the path
-    // that has to wait on the hung peer.
-    let workspaceListCalls = 0;
-    await page.route("**/api/v1/workspaces", async (route) => {
-      if (route.request().method() !== "GET") {
-        await route.fulfill({ status: 200 });
-        return;
-      }
-      workspaceListCalls += 1;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          workspaces: workspaceListCalls === 1 ? [] : [localWorkspace],
-        }),
-      });
+    await page.clock.install();
+
+    // Hold the local list until the fleet snapshot has loaded so the
+    // fetch that surfaces the workspace runs through the peer path —
+    // the path that has to survive the hung peer.
+    let resolveSnapshot: () => void = () => {};
+    const snapshotLoaded = new Promise<void>((resolve) => {
+      resolveSnapshot = resolve;
     });
     await page.route(
       (url) => url.pathname === "/api/v1/snapshot",
       async (route) => {
+        resolveSnapshot();
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -2970,16 +2966,33 @@ test.describe("workspace list fleet inventory", () => {
         });
       },
     );
+    await page.route("**/api/v1/workspaces", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fulfill({ status: 200 });
+        return;
+      }
+      await snapshotLoaded;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaces: [localWorkspace] }),
+      });
+    });
     // Peer request never responds. The 10s list timeout's abort signal
-    // must reach it so the fetch settles and polling continues.
+    // must reach it so the fetch settles.
     await page.route("**/api/v1/fleet/hosts/member/workspaces", async () => {
       await new Promise(() => {});
     });
 
     await page.goto("/workspaces");
 
+    // The peer request firing means the list fetch is past the local
+    // request and stuck on the hung peer, with its abort timer armed.
+    await page.waitForRequest("**/api/v1/fleet/hosts/member/workspaces");
+    await page.clock.fastForward(11_000);
+
     const sidebar = page.locator(".workspace-list-sidebar");
-    await expect(sidebar.locator(".ws-row", { hasText: "Late local workspace" })).toBeVisible({ timeout: 25_000 });
+    await expect(sidebar.locator(".ws-row", { hasText: "Late local workspace" })).toBeVisible();
   });
 });
 
@@ -4042,6 +4055,185 @@ test.describe("delayed-response navigation", () => {
     await expect(errorB).toContainText("setup failed B");
     // B's Retry control must not inherit A's stale in-flight state.
     await expect(errorB.getByRole("button", { name: "Retry" })).toBeEnabled();
+  });
+
+  test("right sidebar diff keeps the rendered workspace's host during a cross-host switch", async ({ page }) => {
+    // Regression: during the in-place transition the previous workspace
+    // stays rendered while the route's host key already points at the
+    // new workspace. The right sidebar combined the old workspace id
+    // with the new host key, so the diff panel could fetch the local
+    // workspace's id from the wrong fleet host.
+    const localWorkspace = {
+      ...testWorkspace,
+      id: "ws-local",
+      item_number: 1,
+      mr_title: "Local A",
+    };
+    const memberWorkspace = {
+      ...testWorkspace,
+      id: "ws-member",
+      item_number: 2,
+      mr_title: "Member B",
+      worktree_path: "/data/member/worktrees/ws-member",
+    };
+
+    const fleetMemberRequests: string[] = [];
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith("/api/v1/fleet/hosts/member/")) {
+        fleetMemberRequests.push(path);
+      }
+    });
+
+    await mockApi(page);
+    await page.route("**/api/v1/events", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: "",
+      });
+    });
+    await page.route("**/api/v1/workspaces", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ workspaces: [localWorkspace] }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200 });
+    });
+    await page.route(
+      (url) => url.pathname === "/api/v1/snapshot",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "member",
+                diagnostics: [],
+                id: "member",
+                kind: "remote",
+                name: "member",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          }),
+        });
+      },
+    );
+    await page.route("**/api/v1/fleet/hosts/member/workspaces", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaces: [memberWorkspace] }),
+      });
+    });
+
+    // Local workspace A — instant.
+    await page.route(`**/api/v1/workspaces/${localWorkspace.id}`, async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(localWorkspace),
+        });
+        return;
+      }
+      await route.fulfill({ status: 204 });
+    });
+    await page.route(`**/api/v1/workspaces/${localWorkspace.id}/runtime`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ launch_targets: [], sessions: [] }),
+      });
+    });
+    for (const suffix of ["files", "diff"]) {
+      await page.route(`**/api/v1/workspaces/${localWorkspace.id}/${suffix}*`, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ stale: false, whitespace_only_count: 0, files: [] }),
+        });
+      });
+    }
+
+    // Member workspace B detail is held so the transition window stays
+    // open: the URL points at B while A is still rendered.
+    let releaseB: () => void = () => {};
+    const bDelay = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+    await page.route(
+      (url) => url.pathname === `/api/v1/fleet/hosts/member/workspaces/${memberWorkspace.id}`,
+      async (route) => {
+        await bDelay;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(memberWorkspace),
+        });
+      },
+    );
+    await page.route(`**/api/v1/fleet/hosts/member/workspaces/${memberWorkspace.id}/runtime`, async (route) => {
+      await bDelay;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ launch_targets: [], sessions: [] }),
+      });
+    });
+
+    await page.goto(`/terminal/${localWorkspace.id}`);
+    await expect(page.locator(".terminal-main .header-name")).toContainText("Local A");
+
+    // Open the diff tab so the right sidebar's diff panel is active and
+    // confirm it fetches the local workspace from the local host.
+    const localFilesRequest = page.waitForRequest(
+      (request) => new URL(request.url()).pathname === `/api/v1/workspaces/${localWorkspace.id}/files`,
+    );
+    await page.locator(".seg-btn", { hasText: "Diff" }).click();
+    await localFilesRequest;
+
+    // Switch to the member-hosted workspace; its detail is held, so the
+    // screen still shows A while the route host is now "member".
+    const bDetailRequest = page.waitForRequest(
+      (request) => new URL(request.url()).pathname === `/api/v1/fleet/hosts/member/workspaces/${memberWorkspace.id}`,
+    );
+    await page.locator(".workspace-list-sidebar .ws-row", { hasText: "Member B" }).click();
+    await expect(page).toHaveURL(new RegExp(`/terminal/fleet/member/${memberWorkspace.id}$`));
+    await expect(page.locator(".terminal-main .header-name")).toContainText("Local A");
+    await bDetailRequest;
+
+    // The only member-host calls may be B's own detail/runtime. The
+    // diff panel must not have fetched the local workspace's id from
+    // the member host.
+    await expect
+      .poll(() => fleetMemberRequests.filter((path) => path.includes(`/workspaces/${localWorkspace.id}`)))
+      .toEqual([]);
+
+    releaseB();
+    await expect(page.locator(".terminal-main .header-name")).toContainText("Member B");
   });
 });
 

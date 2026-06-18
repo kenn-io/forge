@@ -2774,7 +2774,7 @@
               <WorkspaceRightSidebar
                 activeTab={sidebarTab}
                 workspaceID={workspace.id}
-                {workspaceHostKey}
+                workspaceHostKey={selectedWorkspaceHostKey(workspace)}
                 provider={workspace.repo.provider}
                 platformHost={workspace.repo.platform_host}
                 repoOwner={workspace.repo.owner}

@@ -590,6 +590,7 @@
           role="region"
           aria-label="Changed file diffs"
           style:tab-size={tabWidth}
+          style:overscroll-behavior="contain"
         >
           <div class="diff-content" bind:this={diffContent}>
             {#if visibleFiles.length === 0}

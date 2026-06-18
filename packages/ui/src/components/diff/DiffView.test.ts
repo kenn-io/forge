@@ -218,6 +218,14 @@ describe("DiffView", () => {
     expect(clearScrolling).toHaveBeenCalledOnce();
   });
 
+  it("contains wheel overscroll at diff pane boundaries", () => {
+    const diff = makeDiffStore();
+    const { container } = renderDiffView(diff);
+    const diffArea = container.querySelector(".diff-area") as HTMLDivElement;
+
+    expect(diffArea.style.overscrollBehavior).toBe("contain");
+  });
+
   it("keeps a scroll target pending until the file is rendered", async () => {
     const consumeScrollTarget = vi.fn();
     const diff = makeDiffStore({

@@ -72,7 +72,7 @@ If a block cannot be mapped confidently, keep the rendered Markdown correct and 
 
 `renderMarkdownBlocks(raw, repo)` is the only block-rendering API this feature should use. It must parse once with the configured Marked instance, keep document-level Marked behavior such as in-document reference definitions intact for the visible block output, render only visible top-level tokens as blocks, and sanitize every block through the same DOMPurify allow-list used by `renderMarkdown()`. Reference-link resolution inside the reconstructed hunk document is a required regression test for this API boundary.
 
-Multiple hunks are joined in backend hunk order with an explicit anchorless separator: blank line, thematic break line `---`, blank line. The separator prevents accidental list/table merging across unrelated hunks, can influence Markdown parsing the same way a visible thematic break does, has no old/new source-line mapping, and cannot receive review cards. Definitions inside the reconstructed hunk document may resolve across that separator; definitions outside loaded hunks remain unavailable.
+Multiple hunks are joined in backend hunk order with an explicit parser-only separator: blank line, thematic break line `---`, blank line. The separator prevents accidental list/table merging across unrelated hunks and can influence Markdown parsing the same way a thematic break does, but it is hidden from rendered preview output. Synthetic separator tokens have no old/new source-line mapping, are excluded from source-line range calculations, do not participate in block alignment, and cannot receive review cards. Definitions inside the reconstructed hunk document may resolve across that separator; definitions outside loaded hunks remain unavailable.
 
 Repeated paragraphs, headings, or list items are resolved by source order, not rendered text identity alone. The generated-line cursor makes identical text in different source locations produce distinct ranges.
 
@@ -109,6 +109,7 @@ Markdown rich preview should avoid unbounded quadratic work. Block alignment may
 - The rendered DOM remains valid for lists, tables, and blockquotes.
 - Large Markdown diffs do not allocate an unbounded block comparison matrix.
 - The block-rendering path preserves centralized Markdown sanitization and the allowed attribute policy.
+- Multi-hunk previews do not show artificial `<hr>` or separator content that was not part of the reviewed file.
 
 ## Testing
 

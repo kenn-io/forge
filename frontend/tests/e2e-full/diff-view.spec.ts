@@ -1178,11 +1178,13 @@ async function mockFilePreviewApi(page: Page): Promise<void> {
   });
 }
 
-async function mockReviewThreadOnPreviewMarkdown(page: Page, body: string): Promise<void> {
+async function mockReviewThreadOnPreviewMarkdown(page: Page, body: string, line = 3): Promise<void> {
   await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
     const response = await route.fetch();
     const detail = (await response.json()) as MergeRequestDetailForRoute;
     const timestamp = "2026-06-17T15:00:00Z";
+    const externalID = `e2e-rich-preview-${line}`;
+    const threadID = `thread-rich-preview-${line}`;
 
     await route.fulfill({
       response,
@@ -1194,30 +1196,30 @@ async function mockReviewThreadOnPreviewMarkdown(page: Page, body: string): Prom
             Author: "reviewer",
             Body: body,
             CreatedAt: timestamp,
-            DedupeKey: "review_comment:e2e-rich-preview",
+            DedupeKey: `review_comment:${externalID}`,
             DirectURL: "",
             EventType: "review_comment",
             ID: 900_001,
             MergeRequestID: detail.merge_request?.ID ?? 1,
             MetadataJSON: "{}",
-            PlatformExternalID: "e2e-rich-preview",
+            PlatformExternalID: externalID,
             PlatformID: 900_001,
             Resolvable: false,
             Resolved: false,
             Summary: body,
-            ThreadID: "thread-rich-preview",
+            ThreadID: threadID,
             diff_thread: {
               author_login: "reviewer",
               body,
               can_resolve: false,
               created_at: timestamp,
               diff_head_sha: detail.diff_head_sha,
-              id: "thread-rich-preview",
-              line: 3,
+              id: threadID,
+              line,
               line_type: "add",
-              new_line: 3,
+              new_line: line,
               path: "docs/preview.md",
-              provider_comment_id: "e2e-rich-preview",
+              provider_comment_id: externalID,
               resolved: false,
               side: "right",
               updated_at: timestamp,
@@ -1950,6 +1952,31 @@ test.describe("diff view", () => {
         ),
       )
       .toBe(true);
+  });
+
+  test("rich preview keeps unmapped review thread cards visible as file-level fallback", async ({ page }) => {
+    const reviewBody = "Unmapped rich preview note should stay visible";
+    await mockDiffApi(page, previewDiff);
+    await mockFilePreviewApi(page);
+    await mockReviewThreadOnPreviewMarkdown(page, reviewBody, 99);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await openDiffFilterMenu(page);
+    await page.getByRole("switch", { name: "Rich preview" }).click();
+
+    const markdownFile = page.locator('[data-file-path="docs/preview.md"]');
+    await expect(markdownFile.locator(".markdown-rich-diff--unified")).toBeVisible();
+    const fallbackCard = markdownFile.locator(".preview-shell > .inline-review-thread").filter({
+      hasText: reviewBody,
+    });
+    await expect(fallbackCard).toBeVisible();
+    await expect(fallbackCard).toHaveClass(/inline-review-thread--file-level/);
+    await expect(fallbackCard).toContainText("File");
+    await expect(
+      markdownFile.locator(".markdown-rich-diff--unified .inline-review-thread").filter({ hasText: reviewBody }),
+    ).toHaveCount(0);
   });
 
   test("rich preview refetches blob content after a same-PR diff reload", async ({ page }) => {

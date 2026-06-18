@@ -1,10 +1,11 @@
 # Rich Preview Review Card Anchoring Implementation Plan
 
 > **Status:** Implemented on the rich-preview review-card branch. This plan is kept as historical implementation context; completed checkboxes describe work already done, not new pending tasks.
+> RED/GREEN notes below describe the original implementation workflow at the time each step was executed. They are not predictions about the current repository state.
 
 **Goal:** Replace fragment-rendered Markdown rich preview with a source-line-aware render model that preserves Markdown semantics and anchors review cards in unified and split modes.
 
-**Architecture:** Add a pure Markdown rich-preview model under `packages/ui/src/utils/` that builds old/new Markdown documents from diff hunks, maps generated Markdown lines back to source diff lines, renders top-level Markdown tokens through the canonical renderer, and produces unified/split block HTML. `DiffRichPreview.svelte` consumes that model and only assigns/render review cards against explicit block ranges. Structured Markdown containers anchor at the top-level token boundary so cards do not become invalid list/table/blockquote children. The model uses a bounded block comparison strategy for large Markdown diffs.
+**Architecture:** Add a pure Markdown rich-preview model under `packages/ui/src/utils/` that builds old/new Markdown documents from diff hunks, maps generated Markdown lines back to source diff lines, renders top-level Markdown tokens through the canonical renderer, and produces unified/split block HTML. `DiffRichPreview.svelte` consumes that model and only assigns/render review cards against explicit block ranges. Structured Markdown containers anchor at the top-level token boundary so cards do not become invalid list/table/blockquote children. Synthetic hunk separators are parser-only, have no source mapping, and are not rendered or aligned as preview blocks. The model uses a bounded block comparison strategy for large Markdown diffs.
 
 **Tech Stack:** Svelte 5, TypeScript, Marked, DOMPurify, existing `renderMarkdownDiff` and `renderMarkdownSplitDiff`, Vite+/Vitest, Playwright.
 

@@ -63,14 +63,16 @@ function sideIncludesLine(side: "old" | "new", line: SourceLine): boolean {
 }
 
 function buildSideBlocks(document: MarkdownSideDocument, repo: RepoContext): MarkdownSideBlock[] {
-  return renderMarkdownBlocks(document.text, repo).map((block) => {
-    const range = sourceRangeForBlock(block, document.lineMap);
-    return {
-      ...block,
-      sourceStart: range.start,
-      sourceEnd: range.end,
-    };
-  });
+  return renderMarkdownBlocks(document.text, repo)
+    .map((block) => {
+      const range = sourceRangeForBlock(block, document.lineMap);
+      return {
+        ...block,
+        sourceStart: range.start,
+        sourceEnd: range.end,
+      };
+    })
+    .filter((block) => block.sourceStart != null || block.sourceEnd != null);
 }
 
 function sourceRangeForBlock(

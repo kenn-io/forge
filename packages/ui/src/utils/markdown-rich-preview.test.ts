@@ -84,4 +84,34 @@ describe("buildMarkdownRichPreview", () => {
     expect(preview.blocks.some((block) => block.oldStart != null)).toBe(true);
     expect(preview.blocks.some((block) => block.newStart != null)).toBe(true);
   });
+
+  it("does not render synthetic hunk separators as preview content", () => {
+    const file = {
+      ...markdownFile([]),
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 1,
+          new_start: 1,
+          new_count: 1,
+          lines: [{ type: "context", content: "# First hunk", old_num: 1, new_num: 1 }],
+        },
+        {
+          old_start: 20,
+          old_count: 1,
+          new_start: 20,
+          new_count: 1,
+          lines: [{ type: "context", content: "Second hunk paragraph", old_num: 20, new_num: 20 }],
+        },
+      ],
+    } satisfies DiffFile;
+
+    const preview = buildMarkdownRichPreview(file, repo);
+    const html = preview.blocks.map((block) => block.unifiedHtml).join("");
+
+    expect(html).toContain("First hunk");
+    expect(html).toContain("Second hunk paragraph");
+    expect(html).not.toContain("<hr");
+    expect(preview.blocks.every((block) => block.oldStart != null || block.newStart != null)).toBe(true);
+  });
 });

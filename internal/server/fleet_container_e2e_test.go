@@ -28,6 +28,19 @@ import (
 
 var fleetContainerUUIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
+func TestFleetRunDaemonBuildDisablesTelemetry(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	script, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts/e2e/fleet/run-daemon.sh"))
+	require.NoError(err)
+
+	assert.Contains(
+		string(script),
+		"go build -tags middleman_no_telemetry -o \"${binary}\" ./cmd/middleman",
+	)
+}
+
 func TestFleetContainerReadE2E(t *testing.T) {
 	if os.Getenv("MIDDLEMAN_FLEET_CONTAINER_E2E") != "1" {
 		t.Skip("set MIDDLEMAN_FLEET_CONTAINER_E2E=1 to run fleet container e2e")

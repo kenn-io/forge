@@ -77,7 +77,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-go build -o "${binary}" ./cmd/middleman
+go build -tags middleman_no_telemetry -o "${binary}" ./cmd/middleman
 
 "${binary}" serve --config "${config}" &
 middleman_pid=$!

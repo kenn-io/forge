@@ -98,7 +98,7 @@ func SanitizeProperties(event string, properties map[string]any) (map[string]any
 }
 
 func NewReporter(opts Options) (*Reporter, error) {
-	if !EnabledFromEnv() || testing.Testing() {
+	if !enabledInBuild() || !EnabledFromEnv() || testing.Testing() {
 		return DisabledReporter(), nil
 	}
 	if opts.Database == nil {

@@ -2068,6 +2068,17 @@ test.describe("diff view", () => {
         ),
       )
       .toBe(true);
+    await expect
+      .poll(() =>
+        reviewCard.evaluate((element) => {
+          const preview = element.closest(".markdown-rich-diff--unified");
+          if (!preview) return false;
+          const cardRect = element.getBoundingClientRect();
+          const previewRect = preview.getBoundingClientRect();
+          return cardRect.right <= previewRect.right + 1;
+        }),
+      )
+      .toBe(true);
   });
 
   test("rich preview keeps unmapped review thread cards visible as file-level fallback", async ({ page }) => {

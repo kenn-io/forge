@@ -74,9 +74,19 @@
   function layoutContainer(element: HTMLElement): HTMLElement | null {
     const root = element.getRootNode();
     if (root instanceof ShadowRoot && root.host instanceof HTMLElement) {
-      return root.host.closest(".file-content") ?? root.host.closest(".diff-area");
+      return closestLayoutContainer(root.host);
     }
-    return element.closest(".file-content") ?? element.closest(".diff-area");
+    return closestLayoutContainer(element);
+  }
+
+  function closestLayoutContainer(element: HTMLElement): HTMLElement | null {
+    return (
+      element.closest(".markdown-rich-diff__pane") ??
+      element.closest(".diff-rich-preview") ??
+      element.closest(".preview-shell") ??
+      element.closest(".file-content") ??
+      element.closest(".diff-area")
+    );
   }
 
   function startReply(): void {

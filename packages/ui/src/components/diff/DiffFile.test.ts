@@ -901,6 +901,63 @@ describe("DiffFile", () => {
     expect(comment?.closest(".markdown-rich-diff--unified")).toBeTruthy();
   });
 
+  it("orders markdown rich preview review cards by their target source line", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 3,
+            new_start: 1,
+            new_count: 3,
+            lines: [
+              { type: "context", content: "- Issues", old_num: 1, new_num: 1 },
+              { type: "context", content: "- Actions", old_num: 2, new_num: 2 },
+              { type: "context", content: "- Statuses", old_num: 3, new_num: 3 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            id: "thread-actions",
+            provider_comment_id: "comment-actions",
+            path: "README.md",
+            old_path: "README.md",
+            line: 2,
+            new_line: 2,
+            body: "Actions review note",
+            diff_head_sha: "diff-head",
+          }),
+          makeReviewThread({
+            id: "thread-issues",
+            provider_comment_id: "comment-issues",
+            path: "README.md",
+            old_path: "README.md",
+            line: 1,
+            new_line: 1,
+            body: "Issues review note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Actions review note")).toBeTruthy();
+      expect(screen.getByText("Issues review note")).toBeTruthy();
+    });
+    const reviewBodies = Array.from(
+      document.querySelectorAll<HTMLElement>(".markdown-rich-diff--unified .review-thread-body"),
+    ).map((element) => element.textContent?.trim());
+    expect(reviewBodies).toEqual(["Issues review note", "Actions review note"]);
+  });
+
   it("keeps markdown document semantics when review cards are anchored in rich preview", async () => {
     renderDiffFile(
       makeFile({

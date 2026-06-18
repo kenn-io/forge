@@ -184,7 +184,34 @@
         block.rightReviewThreads.push(placement);
       }
     }
+    sortReviewThreadPlacements(fallbackReviewThreads);
+    for (const block of blocks) {
+      sortReviewThreadPlacements(block.reviewThreads);
+      sortReviewThreadPlacements(block.leftReviewThreads);
+      sortReviewThreadPlacements(block.rightReviewThreads);
+    }
     return { blocks, fallbackReviewThreads };
+  }
+
+  function sortReviewThreadPlacements(placements: ReviewThreadPlacement[]): void {
+    placements.sort(compareReviewThreadPlacements);
+  }
+
+  function compareReviewThreadPlacements(
+    left: ReviewThreadPlacement,
+    right: ReviewThreadPlacement,
+  ): number {
+    const lineDelta = reviewThreadTargetLine(left.thread) - reviewThreadTargetLine(right.thread);
+    if (lineDelta !== 0) return lineDelta;
+    const sideDelta = sideSortValue(left.thread) - sideSortValue(right.thread);
+    if (sideDelta !== 0) return sideDelta;
+    const createdAtDelta = Date.parse(left.thread.created_at) - Date.parse(right.thread.created_at);
+    if (!Number.isNaN(createdAtDelta) && createdAtDelta !== 0) return createdAtDelta;
+    return left.thread.id.localeCompare(right.thread.id);
+  }
+
+  function sideSortValue(thread: ReviewThread): number {
+    return reviewThreadTargetSide(thread) === "left" ? 0 : 1;
   }
 
   function blockContainsReviewThread(block: MarkdownRichPreviewBlock, thread: ReviewThread): boolean {

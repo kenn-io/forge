@@ -563,7 +563,7 @@ func waitForRepoSynced(
 		}
 		repo = got
 		return true
-	}, 2*time.Second, 10*time.Millisecond)
+	}, 5*time.Second, 10*time.Millisecond)
 
 	return repo
 }

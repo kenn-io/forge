@@ -5,6 +5,7 @@ import { providerRepoPath, providerRouteParams } from "@middleman/ui/api/provide
 import { apiErrorMessage, client } from "./runtime.js";
 
 type UpdateSettingsRequest = components["schemas"]["UpdateSettingsRequest"];
+type UpdateFleetSettingsRequest = components["schemas"]["UpdateFleetSettingsInputBody"];
 export type RepoPreviewResponse = components["schemas"]["RepoPreviewResponse"];
 export type RepoPreviewRow = components["schemas"]["RepoPreviewRow"];
 
@@ -64,6 +65,16 @@ export async function updateSettings(settings: {
   });
   if (!data) {
     throw new Error(requestErrorMessage(error, `PUT /settings -> ${response.status}`));
+  }
+  return data;
+}
+
+export async function updateFleetSettings(fleet: UpdateFleetSettingsRequest): Promise<Settings["fleet"]> {
+  const { data, error, response } = await client.PUT("/settings/fleet", {
+    body: fleet,
+  });
+  if (!data) {
+    throw new Error(requestErrorMessage(error, `PUT /settings/fleet -> ${response.status}`));
   }
   return data;
 }

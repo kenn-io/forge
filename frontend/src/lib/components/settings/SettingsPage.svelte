@@ -12,6 +12,7 @@
   import TerminalSettings from "./TerminalSettings.svelte";
   import ModeVisibilitySettings from "./ModeVisibilitySettings.svelte";
   import AgentSettings from "./AgentSettings.svelte";
+  import FleetSettings from "./FleetSettings.svelte";
 
   interface SettingsNavItem {
     id: string;
@@ -58,6 +59,13 @@
       group: "Workspace",
       summary: "Agent commands available in workspaces",
       keywords: "workspace agents codex claude gemini opencode aider binary arguments",
+    },
+    {
+      id: "settings-fleet",
+      title: "Fleet federation",
+      group: "Workspace",
+      summary: "Remote hosts and fleet membership",
+      keywords: "fleet federation remote hosts peers ssh http membership",
     },
   ];
 
@@ -223,6 +231,15 @@
             agents={settings.agents}
             onUpdate={(agents) => {
               settings = { ...settings!, agents };
+            }}
+          />
+        </SettingsSection>
+
+        <SettingsSection title="Fleet federation" sectionId="settings-fleet">
+          <FleetSettings
+            fleet={settings.fleet}
+            onUpdate={(fleet) => {
+              settings = { ...settings!, fleet };
             }}
           />
         </SettingsSection>

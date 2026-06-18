@@ -1056,6 +1056,13 @@ type FilesystemValidateRepoOutputBody struct {
 	RootPath *string `json:"root_path,omitempty"`
 }
 
+// FleetPeer defines model for FleetPeer.
+type FleetPeer struct {
+	BaseUrl string  `json:"base_url"`
+	Key     string  `json:"key"`
+	Name    *string `json:"name,omitempty"`
+}
+
 // FleetSSHPeer defines model for FleetSSHPeer.
 type FleetSSHPeer struct {
 	Destination   string  `json:"destination"`
@@ -1070,6 +1077,24 @@ type FleetSSHPeersBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema          *string        `json:"$schema,omitempty"`
 	RestartRequired bool           `json:"restart_required"`
+	SshPeers        []FleetSSHPeer `json:"ssh_peers"`
+}
+
+// FleetSessions defines model for FleetSessions.
+type FleetSessions struct {
+	IncludeUnmanagedDetails *bool `json:"include_unmanaged_details,omitempty"`
+}
+
+// FleetSettingsResponse defines model for FleetSettingsResponse.
+type FleetSettingsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string        `json:"$schema,omitempty"`
+	Enabled         bool           `json:"enabled"`
+	Key             *string        `json:"key,omitempty"`
+	PeerTimeout     *string        `json:"peer_timeout,omitempty"`
+	Peers           []FleetPeer    `json:"peers"`
+	RestartRequired bool           `json:"restart_required"`
+	Sessions        FleetSessions  `json:"sessions"`
 	SshPeers        []FleetSSHPeer `json:"ssh_peers"`
 }
 
@@ -2507,6 +2532,7 @@ type SettingsResponse struct {
 	Schema   *string                `json:"$schema,omitempty"`
 	Activity Activity               `json:"activity"`
 	Agents   []Agent                `json:"agents"`
+	Fleet    FleetSettingsResponse  `json:"fleet"`
 	Modes    *ModeVisibility        `json:"modes,omitempty"`
 	Repos    []ConfiguredRepoStatus `json:"repos"`
 	Terminal Terminal               `json:"terminal"`
@@ -2675,6 +2701,18 @@ type UpdateFleetSSHPeersInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema   *string        `json:"$schema,omitempty"`
 	SshPeers []FleetSSHPeer `json:"ssh_peers"`
+}
+
+// UpdateFleetSettingsInputBody defines model for UpdateFleetSettingsInputBody.
+type UpdateFleetSettingsInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string        `json:"$schema,omitempty"`
+	Enabled     bool           `json:"enabled"`
+	Key         *string        `json:"key,omitempty"`
+	PeerTimeout *string        `json:"peer_timeout,omitempty"`
+	Peers       []FleetPeer    `json:"peers"`
+	Sessions    FleetSessions  `json:"sessions"`
+	SshPeers    []FleetSSHPeer `json:"ssh_peers"`
 }
 
 // UpdateSettingsRequest defines model for UpdateSettingsRequest.
@@ -3536,6 +3574,9 @@ type LaunchHostRuntimeSessionJSONRequestBody = LaunchHostRuntimeSessionInputBody
 
 // UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
 type UpdateSettingsJSONRequestBody = UpdateSettingsRequest
+
+// UpdateFleetSettingsJSONRequestBody defines body for UpdateFleetSettings for application/json ContentType.
+type UpdateFleetSettingsJSONRequestBody = UpdateFleetSettingsInputBody
 
 // UpdateFleetSshPeersJSONRequestBody defines body for UpdateFleetSshPeers for application/json ContentType.
 type UpdateFleetSshPeersJSONRequestBody = UpdateFleetSSHPeersInputBody
@@ -4434,6 +4475,14 @@ type ClientInterface interface {
 	UpdateSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateSettings(ctx context.Context, body UpdateSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFleetSettings request
+	GetFleetSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateFleetSettingsWithBody request with any body
+	UpdateFleetSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateFleetSettings(ctx context.Context, body UpdateFleetSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetFleetSshPeers request
 	GetFleetSshPeers(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -8062,6 +8111,42 @@ func (c *Client) UpdateSettingsWithBody(ctx context.Context, contentType string,
 
 func (c *Client) UpdateSettings(ctx context.Context, body UpdateSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateSettingsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFleetSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetSettingsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateFleetSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateFleetSettingsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateFleetSettings(ctx context.Context, body UpdateFleetSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateFleetSettingsRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -21179,6 +21264,73 @@ func NewUpdateSettingsRequestWithBody(server string, contentType string, body io
 	return req, nil
 }
 
+// NewGetFleetSettingsRequest generates requests for GetFleetSettings
+func NewGetFleetSettingsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/fleet")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateFleetSettingsRequest calls the generic UpdateFleetSettings builder with application/json body
+func NewUpdateFleetSettingsRequest(server string, body UpdateFleetSettingsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateFleetSettingsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewUpdateFleetSettingsRequestWithBody generates requests for UpdateFleetSettings with any type of body
+func NewUpdateFleetSettingsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings/fleet")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetFleetSshPeersRequest generates requests for GetFleetSshPeers
 func NewGetFleetSshPeersRequest(server string) (*http.Request, error) {
 	var err error
@@ -23424,6 +23576,14 @@ type ClientWithResponsesInterface interface {
 	UpdateSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error)
 
 	UpdateSettingsWithResponse(ctx context.Context, body UpdateSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error)
+
+	// GetFleetSettingsWithResponse request
+	GetFleetSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFleetSettingsResponse, error)
+
+	// UpdateFleetSettingsWithBodyWithResponse request with any body
+	UpdateFleetSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFleetSettingsResponse, error)
+
+	UpdateFleetSettingsWithResponse(ctx context.Context, body UpdateFleetSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFleetSettingsResponse, error)
 
 	// GetFleetSshPeersWithResponse request
 	GetFleetSshPeersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFleetSshPeersResponse, error)
@@ -28313,6 +28473,52 @@ func (r UpdateSettingsResponse) StatusCode() int {
 	return 0
 }
 
+type GetFleetSettingsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FleetSettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateFleetSettingsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FleetSettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateFleetSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateFleetSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetFleetSshPeersResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -31548,6 +31754,32 @@ func (c *ClientWithResponses) UpdateSettingsWithResponse(ctx context.Context, bo
 		return nil, err
 	}
 	return ParseUpdateSettingsResponse(rsp)
+}
+
+// GetFleetSettingsWithResponse request returning *GetFleetSettingsResponse
+func (c *ClientWithResponses) GetFleetSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFleetSettingsResponse, error) {
+	rsp, err := c.GetFleetSettings(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetSettingsResponse(rsp)
+}
+
+// UpdateFleetSettingsWithBodyWithResponse request with arbitrary body returning *UpdateFleetSettingsResponse
+func (c *ClientWithResponses) UpdateFleetSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFleetSettingsResponse, error) {
+	rsp, err := c.UpdateFleetSettingsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateFleetSettingsResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateFleetSettingsWithResponse(ctx context.Context, body UpdateFleetSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFleetSettingsResponse, error) {
+	rsp, err := c.UpdateFleetSettings(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateFleetSettingsResponse(rsp)
 }
 
 // GetFleetSshPeersWithResponse request returning *GetFleetSshPeersResponse
@@ -38576,6 +38808,72 @@ func ParseUpdateSettingsResponse(rsp *http.Response) (*UpdateSettingsResponse, e
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFleetSettingsResponse parses an HTTP response from a GetFleetSettingsWithResponse call
+func ParseGetFleetSettingsResponse(rsp *http.Response) (*GetFleetSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FleetSettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateFleetSettingsResponse parses an HTTP response from a UpdateFleetSettingsWithResponse call
+func ParseUpdateFleetSettingsResponse(rsp *http.Response) (*UpdateFleetSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateFleetSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FleetSettingsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

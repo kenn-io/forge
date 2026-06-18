@@ -82,6 +82,10 @@ export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {
 export type AgentSettings = components["schemas"]["Agent"];
 export type ConfigRepo = components["schemas"]["ConfiguredRepoStatus"];
 export type Settings = components["schemas"]["SettingsResponse"];
+export type FleetSettings = components["schemas"]["FleetSettingsResponse"];
+export type FleetSettingsUpdate = components["schemas"]["UpdateFleetSettingsInputBody"];
+export type FleetPeer = components["schemas"]["FleetPeer"];
+export type FleetSSHPeer = components["schemas"]["FleetSSHPeer"];
 
 export interface DiffResult {
   stale: boolean;

@@ -116,6 +116,7 @@ func TestFleetSnapshotIncludesSSHPeers(t *testing.T) {
 
 	srv, _ := setupTestServer(t)
 	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
 		cfg.Fleet.Key = "studio"
 	})
 	srv.sshFleet = newSSHTestTransport(t, fake, config.FleetSSHPeer{
@@ -182,6 +183,9 @@ func TestSSHFleetProxyRelaysWrites(t *testing.T) {
 		),
 	}}
 	srv, _ := setupTestServer(t)
+	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
+	})
 	srv.sshFleet = newSSHTestTransport(t, fake, config.FleetSSHPeer{
 		Key: "epyc", Destination: "wes@epyc.local",
 	})
@@ -226,6 +230,9 @@ func TestSSHFleetProxyRelaysWorkspaceDiffReads(t *testing.T) {
 		),
 	}}
 	srv, _ := setupTestServer(t)
+	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
+	})
 	srv.sshFleet = newSSHTestTransport(t, fake, config.FleetSSHPeer{
 		Key: "epyc", Destination: "wes@epyc.local",
 	})
@@ -269,6 +276,9 @@ func TestSSHFleetAttachSpecWrapped(t *testing.T) {
 		"GET /api/v1/runtime/sessions/s1/attach-spec": framedJSON(200, remoteSpec),
 	}}
 	srv, _ := setupTestServer(t)
+	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
+	})
 	srv.sshFleet = newSSHTestTransport(t, fake, config.FleetSSHPeer{
 		Key: "epyc", Destination: "wes@epyc.local",
 	})
@@ -333,6 +343,7 @@ func TestSSHFleetSnapshotDegradesColdPeerFast(t *testing.T) {
 	})
 	srv, _ := setupTestServer(t)
 	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
 		cfg.Fleet.Key = "studio"
 		cfg.Fleet.PeerTimeout = "150ms"
 	})
@@ -460,6 +471,7 @@ func TestSSHFleetRelayAutoStartsRemoteDaemon(t *testing.T) {
 	transport.runner = sshfleet.NewRunnerWithExec(transport.conns, exec)
 	srv, _ := setupTestServer(t)
 	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
 		cfg.Fleet.Key = "studio"
 	})
 	srv.sshFleet = transport
@@ -485,6 +497,9 @@ func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
+	setTestFleetConfig(fixture.server, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
+	})
 	writeFakeSSHForAttach(t)
 	remoteSpec := runtimeAttachSpecResponse{
 		Version:           1,
@@ -527,6 +542,9 @@ func TestSSHFleetWebSocketTerminalHonorsResizeActive(t *testing.T) {
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
+	setTestFleetConfig(fixture.server, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
+	})
 	writeFakeSSHForAttach(t)
 	remoteSpec := runtimeAttachSpecResponse{
 		Version:     1,

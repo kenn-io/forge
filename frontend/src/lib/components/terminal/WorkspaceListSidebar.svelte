@@ -214,8 +214,12 @@
     fleetHosts.filter((host) => host.reachable).length,
   );
 
+  const hasRemoteFleetHosts = $derived(
+    fleetHosts.some((host) => host.kind !== "self"),
+  );
+
   const showFleetStatus = $derived(
-    fleetError !== null || (fleetLoaded && fleetHosts.length > 0),
+    fleetError !== null || (fleetLoaded && hasRemoteFleetHosts),
   );
 
   // Flat ordering for timestamp sorts. The org/repo mode keeps

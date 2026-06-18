@@ -27,7 +27,8 @@ func TestBuildFleetSnapshotMergesPeerAndDegrades(t *testing.T) {
 
 	srv := &Server{db: dbtest.Open(t), cfg: &config.Config{}}
 	srv.cfg.Fleet = config.Fleet{
-		Key: "studio",
+		Enabled: true,
+		Key:     "studio",
 		Peers: []config.FleetPeer{
 			{Key: "mbp", Name: "mbp", BaseURL: peer.URL},
 			{Key: "epyc", Name: "epyc", BaseURL: "http://127.0.0.1:0"}, // unreachable
@@ -46,6 +47,29 @@ func TestBuildFleetSnapshotMergesPeerAndDegrades(t *testing.T) {
 	}
 	assert.GreaterOrEqual(t, reachable, 2, "want self+mbp reachable, hosts=%+v", snap.Hosts)
 	assert.Equal(t, 1, down, "want 1 unreachable (epyc)")
+}
+
+func TestBuildFleetSnapshotSkipsPeersWhenFederationDisabled(t *testing.T) {
+	peerRequests := 0
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		peerRequests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"schemaVersion":2,"host":{"hostname":"mbp","platform":"macos"}}`))
+	}))
+	defer peer.Close()
+
+	srv := &Server{db: dbtest.Open(t), cfg: &config.Config{}}
+	srv.cfg.Fleet = config.Fleet{
+		Key: "studio",
+		Peers: []config.FleetPeer{
+			{Key: "mbp", Name: "mbp", BaseURL: peer.URL},
+		},
+	}
+
+	snap, err := srv.buildFleetSnapshot(context.Background(), true)
+	require.NoError(t, err)
+	require.Len(t, snap.Hosts, 1, "disabled federation must return local host only")
+	assert.Equal(t, 0, peerRequests, "disabled federation must not fetch HTTP peers")
 }
 
 func TestBuildFleetSnapshotLocalOnly(t *testing.T) {
@@ -83,7 +107,8 @@ func TestHubRoutabilityPolicySuppressesUnroutableHosts(t *testing.T) {
 
 	srv := &Server{db: dbtest.Open(t), cfg: &config.Config{}}
 	srv.cfg.Fleet = config.Fleet{
-		Key: "studio",
+		Enabled: true,
+		Key:     "studio",
 		Peers: []config.FleetPeer{
 			{Key: "mbp", BaseURL: "http://peer.invalid"},
 		},

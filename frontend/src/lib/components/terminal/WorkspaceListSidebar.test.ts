@@ -193,7 +193,7 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByText("http")).toBeTruthy();
   });
 
-  it("shows the local fleet host even without peers", async () => {
+  it("hides the fleet status block when only the local host is present", async () => {
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
         return Promise.resolve({
@@ -222,11 +222,19 @@ describe("WorkspaceListSidebar", () => {
       props: { selectedId: "" },
     });
 
-    await screen.findByText("Fleet");
-    expect(screen.getByText("1/1")).toBeTruthy();
-    expect(screen.getByText("member")).toBeTruthy();
-    expect(screen.getByText("self")).toBeTruthy();
-    expect(screen.getByText("local")).toBeTruthy();
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith(
+        "/snapshot",
+        expect.objectContaining({
+          params: { query: { include_peers: true } },
+        }),
+      );
+    });
+    expect(screen.queryByText("Fleet")).toBeNull();
+    expect(screen.queryByText("1/1")).toBeNull();
+    expect(screen.queryByText("member")).toBeNull();
+    expect(screen.queryByText("self")).toBeNull();
+    expect(screen.queryByText("local")).toBeNull();
   });
 
   it("loads workspaces from reachable ssh fleet hosts", async () => {

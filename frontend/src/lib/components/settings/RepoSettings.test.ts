@@ -30,6 +30,16 @@ const mockUpdateRepoWorktreeBasePath = vi.mocked(updateRepoWorktreeBasePath);
 const mockPreviewRepos = vi.mocked(previewRepos);
 const mockBulkAddRepos = vi.mocked(bulkAddRepos);
 
+function defaultFleetSettings() {
+  return {
+    enabled: false,
+    sessions: {},
+    peers: [],
+    ssh_peers: [],
+    restart_required: false,
+  };
+}
+
 describe("RepoSettings", () => {
   afterEach(() => {
     cleanup();
@@ -180,6 +190,7 @@ describe("RepoSettings", () => {
         renderer: "xterm",
       },
       agents: [],
+      fleet: defaultFleetSettings(),
     });
     mockRefreshRepo.mockResolvedValue({
       repos: [],
@@ -203,6 +214,7 @@ describe("RepoSettings", () => {
         renderer: "xterm",
       },
       agents: [],
+      fleet: defaultFleetSettings(),
     });
 
     render(RepoSettings, {
@@ -274,6 +286,7 @@ describe("RepoSettings", () => {
         renderer: "xterm",
       },
       agents: [],
+      fleet: defaultFleetSettings(),
     });
 
     render(RepoSettings, {
@@ -368,6 +381,7 @@ describe("RepoSettings", () => {
         renderer: "xterm",
       },
       agents: [],
+      fleet: defaultFleetSettings(),
     });
     render(RepoSettings, {
       props: {

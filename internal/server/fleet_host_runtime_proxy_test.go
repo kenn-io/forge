@@ -42,7 +42,8 @@ func TestFleetHostRuntimeSessionProxiesToPeer(t *testing.T) {
 
 	s := &Server{cfg: &config.Config{
 		Fleet: config.Fleet{
-			Key: "hub",
+			Enabled: true,
+			Key:     "hub",
 			Peers: []config.FleetPeer{
 				{Key: "member", BaseURL: peer.URL},
 			},
@@ -141,7 +142,8 @@ func TestFleetFilesystemProxiesToPeer(t *testing.T) {
 
 	s := &Server{cfg: &config.Config{
 		Fleet: config.Fleet{
-			Key: "hub",
+			Enabled: true,
+			Key:     "hub",
 			Peers: []config.FleetPeer{
 				{Key: "member", BaseURL: peer.URL},
 			},

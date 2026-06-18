@@ -1613,6 +1613,28 @@ func TestRestartRequiredForAuthFleetSessionsAndSSHPeers(t *testing.T) {
 	require.False(snap.restartRequiredFor(base()),
 		"identical config must not demand a restart")
 
+	enabledFlipped := base()
+	enabledFlipped.Fleet.Enabled = true
+	require.False(snap.restartRequiredFor(enabledFlipped),
+		"fleet.enabled changes apply without restart")
+
+	keyChanged := base()
+	keyChanged.Fleet.Key = "studio"
+	require.False(snap.restartRequiredFor(keyChanged),
+		"fleet.key changes apply without restart")
+
+	timeoutChanged := base()
+	timeoutChanged.Fleet.PeerTimeout = "4s"
+	require.False(snap.restartRequiredFor(timeoutChanged),
+		"fleet.peer_timeout changes apply without restart")
+
+	httpPeerAdded := base()
+	httpPeerAdded.Fleet.Peers = []config.FleetPeer{
+		{Key: "mini", BaseURL: "http://mini.local:8091"},
+	}
+	require.False(snap.restartRequiredFor(httpPeerAdded),
+		"HTTP fleet peer changes apply without restart")
+
 	authFlipped := base()
 	authFlipped.API.RequireAuth = true
 	require.True(snap.restartRequiredFor(authFlipped))

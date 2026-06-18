@@ -31,10 +31,10 @@ func (s *Server) buildFleetSnapshot(ctx context.Context, includePeers bool) (fle
 	selfKey := s.fleetSelfKey(local.Host.Hostname)
 
 	var results []fleet.PeerResult
-	if includePeers && len(fleetCfg.Peers) > 0 {
+	if includePeers && fleetCfg.Enabled && len(fleetCfg.Peers) > 0 {
 		results = append(results, s.fetchPeerResults(ctx, fleetCfg)...)
 	}
-	if includePeers {
+	if includePeers && fleetCfg.Enabled {
 		results = append(results, s.fetchSSHPeerResults(ctx)...)
 	}
 

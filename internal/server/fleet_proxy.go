@@ -1115,14 +1115,15 @@ func (s *Server) resolveFleetHostTarget(hostKey string) (fleetHostTarget, bool) 
 	if hostKey == s.fleetSelfKey("") {
 		return fleetHostTarget{self: true}, true
 	}
-	if s.cfg != nil {
+	federationEnabled := s.cfg != nil && s.cfg.Fleet.Enabled
+	if federationEnabled {
 		for _, peer := range s.cfg.Fleet.Peers {
 			if peer.Key == hostKey {
 				return fleetHostTarget{peer: peer}, true
 			}
 		}
 	}
-	if s.sshFleet != nil {
+	if federationEnabled && s.sshFleet != nil {
 		if peer, ok := s.sshFleet.peer(hostKey); ok {
 			return fleetHostTarget{sshPeer: &peer}, true
 		}

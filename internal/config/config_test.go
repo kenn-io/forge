@@ -2955,6 +2955,7 @@ func TestSaveRoundTripsFleet(t *testing.T) {
 		DataDir:        dir,
 		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
 		Fleet: Fleet{
+			Enabled:     true,
 			Key:         "studio",
 			PeerTimeout: "3s",
 			Sessions:    FleetSessions{IncludeUnmanagedDetails: true},
@@ -2968,6 +2969,7 @@ func TestSaveRoundTripsFleet(t *testing.T) {
 
 	reloaded, err := Load(path)
 	require.NoError(t, err)
+	assert.True(reloaded.Fleet.Enabled)
 	assert.Equal("studio", reloaded.Fleet.Key)
 	assert.Equal("3s", reloaded.Fleet.PeerTimeout)
 	assert.True(reloaded.Fleet.Sessions.IncludeUnmanagedDetails)
@@ -3545,6 +3547,7 @@ func TestFleetConfigParsesAndValidates(t *testing.T) {
 	require := require.New(t)
 	path := writeConfig(t, `
 [fleet]
+enabled = true
 key = "studio"
 peer_timeout = "2s"
 [fleet.sessions]
@@ -3556,12 +3559,28 @@ base_url = "http://mbp:8091"
 `)
 	cfg, err := Load(path)
 	require.NoError(err)
+	require.True(cfg.Fleet.Enabled)
 	require.Equal("studio", cfg.Fleet.Key)
 	require.Len(cfg.Fleet.Peers, 1)
 	require.Equal("mbp", cfg.Fleet.Peers[0].Key)
 	require.Equal("http://mbp:8091", cfg.Fleet.Peers[0].BaseURL)
 	require.Equal("2s", cfg.Fleet.PeerTimeoutOrDefault().String())
 	require.True(cfg.Fleet.Sessions.IncludeUnmanagedDetails)
+}
+
+func TestFleetConfigDefaultsToDisabledFederation(t *testing.T) {
+	require := require.New(t)
+	path := writeConfig(t, `
+[fleet]
+key = "studio"
+[[fleet.peers]]
+key = "mbp"
+base_url = "http://mbp:8091"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.False(cfg.Fleet.Enabled)
+	require.Len(cfg.Fleet.Peers, 1)
 }
 
 func TestFleetSessionsConfigDefaultsToRedactedUnmanagedDetails(t *testing.T) {

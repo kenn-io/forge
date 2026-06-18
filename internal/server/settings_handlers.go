@@ -23,6 +23,7 @@ type settingsResponse struct {
 	Terminal config.Terminal                 `json:"terminal"`
 	Modes    config.ModeVisibility           `json:"modes,omitzero"`
 	Agents   []config.Agent                  `json:"agents" nullable:"false"`
+	Fleet    fleetSettingsResponse           `json:"fleet"`
 }
 
 type updateSettingsRequest struct {
@@ -59,6 +60,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	terminal := s.cfg.Terminal
 	modes := cloneModeVisibility(s.cfg.Modes).WithDefaults()
 	agents := cloneConfigAgents(s.cfg.Agents)
+	fleetSettings := s.buildFleetSettingsResponseLocked()
 	s.cfgMu.Unlock()
 
 	tracked := s.syncer.TrackedRepos()
@@ -83,6 +85,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		Terminal: terminal,
 		Modes:    modes,
 		Agents:   agents,
+		Fleet:    fleetSettings,
 	}
 }
 
@@ -479,6 +482,20 @@ func cloneConfigAgents(agents []config.Agent) []config.Agent {
 		cloned[i].Command = slices.Clone(agent.Command)
 	}
 	return cloned
+}
+
+func cloneFleetPeers(peers []config.FleetPeer) []config.FleetPeer {
+	if peers == nil {
+		return []config.FleetPeer{}
+	}
+	return slices.Clone(peers)
+}
+
+func cloneFleetSSHPeers(peers []config.FleetSSHPeer) []config.FleetSSHPeer {
+	if peers == nil {
+		return []config.FleetSSHPeer{}
+	}
+	return slices.Clone(peers)
 }
 
 func (s *Server) refreshRuntimeTargetsLocked() {

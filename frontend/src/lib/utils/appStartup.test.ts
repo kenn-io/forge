@@ -37,6 +37,13 @@ function makeStores(): StoreInstances {
 function makeSettings(): Settings {
   return {
     repos: [],
+    fleet: {
+      enabled: false,
+      sessions: {},
+      peers: [],
+      ssh_peers: [],
+      restart_required: false,
+    },
     activity: {
       view_mode: "threaded",
       time_range: "7d",

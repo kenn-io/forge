@@ -703,6 +703,7 @@ func (p FleetSSHPeer) RemoteCommandOrDefault() string {
 // Fleet configures this daemon's federation: an optional local host key
 // and the peers whose snapshots the hub fans out to.
 type Fleet struct {
+	Enabled     bool           `toml:"enabled,omitempty" json:"enabled"`
 	Key         string         `toml:"key,omitempty" json:"key,omitempty"`
 	PeerTimeout string         `toml:"peer_timeout,omitempty" json:"peer_timeout,omitempty"`
 	Sessions    FleetSessions  `toml:"sessions" json:"sessions"`
@@ -992,6 +993,7 @@ port = 8091
 # A peer that does not answer in time degrades (reachable=false)
 # instead of stalling the snapshot.
 # [fleet]
+# enabled = false
 # peer_timeout = "2s"
 
 # Federate with fleet peers reached over SSH: the daemon holds a

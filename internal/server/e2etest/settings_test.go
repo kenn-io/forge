@@ -270,6 +270,126 @@ command = ["systemd-run", "--user", "--scope", "--pty", "bash"]
 	assert.Equal("30d", cfgAfterUpdate.Activity.TimeRange)
 }
 
+func TestSettingsAPIE2EFleetReadUpdateAndValidation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[fleet]
+key = "studio"
+peer_timeout = "3s"
+
+[[fleet.peers]]
+key = "mini"
+name = "Mac mini"
+base_url = "http://mini.tail:8091"
+
+[[fleet.ssh_peers]]
+key = "epyc"
+name = "EPYC"
+destination = "wes@epyc.tail"
+platform = "linux"
+`, &mockGH{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	getResp := doServerJSON(
+		t, ts.Client(), http.MethodGet,
+		ts.URL+"/api/v1/settings", nil,
+	)
+	defer getResp.Body.Close()
+	require.Equal(http.StatusOK, getResp.StatusCode)
+
+	var settings struct {
+		Fleet struct {
+			Enabled     bool   `json:"enabled"`
+			Key         string `json:"key"`
+			PeerTimeout string `json:"peer_timeout"`
+			Peers       []struct {
+				Key     string `json:"key"`
+				Name    string `json:"name"`
+				BaseURL string `json:"base_url"`
+			} `json:"peers"`
+			SSHPeers []struct {
+				Key         string `json:"key"`
+				Name        string `json:"name"`
+				Destination string `json:"destination"`
+				Platform    string `json:"platform"`
+			} `json:"ssh_peers"`
+			RestartRequired bool `json:"restart_required"`
+		} `json:"fleet"`
+	}
+	require.NoError(json.NewDecoder(getResp.Body).Decode(&settings))
+	assert.False(settings.Fleet.Enabled)
+	assert.Equal("studio", settings.Fleet.Key)
+	assert.Equal("3s", settings.Fleet.PeerTimeout)
+	require.Len(settings.Fleet.Peers, 1)
+	assert.Equal("mini", settings.Fleet.Peers[0].Key)
+	require.Len(settings.Fleet.SSHPeers, 1)
+	assert.Equal("epyc", settings.Fleet.SSHPeers[0].Key)
+	assert.False(settings.Fleet.RestartRequired)
+
+	updateResp := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/api/v1/settings/fleet",
+		map[string]any{
+			"enabled":      false,
+			"key":          "hub",
+			"peer_timeout": "4s",
+			"sessions": map[string]any{
+				"include_unmanaged_details": false,
+			},
+			"peers": []map[string]any{{
+				"key":      "mini",
+				"name":     "Mac mini",
+				"base_url": "http://mini.tail:8091",
+			}},
+			"ssh_peers": []map[string]any{{
+				"key":         "epyc",
+				"name":        "EPYC",
+				"destination": "wes@epyc.tail",
+				"platform":    "linux",
+			}},
+		},
+	)
+	defer updateResp.Body.Close()
+	require.Equal(http.StatusOK, updateResp.StatusCode)
+
+	cfgAfterUpdate, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.False(cfgAfterUpdate.Fleet.Enabled)
+	assert.Equal("hub", cfgAfterUpdate.Fleet.Key)
+	assert.Equal("4s", cfgAfterUpdate.Fleet.PeerTimeout)
+	require.Len(cfgAfterUpdate.Fleet.Peers, 1)
+	assert.Equal("mini", cfgAfterUpdate.Fleet.Peers[0].Key)
+	require.Len(cfgAfterUpdate.Fleet.SSHPeers, 1)
+	assert.Equal("epyc", cfgAfterUpdate.Fleet.SSHPeers[0].Key)
+
+	invalidResp := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/api/v1/settings/fleet",
+		map[string]any{
+			"enabled":      true,
+			"key":          "mini",
+			"peer_timeout": "2s",
+			"sessions": map[string]any{
+				"include_unmanaged_details": false,
+			},
+			"peers": []map[string]any{{
+				"key":      "mini",
+				"base_url": "mini.tail:8091",
+			}},
+			"ssh_peers": []map[string]any{},
+		},
+	)
+	defer invalidResp.Body.Close()
+	require.Equal(http.StatusBadRequest, invalidResp.StatusCode)
+}
+
 func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

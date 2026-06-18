@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/middleman/internal/config"
 )
 
 // TestCopyProxyRequestHeadersStripsBrowserHeaders verifies the hub does not
@@ -107,4 +110,44 @@ func TestIsPeerProxyCredentialHeader(t *testing.T) {
 	} {
 		assert.Equal(t, tc.want, isPeerProxyCredentialHeader(tc.key), "header %q", tc.key)
 	}
+}
+
+func TestResolveFleetHostTargetSkipsRemotePeersWhenFederationDisabled(t *testing.T) {
+	assert := assert.New(t)
+	srv := &Server{
+		cfg: &config.Config{
+			Fleet: config.Fleet{
+				Key: "hub",
+				Peers: []config.FleetPeer{
+					{Key: "member", BaseURL: "http://member.test"},
+				},
+			},
+		},
+	}
+
+	_, ok := srv.resolveFleetHostTarget("member")
+	assert.False(ok, "disabled federation must not resolve remote HTTP peers")
+
+	self, ok := srv.resolveFleetHostTarget(fleetSelfHostAlias)
+	require.True(t, ok, "disabled federation must preserve self routing")
+	assert.True(self.self)
+}
+
+func TestResolveFleetHostTargetUsesRemotePeersWhenFederationEnabled(t *testing.T) {
+	assert := assert.New(t)
+	srv := &Server{
+		cfg: &config.Config{
+			Fleet: config.Fleet{
+				Enabled: true,
+				Key:     "hub",
+				Peers: []config.FleetPeer{
+					{Key: "member", BaseURL: "http://member.test"},
+				},
+			},
+		},
+	}
+
+	target, ok := srv.resolveFleetHostTarget("member")
+	require.True(t, ok)
+	assert.Equal("member", target.peer.Key)
 }

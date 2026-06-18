@@ -229,6 +229,7 @@ func TestFleetSnapshotFanOutE2E(t *testing.T) {
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
+			Enabled:     true,
 			Key:         "hub",
 			PeerTimeout: "1s",
 			Peers: []config.FleetPeer{
@@ -709,7 +710,8 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
-			Key: "hub",
+			Enabled: true,
+			Key:     "hub",
 			// PeerTimeout is the read fan-out budget. Drive mutations
 			// deliberately forward the caller's request context instead
 			// of reusing this short read timeout.
@@ -823,7 +825,8 @@ func TestFleetOperationProxyUnknownHostE2E(t *testing.T) {
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
-			Key: "hub",
+			Enabled: true,
+			Key:     "hub",
 		},
 	}
 	hubTS, _ := bootFleetServer(t, hubCfg)
@@ -843,7 +846,8 @@ func TestFleetOperationProxyPeerDispatchFailureE2E(t *testing.T) {
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
-			Key: "hub",
+			Enabled: true,
+			Key:     "hub",
 			Peers: []config.FleetPeer{
 				{Key: "peer", Name: "peer", BaseURL: peerURL},
 			},
@@ -871,7 +875,8 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
-			Key: "hub",
+			Enabled: true,
+			Key:     "hub",
 		},
 	}
 	hubTS, database := bootFleetServer(t, hubCfg)
@@ -964,7 +969,8 @@ func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
-			Key: "hub",
+			Enabled: true,
+			Key:     "hub",
 			Peers: []config.FleetPeer{
 				{Key: "peer", Name: "peer", BaseURL: peerTS.URL},
 			},
@@ -1003,7 +1009,8 @@ func TestFleetTerminalWebSocketProxyPeerDialFailureE2E(t *testing.T) {
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
-			Key: "hub",
+			Enabled: true,
+			Key:     "hub",
 			Peers: []config.FleetPeer{
 				{Key: "peer", Name: "peer", BaseURL: peerTS.URL},
 			},
@@ -1271,6 +1278,7 @@ func TestFleetSnapshotPeerRichFieldsE2E(t *testing.T) {
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
+			Enabled:     true,
 			Key:         "hub",
 			PeerTimeout: "5s",
 			Peers: []config.FleetPeer{

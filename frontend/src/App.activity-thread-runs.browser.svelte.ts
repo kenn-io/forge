@@ -1,11 +1,15 @@
 // Same-author event runs collapse into a single summary row in threaded
 // activity, rendered through the real app shell with the API mocked at the
-// fetch boundary.
+// fetch boundary. Browser-tier analog of App.activity-thread-runs.test.ts: a
+// real Chromium page provides matchMedia/ResizeObserver/IntersectionObserver/
+// canvas natively, so no DOM-global shims are installed; the harness stubs only
+// EventSource. The collapse facts are exact CSS-class/textContent assertions on
+// the real rendered rows, so they stay as document.querySelectorAll queries.
 
-import { cleanup, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
-import { installAppDomGlobals, mountApp, resetKeyboardModuleState } from "./test/appHarness.js";
+import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
 import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const REPO = {
@@ -84,11 +88,27 @@ function activityItems(items: unknown[]): MockRouteOverride {
   };
 }
 
+let mounted: MountedBrowserApp | null = null;
+
 async function mountThreadedActivity(items: unknown[]): Promise<void> {
-  await mountApp("/?view=threaded", {
+  // The jsdom harness mounted at a 1280px desktop width (window.innerWidth +
+  // #app clientWidth). vitest-browser's default iframe is a 414px phone, which
+  // makes App.svelte render the responsive mobile activity presentation
+  // (mobile-activity-card rows) instead of the desktop ActivityThreaded view
+  // whose run-collapse rows (.item-row / .event-row.collapsed-event) this spec
+  // asserts on. Size the iframe to desktop before mounting so App initializes
+  // viewportWidth/#app clientWidth wide and routes to the threaded view.
+  await page.viewport(1280, 900);
+
+  mounted = await mountBrowserApp("/?view=threaded", {
     overrides: [settingsOverride, activityItems(items)],
   });
-  await waitFor(() => expect(document.querySelector(".item-row")).not.toBeNull());
+  await vi.waitFor(
+    () => {
+      expect(document.querySelector(".item-row")).not.toBeNull();
+    },
+    { timeout: 10_000, interval: 50 },
+  );
 }
 
 function collapsedEventRows(): Element[] {
@@ -103,12 +123,12 @@ describe("threaded activity run collapse", () => {
   vi.setConfig({ testTimeout: 20_000 });
 
   beforeEach(() => {
-    installAppDomGlobals();
+    mounted = null;
   });
 
   afterEach(async () => {
-    cleanup();
-    vi.unstubAllGlobals();
+    mounted?.unmount();
+    mounted = null;
     localStorage.clear();
     await resetKeyboardModuleState();
   });

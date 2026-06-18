@@ -33,6 +33,10 @@ function isExcludedPath(posixPath) {
   if (segments.includes("e2e-full")) return true;
   if (basename.includes(".test.")) return true;
   if (basename.includes(".spec.")) return true;
+  // Browser-tier test specs (src/**/*.browser.svelte.ts) mock the API at the
+  // fetch boundary, so they reference /api/v1 paths the same way the .test.ts
+  // specs they replaced did; they are tests, not production frontend code.
+  if (basename.includes(".browser.svelte.")) return true;
 
   return false;
 }

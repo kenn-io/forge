@@ -1,15 +1,27 @@
-// Budget bars and popover in the status bar, rendered through the real app
-// shell with rate-limit data mocked at the fetch boundary.
+// Browser-tier analog of StatusBar.budget.test.ts. The budget bars and popover
+// are exercised through the real app shell with rate-limit data mocked at the
+// fetch boundary. A real Chromium page provides
+// matchMedia/ResizeObserver/IntersectionObserver/canvas natively, so the jsdom
+// installAppDomGlobals() shim is gone; the browser harness stubs only
+// EventSource.
 //
-// Color expectations are asserted on the inline style values the components
-// set (`var(--budget-red)`), not on computed rgb pixels: jsdom does not
-// resolve CSS custom properties, and the token is the semantic contract.
+// Color expectations are asserted on the inline style values the components set
+// (`var(--budget-red)`), not on computed rgb pixels: element.style.background
+// reads the raw inline attribute the component wrote, and the token is the
+// semantic contract. DOM-shape assertions (.budget-bars/.budget-fill/.budget-
+// popover/.host-section/.health-dot/.row-unit/.budget-spent textContent and
+// classList) stay as querySelector against the real DOM, since the page locator
+// API only exposes getByText/getByRole/getByTitle/getByTestId.
 
-import { cleanup, screen, waitFor } from "@testing-library/svelte";
-import { fireEvent } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
-import { installAppDomGlobals, mountApp, resetKeyboardModuleState } from "../../../test/appHarness.js";
+import {
+  mountBrowserApp,
+  pressKey,
+  resetKeyboardModuleState,
+  type MountedBrowserApp,
+} from "../../../test/browserAppHarness.js";
 import { jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
 
 function rateLimits(hosts: Record<string, unknown>): MockRouteOverride {
@@ -76,16 +88,23 @@ const pausedHost = {
   gql_known: true,
 };
 
+// Real Chromium drives the genuine async render/network chain, which is slower
+// than jsdom's synchronous fixtures, so each poll gets a generous window. The
+// outer testTimeout still caps the whole case.
+const WAIT = 10_000;
+
+let mounted: MountedBrowserApp | null = null;
+
 async function mountStatusBar(overrides: MockRouteOverride[] = []): Promise<HTMLElement> {
-  await mountApp("/pulls", { overrides });
-  await waitFor(() => expect(document.querySelector(".budget-bars")).not.toBeNull());
+  mounted = await mountBrowserApp("/pulls", { overrides });
+  await vi.waitFor(() => expect(document.querySelector(".budget-bars")).not.toBeNull(), WAIT);
   return document.querySelector<HTMLElement>(".budget-bars")!;
 }
 
 async function openPopover(bars: HTMLElement): Promise<HTMLElement> {
-  await fireEvent.click(bars);
-  await waitFor(() => expect(screen.getByRole("dialog", { name: "API Budget" })).toBeTruthy());
-  return screen.getByRole("dialog", { name: "API Budget" });
+  await page.elementLocator(bars).click();
+  await vi.waitFor(() => expect(document.querySelector(".budget-popover")).not.toBeNull(), WAIT);
+  return document.querySelector<HTMLElement>(".budget-popover")!;
 }
 
 function healthDot(popover: HTMLElement, hostname: string): HTMLElement {
@@ -99,15 +118,18 @@ function healthDot(popover: HTMLElement, hostname: string): HTMLElement {
 }
 
 describe("budget display", () => {
-  vi.setConfig({ testTimeout: 20_000 });
+  vi.setConfig({ testTimeout: 30_000 });
 
-  beforeEach(() => {
-    installAppDomGlobals();
+  beforeEach(async () => {
+    // The status bar lives in the desktop app shell; size the real Chromium
+    // viewport to a desktop width so the standard layout (and the budget area
+    // in status-right) renders deterministically.
+    await page.viewport(1280, 900);
   });
 
   afterEach(async () => {
-    cleanup();
-    vi.unstubAllGlobals();
+    mounted?.unmount();
+    mounted = null;
     localStorage.clear();
     await resetKeyboardModuleState();
   });
@@ -138,8 +160,8 @@ describe("budget display", () => {
     const bars = await mountStatusBar();
     await openPopover(bars);
 
-    await fireEvent.keyDown(document, { key: "Escape" });
-    await waitFor(() => expect(document.querySelector(".budget-popover")).toBeNull());
+    pressKey("Escape", {}, document);
+    await vi.waitFor(() => expect(document.querySelector(".budget-popover")).toBeNull(), WAIT);
   });
 
   it("popover dismisses on click outside", async () => {
@@ -151,15 +173,15 @@ describe("budget display", () => {
     // clicking outside.
     await new Promise((resolve) => setTimeout(resolve, 5));
 
-    await fireEvent.click(document.querySelector(".app-main")!);
-    await waitFor(() => expect(document.querySelector(".budget-popover")).toBeNull());
+    await page.elementLocator(document.querySelector<HTMLElement>(".app-main")!).click();
+    await vi.waitFor(() => expect(document.querySelector(".budget-popover")).toBeNull(), WAIT);
   });
 
-  // Merges the Enter/Space keyboard cases from both original suites: jsdom
-  // does not synthesize click from Enter/Space the way a browser's native
-  // button activation does, so the conversion asserts the platform
-  // guarantee directly — the trigger is a real <button>, whose activation
-  // (click) opens the popover and Escape closes it.
+  // Merges the Enter/Space keyboard cases from both original suites: a native
+  // <button> trigger is activated by Enter/Space through the browser's native
+  // button activation, so the conversion asserts the platform guarantee
+  // directly — the trigger is a real <button>, whose activation (click) opens
+  // the popover and Escape closes it.
   it("popover trigger is a native button so Enter/Space activate it", async () => {
     const bars = await mountStatusBar();
     expect(bars.tagName).toBe("BUTTON");
@@ -168,12 +190,12 @@ describe("budget display", () => {
 
     bars.focus();
     expect(document.activeElement).toBe(bars);
-    await fireEvent.click(bars);
-    await waitFor(() => expect(document.querySelector(".budget-popover")).not.toBeNull());
+    await page.elementLocator(bars).click();
+    await vi.waitFor(() => expect(document.querySelector(".budget-popover")).not.toBeNull(), WAIT);
     expect(bars.getAttribute("aria-expanded")).toBe("true");
 
-    await fireEvent.keyDown(document, { key: "Escape" });
-    await waitFor(() => expect(document.querySelector(".budget-popover")).toBeNull());
+    pressKey("Escape", {}, document);
+    await vi.waitFor(() => expect(document.querySelector(".budget-popover")).toBeNull(), WAIT);
   });
 
   it("mixed known/unknown hosts show worst-case from known only", async () => {

@@ -1,27 +1,39 @@
+// Browser-tier analog of App.teardown.test.ts.
+//
 // Unmounting the app shell must stop the sync polling interval. runAppStartup
 // starts it after readiness, and a leaked interval keeps firing across tests
 // against whichever fetch stub is current (and keeps workers alive). Guards
 // the stopPolling() call wired into stopFullAppShell.
 //
-// Note: this test wraps the global interval timers but never uses waitFor
-// (which itself polls on setInterval and would be counted as a live timer).
-// Svelte runs onDestroy synchronously on unmount, so the post-unmount
-// assertion is synchronous.
+// Note: this test wraps the global interval timers but never uses an
+// auto-retrying matcher (which itself polls on setInterval and would be counted
+// as a live timer). Svelte runs onDestroy synchronously on unmount, so the
+// post-unmount assertion is synchronous.
+//
+// Browser translation: the real Chromium page provides matchMedia /
+// ResizeObserver / IntersectionObserver / canvas natively, so installAppDomGlobals()
+// is gone; mountBrowserApp stubs only EventSource. We still wrap
+// setInterval/clearInterval here (the behavior under test), so vi.unstubAllGlobals()
+// stays to undo those timer stubs.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { installAppDomGlobals, mountApp, resetKeyboardModuleState } from "./test/appHarness.js";
+import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
 
 describe("app shell teardown", () => {
   vi.setConfig({ testTimeout: 20_000 });
 
   let cleanupTimers = (): void => {};
+  let mounted: MountedBrowserApp | null = null;
 
   beforeEach(() => {
-    installAppDomGlobals();
+    cleanupTimers = () => {};
+    mounted = null;
   });
 
   afterEach(async () => {
+    mounted?.unmount();
+    mounted = null;
     cleanupTimers();
     vi.unstubAllGlobals();
     localStorage.clear();
@@ -43,7 +55,8 @@ describe("app shell teardown", () => {
     });
     cleanupTimers = () => live.forEach((h) => realClear(h));
 
-    const app = await mountApp("/pulls");
+    const app = await mountBrowserApp("/pulls");
+    mounted = app;
     // Let startup run (readiness -> settings -> onReady -> sync.startPolling).
     // Real setTimeout is left unstubbed, so this is a genuine settle.
     await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -52,6 +65,7 @@ describe("app shell teardown", () => {
     // onDestroy runs synchronously: stopFullAppShell -> sync.stopPolling +
     // each component effect's interval cleanup -> every interval cleared.
     app.unmount();
+    mounted = null;
     expect(live.size).toBe(0);
   });
 });

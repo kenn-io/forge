@@ -1,12 +1,27 @@
-// Issue detail routes must preserve the platform host in detail requests
-// (direct load and popstate), and the detail meta row renders assignees.
-// The app is mounted for real with fetch mocked at the network boundary so
-// the asserted host is the one the app actually sent.
+// Browser-tier analog of App.issue-routing.test.ts. Issue detail routes must
+// preserve the platform host in detail requests (direct load and popstate), and
+// the detail meta row renders assignees. The app is mounted for real through the
+// browser harness with fetch mocked at the network boundary so the asserted host
+// is the one the app actually sent.
+//
+// A real Chromium page provides matchMedia/ResizeObserver/IntersectionObserver/
+// canvas natively, so the jsdom installAppDomGlobals() shim is gone; the browser
+// harness stubs only EventSource. The detail-title / meta-row / seen-host
+// assertions are about exact DOM shape and the captured request log, neither of
+// which the page locator API (getByText/getByRole/getByTitle/getByTestId)
+// exposes, so they stay as querySelector against the real DOM and api.requests
+// introspection, wrapped in vi.waitFor for the genuine async render/network
+// chain.
 
-import { cleanup, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
-import { firePopstate, installAppDomGlobals, mountApp, resetKeyboardModuleState } from "./test/appHarness.js";
+import {
+  firePopstate,
+  mountBrowserApp,
+  resetKeyboardModuleState,
+  type MountedBrowserApp,
+} from "./test/browserAppHarness.js";
 import { jsonResponse, type MockRequest, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const mirrorIssueDetail = {
@@ -90,63 +105,76 @@ function detailTitle(): string {
   return document.querySelector(".issue-detail .detail-title")?.textContent ?? "";
 }
 
-describe("issue route platform host", () => {
-  vi.setConfig({ testTimeout: 20_000 });
+// Real Chromium drives the genuine async render/network chain, which is slower
+// than jsdom's synchronous fixtures, so each poll gets a generous window. The
+// outer testTimeout still caps the whole case.
+const WAIT = 10_000;
 
-  beforeEach(() => {
-    installAppDomGlobals();
+describe("issue route platform host", () => {
+  vi.setConfig({ testTimeout: 30_000 });
+
+  let mounted: MountedBrowserApp | null = null;
+
+  beforeEach(async () => {
+    // The container store classifies layout by #app's clientWidth; a real
+    // desktop viewport keeps the desktop issue detail DOM rendering here.
+    await page.viewport(1280, 900);
   });
 
   afterEach(async () => {
-    cleanup();
-    vi.unstubAllGlobals();
+    mounted?.unmount();
+    mounted = null;
     localStorage.clear();
     await resetKeyboardModuleState();
   });
 
   it("direct issue load preserves platform_host in detail requests", async () => {
-    const app = await mountApp("/host/ghe.example.com/issues/github/acme/widgets/7", {
+    mounted = await mountBrowserApp("/host/ghe.example.com/issues/github/acme/widgets/7", {
       overrides: [mirrorIssueRoutes(mirrorIssueDetail, 7)],
     });
 
-    await waitFor(() => expect(detailTitle()).toContain("Mirror host issue"));
-    expect(seenHosts(app.api.requests, 7)).toContain("ghe.example.com");
+    await vi.waitFor(() => expect(detailTitle()).toContain("Mirror host issue"), WAIT);
+    expect(seenHosts(mounted.api.requests, 7)).toContain("ghe.example.com");
   });
 
   it("popstate preserves platform_host in detail requests", async () => {
-    const app = await mountApp("/issues", {
+    mounted = await mountBrowserApp("/issues", {
       overrides: [mirrorIssueRoutes(mirrorIssueDetail, 7)],
     });
-    await waitFor(() => expect(document.body.textContent).toContain("Theme toggle does not stick"));
+    await expect.element(page.getByText("Theme toggle does not stick")).toBeVisible();
 
-    await firePopstate("/host/ghe.example.com/issues/github/acme/widgets/7");
+    firePopstate("/host/ghe.example.com/issues/github/acme/widgets/7");
 
-    await waitFor(() => expect(detailTitle()).toContain("Mirror host issue"));
-    expect(seenHosts(app.api.requests, 7)).toContain("ghe.example.com");
+    await vi.waitFor(() => expect(detailTitle()).toContain("Mirror host issue"), WAIT);
+    expect(seenHosts(mounted.api.requests, 7)).toContain("ghe.example.com");
   });
 });
 
 describe("issue detail assignees", () => {
-  vi.setConfig({ testTimeout: 20_000 });
+  vi.setConfig({ testTimeout: 30_000 });
 
-  beforeEach(() => {
-    installAppDomGlobals();
+  let mounted: MountedBrowserApp | null = null;
+
+  beforeEach(async () => {
+    await page.viewport(1280, 900);
   });
 
   afterEach(async () => {
-    cleanup();
-    vi.unstubAllGlobals();
+    mounted?.unmount();
+    mounted = null;
     localStorage.clear();
     await resetKeyboardModuleState();
   });
 
   it("renders assignees in the meta row when present", async () => {
-    await mountApp("/host/ghe.example.com/issues/github/acme/widgets/12", {
+    mounted = await mountBrowserApp("/host/ghe.example.com/issues/github/acme/widgets/12", {
       overrides: [mirrorIssueRoutes(assignedIssueDetail, 12)],
     });
 
-    await waitFor(() => expect(detailTitle()).toContain("Issue with assignees"));
-    const assigneeList = document.querySelector(".issue-detail .meta-row [data-user-list-editor='assignees']");
-    expect(assigneeList?.textContent).toContain("alice, bob");
+    await vi.waitFor(() => expect(detailTitle()).toContain("Issue with assignees"), WAIT);
+    await vi.waitFor(() => {
+      const assigneeList = document.querySelector(".issue-detail .meta-row [data-user-list-editor='assignees']");
+      expect(assigneeList?.textContent).toContain("alice, bob");
+    }, WAIT);
   });
 });

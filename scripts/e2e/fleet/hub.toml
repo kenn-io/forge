@@ -12,6 +12,7 @@ time_range = "7d"
 renderer = "xterm"
 
 [fleet]
+enabled = true
 key = "hub"
 peer_timeout = "1s"
 

@@ -42,6 +42,9 @@ always hub → peer, one hop.
 
 ```toml
 [fleet]
+# Fleet federation is opt-in. Set this on hubs that should fetch and
+# proxy remote peers; leaving it false keeps remote hosts unavailable.
+enabled = true
 # This daemon's identity in the fleet. Required to be unique across
 # the fleet; empty means "anonymous member" (can be a peer, cannot
 # meaningfully host).

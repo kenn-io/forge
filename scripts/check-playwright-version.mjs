@@ -13,12 +13,17 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // package.json files that pin @playwright/test. All must agree, and the CI
-// container image tag must match them.
+// container image version must match them.
 const PIN_FILES = ["frontend/package.json", "packages/github-app-ui/package.json"];
 const WORKFLOW_FILE = ".github/workflows/ci.yml";
-// Matches mcr.microsoft.com/playwright:v1.60.0 and -distro suffixed tags
-// (v1.60.0-noble, v1.60.0-jammy-amd64, ...), capturing the version component.
-const IMAGE_RE = /mcr\.microsoft\.com\/playwright:v(\d+\.\d+\.\d+)(?:-[a-z0-9-]+)?/g;
+// A line that references the Playwright container image, by tag or by digest:
+//   mcr.microsoft.com/playwright:v1.60.0-noble
+//   mcr.microsoft.com/playwright@sha256:...  # v1.60.0-noble
+const IMAGE_REF_RE = /mcr\.microsoft\.com\/playwright[:@]/;
+// The version lives either in the tag (:v1.60.0-noble) or, for a digest pin, in
+// the trailing "# v1.60.0-noble" comment. Either way it is the v<semver> token;
+// a 64-hex sha256 digest carries no such token, so it cannot match by accident.
+const VERSION_RE = /v(\d+\.\d+\.\d+)/;
 
 function pinnedPlaywright(pkg) {
   return pkg.devDependencies?.["@playwright/test"] ?? pkg.dependencies?.["@playwright/test"];
@@ -54,7 +59,9 @@ export async function checkPlaywrightVersion({ root = process.cwd() } = {}) {
 
   const expected = pins.size > 0 ? [...pins.values()][0] : null;
 
-  // Compare every Playwright container image tag in the workflow against the pin.
+  // Compare every Playwright container image reference in the workflow against
+  // the pin. The image is digest-pinned, so the version is carried by the
+  // trailing "# v<version>" comment, which must be present and must match.
   let workflow;
   try {
     workflow = await readFile(resolve(rootPath, WORKFLOW_FILE), "utf8");
@@ -64,19 +71,30 @@ export async function checkPlaywrightVersion({ root = process.cwd() } = {}) {
   }
 
   workflow.split(/\r?\n/).forEach((line, index) => {
-    IMAGE_RE.lastIndex = 0;
-    let match;
-    while ((match = IMAGE_RE.exec(line)) !== null) {
-      const imageVersion = match[1];
-      if (expected && imageVersion !== expected) {
-        findings.push({
-          file: WORKFLOW_FILE,
-          line: index + 1,
-          message:
-            `Playwright container image pinned to v${imageVersion} but @playwright/test is ${expected}. ` +
-            `Bump the image tag to v${expected} (keeping any -distro suffix) so the pre-baked browsers match.`,
-        });
-      }
+    if (!IMAGE_REF_RE.test(line)) return;
+
+    const versionMatch = line.match(VERSION_RE);
+    if (!versionMatch) {
+      findings.push({
+        file: WORKFLOW_FILE,
+        line: index + 1,
+        message:
+          "Playwright container image has no v<version> tag or comment to verify. Add a " +
+          "trailing '# v<version>' comment next to the digest so the pin stays traceable " +
+          "and checkable against the @playwright/test pin.",
+      });
+      return;
+    }
+
+    const imageVersion = versionMatch[1];
+    if (expected && imageVersion !== expected) {
+      findings.push({
+        file: WORKFLOW_FILE,
+        line: index + 1,
+        message:
+          `Playwright container image is v${imageVersion} but @playwright/test is ${expected}. ` +
+          `Update the digest pin and its '# v${expected}' comment so the pre-baked browsers match.`,
+      });
     }
   });
 

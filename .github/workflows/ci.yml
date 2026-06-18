@@ -264,9 +264,10 @@ jobs:
     # Run inside the official Playwright image: browsers and their OS deps are
     # pre-baked at $PLAYWRIGHT_BROWSERS_PATH, so there is no apt download to
     # time out on (the firefox `--with-deps` install repeatedly flirted with the
-    # old 10m cap off a slow mirror). The image tag is version-coupled to the
-    # @playwright/test pin and kept honest by `make playwright-version-check`.
-    container: mcr.microsoft.com/playwright:v1.60.0-noble
+    # old 10m cap off a slow mirror). Pinned by digest like the actions above so
+    # a bot can bump it; the trailing comment records the version, which
+    # `make playwright-version-check` keeps locked to the @playwright/test pin.
+    container: mcr.microsoft.com/playwright@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948  # v1.60.0-noble
     strategy:
       fail-fast: false
       matrix:

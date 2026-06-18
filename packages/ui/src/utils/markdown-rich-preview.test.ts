@@ -21,7 +21,7 @@ function markdownFile(lines: DiffFile["hunks"][number]["lines"]): DiffFile {
 describe("buildMarkdownRichPreview", () => {
   const repo = { provider: "github", owner: "acme", name: "widgets", repoPath: "acme/widgets" };
 
-  it("preserves reference context while exposing list item block ranges", () => {
+  it("preserves reference context without splitting untargeted list blocks", () => {
     const preview = buildMarkdownRichPreview(
       markdownFile([
         { type: "context", content: "- first", old_num: 1, new_num: 1 },
@@ -36,13 +36,29 @@ describe("buildMarkdownRichPreview", () => {
     );
 
     const html = preview.blocks.map((block) => block.unifiedHtml).join("");
+    expect(html).not.toContain("markdown-rich-diff__split-list");
+    expect(html.match(/<ul/g)).toHaveLength(1);
+    expect(html).toContain('<a href="https://example.com">the ref</a>');
+    expect(preview.blocks.some((block) => block.newStart === 7 && block.newEnd === 7)).toBe(true);
+  });
+
+  it("exposes list item block ranges when a target line needs an internal anchor", () => {
+    const preview = buildMarkdownRichPreview(
+      markdownFile([
+        { type: "context", content: "- first", old_num: 1, new_num: 1 },
+        { type: "context", content: "", old_num: 2, new_num: 2 },
+        { type: "context", content: "- second", old_num: 3, new_num: 3 },
+      ]),
+      repo,
+      { splitOldLines: [3], splitNewLines: [3] },
+    );
+
+    const html = preview.blocks.map((block) => block.unifiedHtml).join("");
     expect(html).toContain("markdown-rich-diff__split-list");
     expect(html.match(/<ul/g)).toHaveLength(2);
-    expect(html).toContain('<a href="https://example.com">the ref</a>');
     expect(preview.blocks.filter((block) => block.unifiedHtml.includes("<li>")).map((block) => block.newLines)).toEqual(
       [[1, 2], [3]],
     );
-    expect(preview.blocks.some((block) => block.newStart === 7 && block.newEnd === 7)).toBe(true);
   });
 
   it("projects split block additions without inline underline markup on every word", () => {

@@ -44,9 +44,18 @@ export interface MarkdownRichPreview {
   blocks: MarkdownRichPreviewBlock[];
 }
 
-export function buildMarkdownRichPreview(source: DiffFile, repo: RepoContext): MarkdownRichPreview {
-  const oldBlocks = buildSideBlocks(buildSideDocument(source, "old"), repo);
-  const newBlocks = buildSideBlocks(buildSideDocument(source, "new"), repo);
+export interface MarkdownRichPreviewOptions {
+  splitOldLines?: readonly number[] | undefined;
+  splitNewLines?: readonly number[] | undefined;
+}
+
+export function buildMarkdownRichPreview(
+  source: DiffFile,
+  repo: RepoContext,
+  options: MarkdownRichPreviewOptions = {},
+): MarkdownRichPreview {
+  const oldBlocks = buildSideBlocks(buildSideDocument(source, "old"), repo, new Set(options.splitOldLines ?? []));
+  const newBlocks = buildSideBlocks(buildSideDocument(source, "new"), repo, new Set(options.splitNewLines ?? []));
   return { blocks: alignBlocks(oldBlocks, newBlocks) };
 }
 
@@ -72,10 +81,14 @@ function sideIncludesLine(side: "old" | "new", line: SourceLine): boolean {
   return side === "old" ? line.type !== "add" : line.type !== "delete";
 }
 
-function buildSideBlocks(document: MarkdownSideDocument, repo: RepoContext): MarkdownSideBlock[] {
+function buildSideBlocks(
+  document: MarkdownSideDocument,
+  repo: RepoContext,
+  splitLines: ReadonlySet<number>,
+): MarkdownSideBlock[] {
   const definitionLines = extractMarkdownDefinitionLines(document.text, repo);
   return renderMarkdownBlocks(document.text, repo).flatMap((block) =>
-    renderedSideBlocks(block, document, repo, definitionLines),
+    renderedSideBlocks(block, document, repo, definitionLines, splitLines),
   );
 }
 
@@ -84,9 +97,10 @@ function renderedSideBlocks(
   document: MarkdownSideDocument,
   repo: RepoContext,
   definitionLines: string[],
+  splitLines: ReadonlySet<number>,
 ): MarkdownSideBlock[] {
   const blockLineMap = document.lineMap.slice(block.startLine - 1, block.endLine);
-  if (blockLineMap.every((line) => line != null)) return sideBlocksForRenderedBlock(block, document);
+  if (blockLineMap.every((line) => line != null)) return sideBlocksForRenderedBlock(block, document, splitLines);
 
   const lines = document.lines
     .slice(block.startLine - 1, block.endLine)
@@ -97,13 +111,25 @@ function renderedSideBlocks(
   const visibleDocument = buildVisibleDocument(lines, definitionLines);
   return renderMarkdownBlocks(visibleDocument.text, repo)
     .map((visibleBlock) =>
-      sideBlocksForRenderedBlock({ ...visibleBlock, key: `${block.key}:${visibleBlock.key}` }, visibleDocument),
+      sideBlocksForRenderedBlock(
+        { ...visibleBlock, key: `${block.key}:${visibleBlock.key}` },
+        visibleDocument,
+        splitLines,
+      ),
     )
     .flat();
 }
 
-function sideBlocksForRenderedBlock(block: RenderedMarkdownBlock, document: MarkdownSideDocument): MarkdownSideBlock[] {
-  return splitListBlock(block, document) ?? [sideBlockForRenderedBlock(block, document.lineMap)];
+function sideBlocksForRenderedBlock(
+  block: RenderedMarkdownBlock,
+  document: MarkdownSideDocument,
+  splitLines: ReadonlySet<number>,
+): MarkdownSideBlock[] {
+  const sourceLines = sourceLinesForBlock(block, document.lineMap);
+  if (sourceLines.some((line) => splitLines.has(line))) {
+    return splitListBlock(block, document) ?? [sideBlockForRenderedBlock(block, document.lineMap)];
+  }
+  return [sideBlockForRenderedBlock(block, document.lineMap)];
 }
 
 interface ListItemLineGroup {

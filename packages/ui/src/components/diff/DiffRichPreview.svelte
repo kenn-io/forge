@@ -158,7 +158,7 @@
       owner,
       name,
       repoPath,
-    }).blocks.map((block) => ({
+    }, reviewThreadSplitLines(source, threads)).blocks.map((block) => ({
       ...block,
       leftReviewThreads: [],
       rightReviewThreads: [],
@@ -191,6 +191,50 @@
       sortReviewThreadPlacements(block.rightReviewThreads);
     }
     return { blocks, fallbackReviewThreads };
+  }
+
+  function reviewThreadSplitLines(source: DiffFile, threads: ReviewThread[]): {
+    splitOldLines: number[];
+    splitNewLines: number[];
+  } {
+    const splitOldLines: number[] = [];
+    const splitNewLines: number[] = [];
+    for (const thread of threads) {
+      if (threadLineIsFileLevelCard(thread)) continue;
+      const side = reviewThreadTargetSide(thread);
+      const targetLine = reviewThreadTargetLine(thread);
+      const diffLine = findReviewThreadDiffLine(source, side, targetLine);
+      if (diffLine?.old_num != null) addUniqueLine(splitOldLines, diffLine.old_num);
+      if (diffLine?.new_num != null) addUniqueLine(splitNewLines, diffLine.new_num);
+      if (!diffLine && side === "left") {
+        addUniqueLine(splitOldLines, targetLine);
+      } else if (!diffLine) {
+        addUniqueLine(splitNewLines, targetLine);
+      }
+    }
+    return {
+      splitOldLines,
+      splitNewLines,
+    };
+  }
+
+  function addUniqueLine(lines: number[], line: number): void {
+    if (!lines.includes(line)) lines.push(line);
+  }
+
+  function findReviewThreadDiffLine(
+    source: DiffFile,
+    side: "left" | "right",
+    targetLine: number,
+  ): DiffFile["hunks"][number]["lines"][number] | undefined {
+    for (const hunk of source.hunks ?? []) {
+      const line = hunk.lines.find((candidate) => {
+        const lineNumber = side === "left" ? candidate.old_num : candidate.new_num;
+        return lineNumber === targetLine;
+      });
+      if (line) return line;
+    }
+    return undefined;
   }
 
   function sortReviewThreadPlacements(placements: ReviewThreadPlacement[]): void {

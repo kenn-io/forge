@@ -590,6 +590,38 @@ const listReviewPreviewDiff: DiffResult = withServerDiffData({
   ],
 });
 
+const untargetedListReviewPreviewDiff: DiffResult = withServerDiffData({
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "docs/untargeted-list-review.md",
+      old_path: "docs/untargeted-list-review.md",
+      status: "modified",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 1,
+      deletions: 0,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 4,
+          new_start: 1,
+          new_count: 5,
+          lines: [
+            { type: "context", content: "- Issues", old_num: 1, new_num: 1 },
+            { type: "context", content: "- Actions", old_num: 2, new_num: 2 },
+            { type: "context", content: "- Statuses", old_num: 3, new_num: 3 },
+            { type: "context", content: "", old_num: 4, new_num: 4 },
+            { type: "add", content: "Paragraph with review note.", new_num: 5 },
+          ],
+        },
+      ],
+    },
+    ...smallDiff.files,
+  ],
+});
+
 const multiHunkMarkdownDiff: DiffResult = withServerDiffData({
   stale: false,
   whitespace_only_count: 0,
@@ -2156,6 +2188,31 @@ test.describe("diff view", () => {
     await expect
       .poll(() => actionsCard.evaluate((element) => element.previousElementSibling?.textContent?.trim() ?? ""))
       .toContain("Actions");
+  });
+
+  test("rich preview keeps untargeted lists intact when a later block has a review card", async ({ page }) => {
+    const reviewBody = "Paragraph review note";
+    await mockDiffApi(page, untargetedListReviewPreviewDiff);
+    await mockReviewThreadOnPreviewMarkdown(page, reviewBody, 5, "docs/untargeted-list-review.md");
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await openDiffFilterMenu(page);
+    await page.getByRole("switch", { name: "Rich preview" }).click();
+
+    const markdownPreview = page.locator(
+      '[data-file-path="docs/untargeted-list-review.md"] .markdown-rich-diff--unified',
+    );
+    await expect(markdownPreview).toBeVisible();
+    await expect(markdownPreview.locator("ul")).toHaveCount(1);
+    await expect(markdownPreview.locator("ul.markdown-rich-diff__split-list")).toHaveCount(0);
+
+    const reviewCard = markdownPreview.locator(".inline-review-thread").filter({ hasText: reviewBody });
+    await expect(reviewCard).toBeVisible();
+    await expect
+      .poll(() => reviewCard.evaluate((element) => element.previousElementSibling?.textContent?.trim() ?? ""))
+      .toContain("Paragraph with review note.");
   });
 
   test("rich preview keeps unmapped review thread cards visible as file-level fallback", async ({ page }) => {

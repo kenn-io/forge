@@ -1007,7 +1007,8 @@ describe("DiffFile", () => {
       expect(screen.getByText("Anchored semantic note")).toBeTruthy();
     });
     const preview = document.querySelector(".markdown-rich-diff--unified");
-    expect(preview?.querySelectorAll("ul.markdown-rich-diff__split-list")).toHaveLength(2);
+    expect(preview?.querySelectorAll("ul")).toHaveLength(1);
+    expect(preview?.querySelectorAll("ul.markdown-rich-diff__split-list")).toHaveLength(0);
     expect(preview?.querySelector('a[href="https://example.com"]')?.textContent).toBe("the ref");
     const comment = document.querySelector("[data-review-thread-id='thread-1']");
     expect(comment?.previousElementSibling?.classList.contains("markdown-rich-diff__anchored-block")).toBe(true);

@@ -68,7 +68,7 @@ describe("FleetSettings", () => {
     expect(screen.getByLabelText("HTTP peer mini base URL")).toBeTruthy();
     expect(screen.getByLabelText("SSH peer epyc key")).toBeTruthy();
     expect(screen.getByLabelText("SSH peer epyc destination")).toBeTruthy();
-    expect(screen.getByRole("combobox", { name: "SSH peer epyc platform: linux" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "SSH peer epyc platform: linux" })).toBeTruthy();
   });
 
   it("saves edited federation settings", async () => {
@@ -101,8 +101,10 @@ describe("FleetSettings", () => {
     await fireEvent.input(screen.getByLabelText("SSH peer epyc remote command"), {
       target: { value: "middleman" },
     });
-    await fireEvent.click(screen.getByRole("combobox", { name: "SSH peer epyc platform: linux" }));
-    await fireEvent.click(screen.getByRole("option", { name: "darwin" }));
+    await fireEvent.click(screen.getByRole("button", { name: "SSH peer epyc platform: linux" }));
+    const platformInput = screen.getByRole("combobox", { name: "SSH peer epyc platform" });
+    await fireEvent.input(platformInput, { target: { value: "mac" } });
+    await fireEvent.keyDown(platformInput, { key: "Enter" });
     await fireEvent.click(screen.getByRole("button", { name: "Save fleet federation" }));
 
     await waitFor(() => {
@@ -123,7 +125,7 @@ describe("FleetSettings", () => {
             key: "epyc",
             name: "EPYC",
             destination: "wes@epyc.tail",
-            platform: "darwin",
+            platform: "macos",
             remote_command: "middleman",
           },
         ],
@@ -131,6 +133,44 @@ describe("FleetSettings", () => {
     });
     expect(onUpdate).toHaveBeenCalledWith(saved);
     expect(screen.getByText("Restart required")).toBeTruthy();
+  });
+
+  it("keeps SSH platform custom values editable", async () => {
+    mockUpdateFleetSettings.mockResolvedValue(fleetSettings());
+
+    render(FleetSettings, {
+      props: {
+        fleet: fleetSettings({
+          ssh_peers: [
+            {
+              key: "epyc",
+              name: "EPYC",
+              destination: "wes@epyc.tail",
+              platform: "plan9",
+            },
+          ],
+        }),
+        onUpdate: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "SSH peer epyc platform: plan9" }));
+    const platformInput = screen.getByRole("combobox", { name: "SSH peer epyc platform" });
+    await fireEvent.input(platformInput, { target: { value: "freebsd" } });
+    await fireEvent.keyDown(platformInput, { key: "Enter" });
+    await fireEvent.click(screen.getByRole("button", { name: "Save fleet federation" }));
+
+    await waitFor(() => {
+      expect(mockUpdateFleetSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ssh_peers: [
+            expect.objectContaining({
+              platform: "freebsd",
+            }),
+          ],
+        }),
+      );
+    });
   });
 
   it("surfaces save errors without discarding the draft", async () => {

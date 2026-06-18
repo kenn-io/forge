@@ -18,6 +18,8 @@
     emptyLabel?: string;
     allowClear?: boolean;
     allowCustom?: boolean;
+    disabled?: boolean;
+    placement?: "bottom" | "top";
     clearLabel?: string;
     triggerPrefix?: string;
     triggerAriaLabel?: string;
@@ -32,6 +34,8 @@
     emptyLabel = "No matches",
     allowClear = false,
     allowCustom = false,
+    disabled = false,
+    placement = "bottom",
     clearLabel = "None",
     triggerPrefix = "",
     triggerAriaLabel = undefined,
@@ -58,6 +62,7 @@
   let optionCount = $derived(filtered.length + optionOffset);
 
   async function openDropdown() {
+    if (disabled) return;
     query = "";
     open = true;
     highlightIndex = allowClear && options.length > 0 ? 1 : 0;
@@ -160,6 +165,7 @@
     <ul
       id={listboxID}
       class="typeahead-list"
+      class:typeahead-list--top={placement === "top"}
       data-surface="solid"
       role="listbox"
       aria-label={`${ariaLabel} options`}
@@ -203,6 +209,7 @@
       type="button"
       aria-label={triggerAriaLabel ?? `${ariaLabel}: ${displayValue}`}
       aria-haspopup="listbox"
+      {disabled}
       onclick={openDropdown}
     >
       <span class="typeahead-value">
@@ -248,6 +255,12 @@
     border-color: var(--border-default);
   }
 
+  .typeahead-trigger:disabled {
+    color: var(--text-muted);
+    background: var(--bg-inset);
+    cursor: default;
+  }
+
   .typeahead-value {
     min-width: 0;
     display: inline-flex;
@@ -286,6 +299,11 @@
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow-lg);
+  }
+
+  .typeahead-list--top {
+    top: auto;
+    bottom: calc(100% + 3px);
   }
 
   .typeahead-option {

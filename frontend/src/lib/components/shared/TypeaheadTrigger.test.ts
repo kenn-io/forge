@@ -70,4 +70,34 @@ describe("TypeaheadTrigger", () => {
     expect(list).toBeTruthy();
     expect(list!.getAttribute("data-surface")).toBe("solid");
   });
+
+  it("can place the option list above the trigger", async () => {
+    const { container } = render(TypeaheadTrigger, {
+      props: {
+        ariaLabel: "Platform",
+        options: [{ value: "macos", label: "macOS" }],
+        placement: "top",
+        onChange: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Platform: None" }));
+
+    expect(container.querySelector(".typeahead-list--top")).toBeTruthy();
+  });
+
+  it("does not open when disabled", async () => {
+    render(TypeaheadTrigger, {
+      props: {
+        ariaLabel: "Owner",
+        options: [{ value: "agent:planner", label: "agent:planner" }],
+        disabled: true,
+        onChange: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Owner: None" }));
+
+    expect(screen.queryByRole("combobox", { name: "Owner" })).toBeNull();
+  });
 });

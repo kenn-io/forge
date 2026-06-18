@@ -2,8 +2,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import { ActionButton, SelectDropdown } from "@middleman/ui";
-  import type { SelectDropdownOption } from "@middleman/ui";
+  import { ActionButton } from "@middleman/ui";
   import type {
     FleetPeer,
     FleetSSHPeer,
@@ -12,6 +11,7 @@
   } from "@middleman/ui/api/types";
   import { updateFleetSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  import TypeaheadTrigger, { type TypeaheadOption } from "../shared/TypeaheadTrigger.svelte";
 
   interface Props {
     fleet: FleetSettingsType;
@@ -37,9 +37,8 @@
   let { fleet, onUpdate }: Props = $props();
 
   const embedded = isEmbedded();
-  const basePlatformOptions: SelectDropdownOption[] = [
-    { value: "", label: "Unspecified", triggerLabel: "Unspecified" },
-    { value: "darwin", label: "darwin" },
+  const basePlatformOptions: TypeaheadOption[] = [
+    { value: "macos", label: "macOS" },
     { value: "linux", label: "linux" },
     { value: "windows", label: "windows" },
   ];
@@ -207,7 +206,7 @@
     return trimmed === "" ? `${prefix} ${index + 1}` : trimmed;
   }
 
-  function platformOptions(value: string): SelectDropdownOption[] {
+  function platformOptions(value: string): TypeaheadOption[] {
     const trimmed = value.trim();
     if (trimmed === "" || basePlatformOptions.some((option) => option.value === trimmed)) {
       return basePlatformOptions;
@@ -450,14 +449,23 @@
                   />
                 </td>
                 <td class="platform-cell">
-                  <SelectDropdown
-                    class="platform-dropdown"
-                    value={peer.platform}
+                  <TypeaheadTrigger
+                    ariaLabel={`SSH peer ${label} platform`}
+                    selected={peer.platform.trim() === "" ? null : peer.platform}
                     options={platformOptions(peer.platform)}
-                    onchange={(value) => {
-                      peer.platform = value;
+                    allowClear
+                    allowCustom
+                    clearLabel="Unspecified"
+                    placeholder="Platform..."
+                    emptyLabel="Enter a platform"
+                    placement="top"
+                    triggerAriaLabel={`SSH peer ${label} platform: ${
+                      platformOptions(peer.platform).find((option) => option.value === peer.platform)?.label ??
+                        "Unspecified"
+                    }`}
+                    onChange={(value) => {
+                      peer.platform = value ?? "";
                     }}
-                    title={`SSH peer ${label} platform`}
                     disabled={embedded || saving}
                   />
                 </td>
@@ -567,7 +575,8 @@
 
   .field input,
   .peer-table input,
-  .platform-cell :global(.select-dropdown-trigger) {
+  .platform-cell :global(.typeahead-trigger),
+  .platform-cell :global(.typeahead-input) {
     width: 100%;
     min-height: 30px;
     padding: 4px 8px;
@@ -581,19 +590,19 @@
 
   .field input:disabled,
   .peer-table input:disabled,
-  .platform-cell :global(.select-dropdown-trigger:disabled) {
+  .platform-cell :global(.typeahead-trigger:disabled) {
     color: var(--text-muted);
     background: var(--bg-inset);
   }
 
-  .platform-cell :global(.select-dropdown) {
+  .platform-cell :global(.typeahead) {
     width: 100%;
     min-width: 0;
   }
 
-  .platform-cell :global(.select-dropdown-trigger) {
+  .platform-cell :global(.typeahead-trigger),
+  .platform-cell :global(.typeahead-input) {
     height: 30px;
-    justify-content: space-between;
   }
 
   .restart-banner,
@@ -643,7 +652,7 @@
   }
 
   .peer-table-wrap {
-    overflow-x: auto;
+    overflow: visible;
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
   }
@@ -724,6 +733,12 @@
   @media (min-width: 760px) {
     .settings-grid {
       grid-template-columns: minmax(0, 1fr) minmax(160px, 0.5fr);
+    }
+  }
+
+  @media (max-width: 759px) {
+    .peer-table-wrap {
+      overflow-x: auto;
     }
   }
 </style>

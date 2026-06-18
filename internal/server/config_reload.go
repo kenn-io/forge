@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -34,6 +35,8 @@ type configChangedEvent struct {
 	// terminal, agents, docs, msgvault) are applied regardless.
 	RestartRequired bool `json:"restart_required"`
 }
+
+const maxConfigReloadAttempts = 3
 
 // startupConfigSnapshot is a deep copy of the fields the server binds at
 // startup. It is taken once in newServer and compared in applyConfigChange
@@ -294,6 +297,31 @@ func (s *Server) handleConfigFileChanged() {
 // The SSE broadcast is intentionally moved out of this function (to
 // handleConfigFileChanged) so a slow subscriber cannot stall the daemon.
 func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
+	for range maxConfigReloadAttempts {
+		event, retry := s.applyConfigChangeAttempt(ctx)
+		if !retry {
+			return event
+		}
+	}
+	return configChangedEvent{
+		Valid: false,
+		Error: "config.toml changed while reload was in progress; waiting for the next change event",
+	}
+}
+
+func (s *Server) applyConfigChangeAttempt(ctx context.Context) (configChangedEvent, bool) {
+	loadedInfo, err := os.Stat(s.cfgPath)
+	if err != nil {
+		slog.Warn(
+			"config reload failed stat; keeping last-known-good",
+			"path", s.cfgPath,
+			"err", err,
+		)
+		return configChangedEvent{
+			Valid: false,
+			Error: sanitizeConfigError(err, s.cfgPath),
+		}, false
+	}
 	newCfg, err := config.Load(s.cfgPath)
 	if err != nil {
 		slog.Warn(
@@ -304,8 +332,24 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		return configChangedEvent{
 			Valid: false,
 			Error: sanitizeConfigError(err, s.cfgPath),
-		}
+		}, false
 	}
+	loadedInfoAfter, err := os.Stat(s.cfgPath)
+	if err != nil {
+		slog.Warn(
+			"config reload failed stat; keeping last-known-good",
+			"path", s.cfgPath,
+			"err", err,
+		)
+		return configChangedEvent{
+			Valid: false,
+			Error: sanitizeConfigError(err, s.cfgPath),
+		}, false
+	}
+	if !sameConfigReloadFileInfo(loadedInfo, loadedInfoAfter) {
+		return configChangedEvent{}, true
+	}
+	loadedInfo = loadedInfoAfter
 	if err := validateReloadCloneTokenSources(newCfg); err != nil {
 		slog.Warn(
 			"config reload failed clone token validation; keeping last-known-good",
@@ -315,7 +359,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		return configChangedEvent{
 			Valid: false,
 			Error: sanitizeConfigError(err, s.cfgPath),
-		}
+		}, false
 	}
 	if err := s.validateReloadProviderTokenSources(ctx, newCfg); err != nil {
 		slog.Warn(
@@ -326,7 +370,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		return configChangedEvent{
 			Valid: false,
 			Error: sanitizeConfigError(err, s.cfgPath),
-		}
+		}, false
 	}
 
 	s.cfgMu.Lock()
@@ -338,7 +382,24 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		return configChangedEvent{
 			Valid: false,
 			Error: "config reload disabled: server has no in-memory config",
-		}
+		}, false
+	}
+	currentInfo, err := os.Stat(s.cfgPath)
+	if err != nil {
+		s.cfgMu.Unlock()
+		slog.Warn(
+			"config reload failed stat; keeping last-known-good",
+			"path", s.cfgPath,
+			"err", err,
+		)
+		return configChangedEvent{
+			Valid: false,
+			Error: sanitizeConfigError(err, s.cfgPath),
+		}, false
+	}
+	if !sameConfigReloadFileInfo(loadedInfo, currentInfo) {
+		s.cfgMu.Unlock()
+		return configChangedEvent{}, true
 	}
 	s.cfgMu.Unlock()
 
@@ -400,7 +461,16 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		"repo_count", len(resolved),
 		"restart_required", restartRequired,
 	)
-	return configChangedEvent{Valid: true, RestartRequired: restartRequired}
+	return configChangedEvent{Valid: true, RestartRequired: restartRequired}, false
+}
+
+func sameConfigReloadFileInfo(a, b os.FileInfo) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return os.SameFile(a, b) &&
+		a.Size() == b.Size() &&
+		a.ModTime().Equal(b.ModTime())
 }
 
 // reloadCredentialNeedsClientRebuild reports whether the reloaded config

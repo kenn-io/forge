@@ -194,4 +194,50 @@ describe("DiffSidebar", () => {
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     }
   });
+
+  it("does not reuse a stale reveal key after the selected path was filtered out", async () => {
+    const files = [makeFile("src/file-0.ts"), makeFile("src/file-8.ts")];
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrolledPaths: string[] = [];
+    HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+      scrolledPaths.push(this.dataset.itemPath ?? "");
+    };
+
+    try {
+      const { rerender } = render(PierreFileTree, {
+        props: {
+          files,
+          selectedPath: "src/file-0.ts",
+          selectedPathRevealKey: 0,
+        },
+      });
+
+      await findTreeItem("src/file-0.ts");
+      expect(scrolledPaths).toEqual([]);
+
+      await rerender({
+        files,
+        selectedPath: "src/hidden.ts",
+        selectedPathRevealKey: 1,
+      });
+
+      expect(treeRoot()?.querySelector('[data-item-path="src/hidden.ts"]')).toBeNull();
+      expect(scrolledPaths).toEqual([]);
+
+      await rerender({
+        files,
+        selectedPath: "src/file-8.ts",
+        selectedPathRevealKey: 1,
+      });
+
+      await waitFor(() => {
+        expect(treeRoot()?.querySelector('[data-item-path="src/file-8.ts"]')?.getAttribute("aria-selected")).toBe(
+          "true",
+        );
+      });
+      expect(scrolledPaths).toEqual([]);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
 });

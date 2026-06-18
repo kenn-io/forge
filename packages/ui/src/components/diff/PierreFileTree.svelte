@@ -124,20 +124,22 @@
         tree.getItem(selected)?.deselect();
       }
     }
-    if (selectedPath && tree.getItem(selectedPath)) {
-      tree.getItem(selectedPath)?.select();
-      revealSelectedPathIfRequested(selectedPath);
+    const selectedItem = selectedPath ? tree.getItem(selectedPath) : undefined;
+    if (selectedItem) {
+      selectedItem.select();
     }
+    revealSelectedPathIfRequested(selectedPath, !!selectedItem);
     syncingSelection = false;
   }
 
-  function revealSelectedPathIfRequested(path: string): void {
+  function revealSelectedPathIfRequested(path: string | null, canRevealPath: boolean): void {
     if (lastSelectedPathRevealKey === null) {
       lastSelectedPathRevealKey = selectedPathRevealKey;
       return;
     }
     if (selectedPathRevealKey === lastSelectedPathRevealKey) return;
     lastSelectedPathRevealKey = selectedPathRevealKey;
+    if (!path || !canRevealPath) return;
     tree?.focusNearestPath(path);
     scheduleSelectedPathIntoView(path);
   }

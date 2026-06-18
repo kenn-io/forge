@@ -298,6 +298,15 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends tmux
 
+      - name: Make $HOME owned by the current user for Firefox
+        # GitHub mounts the container $HOME (/github/home) owned by the runner
+        # UID while steps run as root. Firefox refuses to launch when $HOME is
+        # not owned by the current user (Chromium does not check), so the
+        # firefox leg fails every test at browser launch. Re-own the directory
+        # itself (not its contents) so the launch check passes; HOME stays
+        # /github/home, leaving the setup-go/setup-vp caches untouched.
+        run: chown "$(id -u):$(id -g)" "$HOME"
+
       - name: Build frontend
         run: cd frontend && vp build --logLevel warn
 

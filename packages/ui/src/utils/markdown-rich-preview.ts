@@ -86,7 +86,7 @@ function renderedSideBlocks(
   definitionLines: string[],
 ): MarkdownSideBlock[] {
   const blockLineMap = document.lineMap.slice(block.startLine - 1, block.endLine);
-  if (blockLineMap.every((line) => line != null)) return [sideBlockForRenderedBlock(block, document.lineMap)];
+  if (blockLineMap.every((line) => line != null)) return sideBlocksForRenderedBlock(block, document);
 
   const lines = document.lines
     .slice(block.startLine - 1, block.endLine)
@@ -95,9 +95,100 @@ function renderedSideBlocks(
   if (lines.length === 0) return [];
 
   const visibleDocument = buildVisibleDocument(lines, definitionLines);
-  return renderMarkdownBlocks(visibleDocument.text, repo).map((visibleBlock) =>
-    sideBlockForRenderedBlock({ ...visibleBlock, key: `${block.key}:${visibleBlock.key}` }, visibleDocument.lineMap),
-  );
+  return renderMarkdownBlocks(visibleDocument.text, repo)
+    .map((visibleBlock) =>
+      sideBlocksForRenderedBlock({ ...visibleBlock, key: `${block.key}:${visibleBlock.key}` }, visibleDocument),
+    )
+    .flat();
+}
+
+function sideBlocksForRenderedBlock(block: RenderedMarkdownBlock, document: MarkdownSideDocument): MarkdownSideBlock[] {
+  return splitListBlock(block, document) ?? [sideBlockForRenderedBlock(block, document.lineMap)];
+}
+
+interface ListItemLineGroup {
+  startLine: number;
+  endLine: number;
+  sourceLines: number[];
+}
+
+function splitListBlock(block: RenderedMarkdownBlock, document: MarkdownSideDocument): MarkdownSideBlock[] | null {
+  if (typeof globalThis.document === "undefined") return null;
+  const template = globalThis.document.createElement("template");
+  template.innerHTML = block.html;
+  const rootElements = Array.from(template.content.children);
+  if (rootElements.length !== 1) return null;
+
+  const list = rootElements[0]!;
+  if (list.tagName !== "UL" && list.tagName !== "OL") return null;
+  const items = Array.from(list.children).filter((child) => child.tagName === "LI");
+  if (items.length < 2 || items.length !== list.children.length) return null;
+
+  const groups = listItemLineGroups(block, document);
+  if (groups.length !== items.length) return null;
+
+  return groups.map((group, index) => {
+    const html = listItemHtml(list, items[index]!, index);
+    return {
+      ...block,
+      key: `${block.key}:item:${index}`,
+      startLine: group.startLine,
+      endLine: group.endLine,
+      html,
+      sourceLines: group.sourceLines,
+      sourceStart: group.sourceLines[0],
+      sourceEnd: group.sourceLines.at(-1),
+    };
+  });
+}
+
+function listItemLineGroups(block: RenderedMarkdownBlock, document: MarkdownSideDocument): ListItemLineGroup[] {
+  const startIndex = block.startLine - 1;
+  const endIndex = block.endLine - 1;
+  const markerLines: Array<{ index: number; indent: number }> = [];
+  for (let index = startIndex; index <= endIndex; index++) {
+    const marker = listMarkerIndent(document.lines[index] ?? "");
+    if (marker == null) continue;
+    markerLines.push({ index, indent: marker });
+  }
+  if (markerLines.length < 2) return [];
+
+  const topLevelIndent = Math.min(...markerLines.map((line) => line.indent));
+  const topLevelMarkers = markerLines.filter((line) => line.indent === topLevelIndent);
+  return topLevelMarkers.map((line, index) => {
+    const next = topLevelMarkers[index + 1];
+    const groupStart = line.index;
+    const groupEnd = (next?.index ?? endIndex + 1) - 1;
+    const sourceLines = document.lineMap
+      .slice(groupStart, groupEnd + 1)
+      .filter((sourceLine): sourceLine is number => sourceLine != null);
+    return {
+      startLine: groupStart + 1,
+      endLine: groupEnd + 1,
+      sourceLines,
+    };
+  });
+}
+
+function listMarkerIndent(line: string): number | null {
+  const match = line.match(/^(\s{0,12})(?:[-+*]|\d+[.)])\s+/);
+  if (!match) return null;
+  return indentationWidth(match[1]!);
+}
+
+function indentationWidth(value: string): number {
+  return Array.from(value).reduce((width, char) => width + (char === "\t" ? 4 : 1), 0);
+}
+
+function listItemHtml(list: Element, item: Element, index: number): string {
+  const wrapper = list.cloneNode(false) as Element;
+  wrapper.classList.add("markdown-rich-diff__split-list");
+  if (wrapper.tagName === "OL") {
+    const start = parseInt(list.getAttribute("start") ?? "1", 10);
+    if (!Number.isNaN(start)) wrapper.setAttribute("start", String(start + index));
+  }
+  wrapper.append(item.cloneNode(true));
+  return wrapper.outerHTML;
 }
 
 function buildVisibleDocument(

@@ -484,6 +484,10 @@
     text-decoration: none;
   }
 
+  .markdown-rich-diff :global(.markdown-rich-diff__split-list) {
+    margin-block: 0;
+  }
+
   @media (max-width: 760px) {
     .markdown-rich-diff--split {
       grid-template-columns: minmax(0, 1fr);

@@ -560,6 +560,36 @@ const previewDiff: DiffResult = withServerDiffData({
   ],
 });
 
+const listReviewPreviewDiff: DiffResult = withServerDiffData({
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "docs/list-review.md",
+      old_path: "docs/list-review.md",
+      status: "modified",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 3,
+      deletions: 0,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 0,
+          new_start: 1,
+          new_count: 3,
+          lines: [
+            { type: "add", content: "- Issues", new_num: 1 },
+            { type: "add", content: "- Actions", new_num: 2 },
+            { type: "add", content: "- Statuses", new_num: 3 },
+          ],
+        },
+      ],
+    },
+    ...smallDiff.files,
+  ],
+});
+
 const multiHunkMarkdownDiff: DiffResult = withServerDiffData({
   stale: false,
   whitespace_only_count: 0,
@@ -1273,12 +1303,20 @@ async function mockReviewThreadOnPreviewMarkdown(
   line = 3,
   path = "docs/preview.md",
 ): Promise<void> {
+  await mockReviewThreadsOnPreviewMarkdown(page, [{ body, line, path }]);
+}
+
+interface PreviewMarkdownReviewThread {
+  body: string;
+  line?: number;
+  path?: string;
+}
+
+async function mockReviewThreadsOnPreviewMarkdown(page: Page, threads: PreviewMarkdownReviewThread[]): Promise<void> {
   await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
     const response = await route.fetch();
     const detail = (await response.json()) as MergeRequestDetailForRoute;
     const timestamp = "2026-06-17T15:00:00Z";
-    const externalID = `e2e-rich-preview-${line}`;
-    const threadID = `thread-rich-preview-${line}`;
 
     await route.fulfill({
       response,
@@ -1286,39 +1324,45 @@ async function mockReviewThreadOnPreviewMarkdown(
         ...detail,
         events: [
           ...(detail.events ?? []),
-          {
-            Author: "reviewer",
-            Body: body,
-            CreatedAt: timestamp,
-            DedupeKey: `review_comment:${externalID}`,
-            DirectURL: "",
-            EventType: "review_comment",
-            ID: 900_001,
-            MergeRequestID: detail.merge_request?.ID ?? 1,
-            MetadataJSON: "{}",
-            PlatformExternalID: externalID,
-            PlatformID: 900_001,
-            Resolvable: false,
-            Resolved: false,
-            Summary: body,
-            ThreadID: threadID,
-            diff_thread: {
-              author_login: "reviewer",
-              body,
-              can_resolve: false,
-              created_at: timestamp,
-              diff_head_sha: detail.diff_head_sha,
-              id: threadID,
-              line,
-              line_type: "add",
-              new_line: line,
-              path,
-              provider_comment_id: externalID,
-              resolved: false,
-              side: "right",
-              updated_at: timestamp,
-            },
-          },
+          ...threads.map((thread, index) => {
+            const line = thread.line ?? 3;
+            const path = thread.path ?? "docs/preview.md";
+            const externalID = `e2e-rich-preview-${path}-${line}-${index}`;
+            const threadID = `thread-rich-preview-${path}-${line}-${index}`;
+            return {
+              Author: "reviewer",
+              Body: thread.body,
+              CreatedAt: timestamp,
+              DedupeKey: `review_comment:${externalID}`,
+              DirectURL: "",
+              EventType: "review_comment",
+              ID: 900_001 + index,
+              MergeRequestID: detail.merge_request?.ID ?? 1,
+              MetadataJSON: "{}",
+              PlatformExternalID: externalID,
+              PlatformID: 900_001 + index,
+              Resolvable: false,
+              Resolved: false,
+              Summary: thread.body,
+              ThreadID: threadID,
+              diff_thread: {
+                author_login: "reviewer",
+                body: thread.body,
+                can_resolve: false,
+                created_at: timestamp,
+                diff_head_sha: detail.diff_head_sha,
+                id: threadID,
+                line,
+                line_type: "add",
+                new_line: line,
+                path,
+                provider_comment_id: externalID,
+                resolved: false,
+                side: "right",
+                updated_at: timestamp,
+              },
+            };
+          }),
         ],
       },
     });
@@ -2079,6 +2123,39 @@ test.describe("diff view", () => {
         }),
       )
       .toBe(true);
+  });
+
+  test("rich preview anchors multiple list review cards to their source items", async ({ page }) => {
+    await mockDiffApi(page, listReviewPreviewDiff);
+    await mockReviewThreadsOnPreviewMarkdown(page, [
+      { body: "Actions review note", line: 2, path: "docs/list-review.md" },
+      { body: "Issues review note", line: 1, path: "docs/list-review.md" },
+    ]);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await openDiffFilterMenu(page);
+    await page.getByRole("switch", { name: "Rich preview" }).click();
+
+    const markdownFile = page.locator('[data-file-path="docs/list-review.md"]');
+    await expect(markdownFile.locator(".markdown-rich-diff--unified")).toBeVisible();
+    await expect
+      .poll(() => markdownFile.locator(".markdown-rich-diff--unified .review-thread-body").allTextContents())
+      .toEqual(["Issues review note", "Actions review note"]);
+
+    const issuesCard = markdownFile
+      .locator(".markdown-rich-diff--unified .inline-review-thread")
+      .filter({ hasText: "Issues review note" });
+    const actionsCard = markdownFile
+      .locator(".markdown-rich-diff--unified .inline-review-thread")
+      .filter({ hasText: "Actions review note" });
+    await expect
+      .poll(() => issuesCard.evaluate((element) => element.previousElementSibling?.textContent?.trim() ?? ""))
+      .toContain("Issues");
+    await expect
+      .poll(() => actionsCard.evaluate((element) => element.previousElementSibling?.textContent?.trim() ?? ""))
+      .toContain("Actions");
   });
 
   test("rich preview keeps unmapped review thread cards visible as file-level fallback", async ({ page }) => {

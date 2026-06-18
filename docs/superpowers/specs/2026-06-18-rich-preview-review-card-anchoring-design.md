@@ -100,7 +100,7 @@ Markdown rich preview should avoid unbounded quadratic work. Block alignment may
 
 - Rich preview does not render arbitrary raw Markdown fragments independently.
 - Reference-style links defined inside the rendered hunk document still resolve.
-- Loose lists that Marked treats as one list remain one rendered list.
+- List items can be emitted as separate rich-preview anchor blocks when needed to place review cards after the matching source item.
 - Separate lists and tables on opposite sides of a hidden hunk separator stay separate top-level blocks.
 - Review cards on repeated text blocks map by source line order.
 - Review cards on structured container children remain near the valid top-level container boundary and keep the exact line reference in the card header.
@@ -119,7 +119,7 @@ Markdown rich preview should avoid unbounded quadratic work. Block alignment may
 Add unit coverage for the rich-preview model:
 
 - reference-style links still resolve when review cards are anchored;
-- loose lists render as a single list where Markdown defines one;
+- list items expose separate rich-preview anchor blocks when review cards target individual source items;
 - multi-hunk fenced code, HTML blocks, blockquotes, lists, and tables do not expose synthetic separator lines and keep the expected top-level structure;
 - stripped spanning-token re-renders keep in-document reference definitions available through the approved parser-context API;
 - user-authored thematic breaks inside hunks still render;
@@ -134,7 +134,7 @@ Keep component coverage for:
 - review threads targeting hidden hunk gaps remain file-level fallback cards;
 - source diff review annotations remain unchanged.
 
-Keep browser e2e coverage for the PR files page rich preview toggle, including a review-card case that proves cards are not at the top of the file.
+Keep browser e2e coverage for the PR files page rich preview toggle, including review-card cases that prove cards are not at the top of the file, multiple cards render in source order, list-item cards attach after the matching rendered item, and hidden-gap review threads remain file-level fallback cards.
 
 ## Implementation Staging
 

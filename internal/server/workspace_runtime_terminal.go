@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -173,6 +174,20 @@ func parseRuntimeTerminalSize(
 	cols, colsOK := parsePositiveQueryInt(r, "cols")
 	rows, rowsOK := parsePositiveQueryInt(r, "rows")
 	return cols, rows, colsOK && rowsOK
+}
+
+// clampTerminalDim bounds a client-supplied terminal dimension into the
+// uint16 range pty.Winsize requires, so an oversized cols/rows value is
+// capped rather than silently truncated by the narrowing conversion.
+func clampTerminalDim(v int) uint16 {
+	switch {
+	case v < 1:
+		return 1
+	case v > math.MaxUint16:
+		return math.MaxUint16
+	default:
+		return uint16(v)
+	}
 }
 
 func parsePositiveQueryInt(r *http.Request, name string) (int, bool) {

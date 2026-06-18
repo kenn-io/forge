@@ -904,8 +904,8 @@ func startFleetSSHAttachPTY(
 	cmd := procutil.Command(spec.Command[0], spec.Command[1:]...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Cols: uint16(cols),
-		Rows: uint16(rows),
+		Cols: clampTerminalDim(cols),
+		Rows: clampTerminalDim(rows),
 	})
 	if err != nil {
 		release()
@@ -964,8 +964,8 @@ func (a *fleetSSHPTYAttachment) resizeIfActive(cols, rows int) {
 		return
 	}
 	_ = pty.Setsize(a.ptmx, &pty.Winsize{
-		Cols: uint16(cols),
-		Rows: uint16(rows),
+		Cols: clampTerminalDim(cols),
+		Rows: clampTerminalDim(rows),
 	})
 }
 

@@ -77,7 +77,11 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-go build -tags kit_posthog_disabled -o "${binary}" ./cmd/middleman
+go_build_args=(-o "${binary}")
+if [[ -n "${MIDDLEMAN_GO_BUILD_TAGS:-}" ]]; then
+  go_build_args=(-tags "${MIDDLEMAN_GO_BUILD_TAGS}" "${go_build_args[@]}")
+fi
+go build "${go_build_args[@]}" ./cmd/middleman
 
 "${binary}" serve --config "${config}" &
 middleman_pid=$!

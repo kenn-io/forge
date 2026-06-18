@@ -3,6 +3,8 @@ services:
     build:
       context: ../../..
       dockerfile: Dockerfile.dev
+      args:
+        MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
     command: ["./scripts/e2e/fleet/run-daemon.sh", "hub"]
     environment:
       MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
@@ -22,6 +24,8 @@ services:
     build:
       context: ../../..
       dockerfile: Dockerfile.dev
+      args:
+        MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
     command: ["./scripts/e2e/fleet/run-daemon.sh", "member"]
     environment:
       MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
@@ -37,6 +41,8 @@ services:
     build:
       context: ../../..
       dockerfile: Dockerfile.dev
+      args:
+        MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
     command: ["./scripts/e2e/fleet/run-daemon.sh", "member-ssh"]
     environment:
       MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""

@@ -28,17 +28,27 @@ import (
 
 var fleetContainerUUIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-func TestFleetRunDaemonBuildDisablesTelemetry(t *testing.T) {
+func TestFleetComposeBuildDisablesTelemetry(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
+	dockerfile, err := os.ReadFile(filepath.Join(repoRoot(t), "Dockerfile.dev"))
+	require.NoError(err)
+	compose, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts/e2e/fleet/docker-compose.yml"))
+	require.NoError(err)
 	script, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts/e2e/fleet/run-daemon.sh"))
 	require.NoError(err)
 
+	assert.Contains(string(dockerfile), `ARG MIDDLEMAN_GO_BUILD_TAGS=""`)
+	assert.Contains(string(dockerfile), `ENV MIDDLEMAN_GO_BUILD_TAGS=${MIDDLEMAN_GO_BUILD_TAGS}`)
+	assert.Equal(3, strings.Count(string(compose), "MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled"))
 	assert.Contains(
 		string(script),
-		"go build -tags kit_posthog_disabled -o \"${binary}\" ./cmd/middleman",
+		`if [[ -n "${MIDDLEMAN_GO_BUILD_TAGS:-}" ]]; then`,
 	)
+	assert.Contains(string(script), `go_build_args=(-tags "${MIDDLEMAN_GO_BUILD_TAGS}" "${go_build_args[@]}")`)
+	assert.Contains(string(script), `go build "${go_build_args[@]}" ./cmd/middleman`)
+	assert.NotContains(string(script), "go build -tags kit_posthog_disabled")
 }
 
 func TestFleetContainerReadE2E(t *testing.T) {

@@ -1,4 +1,4 @@
-//go:build !middleman_no_telemetry
+//go:build !kit_posthog_disabled
 
 package telemetry
 

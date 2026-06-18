@@ -37,7 +37,7 @@ func TestFleetRunDaemonBuildDisablesTelemetry(t *testing.T) {
 
 	assert.Contains(
 		string(script),
-		"go build -tags middleman_no_telemetry -o \"${binary}\" ./cmd/middleman",
+		"go build -tags kit_posthog_disabled -o \"${binary}\" ./cmd/middleman",
 	)
 }
 

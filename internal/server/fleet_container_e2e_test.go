@@ -39,9 +39,9 @@ func TestFleetComposeBuildDisablesTelemetry(t *testing.T) {
 	script, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts/e2e/fleet/run-daemon.sh"))
 	require.NoError(err)
 
-	assert.Contains(string(dockerfile), `ARG MIDDLEMAN_GO_BUILD_TAGS=""`)
-	assert.Contains(string(dockerfile), `ENV MIDDLEMAN_GO_BUILD_TAGS=${MIDDLEMAN_GO_BUILD_TAGS}`)
+	assert.NotContains(string(dockerfile), "MIDDLEMAN_GO_BUILD_TAGS")
 	assert.Equal(3, strings.Count(string(compose), "MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled"))
+	assert.NotContains(string(compose), "args:\n        MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled")
 	assert.Contains(
 		string(script),
 		`if [[ -n "${MIDDLEMAN_GO_BUILD_TAGS:-}" ]]; then`,

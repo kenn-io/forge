@@ -3,10 +3,9 @@ services:
     build:
       context: ../../..
       dockerfile: Dockerfile.dev
-      args:
-        MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
     command: ["./scripts/e2e/fleet/run-daemon.sh", "hub"]
     environment:
+      MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
       MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
       MIDDLEMAN_FLEET_HOST_PORT: "${MIDDLEMAN_FLEET_HUB_PORT:-18091}"
     expose:
@@ -24,10 +23,9 @@ services:
     build:
       context: ../../..
       dockerfile: Dockerfile.dev
-      args:
-        MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
     command: ["./scripts/e2e/fleet/run-daemon.sh", "member"]
     environment:
+      MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
       MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
     expose:
       - "18091"
@@ -41,10 +39,9 @@ services:
     build:
       context: ../../..
       dockerfile: Dockerfile.dev
-      args:
-        MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
     command: ["./scripts/e2e/fleet/run-daemon.sh", "member-ssh"]
     environment:
+      MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
       MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
     expose:
       - "22"

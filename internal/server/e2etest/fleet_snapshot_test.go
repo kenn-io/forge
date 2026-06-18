@@ -294,9 +294,11 @@ func TestFleetDisabledBlocksRemoteSnapshotAndProxyE2E(t *testing.T) {
 
 	hubCfg := &config.Config{
 		BasePath: "/",
+		DataDir:  t.TempDir(),
 		Fleet: config.Fleet{
-			Enabled: false,
-			Key:     "hub",
+			Enabled:     false,
+			Key:         "hub",
+			PeerTimeout: "10ms",
 			Peers: []config.FleetPeer{
 				{Key: "peer", Name: "peer", BaseURL: peerTS.URL},
 			},

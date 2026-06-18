@@ -333,6 +333,45 @@ platform = "linux"
 	assert.Equal("epyc", settings.Fleet.SSHPeers[0].Key)
 	assert.False(settings.Fleet.RestartRequired)
 
+	fleetGetResp := doServerJSON(
+		t, ts.Client(), http.MethodGet,
+		ts.URL+"/api/v1/settings/fleet", nil,
+	)
+	defer fleetGetResp.Body.Close()
+	require.Equal(http.StatusOK, fleetGetResp.StatusCode)
+
+	var fleetSettings struct {
+		Enabled     bool   `json:"enabled"`
+		Key         string `json:"key"`
+		PeerTimeout string `json:"peer_timeout"`
+		Peers       []struct {
+			Key     string `json:"key"`
+			Name    string `json:"name"`
+			BaseURL string `json:"base_url"`
+		} `json:"peers"`
+		SSHPeers []struct {
+			Key         string `json:"key"`
+			Name        string `json:"name"`
+			Destination string `json:"destination"`
+			Platform    string `json:"platform"`
+		} `json:"ssh_peers"`
+		RestartRequired bool `json:"restart_required"`
+	}
+	require.NoError(json.NewDecoder(fleetGetResp.Body).Decode(&fleetSettings))
+	assert.False(fleetSettings.Enabled)
+	assert.Equal("studio", fleetSettings.Key)
+	assert.Equal("3s", fleetSettings.PeerTimeout)
+	require.Len(fleetSettings.Peers, 1)
+	assert.Equal("mini", fleetSettings.Peers[0].Key)
+	assert.Equal("Mac mini", fleetSettings.Peers[0].Name)
+	assert.Equal("http://mini.tail:8091", fleetSettings.Peers[0].BaseURL)
+	require.Len(fleetSettings.SSHPeers, 1)
+	assert.Equal("epyc", fleetSettings.SSHPeers[0].Key)
+	assert.Equal("EPYC", fleetSettings.SSHPeers[0].Name)
+	assert.Equal("wes@epyc.tail", fleetSettings.SSHPeers[0].Destination)
+	assert.Equal("linux", fleetSettings.SSHPeers[0].Platform)
+	assert.False(fleetSettings.RestartRequired)
+
 	updateResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
 		ts.URL+"/api/v1/settings/fleet",

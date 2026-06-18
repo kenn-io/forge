@@ -21,7 +21,14 @@ vi.mock("../../api/settings.js", () => ({
   bulkAddRepos: vi.fn(),
 }));
 
-import { addRepo, bulkAddRepos, previewRepos, refreshRepo, updateRepoWorktreeBasePath } from "../../api/settings.js";
+import {
+  addRepo,
+  bulkAddRepos,
+  previewRepos,
+  refreshRepo,
+  removeRepo,
+  updateRepoWorktreeBasePath,
+} from "../../api/settings.js";
 import RepoSettings from "./RepoSettings.svelte";
 
 const mockAddRepo = vi.mocked(addRepo);
@@ -29,6 +36,7 @@ const mockRefreshRepo = vi.mocked(refreshRepo);
 const mockUpdateRepoWorktreeBasePath = vi.mocked(updateRepoWorktreeBasePath);
 const mockPreviewRepos = vi.mocked(previewRepos);
 const mockBulkAddRepos = vi.mocked(bulkAddRepos);
+const mockRemoveRepo = vi.mocked(removeRepo);
 
 describe("RepoSettings", () => {
   afterEach(() => {
@@ -39,6 +47,7 @@ describe("RepoSettings", () => {
     mockUpdateRepoWorktreeBasePath.mockReset();
     mockPreviewRepos.mockReset();
     mockBulkAddRepos.mockReset();
+    mockRemoveRepo.mockReset();
   });
 
   it("renders the glob count and refresh action", () => {
@@ -515,6 +524,109 @@ describe("RepoSettings", () => {
       ],
     });
     await screen.findByText("acme/api");
+  });
+
+  it("rolls back a promoted exact repository when saving the local clone path fails", async () => {
+    const onUpdate = vi.fn();
+    const addedRepos = [
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "*",
+        repo_path: "acme/*",
+        is_glob: true,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ];
+    mockPreviewRepos.mockResolvedValue({
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      pattern: "*",
+      repos: [
+        {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "api",
+          repo_path: "acme/api",
+          description: "HTTP API",
+          private: false,
+          fork: false,
+          pushed_at: null,
+          already_configured: false,
+        },
+      ],
+    });
+    mockBulkAddRepos.mockResolvedValue({
+      repos: addedRepos,
+      activity: {
+        view_mode: "threaded",
+        time_range: "7d",
+        hide_closed: false,
+        hide_bots: false,
+        collapse_threads: false,
+        default_branch_retention_days: 90,
+        default_branch_max_commits: 5000,
+      },
+      terminal: {
+        font_family: "",
+        font_size: 14,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "xterm",
+      },
+      agents: [],
+    });
+    mockUpdateRepoWorktreeBasePath.mockRejectedValue(new Error("path does not exist"));
+    mockRemoveRepo.mockResolvedValue();
+
+    render(RepoSettings, {
+      props: {
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "*",
+            repo_path: "acme/*",
+            is_glob: true,
+            matched_repo_count: 1,
+          },
+        ],
+        onUpdate,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Promote glob repository acme/*" }));
+    await screen.findByText("acme/api");
+    await fireEvent.input(screen.getByLabelText("Local clone path for acme/api"), {
+      target: { value: "/missing/api" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Promote repository" }));
+
+    await waitFor(() =>
+      expect(mockRemoveRepo).toHaveBeenCalledWith("acme", "api", {
+        provider: "github",
+        host: "github.com",
+      }),
+    );
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("path does not exist"));
+    expect(onUpdate).not.toHaveBeenCalled();
+    expect(mockRefreshSyncStatus).not.toHaveBeenCalled();
   });
 
   it("updates repos and refreshes sync status after import", async () => {

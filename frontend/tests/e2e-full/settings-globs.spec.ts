@@ -237,6 +237,59 @@ test("settings promotes a glob match to a persisted exact repo with a local clon
   );
 });
 
+test("settings rolls back a promoted glob match when the local clone path is invalid", async ({ page }) => {
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+
+  const globRow = page.locator(".repo-row", { hasText: "roborev-dev/*" });
+  await globRow.getByRole("button", { name: "Promote glob repository roborev-dev/*" }).click();
+  const dialog = page.getByRole("dialog", { name: "Promote wildcard repository" });
+  await expect(dialog.getByRole("radio", { name: /roborev-dev\/middleman/ })).toBeChecked();
+
+  const addResponsePromise = page.waitForResponse(
+    (response) => response.url().endsWith("/api/v1/repos/bulk") && response.request().method() === "POST",
+  );
+  const saveResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/repo/github/roborev-dev/middleman/worktree-base") &&
+      response.request().method() === "PUT",
+  );
+  const rollbackResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/repo/github/roborev-dev/middleman") && response.request().method() === "DELETE",
+  );
+
+  await dialog
+    .getByLabel("Local clone path for roborev-dev/middleman", { exact: true })
+    .fill("/missing/promoted/clone");
+  await dialog.getByRole("button", { name: "Promote repository" }).click();
+  const addResponse = await addResponsePromise;
+  const saveResponse = await saveResponsePromise;
+  const rollbackResponse = await rollbackResponsePromise;
+  expect(addResponse.status(), `POST repos/bulk failed: ${await addResponse.text()}`).toBe(201);
+  expect(saveResponse.status(), "invalid worktree path should fail validation").not.toBe(200);
+  expect(rollbackResponse.ok(), `DELETE promoted repo returned ${rollbackResponse.status()}`).toBe(true);
+
+  await expect(dialog.getByRole("alert")).toContainText("path does not exist");
+
+  if (!api) throw new Error("settings-globs API context not initialized");
+  await expect
+    .poll(async () => {
+      const settingsResponse = await api!.get("/api/v1/settings");
+      expect(settingsResponse.ok()).toBe(true);
+      const settings = (await settingsResponse.json()) as {
+        repos: Array<{
+          owner: string;
+          name: string;
+          repo_path: string;
+          is_glob: boolean;
+        }>;
+      };
+      return settings.repos.some((repo) => repo.owner === "roborev-dev" && repo.name === "middleman" && !repo.is_glob);
+    })
+    .toBe(false);
+});
+
 test("repository import can hide forks and private repositories before adding", async ({ page }) => {
   let bulkRepos:
     | Array<{

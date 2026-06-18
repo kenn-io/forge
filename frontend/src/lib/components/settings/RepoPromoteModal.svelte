@@ -5,6 +5,7 @@
   import {
     bulkAddRepos,
     previewRepos,
+    removeRepo,
     updateRepoWorktreeBasePath,
     type RepoPreviewRow,
   } from "../../api/settings.js";
@@ -119,37 +120,55 @@
   }
 
   async function handlePromote(): Promise<void> {
-    if (!selectedRow || !selectedKey || selectedRow.already_configured) return;
+    const row = selectedRow;
+    const key = selectedKey;
+    if (!row || !key || row.already_configured) return;
     const worktreeBasePath = selectedPath.trim();
     if (worktreeBasePath === "") return;
+    let addedThisAttempt = false;
     submitting = true;
     error = null;
     try {
-      if (!addedExactKeys[selectedKey]) {
+      if (!addedExactKeys[key]) {
         await bulkAddRepos([
           {
-            provider: selectedRow.provider,
-            host: selectedRow.platform_host,
-            owner: selectedRow.owner,
-            name: selectedRow.name,
-            repo_path: selectedRow.repo_path,
+            provider: row.provider,
+            host: row.platform_host,
+            owner: row.owner,
+            name: row.name,
+            repo_path: row.repo_path,
           },
         ]);
-        addedExactKeys = { ...addedExactKeys, [selectedKey]: true };
+        addedThisAttempt = true;
+        addedExactKeys = { ...addedExactKeys, [key]: true };
       }
       const settings = await updateRepoWorktreeBasePath(
-        selectedRow.owner,
-        selectedRow.name,
+        row.owner,
+        row.name,
         {
-          provider: selectedRow.provider,
-          host: selectedRow.platform_host,
+          provider: row.provider,
+          host: row.platform_host,
         },
         worktreeBasePath,
       );
       onPromoted(settings);
       onClose();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (addedThisAttempt) {
+        try {
+          await removeRepo(row.owner, row.name, {
+            provider: row.provider,
+            host: row.platform_host,
+          });
+          addedExactKeys = { ...addedExactKeys, [key]: false };
+        } catch (rollbackErr) {
+          const rollbackMessage = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
+          error = `${message}; rollback failed: ${rollbackMessage}`;
+          return;
+        }
+      }
+      error = message;
     } finally {
       submitting = false;
     }

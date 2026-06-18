@@ -277,16 +277,21 @@
     targetIndex: number,
     targetIndent: number,
   ): DiffHunkLine | undefined {
+    let crossedBlank = false;
     for (let index = targetIndex - 1; index >= 0; index--) {
       const line = lines[index]!;
-      if (line.content.trim() === "") continue;
+      if (line.content.trim() === "") {
+        crossedBlank = true;
+        continue;
+      }
       const lineIndent = listMarkerIndent(line.content);
       if (lineIndent == null) {
-        if (isIndentedListContinuation(line.content, targetIndent)) continue;
+        if (isListContinuation(line.content, targetIndent, crossedBlank)) continue;
         return undefined;
       }
       if (lineIndent < targetIndent) return undefined;
       if (lineIndent === targetIndent && line.old_num != null && line.new_num != null) return line;
+      crossedBlank = false;
     }
     return undefined;
   }
@@ -296,23 +301,29 @@
     targetIndex: number,
     targetIndent: number,
   ): DiffHunkLine | undefined {
+    let crossedBlank = false;
     for (let index = targetIndex + 1; index < lines.length; index++) {
       const line = lines[index]!;
-      if (line.content.trim() === "") continue;
+      if (line.content.trim() === "") {
+        crossedBlank = true;
+        continue;
+      }
       const lineIndent = listMarkerIndent(line.content);
       if (lineIndent == null) {
-        if (isIndentedListContinuation(line.content, targetIndent)) continue;
+        if (isListContinuation(line.content, targetIndent, crossedBlank)) continue;
         return undefined;
       }
       if (lineIndent < targetIndent) return undefined;
       if (lineIndent === targetIndent && line.old_num != null && line.new_num != null) return line;
+      crossedBlank = false;
     }
     return undefined;
   }
 
-  function isIndentedListContinuation(line: string, targetIndent: number): boolean {
+  function isListContinuation(line: string, targetIndent: number, crossedBlank: boolean): boolean {
     const match = line.match(/^(\s*)/);
-    return indentationWidth(match?.[1] ?? "") > targetIndent;
+    const lineIndent = indentationWidth(match?.[1] ?? "");
+    return lineIndent > targetIndent || (!crossedBlank && lineIndent === targetIndent);
   }
 
   function listMarkerIndent(line: string): number | null {
@@ -517,6 +528,7 @@
   }
 
   .diff-rich-preview {
+    box-sizing: border-box;
     max-width: 920px;
     padding: 24px 32px 36px;
     color: var(--text-primary);
@@ -526,7 +538,8 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 12px;
-    max-width: 1180px;
+    width: 100%;
+    max-width: none;
   }
 
   .markdown-rich-diff__pane {
@@ -575,6 +588,11 @@
 
   .markdown-rich-diff--split :global(.markdown-diff__block) {
     display: block;
+  }
+
+  .markdown-rich-diff--split :global(.markdown-diff__block),
+  .markdown-rich-diff--split :global(.markdown-diff__block *) {
+    text-decoration: none;
   }
 
   .markdown-rich-diff--split :global(ins:not(.markdown-diff__block)),

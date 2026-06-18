@@ -86,7 +86,7 @@ Rich preview should read like rendered Markdown first.
 
 For added or removed block-level content, use quiet block background and border styling. Avoid underlining every word in newly inserted paragraphs, headings, or list items. Inline `ins` and `del` styling should be reserved for small text changes inside otherwise matching blocks.
 
-Split mode uses the before/after pane and block background as the primary block-level add/delete cue. Inline `ins` and `del` nodes inside otherwise matching split-pane blocks keep a subtle add/delete background cue, but never use native underline or strike-through text decoration.
+Split mode uses the before/after pane and block background as the primary block-level add/delete cue. Inline `ins` and `del` nodes inside otherwise matching split-pane blocks keep a subtle add/delete background cue, but never use native underline or strike-through text decoration. This no-decoration rule applies to block-level diff wrappers and their descendants; block fill and pane placement carry the add/delete signal for full-block changes.
 
 Review cards should sit between rendered blocks without introducing artificial paragraph breaks, isolated list fragments, or source-diff-style clutter.
 
@@ -94,7 +94,9 @@ For structured containers, the card sits after the whole top-level container. It
 
 List-item anchoring is the only container-specific exception in this milestone. The pure rich-preview builder accepts explicit old-side and new-side source-line sets that need internal anchors. It keeps normal lists as one rendered list unless one of those target lines falls inside the list. When a review targets a context list item, the component uses that target line as the anchor boundary. When a review targets an added or deleted list item, it also adds a same-indent comparable context list item as an alignment boundary so unchanged sibling items do not render as false additions or deletions. Boundary selection prefers the nearest preceding comparable item, then the nearest following comparable item; if neither exists, the changed side can still split for card placement and the opposite side remains absent or whole.
 
-Split list blocks are a placement device, not new Markdown paragraph breaks. They render only the minimum number of `<ul>` or `<ol>` chunks needed to put review cards after their target items; untargeted consecutive items stay grouped in the same chunk. Split chunks must preserve numbering for ordered lists, keep nested lists and multiline item content inside the owning item, abandon splitting when rendered `<li>` counts do not match source markers, and use styling that removes only synthetic wrapper margins. Untargeted lists, loose lists outside targeted regions, tables, and blockquotes remain whole top-level blocks. Targeted loose lists use the same source-marker grouping, preserving each rendered `<li>` subtree; if the renderer/source marker count no longer matches, the card anchors after the whole list container instead of guessing.
+Split list blocks are a placement device, not new Markdown paragraph breaks. They render only the minimum number of `<ul>` or `<ol>` chunks needed to put review cards after their target items; untargeted consecutive items stay grouped in the same chunk. Split chunks must preserve numbering for ordered lists, keep nested lists and multiline item content inside the owning item, abandon splitting when rendered `<li>` counts do not match source markers, and use styling that removes only synthetic wrapper margins. Untargeted lists, loose lists outside targeted regions, tables, and blockquotes remain whole top-level blocks. Targeted loose lists use the same source-marker grouping, preserving each rendered `<li>` subtree; if the renderer/source marker count no longer matches, the card anchors after the whole list container instead of guessing. Added/deleted list boundary scans treat indented continuation lines and pre-blank lazy continuation lines as part of the current list item; they stop at lower-indented content, lower-indented markers, or same-indent non-list text after a blank line so unrelated blocks are not selected as alignment context.
+
+Side-by-side rich preview is a comparison surface, not a single prose column. It should use the available file width for its two panes, while unified rich preview keeps the narrower readable Markdown measure.
 
 Wrapper elements around rendered blocks are acceptable only when they preserve the readable Markdown layout. They must not force one-off margin, table, list, or heading behavior that differs materially from the normal rich preview. Layout regressions for lists, headings, paragraphs, and tables should be covered by component or browser assertions when wrappers change.
 
@@ -115,6 +117,7 @@ Markdown rich preview should avoid unbounded quadratic work. Block alignment may
 - Split rich preview anchors cards to the matching old or new side rather than dumping all cards above the preview.
 - Block-level additions and deletions use block diff styling without per-word underline decoration.
 - Split-pane inline text changes retain a visible add/delete background cue without underline or strike-through decoration.
+- Split-pane rich preview uses the available file width instead of the unified preview's prose-width cap.
 - The rendered DOM remains valid for lists, tables, and blockquotes.
 - Large Markdown diffs do not allocate an unbounded block comparison matrix.
 - The block-rendering path preserves centralized Markdown sanitization and the allowed attribute policy.

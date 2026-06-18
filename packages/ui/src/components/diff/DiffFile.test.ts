@@ -1032,13 +1032,13 @@ describe("DiffFile", () => {
         ],
       },
       {
-        name: "prepended multiline",
+        name: "prepended lazy multiline",
         targetLine: 1,
         oldCount: 2,
         newCount: 4,
         lines: [
           { type: "add" as const, content: "- Actions", new_num: 1 },
-          { type: "add" as const, content: "  still needs details", new_num: 2 },
+          { type: "add" as const, content: "still needs details", new_num: 2 },
           { type: "context" as const, content: "- Issues", old_num: 1, new_num: 3 },
           { type: "context" as const, content: "- Statuses", old_num: 2, new_num: 4 },
         ],
@@ -1168,13 +1168,13 @@ describe("DiffFile", () => {
         ],
       },
       {
-        name: "first multiline",
+        name: "first lazy multiline",
         targetLine: 1,
         oldCount: 4,
         newCount: 2,
         lines: [
           { type: "delete" as const, content: "- Actions", old_num: 1 },
-          { type: "delete" as const, content: "  still needs details", old_num: 2 },
+          { type: "delete" as const, content: "still needs details", old_num: 2 },
           { type: "context" as const, content: "- Issues", old_num: 3, new_num: 1 },
           { type: "context" as const, content: "- Statuses", old_num: 4, new_num: 2 },
         ],

@@ -166,7 +166,7 @@ Add tests proving synthetic separators stay hidden for standalone fenced-code, H
 
 - [x] **Step 2: Add component tests**
 
-Add tests proving split mode does not dump line comments at the top, comments preserve source order, list-item review cards render after the matching item rather than after the whole list, and added/deleted list-item review cards keep unchanged sibling items aligned at middle and edge positions, including multiline changed items.
+Add tests proving split mode does not dump line comments at the top, comments preserve source order, list-item review cards render after the matching item rather than after the whole list, and added/deleted list-item review cards keep unchanged sibling items aligned at middle and edge positions, including lazy multiline changed items.
 
 - [x] **Step 3: Run component tests and verify RED before production wiring if not already red**
 
@@ -184,7 +184,7 @@ Extend the existing rich-preview review-card e2e case to assert the card has a r
 
 Add a diff-view e2e case with a multi-hunk Markdown block and a review thread targeting a hidden source gap, proving the card remains a file-level fallback instead of rendering inside `.markdown-rich-diff--unified`.
 Add another diff-view e2e case with multiple list-item review threads returned out of source order, proving rich preview renders the cards in source order, anchors each card after the matching rendered item, and does not add synthetic split-list margins.
-Add browser coverage proving rich preview side-by-side panes render changed text without native `<ins>`/`<del>` underlines or strike-through styling while keeping an inline background cue for word-level changes.
+Add browser coverage proving rich preview side-by-side panes render changed text without native `<ins>`/`<del>` underlines or strike-through styling while keeping an inline background cue for word-level changes, and that split rich preview uses wide file-pane space rather than the unified prose-width cap.
 
 ### Task 5: Styling, Validation, And Commit
 
@@ -194,7 +194,7 @@ Add browser coverage proving rich preview side-by-side panes render changed text
 
 - [x] **Step 1: Quiet block-level diff styling**
 
-Change rich-preview CSS so `ins.markdown-diff__block` and `del.markdown-diff__block` use block background/border without text underline. Keep inline `ins`/`del` background styling for non-block changes in unified and split modes.
+Change rich-preview CSS so `ins.markdown-diff__block` and `del.markdown-diff__block` use block background/border without text underline. Keep inline `ins`/`del` background styling for non-block changes in unified and split modes, and let split mode expand to the available file width.
 
 - [x] **Step 2: Run Svelte validation**
 

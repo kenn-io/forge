@@ -673,7 +673,7 @@ const edgeListReviewPreviewDiff: DiffResult = withServerDiffData({
           new_count: 5,
           lines: [
             { type: "add", content: "- Prepended", new_num: 1 },
-            { type: "add", content: "  prepended details", new_num: 2 },
+            { type: "add", content: "prepended details", new_num: 2 },
             { type: "context", content: "- Issues", old_num: 1, new_num: 3 },
             { type: "context", content: "- Statuses", old_num: 2, new_num: 4 },
             { type: "add", content: "- Appended", new_num: 5 },
@@ -697,7 +697,7 @@ const edgeListReviewPreviewDiff: DiffResult = withServerDiffData({
           new_count: 2,
           lines: [
             { type: "delete", content: "- Removed first", old_num: 1 },
-            { type: "delete", content: "  removed first details", old_num: 2 },
+            { type: "delete", content: "removed first details", old_num: 2 },
             { type: "context", content: "- Issues", old_num: 3, new_num: 1 },
             { type: "context", content: "- Statuses", old_num: 4, new_num: 2 },
             { type: "delete", content: "- Removed last", old_num: 5 },
@@ -787,6 +787,12 @@ const blockFillMarkdownDiff: DiffResult = withServerDiffData({
       ],
     },
   ],
+});
+
+const splitRichPreviewDiff: DiffResult = withServerDiffData({
+  stale: false,
+  whitespace_only_count: 0,
+  files: [previewDiff.files[0]!, blockFillMarkdownDiff.files[0]!, ...smallDiff.files],
 });
 
 // --- Helpers ---
@@ -2193,7 +2199,8 @@ test.describe("diff view", () => {
   });
 
   test("rich preview side-by-side panes do not underline changed text", async ({ page }) => {
-    await mockDiffApi(page, previewDiff);
+    await page.setViewportSize({ width: 2200, height: 1000 });
+    await mockDiffApi(page, splitRichPreviewDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
@@ -2219,6 +2226,21 @@ test.describe("diff view", () => {
     await expect
       .poll(() => afterChange.evaluate((element) => getComputedStyle(element).textDecorationLine))
       .toBe("none");
+    const blockFillPreview = page.locator('[data-file-path="docs/block-fill.md"] .markdown-rich-diff--split');
+    await expect(blockFillPreview).toBeVisible();
+    const deletedBlock = blockFillPreview
+      .locator('[aria-label="Before markdown preview"] del.markdown-diff__block')
+      .filter({ hasText: "Removed standalone block" })
+      .first();
+    await expect(deletedBlock).toBeVisible();
+    await expect
+      .poll(() =>
+        deletedBlock.evaluate((element) => {
+          const textElement = element.querySelector("*") ?? element;
+          return getComputedStyle(textElement).textDecorationLine;
+        }),
+      )
+      .toBe("none");
     const inlineBeforeChange = markdownPreview
       .locator('[aria-label="Before markdown preview"] strong del')
       .filter({ hasText: "beta" })
@@ -2235,6 +2257,9 @@ test.describe("diff view", () => {
     await expect
       .poll(() => inlineAfterChange.evaluate((element) => getComputedStyle(element).backgroundColor))
       .not.toBe("rgba(0, 0, 0, 0)");
+    await expect
+      .poll(() => markdownPreview.evaluate((element) => element.getBoundingClientRect().width))
+      .toBeGreaterThan(1300);
   });
 
   test("rich preview gives standalone block additions and deletions visible fills", async ({ page }) => {

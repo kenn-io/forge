@@ -39,9 +39,15 @@ const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
 const onSelectItem = vi.hoisted(() => vi.fn());
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
+const showNotifications = vi.hoisted(() => ({ value: true }));
 const setHideOrgName = vi.hoisted(() =>
   vi.fn((value: boolean) => {
     hideOrgName.value = value;
+  }),
+);
+const setShowNotifications = vi.hoisted(() =>
+  vi.fn((value: boolean) => {
+    showNotifications.value = value;
   }),
 );
 
@@ -58,7 +64,7 @@ vi.mock("../context.js", () => ({
       getTimeRange: () => "7d",
       getItemFilter: () => "all",
       getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push"]),
-      getShowNotifications: () => true,
+      getShowNotifications: () => showNotifications.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => false,
@@ -68,7 +74,7 @@ vi.mock("../context.js", () => ({
       setActivitySearch: vi.fn(),
       setTimeRange: vi.fn(),
       setItemFilter: vi.fn(),
-      setShowNotifications: vi.fn(),
+      setShowNotifications,
       setHideBots: vi.fn(),
       setHideDefaultBranchActivity: vi.fn(),
       syncToURL: vi.fn(),
@@ -227,9 +233,49 @@ function notificationItem(id: string, title: string, subjectState: string): Acti
   } as ActivityItem;
 }
 
+describe("MobileActivityView notifications", () => {
+  beforeEach(() => {
+    hideClosedMerged.value = false;
+    showNotifications.value = true;
+    onSelectItem.mockClear();
+    setShowNotifications.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("labels notification events by their reason, not the raw type", () => {
+    items.value = [notificationItem("1", "Review me", "open")];
+
+    const { container } = render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    const event = container.querySelector(".mobile-activity-event__body strong");
+    expect(event?.textContent).toBe("Review requested");
+  });
+
+  it("hides notifications through a mobile toggle wired to the store", async () => {
+    items.value = [notificationItem("1", "Review me", "open")];
+
+    const { getByRole } = render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    const button = getByRole("button", { name: "Hide notifications" });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+
+    await fireEvent.click(button);
+
+    expect(setShowNotifications).toHaveBeenCalledWith(false);
+  });
+});
+
 describe("MobileActivityView hide closed/merged", () => {
   beforeEach(() => {
     hideClosedMerged.value = false;
+    showNotifications.value = true;
     onSelectItem.mockClear();
   });
 

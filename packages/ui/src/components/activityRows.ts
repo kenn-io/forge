@@ -61,6 +61,35 @@ export function shortSha(sha: string | undefined): string {
   return sha ? sha.slice(0, 7) : "";
 }
 
+// A notification's reason rides in body_preview from the backend union; turn
+// the raw GitHub reason token into a human label. Shared so the desktop,
+// threaded, and mobile activity surfaces render the same notification labels
+// instead of drifting apart.
+export function notificationReasonLabel(reason: string): string {
+  switch (reason) {
+    case "review_requested":
+      return "Review requested";
+    case "mention":
+      return "Mentioned";
+    case "team_mention":
+      return "Team mentioned";
+    case "assign":
+      return "Assigned";
+    case "author":
+      return "Your thread";
+    case "comment":
+      return "New comment";
+    case "state_change":
+      return "State changed";
+    case "subscribed":
+      return "Subscribed";
+    case "ci_activity":
+      return "CI activity";
+    default:
+      return "Notification";
+  }
+}
+
 function repoKeyForItem(item: ActivityItem): string {
   return activityRepoKey({
     provider: item.repo?.provider ?? "",

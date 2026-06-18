@@ -17,6 +17,7 @@
     isCollapsedActivityRow,
     isClosedOrMergedActivity,
     collapseActivityRuns,
+    notificationReasonLabel,
     shortSha,
   } from "./activityRows.js";
   import {
@@ -204,24 +205,6 @@
       case "default_branch_force_push": return "Force-pushed";
       case "notification": return notificationReasonLabel(item.body_preview);
       default: return item.activity_type;
-    }
-  }
-
-  // The notification's reason rides in body_preview from the backend
-  // union; turn the raw GitHub reason token into a human label.
-  function notificationReasonLabel(reason: string): string {
-    switch (reason) {
-      case "review_requested": return "Review requested";
-      case "mention": return "Mentioned";
-      case "team_mention": return "Team mentioned";
-      case "assign": return "Assigned";
-      case "author": return "Your thread";
-      case "comment": return "New comment";
-      case "state_change": return "State changed";
-      case "subscribed": return "Subscribed";
-      case "ci_activity": return "CI activity";
-      case "": return "Notification";
-      default: return "Notification";
     }
   }
 

@@ -19,6 +19,7 @@
     isClosedOrMergedActivity,
     isDefaultBranchActivity,
     isDefaultBranchForcePushActivity,
+    notificationReasonLabel,
     shortSha,
   } from "../components/activityRows.js";
   import {
@@ -214,6 +215,11 @@
     applyFilters();
   }
 
+  function toggleHideNotifications(): void {
+    activity.setShowNotifications(!activity.getShowNotifications());
+    applyFilters();
+  }
+
   function toggleHideDefaultBranchActivity(): void {
     activity.setHideDefaultBranchActivity(
       !activity.getHideDefaultBranchActivity(),
@@ -256,8 +262,8 @@
     onSelectItem?.(event);
   }
 
-  function eventLabel(type: string): string {
-    switch (type) {
+  function eventLabel(item: ActivityItem): string {
+    switch (item.activity_type) {
       case "new_pr":
       case "new_issue":
         return "Opened";
@@ -271,8 +277,10 @@
       case "force_push":
       case "default_branch_force_push":
         return "Force-pushed";
+      case "notification":
+        return notificationReasonLabel(item.body_preview);
       default:
-        return type;
+        return item.activity_type;
     }
   }
 
@@ -418,6 +426,14 @@
         aria-pressed={grouping.getHideOrgName()}
         onclick={toggleHideOrgName}
       >Hide org</button>
+
+      <button
+        type="button"
+        class="mobile-filter-toggle"
+        class:active={!activity.getShowNotifications()}
+        aria-pressed={!activity.getShowNotifications()}
+        onclick={toggleHideNotifications}
+      >Hide notifications</button>
     </div>
 
 
@@ -482,7 +498,7 @@
                 >
                   <span class="mobile-activity-event__dot" aria-hidden="true"></span>
                   <span class="mobile-activity-event__body">
-                    <strong>{eventLabel(event.activity_type)}</strong>
+                    <strong>{eventLabel(event)}</strong>
                     <span>{eventDetail(event)}</span>
                   </span>
                   <time>{relativeTime(event.created_at)}</time>

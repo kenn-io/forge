@@ -9,6 +9,7 @@
     isDefaultBranchActivity,
     isDefaultBranchCommitActivity,
     isDefaultBranchForcePushActivity,
+    notificationReasonLabel,
     shortSha,
     type ActivityRow,
   } from "./activityRows.js";
@@ -370,21 +371,6 @@
       return notificationReasonLabel(row.body_preview);
     }
     return eventLabel(row.activity_type);
-  }
-
-  function notificationReasonLabel(reason: string): string {
-    switch (reason) {
-      case "review_requested": return "Review requested";
-      case "mention": return "Mentioned";
-      case "team_mention": return "Team mentioned";
-      case "assign": return "Assigned";
-      case "author": return "Your thread";
-      case "comment": return "New comment";
-      case "state_change": return "State changed";
-      case "subscribed": return "Subscribed";
-      case "ci_activity": return "CI activity";
-      default: return "Notification";
-    }
   }
 
   function isUnreadNotification(row: ActivityItem): boolean {

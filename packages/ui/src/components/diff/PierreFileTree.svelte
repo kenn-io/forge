@@ -9,6 +9,7 @@
   interface Props {
     files: readonly DiffFile[] | null | undefined;
     selectedPath?: string | null;
+    selectedPathRevealKey?: number;
     ariaLabel?: string;
     onSelect?: (path: string) => void;
   }
@@ -16,6 +17,7 @@
   const {
     files,
     selectedPath = null,
+    selectedPathRevealKey = 0,
     ariaLabel = "Changed files",
     onSelect,
   }: Props = $props();
@@ -25,6 +27,7 @@
   let renderedTreeKey = "";
   let syncingSelection = false;
   let selectedPathScrollFrame = 0;
+  let lastSelectedPathRevealKey: number | null = null;
 
   const safeFiles = $derived(files ?? []);
   const treePaths = $derived(safeFiles.map((file) => file.path));
@@ -123,10 +126,20 @@
     }
     if (selectedPath && tree.getItem(selectedPath)) {
       tree.getItem(selectedPath)?.select();
-      tree.focusNearestPath(selectedPath);
-      scheduleSelectedPathIntoView(selectedPath);
+      revealSelectedPathIfRequested(selectedPath);
     }
     syncingSelection = false;
+  }
+
+  function revealSelectedPathIfRequested(path: string): void {
+    if (lastSelectedPathRevealKey === null) {
+      lastSelectedPathRevealKey = selectedPathRevealKey;
+      return;
+    }
+    if (selectedPathRevealKey === lastSelectedPathRevealKey) return;
+    lastSelectedPathRevealKey = selectedPathRevealKey;
+    tree?.focusNearestPath(path);
+    scheduleSelectedPathIntoView(path);
   }
 
   function scheduleSelectedPathIntoView(path: string): void {

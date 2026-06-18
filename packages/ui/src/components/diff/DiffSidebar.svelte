@@ -49,6 +49,7 @@
   });
   const filteredDiffFiles = $derived(filteredFileList?.files ?? null);
   const activeFile = $derived(diff.getActiveFile());
+  const activeFileRevealKey = $derived(diff.getActiveFileRevealKey());
 </script>
 
 {#if showCommits}
@@ -71,6 +72,7 @@
     <PierreFileTree
       files={filteredDiffFiles}
       selectedPath={activeFile}
+      selectedPathRevealKey={activeFileRevealKey}
       onSelect={handleTreeSelection}
     />
   {/if}

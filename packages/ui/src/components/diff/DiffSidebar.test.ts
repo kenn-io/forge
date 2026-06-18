@@ -39,6 +39,7 @@ function makeDiffStore(files: DiffFile[], overrides: Partial<DiffStore> = {}): D
     getFileList: () => fileList,
     isFileListLoading: () => false,
     getActiveFile: () => files[0]?.path ?? null,
+    getActiveFileRevealKey: () => 0,
     requestScrollToFile: vi.fn(),
     ...overrides,
   } as unknown as DiffStore;
@@ -124,7 +125,7 @@ describe("DiffSidebar", () => {
     });
   });
 
-  it("scrolls the selected file tree row into view when active path changes", async () => {
+  it("selects active path changes without scrolling the file tree", async () => {
     const files = Array.from({ length: 12 }, (_, i) => makeFile(`src/file-${i}.ts`));
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
     const scrolledPaths: string[] = [];
@@ -141,14 +142,48 @@ describe("DiffSidebar", () => {
       });
 
       await findTreeItem("src/file-0.ts");
-      await waitFor(() => {
-        expect(scrolledPaths).toContain("src/file-0.ts");
-      });
-      scrolledPaths.length = 0;
+      expect(scrolledPaths).toEqual([]);
 
       await rerender({
         files,
         selectedPath: "src/file-8.ts",
+      });
+
+      await waitFor(() => {
+        expect(treeRoot()?.querySelector('[data-item-path="src/file-8.ts"]')?.getAttribute("aria-selected")).toBe(
+          "true",
+        );
+      });
+      expect(scrolledPaths).toEqual([]);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it("scrolls the selected file tree row into view when reveal key changes", async () => {
+    const files = Array.from({ length: 12 }, (_, i) => makeFile(`src/file-${i}.ts`));
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrolledPaths: string[] = [];
+    HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+      scrolledPaths.push(this.dataset.itemPath ?? "");
+    };
+
+    try {
+      const { rerender } = render(PierreFileTree, {
+        props: {
+          files,
+          selectedPath: "src/file-0.ts",
+          selectedPathRevealKey: 0,
+        },
+      });
+
+      await findTreeItem("src/file-0.ts");
+      expect(scrolledPaths).toEqual([]);
+
+      await rerender({
+        files,
+        selectedPath: "src/file-8.ts",
+        selectedPathRevealKey: 1,
       });
 
       await findTreeItem("src/file-8.ts");

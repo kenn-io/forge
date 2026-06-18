@@ -154,6 +154,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let viewMode = $state<DiffViewMode>(loadDiffViewMode());
   let collapsedFiles = $state<Record<string, string[]>>(loadCollapsedFiles());
   let activeFile = $state<string | null>(null);
+  let activeFileRevealKey = $state(0);
   let scrollTarget = $state<DiffScrollTarget | null>(null);
   let scrolling = $state(false);
   let fileCategoryFilter = $state<DiffFileCategoryFilter>("all");
@@ -268,6 +269,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   function getActiveFile(): string | null {
     return activeFile;
   }
+  function getActiveFileRevealKey(): number {
+    return activeFileRevealKey;
+  }
   function isScrolling(): boolean {
     return scrolling;
   }
@@ -325,12 +329,14 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   function requestScrollToFile(path: string): void {
     activeFile = path;
+    activeFileRevealKey += 1;
     scrolling = true;
     scrollTarget = { path };
   }
 
   function requestScrollToLine(path: string, line: number, side: "left" | "right" = "right"): void {
     activeFile = path;
+    activeFileRevealKey += 1;
     scrolling = true;
     scrollTarget = { path, line, side };
   }
@@ -1138,6 +1144,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     getViewMode,
     getFileCategoryFilter,
     getActiveFile,
+    getActiveFileRevealKey,
     setActiveFile,
     setFileCategoryFilter,
     isScrolling,

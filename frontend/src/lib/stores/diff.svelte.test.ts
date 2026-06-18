@@ -835,6 +835,27 @@ describe("createDiffStore loadDiff", () => {
     ]);
   });
 
+  it("reveals active files only for explicit diff navigation", async () => {
+    const store = createDiffStore({ client: testClient() });
+
+    expect(store.getActiveFileRevealKey()).toBe(0);
+
+    store.setActiveFile("a.ts");
+
+    expect(store.getActiveFile()).toBe("a.ts");
+    expect(store.getActiveFileRevealKey()).toBe(0);
+
+    store.requestScrollToFile("b.ts");
+
+    expect(store.getActiveFile()).toBe("b.ts");
+    expect(store.getActiveFileRevealKey()).toBe(1);
+
+    store.requestScrollToLine("c.ts", 12);
+
+    expect(store.getActiveFile()).toBe("c.ts");
+    expect(store.getActiveFileRevealKey()).toBe(2);
+  });
+
   it("uses the workspace diff whitespace count", async () => {
     const files = makeFilesResult(["a.ts", "whitespace.ts"], {
       whitespace_only_count: 7,

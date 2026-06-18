@@ -351,10 +351,10 @@ type liveClient struct {
 	// fall back to the read client.
 	ghWrite *gh.Client
 	// ghNotifications/httpNotificationClient carry user-scoped
-	// notification APIs on the user's own credential, but through the
-	// background sync budget transport and read/background rate tracker.
-	// That keeps automatic notification pagination from consuming the
-	// write tracker that gates maintainer mutations.
+	// notification APIs on the user's own credential, through the
+	// background sync budget transport. In GitHub App split-auth mode
+	// their PAT rate headers must not feed the app-token read tracker or
+	// the mutation write tracker.
 	ghNotifications *gh.Client
 	// source is the credential chain reads resolve through. Split
 	// behavior (the viewer-permission overlay in GetRepository) is
@@ -458,7 +458,7 @@ func (c *liveClient) ListNotifications(ctx context.Context, opts NotificationLis
 	} else {
 		notifications, resp, err = c.notificationGH().Activity.ListNotifications(ctx, ghOpts)
 	}
-	c.trackRate(resp)
+	c.trackNotificationRate(resp)
 	if err != nil {
 		return nil, false, err
 	}
@@ -471,7 +471,7 @@ func (c *liveClient) ListNotifications(ctx context.Context, opts NotificationLis
 
 func (c *liveClient) GetNotificationThread(ctx context.Context, threadID string) (NotificationThread, error) {
 	notification, resp, err := c.notificationGH().Activity.GetThread(ctx, threadID)
-	c.trackRate(resp)
+	c.trackNotificationRate(resp)
 	if err != nil {
 		return NotificationThread{}, err
 	}
@@ -480,7 +480,7 @@ func (c *liveClient) GetNotificationThread(ctx context.Context, threadID string)
 
 func (c *liveClient) MarkNotificationThreadRead(ctx context.Context, threadID string) error {
 	resp, err := c.notificationGH().Activity.MarkThreadRead(ctx, threadID)
-	c.trackRate(resp)
+	c.trackNotificationRate(resp)
 	return err
 }
 
@@ -1156,6 +1156,17 @@ func (c *liveClient) trackWriteRate(resp *gh.Response) {
 	}
 	c.writeRateTracker.RecordRequest()
 	c.writeRateTracker.UpdateFromRate(rateFromGitHub(resp.Rate))
+}
+
+// trackNotificationRate records notification API responses only when the
+// read client and notification client use the same credential. In GitHub App
+// split-auth mode, reads use an installation token while notifications use
+// the user's PAT, so PAT headers cannot update the installation read tracker.
+func (c *liveClient) trackNotificationRate(resp *gh.Response) {
+	if c.splitAuthActive() {
+		return
+	}
+	c.trackRate(resp)
 }
 
 func (c *liveClient) GetRateLimitSnapshot(ctx context.Context) (*RateLimitSnapshot, error) {

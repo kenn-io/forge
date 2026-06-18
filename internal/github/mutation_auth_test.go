@@ -306,8 +306,9 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 	assert.Equal("Bearer user-pat", authByCall["notifications:get"])
 	assert.Equal("Bearer user-pat", authByCall["notifications:mark-read"])
 	assert.Equal(int64(0), mints.Load(), "notification APIs must not mint app tokens")
-	assert.Equal(3, readRT.RequestsThisHour())
-	assert.Equal(4988, readRT.Remaining())
+	assert.Equal(0, readRT.RequestsThisHour())
+	assert.Equal(-1, readRT.Remaining(),
+		"PAT notification responses must not overwrite the app-token read tracker")
 	assert.Equal(0, writeRT.RequestsThisHour())
 	assert.Equal(-1, writeRT.Remaining())
 	assert.Equal(3, budget.Spent())

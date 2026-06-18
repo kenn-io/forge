@@ -63,4 +63,38 @@ test.describe("notifications in the activity feed", () => {
       await server.stop();
     }
   });
+
+  // The feed switches to compact rows whenever a detail pane is open
+  // (ActivityFeedView passes compact={phone || hasActiveDetail}). Opening
+  // one notification's detail exercises the compact mark-seen control,
+  // which lives beside the row rather than inside the wide table.
+  test("marks a notification seen from the compact split layout", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/`);
+      await waitForTable(page);
+
+      // Open the review notification's detail to collapse the feed into the
+      // compact split layout. The unrelated "Mentioned" notification stays
+      // unread and now renders as a compact row.
+      await page.locator(".activity-row", { hasText: "Review requested" }).first().click();
+      const mentionRow = page.locator(".compact-row-slot", { hasText: "Mentioned" });
+      await expect(mentionRow.locator(".activity-compact-row")).toBeVisible();
+
+      const seen = mentionRow.getByRole("button", { name: "Mark notification seen" });
+      await expect(seen).toBeVisible();
+
+      const readResponse = page.waitForResponse(
+        (r) => r.request().method() === "POST" && r.url().endsWith("/api/v1/notifications/read"),
+      );
+      await seen.click();
+      expect((await readResponse).status()).toBe(200);
+
+      // The control clears once the row is read, but the row stays in the feed.
+      await expect(mentionRow.getByRole("button", { name: "Mark notification seen" })).toHaveCount(0);
+      await expect(mentionRow.locator(".activity-compact-row")).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
 });

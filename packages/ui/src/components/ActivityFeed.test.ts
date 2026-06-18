@@ -652,9 +652,16 @@ describe("ActivityFeed notification rows", () => {
       }),
     ];
 
-    render(ActivityFeed, { props: { compact: true } });
+    const { container } = render(ActivityFeed, { props: { compact: true } });
+
+    // The row body stays a real <button> so keyboard users can focus and
+    // activate it; the mark-seen control is a separate, non-nested button.
+    const rowBody = container.querySelector(".activity-compact-row");
+    expect(rowBody?.tagName).toBe("BUTTON");
 
     const btn = screen.getByRole("button", { name: "Mark notification seen" });
+    expect(rowBody?.contains(btn)).toBe(false);
+
     await fireEvent.click(btn);
     expect(markNotificationSeen).toHaveBeenCalledTimes(1);
     expect(markNotificationSeen.mock.calls[0]![0]).toMatchObject({ id: "ntf:42" });

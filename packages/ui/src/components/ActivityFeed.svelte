@@ -697,55 +697,58 @@
                 </span>
               </button>
             {:else}
-              <!-- svelte-ignore a11y_click_events_have_key_events -->
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div
-                class="activity-compact-row"
-                class:selected={isSelectedActivityItem(row)}
-                onclick={() => handleRowClick(row)}
-              >
-                <span class="compact-row-top">
-                  {#if isDefaultBranchActivity(row)}
-                    <Chip size="sm" uppercase={false} class="chip--muted branch-chip">Branch</Chip>
-                    <span class="branch-name">{branchName(row)}</span>
-                  {:else}
-                    <ItemKindChip kind={row.item_type} />
-                    <span class="item-number">#{row.item_number}</span>
-                    {#if row.workspace}
-                      <WorkspaceIndicator status={row.workspace.status} size={12} />
+              {@const unread = isUnreadNotification(row)}
+              <div class="compact-row-slot">
+                <button
+                  class="activity-compact-row"
+                  class:selected={isSelectedActivityItem(row)}
+                  class:has-seen-action={unread}
+                  onclick={() => handleRowClick(row)}
+                  type="button"
+                >
+                  <span class="compact-row-top">
+                    {#if isDefaultBranchActivity(row)}
+                      <Chip size="sm" uppercase={false} class="chip--muted branch-chip">Branch</Chip>
+                      <span class="branch-name">{branchName(row)}</span>
+                    {:else}
+                      <ItemKindChip kind={row.item_type} />
+                      <span class="item-number">#{row.item_number}</span>
+                      {#if row.workspace}
+                        <WorkspaceIndicator status={row.workspace.status} size={12} />
+                      {/if}
+                      {#if hasStateChip(row)}
+                        <ItemStateChip state={row.item_state} />
+                      {/if}
                     {/if}
-                    {#if hasStateChip(row)}
-                      <ItemStateChip state={row.item_state} />
+                    <span class="compact-time">{relativeTime(row.created_at)}</span>
+                  </span>
+                  <span class="compact-title">
+                    {isDefaultBranchActivity(row) ? branchActivityTitle(row) : row.item_title}
+                  </span>
+                  <span class="compact-meta">
+                    <span>{repoLabel(row)}</span>
+                    {#if isDefaultBranchActivity(row) && branchActivityDetail(row)}
+                      <span class="sha">{branchActivityDetail(row)}</span>
                     {/if}
-                  {/if}
-                  <span class="compact-time">{relativeTime(row.created_at)}</span>
-                  {#if isUnreadNotification(row)}
-                    <button
-                      class="link-btn mark-seen-btn"
-                      type="button"
-                      aria-label="Mark notification seen"
-                      title="Mark seen"
-                      onclick={(e) => handleMarkSeen(e, row)}
-                    >
-                      <CheckIcon size="14" strokeWidth="2" aria-hidden="true" />
-                    </button>
-                  {/if}
-                </span>
-                <span class="compact-title">
-                  {isDefaultBranchActivity(row) ? branchActivityTitle(row) : row.item_title}
-                </span>
-                <span class="compact-meta">
-                  <span>{repoLabel(row)}</span>
-                  {#if isDefaultBranchActivity(row) && branchActivityDetail(row)}
-                    <span class="sha">{branchActivityDetail(row)}</span>
-                  {/if}
-                  <Chip
-                    size="sm"
-                    uppercase={false}
-                    class={eventChipClass(row.activity_type)}
-                  >{eventLabel(row)}</Chip>
-                  <span>{activityAuthor(row)}</span>
-                </span>
+                    <Chip
+                      size="sm"
+                      uppercase={false}
+                      class={eventChipClass(row.activity_type)}
+                    >{eventLabel(row)}</Chip>
+                    <span>{activityAuthor(row)}</span>
+                  </span>
+                </button>
+                {#if unread}
+                  <button
+                    class="link-btn mark-seen-btn compact-mark-seen"
+                    type="button"
+                    aria-label="Mark notification seen"
+                    title="Mark seen"
+                    onclick={(e) => handleMarkSeen(e, row)}
+                  >
+                    <CheckIcon size="14" strokeWidth="2" aria-hidden="true" />
+                  </button>
+                {/if}
               </div>
             {/if}
           {/each}
@@ -1063,6 +1066,28 @@
     flex-direction: column;
   }
 
+  /* The mark-seen action sits beside the row rather than inside it: a
+     <button> cannot nest another button, so the row body stays a real
+     <button> (keyboard focus + Enter/Space) and the action is an absolutely
+     positioned sibling in this relative slot. The row reserves a right
+     gutter via .has-seen-action so the control never overlaps content. */
+  .compact-row-slot {
+    position: relative;
+    display: flex;
+  }
+
+  .compact-row-slot > .activity-compact-row {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .compact-mark-seen {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+  }
+
   .activity-compact-row {
     display: flex;
     flex-direction: column;
@@ -1075,6 +1100,10 @@
     text-align: left;
     color: inherit;
     background: transparent;
+  }
+
+  .activity-compact-row.has-seen-action {
+    padding-right: 36px;
   }
 
   .activity-compact-row:hover {

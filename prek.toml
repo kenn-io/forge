@@ -64,7 +64,6 @@ hooks = [
     entry = "make playwright-version-check",
     files = "^(scripts/check-playwright-version\\.mjs|\\.github/workflows/ci\\.yml|frontend/package\\.json|packages/github-app-ui/package\\.json)$",
     pass_filenames = false,
-    require_serial = true,
     priority = 0,
   },
   {

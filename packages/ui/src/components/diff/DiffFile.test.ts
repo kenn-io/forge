@@ -1018,6 +1018,74 @@ describe("DiffFile", () => {
     expect(actionsComment?.previousElementSibling?.textContent).not.toContain("Statuses");
   });
 
+  it("keeps unchanged list siblings aligned when added list item review targets an edge", async () => {
+    for (const scenario of [
+      {
+        name: "prepended",
+        targetLine: 1,
+        lines: [
+          { type: "add" as const, content: "- Actions", new_num: 1 },
+          { type: "context" as const, content: "- Issues", old_num: 1, new_num: 2 },
+          { type: "context" as const, content: "- Statuses", old_num: 2, new_num: 3 },
+        ],
+      },
+      {
+        name: "appended",
+        targetLine: 3,
+        lines: [
+          { type: "context" as const, content: "- Issues", old_num: 1, new_num: 1 },
+          { type: "context" as const, content: "- Statuses", old_num: 2, new_num: 2 },
+          { type: "add" as const, content: "- Actions", new_num: 3 },
+        ],
+      },
+    ]) {
+      cleanup();
+      renderDiffFile(
+        makeFile({
+          path: "README.md",
+          old_path: "README.md",
+          hunks: [
+            {
+              old_start: 1,
+              old_count: 2,
+              new_start: 1,
+              new_count: 3,
+              lines: scenario.lines,
+            },
+          ],
+        }),
+        {
+          richPreview: true,
+          diffHeadSHA: "diff-head",
+          reviewThreads: [
+            makeReviewThread({
+              id: `thread-actions-${scenario.name}`,
+              provider_comment_id: `comment-actions-${scenario.name}`,
+              path: "README.md",
+              old_path: "README.md",
+              line: scenario.targetLine,
+              new_line: scenario.targetLine,
+              body: `Actions ${scenario.name} review note`,
+              diff_head_sha: "diff-head",
+            }),
+          ],
+        },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(`Actions ${scenario.name} review note`)).toBeTruthy();
+      });
+      const preview = document.querySelector(".markdown-rich-diff--unified");
+      expect(preview?.querySelector("ins")?.textContent).toContain("Actions");
+      expect(preview?.querySelector("ins")?.textContent ?? "").not.toContain("Issues");
+      expect(preview?.querySelector("ins")?.textContent ?? "").not.toContain("Statuses");
+      expect(preview?.querySelector("del")?.textContent ?? "").not.toContain("Issues");
+      expect(preview?.querySelector("del")?.textContent ?? "").not.toContain("Statuses");
+      const actionsComment = document.querySelector(`[data-review-thread-id='thread-actions-${scenario.name}']`);
+      expect(actionsComment?.previousElementSibling?.textContent).toContain("Actions");
+    }
+  });
+
   it("keeps unchanged list siblings aligned when a review targets a deleted list item", async () => {
     renderDiffFile(
       makeFile({
@@ -1068,6 +1136,77 @@ describe("DiffFile", () => {
     const actionsComment = document.querySelector("[data-review-thread-id='thread-actions']");
     expect(actionsComment?.previousElementSibling?.textContent).toContain("Actions");
     expect(actionsComment?.previousElementSibling?.textContent).not.toContain("Statuses");
+  });
+
+  it("keeps unchanged list siblings aligned when deleted list item review targets an edge", async () => {
+    for (const scenario of [
+      {
+        name: "first",
+        targetLine: 1,
+        lines: [
+          { type: "delete" as const, content: "- Actions", old_num: 1 },
+          { type: "context" as const, content: "- Issues", old_num: 2, new_num: 1 },
+          { type: "context" as const, content: "- Statuses", old_num: 3, new_num: 2 },
+        ],
+      },
+      {
+        name: "last",
+        targetLine: 3,
+        lines: [
+          { type: "context" as const, content: "- Issues", old_num: 1, new_num: 1 },
+          { type: "context" as const, content: "- Statuses", old_num: 2, new_num: 2 },
+          { type: "delete" as const, content: "- Actions", old_num: 3 },
+        ],
+      },
+    ]) {
+      cleanup();
+      renderDiffFile(
+        makeFile({
+          path: "README.md",
+          old_path: "README.md",
+          hunks: [
+            {
+              old_start: 1,
+              old_count: 3,
+              new_start: 1,
+              new_count: 2,
+              lines: scenario.lines,
+            },
+          ],
+        }),
+        {
+          richPreview: true,
+          diffHeadSHA: "diff-head",
+          reviewThreads: [
+            makeReviewThread({
+              id: `thread-actions-${scenario.name}`,
+              provider_comment_id: `comment-actions-${scenario.name}`,
+              path: "README.md",
+              old_path: "README.md",
+              side: "left",
+              line: scenario.targetLine,
+              old_line: scenario.targetLine,
+              new_line: undefined,
+              line_type: "delete",
+              body: `Actions ${scenario.name} review note`,
+              diff_head_sha: "diff-head",
+            }),
+          ],
+        },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(`Actions ${scenario.name} review note`)).toBeTruthy();
+      });
+      const preview = document.querySelector(".markdown-rich-diff--unified");
+      expect(preview?.querySelector("del")?.textContent).toContain("Actions");
+      expect(preview?.querySelector("del")?.textContent ?? "").not.toContain("Issues");
+      expect(preview?.querySelector("del")?.textContent ?? "").not.toContain("Statuses");
+      expect(preview?.querySelector("ins")?.textContent ?? "").not.toContain("Issues");
+      expect(preview?.querySelector("ins")?.textContent ?? "").not.toContain("Statuses");
+      const actionsComment = document.querySelector(`[data-review-thread-id='thread-actions-${scenario.name}']`);
+      expect(actionsComment?.previousElementSibling?.textContent).toContain("Actions");
+    }
   });
 
   it("keeps markdown document semantics when review cards are anchored in rich preview", async () => {

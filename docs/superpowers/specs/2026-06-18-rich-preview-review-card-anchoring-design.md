@@ -90,9 +90,9 @@ Review cards should sit between rendered blocks without introducing artificial p
 
 For structured containers, the card sits after the whole top-level container. It must not become a child of `<ul>`, `<ol>`, `<table>`, `<tbody>`, `<tr>`, `<blockquote>`, or similar elements unless the implementation has a valid, tested container-specific insertion model.
 
-List-item anchoring is the only container-specific exception in this milestone. The pure rich-preview builder accepts explicit old-side and new-side source-line sets that need internal anchors. It keeps normal lists as one rendered list unless one of those target lines falls inside the list. When a review targets a context list item, the component uses that target line as the anchor boundary. When a review targets an added or deleted list item, it also adds the previous comparable list-item boundary where one exists so unchanged sibling items can still align with the opposite side instead of being rendered as false additions or deletions.
+List-item anchoring is the only container-specific exception in this milestone. The pure rich-preview builder accepts explicit old-side and new-side source-line sets that need internal anchors. It keeps normal lists as one rendered list unless one of those target lines falls inside the list. When a review targets a context list item, the component uses that target line as the anchor boundary. When a review targets an added or deleted list item, it also adds a same-indent comparable context list item as an alignment boundary so unchanged sibling items do not render as false additions or deletions. Boundary selection prefers the nearest preceding comparable item, then the nearest following comparable item; if neither exists, the changed side can still split for card placement and the opposite side remains absent or whole.
 
-Split list blocks are a placement device, not new Markdown paragraph breaks. They render only the minimum number of `<ul>` or `<ol>` chunks needed to put review cards after their target items; untargeted consecutive items stay grouped in the same chunk. Split chunks must preserve numbering for ordered lists, keep nested lists inside the owning item, abandon splitting when rendered `<li>` counts do not match source markers, and use styling that removes synthetic wrapper margins. Untargeted lists, loose lists outside targeted regions, tables, and blockquotes remain whole top-level blocks.
+Split list blocks are a placement device, not new Markdown paragraph breaks. They render only the minimum number of `<ul>` or `<ol>` chunks needed to put review cards after their target items; untargeted consecutive items stay grouped in the same chunk. Split chunks must preserve numbering for ordered lists, keep nested lists and multiline item content inside the owning item, abandon splitting when rendered `<li>` counts do not match source markers, and use styling that removes only synthetic wrapper margins. Untargeted lists, loose lists outside targeted regions, tables, and blockquotes remain whole top-level blocks. Targeted loose lists use the same source-marker grouping, preserving each rendered `<li>` subtree; if the renderer/source marker count no longer matches, the card anchors after the whole list container instead of guessing.
 
 Wrapper elements around rendered blocks are acceptable only when they preserve the readable Markdown layout. They must not force one-off margin, table, list, or heading behavior that differs materially from the normal rich preview. Layout regressions for lists, headings, paragraphs, and tables should be covered by component or browser assertions when wrappers change.
 
@@ -126,7 +126,7 @@ Add unit coverage for the rich-preview model:
 - reference-style links still resolve when review cards are anchored;
 - untargeted lists remain whole rendered lists;
 - list items expose separate rich-preview anchor blocks when split-line inputs target individual source items;
-- ordered-list numbering, nested lists, multiline items, and mismatched source/rendered item counts have focused coverage or an explicit fallback expectation;
+- ordered-list numbering, nested lists, multiline items, and mismatched source/rendered item counts have focused coverage;
 - multi-hunk fenced code, HTML blocks, blockquotes, lists, and tables do not expose synthetic separator lines and keep the expected top-level structure;
 - stripped spanning-token re-renders keep in-document reference definitions available through the approved parser-context API;
 - user-authored thematic breaks inside hunks still render;
@@ -139,6 +139,7 @@ Keep component coverage for:
 - unified rich preview renders review cards inside the preview after their target block;
 - split rich preview renders review cards near the matching side block;
 - added and deleted list-item review cards keep unchanged sibling items aligned rather than rendering them as false additions or deletions;
+- added and deleted list-item review cards at the first and last list item keep unchanged sibling items aligned;
 - review threads targeting hidden hunk gaps remain file-level fallback cards;
 - source diff review annotations remain unchanged.
 

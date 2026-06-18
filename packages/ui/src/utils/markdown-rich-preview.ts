@@ -180,7 +180,6 @@ function splitListBlock(
       groups: groups.slice(startIndex),
     });
   }
-  if (segments.length < 2) return null;
 
   return segments.map((segment) => {
     const sourceLines = segment.groups.flatMap((group) => group.sourceLines);

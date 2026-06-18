@@ -257,11 +257,22 @@
     const targetIndent = listMarkerIndent(target.content);
     if (targetIndent == null) return;
 
-    const previous = previousListMarkerLine(lines, targetIndex, targetIndent);
-    if (previous) addDiffLineNumbers(oldLines, newLines, previous);
+    const boundary = comparableListMarkerLine(lines, targetIndex, targetIndent);
+    if (boundary) addDiffLineNumbers(oldLines, newLines, boundary);
   }
 
-  function previousListMarkerLine(
+  function comparableListMarkerLine(
+    lines: DiffHunk["lines"],
+    targetIndex: number,
+    targetIndent: number,
+  ): DiffHunkLine | undefined {
+    return (
+      previousComparableListMarkerLine(lines, targetIndex, targetIndent) ??
+      nextComparableListMarkerLine(lines, targetIndex, targetIndent)
+    );
+  }
+
+  function previousComparableListMarkerLine(
     lines: DiffHunk["lines"],
     targetIndex: number,
     targetIndent: number,
@@ -271,7 +282,22 @@
       if (line.content.trim() === "") continue;
       const lineIndent = listMarkerIndent(line.content);
       if (lineIndent == null || lineIndent < targetIndent) return undefined;
-      if (lineIndent === targetIndent) return line;
+      if (lineIndent === targetIndent && line.old_num != null && line.new_num != null) return line;
+    }
+    return undefined;
+  }
+
+  function nextComparableListMarkerLine(
+    lines: DiffHunk["lines"],
+    targetIndex: number,
+    targetIndent: number,
+  ): DiffHunkLine | undefined {
+    for (let index = targetIndex + 1; index < lines.length; index++) {
+      const line = lines[index]!;
+      if (line.content.trim() === "") continue;
+      const lineIndent = listMarkerIndent(line.content);
+      if (lineIndent == null || lineIndent < targetIndent) return undefined;
+      if (lineIndent === targetIndent && line.old_num != null && line.new_num != null) return line;
     }
     return undefined;
   }
@@ -522,6 +548,17 @@
   .markdown-rich-diff--split :global(.markdown-diff__placeholder) {
     visibility: hidden;
     pointer-events: none;
+  }
+
+  .markdown-rich-diff--split :global(ins),
+  .markdown-rich-diff--split :global(del) {
+    color: inherit;
+    background: transparent;
+    text-decoration: none;
+  }
+
+  .markdown-rich-diff--split :global(.markdown-diff__block) {
+    display: block;
   }
 
   .markdown-rich-diff--unified {

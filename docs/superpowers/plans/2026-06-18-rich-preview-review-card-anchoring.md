@@ -166,7 +166,7 @@ Add tests proving synthetic separators stay hidden for standalone fenced-code, H
 
 - [x] **Step 2: Add component tests**
 
-Add tests proving split mode does not dump line comments at the top, comments preserve source order, list-item review cards render after the matching item rather than after the whole list, and added/deleted list-item review cards keep unchanged sibling items aligned.
+Add tests proving split mode does not dump line comments at the top, comments preserve source order, list-item review cards render after the matching item rather than after the whole list, and added/deleted list-item review cards keep unchanged sibling items aligned at middle and edge positions.
 
 - [x] **Step 3: Run component tests and verify RED before production wiring if not already red**
 
@@ -184,6 +184,7 @@ Extend the existing rich-preview review-card e2e case to assert the card has a r
 
 Add a diff-view e2e case with a multi-hunk Markdown block and a review thread targeting a hidden source gap, proving the card remains a file-level fallback instead of rendering inside `.markdown-rich-diff--unified`.
 Add another diff-view e2e case with multiple list-item review threads returned out of source order, proving rich preview renders the cards in source order, anchors each card after the matching rendered item, and does not add synthetic split-list margins.
+Add browser coverage proving rich preview side-by-side panes render changed text without native `<ins>`/`<del>` underlines or strike-through styling.
 
 ### Task 5: Styling, Validation, And Commit
 
@@ -211,6 +212,7 @@ node node_modules/vite-plus/bin/vp run ui-package-check
 (cd frontend && node node_modules/.bin/playwright test --config=playwright-e2e.config.ts tests/e2e-full/diff-view.spec.ts -g "rich preview anchors multiple list review cards")
 (cd frontend && node node_modules/.bin/playwright test --config=playwright-e2e.config.ts tests/e2e-full/diff-view.spec.ts -g "rich preview keeps untargeted lists intact")
 (cd frontend && node node_modules/.bin/playwright test --config=playwright-e2e.config.ts tests/e2e-full/diff-view.spec.ts -g "rich preview keeps unchanged list siblings aligned")
+(cd frontend && node node_modules/.bin/playwright test --config=playwright-e2e.config.ts tests/e2e-full/diff-view.spec.ts -g "rich preview side-by-side panes do not underline")
 (cd frontend && node node_modules/.bin/playwright test --config=playwright-e2e.config.ts tests/e2e-full/diff-view.spec.ts -g "rich preview keeps hidden hunk-gap review threads")
 git diff --check
 ```

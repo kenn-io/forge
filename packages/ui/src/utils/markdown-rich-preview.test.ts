@@ -81,6 +81,21 @@ describe("buildMarkdownRichPreview", () => {
     expect(listBlocks).toHaveLength(2);
   });
 
+  it("keeps a split wrapper when a requested list anchor produces one segment", () => {
+    const preview = buildMarkdownRichPreview(
+      markdownFile([
+        { type: "context", content: "- first", old_num: 1, new_num: 1 },
+        { type: "context", content: "- second", old_num: 2, new_num: 2 },
+      ]),
+      repo,
+      { splitOldLines: [2], splitNewLines: [2] },
+    );
+
+    const listBlocks = preview.blocks.filter((block) => block.unifiedHtml.includes("markdown-rich-diff__split-list"));
+    expect(listBlocks).toHaveLength(1);
+    expect(listBlocks[0]?.newLines).toEqual([1, 2]);
+  });
+
   it("preserves ordered list numbering when list item anchors split a list", () => {
     const preview = buildMarkdownRichPreview(
       markdownFile([

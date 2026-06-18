@@ -114,4 +114,56 @@ describe("buildMarkdownRichPreview", () => {
     expect(html).not.toContain("<hr");
     expect(preview.blocks.every((block) => block.oldStart != null || block.newStart != null)).toBe(true);
   });
+
+  it("strips synthetic hunk separator lines from blocks spanning hunks", () => {
+    const file = {
+      ...markdownFile([]),
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 2,
+          new_start: 1,
+          new_count: 2,
+          lines: [
+            { type: "context", content: "```text", old_num: 1, new_num: 1 },
+            { type: "context", content: "first hunk code", old_num: 2, new_num: 2 },
+          ],
+        },
+        {
+          old_start: 10,
+          old_count: 2,
+          new_start: 10,
+          new_count: 2,
+          lines: [
+            { type: "context", content: "second hunk code", old_num: 10, new_num: 10 },
+            { type: "context", content: "```", old_num: 11, new_num: 11 },
+          ],
+        },
+      ],
+    } satisfies DiffFile;
+
+    const preview = buildMarkdownRichPreview(file, repo);
+    const html = preview.blocks.map((block) => block.unifiedHtml).join("");
+
+    expect(html).toContain("first hunk code");
+    expect(html).toContain("second hunk code");
+    expect(html).not.toContain("---");
+  });
+
+  it("keeps user-authored thematic breaks from source lines", () => {
+    const preview = buildMarkdownRichPreview(
+      markdownFile([
+        { type: "context", content: "Before", old_num: 1, new_num: 1 },
+        { type: "context", content: "", old_num: 2, new_num: 2 },
+        { type: "context", content: "---", old_num: 3, new_num: 3 },
+        { type: "context", content: "", old_num: 4, new_num: 4 },
+        { type: "context", content: "After", old_num: 5, new_num: 5 },
+      ]),
+      repo,
+    );
+
+    const html = preview.blocks.map((block) => block.unifiedHtml).join("");
+
+    expect(html).toContain("<hr");
+  });
 });

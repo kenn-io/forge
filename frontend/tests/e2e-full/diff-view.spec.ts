@@ -560,6 +560,45 @@ const previewDiff: DiffResult = withServerDiffData({
   ],
 });
 
+const multiHunkMarkdownDiff: DiffResult = withServerDiffData({
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "docs/multihunk.md",
+      old_path: "docs/multihunk.md",
+      status: "modified",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 1,
+      deletions: 0,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 2,
+          new_start: 1,
+          new_count: 2,
+          lines: [
+            { type: "context", content: "```text", old_num: 1, new_num: 1 },
+            { type: "context", content: "first hunk code", old_num: 2, new_num: 2 },
+          ],
+        },
+        {
+          old_start: 10,
+          old_count: 2,
+          new_start: 10,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "second hunk code", old_num: 10, new_num: 10 },
+            { type: "add", content: "added hunk code", new_num: 11 },
+            { type: "context", content: "```", old_num: 11, new_num: 12 },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 // --- Helpers ---
 
 function cssString(value: string): string {
@@ -1977,6 +2016,25 @@ test.describe("diff view", () => {
     await expect(
       markdownFile.locator(".markdown-rich-diff--unified .inline-review-thread").filter({ hasText: reviewBody }),
     ).toHaveCount(0);
+  });
+
+  test("rich preview hides synthetic hunk separators inside spanning markdown blocks", async ({ page }) => {
+    await mockDiffApi(page, multiHunkMarkdownDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    await openDiffFilterMenu(page);
+    await page.getByRole("switch", { name: "Rich preview" }).click();
+
+    const markdownFile = page.locator('[data-file-path="docs/multihunk.md"]');
+    const markdownPreview = markdownFile.locator(".markdown-rich-diff--unified");
+    await expect(markdownPreview).toBeVisible();
+    const codeBlock = markdownPreview.locator("code").filter({ hasText: "first hunk code" });
+    await expect(codeBlock).toBeVisible();
+    await expect(codeBlock).toContainText("second hunk code");
+    await expect(codeBlock).toContainText("added hunk code");
+    await expect(codeBlock).not.toContainText("---");
+    await expect(markdownPreview.locator("hr")).toHaveCount(0);
   });
 
   test("rich preview refetches blob content after a same-PR diff reload", async ({ page }) => {

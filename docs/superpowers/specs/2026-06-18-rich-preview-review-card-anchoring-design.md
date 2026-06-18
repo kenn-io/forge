@@ -72,7 +72,7 @@ If a block cannot be mapped confidently, keep the rendered Markdown correct and 
 
 `renderMarkdownBlocks(raw, repo)` is the only block-rendering API this feature should use. It must parse once with the configured Marked instance, keep document-level Marked behavior such as in-document reference definitions intact for the visible block output, render only visible top-level tokens as blocks, and sanitize every block through the same DOMPurify allow-list used by `renderMarkdown()`. Reference-link resolution inside the reconstructed hunk document is a required regression test for this API boundary.
 
-Multiple hunks are joined in backend hunk order with an explicit parser-only separator: blank line, thematic break line `---`, blank line. The separator prevents accidental list/table merging across unrelated hunks and can influence Markdown parsing the same way a thematic break does, but it is hidden from rendered preview output. Synthetic separator tokens have no old/new source-line mapping, are excluded from source-line range calculations, do not participate in block alignment, and cannot receive review cards. Definitions inside the reconstructed hunk document may resolve across that separator; definitions outside loaded hunks remain unavailable.
+Multiple hunks are joined in backend hunk order with an explicit parser-only separator: blank line, thematic break line `---`, blank line. The separator prevents accidental list/table merging across unrelated hunks and can influence Markdown parsing the same way a thematic break does, but it is hidden from rendered preview output. Synthetic separator tokens have no old/new source-line mapping, are excluded from source-line range calculations, do not participate in block alignment, and cannot receive review cards. If Marked absorbs synthetic separator lines into a mapped multi-line token, such as a fenced code block or HTML block spanning hunks, the rendered block is rebuilt from mapped source lines only so the synthetic lines are stripped before sanitization and diffing. User-authored `---` lines inside a hunk keep their source mapping and render normally. Definitions inside the reconstructed hunk document may resolve across that separator; definitions outside loaded hunks remain unavailable.
 
 Repeated paragraphs, headings, or list items are resolved by source order, not rendered text identity alone. The generated-line cursor makes identical text in different source locations produce distinct ranges.
 
@@ -110,6 +110,7 @@ Markdown rich preview should avoid unbounded quadratic work. Block alignment may
 - Large Markdown diffs do not allocate an unbounded block comparison matrix.
 - The block-rendering path preserves centralized Markdown sanitization and the allowed attribute policy.
 - Multi-hunk previews do not show artificial `<hr>` or separator content that was not part of the reviewed file.
+- Synthetic separator lines are hidden even when a Markdown token spans hunks, while user-authored thematic breaks remain visible.
 
 ## Testing
 
@@ -117,6 +118,8 @@ Add unit coverage for the rich-preview model:
 
 - reference-style links still resolve when review cards are anchored;
 - loose lists render as a single list where Markdown defines one;
+- multi-hunk fenced code, HTML blocks, blockquotes, and list continuations do not expose synthetic separator lines;
+- user-authored thematic breaks inside hunks still render;
 - review threads assign to old-side and new-side blocks;
 - uncertain or file-level threads fall back visibly.
 

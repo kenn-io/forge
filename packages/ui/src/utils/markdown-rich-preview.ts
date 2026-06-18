@@ -12,6 +12,7 @@ const MAX_BLOCK_COMPARISON_SIZE = 20_000;
 
 interface MarkdownSideDocument {
   text: string;
+  lines: string[];
   lineMap: Array<number | undefined>;
 }
 
@@ -54,6 +55,7 @@ function buildSideDocument(source: DiffFile, side: "old" | "new"): MarkdownSideD
   }
   return {
     text: `${lines.map((line) => line.content).join("\n")}\n`,
+    lines: lines.map((line) => line.content),
     lineMap: lines.map((line) => line.sourceLine),
   };
 }
@@ -63,16 +65,43 @@ function sideIncludesLine(side: "old" | "new", line: SourceLine): boolean {
 }
 
 function buildSideBlocks(document: MarkdownSideDocument, repo: RepoContext): MarkdownSideBlock[] {
-  return renderMarkdownBlocks(document.text, repo)
-    .map((block) => {
-      const range = sourceRangeForBlock(block, document.lineMap);
-      return {
-        ...block,
-        sourceStart: range.start,
-        sourceEnd: range.end,
-      };
-    })
-    .filter((block) => block.sourceStart != null || block.sourceEnd != null);
+  return renderMarkdownBlocks(document.text, repo).flatMap((block) => renderedSideBlocks(block, document, repo));
+}
+
+function renderedSideBlocks(
+  block: RenderedMarkdownBlock,
+  document: MarkdownSideDocument,
+  repo: RepoContext,
+): MarkdownSideBlock[] {
+  const blockLineMap = document.lineMap.slice(block.startLine - 1, block.endLine);
+  if (blockLineMap.every((line) => line != null)) return [sideBlockForRenderedBlock(block, document.lineMap)];
+
+  const lines = document.lines
+    .slice(block.startLine - 1, block.endLine)
+    .map((content, index) => ({ content, sourceLine: blockLineMap[index] }))
+    .filter((line): line is { content: string; sourceLine: number } => line.sourceLine != null);
+  if (lines.length === 0) return [];
+
+  const visibleDocument: MarkdownSideDocument = {
+    text: `${lines.map((line) => line.content).join("\n")}\n`,
+    lines: lines.map((line) => line.content),
+    lineMap: lines.map((line) => line.sourceLine),
+  };
+  return renderMarkdownBlocks(visibleDocument.text, repo).map((visibleBlock) =>
+    sideBlockForRenderedBlock({ ...visibleBlock, key: `${block.key}:${visibleBlock.key}` }, visibleDocument.lineMap),
+  );
+}
+
+function sideBlockForRenderedBlock(
+  block: RenderedMarkdownBlock,
+  lineMap: Array<number | undefined>,
+): MarkdownSideBlock {
+  const range = sourceRangeForBlock(block, lineMap);
+  return {
+    ...block,
+    sourceStart: range.start,
+    sourceEnd: range.end,
+  };
 }
 
 function sourceRangeForBlock(

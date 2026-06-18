@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -64,6 +65,35 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert.NotContains(newSessionText, "secret-value")
 	assert.NotContains(scriptText, "argv-visible-value")
 	assert.NotContains(scriptText, "secret-value")
+}
+
+func TestTmuxLauncherCanHideStatusOnNewSessions(t *testing.T) {
+	assert := Assert.New(t)
+
+	paneEnv := tmuxAgentEnvPolicy.paneEnvironment(
+		os.Environ(), []string{"/bin/sh", "-lc", "sleep 10"}, nil,
+	)
+	launcher := tmuxLauncher{
+		TmuxCommand: []string{"/usr/bin/tmux"},
+		Session:     "middleman-test",
+		CWD:         "/tmp/work tree",
+		Pane:        paneEnv,
+		OwnerMarker: "middleman:test-owner",
+		HideStatus:  true,
+	}
+
+	paneCommand, cleanup, err := launcher.newSessionPaneCommand()
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+	newSession := launcher.newSessionCommand(paneCommand)
+
+	assert.Contains(newSession, "status")
+	assert.Contains(newSession, "off")
+	assert.True(containsArgvSequence(newSession, []string{
+		";", "set-option", "-q", "-t", "middleman-test",
+		"status", "off",
+	}))
+	assert.NotContains(launcher.attachSessionCommand(), "status")
 }
 
 func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {
@@ -188,4 +218,16 @@ func requireTmuxPaneScript(t *testing.T, command string) string {
 	data, err := os.ReadFile(words[1])
 	require.NoError(t, err)
 	return string(data)
+}
+
+func containsArgvSequence(argv []string, sequence []string) bool {
+	if len(sequence) == 0 {
+		return true
+	}
+	for i := 0; i+len(sequence) <= len(argv); i++ {
+		if slices.Equal(argv[i:i+len(sequence)], sequence) {
+			return true
+		}
+	}
+	return false
 }

@@ -89,6 +89,9 @@ type Options struct {
 	// the tmux launch target is available. Other sessions are started
 	// through PtyOwnerRuntime.
 	WrapAgentSessionsInTmux bool
+	// HideTmuxStatus turns off tmux's status line for newly-created
+	// tmux-backed runtime sessions.
+	HideTmuxStatus bool
 	// StripEnvVars names additional env vars to strip beyond the
 	// built-in credential prefixes (e.g. a configured token env).
 	StripEnvVars []string
@@ -113,6 +116,7 @@ type Manager struct {
 	tmuxCommand       []string
 	tmuxOwnerMarker   string
 	wrapAgentsInTmux  bool
+	hideTmuxStatus    bool
 	stripEnvVars      []string
 	onSessionExit     func(SessionInfo)
 	ptyOwnerRuntime   ptyownerruntime.Owner
@@ -234,6 +238,7 @@ func NewManager(options Options) *Manager {
 		tmuxCommand:       slices.Clone(options.TmuxCommand),
 		tmuxOwnerMarker:   options.TmuxOwnerMarker,
 		wrapAgentsInTmux:  options.WrapAgentSessionsInTmux,
+		hideTmuxStatus:    options.HideTmuxStatus,
 		stripEnvVars:      dedupeStrings(options.StripEnvVars),
 		onSessionExit:     options.OnSessionExit,
 		ptyOwnerRuntime:   options.PtyOwnerRuntime,
@@ -663,6 +668,12 @@ func (m *Manager) UpdateTargetsAndStripEnvVars(
 	m.mu.Unlock()
 }
 
+func (m *Manager) UpdateHideTmuxStatus(hide bool) {
+	m.mu.Lock()
+	m.hideTmuxStatus = hide
+	m.mu.Unlock()
+}
+
 func cloneLaunchTargetSet(
 	targets []LaunchTarget,
 ) (map[string]LaunchTarget, []LaunchTarget) {
@@ -686,6 +697,12 @@ func (m *Manager) currentStripEnvVars() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return slices.Clone(m.stripEnvVars)
+}
+
+func (m *Manager) currentHideTmuxStatus() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.hideTmuxStatus
 }
 
 func (m *Manager) ListSessions(workspaceID string) []SessionInfo {
@@ -1305,6 +1322,7 @@ func (m *Manager) shellLaunchCommand(
 		CWD:         cwd,
 		Pane:        paneEnv,
 		OwnerMarker: m.tmuxOwnerMarker,
+		HideStatus:  m.currentHideTmuxStatus(),
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err
@@ -1458,6 +1476,7 @@ func (m *Manager) launchCommand(
 		CWD:         cwd,
 		Pane:        paneEnv,
 		OwnerMarker: m.tmuxOwnerMarker,
+		HideStatus:  m.currentHideTmuxStatus(),
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err

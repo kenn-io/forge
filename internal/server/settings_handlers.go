@@ -499,12 +499,19 @@ func cloneFleetSSHPeers(peers []config.FleetSSHPeer) []config.FleetSSHPeer {
 }
 
 func (s *Server) refreshRuntimeTargetsLocked() {
-	if s.runtime == nil || s.cfg == nil {
+	if s.cfg == nil {
+		return
+	}
+	if s.workspaces != nil {
+		s.workspaces.SetHideTmuxStatus(s.cfg.Terminal.HideTmuxStatus)
+	}
+	if s.runtime == nil {
 		return
 	}
 	tmuxCmd := s.bootTmuxCommand()
 	targets := localruntime.ResolveLaunchTargets(s.cfg.Agents, tmuxCmd, nil)
 	s.runtime.UpdateTargetsAndStripEnvVars(targets, s.cfg.TokenEnvNames())
+	s.runtime.UpdateHideTmuxStatus(s.cfg.Terminal.HideTmuxStatus)
 }
 
 func (s *Server) bootTmuxCommand() []string {

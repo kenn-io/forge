@@ -349,6 +349,7 @@ command = ["codex", "--full-auto"]
 	require.NotNil(resp.Terminal.CursorBlink)
 	assert.True(*resp.Terminal.CursorBlink)
 	assert.False(resp.Terminal.FontLigatures)
+	assert.False(resp.Terminal.HideTmuxStatus)
 	assertDefaultModeVisibility(t, resp.Modes)
 	require.Len(resp.Agents, 1)
 	assert.Equal("codex", resp.Agents[0].Key)
@@ -425,13 +426,14 @@ func TestHandleUpdateSettings(t *testing.T) {
 		HideBots:   true,
 	}
 	terminal := config.Terminal{
-		FontFamily:    "\"Fira Code\", monospace",
-		FontSize:      16,
-		Scrollback:    5000,
-		LineHeight:    1.15,
-		CursorBlink:   new(true),
-		FontLigatures: true,
-		Renderer:      config.TerminalRendererXterm,
+		FontFamily:     "\"Fira Code\", monospace",
+		FontSize:       16,
+		Scrollback:     5000,
+		LineHeight:     1.15,
+		CursorBlink:    new(true),
+		FontLigatures:  true,
+		Renderer:       config.TerminalRendererXterm,
+		HideTmuxStatus: true,
 	}
 	body := updateSettingsRequest{
 		Activity: &activity,
@@ -452,6 +454,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.Equal(5000, cfg2.Terminal.Scrollback)
 	assert.InDelta(1.15, cfg2.Terminal.LineHeight, 0.001)
 	assert.True(cfg2.Terminal.FontLigatures)
+	assert.True(cfg2.Terminal.HideTmuxStatus)
 }
 
 func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {

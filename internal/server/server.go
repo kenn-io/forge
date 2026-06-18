@@ -712,6 +712,10 @@ func newServer(
 	// of the call is explicit at this level.
 	tmuxCmd := cfg.TmuxCommand()
 	s.tmuxCmd = tmuxCmd
+	hideTmuxStatus := false
+	if cfg != nil {
+		hideTmuxStatus = cfg.Terminal.HideTmuxStatus
+	}
 	tmuxAvailable := tmuxCommandAvailable(tmuxCmd)
 	includeUnmanagedTmuxDetails := false
 	if cfg != nil {
@@ -739,6 +743,7 @@ func newServer(
 		s.workspacePRMonitor = workspace.NewPRMonitor(database)
 		s.workspacePushedHeadObserver = workspace.NewPushedHeadObserver(database)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
+		s.workspaces.SetHideTmuxStatus(hideTmuxStatus)
 		s.workspaces.SetIssueBranchSlugEnabled(
 			cfg.IssueWorkspaceBranchSlugEnabled(),
 		)
@@ -793,6 +798,7 @@ func newServer(
 			TmuxCommand:              tmuxCmd,
 			TmuxOwnerMarker:          s.workspaces.TmuxOwnerMarker(),
 			WrapAgentSessionsInTmux:  cfg.TmuxAgentSessionsEnabled(),
+			HideTmuxStatus:           hideTmuxStatus,
 			StripEnvVars:             s.runtimeStripEnvVars,
 			ShellCommand:             cfg.ShellCommand(),
 			OnSessionExit:            s.handleRuntimeSessionExit,

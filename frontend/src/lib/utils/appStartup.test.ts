@@ -62,6 +62,7 @@ function makeSettings(): Settings {
       cursor_blink: true,
       font_ligatures: false,
       renderer: "xterm",
+      hide_tmux_status: false,
     },
     modes: {
       activity: true,

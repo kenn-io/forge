@@ -64,6 +64,7 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   cursor_blink: true,
   font_ligatures: false,
   renderer: "xterm",
+  hide_tmux_status: false,
 };
 
 export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {

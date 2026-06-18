@@ -75,6 +75,9 @@
     DEFAULT_TERMINAL_SETTINGS.font_ligatures,
   );
   let rendererDraft = $state<TerminalSettingsType["renderer"]>("xterm");
+  let hideTmuxStatusDraft = $state(
+    DEFAULT_TERMINAL_SETTINGS.hide_tmux_status,
+  );
   let fontDialogOpen = $state(false);
   let localFonts = $state<FontData[] | null>(null);
   let fontLoadError = $state<string | null>(null);
@@ -149,6 +152,7 @@
       cursor_blink: cursorBlinkDraft,
       font_ligatures: fontLigaturesDraft,
       renderer: rendererDraft,
+      hide_tmux_status: hideTmuxStatusDraft,
     };
   }
 
@@ -165,7 +169,8 @@
       pendingTerminal.letter_spacing !== currentTerminal.letter_spacing ||
       pendingTerminal.cursor_blink !== currentTerminal.cursor_blink ||
       pendingTerminal.font_ligatures !== currentTerminal.font_ligatures ||
-      pendingTerminal.renderer !== currentTerminal.renderer,
+      pendingTerminal.renderer !== currentTerminal.renderer ||
+      pendingTerminal.hide_tmux_status !== currentTerminal.hide_tmux_status
   );
   const isDefaultDraft = $derived(
     pendingTerminal.font_family === DEFAULT_TERMINAL_SETTINGS.font_family &&
@@ -178,7 +183,9 @@
         DEFAULT_TERMINAL_SETTINGS.cursor_blink &&
       pendingTerminal.font_ligatures ===
         DEFAULT_TERMINAL_SETTINGS.font_ligatures &&
-      pendingTerminal.renderer === DEFAULT_TERMINAL_SETTINGS.renderer,
+      pendingTerminal.renderer === DEFAULT_TERMINAL_SETTINGS.renderer &&
+      pendingTerminal.hide_tmux_status ===
+        DEFAULT_TERMINAL_SETTINGS.hide_tmux_status
   );
   const xtermOnlyControlsEnabled = $derived(rendererDraft === "xterm");
   const canSave = $derived(!saving && isDirty);
@@ -210,6 +217,7 @@
     cursorBlinkDraft = value.cursor_blink;
     fontLigaturesDraft = value.font_ligatures;
     rendererDraft = value.renderer;
+    hideTmuxStatusDraft = value.hide_tmux_status;
   }
 
   $effect(() => {
@@ -411,6 +419,15 @@
       disabled={saving || !xtermOnlyControlsEnabled}
     />
     <span>Font ligatures</span>
+  </label>
+
+  <label class="toggle-field">
+    <input
+      type="checkbox"
+      bind:checked={hideTmuxStatusDraft}
+      disabled={saving}
+    />
+    <span>Hide tmux status line in new sessions</span>
   </label>
 
   <div class="setting-actions">

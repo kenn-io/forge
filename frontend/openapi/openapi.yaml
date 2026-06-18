@@ -5692,6 +5692,8 @@ components:
         font_size:
           format: int64
           type: integer
+        hide_tmux_status:
+          type: boolean
         letter_spacing:
           format: int64
           type: integer
@@ -5715,6 +5717,7 @@ components:
         - cursor_blink
         - font_ligatures
         - renderer
+        - hide_tmux_status
       type: object
     TmuxSessionInfo:
       additionalProperties: false

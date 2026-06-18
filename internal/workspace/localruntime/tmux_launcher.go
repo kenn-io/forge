@@ -121,6 +121,7 @@ type tmuxLauncher struct {
 	CWD         string
 	Pane        tmuxPaneEnvironment
 	OwnerMarker string
+	HideStatus  bool
 }
 
 type tmuxLaunchResult struct {
@@ -386,6 +387,13 @@ func (l tmuxLauncher) newSessionCommand(paneCommand string) []string {
 			command,
 			";", "set-option", "-q", "-t", l.Session,
 			"@middleman_owner", l.OwnerMarker,
+		)
+	}
+	if l.HideStatus {
+		command = append(
+			command,
+			";", "set-option", "-q", "-t", l.Session,
+			"status", "off",
 		)
 	}
 	return command

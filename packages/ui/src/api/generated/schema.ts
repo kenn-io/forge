@@ -6208,6 +6208,7 @@ export interface components {
             font_ligatures: boolean;
             /** Format: int64 */
             font_size: number;
+            hide_tmux_status: boolean;
             /** Format: int64 */
             letter_spacing: number;
             /** Format: double */

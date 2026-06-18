@@ -194,6 +194,7 @@ func (m *Manager) commandSessionLaunch(
 		CWD:         spec.CWD,
 		Pane:        paneEnv,
 		OwnerMarker: m.tmuxOwnerMarker,
+		HideStatus:  m.currentHideTmuxStatus(),
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err

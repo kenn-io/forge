@@ -554,14 +554,15 @@ const (
 )
 
 type Terminal struct {
-	FontFamily    string  `toml:"font_family,omitempty" json:"font_family"`
-	FontSize      int     `toml:"font_size,omitempty" json:"font_size"`
-	Scrollback    int     `toml:"scrollback,omitempty" json:"scrollback"`
-	LineHeight    float64 `toml:"line_height,omitempty" json:"line_height"`
-	LetterSpacing int     `toml:"letter_spacing,omitempty" json:"letter_spacing"`
-	CursorBlink   *bool   `toml:"cursor_blink,omitempty" json:"cursor_blink" nullable:"false"`
-	FontLigatures bool    `toml:"font_ligatures,omitempty" json:"font_ligatures"`
-	Renderer      string  `toml:"renderer,omitempty" json:"renderer" enum:"xterm,ghostty-web"`
+	FontFamily     string  `toml:"font_family,omitempty" json:"font_family"`
+	FontSize       int     `toml:"font_size,omitempty" json:"font_size"`
+	Scrollback     int     `toml:"scrollback,omitempty" json:"scrollback"`
+	LineHeight     float64 `toml:"line_height,omitempty" json:"line_height"`
+	LetterSpacing  int     `toml:"letter_spacing,omitempty" json:"letter_spacing"`
+	CursorBlink    *bool   `toml:"cursor_blink,omitempty" json:"cursor_blink" nullable:"false"`
+	FontLigatures  bool    `toml:"font_ligatures,omitempty" json:"font_ligatures"`
+	Renderer       string  `toml:"renderer,omitempty" json:"renderer" enum:"xterm,ghostty-web"`
+	HideTmuxStatus bool    `toml:"hide_tmux_status,omitempty" json:"hide_tmux_status"`
 }
 
 type Agent struct {

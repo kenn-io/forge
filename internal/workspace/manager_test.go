@@ -3925,11 +3925,12 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
+	mgr.SetHideTmuxStatus(true)
 
 	require.NoError(mgr.EnsureTmux(t.Context(), "sess-B", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 3)
+	require.Len(argvs, 4)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-B"},
 		argvs[0],
@@ -3952,6 +3953,10 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 			"@middleman_owner", mgr.tmuxOwnerMarker(),
 		},
 		argvs[2],
+	)
+	assert.Equal(
+		[]string{"set-option", "-q", "-t", "sess-B", "status", "off"},
+		argvs[3],
 	)
 }
 

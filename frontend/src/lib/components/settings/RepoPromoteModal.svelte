@@ -204,7 +204,7 @@
           bind:this={searchInput}
           value={filterText}
           placeholder="Filter repositories..."
-          disabled={loading || submitting}
+          disabled={submitting}
           oninput={(event) => { filterText = event.currentTarget.value; }}
         />
       </label>

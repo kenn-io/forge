@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
@@ -10,6 +14,11 @@ type RepoSummary = {
 
 let isolatedServer: IsolatedE2EServer | undefined;
 let api: APIRequestContext | undefined;
+let localRepo: string | undefined;
+
+function git(dir: string, ...args: string[]): void {
+  execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+}
 
 test.beforeEach(async () => {
   isolatedServer = await startIsolatedE2EServer();
@@ -23,6 +32,10 @@ test.afterEach(async () => {
   await isolatedServer?.stop();
   api = undefined;
   isolatedServer = undefined;
+  if (localRepo) {
+    rmSync(localRepo, { recursive: true, force: true });
+    localRepo = undefined;
+  }
 });
 
 test("settings shows glob match counts and refresh updates tracked repos", async ({ page }) => {
@@ -165,6 +178,63 @@ test("settings imports a selected subset from a repository glob", async ({ page 
 
   await page.goto(`${isolatedServer!.info.base_url}/pulls`);
   await expect(page.getByTitle("Select repository")).toContainText("All repos");
+});
+
+test("settings promotes a glob match to a persisted exact repo with a local clone", async ({ page }) => {
+  localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "mm-promote-clone-")));
+  git(localRepo, "init");
+  git(localRepo, "remote", "add", "origin", "https://github.com/roborev-dev/middleman.git");
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+
+  const globRow = page.locator(".repo-row", { hasText: "roborev-dev/*" });
+  await globRow.getByRole("button", { name: "Promote glob repository roborev-dev/*" }).click();
+  const dialog = page.getByRole("dialog", { name: "Promote wildcard repository" });
+  await expect(dialog.getByLabel("Search matches")).toBeFocused();
+  await expect(dialog.getByRole("radio", { name: /roborev-dev\/middleman/ })).toBeChecked();
+
+  const saveResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/repo/github/roborev-dev/middleman/worktree-base") &&
+      response.request().method() === "PUT",
+  );
+  await dialog.getByLabel("Local clone path for roborev-dev/middleman", { exact: true }).fill(localRepo);
+  await dialog.getByRole("button", { name: "Promote repository" }).click();
+  const saveResponse = await saveResponsePromise;
+  const saveBody = await saveResponse.text();
+  expect(saveResponse.status(), `PUT worktree-base failed: ${saveBody}`).toBe(200);
+
+  await expect(dialog).toHaveCount(0);
+  const exactRow = page.locator(".repo-row", { hasText: "roborev-dev/middleman" });
+  await expect(exactRow).toBeVisible();
+  await expect(exactRow.getByRole("button", { name: "Local clone for roborev-dev/middleman" })).toHaveAttribute(
+    "title",
+    `Local clone: ${localRepo}`,
+  );
+
+  if (!api) throw new Error("settings-globs API context not initialized");
+  const settingsResponse = await api.get("/api/v1/settings");
+  const settingsBody = await settingsResponse.text();
+  expect(settingsResponse.status(), `GET settings failed: ${settingsBody}`).toBe(200);
+  const settings = JSON.parse(settingsBody) as {
+    repos: Array<{
+      owner: string;
+      name: string;
+      repo_path: string;
+      is_glob: boolean;
+      worktree_base_path?: string;
+    }>;
+  };
+  expect(settings.repos).toContainEqual(
+    expect.objectContaining({
+      owner: "roborev-dev",
+      name: "middleman",
+      repo_path: "roborev-dev/middleman",
+      is_glob: false,
+      worktree_base_path: localRepo,
+    }),
+  );
 });
 
 test("repository import can hide forks and private repositories before adding", async ({ page }) => {

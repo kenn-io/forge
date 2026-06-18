@@ -463,6 +463,60 @@ describe("RepoSettings", () => {
     expect(mockRefreshSyncStatus).toHaveBeenCalled();
   });
 
+  it("focuses the promote search while wildcard matches are loading", async () => {
+    let resolvePreview: ((value: Awaited<ReturnType<typeof previewRepos>>) => void) | undefined;
+    mockPreviewRepos.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePreview = resolve;
+      }),
+    );
+
+    render(RepoSettings, {
+      props: {
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "*",
+            repo_path: "acme/*",
+            is_glob: true,
+            matched_repo_count: 1,
+          },
+        ],
+        onUpdate: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Promote glob repository acme/*" }));
+    await screen.findByRole("dialog", { name: "Promote wildcard repository" });
+    const searchInput = screen.getByPlaceholderText("Filter repositories...");
+
+    await waitFor(() => expect(document.activeElement).toBe(searchInput));
+
+    resolvePreview?.({
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      pattern: "*",
+      repos: [
+        {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "api",
+          repo_path: "acme/api",
+          description: "HTTP API",
+          private: false,
+          fork: false,
+          pushed_at: null,
+          already_configured: false,
+        },
+      ],
+    });
+    await screen.findByText("acme/api");
+  });
+
   it("updates repos and refreshes sync status after import", async () => {
     const importedRepos = [
       {

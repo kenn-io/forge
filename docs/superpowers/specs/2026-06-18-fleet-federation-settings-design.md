@@ -3,20 +3,22 @@
 ## Summary
 
 Add a fleet federation settings panel that lets users keep local workspace
-features enabled while disabling every remote fleet surface by default. The
-settings panel manages the federation toggle, optional local fleet key, peer
-timeout, session detail setting, and both HTTP and SSH peer membership.
+features enabled while disabling every remote runtime, status, and operation
+surface by default. The settings panel manages the federation toggle, optional
+local fleet key, peer timeout, session detail setting, and both HTTP and SSH
+peer membership.
 
 The toggle controls remote federation only. Local workspace snapshots,
 registered worktrees, runtime sessions, and local host operations continue to
-work when federation is disabled. Saved peer membership remains in config so a
-user can turn federation off temporarily and later re-enable the same members.
+work when federation is disabled. Saved peer membership remains visible and
+editable in settings so a user can turn federation off temporarily and later
+re-enable the same members.
 
 ## Goals
 
 - Make remote fleet federation opt-in, with a default disabled state.
-- Hide remote fleet UI when federation is disabled, including the fleet
-  indicator/status block in the workspace sidebar.
+- Hide remote runtime/status/operation fleet UI when federation is disabled,
+  including the fleet indicator/status block in the workspace sidebar.
 - Preserve current local workspace behavior when federation is disabled.
 - Let users configure both HTTP peers and SSH peers from the settings UI.
 - Preserve existing config flexibility: `fleet.key` remains optional, but the
@@ -60,6 +62,8 @@ The rest of the fleet config remains structurally the same:
 
 Membership can be edited while federation is disabled. Saving membership while
 disabled only changes persisted config; it does not make remote hosts visible.
+This means the settings page remains a configuration surface even while the
+runtime fleet surface is off.
 
 ## Backend Behavior
 
@@ -73,8 +77,13 @@ Remote federation gates should be centralized in the existing fleet paths:
   `cfg.Fleet.Enabled` is true.
 - Remote proxy routes therefore become unavailable while federation is
   disabled, even if peer membership is still saved.
+- Disabled remote proxy routes return the existing `404`/`notFound` problem
+  shape with `details.hostKey` rather than a peer-unreachable or capability
+  error. This keeps disabled federation distinct from a configured but
+  unreachable enabled peer.
 - Existing raw snapshot behavior remains local-only and is not affected by the
   toggle.
+- Disabled federation must avoid HTTP and SSH peer network calls entirely.
 
 The settings API should expose a focused fleet settings shape rather than
 folding peer editing into unrelated general settings updates:
@@ -108,6 +117,14 @@ updates should use a focused route such as `PUT /settings/fleet`. This keeps
 fleet validation, restart-required reporting, and peer replacement semantics
 separate from activity, terminal, mode, and agent settings.
 
+`PUT /settings/fleet` is a full replacement of the fleet settings object, not a
+patch. The server validates the complete candidate config before saving,
+persists it through the existing atomic config writer, updates live in-memory
+config only for successfully saved values, and rolls back any live in-memory
+change if persistence fails. Concurrent saves use the same settings lock as the
+other settings routes. Success always returns the stable fleet settings shape
+above, including `restart_required`.
+
 ## Validation And Restart Semantics
 
 Validation should preserve existing rules and add only the enable flag:
@@ -123,16 +140,25 @@ Validation should preserve existing rules and add only the enable flag:
 - `peer_timeout`, when set, must parse as a Go duration.
 
 Validation failures return the existing settings `badRequest` problem style.
-Save failures return the existing internal settings save problem style.
+Save failures return the existing internal settings save problem style. Disabled
+remote proxy access returns `notFound`. Enabled but unreachable peers keep using
+the existing peer health and proxy error taxonomy.
 
 Restart-required behavior:
 
 - Toggling `fleet.enabled` applies immediately to snapshot fan-out and remote
   proxy resolution.
-- Editing HTTP peers, `fleet.key`, or `peer_timeout` applies immediately to
-  snapshot fan-out and HTTP proxy routing.
+- Editing HTTP peers, `fleet.key`, or `peer_timeout` applies immediately to new
+  snapshot fan-out and HTTP proxy routing requests. Changing `fleet.key`
+  changes the local host key emitted by subsequent snapshots; clients should
+  refresh settings/snapshot data after save, and old explicit host-key routes
+  are not compatibility aliases. The generic self/local route behavior remains
+  available.
 - Editing SSH peers still reports `restart_required` because the SSH transport
-  is constructed at daemon startup.
+  is constructed at daemon startup. Newly saved SSH peer membership is shown in
+  settings immediately, but the live SSH transport continues to use the startup
+  peer set until restart. Enabling federation before restart exposes only the
+  live startup SSH peers, not newly persisted SSH peers.
 - Editing `fleet.sessions.include_unmanaged_details` still reports
   `restart_required` because tmux monitoring is constructed at daemon startup.
 
@@ -164,6 +190,9 @@ behavior clear without requiring the user to enter `middleman`.
 
 HTTP peer rows should include restrained warning text that HTTP federation is
 for trusted network boundaries because the hub does not forward auth to peers.
+Existing users who already have peers but no explicit `enabled` flag see the
+disabled toggle and saved memberships in this settings section; no separate
+first-run migration banner is required.
 
 ## Workspace UI
 
@@ -191,12 +220,15 @@ Backend tests:
 - Settings save preserves peer membership while toggling enabled off.
 - `GET /snapshot?include_peers=true` excludes HTTP and SSH peers when disabled.
 - The same snapshot includes configured peers when enabled.
-- Remote fleet proxy resolution returns not found or unavailable for remote
-  peers when disabled, while local self routing still works.
+- Remote fleet proxy resolution returns `404`/`notFound` for remote peers when
+  disabled, while local self routing still works.
 - `PUT /settings/fleet` validates peer collisions, HTTP URLs, SSH
   destinations, SSH remote commands, and peer timeout.
 - `restart_required` is true for SSH peer and session detail edits, but false
   for enable toggle, key, timeout, and HTTP peer edits.
+- Full-stack API tests exercise `GET /settings`, `PUT /settings/fleet`,
+  disabled snapshot behavior, enabled snapshot behavior, and disabled remote
+  proxy behavior through the real HTTP server and SQLite-backed settings path.
 
 Frontend tests:
 
@@ -211,3 +243,14 @@ Frontend tests:
 Use Vitest + jsdom for settings and workspace sidebar behavior. Browser tests
 are not required unless implementation changes layout behavior that needs real
 geometry verification.
+
+## Implementation Plan
+
+Implement the feature in reviewable stages:
+
+1. Add config model/default coverage for `fleet.enabled`.
+2. Gate backend snapshot fan-out and remote proxy resolution.
+3. Add focused settings API read/update behavior and generated client types.
+4. Add the fleet settings editor under Workspace settings.
+5. Hide workspace sidebar fleet status when only the local host is visible.
+6. Add full-stack, unit, and frontend regression coverage.

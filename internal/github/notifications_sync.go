@@ -367,28 +367,20 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 		}
 		reopened, err := s.reopenIfNotificationThreadAdvanced(ctx, host, client, notification)
 		if err != nil {
-			return err
+			// The pre-ack refetch spends the same upstream budget as the
+			// mark-read call, so a rate limit here must defer the queued
+			// ack rather than retry the same due row every tick.
+			if deferErr := s.deferQueuedNotificationAckOnError(ctx, kind, host, notification, err); deferErr != nil {
+				return deferErr
+			}
+			continue
 		}
 		if reopened {
 			continue
 		}
 		if err := client.MarkNotificationThreadRead(ctx, notification.PlatformNotificationID); err != nil {
-			if nextAttemptAt, ok := notificationReadRateLimitNextAttempt(err, time.Now().UTC()); ok {
-				if recordErr := s.db.DeferQueuedNotificationAcks(ctx, string(kind), host, nextAttemptAt, "rate_limited"); recordErr != nil {
-					return recordErr
-				}
-				return fmt.Errorf("notification read propagation rate limited for host %s: %w", host, err)
-			}
-			errText := err.Error()
-			var nextAttemptAt *time.Time
-			if notification.SourceAckAttempts+1 >= defaultNotificationPropagationMaxAttempts {
-				errText = "max_attempts_exceeded"
-			} else {
-				next := time.Now().UTC().Add(notificationReadBackoff(notification.SourceAckAttempts + 1))
-				nextAttemptAt = &next
-			}
-			if recordErr := s.db.MarkNotificationAckPropagationResult(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt, nil, errText, nextAttemptAt); recordErr != nil {
-				return recordErr
+			if deferErr := s.deferQueuedNotificationAckOnError(ctx, kind, host, notification, err); deferErr != nil {
+				return deferErr
 			}
 			continue
 		}
@@ -397,8 +389,50 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 			return err
 		}
 		if _, err := s.reopenIfNotificationThreadAdvanced(ctx, host, client, notification); err != nil {
-			return err
+			// The ack already succeeded above, so this reconciliation
+			// refetch only reopens threads that advanced mid-flight. Defer
+			// instead of aborting the batch so a rate limit does not skip
+			// the remaining queued rows.
+			if deferErr := s.deferQueuedNotificationAckOnError(ctx, kind, host, notification, err); deferErr != nil {
+				return deferErr
+			}
+			continue
 		}
+	}
+	return nil
+}
+
+// deferQueuedNotificationAckOnError records backoff after a propagation step
+// (thread refetch or mark-read) fails for a queued ack. Rate-limit errors
+// defer every queued ack for the host and return an error so the batch stops
+// without burning the shared upstream budget on a row that cannot make
+// progress; any other error records a per-row next-attempt time so only this
+// row backs off. A nil return means the ack was deferred and the caller should
+// advance to the next queued row.
+func (s *Syncer) deferQueuedNotificationAckOnError(
+	ctx context.Context,
+	kind platform.Kind,
+	host string,
+	notification db.Notification,
+	cause error,
+) error {
+	now := time.Now().UTC()
+	if nextAttemptAt, ok := notificationReadRateLimitNextAttempt(cause, now); ok {
+		if recordErr := s.db.DeferQueuedNotificationAcks(ctx, string(kind), host, nextAttemptAt, "rate_limited"); recordErr != nil {
+			return recordErr
+		}
+		return fmt.Errorf("notification read propagation rate limited for host %s: %w", host, cause)
+	}
+	errText := cause.Error()
+	var nextAttemptAt *time.Time
+	if notification.SourceAckAttempts+1 >= defaultNotificationPropagationMaxAttempts {
+		errText = "max_attempts_exceeded"
+	} else {
+		next := now.Add(notificationReadBackoff(notification.SourceAckAttempts + 1))
+		nextAttemptAt = &next
+	}
+	if recordErr := s.db.MarkNotificationAckPropagationResult(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt, nil, errText, nextAttemptAt); recordErr != nil {
+		return recordErr
 	}
 	return nil
 }

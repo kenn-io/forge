@@ -2101,6 +2101,159 @@ func TestProcessQueuedNotificationReadsPausesOnRateLimitWithoutConsumingAttempts
 	check.NotNil(queuedByThread["thread-2"])
 }
 
+func TestProcessQueuedNotificationReadsDefersWhenRefetchRateLimited(t *testing.T) {
+	require := require.New(t)
+	check := Assert.New(t)
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	numberOne := 7
+	numberTwo := 8
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{
+		{
+			Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1", RepoID: &repoID,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "Please review",
+			WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &numberOne, ItemType: "pr",
+			Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-2", RepoID: &repoID,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "Please review again",
+			WebURL: "https://github.com/acme/widget/pull/8", ItemNumber: &numberTwo, ItemType: "pr",
+			Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+		},
+	}))
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"})
+	require.NoError(err)
+	require.Len(items, 2)
+	queuedAt := now.Add(time.Minute)
+	_, err = d.QueueNotificationIDsRead(t.Context(), []int64{items[0].ID, items[1].ID}, queuedAt)
+	require.NoError(err)
+	resetAt := time.Now().UTC().Add(time.Hour).Round(0)
+	var refetchedThreads []string
+	var markedThreads []string
+	mc := &mockClient{
+		getNotificationThreadFn: func(_ context.Context, threadID string) (NotificationThread, error) {
+			refetchedThreads = append(refetchedThreads, threadID)
+			return NotificationThread{}, &gh.RateLimitError{
+				Rate: gh.Rate{Reset: gh.Timestamp{Time: resetAt}},
+				Response: &http.Response{
+					StatusCode: http.StatusForbidden,
+					Request:    httptest.NewRequest(http.MethodGet, "https://api.github.com/notifications/threads/"+threadID, nil),
+				},
+				Message: "API rate limit exceeded",
+			}
+		},
+		markNotificationThreadReadFn: func(_ context.Context, threadID string) error {
+			markedThreads = append(markedThreads, threadID)
+			return nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil)
+
+	err = syncer.ProcessQueuedNotificationReads(t.Context(), platform.KindGitHub, "github.com", 10)
+	require.Error(err)
+
+	// The refetch budget is shared with mark-read, so a rate-limited refetch
+	// must not reach the mark-read call and must defer every queued ack.
+	check.Equal([]string{"thread-1"}, refetchedThreads)
+	check.Empty(markedThreads)
+
+	items, err = d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"})
+	require.NoError(err)
+	require.Len(items, 2)
+	attemptsByThread := map[string]int{}
+	errorsByThread := map[string]string{}
+	nextAttemptByThread := map[string]*time.Time{}
+	queuedByThread := map[string]*time.Time{}
+	for _, item := range items {
+		attemptsByThread[item.PlatformNotificationID] = item.SourceAckAttempts
+		errorsByThread[item.PlatformNotificationID] = item.SourceAckError
+		nextAttemptByThread[item.PlatformNotificationID] = item.SourceAckNextAttemptAt
+		queuedByThread[item.PlatformNotificationID] = item.SourceAckQueuedAt
+	}
+	check.Equal(map[string]int{"thread-1": 0, "thread-2": 0}, attemptsByThread)
+	check.Equal(map[string]string{"thread-1": "rate_limited", "thread-2": "rate_limited"}, errorsByThread)
+	if check.NotNil(nextAttemptByThread["thread-1"]) {
+		check.Equal(resetAt, *nextAttemptByThread["thread-1"])
+	}
+	if check.NotNil(nextAttemptByThread["thread-2"]) {
+		check.Equal(resetAt, *nextAttemptByThread["thread-2"])
+	}
+	check.NotNil(queuedByThread["thread-1"])
+	check.NotNil(queuedByThread["thread-2"])
+}
+
+func TestProcessQueuedNotificationReadsBacksOffRowAndContinuesOnRefetchError(t *testing.T) {
+	require := require.New(t)
+	check := Assert.New(t)
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	numberOne := 7
+	numberTwo := 8
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{
+		{
+			Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1", RepoID: &repoID,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "Please review",
+			WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &numberOne, ItemType: "pr",
+			Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-2", RepoID: &repoID,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "Please review again",
+			WebURL: "https://github.com/acme/widget/pull/8", ItemNumber: &numberTwo, ItemType: "pr",
+			Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+		},
+	}))
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"})
+	require.NoError(err)
+	require.Len(items, 2)
+	queuedAt := now.Add(time.Minute)
+	_, err = d.QueueNotificationIDsRead(t.Context(), []int64{items[0].ID, items[1].ID}, queuedAt)
+	require.NoError(err)
+	var markedThreads []string
+	mc := &mockClient{
+		getNotificationThreadFn: func(_ context.Context, threadID string) (NotificationThread, error) {
+			if threadID == "thread-1" {
+				return NotificationThread{}, errors.New("boom")
+			}
+			// thread-2 has not advanced, so it proceeds to mark-read.
+			return NotificationThread{ID: threadID, UpdatedAt: now}, nil
+		},
+		markNotificationThreadReadFn: func(_ context.Context, threadID string) error {
+			markedThreads = append(markedThreads, threadID)
+			return nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil)
+
+	// A per-row refetch error must not abort the batch.
+	require.NoError(syncer.ProcessQueuedNotificationReads(t.Context(), platform.KindGitHub, "github.com", 10))
+	check.Equal([]string{"thread-2"}, markedThreads)
+
+	items, err = d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"})
+	require.NoError(err)
+	require.Len(items, 2)
+	byThread := map[string]db.Notification{}
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	// thread-1 backed off for a retry without being acked.
+	failed := byThread["thread-1"]
+	check.Equal(1, failed.SourceAckAttempts)
+	check.Contains(failed.SourceAckError, "boom")
+	check.NotNil(failed.SourceAckNextAttemptAt)
+	check.NotNil(failed.SourceAckQueuedAt)
+	check.Nil(failed.SourceAckSyncedAt)
+	// thread-2 was acked normally.
+	acked := byThread["thread-2"]
+	check.NotNil(acked.SourceAckSyncedAt)
+	check.Nil(acked.SourceAckQueuedAt)
+}
+
 func TestProcessQueuedNotificationReadsReopensRemoteActivityAfterPatchRace(t *testing.T) {
 	require := require.New(t)
 	check := Assert.New(t)

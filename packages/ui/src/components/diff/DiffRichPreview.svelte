@@ -173,7 +173,7 @@
       }
       const block = blocks.find((candidate) => blockContainsReviewThread(candidate, thread));
       if (!block) {
-        fallbackReviewThreads.push({ thread, fileLevel });
+        fallbackReviewThreads.push({ thread, fileLevel: true });
         continue;
       }
       const placement = { thread, fileLevel };

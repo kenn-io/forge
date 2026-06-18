@@ -996,6 +996,37 @@ describe("DiffFile", () => {
     expect(document.querySelector(".preview-shell > .inline-review-thread")).toBeNull();
   });
 
+  it("keeps unmapped markdown rich preview threads in file-level fallback cards", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            path: "README.md",
+            old_path: "README.md",
+            line: 99,
+            new_line: 99,
+            body: "Unmapped rich preview note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Unmapped rich preview note")).toBeTruthy();
+    });
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    expect(comment?.closest(".markdown-rich-diff--unified")).toBeNull();
+    expect(comment?.classList.contains("inline-review-thread--file-level")).toBe(true);
+    expect(comment?.textContent).toContain("File");
+  });
+
   it("lets published inline review threads be replied to", async () => {
     const replyToDiscussion = vi.fn().mockResolvedValue(true);
     renderDiffFile(makeFile(), {

@@ -58,4 +58,30 @@ describe("buildMarkdownRichPreview", () => {
     expect(added?.beforeHtml).toContain("markdown-diff__placeholder");
     expect(added?.afterHtml).toContain("Added paragraph with several words");
   });
+
+  it("uses a coarse fallback for large block comparisons", () => {
+    const lines: DiffFile["hunks"][number]["lines"] = [];
+    for (let index = 0; index < 160; index++) {
+      lines.push({
+        type: "delete",
+        content: index % 20 === 0 ? "Shared paragraph" : `Old paragraph ${index}`,
+        old_num: index * 2 + 1,
+      });
+      lines.push({ type: "delete", content: "", old_num: index * 2 + 2 });
+    }
+    for (let index = 0; index < 160; index++) {
+      lines.push({
+        type: "add",
+        content: index % 20 === 0 ? "Shared paragraph" : `New paragraph ${index}`,
+        new_num: index * 2 + 1,
+      });
+      lines.push({ type: "add", content: "", new_num: index * 2 + 2 });
+    }
+
+    const preview = buildMarkdownRichPreview(markdownFile(lines), repo);
+
+    expect(preview.blocks.some((block) => block.oldStart != null && block.newStart != null)).toBe(false);
+    expect(preview.blocks.some((block) => block.oldStart != null)).toBe(true);
+    expect(preview.blocks.some((block) => block.newStart != null)).toBe(true);
+  });
 });

@@ -8,6 +8,8 @@ type DiffOp<T> =
   | { kind: "delete"; oldItem: T }
   | { kind: "insert"; newItem: T };
 
+const MAX_BLOCK_COMPARISON_SIZE = 20_000;
+
 interface MarkdownSideDocument {
   text: string;
   lineMap: Array<number | undefined>;
@@ -83,6 +85,9 @@ function sourceRangeForBlock(
 }
 
 function alignBlocks(oldBlocks: MarkdownSideBlock[], newBlocks: MarkdownSideBlock[]): MarkdownRichPreviewBlock[] {
+  if (oldBlocks.length * newBlocks.length > MAX_BLOCK_COMPARISON_SIZE) {
+    return renderCoarseBlocks(oldBlocks, newBlocks);
+  }
   const ops = diffSequence(oldBlocks, newBlocks, (oldBlock, newBlock) => oldBlock.html === newBlock.html);
   const blocks: MarkdownRichPreviewBlock[] = [];
   for (let i = 0; i < ops.length; i++) {
@@ -119,6 +124,20 @@ function alignBlocks(oldBlocks: MarkdownSideBlock[], newBlocks: MarkdownSideBloc
     for (let index = pairs; index < insertRun.length; index++) {
       blocks.push(renderBlock(blocks.length, undefined, insertRun[index]));
     }
+  }
+  return blocks;
+}
+
+function renderCoarseBlocks(
+  oldBlocks: MarkdownSideBlock[],
+  newBlocks: MarkdownSideBlock[],
+): MarkdownRichPreviewBlock[] {
+  const blocks: MarkdownRichPreviewBlock[] = [];
+  for (const oldBlock of oldBlocks) {
+    blocks.push(renderBlock(blocks.length, oldBlock, undefined));
+  }
+  for (const newBlock of newBlocks) {
+    blocks.push(renderBlock(blocks.length, undefined, newBlock));
   }
   return blocks;
 }

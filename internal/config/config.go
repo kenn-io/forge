@@ -1227,6 +1227,9 @@ func (c *Config) Validate() error {
 // GitHub App installation coverage check for the CLI's repair path.
 func (c *Config) validate(skipAppCoverage bool) error {
 	var err error
+	if err := c.Fleet.Validate(); err != nil {
+		return err
+	}
 	if err := c.validateFleetSSHPeers(); err != nil {
 		return err
 	}
@@ -1494,21 +1497,24 @@ func (c *Config) validate(skipAppCoverage bool) error {
 		)
 	}
 
-	if err := c.Fleet.Validate(); err != nil {
-		return err
-	}
-
 	return nil
 }
 
-// Validate checks the fleet section: peer keys must be unique, non-empty,
-// distinct from the local fleet key, and not shadow the reserved self alias;
-// base URLs must be absolute http(s); peer_timeout must parse when set.
-// Embedders that supply peers through Options share this validation with the
-// config-file path.
-func (f Fleet) Validate() error {
+// Validate checks and canonicalizes the fleet section: peer keys must be
+// unique, non-empty, distinct from the local fleet key, and not shadow the
+// reserved self alias; base URLs must be absolute http(s); peer_timeout must
+// parse when set. Embedders that supply peers through Options share this
+// validation with the config-file path.
+func (f *Fleet) Validate() error {
 	const reservedSelfKey = "self"
-	if strings.TrimSpace(f.Key) == reservedSelfKey {
+	f.Key = strings.TrimSpace(f.Key)
+	for i := range f.Peers {
+		f.Peers[i].Key = strings.TrimSpace(f.Peers[i].Key)
+	}
+	for i := range f.SSHPeers {
+		f.SSHPeers[i].Key = strings.TrimSpace(f.SSHPeers[i].Key)
+	}
+	if f.Key == reservedSelfKey {
 		return fmt.Errorf("fleet.key %q is reserved for local self routing", reservedSelfKey)
 	}
 	seenFleetPeers := map[string]bool{}

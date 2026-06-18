@@ -377,25 +377,25 @@ platform = "linux"
 		ts.URL+"/api/v1/settings/fleet",
 		map[string]any{
 			"enabled":      true,
-			"key":          "hub",
+			"key":          " hub ",
 			"peer_timeout": "4s",
 			"sessions": map[string]any{
 				"include_unmanaged_details": false,
 			},
 			"peers": []map[string]any{{
-				"key":      "mini",
+				"key":      " mini ",
 				"name":     "Mac mini",
 				"base_url": "http://mini.tail:8091",
 			}},
 			"ssh_peers": []map[string]any{
 				{
-					"key":         "studio-mac",
+					"key":         " studio-mac ",
 					"name":        "Studio Mac",
 					"destination": "dev@studio.local",
 					"platform":    "macos",
 				},
 				{
-					"key":         "freebsd-box",
+					"key":         " freebsd-box ",
 					"name":        "FreeBSD box",
 					"destination": "dev@freebsd.local",
 					"platform":    "freebsd",

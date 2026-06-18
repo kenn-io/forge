@@ -46,6 +46,7 @@ func bootFleetServer(t *testing.T, cfg *config.Config) (*httptest.Server, *dbpkg
 			AllowLoopbackAnyPort: true,
 		},
 	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	return ts, database

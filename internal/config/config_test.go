@@ -3568,6 +3568,89 @@ base_url = "http://mbp:8091"
 	require.True(cfg.Fleet.Sessions.IncludeUnmanagedDetails)
 }
 
+func TestFleetConfigNormalizesHostKeys(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[fleet]
+key = " studio "
+[[fleet.peers]]
+key = " mbp "
+name = "MacBook"
+base_url = "http://mbp:8091"
+[[fleet.ssh_peers]]
+key = " epyc "
+destination = "dev@epyc.tail"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+
+	assert.Equal("studio", cfg.Fleet.Key)
+	require.Len(t, cfg.Fleet.Peers, 1)
+	assert.Equal("mbp", cfg.Fleet.Peers[0].Key)
+	require.Len(t, cfg.Fleet.SSHPeers, 1)
+	assert.Equal("epyc", cfg.Fleet.SSHPeers[0].Key)
+}
+
+func TestFleetRejectsTrimmedEmptyAndDuplicatePeerKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name: "empty http peer",
+			content: `
+[[fleet.peers]]
+key = "   "
+base_url = "http://empty:8091"
+`,
+			want: "key is required",
+		},
+		{
+			name: "duplicate http peers",
+			content: `
+[[fleet.peers]]
+key = "mini"
+base_url = "http://mini:8091"
+[[fleet.peers]]
+key = " mini "
+base_url = "http://mini2:8091"
+`,
+			want: "duplicate key",
+		},
+		{
+			name: "http peer collides with local key",
+			content: `
+[fleet]
+key = " hub "
+[[fleet.peers]]
+key = "hub"
+base_url = "http://hub:8091"
+`,
+			want: "collides with fleet.key",
+		},
+		{
+			name: "ssh peer collides with trimmed http peer",
+			content: `
+[[fleet.peers]]
+key = " mini "
+base_url = "http://mini:8091"
+[[fleet.ssh_peers]]
+key = "mini"
+destination = "dev@mini"
+`,
+			want: "collides with fleet.peers",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tc.content))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
 func TestFleetConfigDefaultsToDisabledFederation(t *testing.T) {
 	require := require.New(t)
 	path := writeConfig(t, `

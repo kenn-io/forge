@@ -448,6 +448,12 @@ type Syncer struct {
 	onMRSynced       func(owner, name string, mr *db.MergeRequest)
 	onSyncCompleted  func(results []RepoSyncResult)
 	onStatusChange   func(status *SyncStatus)
+	// onNotificationSyncComplete fires after each notification sync run
+	// (periodic, manual, or sidecar) so the server can broadcast the same
+	// data-change signal the normal sync uses. Notification sync can insert
+	// rows with older timestamps than the feed's top cursor, which the
+	// feed's incremental poll would miss without a full reload nudge.
+	onNotificationSyncComplete func()
 	// statusMu serializes publishStatus so worker goroutines
 	// can't interleave updates and deliver out-of-order snapshots
 	// to SSE subscribers.
@@ -1866,6 +1872,13 @@ func (s *Syncer) BranchActivityLimits() (time.Duration, int) {
 // state over SSE.
 func (s *Syncer) SetOnStatusChange(fn func(status *SyncStatus)) {
 	s.onStatusChange = fn
+}
+
+// SetOnNotificationSyncComplete registers a callback invoked after each
+// notification sync run finishes. Register it before Start so it is never
+// assigned concurrently with a running sidecar sync.
+func (s *Syncer) SetOnNotificationSyncComplete(fn func()) {
+	s.onNotificationSyncComplete = fn
 }
 
 // SetFetchers registers GitHub GraphQL fetchers keyed by platform host.

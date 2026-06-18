@@ -54,6 +54,12 @@ func (s *Syncer) RunNotificationSync(ctx context.Context) error {
 	}
 	err := s.SyncNotifications(ctx)
 	s.FinishNotificationSync(err)
+	// Nudge listeners (the SSE hub) even on a partial error: a run that
+	// errored on one host can still have inserted rows for another, and the
+	// reload it triggers is idempotent.
+	if s.onNotificationSyncComplete != nil {
+		s.onNotificationSyncComplete()
+	}
 	return err
 }
 
@@ -365,17 +371,26 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 		if !current {
 			continue
 		}
-		reopened, err := s.reopenIfNotificationThreadAdvanced(ctx, host, client, notification)
+		remote, advanced, err := s.fetchAdvancedNotificationThread(ctx, host, client, notification)
 		if err != nil {
 			// The pre-ack refetch spends the same upstream budget as the
-			// mark-read call, so a rate limit here must defer the queued
-			// ack rather than retry the same due row every tick.
+			// mark-read call, so a rate limit here must defer the queued ack
+			// rather than retry the same due row every tick. Only this refetch
+			// API error routes through backoff; the persistence error below
+			// surfaces normally so a failed local refresh is not hidden.
 			if deferErr := s.deferQueuedNotificationAckOnError(ctx, kind, host, notification, err); deferErr != nil {
 				return deferErr
 			}
 			continue
 		}
-		if reopened {
+		if advanced {
+			// New activity arrived since the read was queued. Refresh local
+			// state from the upstream thread, preserving its read/unread flag
+			// so a thread the user already read upstream is not resurrected,
+			// and skip the mark-read so we never ack unseen activity.
+			if err := s.persistReopenedNotification(ctx, host, notification, remote, false); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := client.MarkNotificationThreadRead(ctx, notification.PlatformNotificationID); err != nil {
@@ -388,15 +403,22 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 		if err := s.db.MarkNotificationAckPropagationResult(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt, &syncedAt, "", nil); err != nil {
 			return err
 		}
-		if _, err := s.reopenIfNotificationThreadAdvanced(ctx, host, client, notification); err != nil {
-			// The ack already succeeded above, so this reconciliation
-			// refetch only reopens threads that advanced mid-flight. Defer
-			// instead of aborting the batch so a rate limit does not skip
-			// the remaining queued rows.
+		// Reconciliation refetch: if the thread advanced between the pre-ack
+		// refetch and the mark-read, our PATCH may have read newer activity
+		// the user never saw, so force it back to unread. The ack already
+		// succeeded, so a refetch API error only backs off; a persistence
+		// error still surfaces normally.
+		remote, advanced, err = s.fetchAdvancedNotificationThread(ctx, host, client, notification)
+		if err != nil {
 			if deferErr := s.deferQueuedNotificationAckOnError(ctx, kind, host, notification, err); deferErr != nil {
 				return deferErr
 			}
 			continue
+		}
+		if advanced {
+			if err := s.persistReopenedNotification(ctx, host, notification, remote, true); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -437,18 +459,46 @@ func (s *Syncer) deferQueuedNotificationAckOnError(
 	return nil
 }
 
-func (s *Syncer) reopenIfNotificationThreadAdvanced(ctx context.Context, host string, client notificationClient, notification db.Notification) (bool, error) {
+// fetchAdvancedNotificationThread refetches the upstream thread and reports
+// whether it advanced past the locally recorded source_updated_at. A provider
+// without the refetch capability or an unchanged thread reports advanced=false
+// with no error. The returned error is always the refetch API error, so
+// callers can route it through ack backoff; local persistence is handled
+// separately by persistReopenedNotification so its failures are not mistaken
+// for an upstream/ack failure.
+func (s *Syncer) fetchAdvancedNotificationThread(
+	ctx context.Context,
+	host string,
+	client notificationClient,
+	notification db.Notification,
+) (NotificationThread, bool, error) {
 	getter, ok := notificationThreadGetterFor(client)
 	if !ok {
-		return false, nil
+		return NotificationThread{}, false, nil
 	}
 	remote, err := getter.GetNotificationThread(ctx, notification.PlatformNotificationID)
 	if err != nil {
-		return false, fmt.Errorf("get notification thread %s for %s: %w", notification.PlatformNotificationID, host, err)
+		return NotificationThread{}, false, fmt.Errorf("get notification thread %s for %s: %w", notification.PlatformNotificationID, host, err)
 	}
 	if !remote.UpdatedAt.After(notification.SourceUpdatedAt) {
-		return false, nil
+		return NotificationThread{}, false, nil
 	}
+	return remote, true, nil
+}
+
+// persistReopenedNotification refreshes local state from an advanced upstream
+// thread. forceUnread marks the row unread regardless of the refreshed flag:
+// the post-ack reconciliation path sets it because our own mark-read has
+// already flipped the upstream thread to read, so the refetch can no longer
+// report the unseen activity as unread. The pre-ack path passes false so a
+// thread the user already read upstream is not resurrected as unread.
+func (s *Syncer) persistReopenedNotification(
+	ctx context.Context,
+	host string,
+	notification db.Notification,
+	remote NotificationThread,
+	forceUnread bool,
+) error {
 	if remote.ID == "" {
 		remote.ID = notification.PlatformNotificationID
 	}
@@ -458,7 +508,9 @@ func (s *Syncer) reopenIfNotificationThreadAdvanced(ctx context.Context, host st
 	if remote.RepoName == "" {
 		remote.RepoName = notification.RepoName
 	}
-	remote.Unread = true
+	if forceUnread {
+		remote.Unread = true
+	}
 	// Preserve the original provider identity: notificationToDB keys off
 	// repoPlatform(repo), so dropping Platform here would re-upsert the
 	// refreshed notification under GitHub for any non-GitHub provider.
@@ -470,12 +522,12 @@ func (s *Syncer) reopenIfNotificationThreadAdvanced(ctx context.Context, host st
 	}
 	refreshed, err := s.notificationToDB(ctx, host, repo, remote, time.Now().UTC())
 	if err != nil {
-		return false, fmt.Errorf("normalize refreshed notification %s for %s: %w", notification.PlatformNotificationID, host, err)
+		return fmt.Errorf("normalize refreshed notification %s for %s: %w", notification.PlatformNotificationID, host, err)
 	}
 	if err := s.db.UpsertNotifications(ctx, []db.Notification{refreshed}); err != nil {
-		return false, fmt.Errorf("upsert refreshed notification %s for %s: %w", notification.PlatformNotificationID, host, err)
+		return fmt.Errorf("upsert refreshed notification %s for %s: %w", notification.PlatformNotificationID, host, err)
 	}
-	return true, nil
+	return nil
 }
 
 func notificationReadRateLimitNextAttempt(err error, now time.Time) (time.Time, bool) {

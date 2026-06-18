@@ -2185,6 +2185,81 @@ func TestProcessQueuedNotificationReadsDefersWhenRefetchRateLimited(t *testing.T
 	check.NotNil(queuedByThread["thread-2"])
 }
 
+func TestRunNotificationSyncFiresCompletionHook(t *testing.T) {
+	require := require.New(t)
+	check := Assert.New(t)
+	d := openTestDB(t)
+	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{}}, d, nil, nil, time.Minute, nil, nil)
+	var calls int
+	syncer.SetOnNotificationSyncComplete(func() { calls++ })
+
+	require.NoError(syncer.RunNotificationSync(t.Context()))
+	check.Equal(1, calls)
+
+	// A second run fires the hook again so an already-open feed keeps
+	// reloading after later syncs.
+	require.NoError(syncer.RunNotificationSync(t.Context()))
+	check.Equal(2, calls)
+}
+
+func TestProcessQueuedNotificationReadsPreservesUpstreamReadOnPreAckRefetch(t *testing.T) {
+	require := require.New(t)
+	check := Assert.New(t)
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	number := 7
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{{
+		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1", RepoID: &repoID,
+		RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "Please review",
+		WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &number, ItemType: "pr",
+		Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+	}}))
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "unread"})
+	require.NoError(err)
+	require.Len(items, 1)
+	queuedAt := now.Add(time.Minute)
+	_, err = d.QueueNotificationIDsRead(t.Context(), []int64{items[0].ID}, queuedAt)
+	require.NoError(err)
+
+	// The thread advanced upstream, but GitHub reports it already read (the
+	// user read the newer activity elsewhere). The pre-ack refetch must keep
+	// it read locally rather than resurrecting it as unread.
+	newer := now.Add(2 * time.Minute)
+	var markedThreads []string
+	mc := &mockClient{
+		getNotificationThreadFn: func(_ context.Context, threadID string) (NotificationThread, error) {
+			return NotificationThread{
+				ID: threadID, RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+				SubjectTitle: "Please review", WebURL: "https://github.com/acme/widget/pull/7",
+				ItemNumber: &number, ItemType: "pr", Reason: "mention",
+				Unread: false, UpdatedAt: newer,
+			}, nil
+		},
+		markNotificationThreadReadFn: func(_ context.Context, threadID string) error {
+			markedThreads = append(markedThreads, threadID)
+			return nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil)
+
+	require.NoError(syncer.ProcessQueuedNotificationReads(t.Context(), platform.KindGitHub, "github.com", 10))
+
+	// No mark-read: the advanced thread is already read upstream.
+	check.Empty(markedThreads)
+	all, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"})
+	require.NoError(err)
+	require.Len(all, 1)
+	check.False(all[0].Unread)
+	check.Equal(newer, all[0].SourceUpdatedAt)
+	check.Nil(all[0].SourceAckQueuedAt)
+
+	unread, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "unread"})
+	require.NoError(err)
+	check.Empty(unread)
+}
+
 func TestProcessQueuedNotificationReadsBacksOffRowAndContinuesOnRefetchError(t *testing.T) {
 	require := require.New(t)
 	check := Assert.New(t)

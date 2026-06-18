@@ -50,6 +50,33 @@ test.describe("mobile activity notifications", () => {
     }
   });
 
+  test("surfaces a notification synced after the feed is already loaded", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/m`);
+      await waitForMobileCards(page);
+
+      // Not present until a sync pulls it in.
+      await expect(page.getByText("Synced tools notification")).toHaveCount(0);
+
+      // Stage the new upstream notification, then run a notification sync.
+      // The sync inserts the row and broadcasts data_changed; the feed's
+      // incremental poll only fetches rows newer than its top cursor, so
+      // without that broadcast the row would stay invisible until reload.
+      const staged = await page.request.post(`${server.info.base_url}/__e2e/notifications/add-synced`);
+      expect(staged.ok()).toBe(true);
+      const synced = await page.request.post(`${server.info.base_url}/api/v1/notifications/sync`, {
+        headers: { "content-type": "application/json" },
+        data: {},
+      });
+      expect(synced.status()).toBe(202);
+
+      await expect(page.getByText("Synced tools notification").first()).toBeVisible({ timeout: 10_000 });
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("marks an unread notification seen from the mobile feed", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {

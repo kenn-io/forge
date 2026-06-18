@@ -1296,6 +1296,11 @@ func buildAppState(
 			HostCheckAllowLoopbackAnyPort: true,
 		},
 	)
+	// Mirror production wiring so notification syncs nudge an open activity
+	// feed to reload (the feed's incremental poll skips backfilled rows).
+	syncer.SetOnNotificationSyncComplete(func() {
+		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+	})
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-workflow-approval/required" {

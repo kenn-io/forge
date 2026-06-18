@@ -604,6 +604,16 @@ func run(opts serve.Options) error {
 		Data: syncer.Status(),
 	})
 
+	// Notification sync runs on its own timer and can backfill rows older
+	// than the activity feed's top cursor, so broadcast the same
+	// data-change signal the normal sync uses to nudge a full reload.
+	syncer.SetOnNotificationSyncComplete(func() {
+		srv.Hub().Broadcast(server.Event{
+			Type: "data_changed",
+			Data: struct{}{},
+		})
+	})
+
 	// The branch-match recompute runs first, then chains to stack
 	// detection, mirroring the embedding API wiring in middleman.go. The
 	// syncer is the watched-MR setter.

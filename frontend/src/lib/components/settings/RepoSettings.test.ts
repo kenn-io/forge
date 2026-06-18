@@ -430,6 +430,7 @@ describe("RepoSettings", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Promote glob repository acme/*" }));
     await screen.findByRole("dialog", { name: "Promote wildcard repository" });
+    expect(screen.getByRole("radiogroup", { name: "Wildcard matches" })).toBeTruthy();
     await screen.findByText("acme/api");
     await fireEvent.input(screen.getByLabelText("Local clone path for acme/api"), {
       target: { value: "/Users/acme/api" },

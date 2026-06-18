@@ -52,6 +52,7 @@
   const selectedPath = $derived(
     selectedKey ? (pathDrafts[selectedKey] ?? "") : "",
   );
+  const availableCount = $derived(rows.filter((row) => !row.already_configured).length);
 
   $effect(() => {
     const target = repo;
@@ -215,7 +216,7 @@
       {#if loading}
         <div class="empty-state">Loading matches...</div>
       {:else if filteredRows.length > 0}
-        <div class="match-list" role="listbox" aria-label="Wildcard matches">
+        <div class="match-list" role="radiogroup" aria-label="Wildcard matches">
           {#each filteredRows as row (promoteRowKey(row))}
             {@const key = promoteRowKey(row)}
             <label class={["match-row", selectedKey === key && "match-row--selected", row.already_configured && "match-row--disabled"]}>
@@ -244,7 +245,7 @@
 
       {#if selectedRow}
         <label class="path-field">
-          <span>Local clone path</span>
+          <span>Local clone path for {selectedRow.repo_path}</span>
           <input
             type="text"
             placeholder="/path/to/existing/clone"
@@ -269,7 +270,7 @@
       {/if}
 
       <footer class="modal-footer">
-        <span>{rows.length} matches</span>
+        <span>{availableCount} available of {rows.length} matches</span>
         <div class="footer-actions">
           <button class="secondary-btn" type="button" onclick={closeIfAllowed} disabled={submitting}>Cancel</button>
           <button

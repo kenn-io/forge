@@ -3130,6 +3130,20 @@ type dedupGetUserClient struct {
 	mockClient
 	getUserCount atomic.Int32
 	block        chan struct{}
+	author       string
+	now          time.Time
+}
+
+func (c *dedupGetUserClient) ListOpenPullRequests(
+	_ context.Context, _, repo string,
+) ([]*gh.PullRequest, error) {
+	number := 1
+	if repo == "r2" {
+		number = 2
+	}
+	pr := buildOpenPR(number, c.now)
+	pr.User = &gh.User{Login: &c.author}
+	return []*gh.PullRequest{pr}, nil
 }
 
 func (c *dedupGetUserClient) GetUser(
@@ -3149,17 +3163,10 @@ func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
 	author := "alice"
 	now := time.Date(2026, 4, 8, 12, 0, 0, 0, time.UTC)
 
-	// Build two PRs in two repos, both authored by "alice".
-	buildAuthoredPR := func(num int) *gh.PullRequest {
-		pr := buildOpenPR(num, now)
-		pr.User = &gh.User{Login: &author}
-		return pr
-	}
-
-	mc := &dedupGetUserClient{block: make(chan struct{})}
-	mc.openPRs = []*gh.PullRequest{
-		buildAuthoredPR(1),
-		buildAuthoredPR(2),
+	mc := &dedupGetUserClient{
+		block:  make(chan struct{}),
+		author: author,
+		now:    now,
 	}
 
 	syncer := NewSyncer(

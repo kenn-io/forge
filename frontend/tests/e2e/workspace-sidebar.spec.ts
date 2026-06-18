@@ -2860,7 +2860,7 @@ test.describe("workspace list fleet inventory", () => {
     await expect(page.locator(".workspace-home")).toContainText("Member workspace");
   });
 
-  test("shows singleton self fleet host status", async ({ page }) => {
+  test("hides singleton self fleet host status", async ({ page }) => {
     await page.route("**/api/v1/workspaces", async (route) => {
       await route.fulfill({
         status: 200,
@@ -2897,11 +2897,10 @@ test.describe("workspace list fleet inventory", () => {
     await page.goto("/workspaces");
 
     const sidebar = page.locator(".workspace-list-sidebar");
-    await expect(sidebar).toContainText("Fleet");
-    await expect(sidebar).toContainText("1/1");
-    await expect(sidebar).toContainText("member");
-    await expect(sidebar).toContainText("self");
-    await expect(sidebar).toContainText("local");
+    await expect(sidebar).toBeVisible();
+    await expect(sidebar).not.toContainText("Fleet");
+    await expect(sidebar).not.toContainText("1/1");
+    await expect(sidebar).not.toContainText("member");
   });
 
   test("a hung fleet peer does not freeze local workspace updates", async ({ page }) => {

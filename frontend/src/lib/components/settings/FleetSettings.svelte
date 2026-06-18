@@ -305,48 +305,57 @@
     {#if httpPeerDrafts.length === 0}
       <p class="empty-peers">No HTTP peers configured.</p>
     {:else}
-      <div class="peer-list">
-        {#each httpPeerDrafts as peer, index (peer.id)}
-          {@const label = peerLabel("HTTP peer", peer.key, index)}
-          <div class="peer-row">
-            <div class="peer-fields">
-              <label class="field">
-                <span class="field-label">Key</span>
-                <input
-                  bind:value={peer.key}
-                  disabled={embedded || saving}
-                  aria-label={`HTTP peer ${label} key`}
-                />
-              </label>
-              <label class="field">
-                <span class="field-label">Name</span>
-                <input
-                  bind:value={peer.name}
-                  disabled={embedded || saving}
-                  aria-label={`HTTP peer ${label} name`}
-                />
-              </label>
-              <label class="field field-wide">
-                <span class="field-label">Base URL</span>
-                <input
-                  bind:value={peer.baseURL}
-                  disabled={embedded || saving}
-                  aria-label={`HTTP peer ${label} base URL`}
-                />
-              </label>
-            </div>
-            <button
-              class="icon-button"
-              type="button"
-              onclick={() => removeHTTPPeer(peer.id)}
-              disabled={embedded || saving}
-              aria-label={`Remove HTTP peer ${label}`}
-              title={`Remove HTTP peer ${label}`}
-            >
-              <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </button>
-          </div>
-        {/each}
+      <div class="peer-table-wrap">
+        <table class="peer-table http" aria-label="HTTP peer membership">
+          <thead>
+            <tr>
+              <th scope="col">Key</th>
+              <th scope="col">Name</th>
+              <th scope="col">Base URL</th>
+              <th scope="col" aria-label="HTTP peer actions"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each httpPeerDrafts as peer, index (peer.id)}
+              {@const label = peerLabel("HTTP peer", peer.key, index)}
+              <tr>
+                <td>
+                  <input
+                    bind:value={peer.key}
+                    disabled={embedded || saving}
+                    aria-label={`HTTP peer ${label} key`}
+                  />
+                </td>
+                <td>
+                  <input
+                    bind:value={peer.name}
+                    disabled={embedded || saving}
+                    aria-label={`HTTP peer ${label} name`}
+                  />
+                </td>
+                <td>
+                  <input
+                    bind:value={peer.baseURL}
+                    disabled={embedded || saving}
+                    aria-label={`HTTP peer ${label} base URL`}
+                  />
+                </td>
+                <td class="action-cell">
+                  <button
+                    class="icon-button"
+                    type="button"
+                    onclick={() => removeHTTPPeer(peer.id)}
+                    disabled={embedded || saving}
+                    aria-label={`Remove HTTP peer ${label}`}
+                    title={`Remove HTTP peer ${label}`}
+                  >
+                    <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                  </button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       </div>
     {/if}
   </section>
@@ -371,65 +380,74 @@
     {#if sshPeerDrafts.length === 0}
       <p class="empty-peers">No SSH peers configured.</p>
     {:else}
-      <div class="peer-list">
-        {#each sshPeerDrafts as peer, index (peer.id)}
-          {@const label = peerLabel("SSH peer", peer.key, index)}
-          <div class="peer-row">
-            <div class="peer-fields ssh">
-              <label class="field">
-                <span class="field-label">Key</span>
-                <input
-                  bind:value={peer.key}
-                  disabled={embedded || saving}
-                  aria-label={`SSH peer ${label} key`}
-                />
-              </label>
-              <label class="field">
-                <span class="field-label">Name</span>
-                <input
-                  bind:value={peer.name}
-                  disabled={embedded || saving}
-                  aria-label={`SSH peer ${label} name`}
-                />
-              </label>
-              <label class="field field-wide">
-                <span class="field-label">Destination</span>
-                <input
-                  bind:value={peer.destination}
-                  disabled={embedded || saving}
-                  aria-label={`SSH peer ${label} destination`}
-                />
-              </label>
-              <label class="field">
-                <span class="field-label">Platform</span>
-                <input
-                  bind:value={peer.platform}
-                  disabled={embedded || saving}
-                  aria-label={`SSH peer ${label} platform`}
-                />
-              </label>
-              <label class="field">
-                <span class="field-label">Remote command</span>
-                <input
-                  bind:value={peer.remoteCommand}
-                  placeholder="middleman"
-                  disabled={embedded || saving}
-                  aria-label={`SSH peer ${label} remote command`}
-                />
-              </label>
-            </div>
-            <button
-              class="icon-button"
-              type="button"
-              onclick={() => removeSSHPeer(peer.id)}
-              disabled={embedded || saving}
-              aria-label={`Remove SSH peer ${label}`}
-              title={`Remove SSH peer ${label}`}
-            >
-              <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </button>
-          </div>
-        {/each}
+      <div class="peer-table-wrap">
+        <table class="peer-table ssh" aria-label="SSH peer membership">
+          <thead>
+            <tr>
+              <th scope="col">Key</th>
+              <th scope="col">Name</th>
+              <th scope="col">Destination</th>
+              <th scope="col">Platform</th>
+              <th scope="col">Remote command</th>
+              <th scope="col" aria-label="SSH peer actions"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each sshPeerDrafts as peer, index (peer.id)}
+              {@const label = peerLabel("SSH peer", peer.key, index)}
+              <tr>
+                <td>
+                  <input
+                    bind:value={peer.key}
+                    disabled={embedded || saving}
+                    aria-label={`SSH peer ${label} key`}
+                  />
+                </td>
+                <td>
+                  <input
+                    bind:value={peer.name}
+                    disabled={embedded || saving}
+                    aria-label={`SSH peer ${label} name`}
+                  />
+                </td>
+                <td>
+                  <input
+                    bind:value={peer.destination}
+                    disabled={embedded || saving}
+                    aria-label={`SSH peer ${label} destination`}
+                  />
+                </td>
+                <td>
+                  <input
+                    bind:value={peer.platform}
+                    disabled={embedded || saving}
+                    aria-label={`SSH peer ${label} platform`}
+                  />
+                </td>
+                <td>
+                  <input
+                    bind:value={peer.remoteCommand}
+                    placeholder="middleman"
+                    disabled={embedded || saving}
+                    aria-label={`SSH peer ${label} remote command`}
+                  />
+                </td>
+                <td class="action-cell">
+                  <button
+                    class="icon-button"
+                    type="button"
+                    onclick={() => removeSSHPeer(peer.id)}
+                    disabled={embedded || saving}
+                    aria-label={`Remove SSH peer ${label}`}
+                    title={`Remove SSH peer ${label}`}
+                  >
+                    <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                  </button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       </div>
     {/if}
   </section>
@@ -507,8 +525,10 @@
     min-width: 0;
   }
 
-  .field input {
-    min-height: 32px;
+  .field input,
+  .peer-table input {
+    width: 100%;
+    min-height: 30px;
     padding: 5px 8px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
@@ -517,7 +537,8 @@
     font-size: var(--font-size-sm);
   }
 
-  .field input:disabled {
+  .field input:disabled,
+  .peer-table input:disabled {
     color: var(--text-muted);
     background: var(--bg-inset);
   }
@@ -568,35 +589,75 @@
     margin: 3px 0 0;
   }
 
-  .peer-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .peer-row {
-    display: flex;
-    gap: 8px;
-    align-items: flex-start;
-    padding: 10px;
+  .peer-table-wrap {
+    overflow-x: auto;
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
   }
 
-  .peer-fields {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: grid;
-    grid-template-columns: minmax(90px, 0.7fr) minmax(110px, 1fr);
-    gap: 10px;
+  .peer-table {
+    width: 100%;
+    min-width: 620px;
+    border-collapse: collapse;
+    table-layout: fixed;
   }
 
-  .peer-fields.ssh {
-    grid-template-columns: minmax(90px, 0.7fr) minmax(110px, 1fr);
+  .peer-table.ssh {
+    min-width: 860px;
   }
 
-  .field-wide {
-    grid-column: 1 / -1;
+  .peer-table th,
+  .peer-table td {
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--border-muted);
+    vertical-align: top;
+  }
+
+  .peer-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .peer-table th {
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    text-align: left;
+    background: var(--bg-inset);
+  }
+
+  .peer-table.http th:nth-child(1),
+  .peer-table.http td:nth-child(1) {
+    width: 20%;
+  }
+
+  .peer-table.http th:nth-child(2),
+  .peer-table.http td:nth-child(2) {
+    width: 26%;
+  }
+
+  .peer-table.ssh th:nth-child(1),
+  .peer-table.ssh td:nth-child(1) {
+    width: 14%;
+  }
+
+  .peer-table.ssh th:nth-child(2),
+  .peer-table.ssh td:nth-child(2) {
+    width: 18%;
+  }
+
+  .peer-table.ssh th:nth-child(4),
+  .peer-table.ssh td:nth-child(4) {
+    width: 13%;
+  }
+
+  .peer-table.ssh th:nth-child(5),
+  .peer-table.ssh td:nth-child(5) {
+    width: 19%;
+  }
+
+  .action-cell {
+    width: 40px;
+    text-align: right;
   }
 
   .settings-actions {
@@ -648,26 +709,6 @@
   @media (min-width: 760px) {
     .settings-grid {
       grid-template-columns: minmax(0, 1fr) minmax(160px, 0.5fr);
-    }
-
-    .peer-fields {
-      grid-template-columns:
-        minmax(90px, 0.6fr)
-        minmax(120px, 0.8fr)
-        minmax(220px, 1.4fr);
-    }
-
-    .peer-fields.ssh {
-      grid-template-columns:
-        minmax(90px, 0.6fr)
-        minmax(120px, 0.8fr)
-        minmax(190px, 1.2fr)
-        minmax(90px, 0.6fr)
-        minmax(130px, 0.8fr);
-    }
-
-    .field-wide {
-      grid-column: auto;
     }
   }
 </style>

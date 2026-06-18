@@ -286,6 +286,17 @@ const settings = {
     renderer: "xterm",
   },
   agents: [],
+  fleet: {
+    enabled: false,
+    key: "",
+    peer_timeout: "2s",
+    sessions: {
+      include_unmanaged_details: false,
+    },
+    peers: [],
+    ssh_peers: [],
+    restart_required: false,
+  },
 };
 
 export function makeRateLimits() {

@@ -62,6 +62,8 @@ describe("FleetSettings", () => {
     }) as HTMLInputElement;
     expect(toggle.checked).toBe(false);
     expect(screen.getByText("Remote hosts stay unavailable while federation is off.")).toBeTruthy();
+    expect(screen.getByRole("table", { name: "HTTP peer membership" })).toBeTruthy();
+    expect(screen.getByRole("table", { name: "SSH peer membership" })).toBeTruthy();
     expect(screen.getByLabelText("HTTP peer mini key")).toBeTruthy();
     expect(screen.getByLabelText("HTTP peer mini base URL")).toBeTruthy();
     expect(screen.getByLabelText("SSH peer epyc key")).toBeTruthy();

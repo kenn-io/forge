@@ -78,8 +78,8 @@ test("settings sidebar order matches rendered section order", async ({ page }) =
       return { navOrder, sectionOrder, orderMatches: navOrder.join("\n") === sectionOrder.join("\n") };
     }),
   ).resolves.toEqual({
-    navOrder: ["Repositories", "Activity", "Terminal", "Workspace agents", "Visible modes"],
-    sectionOrder: ["Repositories", "Activity", "Terminal", "Workspace agents", "Visible modes"],
+    navOrder: ["Repositories", "Activity", "Terminal", "Workspace agents", "Fleet federation", "Visible modes"],
+    sectionOrder: ["Repositories", "Activity", "Terminal", "Workspace agents", "Fleet federation", "Visible modes"],
     orderMatches: true,
   });
 });

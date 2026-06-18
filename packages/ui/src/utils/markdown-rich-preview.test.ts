@@ -251,6 +251,45 @@ describe("buildMarkdownRichPreview", () => {
     expect(html).not.toContain("<hr");
   });
 
+  it("hides synthetic separators around multi-hunk tables without merging unrelated table blocks", () => {
+    const file = {
+      ...markdownFile([]),
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 3,
+          new_start: 1,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "| Name |", old_num: 1, new_num: 1 },
+            { type: "context", content: "| --- |", old_num: 2, new_num: 2 },
+            { type: "context", content: "| first hunk row |", old_num: 3, new_num: 3 },
+          ],
+        },
+        {
+          old_start: 10,
+          old_count: 3,
+          new_start: 10,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "| Name |", old_num: 10, new_num: 10 },
+            { type: "context", content: "| --- |", old_num: 11, new_num: 11 },
+            { type: "context", content: "| second hunk row |", old_num: 12, new_num: 12 },
+          ],
+        },
+      ],
+    } satisfies DiffFile;
+
+    const preview = buildMarkdownRichPreview(file, repo);
+    const html = preview.blocks.map((block) => block.unifiedHtml).join("");
+
+    expect(html.match(/<table>/g)).toHaveLength(2);
+    expect(html).toContain("first hunk row");
+    expect(html).toContain("second hunk row");
+    expect(html).not.toContain("---");
+    expect(html).not.toContain("<hr");
+  });
+
   it("keeps user-authored thematic breaks from source lines", () => {
     const preview = buildMarkdownRichPreview(
       markdownFile([

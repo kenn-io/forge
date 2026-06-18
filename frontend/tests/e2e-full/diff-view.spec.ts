@@ -1267,7 +1267,12 @@ async function mockFilePreviewApi(page: Page): Promise<void> {
   });
 }
 
-async function mockReviewThreadOnPreviewMarkdown(page: Page, body: string, line = 3): Promise<void> {
+async function mockReviewThreadOnPreviewMarkdown(
+  page: Page,
+  body: string,
+  line = 3,
+  path = "docs/preview.md",
+): Promise<void> {
   await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
     const response = await route.fetch();
     const detail = (await response.json()) as MergeRequestDetailForRoute;
@@ -1307,7 +1312,7 @@ async function mockReviewThreadOnPreviewMarkdown(page: Page, body: string, line 
               line,
               line_type: "add",
               new_line: line,
-              path: "docs/preview.md",
+              path,
               provider_comment_id: externalID,
               resolved: false,
               side: "right",
@@ -2107,6 +2112,28 @@ test.describe("diff view", () => {
     await expect(codeBlock).toContainText("added hunk code");
     await expect(codeBlock).not.toContainText("---");
     await expect(markdownPreview.locator("hr")).toHaveCount(0);
+  });
+
+  test("rich preview keeps hidden hunk-gap review threads as file-level fallback", async ({ page }) => {
+    const reviewBody = "Hidden hunk gap review note should stay fallback";
+    await mockDiffApi(page, multiHunkMarkdownDiff);
+    await mockReviewThreadOnPreviewMarkdown(page, reviewBody, 6, "docs/multihunk.md");
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await openDiffFilterMenu(page);
+    await page.getByRole("switch", { name: "Rich preview" }).click();
+
+    const markdownFile = page.locator('[data-file-path="docs/multihunk.md"]');
+    const fallbackCard = markdownFile.locator(".preview-shell > .inline-review-thread").filter({
+      hasText: reviewBody,
+    });
+    await expect(fallbackCard).toBeVisible();
+    await expect(fallbackCard).toHaveClass(/inline-review-thread--file-level/);
+    await expect(
+      markdownFile.locator(".markdown-rich-diff--unified .inline-review-thread").filter({ hasText: reviewBody }),
+    ).toHaveCount(0);
   });
 
   test("rich preview refetches blob content after a same-PR diff reload", async ({ page }) => {

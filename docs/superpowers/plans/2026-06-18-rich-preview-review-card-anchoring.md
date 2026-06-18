@@ -161,7 +161,7 @@ Unified mode renders each block's `unifiedHtml` followed by assigned review card
 
 - [x] **Step 1: Add component tests**
 
-Add tests proving Markdown semantics survive anchored cards, split mode does not dump line comments at the top, synthetic separators stay hidden for standalone fenced-code, HTML-block, blockquote, and list-continuation cases, user-authored thematic breaks remain visible, and review threads targeting hidden hunk gaps fall back instead of anchoring to a spanning block's display range.
+Add tests proving Markdown semantics survive anchored cards, split mode does not dump line comments at the top, synthetic separators stay hidden for standalone fenced-code, HTML-block, blockquote, list, and table cases, stripped spanning-token renders keep in-document reference definitions available through the approved parser-context API, user-authored thematic breaks remain visible, and review threads targeting hidden hunk gaps fall back instead of anchoring to a spanning block's display range.
 
 - [x] **Step 2: Run component tests and verify RED before production wiring if not already red**
 
@@ -174,6 +174,10 @@ Run: `cd frontend && node ../node_modules/vite-plus/bin/vp test run ../packages/
 - [x] **Step 4: Update Playwright assertion**
 
 Extend the existing rich-preview review-card e2e case to assert the card has a rendered Markdown block immediately before it and is not the first child of the preview.
+
+- [x] **Step 5: Add hidden-gap fallback e2e coverage**
+
+Add a diff-view e2e case with a multi-hunk Markdown block and a review thread targeting a hidden source gap, proving the card remains a file-level fallback instead of rendering inside `.markdown-rich-diff--unified`.
 
 ### Task 5: Styling, Validation, And Commit
 

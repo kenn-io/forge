@@ -227,6 +227,7 @@ func (e *DiffSyncError) UserMessage() string {
 // RepoRef identifies a repository on a configured provider.
 type RepoRef struct {
 	Platform           platform.Kind
+	RepoID             int64
 	Owner              string
 	Name               string
 	PlatformHost       string

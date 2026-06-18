@@ -394,6 +394,38 @@ func TestReadPropagationSuccessDoesNotClearNewerUnreadActivity(t *testing.T) {
 	assert.Nil(unread[0].SourceAckQueuedAt)
 }
 
+func TestReopenNotificationAckPropagationRestoresUnreadAndClearsGeneration(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	seedNotificationRepo(t, d)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	require.NoError(d.UpsertNotifications(t.Context(), []Notification{notificationFixture("mention", "mention", now)}))
+	items, err := d.ListNotifications(t.Context(), ListNotificationsOpts{State: "unread"})
+	require.NoError(err)
+	require.Len(items, 1)
+
+	queuedAt := now.Add(time.Minute)
+	queuedIDs, err := d.QueueNotificationIDsRead(t.Context(), []int64{items[0].ID}, queuedAt)
+	require.NoError(err)
+	require.Len(queuedIDs, 1)
+	queued, err := d.ListQueuedNotificationAcks(t.Context(), "github", "github.com", 10, queuedAt)
+	require.NoError(err)
+	require.Len(queued, 1)
+
+	require.NoError(d.ReopenNotificationAckPropagation(t.Context(), queued[0].ID, queued[0].SourceAckQueuedAt, queued[0].SourceUpdatedAt))
+
+	unread, err := d.ListNotifications(t.Context(), ListNotificationsOpts{State: "unread"})
+	require.NoError(err)
+	require.Len(unread, 1)
+	assert.Equal("mention", unread[0].PlatformNotificationID)
+	assert.Nil(unread[0].SourceAckQueuedAt)
+	assert.Nil(unread[0].SourceAckSyncedAt)
+	assert.Nil(unread[0].SourceAckGenerationAt)
+	assert.Empty(unread[0].SourceAckError)
+	assert.Equal(0, unread[0].SourceAckAttempts)
+}
+
 func TestUpsertNotificationsIgnoresStaleSourceUpdates(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

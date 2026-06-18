@@ -99,12 +99,26 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 	for _, repo := range repos {
 		platformName := string(repoPlatform(repo))
 		host := normalizedPlatformHost(repo.PlatformHost)
-		tracked[notificationRepoKey(platformName, host, repo.Owner, repo.Name)] = RepoRef{
+		trackedRepo := RepoRef{
 			Platform:     repoPlatform(repo),
 			Owner:        strings.ToLower(repo.Owner),
 			Name:         strings.ToLower(repo.Name),
 			PlatformHost: host,
 		}
+		dbRepo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+			Platform:     platformName,
+			PlatformHost: host,
+			Owner:        repo.Owner,
+			Name:         repo.Name,
+			RepoPath:     repo.RepoPath,
+		})
+		if err != nil {
+			return fmt.Errorf("load notification repo identity for %s/%s on %s/%s: %w", repo.Owner, repo.Name, platformName, host, err)
+		}
+		if dbRepo != nil {
+			trackedRepo.RepoID = dbRepo.ID
+		}
+		tracked[notificationRepoKey(platformName, host, repo.Owner, repo.Name)] = trackedRepo
 	}
 	clients := s.notificationClients()
 	var errs []error
@@ -377,19 +391,18 @@ func (s *Syncer) notificationToDB(ctx context.Context, host string, repo RepoRef
 	if notification.ItemAuthor != "" || notification.ItemNumber == nil {
 		return notification, nil
 	}
-	dbRepo, err := s.db.GetRepoByHostOwnerName(ctx, host, repo.Owner, repo.Name)
-	if err != nil || dbRepo == nil {
-		return notification, err
+	if repo.RepoID == 0 {
+		return notification, nil
 	}
 	switch notification.ItemType {
 	case "pr":
-		mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, dbRepo.ID, *notification.ItemNumber)
+		mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.RepoID, *notification.ItemNumber)
 		if err != nil || mr == nil {
 			return notification, err
 		}
 		notification.ItemAuthor = mr.Author
 	case "issue":
-		issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, dbRepo.ID, *notification.ItemNumber)
+		issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.RepoID, *notification.ItemNumber)
 		if err != nil || issue == nil {
 			return notification, err
 		}
@@ -399,10 +412,15 @@ func (s *Syncer) notificationToDB(ctx context.Context, host string, repo RepoRef
 }
 
 func notificationToDB(host string, repo RepoRef, thread NotificationThread, syncedAt time.Time) db.Notification {
+	var repoID *int64
+	if repo.RepoID != 0 {
+		repoID = &repo.RepoID
+	}
 	return db.Notification{
 		Platform:                 string(repoPlatform(repo)),
 		PlatformHost:             normalizedPlatformHost(host),
 		PlatformNotificationID:   thread.ID,
+		RepoID:                   repoID,
 		RepoOwner:                strings.ToLower(repo.Owner),
 		RepoName:                 strings.ToLower(repo.Name),
 		SubjectType:              thread.SubjectType,
@@ -472,18 +490,13 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 			}
 			continue
 		}
-		syncedAt := time.Now().UTC()
-		if err := s.db.MarkNotificationAckPropagationResult(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt, &syncedAt, "", nil); err != nil {
-			return err
-		}
 		// Reconciliation refetch: if the thread advanced between the pre-ack
 		// refetch and the mark-read, our PATCH may have read newer activity
-		// the user never saw, so force it back to unread. The ack already
-		// succeeded, so a refetch API error only backs off; a persistence
-		// error still surfaces normally.
+		// the user never saw, so force it back to unread. Do not clear the
+		// queued ack until this refetch proves there was no newer activity.
 		remote, advanced, err = s.fetchAdvancedNotificationThread(ctx, host, client, notification)
 		if err != nil {
-			if deferErr := s.deferQueuedNotificationAckOnError(ctx, kind, host, notification, err); deferErr != nil {
+			if deferErr := s.reopenNotificationAfterPostAckRefetchError(ctx, kind, host, notification, err); deferErr != nil {
 				return deferErr
 			}
 			continue
@@ -492,7 +505,31 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 			if err := s.persistReopenedNotification(ctx, host, notification, remote, true); err != nil {
 				return err
 			}
+			continue
 		}
+		syncedAt := time.Now().UTC()
+		if err := s.db.MarkNotificationAckPropagationResult(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt, &syncedAt, "", nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Syncer) reopenNotificationAfterPostAckRefetchError(
+	ctx context.Context,
+	kind platform.Kind,
+	host string,
+	notification db.Notification,
+	cause error,
+) error {
+	if err := s.db.ReopenNotificationAckPropagation(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt); err != nil {
+		return err
+	}
+	if nextAttemptAt, ok := notificationReadRateLimitNextAttempt(cause, time.Now().UTC()); ok {
+		if recordErr := s.db.DeferQueuedNotificationAcks(ctx, string(kind), host, nextAttemptAt, "rate_limited"); recordErr != nil {
+			return recordErr
+		}
+		return fmt.Errorf("notification read propagation rate limited for host %s: %w", host, cause)
 	}
 	return nil
 }
@@ -592,6 +629,9 @@ func (s *Syncer) persistReopenedNotification(
 		Owner:        remote.RepoOwner,
 		Name:         remote.RepoName,
 		PlatformHost: host,
+	}
+	if notification.RepoID != nil {
+		repo.RepoID = *notification.RepoID
 	}
 	refreshed, err := s.notificationToDB(ctx, host, repo, remote, time.Now().UTC())
 	if err != nil {

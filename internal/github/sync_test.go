@@ -1947,6 +1947,102 @@ func TestSyncNotificationsEnrichesItemAuthorFromLinkedItems(t *testing.T) {
 	assert.Equal("bob", issueItems[0].ItemAuthor)
 }
 
+func TestSyncNotificationsEnrichesItemAuthorFromProviderScopedRepo(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	forgejoRepoID, err := d.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform:     "forgejo",
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	githubRepoID, err := d.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	number := 7
+	_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:           forgejoRepoID,
+		PlatformID:       700,
+		Number:           number,
+		URL:              "https://code.example.com/acme/widget/pulls/7",
+		Title:            "Wrong provider",
+		Author:           "wrong-author",
+		State:            "open",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
+		PlatformHeadSHA:  "forgejo-head",
+		PlatformBaseSHA:  "forgejo-base",
+		HeadRepoCloneURL: "https://code.example.com/acme/widget.git",
+	})
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:           githubRepoID,
+		PlatformID:       701,
+		Number:           number,
+		URL:              "https://code.example.com/acme/widget/pull/7",
+		Title:            "Right provider",
+		Author:           "right-author",
+		State:            "open",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
+		PlatformHeadSHA:  "github-head",
+		PlatformBaseSHA:  "github-base",
+		HeadRepoCloneURL: "https://code.example.com/acme/widget.git",
+	})
+	require.NoError(err)
+	syncer := NewSyncer(
+		map[string]Client{
+			"code.example.com": &mockClient{
+				listNotificationsFn: func(_ context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+					if opts.Participating {
+						return nil, false, nil
+					}
+					return []NotificationThread{{
+						ID:           "thread-pr",
+						RepoOwner:    "acme",
+						RepoName:     "widget",
+						SubjectType:  "PullRequest",
+						SubjectTitle: "Review requested",
+						WebURL:       "https://code.example.com/acme/widget/pull/7",
+						ItemNumber:   &number,
+						ItemType:     "pr",
+						Reason:       "mention",
+						Unread:       true,
+						UpdatedAt:    now,
+					}}, false, nil
+				},
+			},
+		},
+		d,
+		nil,
+		[]RepoRef{{Platform: platform.KindGitHub, Owner: "acme", Name: "widget", PlatformHost: "code.example.com"}},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	require.NoError(syncer.SyncNotifications(t.Context()))
+
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 1)
+	assert.Equal("github", items[0].Platform)
+	require.NotNil(items[0].RepoID)
+	assert.Equal(githubRepoID, *items[0].RepoID)
+	assert.Equal("right-author", items[0].ItemAuthor)
+}
+
 func TestSyncNotificationsMarksParticipatingThreads(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -2512,6 +2608,72 @@ func TestProcessQueuedNotificationReadsReopensRemoteActivityAfterPatchRace(t *te
 	check.Nil(unread[0].SourceAckQueuedAt)
 	check.Nil(unread[0].SourceAckSyncedAt)
 	check.Nil(unread[0].SourceAckGenerationAt)
+}
+
+func TestProcessQueuedNotificationReadsReopensAfterPostAckRefetchError(t *testing.T) {
+	require := require.New(t)
+	check := Assert.New(t)
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	number := 7
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{{
+		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1", RepoID: &repoID,
+		RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "Please review",
+		WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &number, ItemType: "pr",
+		Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+	}}))
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "unread"})
+	require.NoError(err)
+	require.Len(items, 1)
+	queuedAt := now.Add(time.Minute)
+	_, err = d.QueueNotificationIDsRead(t.Context(), []int64{items[0].ID}, queuedAt)
+	require.NoError(err)
+
+	var getCalls int
+	var markedThreads []string
+	mc := &mockClient{
+		getNotificationThreadFn: func(_ context.Context, threadID string) (NotificationThread, error) {
+			getCalls++
+			if getCalls == 1 {
+				return NotificationThread{
+					ID:           threadID,
+					RepoOwner:    "acme",
+					RepoName:     "widget",
+					SubjectType:  "PullRequest",
+					SubjectTitle: "Please review",
+					WebURL:       "https://github.com/acme/widget/pull/7",
+					ItemNumber:   &number,
+					ItemType:     "pr",
+					Reason:       "mention",
+					Unread:       false,
+					UpdatedAt:    now,
+					LastReadAt:   &queuedAt,
+				}, nil
+			}
+			return NotificationThread{}, errors.New("post-ack refetch failed")
+		},
+		markNotificationThreadReadFn: func(_ context.Context, threadID string) error {
+			markedThreads = append(markedThreads, threadID)
+			return nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil)
+
+	require.NoError(syncer.ProcessQueuedNotificationReads(t.Context(), platform.KindGitHub, "github.com", 10))
+
+	unread, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "unread"})
+	require.NoError(err)
+	require.Len(unread, 1)
+	check.Equal([]string{"thread-1"}, markedThreads)
+	check.Equal(2, getCalls)
+	check.Equal("thread-1", unread[0].PlatformNotificationID)
+	check.True(unread[0].Unread)
+	check.Nil(unread[0].SourceAckQueuedAt)
+	check.Nil(unread[0].SourceAckSyncedAt)
+	check.Nil(unread[0].SourceAckGenerationAt)
+	check.Empty(unread[0].SourceAckError)
 }
 
 func TestNotificationTrackedReposKeyIncludesPlatform(t *testing.T) {

@@ -833,6 +833,26 @@ func (d *DB) MarkNotificationAckPropagationResult(ctx context.Context, id int64,
 	return nil
 }
 
+// ReopenNotificationAckPropagation restores a locally read notification to
+// unread when a successful upstream read ack cannot be reconciled safely.
+func (d *DB) ReopenNotificationAckPropagation(ctx context.Context, id int64, queuedAt *time.Time, sourceUpdatedAt time.Time) error {
+	_, err := d.rw.ExecContext(ctx, `UPDATE middleman_notification_items
+		SET unread = 1,
+		    source_ack_queued_at = NULL,
+		    source_ack_synced_at = NULL,
+		    source_ack_generation_at = NULL,
+		    source_ack_error = '',
+		    source_ack_attempts = 0,
+		    source_ack_last_attempt_at = NULL,
+		    source_ack_next_attempt_at = NULL
+		WHERE id = ? AND source_ack_queued_at = ? AND source_updated_at = ?`,
+		id, nullableNotificationTime(queuedAt), canonicalUTCTime(sourceUpdatedAt))
+	if err != nil {
+		return fmt.Errorf("reopen notification ack propagation: %w", err)
+	}
+	return nil
+}
+
 func (d *DB) DeferQueuedNotificationAcks(ctx context.Context, platform, host string, nextAttemptAt time.Time, errText string) error {
 	var err error
 	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)

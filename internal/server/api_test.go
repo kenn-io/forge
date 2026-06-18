@@ -6342,7 +6342,7 @@ func TestMatchPriorityRepoSupportsNestedBareRepoPaths(t *testing.T) {
 		},
 		{
 			Platform:     platform.KindGitea,
-			PlatformHost: "gitea",
+			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
 			RepoPath:     "acme/widget",
@@ -6359,10 +6359,16 @@ func TestMatchPriorityRepoSupportsNestedBareRepoPaths(t *testing.T) {
 	assert.Equal(platform.KindGitHub, repo.Platform)
 	assert.Equal("acme/widget", repo.RepoPath)
 
-	repo, ok = matchPriorityRepo("gitea/acme/widget", tracked)
+	repo, ok = matchPriorityRepo("gitea|github.com/acme/widget", tracked)
 	assert.True(ok)
 	assert.Equal(platform.KindGitea, repo.Platform)
-	assert.Equal("gitea", repo.PlatformHost)
+	assert.Equal("github.com", repo.PlatformHost)
+	assert.Equal("acme/widget", repo.RepoPath)
+
+	repo, ok = matchPriorityRepo("github|github.com/acme/widget", tracked)
+	assert.True(ok)
+	assert.Equal(platform.KindGitHub, repo.Platform)
+	assert.Equal("github.com", repo.PlatformHost)
 	assert.Equal("acme/widget", repo.RepoPath)
 }
 

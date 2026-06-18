@@ -1023,6 +1023,8 @@ describe("DiffFile", () => {
       {
         name: "prepended",
         targetLine: 1,
+        oldCount: 2,
+        newCount: 3,
         lines: [
           { type: "add" as const, content: "- Actions", new_num: 1 },
           { type: "context" as const, content: "- Issues", old_num: 1, new_num: 2 },
@@ -1030,8 +1032,22 @@ describe("DiffFile", () => {
         ],
       },
       {
+        name: "prepended multiline",
+        targetLine: 1,
+        oldCount: 2,
+        newCount: 4,
+        lines: [
+          { type: "add" as const, content: "- Actions", new_num: 1 },
+          { type: "add" as const, content: "  still needs details", new_num: 2 },
+          { type: "context" as const, content: "- Issues", old_num: 1, new_num: 3 },
+          { type: "context" as const, content: "- Statuses", old_num: 2, new_num: 4 },
+        ],
+      },
+      {
         name: "appended",
         targetLine: 3,
+        oldCount: 2,
+        newCount: 3,
         lines: [
           { type: "context" as const, content: "- Issues", old_num: 1, new_num: 1 },
           { type: "context" as const, content: "- Statuses", old_num: 2, new_num: 2 },
@@ -1047,9 +1063,9 @@ describe("DiffFile", () => {
           hunks: [
             {
               old_start: 1,
-              old_count: 2,
+              old_count: scenario.oldCount,
               new_start: 1,
-              new_count: 3,
+              new_count: scenario.newCount,
               lines: scenario.lines,
             },
           ],
@@ -1143,6 +1159,8 @@ describe("DiffFile", () => {
       {
         name: "first",
         targetLine: 1,
+        oldCount: 3,
+        newCount: 2,
         lines: [
           { type: "delete" as const, content: "- Actions", old_num: 1 },
           { type: "context" as const, content: "- Issues", old_num: 2, new_num: 1 },
@@ -1150,8 +1168,22 @@ describe("DiffFile", () => {
         ],
       },
       {
+        name: "first multiline",
+        targetLine: 1,
+        oldCount: 4,
+        newCount: 2,
+        lines: [
+          { type: "delete" as const, content: "- Actions", old_num: 1 },
+          { type: "delete" as const, content: "  still needs details", old_num: 2 },
+          { type: "context" as const, content: "- Issues", old_num: 3, new_num: 1 },
+          { type: "context" as const, content: "- Statuses", old_num: 4, new_num: 2 },
+        ],
+      },
+      {
         name: "last",
         targetLine: 3,
+        oldCount: 3,
+        newCount: 2,
         lines: [
           { type: "context" as const, content: "- Issues", old_num: 1, new_num: 1 },
           { type: "context" as const, content: "- Statuses", old_num: 2, new_num: 2 },
@@ -1167,9 +1199,9 @@ describe("DiffFile", () => {
           hunks: [
             {
               old_start: 1,
-              old_count: 3,
+              old_count: scenario.oldCount,
               new_start: 1,
-              new_count: 2,
+              new_count: scenario.newCount,
               lines: scenario.lines,
             },
           ],

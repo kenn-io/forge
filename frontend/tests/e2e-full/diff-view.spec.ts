@@ -663,19 +663,20 @@ const edgeListReviewPreviewDiff: DiffResult = withServerDiffData({
       status: "modified",
       is_binary: false,
       is_whitespace_only: false,
-      additions: 2,
+      additions: 3,
       deletions: 0,
       hunks: [
         {
           old_start: 1,
           old_count: 2,
           new_start: 1,
-          new_count: 4,
+          new_count: 5,
           lines: [
             { type: "add", content: "- Prepended", new_num: 1 },
-            { type: "context", content: "- Issues", old_num: 1, new_num: 2 },
-            { type: "context", content: "- Statuses", old_num: 2, new_num: 3 },
-            { type: "add", content: "- Appended", new_num: 4 },
+            { type: "add", content: "  prepended details", new_num: 2 },
+            { type: "context", content: "- Issues", old_num: 1, new_num: 3 },
+            { type: "context", content: "- Statuses", old_num: 2, new_num: 4 },
+            { type: "add", content: "- Appended", new_num: 5 },
           ],
         },
       ],
@@ -687,18 +688,19 @@ const edgeListReviewPreviewDiff: DiffResult = withServerDiffData({
       is_binary: false,
       is_whitespace_only: false,
       additions: 0,
-      deletions: 2,
+      deletions: 3,
       hunks: [
         {
           old_start: 1,
-          old_count: 4,
+          old_count: 5,
           new_start: 1,
           new_count: 2,
           lines: [
             { type: "delete", content: "- Removed first", old_num: 1 },
-            { type: "context", content: "- Issues", old_num: 2, new_num: 1 },
-            { type: "context", content: "- Statuses", old_num: 3, new_num: 2 },
-            { type: "delete", content: "- Removed last", old_num: 4 },
+            { type: "delete", content: "  removed first details", old_num: 2 },
+            { type: "context", content: "- Issues", old_num: 3, new_num: 1 },
+            { type: "context", content: "- Statuses", old_num: 4, new_num: 2 },
+            { type: "delete", content: "- Removed last", old_num: 5 },
           ],
         },
       ],
@@ -2217,6 +2219,22 @@ test.describe("diff view", () => {
     await expect
       .poll(() => afterChange.evaluate((element) => getComputedStyle(element).textDecorationLine))
       .toBe("none");
+    const inlineBeforeChange = markdownPreview
+      .locator('[aria-label="Before markdown preview"] strong del')
+      .filter({ hasText: "beta" })
+      .first();
+    const inlineAfterChange = markdownPreview
+      .locator('[aria-label="After markdown preview"] strong ins')
+      .filter({ hasText: "two" })
+      .first();
+    await expect(inlineBeforeChange).toBeVisible();
+    await expect(inlineAfterChange).toBeVisible();
+    await expect
+      .poll(() => inlineBeforeChange.evaluate((element) => getComputedStyle(element).backgroundColor))
+      .not.toBe("rgba(0, 0, 0, 0)");
+    await expect
+      .poll(() => inlineAfterChange.evaluate((element) => getComputedStyle(element).backgroundColor))
+      .not.toBe("rgba(0, 0, 0, 0)");
   });
 
   test("rich preview gives standalone block additions and deletions visible fills", async ({ page }) => {
@@ -2417,7 +2435,7 @@ test.describe("diff view", () => {
       },
       {
         body: "Appended item review note",
-        line: 4,
+        line: 5,
         path: "docs/edge-added-list-review.md",
       },
       {
@@ -2429,8 +2447,8 @@ test.describe("diff view", () => {
       },
       {
         body: "Deleted last item review note",
-        line: 4,
-        oldLine: 4,
+        line: 5,
+        oldLine: 5,
         path: "docs/edge-deleted-list-review.md",
         side: "left",
       },

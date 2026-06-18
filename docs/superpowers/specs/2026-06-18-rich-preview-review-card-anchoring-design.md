@@ -86,6 +86,8 @@ Rich preview should read like rendered Markdown first.
 
 For added or removed block-level content, use quiet block background and border styling. Avoid underlining every word in newly inserted paragraphs, headings, or list items. Inline `ins` and `del` styling should be reserved for small text changes inside otherwise matching blocks.
 
+Split mode uses the before/after pane and block background as the primary block-level add/delete cue. Inline `ins` and `del` nodes inside otherwise matching split-pane blocks keep a subtle add/delete background cue, but never use native underline or strike-through text decoration.
+
 Review cards should sit between rendered blocks without introducing artificial paragraph breaks, isolated list fragments, or source-diff-style clutter.
 
 For structured containers, the card sits after the whole top-level container. It must not become a child of `<ul>`, `<ol>`, `<table>`, `<tbody>`, `<tr>`, `<blockquote>`, or similar elements unless the implementation has a valid, tested container-specific insertion model.
@@ -112,6 +114,7 @@ Markdown rich preview should avoid unbounded quadratic work. Block alignment may
 - File-level, stale-head, and unmapped review threads remain visible in a separated fallback stack.
 - Split rich preview anchors cards to the matching old or new side rather than dumping all cards above the preview.
 - Block-level additions and deletions use block diff styling without per-word underline decoration.
+- Split-pane inline text changes retain a visible add/delete background cue without underline or strike-through decoration.
 - The rendered DOM remains valid for lists, tables, and blockquotes.
 - Large Markdown diffs do not allocate an unbounded block comparison matrix.
 - The block-rendering path preserves centralized Markdown sanitization and the allowed attribute policy.
@@ -126,7 +129,7 @@ Add unit coverage for the rich-preview model:
 - reference-style links still resolve when review cards are anchored;
 - untargeted lists remain whole rendered lists;
 - list items expose separate rich-preview anchor blocks when split-line inputs target individual source items;
-- ordered-list numbering, nested lists, multiline items, and mismatched source/rendered item counts have focused coverage;
+- ordered-list numbering, nested lists, multiline items, targeted loose lists, and mismatched source/rendered item counts have focused coverage;
 - multi-hunk fenced code, HTML blocks, blockquotes, lists, and tables do not expose synthetic separator lines and keep the expected top-level structure;
 - stripped spanning-token re-renders keep in-document reference definitions available through the approved parser-context API;
 - user-authored thematic breaks inside hunks still render;

@@ -133,6 +133,28 @@ describe("buildMarkdownRichPreview", () => {
     expect(listBlocks[1]?.unifiedHtml).not.toContain("child");
   });
 
+  it("preserves paragraph-wrapped loose list items when a target line splits the list", () => {
+    const preview = buildMarkdownRichPreview(
+      markdownFile([
+        { type: "context", content: "- first", old_num: 1, new_num: 1 },
+        { type: "context", content: "", old_num: 2, new_num: 2 },
+        { type: "context", content: "  first detail", old_num: 3, new_num: 3 },
+        { type: "context", content: "- second", old_num: 4, new_num: 4 },
+        { type: "context", content: "", old_num: 5, new_num: 5 },
+        { type: "context", content: "  second detail", old_num: 6, new_num: 6 },
+        { type: "context", content: "- third", old_num: 7, new_num: 7 },
+      ]),
+      repo,
+      { splitOldLines: [4], splitNewLines: [4] },
+    );
+
+    const listBlocks = preview.blocks.filter((block) => block.unifiedHtml.includes("markdown-rich-diff__split-list"));
+    expect(listBlocks.map((block) => block.newLines)).toEqual([[1, 2, 3, 4, 5, 6], [7]]);
+    expect(listBlocks[0]?.unifiedHtml).toContain("<p>second</p>");
+    expect(listBlocks[0]?.unifiedHtml).toContain("<p>second detail</p>");
+    expect(listBlocks[1]?.unifiedHtml).not.toContain("second detail");
+  });
+
   it("projects split block additions without inline underline markup on every word", () => {
     const preview = buildMarkdownRichPreview(
       markdownFile([

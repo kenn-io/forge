@@ -281,7 +281,11 @@
       const line = lines[index]!;
       if (line.content.trim() === "") continue;
       const lineIndent = listMarkerIndent(line.content);
-      if (lineIndent == null || lineIndent < targetIndent) return undefined;
+      if (lineIndent == null) {
+        if (isIndentedListContinuation(line.content, targetIndent)) continue;
+        return undefined;
+      }
+      if (lineIndent < targetIndent) return undefined;
       if (lineIndent === targetIndent && line.old_num != null && line.new_num != null) return line;
     }
     return undefined;
@@ -296,16 +300,29 @@
       const line = lines[index]!;
       if (line.content.trim() === "") continue;
       const lineIndent = listMarkerIndent(line.content);
-      if (lineIndent == null || lineIndent < targetIndent) return undefined;
+      if (lineIndent == null) {
+        if (isIndentedListContinuation(line.content, targetIndent)) continue;
+        return undefined;
+      }
+      if (lineIndent < targetIndent) return undefined;
       if (lineIndent === targetIndent && line.old_num != null && line.new_num != null) return line;
     }
     return undefined;
   }
 
+  function isIndentedListContinuation(line: string, targetIndent: number): boolean {
+    const match = line.match(/^(\s*)/);
+    return indentationWidth(match?.[1] ?? "") > targetIndent;
+  }
+
   function listMarkerIndent(line: string): number | null {
     const match = line.match(/^(\s{0,12})(?:[-+*]|\d+[.)])\s+/);
     if (!match) return null;
-    return Array.from(match[1]!).reduce((width, char) => width + (char === "\t" ? 4 : 1), 0);
+    return indentationWidth(match[1]!);
+  }
+
+  function indentationWidth(value: string): number {
+    return Array.from(value).reduce((width, char) => width + (char === "\t" ? 4 : 1), 0);
   }
 
   function sortReviewThreadPlacements(placements: ReviewThreadPlacement[]): void {
@@ -552,13 +569,31 @@
 
   .markdown-rich-diff--split :global(ins),
   .markdown-rich-diff--split :global(del) {
-    color: inherit;
-    background: transparent;
+    color: var(--text-primary);
     text-decoration: none;
   }
 
   .markdown-rich-diff--split :global(.markdown-diff__block) {
     display: block;
+  }
+
+  .markdown-rich-diff--split :global(ins:not(.markdown-diff__block)),
+  .markdown-rich-diff--split :global(del:not(.markdown-diff__block)) {
+    padding: 0 0.16em;
+    border-radius: 3px;
+  }
+
+  .markdown-rich-diff--split :global(ins:not(.markdown-diff__block)) {
+    background: color-mix(in srgb, var(--diff-add-bg) 78%, transparent);
+  }
+
+  .markdown-rich-diff--split :global(del:not(.markdown-diff__block)) {
+    background: color-mix(in srgb, var(--diff-del-bg) 80%, transparent);
+  }
+
+  .markdown-rich-diff--split :global(ins.markdown-diff__block),
+  .markdown-rich-diff--split :global(del.markdown-diff__block) {
+    background: transparent;
   }
 
   .markdown-rich-diff--unified {

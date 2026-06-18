@@ -393,6 +393,10 @@ jobs:
   test_browser:
     name: frontend browser tests
     runs-on: ubuntu-latest
+    # Keep browser-component tests on the same Playwright image as the full e2e
+    # suite so Chromium and its OS dependencies are preinstalled instead of
+    # depending on apt during the workflow.
+    container: mcr.microsoft.com/playwright@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948  # v1.60.0-noble
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -404,18 +408,6 @@ jobs:
           node-version-file: package.json
           cache: true
           run-install: true
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
-
-      - name: Install Playwright browser
-        timeout-minutes: 10
-        run: cd frontend && vp exec -- playwright install --with-deps chromium
 
       - name: Run frontend browser tests
         run: cd frontend && vp test run --project browser

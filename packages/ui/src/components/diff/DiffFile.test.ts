@@ -909,13 +909,14 @@ describe("DiffFile", () => {
         hunks: [
           {
             old_start: 1,
-            old_count: 3,
+            old_count: 4,
             new_start: 1,
-            new_count: 3,
+            new_count: 4,
             lines: [
               { type: "context", content: "- Issues", old_num: 1, new_num: 1 },
               { type: "context", content: "- Actions", old_num: 2, new_num: 2 },
               { type: "context", content: "- Statuses", old_num: 3, new_num: 3 },
+              { type: "context", content: "- Members", old_num: 4, new_num: 4 },
             ],
           },
         ],
@@ -958,8 +959,113 @@ describe("DiffFile", () => {
     expect(reviewBodies).toEqual(["Issues review note", "Actions review note"]);
     const issuesComment = document.querySelector("[data-review-thread-id='thread-issues']");
     const actionsComment = document.querySelector("[data-review-thread-id='thread-actions']");
+    const splitLists = Array.from(document.querySelectorAll<HTMLElement>("ul.markdown-rich-diff__split-list"));
+    expect(splitLists).toHaveLength(3);
+    expect(splitLists.at(-1)?.textContent).toContain("Statuses");
+    expect(splitLists.at(-1)?.textContent).toContain("Members");
     expect(issuesComment?.previousElementSibling?.textContent).toContain("Issues");
     expect(issuesComment?.previousElementSibling?.textContent).not.toContain("Actions");
+    expect(actionsComment?.previousElementSibling?.textContent).toContain("Actions");
+    expect(actionsComment?.previousElementSibling?.textContent).not.toContain("Statuses");
+  });
+
+  it("keeps unchanged list siblings aligned when a review targets an added list item", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 2,
+            new_start: 1,
+            new_count: 3,
+            lines: [
+              { type: "context", content: "- Issues", old_num: 1, new_num: 1 },
+              { type: "add", content: "- Actions", new_num: 2 },
+              { type: "context", content: "- Statuses", old_num: 2, new_num: 3 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            id: "thread-actions",
+            provider_comment_id: "comment-actions",
+            path: "README.md",
+            old_path: "README.md",
+            line: 2,
+            new_line: 2,
+            body: "Actions review note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Actions review note")).toBeTruthy();
+    });
+    const preview = document.querySelector(".markdown-rich-diff--unified");
+    expect(preview?.querySelector("ins")?.textContent).toContain("Actions");
+    expect(preview?.querySelector("del")?.textContent ?? "").not.toContain("Statuses");
+    expect(preview?.querySelector("ins")?.textContent ?? "").not.toContain("Issues");
+    const actionsComment = document.querySelector("[data-review-thread-id='thread-actions']");
+    expect(actionsComment?.previousElementSibling?.textContent).toContain("Actions");
+    expect(actionsComment?.previousElementSibling?.textContent).not.toContain("Statuses");
+  });
+
+  it("keeps unchanged list siblings aligned when a review targets a deleted list item", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 3,
+            new_start: 1,
+            new_count: 2,
+            lines: [
+              { type: "context", content: "- Issues", old_num: 1, new_num: 1 },
+              { type: "delete", content: "- Actions", old_num: 2 },
+              { type: "context", content: "- Statuses", old_num: 3, new_num: 2 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            id: "thread-actions",
+            provider_comment_id: "comment-actions",
+            path: "README.md",
+            old_path: "README.md",
+            side: "left",
+            line: 2,
+            old_line: 2,
+            new_line: undefined,
+            line_type: "delete",
+            body: "Actions review note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Actions review note")).toBeTruthy();
+    });
+    const preview = document.querySelector(".markdown-rich-diff--unified");
+    expect(preview?.querySelector("del")?.textContent).toContain("Actions");
+    expect(preview?.querySelector("del")?.textContent ?? "").not.toContain("Statuses");
+    expect(preview?.querySelector("ins")?.textContent ?? "").not.toContain("Issues");
+    const actionsComment = document.querySelector("[data-review-thread-id='thread-actions']");
     expect(actionsComment?.previousElementSibling?.textContent).toContain("Actions");
     expect(actionsComment?.previousElementSibling?.textContent).not.toContain("Statuses");
   });

@@ -90,6 +90,10 @@ Review cards should sit between rendered blocks without introducing artificial p
 
 For structured containers, the card sits after the whole top-level container. It must not become a child of `<ul>`, `<ol>`, `<table>`, `<tbody>`, `<tr>`, `<blockquote>`, or similar elements unless the implementation has a valid, tested container-specific insertion model.
 
+List-item anchoring is the only container-specific exception in this milestone. The pure rich-preview builder accepts explicit old-side and new-side source-line sets that need internal anchors. It keeps normal lists as one rendered list unless one of those target lines falls inside the list. When a review targets a context list item, the component uses that target line as the anchor boundary. When a review targets an added or deleted list item, it also adds the previous comparable list-item boundary where one exists so unchanged sibling items can still align with the opposite side instead of being rendered as false additions or deletions.
+
+Split list blocks are a placement device, not new Markdown paragraph breaks. They render only the minimum number of `<ul>` or `<ol>` chunks needed to put review cards after their target items; untargeted consecutive items stay grouped in the same chunk. Split chunks must preserve numbering for ordered lists, keep nested lists inside the owning item, abandon splitting when rendered `<li>` counts do not match source markers, and use styling that removes synthetic wrapper margins. Untargeted lists, loose lists outside targeted regions, tables, and blockquotes remain whole top-level blocks.
+
 Wrapper elements around rendered blocks are acceptable only when they preserve the readable Markdown layout. They must not force one-off margin, table, list, or heading behavior that differs materially from the normal rich preview. Layout regressions for lists, headings, paragraphs, and tables should be covered by component or browser assertions when wrappers change.
 
 ## Performance
@@ -100,7 +104,8 @@ Markdown rich preview should avoid unbounded quadratic work. Block alignment may
 
 - Rich preview does not render arbitrary raw Markdown fragments independently.
 - Reference-style links defined inside the rendered hunk document still resolve.
-- List items can be emitted as separate rich-preview anchor blocks when needed to place review cards after the matching source item.
+- List items emit separate rich-preview anchor blocks only when explicit review target lines require item-level placement, and untargeted consecutive items stay grouped instead of splitting into artificial one-line lists.
+- Split list anchors do not introduce synthetic vertical margins or blank lines beyond the review card itself.
 - Separate lists and tables on opposite sides of a hidden hunk separator stay separate top-level blocks.
 - Review cards on repeated text blocks map by source line order.
 - Review cards on structured container children remain near the valid top-level container boundary and keep the exact line reference in the card header.
@@ -119,7 +124,9 @@ Markdown rich preview should avoid unbounded quadratic work. Block alignment may
 Add unit coverage for the rich-preview model:
 
 - reference-style links still resolve when review cards are anchored;
-- list items expose separate rich-preview anchor blocks when review cards target individual source items;
+- untargeted lists remain whole rendered lists;
+- list items expose separate rich-preview anchor blocks when split-line inputs target individual source items;
+- ordered-list numbering, nested lists, multiline items, and mismatched source/rendered item counts have focused coverage or an explicit fallback expectation;
 - multi-hunk fenced code, HTML blocks, blockquotes, lists, and tables do not expose synthetic separator lines and keep the expected top-level structure;
 - stripped spanning-token re-renders keep in-document reference definitions available through the approved parser-context API;
 - user-authored thematic breaks inside hunks still render;
@@ -131,10 +138,11 @@ Keep component coverage for:
 
 - unified rich preview renders review cards inside the preview after their target block;
 - split rich preview renders review cards near the matching side block;
+- added and deleted list-item review cards keep unchanged sibling items aligned rather than rendering them as false additions or deletions;
 - review threads targeting hidden hunk gaps remain file-level fallback cards;
 - source diff review annotations remain unchanged.
 
-Keep browser e2e coverage for the PR files page rich preview toggle, including review-card cases that prove cards are not at the top of the file, multiple cards render in source order, list-item cards attach after the matching rendered item, and hidden-gap review threads remain file-level fallback cards.
+Keep browser e2e coverage for the PR files page rich preview toggle, including review-card cases that prove cards are not at the top of the file, multiple cards render in source order, list-item cards attach after the matching rendered item, split-list anchors do not add synthetic list margins, and hidden-gap review threads remain file-level fallback cards.
 
 ## Implementation Staging
 

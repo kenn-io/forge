@@ -127,7 +127,7 @@ function sideBlocksForRenderedBlock(
 ): MarkdownSideBlock[] {
   const sourceLines = sourceLinesForBlock(block, document.lineMap);
   if (sourceLines.some((line) => splitLines.has(line))) {
-    return splitListBlock(block, document) ?? [sideBlockForRenderedBlock(block, document.lineMap)];
+    return splitListBlock(block, document, splitLines) ?? [sideBlockForRenderedBlock(block, document.lineMap)];
   }
   return [sideBlockForRenderedBlock(block, document.lineMap)];
 }
@@ -138,7 +138,11 @@ interface ListItemLineGroup {
   sourceLines: number[];
 }
 
-function splitListBlock(block: RenderedMarkdownBlock, document: MarkdownSideDocument): MarkdownSideBlock[] | null {
+function splitListBlock(
+  block: RenderedMarkdownBlock,
+  document: MarkdownSideDocument,
+  splitLines: ReadonlySet<number>,
+): MarkdownSideBlock[] | null {
   if (typeof globalThis.document === "undefined") return null;
   const template = globalThis.document.createElement("template");
   template.innerHTML = block.html;
@@ -153,17 +157,43 @@ function splitListBlock(block: RenderedMarkdownBlock, document: MarkdownSideDocu
   const groups = listItemLineGroups(block, document);
   if (groups.length !== items.length) return null;
 
-  return groups.map((group, index) => {
-    const html = listItemHtml(list, items[index]!, index);
+  const breakAfterIndexes = groups
+    .map((group, index) => ({ group, index }))
+    .filter(({ group }) => group.sourceLines.some((line) => splitLines.has(line)))
+    .map(({ index }) => index);
+  if (breakAfterIndexes.length === 0) return null;
+
+  const segments: Array<{ startIndex: number; endIndex: number; groups: ListItemLineGroup[] }> = [];
+  let startIndex = 0;
+  for (const breakAfterIndex of breakAfterIndexes) {
+    segments.push({
+      startIndex,
+      endIndex: breakAfterIndex,
+      groups: groups.slice(startIndex, breakAfterIndex + 1),
+    });
+    startIndex = breakAfterIndex + 1;
+  }
+  if (startIndex < groups.length) {
+    segments.push({
+      startIndex,
+      endIndex: groups.length - 1,
+      groups: groups.slice(startIndex),
+    });
+  }
+  if (segments.length < 2) return null;
+
+  return segments.map((segment) => {
+    const sourceLines = segment.groups.flatMap((group) => group.sourceLines);
+    const html = listSegmentHtml(list, items, segment.startIndex, segment.endIndex);
     return {
       ...block,
-      key: `${block.key}:item:${index}`,
-      startLine: group.startLine,
-      endLine: group.endLine,
+      key: `${block.key}:items:${segment.startIndex}-${segment.endIndex}`,
+      startLine: segment.groups[0]!.startLine,
+      endLine: segment.groups.at(-1)!.endLine,
       html,
-      sourceLines: group.sourceLines,
-      sourceStart: group.sourceLines[0],
-      sourceEnd: group.sourceLines.at(-1),
+      sourceLines,
+      sourceStart: sourceLines[0],
+      sourceEnd: sourceLines.at(-1),
     };
   });
 }
@@ -206,14 +236,16 @@ function indentationWidth(value: string): number {
   return Array.from(value).reduce((width, char) => width + (char === "\t" ? 4 : 1), 0);
 }
 
-function listItemHtml(list: Element, item: Element, index: number): string {
+function listSegmentHtml(list: Element, items: Element[], startIndex: number, endIndex: number): string {
   const wrapper = list.cloneNode(false) as Element;
   wrapper.classList.add("markdown-rich-diff__split-list");
   if (wrapper.tagName === "OL") {
     const start = parseInt(list.getAttribute("start") ?? "1", 10);
-    if (!Number.isNaN(start)) wrapper.setAttribute("start", String(start + index));
+    if (!Number.isNaN(start)) wrapper.setAttribute("start", String(start + startIndex));
   }
-  wrapper.append(item.cloneNode(true));
+  for (let index = startIndex; index <= endIndex; index++) {
+    wrapper.append(items[index]!.cloneNode(true));
+  }
   return wrapper.outerHTML;
 }
 

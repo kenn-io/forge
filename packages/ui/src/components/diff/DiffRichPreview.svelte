@@ -51,6 +51,8 @@
     thread: ReviewThread;
     fileLevel: boolean;
   };
+  type DiffHunk = DiffFile["hunks"][number];
+  type DiffHunkLine = DiffHunk["lines"][number];
   type AnchoredMarkdownBlock = MarkdownRichPreviewBlock & {
     leftReviewThreads: ReviewThreadPlacement[];
     rightReviewThreads: ReviewThreadPlacement[];
@@ -203,14 +205,16 @@
       if (threadLineIsFileLevelCard(thread)) continue;
       const side = reviewThreadTargetSide(thread);
       const targetLine = reviewThreadTargetLine(thread);
-      const diffLine = findReviewThreadDiffLine(source, side, targetLine);
-      if (diffLine?.old_num != null) addUniqueLine(splitOldLines, diffLine.old_num);
-      if (diffLine?.new_num != null) addUniqueLine(splitNewLines, diffLine.new_num);
-      if (!diffLine && side === "left") {
+      const match = findReviewThreadDiffLine(source, side, targetLine);
+      if (!match && side === "left") {
         addUniqueLine(splitOldLines, targetLine);
-      } else if (!diffLine) {
+        continue;
+      } else if (!match) {
         addUniqueLine(splitNewLines, targetLine);
+        continue;
       }
+      addDiffLineNumbers(splitOldLines, splitNewLines, match.hunk.lines[match.index]!);
+      addPreviousListBoundaryForChangedLine(splitOldLines, splitNewLines, match.hunk.lines, match.index);
     }
     return {
       splitOldLines,
@@ -226,15 +230,56 @@
     source: DiffFile,
     side: "left" | "right",
     targetLine: number,
-  ): DiffFile["hunks"][number]["lines"][number] | undefined {
+  ): { hunk: DiffHunk; index: number } | undefined {
     for (const hunk of source.hunks ?? []) {
-      const line = hunk.lines.find((candidate) => {
+      const index = hunk.lines.findIndex((candidate) => {
         const lineNumber = side === "left" ? candidate.old_num : candidate.new_num;
         return lineNumber === targetLine;
       });
-      if (line) return line;
+      if (index >= 0) return { hunk, index };
     }
     return undefined;
+  }
+
+  function addDiffLineNumbers(oldLines: number[], newLines: number[], line: DiffHunkLine): void {
+    if (line.old_num != null) addUniqueLine(oldLines, line.old_num);
+    if (line.new_num != null) addUniqueLine(newLines, line.new_num);
+  }
+
+  function addPreviousListBoundaryForChangedLine(
+    oldLines: number[],
+    newLines: number[],
+    lines: DiffHunk["lines"],
+    targetIndex: number,
+  ): void {
+    const target = lines[targetIndex]!;
+    if (target.type !== "add" && target.type !== "delete") return;
+    const targetIndent = listMarkerIndent(target.content);
+    if (targetIndent == null) return;
+
+    const previous = previousListMarkerLine(lines, targetIndex, targetIndent);
+    if (previous) addDiffLineNumbers(oldLines, newLines, previous);
+  }
+
+  function previousListMarkerLine(
+    lines: DiffHunk["lines"],
+    targetIndex: number,
+    targetIndent: number,
+  ): DiffHunkLine | undefined {
+    for (let index = targetIndex - 1; index >= 0; index--) {
+      const line = lines[index]!;
+      if (line.content.trim() === "") continue;
+      const lineIndent = listMarkerIndent(line.content);
+      if (lineIndent == null || lineIndent < targetIndent) return undefined;
+      if (lineIndent === targetIndent) return line;
+    }
+    return undefined;
+  }
+
+  function listMarkerIndent(line: string): number | null {
+    const match = line.match(/^(\s{0,12})(?:[-+*]|\d+[.)])\s+/);
+    if (!match) return null;
+    return Array.from(match[1]!).reduce((width, char) => width + (char === "\t" ? 4 : 1), 0);
   }
 
   function sortReviewThreadPlacements(placements: ReviewThreadPlacement[]): void {
@@ -529,6 +574,19 @@
   }
 
   .markdown-rich-diff :global(.markdown-rich-diff__split-list) {
+    margin: 0;
+  }
+
+  .markdown-rich-diff__anchored-block:has(:global(.markdown-rich-diff__split-list)) {
+    margin: 0;
+  }
+
+  .markdown-rich-diff--unified :global(.markdown-diff__block:has(.markdown-rich-diff__split-list)) {
+    margin: 0;
+    padding-block: 0;
+  }
+
+  .markdown-rich-diff :global(.markdown-rich-diff__split-list > li) {
     margin-block: 0;
   }
 

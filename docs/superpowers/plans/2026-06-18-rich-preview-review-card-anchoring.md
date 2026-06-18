@@ -162,11 +162,11 @@ Unified mode renders each block's `unifiedHtml` followed by assigned review card
 
 - [x] **Step 1: Add model tests**
 
-Add tests proving synthetic separators stay hidden for standalone fenced-code, HTML-block, blockquote, list, and table cases, stripped spanning-token renders keep in-document reference definitions available through the approved parser-context API, user-authored thematic breaks remain visible, list items expose separate rich-preview anchor blocks when review cards target individual source items, and review threads targeting hidden hunk gaps fall back instead of anchoring to a spanning block's display range.
+Add tests proving synthetic separators stay hidden for standalone fenced-code, HTML-block, blockquote, list, and table cases, stripped spanning-token renders keep in-document reference definitions available through the approved parser-context API, user-authored thematic breaks remain visible, untargeted lists remain whole rendered lists, split-line inputs expose separate rich-preview anchor blocks for targeted list items, and review threads targeting hidden hunk gaps fall back instead of anchoring to a spanning block's display range.
 
 - [x] **Step 2: Add component tests**
 
-Add tests proving split mode does not dump line comments at the top, comments preserve source order, and list-item review cards render after the matching item rather than after the whole list.
+Add tests proving split mode does not dump line comments at the top, comments preserve source order, list-item review cards render after the matching item rather than after the whole list, and added/deleted list-item review cards keep unchanged sibling items aligned.
 
 - [x] **Step 3: Run component tests and verify RED before production wiring if not already red**
 
@@ -183,7 +183,7 @@ Extend the existing rich-preview review-card e2e case to assert the card has a r
 - [x] **Step 6: Add multi-card and hidden-gap fallback e2e coverage**
 
 Add a diff-view e2e case with a multi-hunk Markdown block and a review thread targeting a hidden source gap, proving the card remains a file-level fallback instead of rendering inside `.markdown-rich-diff--unified`.
-Add another diff-view e2e case with multiple list-item review threads returned out of source order, proving rich preview renders the cards in source order and anchors each card after the matching rendered item.
+Add another diff-view e2e case with multiple list-item review threads returned out of source order, proving rich preview renders the cards in source order, anchors each card after the matching rendered item, and does not add synthetic split-list margins.
 
 ### Task 5: Styling, Validation, And Commit
 
@@ -209,6 +209,8 @@ Run:
 node node_modules/vite-plus/bin/vp run ui-package-check
 (cd frontend && node node_modules/.bin/playwright test --config=playwright-e2e.config.ts tests/e2e-full/diff-view.spec.ts -g "rich preview shows review thread cards")
 (cd frontend && node node_modules/.bin/playwright test --config=playwright-e2e.config.ts tests/e2e-full/diff-view.spec.ts -g "rich preview anchors multiple list review cards")
+(cd frontend && node node_modules/.bin/playwright test --config=playwright-e2e.config.ts tests/e2e-full/diff-view.spec.ts -g "rich preview keeps untargeted lists intact")
+(cd frontend && node node_modules/.bin/playwright test --config=playwright-e2e.config.ts tests/e2e-full/diff-view.spec.ts -g "rich preview keeps unchanged list siblings aligned")
 (cd frontend && node node_modules/.bin/playwright test --config=playwright-e2e.config.ts tests/e2e-full/diff-view.spec.ts -g "rich preview keeps hidden hunk-gap review threads")
 git diff --check
 ```

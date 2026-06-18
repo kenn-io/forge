@@ -46,11 +46,11 @@ describe("buildMarkdownRichPreview", () => {
     const preview = buildMarkdownRichPreview(
       markdownFile([
         { type: "context", content: "- first", old_num: 1, new_num: 1 },
-        { type: "context", content: "", old_num: 2, new_num: 2 },
-        { type: "context", content: "- second", old_num: 3, new_num: 3 },
+        { type: "context", content: "- second", old_num: 2, new_num: 2 },
+        { type: "context", content: "- third", old_num: 3, new_num: 3 },
       ]),
       repo,
-      { splitOldLines: [3], splitNewLines: [3] },
+      { splitOldLines: [2], splitNewLines: [2] },
     );
 
     const html = preview.blocks.map((block) => block.unifiedHtml).join("");
@@ -59,6 +59,63 @@ describe("buildMarkdownRichPreview", () => {
     expect(preview.blocks.filter((block) => block.unifiedHtml.includes("<li>")).map((block) => block.newLines)).toEqual(
       [[1, 2], [3]],
     );
+  });
+
+  it("keeps untargeted trailing list items in one segment", () => {
+    const preview = buildMarkdownRichPreview(
+      markdownFile([
+        { type: "context", content: "- first", old_num: 1, new_num: 1 },
+        { type: "context", content: "- second", old_num: 2, new_num: 2 },
+        { type: "context", content: "- third", old_num: 3, new_num: 3 },
+        { type: "context", content: "- fourth", old_num: 4, new_num: 4 },
+      ]),
+      repo,
+      { splitOldLines: [2], splitNewLines: [2] },
+    );
+
+    const listBlocks = preview.blocks.filter((block) => block.unifiedHtml.includes("markdown-rich-diff__split-list"));
+    expect(listBlocks.map((block) => block.newLines)).toEqual([
+      [1, 2],
+      [3, 4],
+    ]);
+    expect(listBlocks).toHaveLength(2);
+  });
+
+  it("preserves ordered list numbering when list item anchors split a list", () => {
+    const preview = buildMarkdownRichPreview(
+      markdownFile([
+        { type: "context", content: "3. first", old_num: 1, new_num: 1 },
+        { type: "context", content: "4. second", old_num: 2, new_num: 2 },
+        { type: "context", content: "5. third", old_num: 3, new_num: 3 },
+      ]),
+      repo,
+      { splitOldLines: [2], splitNewLines: [2] },
+    );
+
+    const orderedLists = preview.blocks
+      .map((block) => block.unifiedHtml)
+      .filter((html) => html.includes("markdown-rich-diff__split-list"));
+    expect(orderedLists).toHaveLength(2);
+    expect(orderedLists[0]).toContain('start="3"');
+    expect(orderedLists[1]).toContain('start="5"');
+  });
+
+  it("keeps nested lists inside the owning top-level split item", () => {
+    const preview = buildMarkdownRichPreview(
+      markdownFile([
+        { type: "context", content: "- parent", old_num: 1, new_num: 1 },
+        { type: "context", content: "  - child", old_num: 2, new_num: 2 },
+        { type: "context", content: "- sibling", old_num: 3, new_num: 3 },
+        { type: "context", content: "- tail", old_num: 4, new_num: 4 },
+      ]),
+      repo,
+      { splitOldLines: [3], splitNewLines: [3] },
+    );
+
+    const listBlocks = preview.blocks.filter((block) => block.unifiedHtml.includes("markdown-rich-diff__split-list"));
+    expect(listBlocks.map((block) => block.newLines)).toEqual([[1, 2, 3], [4]]);
+    expect(listBlocks[0]?.unifiedHtml).toContain("child");
+    expect(listBlocks[1]?.unifiedHtml).not.toContain("child");
   });
 
   it("projects split block additions without inline underline markup on every word", () => {

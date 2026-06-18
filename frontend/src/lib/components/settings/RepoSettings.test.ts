@@ -313,6 +313,155 @@ describe("RepoSettings", () => {
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(updatedRepos));
   });
 
+  it("promotes a glob match to an exact repository with a local clone path", async () => {
+    const onUpdate = vi.fn();
+    const addedRepos = [
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "*",
+        repo_path: "acme/*",
+        is_glob: true,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ];
+    const promotedRepos = [
+      {
+        ...addedRepos[0]!,
+      },
+      {
+        ...addedRepos[1]!,
+        worktree_base_path: "/Users/acme/api",
+      },
+    ];
+    mockPreviewRepos.mockResolvedValue({
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      pattern: "*",
+      repos: [
+        {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "api",
+          repo_path: "acme/api",
+          description: "HTTP API",
+          private: false,
+          fork: false,
+          pushed_at: null,
+          already_configured: false,
+        },
+      ],
+    });
+    mockBulkAddRepos.mockResolvedValue({
+      repos: addedRepos,
+      activity: {
+        view_mode: "threaded",
+        time_range: "7d",
+        hide_closed: false,
+        hide_bots: false,
+        collapse_threads: false,
+        default_branch_retention_days: 90,
+        default_branch_max_commits: 5000,
+      },
+      terminal: {
+        font_family: "",
+        font_size: 14,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "xterm",
+      },
+      agents: [],
+    });
+    mockUpdateRepoWorktreeBasePath.mockResolvedValue({
+      repos: promotedRepos,
+      activity: {
+        view_mode: "threaded",
+        time_range: "7d",
+        hide_closed: false,
+        hide_bots: false,
+        collapse_threads: false,
+        default_branch_retention_days: 90,
+        default_branch_max_commits: 5000,
+      },
+      terminal: {
+        font_family: "",
+        font_size: 14,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "xterm",
+      },
+      agents: [],
+    });
+
+    render(RepoSettings, {
+      props: {
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "*",
+            repo_path: "acme/*",
+            is_glob: true,
+            matched_repo_count: 1,
+          },
+        ],
+        onUpdate,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Promote glob repository acme/*" }));
+    await screen.findByRole("dialog", { name: "Promote wildcard repository" });
+    await screen.findByText("acme/api");
+    await fireEvent.input(screen.getByLabelText("Local clone path for acme/api"), {
+      target: { value: "/Users/acme/api" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Promote repository" }));
+
+    expect(mockPreviewRepos).toHaveBeenCalledWith("acme", "*", {
+      provider: "github",
+      host: "github.com",
+    });
+    expect(mockBulkAddRepos).toHaveBeenCalledWith([
+      {
+        provider: "github",
+        host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+      },
+    ]);
+    expect(mockUpdateRepoWorktreeBasePath).toHaveBeenCalledWith(
+      "acme",
+      "api",
+      {
+        provider: "github",
+        host: "github.com",
+      },
+      "/Users/acme/api",
+    );
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(promotedRepos));
+    expect(mockRefreshSyncStatus).toHaveBeenCalled();
+  });
+
   it("updates repos and refreshes sync status after import", async () => {
     const importedRepos = [
       {

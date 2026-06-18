@@ -12,6 +12,7 @@
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoImportModal from "./RepoImportModal.svelte";
+  import RepoPromoteModal from "./RepoPromoteModal.svelte";
 
   const { sync } = getStores();
 
@@ -38,6 +39,7 @@
   let savingWorktreeBaseByKey = $state<Record<string, boolean>>({});
   let worktreeBaseErrors = $state<Record<string, string>>({});
   let cloneEditorOpen = $state<Record<string, boolean>>({});
+  let promoteRepo = $state<ConfigRepo | null>(null);
 
   const showProviderIcons = $derived.by(() => {
     const providers = new Set(
@@ -194,6 +196,16 @@
   }}
 />
 
+<RepoPromoteModal
+  open={Boolean(promoteRepo)}
+  repo={promoteRepo}
+  onClose={() => { promoteRepo = null; }}
+  onPromoted={(settings) => {
+    onUpdate(settings.repos);
+    void sync.refreshSyncStatus();
+  }}
+/>
+
 <div class="repo-list">
   {#each repos as repo (repoKey(repo))}
     {@const key = repoKey(repo)}
@@ -214,6 +226,14 @@
         {:else}
           <div class="repo-actions">
             {#if repo.is_glob}
+              <button
+                class="promote-btn"
+                onclick={() => { promoteRepo = repo; }}
+                disabled={embedded}
+                aria-label={`Promote glob repository ${repoLabel(repo)}`}
+              >
+                Promote
+              </button>
               <button
                 class="refresh-btn"
                 onclick={() => void handleRefresh(repo)}
@@ -364,6 +384,17 @@
     color: var(--accent-blue); border: 1px solid color-mix(in srgb, var(--accent-blue) 35%, var(--border-muted));
     border-radius: var(--radius-sm); transition: background 0.12s, opacity 0.12s;
   }
+  .promote-btn {
+    padding: 4px 10px; font-size: var(--font-size-sm); font-weight: 600;
+    color: var(--text-primary); background: var(--bg-inset);
+    border: 1px solid var(--border-muted); border-radius: var(--radius-sm);
+    transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+  }
+  .promote-btn:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--accent-blue) 35%, var(--border-muted));
+    background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-inset));
+  }
+  .promote-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .refresh-btn:hover:not(:disabled) {
     background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
   }

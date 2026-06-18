@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1139,6 +1140,20 @@ func (a *Attachment) Resize(cols, rows int) error {
 	return a.resize(cols, rows)
 }
 
+// clampWinsizeDim bounds a client-supplied terminal dimension into the
+// uint16 range pty.Winsize requires, so an oversized cols/rows value is
+// capped rather than silently truncated by the narrowing conversion.
+func clampWinsizeDim(v int) uint16 {
+	switch {
+	case v < 1:
+		return 1
+	case v > math.MaxUint16:
+		return math.MaxUint16
+	default:
+		return uint16(v)
+	}
+}
+
 func (a *Attachment) Refresh(ctx context.Context) error {
 	if a == nil || a.refresh == nil {
 		return errors.New("attachment is closed")
@@ -2240,12 +2255,14 @@ func attachToSession(
 			if !s.canResize(resizeAttachmentID) {
 				return nil
 			}
+			clampedCols := clampWinsizeDim(cols)
+			clampedRows := clampWinsizeDim(rows)
 			if s.pty != nil {
-				return s.pty.Resize(cols, rows)
+				return s.pty.Resize(int(clampedCols), int(clampedRows))
 			}
 			return pty.Setsize(s.ptmx, &pty.Winsize{
-				Rows: uint16(rows),
-				Cols: uint16(cols),
+				Rows: clampedRows,
+				Cols: clampedCols,
 			})
 		},
 		refresh: func(ctx context.Context) error {

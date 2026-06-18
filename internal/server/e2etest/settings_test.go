@@ -337,7 +337,7 @@ platform = "linux"
 		t, ts.Client(), http.MethodPut,
 		ts.URL+"/api/v1/settings/fleet",
 		map[string]any{
-			"enabled":      false,
+			"enabled":      true,
 			"key":          "hub",
 			"peer_timeout": "4s",
 			"sessions": map[string]any{
@@ -368,12 +368,14 @@ platform = "linux"
 	require.Equal(http.StatusOK, updateResp.StatusCode)
 
 	var updatedSettings struct {
+		Enabled  bool `json:"enabled"`
 		SSHPeers []struct {
 			Key      string `json:"key"`
 			Platform string `json:"platform"`
 		} `json:"ssh_peers"`
 	}
 	require.NoError(json.NewDecoder(updateResp.Body).Decode(&updatedSettings))
+	assert.True(updatedSettings.Enabled)
 	require.Len(updatedSettings.SSHPeers, 2)
 	assert.Equal("studio-mac", updatedSettings.SSHPeers[0].Key)
 	assert.Equal("macos", updatedSettings.SSHPeers[0].Platform)
@@ -382,7 +384,7 @@ platform = "linux"
 
 	cfgAfterUpdate, err := config.Load(cfgPath)
 	require.NoError(err)
-	assert.False(cfgAfterUpdate.Fleet.Enabled)
+	assert.True(cfgAfterUpdate.Fleet.Enabled)
 	assert.Equal("hub", cfgAfterUpdate.Fleet.Key)
 	assert.Equal("4s", cfgAfterUpdate.Fleet.PeerTimeout)
 	require.Len(cfgAfterUpdate.Fleet.Peers, 1)

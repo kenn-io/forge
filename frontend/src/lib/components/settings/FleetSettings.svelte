@@ -2,7 +2,8 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import { SelectDropdown } from "@middleman/ui";
+  import { ActionButton, SelectDropdown } from "@middleman/ui";
+  import type { SelectDropdownOption } from "@middleman/ui";
   import type {
     FleetPeer,
     FleetSSHPeer,
@@ -33,17 +34,10 @@
     remoteCommand: string;
   }
 
-  interface DropdownOption {
-    value: string;
-    label: string;
-    triggerLabel?: string;
-    disabled?: boolean;
-  }
-
   let { fleet, onUpdate }: Props = $props();
 
   const embedded = isEmbedded();
-  const basePlatformOptions: DropdownOption[] = [
+  const basePlatformOptions: SelectDropdownOption[] = [
     { value: "", label: "Unspecified", triggerLabel: "Unspecified" },
     { value: "darwin", label: "darwin" },
     { value: "linux", label: "linux" },
@@ -213,7 +207,7 @@
     return trimmed === "" ? `${prefix} ${index + 1}` : trimmed;
   }
 
-  function platformOptions(value: string): DropdownOption[] {
+  function platformOptions(value: string): SelectDropdownOption[] {
     const trimmed = value.trim();
     if (trimmed === "" || basePlatformOptions.some((option) => option.value === trimmed)) {
       return basePlatformOptions;
@@ -313,15 +307,15 @@
         <h3>HTTP peers</h3>
         <p>Use only on a trusted network boundary; hub credentials are not forwarded.</p>
       </div>
-      <button
-        class="secondary-button"
+      <ActionButton
+        size="sm"
         type="button"
         onclick={addHTTPPeer}
         disabled={embedded || saving}
       >
         <PlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         Add HTTP peer
-      </button>
+      </ActionButton>
     </div>
 
     {#if httpPeerDrafts.length === 0}
@@ -369,16 +363,18 @@
                   />
                 </td>
                 <td class="action-cell">
-                  <button
-                    class="icon-button"
+                  <ActionButton
+                    size="sm"
+                    tone="danger"
+                    surface="outline"
                     type="button"
                     onclick={() => removeHTTPPeer(peer.id)}
                     disabled={embedded || saving}
-                    aria-label={`Remove HTTP peer ${label}`}
+                    ariaLabel={`Remove HTTP peer ${label}`}
                     title={`Remove HTTP peer ${label}`}
                   >
                     <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  </button>
+                  </ActionButton>
                 </td>
               </tr>
             {/each}
@@ -394,15 +390,15 @@
         <h3>SSH peers</h3>
         <p>Private relay members reached by running the peer CLI remotely.</p>
       </div>
-      <button
-        class="secondary-button"
+      <ActionButton
+        size="sm"
         type="button"
         onclick={addSSHPeer}
         disabled={embedded || saving}
       >
         <PlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         Add SSH peer
-      </button>
+      </ActionButton>
     </div>
 
     {#if sshPeerDrafts.length === 0}
@@ -474,16 +470,18 @@
                   />
                 </td>
                 <td class="action-cell">
-                  <button
-                    class="icon-button"
+                  <ActionButton
+                    size="sm"
+                    tone="danger"
+                    surface="outline"
                     type="button"
                     onclick={() => removeSSHPeer(peer.id)}
                     disabled={embedded || saving}
-                    aria-label={`Remove SSH peer ${label}`}
+                    ariaLabel={`Remove SSH peer ${label}`}
                     title={`Remove SSH peer ${label}`}
                   >
                     <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  </button>
+                  </ActionButton>
                 </td>
               </tr>
             {/each}
@@ -494,23 +492,24 @@
   </section>
 
   <div class="settings-actions">
-    <button
-      class="secondary-button"
+    <ActionButton
+      size="sm"
       type="button"
       onclick={resetDraft}
       disabled={!isDirty || saving}
     >
       <RotateCcwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
       Reset
-    </button>
-    <button
-      class="primary-button"
+    </ActionButton>
+    <ActionButton
+      tone="info"
+      surface="solid"
       type="button"
-      onclick={save}
+      onclick={() => void save()}
       disabled={!canSave}
     >
       Save fleet federation
-    </button>
+    </ActionButton>
   </div>
 </div>
 
@@ -518,7 +517,7 @@
   .fleet-settings {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3-5);
+    gap: 14px;
   }
 
   .toggle-row,
@@ -526,7 +525,7 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: var(--space-4);
+    gap: 16px;
   }
 
   .check-row {
@@ -535,7 +534,7 @@
 
   .toggle-row input,
   .check-row input {
-    margin-top: var(--space-0-5);
+    margin-top: 2px;
   }
 
   .field-label {
@@ -556,13 +555,13 @@
   .settings-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-3);
+    gap: 12px;
   }
 
   .field {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: 4px;
     min-width: 0;
   }
 
@@ -571,7 +570,7 @@
   .platform-cell :global(.select-dropdown-trigger) {
     width: 100%;
     min-height: 30px;
-    padding: var(--space-1) var(--space-2);
+    padding: 4px 8px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     background: var(--bg-primary);
@@ -600,7 +599,7 @@
   .restart-banner,
   .settings-error {
     margin: 0;
-    padding: var(--space-2) var(--space-2-5);
+    padding: 8px 10px;
     border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);
   }
@@ -620,8 +619,8 @@
   .peer-section {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2-5);
-    padding-top: var(--space-3);
+    gap: 10px;
+    padding-top: 12px;
     border-top: 1px solid var(--border-muted);
   }
 
@@ -629,7 +628,7 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: var(--space-3);
+    gap: 12px;
   }
 
   .peer-section-header h3 {
@@ -640,7 +639,7 @@
   }
 
   .peer-section-header p {
-    margin: var(--space-0-5) 0 0;
+    margin: 2px 0 0;
   }
 
   .peer-table-wrap {
@@ -657,12 +656,12 @@
   }
 
   .peer-table.ssh {
-    min-width: 860px;
+    min-width: 680px;
   }
 
   .peer-table th,
   .peer-table td {
-    padding: var(--space-2);
+    padding: 8px;
     border-bottom: 1px solid var(--border-muted);
     vertical-align: top;
   }
@@ -719,47 +718,7 @@
   .settings-actions {
     display: flex;
     justify-content: flex-end;
-    gap: var(--space-2);
-  }
-
-  .primary-button,
-  .secondary-button,
-  .icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-1-5);
-    min-height: 30px;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-  }
-
-  .primary-button {
-    padding: 0 var(--space-3);
-    background: var(--accent-blue);
-    color: white;
-  }
-
-  .secondary-button {
-    padding: 0 var(--space-2-5);
-    border: 1px solid var(--border-default);
-    background: var(--bg-primary);
-    color: var(--text-secondary);
-  }
-
-  .icon-button {
-    flex: 0 0 auto;
-    width: 30px;
-    border: 1px solid var(--border-default);
-    color: var(--text-muted);
-  }
-
-  .primary-button:disabled,
-  .secondary-button:disabled,
-  .icon-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    gap: 8px;
   }
 
   @media (min-width: 760px) {

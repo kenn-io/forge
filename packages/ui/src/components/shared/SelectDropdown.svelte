@@ -10,13 +10,7 @@
 <script lang="ts">
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
-
-  export interface SelectDropdownOption {
-    value: string;
-    label: string;
-    triggerLabel?: string;
-    disabled?: boolean;
-  }
+  import type { SelectDropdownOption } from "./select-dropdown.js";
 
   interface Props {
     value: string;

@@ -180,6 +180,25 @@
     border-color: #145c27;
   }
 
+  /* Info solid — primary submit / save */
+  .action-button--solid.action-button--info {
+    background: var(--accent-blue);
+    color: #fff;
+    border: 1px solid var(--accent-blue);
+  }
+  .action-button--solid.action-button--info:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent-blue) 88%, #000);
+    border-color: color-mix(in srgb, var(--accent-blue) 88%, #000);
+  }
+  .action-button--solid.action-button--info:focus-visible {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 42%, transparent);
+  }
+  .action-button--solid.action-button--info:active:not(:disabled),
+  .action-button--solid.action-button--info[aria-expanded="true"] {
+    background: color-mix(in srgb, var(--accent-blue) 78%, #000);
+    border-color: color-mix(in srgb, var(--accent-blue) 78%, #000);
+  }
+
   /* Success soft — approve */
   .action-button--soft.action-button--success {
     background: color-mix(in srgb, var(--accent-green) 12%, transparent);

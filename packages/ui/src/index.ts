@@ -115,6 +115,7 @@ export { default as LeftSidebarToggle } from "./components/shared/LeftSidebarTog
 export { default as DiffStats } from "./components/shared/DiffStats.svelte";
 export { default as FilterDropdown } from "./components/shared/FilterDropdown.svelte";
 export { default as SelectDropdown } from "./components/shared/SelectDropdown.svelte";
+export type { SelectDropdownOption } from "./components/shared/select-dropdown.js";
 export { default as SplitResizeHandle } from "./components/shared/SplitResizeHandle.svelte";
 export type { SplitResizeEvent } from "./components/shared/split-resize.js";
 export { default as TabbedPanelTree } from "./components/shared/TabbedPanelTree.svelte";

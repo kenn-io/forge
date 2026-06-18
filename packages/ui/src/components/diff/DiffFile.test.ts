@@ -898,6 +898,7 @@ describe("DiffFile", () => {
     expect(screen.getByText("Published review note in rich preview")).toBeTruthy();
     const comment = document.querySelector("[data-review-thread-id='thread-1']");
     expect(comment?.closest("[slot^='annotation-']")).toBeNull();
+    expect(comment?.closest(".markdown-rich-diff--unified")).toBeTruthy();
   });
 
   it("lets published inline review threads be replied to", async () => {

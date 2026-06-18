@@ -4,6 +4,12 @@
   import type { DiffViewMode } from "../../stores/diff.svelte.js";
   import { renderMarkdownDiff, renderMarkdownSplitDiff } from "../../utils/markdown-diff.js";
   import { renderMarkdown } from "../../utils/markdown.js";
+  import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
+  import {
+    reviewThreadTargetLine,
+    reviewThreadTargetSide,
+    type ReviewThread,
+  } from "./review-thread-context.js";
 
   interface Props {
     file: DiffFile;
@@ -15,15 +21,50 @@
     number: number;
     active: boolean;
     viewMode?: DiffViewMode;
+    reviewThreads?: ReviewThread[];
+    canReplyToThreads?: boolean;
+    reviewThreadIsFileLevelCard?: ((thread: ReviewThread) => boolean) | undefined;
+    onreply?: ((thread: ReviewThread, body: string) => Promise<boolean>) | undefined;
   }
 
-  const { file, provider, platformHost, owner, name, repoPath, number, active, viewMode = "unified" }: Props = $props();
+  const {
+    file,
+    provider,
+    platformHost,
+    owner,
+    name,
+    repoPath,
+    number,
+    active,
+    viewMode = "unified",
+    reviewThreads = [],
+    canReplyToThreads = false,
+    reviewThreadIsFileLevelCard,
+    onreply,
+  }: Props = $props();
   const { diff: diffStore } = getStores();
 
   interface MarkdownComparison {
     diffHtml?: string;
     oldHtml: string;
     newHtml: string;
+  }
+  type SourceLine = DiffFile["hunks"][number]["lines"][number];
+  type MarkdownLineBlock = {
+    key: string;
+    lines: SourceLine[];
+    oldStart?: number | undefined;
+    oldEnd?: number | undefined;
+    newStart?: number | undefined;
+    newEnd?: number | undefined;
+  };
+  type MarkdownRenderedBlock = MarkdownLineBlock & {
+    diffHtml: string;
+    reviewThreads: ReviewThread[];
+  };
+  interface AnchoredMarkdownComparison {
+    blocks: MarkdownRenderedBlock[];
+    unanchoredReviewThreads: ReviewThread[];
   }
 
   let loading = $state(false);
@@ -35,10 +76,18 @@
   const markdownComparison = $derived.by(() =>
     active && isMarkdownFile ? buildMarkdownComparison(file, viewMode) : null,
   );
+  const anchoredMarkdownComparison = $derived.by(() =>
+    active && isMarkdownFile && viewMode !== "split"
+      ? buildAnchoredMarkdownComparison(file, reviewThreads)
+      : null,
+  );
   const text = $derived(preview ? decodeText(preview.content) : "");
   const dataURL = $derived(preview ? `data:${preview.media_type};base64,${preview.content}` : "");
   const kind = $derived(previewKind(file.path, preview?.media_type ?? ""));
   const displayText = $derived(formatText(file.path, text));
+  const fallbackReviewThreads = $derived(
+    anchoredMarkdownComparison?.unanchoredReviewThreads ?? reviewThreads,
+  );
 
   $effect(() => {
     const sourceFile = file;
@@ -132,12 +181,114 @@
       newHtml: splitHtml?.afterHtml ?? newHtml,
     };
   }
+
+  function buildAnchoredMarkdownComparison(
+    source: DiffFile,
+    threads: ReviewThread[],
+  ): AnchoredMarkdownComparison {
+    const blocks: MarkdownRenderedBlock[] = markdownLineBlocks(source).map((block): MarkdownRenderedBlock => {
+      const oldMarkdown = block.lines
+        .filter((line) => line.type !== "add")
+        .map((line) => line.content)
+        .join("\n");
+      const newMarkdown = block.lines
+        .filter((line) => line.type !== "delete")
+        .map((line) => line.content)
+        .join("\n");
+      const repo = { provider, platformHost, owner, name, repoPath };
+      const oldHtml = renderMarkdown(`${oldMarkdown}\n`, repo);
+      const newHtml = renderMarkdown(`${newMarkdown}\n`, repo);
+      return {
+        ...block,
+        diffHtml: renderMarkdownDiff(oldHtml, newHtml),
+        reviewThreads: [],
+      };
+    });
+    const unanchoredReviewThreads: ReviewThread[] = [];
+    for (const thread of threads) {
+      const block = blocks.find((candidate) => blockContainsReviewThread(candidate, thread));
+      if (block) block.reviewThreads.push(thread);
+      else unanchoredReviewThreads.push(thread);
+    }
+    return { blocks, unanchoredReviewThreads };
+  }
+
+  function markdownLineBlocks(source: DiffFile): MarkdownLineBlock[] {
+    const blocks: MarkdownLineBlock[] = [];
+    let current: SourceLine[] = [];
+    let inFence = false;
+    for (const hunk of source.hunks) {
+      if (current.length > 0) {
+        pushMarkdownLineBlock(blocks, current);
+        current = [];
+      }
+      for (const line of hunk.lines) {
+        current.push(line);
+        if (isFenceLine(line.content)) {
+          inFence = !inFence;
+          continue;
+        }
+        if (!inFence && line.content.trim() === "") {
+          pushMarkdownLineBlock(blocks, current);
+          current = [];
+        }
+      }
+    }
+    pushMarkdownLineBlock(blocks, current);
+    return blocks;
+  }
+
+  function isFenceLine(content: string): boolean {
+    return /^\s*(```|~~~)/.test(content);
+  }
+
+  function pushMarkdownLineBlock(blocks: MarkdownLineBlock[], lines: SourceLine[]): void {
+    if (lines.length === 0) return;
+    const oldNumbers = lines.map((line) => line.old_num).filter((line): line is number => line != null);
+    const newNumbers = lines.map((line) => line.new_num).filter((line): line is number => line != null);
+    blocks.push({
+      key: `${blocks.length}:${oldNumbers[0] ?? ""}:${newNumbers[0] ?? ""}`,
+      lines,
+      oldStart: oldNumbers[0],
+      oldEnd: oldNumbers.at(-1),
+      newStart: newNumbers[0],
+      newEnd: newNumbers.at(-1),
+    });
+  }
+
+  function blockContainsReviewThread(block: MarkdownLineBlock, thread: ReviewThread): boolean {
+    if (threadLineIsFileLevelCard(thread)) return false;
+    const line = reviewThreadTargetLine(thread);
+    return reviewThreadTargetSide(thread) === "left"
+      ? lineInRange(line, block.oldStart, block.oldEnd)
+      : lineInRange(line, block.newStart, block.newEnd);
+  }
+
+  function lineInRange(
+    line: number,
+    start: number | undefined,
+    end: number | undefined,
+  ): boolean {
+    return start != null && end != null && line >= start && line <= end;
+  }
+
+  function threadLineIsFileLevelCard(thread: ReviewThread): boolean {
+    return reviewThreadIsFileLevelCard?.(thread) ?? thread.line_type === "file";
+  }
 </script>
 
 <div class="preview-shell">
   {#if isMarkdownFile}
     {#if markdownComparison}
       {#if viewMode === "split"}
+        {#each fallbackReviewThreads as thread (thread.id)}
+          <DiffReviewThreadInlineComment
+            {thread}
+            fileLevel={threadLineIsFileLevelCard(thread)}
+            canReply={canReplyToThreads}
+            {onreply}
+          />
+        {/each}
         <div class="diff-rich-preview markdown-rich-diff markdown-rich-diff--split">
           <div
             class="markdown-rich-diff__pane markdown-rich-diff__block--delete"
@@ -160,7 +311,31 @@
         </div>
       {:else}
         <div class="diff-rich-preview markdown-rich-diff markdown-rich-diff--unified markdown-body">
-          {@html markdownComparison.diffHtml ?? markdownComparison.newHtml}
+          {#if anchoredMarkdownComparison}
+            {#each anchoredMarkdownComparison.unanchoredReviewThreads as thread (thread.id)}
+              <DiffReviewThreadInlineComment
+                {thread}
+                fileLevel={threadLineIsFileLevelCard(thread)}
+                canReply={canReplyToThreads}
+                {onreply}
+              />
+            {/each}
+            {#each anchoredMarkdownComparison.blocks as block (block.key)}
+              <div class="markdown-rich-diff__anchored-block">
+                {@html block.diffHtml}
+              </div>
+              {#each block.reviewThreads as thread (thread.id)}
+                <DiffReviewThreadInlineComment
+                  {thread}
+                  fileLevel={threadLineIsFileLevelCard(thread)}
+                  canReply={canReplyToThreads}
+                  {onreply}
+                />
+              {/each}
+            {/each}
+          {:else}
+            {@html markdownComparison.diffHtml ?? markdownComparison.newHtml}
+          {/if}
         </div>
       {/if}
     {:else}
@@ -171,6 +346,14 @@
   {:else if error}
     <div class="preview-state preview-state--error">{error}</div>
   {:else if preview}
+    {#each fallbackReviewThreads as thread (thread.id)}
+      <DiffReviewThreadInlineComment
+        {thread}
+        fileLevel={threadLineIsFileLevelCard(thread)}
+        canReply={canReplyToThreads}
+        {onreply}
+      />
+    {/each}
     {#if kind === "markdown"}
       <div class="diff-rich-preview markdown-body">
         {@html renderMarkdown(text, { provider, platformHost, owner, name, repoPath })}

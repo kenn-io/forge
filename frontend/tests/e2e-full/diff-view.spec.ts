@@ -1938,7 +1938,9 @@ test.describe("diff view", () => {
 
     const markdownFile = page.locator('[data-file-path="docs/preview.md"]');
     await expect(markdownFile.locator(".markdown-rich-diff--unified")).toBeVisible();
-    await expect(markdownFile.locator(".inline-review-thread").filter({ hasText: reviewBody })).toBeVisible();
+    await expect(
+      markdownFile.locator(".markdown-rich-diff--unified .inline-review-thread").filter({ hasText: reviewBody }),
+    ).toBeVisible();
   });
 
   test("rich preview refetches blob content after a same-PR diff reload", async ({ page }) => {

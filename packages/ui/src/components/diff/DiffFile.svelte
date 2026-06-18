@@ -532,14 +532,6 @@
   {#if !collapsed}
     <div class="file-content">
       {#if showRichPreview}
-        {#each fileReviewThreads as thread (thread.id)}
-          <DiffReviewThreadInlineComment
-            {thread}
-            fileLevel={reviewThreadIsFileLevelCard(thread)}
-            canReply={canReplyToThreads}
-            onreply={replyToThread}
-          />
-        {/each}
         {#key richPreviewKey}
           <DiffRichPreview
             {file}
@@ -551,6 +543,10 @@
             {number}
             active={inViewport}
             {viewMode}
+            reviewThreads={fileReviewThreads}
+            {canReplyToThreads}
+            {reviewThreadIsFileLevelCard}
+            onreply={replyToThread}
           />
         {/key}
       {:else}

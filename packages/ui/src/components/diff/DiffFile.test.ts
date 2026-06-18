@@ -1027,6 +1027,58 @@ describe("DiffFile", () => {
     expect(comment?.textContent).toContain("File");
   });
 
+  it("does not anchor markdown rich preview threads to hidden source gaps inside spanning blocks", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 2,
+            new_start: 1,
+            new_count: 2,
+            lines: [
+              { type: "context", content: "```text", old_num: 1, new_num: 1 },
+              { type: "context", content: "first hunk code", old_num: 2, new_num: 2 },
+            ],
+          },
+          {
+            old_start: 10,
+            old_count: 2,
+            new_start: 10,
+            new_count: 2,
+            lines: [
+              { type: "context", content: "second hunk code", old_num: 10, new_num: 10 },
+              { type: "context", content: "```", old_num: 11, new_num: 11 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            path: "README.md",
+            old_path: "README.md",
+            line: 6,
+            new_line: 6,
+            body: "Gap line review note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Gap line review note")).toBeTruthy();
+    });
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    expect(comment?.closest(".markdown-rich-diff--unified")).toBeNull();
+    expect(comment?.classList.contains("inline-review-thread--file-level")).toBe(true);
+  });
+
   it("lets published inline review threads be replied to", async () => {
     const replyToDiscussion = vi.fn().mockResolvedValue(true);
     renderDiffFile(makeFile(), {

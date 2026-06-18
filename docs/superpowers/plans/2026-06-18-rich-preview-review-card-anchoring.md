@@ -5,7 +5,7 @@
 
 **Goal:** Replace fragment-rendered Markdown rich preview with a source-line-aware render model that preserves Markdown semantics and anchors review cards in unified and split modes.
 
-**Architecture:** Add a pure Markdown rich-preview model under `packages/ui/src/utils/` that builds old/new Markdown documents from diff hunks, maps generated Markdown lines back to source diff lines, renders top-level Markdown tokens through the canonical renderer, and produces unified/split block HTML. `DiffRichPreview.svelte` consumes that model and only assigns/render review cards against explicit block ranges. Structured Markdown containers anchor at the top-level token boundary so cards do not become invalid list/table/blockquote children. Synthetic hunk separators are parser-only, have no source mapping, are stripped from spanning tokens before rendering, and are not rendered or aligned as preview blocks. User-authored `---` lines keep their source mapping and render normally. The model uses a bounded block comparison strategy for large Markdown diffs.
+**Architecture:** Add a pure Markdown rich-preview model under `packages/ui/src/utils/` that builds old/new Markdown documents from diff hunks, maps generated Markdown lines back to source diff lines, renders top-level Markdown tokens through the canonical renderer, and produces unified/split block HTML. `DiffRichPreview.svelte` consumes that model and only assigns/render review cards against exact mapped source-line sets; start/end ranges are display metadata and do not imply that hidden hunk-gap lines are contained. Structured Markdown containers anchor at the top-level token boundary so cards do not become invalid list/table/blockquote children. Synthetic hunk separators are parser-only, have no source mapping, are stripped from spanning tokens before rendering, and are not rendered or aligned as preview blocks. Stripped spanning-token renders carry in-document reference definitions as parser context. User-authored `---` lines keep their source mapping and render normally. The model uses a bounded block comparison strategy for large Markdown diffs.
 
 **Tech Stack:** Svelte 5, TypeScript, Marked, DOMPurify, existing `renderMarkdownDiff` and `renderMarkdownSplitDiff`, Vite+/Vitest, Playwright.
 
@@ -111,8 +111,10 @@ export interface MarkdownRichPreviewBlock {
   key: string;
   oldStart?: number | undefined;
   oldEnd?: number | undefined;
+  oldLines?: number[] | undefined;
   newStart?: number | undefined;
   newEnd?: number | undefined;
+  newLines?: number[] | undefined;
   unifiedHtml: string;
   beforeHtml?: string | undefined;
   afterHtml?: string | undefined;
@@ -159,7 +161,7 @@ Unified mode renders each block's `unifiedHtml` followed by assigned review card
 
 - [x] **Step 1: Add component tests**
 
-Add tests proving Markdown semantics survive anchored cards, split mode does not dump line comments at the top, synthetic separators stay hidden for standalone and spanning-token cases, and user-authored thematic breaks remain visible.
+Add tests proving Markdown semantics survive anchored cards, split mode does not dump line comments at the top, synthetic separators stay hidden for standalone fenced-code, HTML-block, blockquote, and list-continuation cases, user-authored thematic breaks remain visible, and review threads targeting hidden hunk gaps fall back instead of anchoring to a spanning block's display range.
 
 - [x] **Step 2: Run component tests and verify RED before production wiring if not already red**
 

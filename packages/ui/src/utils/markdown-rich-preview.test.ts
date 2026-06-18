@@ -148,6 +148,107 @@ describe("buildMarkdownRichPreview", () => {
     expect(html).toContain("first hunk code");
     expect(html).toContain("second hunk code");
     expect(html).not.toContain("---");
+    expect(preview.blocks.find((block) => block.unifiedHtml.includes("first hunk code"))?.newLines).toEqual([
+      1, 2, 10, 11,
+    ]);
+  });
+
+  it("hides synthetic separators around multi-hunk HTML blocks", () => {
+    const file = {
+      ...markdownFile([]),
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 2,
+          new_start: 1,
+          new_count: 2,
+          lines: [
+            { type: "context", content: "<div>", old_num: 1, new_num: 1 },
+            { type: "context", content: "first hunk html", old_num: 2, new_num: 2 },
+          ],
+        },
+        {
+          old_start: 10,
+          old_count: 2,
+          new_start: 10,
+          new_count: 2,
+          lines: [
+            { type: "context", content: "second hunk html", old_num: 10, new_num: 10 },
+            { type: "context", content: "</div>", old_num: 11, new_num: 11 },
+          ],
+        },
+      ],
+    } satisfies DiffFile;
+
+    const preview = buildMarkdownRichPreview(file, repo);
+    const html = preview.blocks.map((block) => block.unifiedHtml).join("");
+
+    expect(html).toContain("first hunk html");
+    expect(html).toContain("second hunk html");
+    expect(html).not.toContain("---");
+    expect(html).not.toContain("<hr");
+  });
+
+  it("hides synthetic separators around multi-hunk blockquotes", () => {
+    const file = {
+      ...markdownFile([]),
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 1,
+          new_start: 1,
+          new_count: 1,
+          lines: [{ type: "context", content: "> first hunk quote", old_num: 1, new_num: 1 }],
+        },
+        {
+          old_start: 10,
+          old_count: 1,
+          new_start: 10,
+          new_count: 1,
+          lines: [{ type: "context", content: "> second hunk quote", old_num: 10, new_num: 10 }],
+        },
+      ],
+    } satisfies DiffFile;
+
+    const preview = buildMarkdownRichPreview(file, repo);
+    const html = preview.blocks.map((block) => block.unifiedHtml).join("");
+
+    expect(html).toContain("<blockquote>");
+    expect(html).toContain("first hunk quote");
+    expect(html).toContain("second hunk quote");
+    expect(html).not.toContain("---");
+    expect(html).not.toContain("<hr");
+  });
+
+  it("hides synthetic separators around multi-hunk list continuations", () => {
+    const file = {
+      ...markdownFile([]),
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 1,
+          new_start: 1,
+          new_count: 1,
+          lines: [{ type: "context", content: "- first hunk item", old_num: 1, new_num: 1 }],
+        },
+        {
+          old_start: 10,
+          old_count: 1,
+          new_start: 10,
+          new_count: 1,
+          lines: [{ type: "context", content: "- second hunk item", old_num: 10, new_num: 10 }],
+        },
+      ],
+    } satisfies DiffFile;
+
+    const preview = buildMarkdownRichPreview(file, repo);
+    const html = preview.blocks.map((block) => block.unifiedHtml).join("");
+
+    expect(html).toContain("<ul>");
+    expect(html).toContain("first hunk item");
+    expect(html).toContain("second hunk item");
+    expect(html).not.toContain("---");
+    expect(html).not.toContain("<hr");
   });
 
   it("keeps user-authored thematic breaks from source lines", () => {

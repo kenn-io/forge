@@ -599,10 +599,60 @@ const multiHunkMarkdownDiff: DiffResult = withServerDiffData({
   ],
 });
 
+const blockFillMarkdownDiff: DiffResult = withServerDiffData({
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "docs/block-fill.md",
+      old_path: "docs/block-fill.md",
+      status: "modified",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 1,
+      deletions: 1,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 6,
+          new_start: 1,
+          new_count: 6,
+          lines: [
+            { type: "context", content: "# Block fills", old_num: 1, new_num: 1 },
+            { type: "context", content: "", old_num: 2, new_num: 2 },
+            {
+              type: "delete",
+              content: "Removed standalone block that should have a filled background.",
+              old_num: 3,
+            },
+            { type: "context", content: "", old_num: 4, new_num: 3 },
+            { type: "context", content: "Shared stable block", old_num: 5, new_num: 4 },
+            { type: "context", content: "", old_num: 6, new_num: 5 },
+            {
+              type: "add",
+              content: "Added standalone block that should have a filled background.",
+              new_num: 6,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 // --- Helpers ---
 
 function cssString(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+async function expectNonTransparentBackground(locator: Locator) {
+  await expect
+    .poll(async () => {
+      const background = await locator.evaluate((element) => getComputedStyle(element).backgroundColor);
+      return background !== "rgba(0, 0, 0, 0)" && background !== "transparent";
+    })
+    .toBe(true);
 }
 
 function treeFileItems(pageOrLocator: Page | ReturnType<Page["locator"]>) {
@@ -1963,6 +2013,28 @@ test.describe("diff view", () => {
 
     await clickTreeFileItem(page, "assets/logo.png");
     await expect(page.locator(".diff-image-preview img[alt='assets/logo.png']")).toBeVisible();
+  });
+
+  test("rich preview gives standalone block additions and deletions visible fills", async ({ page }) => {
+    await mockDiffApi(page, blockFillMarkdownDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    await openDiffFilterMenu(page);
+    await page.getByRole("switch", { name: "Rich preview" }).click();
+
+    const markdownPreview = page.locator('[data-file-path="docs/block-fill.md"] .markdown-rich-diff--unified');
+    await expect(markdownPreview).toBeVisible();
+    await expectNonTransparentBackground(
+      markdownPreview.locator("del.markdown-diff__block").filter({
+        hasText: "Removed standalone block that should have a filled background.",
+      }),
+    );
+    await expectNonTransparentBackground(
+      markdownPreview.locator("ins.markdown-diff__block").filter({
+        hasText: "Added standalone block that should have a filled background.",
+      }),
+    );
   });
 
   test("rich preview shows review thread cards", async ({ page }) => {

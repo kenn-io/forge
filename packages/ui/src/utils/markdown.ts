@@ -340,6 +340,19 @@ export function renderMarkdownBlocks(
   return blocks;
 }
 
+export function extractMarkdownDefinitionLines(raw: string, repo?: RepoContext): string[] {
+  if (!raw) return [];
+  const marked = getMarked(repo);
+  const tokens = marked.lexer(raw) as Tokens.Generic[];
+  const lines: string[] = [];
+  for (const token of tokens) {
+    if (token.type !== "def" || !token.raw) continue;
+    const raw = token.raw.endsWith("\n") ? token.raw.slice(0, -1) : token.raw;
+    if (raw) lines.push(...raw.split("\n"));
+  }
+  return lines;
+}
+
 export function renderMarkdown(raw: string, repo?: RepoContext, opts: RenderMarkdownOpts = {}): string {
   if (!raw) return "";
   const interactiveTasks = !!opts.interactiveTasks;

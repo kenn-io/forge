@@ -66,19 +66,19 @@ This is intentional: preserving valid rendered Markdown takes priority over plac
 5. Render blocks using the canonical renderer while preserving the same Markdown semantics as whole-document rendering. If that cannot be guaranteed for a construct, do not decompose that construct into independently rendered fragments.
 6. Diff corresponding old/new rendered blocks for unified HTML.
 7. Project the same diff into before/after HTML for split mode.
-8. Assign each review thread to the block whose old or new source range contains the target line.
+8. Assign each review thread to the block whose exact old or new mapped source-line set contains the target line. Start/end ranges are display metadata only; they are not enough for anchoring when a block spans multiple hunks with hidden source gaps.
 
 If a block cannot be mapped confidently, keep the rendered Markdown correct and leave related review threads in the fallback area. Correct rendering is more important than guessed inline placement.
 
 `renderMarkdownBlocks(raw, repo)` is the only block-rendering API this feature should use. It must parse once with the configured Marked instance, keep document-level Marked behavior such as in-document reference definitions intact for the visible block output, render only visible top-level tokens as blocks, and sanitize every block through the same DOMPurify allow-list used by `renderMarkdown()`. Reference-link resolution inside the reconstructed hunk document is a required regression test for this API boundary.
 
-Multiple hunks are joined in backend hunk order with an explicit parser-only separator: blank line, thematic break line `---`, blank line. The separator prevents accidental list/table merging across unrelated hunks and can influence Markdown parsing the same way a thematic break does, but it is hidden from rendered preview output. Synthetic separator tokens have no old/new source-line mapping, are excluded from source-line range calculations, do not participate in block alignment, and cannot receive review cards. If Marked absorbs synthetic separator lines into a mapped multi-line token, such as a fenced code block or HTML block spanning hunks, the rendered block is rebuilt from mapped source lines only so the synthetic lines are stripped before sanitization and diffing. User-authored `---` lines inside a hunk keep their source mapping and render normally. Definitions inside the reconstructed hunk document may resolve across that separator; definitions outside loaded hunks remain unavailable.
+Multiple hunks are joined in backend hunk order with an explicit parser-only separator: blank line, thematic break line `---`, blank line. The separator prevents accidental list/table merging across unrelated hunks and can influence Markdown parsing the same way a thematic break does, but it is hidden from rendered preview output. Synthetic separator tokens have no old/new source-line mapping, are excluded from mapped source-line sets and display range calculations, do not participate in block alignment, and cannot receive review cards. If Marked absorbs synthetic separator lines into a mapped multi-line token, such as a fenced code block spanning hunks, the rendered block is rebuilt from mapped source lines only so the synthetic lines are stripped before sanitization and diffing. That stripped re-render must include in-document reference definitions from the reconstructed hunk document as parser context; if a future token type cannot be stripped without preserving document-level semantics, keep the correct rendered output and move related cards to fallback instead of guessing. User-authored `---` lines inside a hunk keep their source mapping and render normally. Definitions inside the reconstructed hunk document may resolve across that separator; definitions outside loaded hunks remain unavailable.
 
 Repeated paragraphs, headings, or list items are resolved by source order, not rendered text identity alone. The generated-line cursor makes identical text in different source locations produce distinct ranges.
 
 Definitions outside the loaded diff hunks are outside this feature's available input. They may not resolve until the preview is backed by full-file content. Definitions inside the reconstructed hunk document must keep working.
 
-Deleted-only comments anchor against old-side block ranges. Added/current comments anchor against new-side block ranges. Multi-line review ranges use the same target side and line that the source diff uses for card placement; if the target range crosses multiple top-level Markdown containers, the card anchors to the first containing top-level block for that target line. If no containing block exists, the card becomes a file-level fallback card rather than guessing.
+Deleted-only comments anchor against old-side mapped line sets. Added/current comments anchor against new-side mapped line sets. Multi-line review ranges use the same target side and line that the source diff uses for card placement; if the target range crosses multiple top-level Markdown containers, the card anchors to the first containing top-level block for that target line. If no containing block exists, or if the target line falls inside a hidden hunk gap within a block's display start/end range, the card becomes a file-level fallback card rather than guessing.
 
 ## Visual Behavior
 
@@ -111,6 +111,7 @@ Markdown rich preview should avoid unbounded quadratic work. Block alignment may
 - The block-rendering path preserves centralized Markdown sanitization and the allowed attribute policy.
 - Multi-hunk previews do not show artificial `<hr>` or separator content that was not part of the reviewed file.
 - Synthetic separator lines are hidden even when a Markdown token spans hunks, while user-authored thematic breaks remain visible.
+- Review cards do not anchor to hidden source gaps between hunks, even when one rendered block spans both hunks.
 
 ## Testing
 
@@ -120,6 +121,7 @@ Add unit coverage for the rich-preview model:
 - loose lists render as a single list where Markdown defines one;
 - multi-hunk fenced code, HTML blocks, blockquotes, and list continuations do not expose synthetic separator lines;
 - user-authored thematic breaks inside hunks still render;
+- mapped source-line sets exclude synthetic separator lines and hidden hunk gaps;
 - review threads assign to old-side and new-side blocks;
 - uncertain or file-level threads fall back visibly.
 
@@ -127,6 +129,7 @@ Keep component coverage for:
 
 - unified rich preview renders review cards inside the preview after their target block;
 - split rich preview renders review cards near the matching side block;
+- review threads targeting hidden hunk gaps remain file-level fallback cards;
 - source diff review annotations remain unchanged.
 
 Keep browser e2e coverage for the PR files page rich preview toggle, including a review-card case that proves cards are not at the top of the file.

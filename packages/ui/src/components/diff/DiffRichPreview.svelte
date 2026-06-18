@@ -190,9 +190,20 @@
   function blockContainsReviewThread(block: MarkdownRichPreviewBlock, thread: ReviewThread): boolean {
     if (threadLineIsFileLevelCard(thread)) return false;
     const line = reviewThreadTargetLine(thread);
-    return reviewThreadTargetSide(thread) === "left"
-      ? lineInRange(line, block.oldStart, block.oldEnd)
-      : lineInRange(line, block.newStart, block.newEnd);
+    if (reviewThreadTargetSide(thread) === "left") {
+      return lineInMappedBlock(line, block.oldLines, block.oldStart, block.oldEnd);
+    }
+    return lineInMappedBlock(line, block.newLines, block.newStart, block.newEnd);
+  }
+
+  function lineInMappedBlock(
+    line: number,
+    mappedLines: number[] | undefined,
+    start: number | undefined,
+    end: number | undefined,
+  ): boolean {
+    if (mappedLines?.length) return mappedLines.includes(line);
+    return lineInRange(line, start, end);
   }
 
   function lineInRange(
@@ -430,15 +441,17 @@
   }
 
   .markdown-rich-diff--unified :global(ins.markdown-diff__block) {
+    background: var(--diff-add-bg);
     border-color: color-mix(in srgb, var(--diff-add-text) 32%, transparent);
   }
 
   .markdown-rich-diff--unified :global(del.markdown-diff__block) {
+    background: var(--diff-del-bg);
     border-color: color-mix(in srgb, var(--diff-del-text) 36%, transparent);
   }
 
-  .markdown-rich-diff :global(.markdown-diff__structural > ins),
-  .markdown-rich-diff :global(.markdown-diff__structural > del) {
+  .markdown-rich-diff :global(.markdown-diff__structural > ins:not(.markdown-diff__block)),
+  .markdown-rich-diff :global(.markdown-diff__structural > del:not(.markdown-diff__block)) {
     padding: 0;
     background: transparent;
     text-decoration: none;

@@ -1,5 +1,10 @@
 import type { DiffFile } from "../api/types.js";
-import { renderMarkdownBlocks, type RenderedMarkdownBlock, type RepoContext } from "./markdown.js";
+import {
+  extractMarkdownDefinitionLines,
+  renderMarkdownBlocks,
+  type RenderedMarkdownBlock,
+  type RepoContext,
+} from "./markdown.js";
 import { renderMarkdownDiff, renderMarkdownSplitDiff } from "./markdown-diff.js";
 
 type SourceLine = DiffFile["hunks"][number]["lines"][number];
@@ -19,14 +24,17 @@ interface MarkdownSideDocument {
 interface MarkdownSideBlock extends RenderedMarkdownBlock {
   sourceStart?: number | undefined;
   sourceEnd?: number | undefined;
+  sourceLines: number[];
 }
 
 export interface MarkdownRichPreviewBlock {
   key: string;
   oldStart?: number | undefined;
   oldEnd?: number | undefined;
+  oldLines?: number[] | undefined;
   newStart?: number | undefined;
   newEnd?: number | undefined;
+  newLines?: number[] | undefined;
   unifiedHtml: string;
   beforeHtml?: string | undefined;
   afterHtml?: string | undefined;
@@ -65,13 +73,17 @@ function sideIncludesLine(side: "old" | "new", line: SourceLine): boolean {
 }
 
 function buildSideBlocks(document: MarkdownSideDocument, repo: RepoContext): MarkdownSideBlock[] {
-  return renderMarkdownBlocks(document.text, repo).flatMap((block) => renderedSideBlocks(block, document, repo));
+  const definitionLines = extractMarkdownDefinitionLines(document.text, repo);
+  return renderMarkdownBlocks(document.text, repo).flatMap((block) =>
+    renderedSideBlocks(block, document, repo, definitionLines),
+  );
 }
 
 function renderedSideBlocks(
   block: RenderedMarkdownBlock,
   document: MarkdownSideDocument,
   repo: RepoContext,
+  definitionLines: string[],
 ): MarkdownSideBlock[] {
   const blockLineMap = document.lineMap.slice(block.startLine - 1, block.endLine);
   if (blockLineMap.every((line) => line != null)) return [sideBlockForRenderedBlock(block, document.lineMap)];
@@ -82,37 +94,40 @@ function renderedSideBlocks(
     .filter((line): line is { content: string; sourceLine: number } => line.sourceLine != null);
   if (lines.length === 0) return [];
 
-  const visibleDocument: MarkdownSideDocument = {
-    text: `${lines.map((line) => line.content).join("\n")}\n`,
-    lines: lines.map((line) => line.content),
-    lineMap: lines.map((line) => line.sourceLine),
-  };
+  const visibleDocument = buildVisibleDocument(lines, definitionLines);
   return renderMarkdownBlocks(visibleDocument.text, repo).map((visibleBlock) =>
     sideBlockForRenderedBlock({ ...visibleBlock, key: `${block.key}:${visibleBlock.key}` }, visibleDocument.lineMap),
   );
+}
+
+function buildVisibleDocument(
+  lines: Array<{ content: string; sourceLine: number }>,
+  definitionLines: string[],
+): MarkdownSideDocument {
+  const sourceLines = lines.map((line) => line.content);
+  const parserContextLines = definitionLines.length > 0 ? ["", ...definitionLines] : [];
+  return {
+    text: `${[...sourceLines, ...parserContextLines].join("\n")}\n`,
+    lines: [...sourceLines, ...parserContextLines],
+    lineMap: [...lines.map((line) => line.sourceLine), ...parserContextLines.map(() => undefined)],
+  };
 }
 
 function sideBlockForRenderedBlock(
   block: RenderedMarkdownBlock,
   lineMap: Array<number | undefined>,
 ): MarkdownSideBlock {
-  const range = sourceRangeForBlock(block, lineMap);
+  const sourceLines = sourceLinesForBlock(block, lineMap);
   return {
     ...block,
-    sourceStart: range.start,
-    sourceEnd: range.end,
+    sourceLines,
+    sourceStart: sourceLines[0],
+    sourceEnd: sourceLines.at(-1),
   };
 }
 
-function sourceRangeForBlock(
-  block: RenderedMarkdownBlock,
-  lineMap: Array<number | undefined>,
-): { start?: number | undefined; end?: number | undefined } {
-  const sourceLines = lineMap.slice(block.startLine - 1, block.endLine).filter((line): line is number => line != null);
-  return {
-    start: sourceLines[0],
-    end: sourceLines.at(-1),
-  };
+function sourceLinesForBlock(block: RenderedMarkdownBlock, lineMap: Array<number | undefined>): number[] {
+  return lineMap.slice(block.startLine - 1, block.endLine).filter((line): line is number => line != null);
 }
 
 function alignBlocks(oldBlocks: MarkdownSideBlock[], newBlocks: MarkdownSideBlock[]): MarkdownRichPreviewBlock[] {
@@ -185,8 +200,10 @@ function renderBlock(
     key: `${index}:${oldBlock?.key ?? ""}:${newBlock?.key ?? ""}`,
     oldStart: oldBlock?.sourceStart,
     oldEnd: oldBlock?.sourceEnd,
+    oldLines: oldBlock?.sourceLines,
     newStart: newBlock?.sourceStart,
     newEnd: newBlock?.sourceEnd,
+    newLines: newBlock?.sourceLines,
     unifiedHtml: renderMarkdownDiff(oldHtml, newHtml),
     beforeHtml: split.beforeHtml,
     afterHtml: split.afterHtml,

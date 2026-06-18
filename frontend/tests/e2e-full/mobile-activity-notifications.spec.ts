@@ -1,0 +1,79 @@
+import { devices, expect, test, type Page } from "@playwright/test";
+import { startIsolatedE2EServer } from "./support/e2eServer";
+
+// The mobile activity feed (/m) shares the seeded notifications with the
+// desktop feed: "review_requested" on acme/widgets#1 and "mention" on
+// acme/tools#5. These tests exercise the phone workflow against the real
+// Go backend so the notification reason labels, the hide-notifications
+// reload, and the mark-seen request are covered end to end rather than
+// through a mocked store.
+
+const iPhone13 = devices["iPhone 13"];
+test.use({
+  viewport: iPhone13.viewport,
+  deviceScaleFactor: iPhone13.deviceScaleFactor,
+  userAgent: iPhone13.userAgent,
+});
+
+async function waitForMobileCards(page: Page): Promise<void> {
+  await page.locator(".mobile-activity-card").first().waitFor({ state: "visible", timeout: 10_000 });
+}
+
+test.describe("mobile activity notifications", () => {
+  test("labels notification reasons and hides them through a real reload", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/m`);
+      await waitForMobileCards(page);
+
+      // Reason labels render instead of the raw "notification" type.
+      const reviewLabel = page.locator(".mobile-activity-event__body strong", { hasText: "Review requested" });
+      const mentionLabel = page.locator(".mobile-activity-event__body strong", { hasText: "Mentioned" });
+      await expect(reviewLabel.first()).toBeVisible();
+      await expect(mentionLabel.first()).toBeVisible();
+
+      // Hiding notifications drops the notification type from the activity
+      // query and reloads, so the rows disappear via the real backend feed
+      // rather than a client-side filter.
+      const reload = page.waitForResponse(
+        (r) => r.request().method() === "GET" && r.url().includes("/api/v1/activity"),
+      );
+      await page.getByRole("button", { name: "Hide notifications" }).click();
+      expect((await reload).status()).toBe(200);
+
+      await expect(page.locator(".mobile-activity-event__body strong", { hasText: "Review requested" })).toHaveCount(0);
+      await expect(page.locator(".mobile-activity-event__body strong", { hasText: "Mentioned" })).toHaveCount(0);
+      // Non-notification activity still renders, so the feed is filtered, not emptied.
+      await expect(page.locator(".mobile-activity-card").first()).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("marks an unread notification seen from the mobile feed", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/m`);
+      await waitForMobileCards(page);
+
+      const reviewSlot = page.locator(".mobile-activity-event-slot", { hasText: "Review requested" });
+      const seen = reviewSlot.getByRole("button", { name: "Mark notification seen" });
+      await expect(seen.first()).toBeVisible();
+
+      const readResponse = page.waitForResponse(
+        (r) => r.request().method() === "POST" && r.url().endsWith("/api/v1/notifications/read"),
+      );
+      await seen.first().click();
+      expect((await readResponse).status()).toBe(200);
+
+      // The control clears once the row reads as seen, but the event stays
+      // in the feed as history.
+      await expect(reviewSlot.getByRole("button", { name: "Mark notification seen" })).toHaveCount(0);
+      await expect(
+        page.locator(".mobile-activity-event__body strong", { hasText: "Review requested" }).first(),
+      ).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
+});

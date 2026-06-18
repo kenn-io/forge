@@ -50,6 +50,7 @@ const setShowNotifications = vi.hoisted(() =>
     showNotifications.value = value;
   }),
 );
+const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock("../context.js", () => ({
   getStores: () => ({
@@ -75,6 +76,7 @@ vi.mock("../context.js", () => ({
       setTimeRange: vi.fn(),
       setItemFilter: vi.fn(),
       setShowNotifications,
+      markNotificationSeen,
       setHideBots: vi.fn(),
       setHideDefaultBranchActivity: vi.fn(),
       syncToURL: vi.fn(),
@@ -239,6 +241,7 @@ describe("MobileActivityView notifications", () => {
     showNotifications.value = true;
     onSelectItem.mockClear();
     setShowNotifications.mockClear();
+    markNotificationSeen.mockClear();
   });
 
   afterEach(() => {
@@ -269,6 +272,22 @@ describe("MobileActivityView notifications", () => {
     await fireEvent.click(button);
 
     expect(setShowNotifications).toHaveBeenCalledWith(false);
+  });
+
+  it("marks an unread notification seen from a touch control without navigating", async () => {
+    items.value = [notificationItem("1", "Review me", "open")];
+
+    const { getByRole } = render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    const seen = getByRole("button", { name: "Mark notification seen" });
+    await fireEvent.click(seen);
+
+    expect(markNotificationSeen).toHaveBeenCalledTimes(1);
+    expect(markNotificationSeen.mock.calls[0]![0]).toMatchObject({ id: "1" });
+    // The seen control is a sibling, so tapping it must not open the item.
+    expect(onSelectItem).not.toHaveBeenCalled();
   });
 });
 

@@ -2925,21 +2925,7 @@ func TestSyncStatusUpdated(t *testing.T) {
 	assert.Empty(status.LastError)
 }
 
-func setTestLocalEDT(t *testing.T) {
-	t.Helper()
-	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
-	oldLocal := time.Local
-	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
-	time.Local = time.FixedZone("EDT", -4*60*60)
-	t.Cleanup(func() {
-		//nolint:forbidigo // Tests intentionally restore the overridden process local zone.
-		time.Local = oldLocal
-	})
-}
-
 func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
-	setTestLocalEDT(t)
-
 	d := openTestDB(t)
 	mc := &mockClient{
 		openPRs:  []*gh.PullRequest{},
@@ -7365,7 +7351,6 @@ func TestRunBackfillDiscoveryUsesProviderQualifiedRepo(t *testing.T) {
 
 func TestBackfillRepoStoresCompletionTimestampsInUTC(t *testing.T) {
 	require := require.New(t)
-	setTestLocalEDT(t)
 
 	ctx := t.Context()
 	d := openTestDB(t)

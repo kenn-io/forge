@@ -406,6 +406,16 @@ func NormalizeIssueTimelineEvent(
 			CreatedAt:    event.CreatedAt,
 			DedupeKey:    timelineDedupeKey(event),
 		}
+	case "closed", "reopened":
+		return &platform.IssueEvent{
+			Repo:        repo,
+			IssueNumber: issueNumber,
+			EventType:   event.EventType,
+			Author:      event.Actor,
+			Summary:     lifecycleSummary(event.EventType),
+			CreatedAt:   event.CreatedAt,
+			DedupeKey:   timelineDedupeKey(event),
+		}
 	default:
 		return nil
 	}

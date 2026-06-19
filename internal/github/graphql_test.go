@@ -447,6 +447,30 @@ func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
 				"actor":{"login":"alice"},
 				"assignee":{"__typename":"User","login":"bob"},
 				"createdAt":"` + now + `"
+			},{
+				"__typename":"CrossReferencedEvent",
+				"id":"CRE_issue_1",
+				"actor":{"login":"reviewer"},
+				"createdAt":"` + now + `",
+				"isCrossRepository":false,
+				"willCloseTarget":true,
+				"source":{
+					"__typename":"PullRequest",
+					"number":22,
+					"title":"Fix issue",
+					"url":"https://github.com/owner/repo/pull/22",
+					"repository":{"owner":{"login":"owner"},"name":"repo"}
+				}
+			},{
+				"__typename":"ClosedEvent",
+				"id":"CE_issue_1",
+				"actor":{"login":"closer"},
+				"createdAt":"` + now + `"
+			},{
+				"__typename":"ReopenedEvent",
+				"id":"RE_issue_1",
+				"actor":{"login":"opener"},
+				"createdAt":"` + now + `"
 			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
 		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
 	}))
@@ -460,11 +484,21 @@ func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(result)
 	require.Len(result.Issues, 1)
-	require.Len(result.Issues[0].TimelineEvents, 1)
+	require.Len(result.Issues[0].TimelineEvents, 4)
 	assert.Equal("assigned", result.Issues[0].TimelineEvents[0].EventType)
 	assert.Equal("bob", result.Issues[0].TimelineEvents[0].Assignee)
+	assert.Equal("cross_referenced", result.Issues[0].TimelineEvents[1].EventType)
+	assert.Equal(22, result.Issues[0].TimelineEvents[1].SourceNumber)
+	assert.Equal("Fix issue", result.Issues[0].TimelineEvents[1].SourceTitle)
+	assert.Equal("closed", result.Issues[0].TimelineEvents[2].EventType)
+	assert.Equal("closer", result.Issues[0].TimelineEvents[2].Actor)
+	assert.Equal("reopened", result.Issues[0].TimelineEvents[3].EventType)
+	assert.Equal("opener", result.Issues[0].TimelineEvents[3].Actor)
 
 	assert.Contains(string(requestBody), "AssignedEvent")
+	assert.Contains(string(requestBody), "CrossReferencedEvent")
+	assert.Contains(string(requestBody), "ClosedEvent")
+	assert.Contains(string(requestBody), "ReopenedEvent")
 	assert.NotContains(string(requestBody), "HeadRefForcePushedEvent")
 	assert.NotContains(string(requestBody), "CommentDeletedEvent")
 	assert.NotContains(string(requestBody), "BaseRefChangedEvent")

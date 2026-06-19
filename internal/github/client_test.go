@@ -707,7 +707,7 @@ func TestListIssueTimelineEvents(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"timelineItems":{"nodes":[{"__typename":"AssignedEvent","id":"AE_1","actor":{"login":"wesm"},"assignee":{"__typename":"User","login":"wesm"},"createdAt":"2024-06-01T12:20:00Z"}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"timelineItems":{"nodes":[{"__typename":"UnassignedEvent","id":"UE_1","actor":{"login":"alice"},"assignee":{"__typename":"Mannequin","login":"bob"},"createdAt":"2024-06-01T12:25:00Z"},{"__typename":"CrossReferencedEvent","id":"CRE_1","actor":{"login":"mariusvniekerk"},"createdAt":"2024-06-01T12:30:00Z","isCrossRepository":false,"willCloseTarget":false,"source":{"__typename":"PullRequest","number":860,"title":"Add global review guidelines","url":"https://github.com/kenn-io/roborev/pull/860","repository":{"owner":{"login":"kenn-io"},"name":"roborev"}}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"timelineItems":{"nodes":[{"__typename":"UnassignedEvent","id":"UE_1","actor":{"login":"alice"},"assignee":{"__typename":"Mannequin","login":"bob"},"createdAt":"2024-06-01T12:25:00Z"},{"__typename":"CrossReferencedEvent","id":"CRE_1","actor":{"login":"mariusvniekerk"},"createdAt":"2024-06-01T12:30:00Z","isCrossRepository":false,"willCloseTarget":false,"source":{"__typename":"PullRequest","number":860,"title":"Add global review guidelines","url":"https://github.com/kenn-io/roborev/pull/860","repository":{"owner":{"login":"kenn-io"},"name":"roborev"}}},{"__typename":"ClosedEvent","id":"CE_1","actor":{"login":"closer"},"createdAt":"2024-06-01T12:35:00Z"},{"__typename":"ReopenedEvent","id":"RE_1","actor":{"login":"opener"},"createdAt":"2024-06-01T12:40:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -719,7 +719,7 @@ func TestListIssueTimelineEvents(t *testing.T) {
 
 	events, err := c.ListIssueTimelineEvents(t.Context(), "owner", "repo", 42)
 	require.NoError(err)
-	require.Len(events, 3)
+	require.Len(events, 5)
 	require.Equal("assigned", events[0].EventType)
 	require.Equal("AE_1", events[0].NodeID)
 	require.Equal("wesm", events[0].Actor)
@@ -737,6 +737,12 @@ func TestListIssueTimelineEvents(t *testing.T) {
 	require.Equal(860, events[2].SourceNumber)
 	require.Equal("Add global review guidelines", events[2].SourceTitle)
 	require.Equal("https://github.com/kenn-io/roborev/pull/860", events[2].SourceURL)
+	require.Equal("closed", events[3].EventType)
+	require.Equal("CE_1", events[3].NodeID)
+	require.Equal("closer", events[3].Actor)
+	require.Equal("reopened", events[4].EventType)
+	require.Equal("RE_1", events[4].NodeID)
+	require.Equal("opener", events[4].Actor)
 	require.Equal(2, calls)
 }
 

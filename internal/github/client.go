@@ -624,7 +624,7 @@ const issueTimelineEventsQuery = `
 query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     issue(number: $number) {
-      timelineItems(itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT, CROSS_REFERENCED_EVENT], first: 100, after: $cursor) {
+      timelineItems(itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT, CROSS_REFERENCED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100, after: $cursor) {
         nodes {
           __typename
           ... on Node {
@@ -677,6 +677,14 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
               ... on Organization { login }
               ... on User { login }
             }
+            createdAt
+          }
+          ... on ClosedEvent {
+            actor { login }
+            createdAt
+          }
+          ... on ReopenedEvent {
+            actor { login }
             createdAt
           }
         }
@@ -2007,6 +2015,10 @@ func (c *liveClient) ListIssueTimelineEvents(
 				event.EventType = "unassigned"
 			case "CrossReferencedEvent":
 				event.EventType = "cross_referenced"
+			case "ClosedEvent":
+				event.EventType = "closed"
+			case "ReopenedEvent":
+				event.EventType = "reopened"
 			default:
 				continue
 			}

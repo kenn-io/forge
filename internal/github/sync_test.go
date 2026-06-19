@@ -8957,6 +8957,107 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 	assert.Empty(events)
 }
 
+func TestSyncOpenIssueFromBulkStoresTimelineEvents(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 3, 12, 0, 0, 0, time.UTC)
+	issueID := int64(9301)
+	issueNumber := 9
+	issueTitle := "bulk issue timeline"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/9"
+	issueAuthor := "alice"
+	updatedAt := gh.Timestamp{Time: now}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{
+		Issue: &gh.Issue{
+			ID:        &issueID,
+			Number:    &issueNumber,
+			Title:     &issueTitle,
+			State:     &issueState,
+			HTMLURL:   &issueURL,
+			User:      &gh.User{Login: &issueAuthor},
+			CreatedAt: &updatedAt,
+			UpdatedAt: &updatedAt,
+		},
+		TimelineEvents: []PullRequestTimelineEvent{
+			{
+				NodeID:       "CRE_issue_1",
+				EventType:    "cross_referenced",
+				Actor:        "reviewer",
+				CreatedAt:    now.Add(time.Minute),
+				SourceType:   "PullRequest",
+				SourceOwner:  "owner",
+				SourceRepo:   "repo",
+				SourceNumber: 22,
+				SourceTitle:  "Fix issue",
+				SourceURL:    "https://github.com/owner/repo/pull/22",
+			},
+			{
+				NodeID:    "CE_issue_1",
+				EventType: "closed",
+				Actor:     "closer",
+				CreatedAt: now.Add(2 * time.Minute),
+			},
+			{
+				NodeID:    "RE_issue_1",
+				EventType: "reopened",
+				Actor:     "opener",
+				CreatedAt: now.Add(3 * time.Minute),
+			},
+		},
+		CommentsComplete: true,
+		TimelineComplete: true,
+	})
+	require.NoError(err)
+
+	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.NotNil(issue.DetailFetchedAt)
+
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	require.Len(events, 3)
+
+	byType := make(map[string]db.IssueEvent, len(events))
+	for _, event := range events {
+		byType[event.EventType] = event
+	}
+
+	crossReferenced, ok := byType["cross_referenced"]
+	require.True(ok)
+	assert.Equal("reviewer", crossReferenced.Author)
+	assert.Equal("Referenced from owner/repo#22", crossReferenced.Summary)
+	assert.Contains(crossReferenced.MetadataJSON, `"source_title":"Fix issue"`)
+	assert.Equal("timeline-CRE_issue_1", crossReferenced.DedupeKey)
+
+	closed, ok := byType["closed"]
+	require.True(ok)
+	assert.Equal("closer", closed.Author)
+	assert.Equal("closed this", closed.Summary)
+	assert.Equal("timeline-CE_issue_1", closed.DedupeKey)
+
+	reopened, ok := byType["reopened"]
+	require.True(ok)
+	assert.Equal("opener", reopened.Author)
+	assert.Equal("reopened this", reopened.Summary)
+	assert.Equal("timeline-RE_issue_1", reopened.DedupeKey)
+}
+
 func TestSyncIssuesFromListLogsProgressForLargeIssueSets(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

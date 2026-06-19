@@ -167,10 +167,13 @@ type gqlPullRequestTimelineItem struct {
 }
 
 type gqlIssueTimelineItem struct {
-	Typename        string           `graphql:"__typename"`
-	Node            gqlNodeFragment  `graphql:"... on Node"`
-	AssignedEvent   gqlAssignedEvent `graphql:"... on AssignedEvent"`
-	UnassignedEvent gqlAssignedEvent `graphql:"... on UnassignedEvent"`
+	Typename             string                  `graphql:"__typename"`
+	Node                 gqlNodeFragment         `graphql:"... on Node"`
+	CrossReferencedEvent gqlCrossReferencedEvent `graphql:"... on CrossReferencedEvent"`
+	AssignedEvent        gqlAssignedEvent        `graphql:"... on AssignedEvent"`
+	UnassignedEvent      gqlAssignedEvent        `graphql:"... on UnassignedEvent"`
+	ClosedEvent          gqlLifecycleEvent       `graphql:"... on ClosedEvent"`
+	ReopenedEvent        gqlLifecycleEvent       `graphql:"... on ReopenedEvent"`
 }
 
 type gqlNodeFragment struct {
@@ -314,7 +317,7 @@ type gqlIssue struct {
 	TimelineItems struct {
 		Nodes    []gqlIssueTimelineItem
 		PageInfo pageInfo
-	} `graphql:"timelineItems(itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT], first: 100)"`
+	} `graphql:"timelineItems(itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT, CROSS_REFERENCED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100)"`
 }
 
 type gqlLabel struct {
@@ -937,10 +940,16 @@ func adaptIssueTimelineEvent(gql *gqlIssueTimelineItem) (PullRequestTimelineEven
 	}
 	event := PullRequestTimelineEvent{NodeID: gql.Node.ID}
 	switch gql.Typename {
+	case "CrossReferencedEvent":
+		copyCrossReferencedEvent(&event, gql.CrossReferencedEvent)
 	case "AssignedEvent":
 		copyAssignmentEvent(&event, "assigned", gql.AssignedEvent)
 	case "UnassignedEvent":
 		copyAssignmentEvent(&event, "unassigned", gql.UnassignedEvent)
+	case "ClosedEvent":
+		copyLifecycleEvent(&event, "closed", gql.ClosedEvent)
+	case "ReopenedEvent":
+		copyLifecycleEvent(&event, "reopened", gql.ReopenedEvent)
 	default:
 		return PullRequestTimelineEvent{}, false
 	}
@@ -980,21 +989,7 @@ func adaptPullRequestTimelineEvent(gql *gqlPullRequestTimelineItem) (PullRequest
 			event.DeletedCommentAuthor = src.DeletedCommentAuthor.Login
 		}
 	case "CrossReferencedEvent":
-		src := gql.CrossReferencedEvent
-		event.EventType = "cross_referenced"
-		event.CreatedAt = src.CreatedAt
-		event.IsCrossRepository = src.IsCrossRepository
-		event.WillCloseTarget = src.WillCloseTarget
-		if src.Actor != nil {
-			event.Actor = src.Actor.Login
-		}
-		event.SourceType = src.Source.Typename
-		switch src.Source.Typename {
-		case "Issue":
-			copyReferencedSubject(&event, src.Source.Issue)
-		case "PullRequest":
-			copyReferencedSubject(&event, src.Source.PullRequest)
-		}
+		copyCrossReferencedEvent(&event, gql.CrossReferencedEvent)
 	case "RenamedTitleEvent":
 		src := gql.RenamedTitleEvent
 		event.EventType = "renamed_title"
@@ -1043,6 +1038,23 @@ func copyLifecycleEvent(event *PullRequestTimelineEvent, eventType string, src g
 	event.CreatedAt = src.CreatedAt
 	if src.Actor != nil {
 		event.Actor = src.Actor.Login
+	}
+}
+
+func copyCrossReferencedEvent(event *PullRequestTimelineEvent, src gqlCrossReferencedEvent) {
+	event.EventType = "cross_referenced"
+	event.CreatedAt = src.CreatedAt
+	event.IsCrossRepository = src.IsCrossRepository
+	event.WillCloseTarget = src.WillCloseTarget
+	if src.Actor != nil {
+		event.Actor = src.Actor.Login
+	}
+	event.SourceType = src.Source.Typename
+	switch src.Source.Typename {
+	case "Issue":
+		copyReferencedSubject(event, src.Source.Issue)
+	case "PullRequest":
+		copyReferencedSubject(event, src.Source.PullRequest)
 	}
 }
 

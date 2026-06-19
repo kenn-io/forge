@@ -10183,6 +10183,151 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Empty(*secondResp.JSON200.Events)
 }
 
+func TestE2EGraphQLBulkSyncPersistsIssueTimelineEvents(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	now := time.Date(2026, 4, 13, 12, 0, 0, 0, time.UTC)
+	nowRFC3339 := now.Format(time.RFC3339)
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+			return
+		}
+		resp := `{"data":{"repository":{"issues":{"nodes":[{
+			"databaseId":171200,
+			"number":173,
+			"title":"Bulk timeline issue",
+			"state":"OPEN",
+			"body":"GraphQL bulk issue timeline",
+			"url":"https://github.com/acme/widget/issues/173",
+			"author":{"login":"heidi"},
+			"createdAt":"` + nowRFC3339 + `",
+			"updatedAt":"` + nowRFC3339 + `",
+			"closedAt":null,
+			"labels":{"nodes":[]},
+			"comments":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+			"timelineItems":{"nodes":[{
+				"__typename":"CrossReferencedEvent",
+				"id":"CRE_issue_173",
+				"actor":{"login":"reviewer"},
+				"createdAt":"` + now.Add(time.Minute).Format(time.RFC3339) + `",
+				"isCrossRepository":false,
+				"willCloseTarget":true,
+				"source":{
+					"__typename":"PullRequest",
+					"number":174,
+					"title":"Fix bulk timeline issue",
+					"url":"https://github.com/acme/widget/pull/174",
+					"repository":{"owner":{"login":"acme"},"name":"widget"}
+				}
+			},{
+				"__typename":"ClosedEvent",
+				"id":"CE_issue_173",
+				"actor":{"login":"closer"},
+				"createdAt":"` + now.Add(2*time.Minute).Format(time.RFC3339) + `"
+			},{
+				"__typename":"ReopenedEvent",
+				"id":"RE_issue_173",
+				"actor":{"login":"opener"},
+				"createdAt":"` + now.Add(3*time.Minute).Format(time.RFC3339) + `"
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer gqlSrv.Close()
+
+	issueID := int64(171200)
+	issueNumber := 173
+	issueTitle := "Bulk timeline issue"
+	issueState := "open"
+	issueURL := "https://github.com/acme/widget/issues/173"
+	issueAuthor := "heidi"
+	issueTime := gh.Timestamp{Time: now}
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return []*gh.Issue{{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				User:      &gh.User{Login: &issueAuthor},
+				CreatedAt: &issueTime,
+				UpdatedAt: &issueTime,
+			}}, nil
+		},
+	}
+
+	database := dbtest.Open(t)
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	resp, err := client.HTTP.GetIssueWithResponse(
+		ctx, "gh", "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.True(resp.JSON200.DetailLoaded)
+	require.NotNil(resp.JSON200.Events)
+	require.Len(*resp.JSON200.Events, 3)
+
+	byType := make(map[string]generated.IssueEvent, len(*resp.JSON200.Events))
+	for _, event := range *resp.JSON200.Events {
+		byType[event.EventType] = event
+	}
+
+	crossReferenced, ok := byType["cross_referenced"]
+	require.True(ok)
+	assert.Equal("reviewer", crossReferenced.Author)
+	assert.Equal("Referenced from acme/widget#174", crossReferenced.Summary)
+	assert.Contains(crossReferenced.MetadataJSON, `"source_title":"Fix bulk timeline issue"`)
+	assert.Equal("timeline-CRE_issue_173", crossReferenced.DedupeKey)
+
+	closed, ok := byType["closed"]
+	require.True(ok)
+	assert.Equal("closer", closed.Author)
+	assert.Equal("closed this", closed.Summary)
+	assert.Equal("timeline-CE_issue_173", closed.DedupeKey)
+
+	reopened, ok := byType["reopened"]
+	require.True(ok)
+	assert.Equal("opener", reopened.Author)
+	assert.Equal("reopened this", reopened.Summary)
+	assert.Equal("timeline-RE_issue_173", reopened.DedupeKey)
+}
+
 func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

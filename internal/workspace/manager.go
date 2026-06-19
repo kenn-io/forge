@@ -1010,7 +1010,13 @@ func (m *Manager) addWorktreeLocked(
 		return branch, nil
 	}
 	fallbackBranch := syntheticPRWorktreeBranch(ws.ItemNumber)
-	startRef := workspaceStartRef(ws)
+	startRef, startRefErr := workspaceFallbackStartRef(ctx, cloneDir, ws)
+	if startRefErr != nil {
+		return "", fmt.Errorf(
+			"preferred branch %q failed: %w; fallback branch %q failed: %w",
+			ws.GitHeadRef, err, fallbackBranch, startRefErr,
+		)
+	}
 	fallbackErr := runGitWorktreeAdd(
 		ctx, cloneDir, ws.WorktreePath,
 		"-b", fallbackBranch, startRef,
@@ -1159,9 +1165,29 @@ func workspaceStartRef(ws *Workspace) string {
 		return "origin/HEAD"
 	}
 	if ws.MRHeadRepo != nil {
-		return fmt.Sprintf("refs/pull/%d/head", ws.ItemNumber)
+		return workspaceMergeRequestHeadRef(ws)
 	}
 	return "origin/" + ws.GitHeadRef
+}
+
+func workspaceFallbackStartRef(
+	ctx context.Context, cloneDir string, ws *Workspace,
+) (string, error) {
+	if ws.ItemType == db.WorkspaceItemTypePullRequest {
+		ref := workspaceMergeRequestHeadRef(ws)
+		_, exists, err := gitRefSHA(ctx, cloneDir, ref)
+		if err != nil {
+			return "", fmt.Errorf("inspect merge request head ref %q: %w", ref, err)
+		}
+		if exists {
+			return ref, nil
+		}
+	}
+	return workspaceStartRef(ws), nil
+}
+
+func workspaceMergeRequestHeadRef(ws *Workspace) string {
+	return platform.MergeRequestHeadRef(platform.Kind(ws.Platform), ws.ItemNumber)
 }
 
 func syntheticPRWorktreeBranch(mrNumber int) string {

@@ -1910,6 +1910,46 @@ func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
 	}
 }
 
+func TestAddWorktreeMergedSameRepoPRUsesPullRefWhenHeadBranchDeleted(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	prNumber := 545
+	headBranch := "codex/wildcard-promote-local-clones"
+	headSHA := configureSameRepoPRRefs(t, cloneDir, headBranch, prNumber)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref", "-d",
+		"refs/remotes/origin/"+headBranch,
+	)
+
+	ws := &Workspace{
+		ID:              "ws-merged-same-repo-pr",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "middleman",
+		RepoName:        "middleman",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      prNumber,
+		GitHeadRef:      headBranch,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "ws-merged-same-repo-pr",
+		Status:          "creating",
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+
+	require.NoError(err)
+	assert.Equal(syntheticPRWorktreeBranch(prNumber), branch)
+	gotSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(headSHA, gotSHA)
+}
+
 func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

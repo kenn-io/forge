@@ -40,7 +40,7 @@ export function floatingPopoverStyle({
     triggerGap,
   });
 
-  const style = [`left: ${Math.round(left)}px`, `top: ${Math.round(top)}px`];
+  const style = [`left: ${formatPx(left)}px`, `top: ${Math.round(top)}px`];
   if (constrainWidth) {
     style.push(`width: ${Math.round(width)}px`);
   }
@@ -67,4 +67,8 @@ function floatingTop({ trigger, popoverHeight, viewportHeight, edgeGap, triggerG
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(min, value), max);
+}
+
+function formatPx(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)));
 }

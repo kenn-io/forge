@@ -70,6 +70,17 @@ describe("floatingPopoverStyle", () => {
     expect(style).not.toContain("width:");
   });
 
+  it("preserves fractional trigger edges for start-aligned dropdowns", () => {
+    const style = floatingPopoverStyle({
+      trigger: rect({ left: 58.5, bottom: 100 }),
+      viewportWidth: 1200,
+      popoverWidth: 200,
+      align: "start",
+    });
+
+    expect(style).toContain("left: 58.5px");
+  });
+
   it("places measured dropdowns above the trigger when they would overflow below", () => {
     const style = floatingPopoverStyle({
       trigger: rect({

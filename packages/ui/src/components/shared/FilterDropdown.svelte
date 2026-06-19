@@ -133,17 +133,22 @@
     await openDropdown();
   }
 
-  function handleSelect(item: FilterDropdownItem): void {
+  async function handleSelect(item: FilterDropdownItem): Promise<void> {
     if (disabled || item.disabled) return;
     item.onSelect();
     if (item.closeOnSelect) {
       isOpen = false;
+      return;
     }
+    await tick();
+    positionDropdown();
   }
 
-  function handleReset(): void {
+  async function handleReset(): Promise<void> {
     if (disabled) return;
     onReset?.();
+    await tick();
+    positionDropdown();
   }
 
   function itemDescriptionId(item: FilterDropdownItem): string {

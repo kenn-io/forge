@@ -82,6 +82,16 @@ async function mockPulls(page: Page) {
   });
 }
 
+async function openPrFilters(page: Page): Promise<void> {
+  const standaloneTrigger = page.getByTitle("Filter PRs");
+  if (await standaloneTrigger.isVisible()) {
+    await standaloneTrigger.click();
+  } else {
+    await page.locator(".compact-filter-menu .filter-btn").click();
+  }
+  await expect(page.locator(".filter-dropdown")).toBeVisible();
+}
+
 test("PR filters stack attributes and allow multiple kanban statuses", async ({ page }) => {
   await mockPulls(page);
   await page.goto("/pulls");
@@ -89,7 +99,7 @@ test("PR filters stack attributes and allow multiple kanban statuses", async ({ 
   const rows = page.locator(".pr-list-row");
   await expect(rows).toHaveCount(4);
 
-  await page.getByTitle("Filter PRs").click();
+  await openPrFilters(page);
   await page.locator(".filter-dropdown").getByRole("button", { name: "Ready", exact: true }).first().click();
   await page.locator(".filter-dropdown").getByRole("button", { name: "Reviewing" }).click();
   await page.locator(".filter-dropdown").getByRole("button", { name: "Ready", exact: true }).nth(1).click();

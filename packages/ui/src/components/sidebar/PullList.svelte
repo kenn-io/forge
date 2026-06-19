@@ -63,9 +63,12 @@
     { value: "byWorkflow", label: "Status" },
     { value: "flat", label: "All" },
   ];
-  // Playwright-measured with a buffered "9999 PRs" count label:
-  // the full PR filter row first fits at 396px.
-  const COMPACT_FILTER_MAX_WIDTH = 395;
+  // Playwright-measured with the local PR filter icon and sidebar toggle:
+  // the full PR filter row needs 423px, so collapse with a small buffer.
+  const COMPACT_FILTER_MAX_WIDTH = 430;
+  // Keep the full filter groups visible at medium widths, but collapse the
+  // local PR filter trigger label before it crowds the sidebar toggle.
+  const LOCAL_FILTER_ICON_ONLY_MAX_WIDTH = 930;
 
   interface Props {
     getDetailTab?: () => string;
@@ -122,7 +125,15 @@
     void pulls.loadPulls();
   }
 
-  const compactFilterSections = $derived.by(() => [
+  function clearCompactFilters(): void {
+    pulls.clearLocalFilters();
+    grouping.setGroupingMode("byRepo");
+    if (pulls.getFilterState() !== "open") {
+      setPullState("open");
+    }
+  }
+
+  const toolbarFilterSections = $derived.by(() => [
     {
       title: "State",
       items: pullStateOptions.map((state) => ({
@@ -145,9 +156,6 @@
     },
   ]);
 
-  const hasCompactFilterChanges = $derived(
-    pulls.getFilterState() !== "open" || groupingMode !== "byRepo",
-  );
   const localFilterSections = $derived.by(() => [
     {
       title: "PR",
@@ -168,8 +176,20 @@
       })),
     },
   ]);
+  const compactFilterSections = $derived.by(() => [
+    ...toolbarFilterSections,
+    ...localFilterSections,
+  ]);
+  const hasCompactFilterChanges = $derived(
+    pulls.getFilterState() !== "open"
+      || groupingMode !== "byRepo"
+      || pulls.getLocalFilterCount() > 0,
+  );
   const useCompactFilters = $derived(
     sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
+  );
+  const useIconOnlyLocalFilters = $derived(
+    sidebarWidth <= LOCAL_FILTER_ICON_ONLY_MAX_WIDTH,
   );
 
   interface PullGroup {
@@ -330,23 +350,29 @@
       <FilterDropdown
         label="Filters"
         title="Filters"
-        icon="more"
         active={hasCompactFilterChanges}
-        showBadge={false}
+        badgeCount={pulls.getLocalFilterCount()}
         sections={compactFilterSections}
-        minWidth="160px"
+        resetLabel="Clear filters"
+        onReset={clearCompactFilters}
+        minWidth="190px"
       />
     </div>
-    <FilterDropdown
-      label="Filters"
-      title="Filter PRs"
-      active={pulls.getLocalFilterCount() > 0}
-      badgeCount={pulls.getLocalFilterCount()}
-      sections={localFilterSections}
-      resetLabel="Clear filters"
-      onReset={pulls.clearLocalFilters}
-      minWidth="190px"
-    />
+    <div
+      class="local-filter-menu"
+      class:local-filter-menu--icon-only={useIconOnlyLocalFilters}
+    >
+      <FilterDropdown
+        label="Filters"
+        title="Filter PRs"
+        active={pulls.getLocalFilterCount() > 0}
+        badgeCount={pulls.getLocalFilterCount()}
+        sections={localFilterSections}
+        resetLabel="Clear filters"
+        onReset={pulls.clearLocalFilters}
+        minWidth="190px"
+      />
+    </div>
     {#if isSidebarToggleEnabled()}
       <LeftSidebarToggle
         state="expanded"
@@ -748,15 +774,43 @@
     transform-origin: left center;
   }
 
-  .compact-filter-menu :global(.filter-btn) {
-    width: 26px;
+  .local-filter-menu {
+    flex-shrink: 0;
+  }
+
+  .local-filter-menu--icon-only :global(.filter-btn) {
+    width: 34px;
     justify-content: center;
-    padding: 3px;
+    gap: 0;
+    padding-inline: 0;
+  }
+
+  .local-filter-menu--icon-only :global(.filter-trigger-label) {
+    display: none;
+  }
+
+  .local-filter-menu--icon-only :global(.filter-badge) {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+  }
+
+  .compact-filter-menu :global(.filter-btn) {
+    width: 34px;
+    justify-content: center;
+    gap: 0;
+    padding-inline: 0;
   }
 
   .compact-filter-menu :global(.filter-trigger-label),
   .compact-filter-menu :global(.filter-trigger-detail) {
     display: none;
+  }
+
+  .compact-filter-menu :global(.filter-badge) {
+    position: absolute;
+    top: -5px;
+    right: -5px;
   }
 
   .state-btn {
@@ -808,6 +862,10 @@
 
   .filter-bar--compact .state-toggle,
   .filter-bar--compact .group-toggle {
+    display: none;
+  }
+
+  .filter-bar--compact .local-filter-menu {
     display: none;
   }
 

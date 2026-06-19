@@ -248,6 +248,117 @@ name = "widget"
 	assert.True(cfgAfterUpdate.Terminal.HideTmuxStatus)
 }
 
+func TestSettingsAPIE2EHideTmuxStatusUpdateAffectsWorkspaceCreation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "tmux-record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
+record=%q
+printf '%%s\0' "$#" "$@" >> "$record"
+exit 0
+`, record), 0o755))
+	cfgPath := filepath.Join(dir, "config.toml")
+	localRepo, remote, platformHost := setupSettingsLocalGitRepo(t)
+	require.NoError(os.WriteFile(cfgPath, fmt.Appendf(nil, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[tmux]
+command = [%q]
+
+[[repos]]
+platform_host = %q
+owner = "acme"
+name = "widget"
+`, tmuxPath, platformHost), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"),
+	)
+	require.NoError(err)
+	seedSettingsWorkspaceMR(t, database, repoID, 42, "feature/thing")
+	syncer := github.NewSyncer(
+		map[string]github.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]github.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: platformHost}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := server.NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		server.ServerOptions{
+			WorktreeDir:                        filepath.Join(dir, "workspaces"),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	client, err := generated.NewClientWithResponses(
+		ts.URL+"/api/v1",
+		generated.WithRequestEditorFn(
+			func(_ context.Context, req *http.Request) error {
+				setAcceptedHostForE2ETest(req)
+				return nil
+			},
+		),
+	)
+	require.NoError(err)
+
+	updateResp, err := client.UpdateSettingsWithResponse(
+		t.Context(),
+		generated.UpdateSettingsRequest{
+			Terminal: &generated.Terminal{
+				FontSize:       14,
+				Scrollback:     1000,
+				LineHeight:     1,
+				CursorBlink:    true,
+				HideTmuxStatus: true,
+				Renderer:       generated.Xterm,
+			},
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, updateResp.StatusCode(), string(updateResp.Body))
+
+	runSettingsGit(t, localRepo, "push", remote, "HEAD:refs/heads/feature/thing")
+	runSettingsGit(t, remote, "update-server-info")
+	runSettingsGit(t, localRepo, "fetch", "--prune", "origin")
+	baseResp, err := client.UpdateRepoWorktreeBaseOnHostWithResponse(
+		t.Context(), platformHost, "github", "acme", "widget",
+		generated.RepoWorktreeBaseRequest{WorktreeBasePath: localRepo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, baseResp.StatusCode(), string(baseResp.Body))
+	createResp, err := client.CreateWorkspaceWithResponse(
+		t.Context(),
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: platformHost,
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     42,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode(), string(createResp.Body))
+	require.NotNil(createResp.JSON202)
+
+	ready := waitForSettingsWorkspaceReady(t, client, createResp.JSON202.Id)
+	assert.NotEmpty(ready.TmuxSession)
+	raw, err := os.ReadFile(record)
+	require.NoError(err)
+	assert.Contains(
+		string(raw),
+		"set-option\x00-q\x00-t\x00"+ready.TmuxSession+"\x00status\x00off",
+	)
+}
+
 func TestSettingsAPIE2EPreservesMsgvaultConfig(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

@@ -123,8 +123,17 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 	api, err := apiclient.NewWithHTTPClient(middleman.URL, middleman.Client())
 	require.NoError(err)
 
+	syncLastRunAt := func() *time.Time {
+		t.Helper()
+		resp, err := api.HTTP.GetSyncStatusWithResponse(t.Context())
+		require.NoError(err)
+		require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+		require.NotNil(resp.JSON200)
+		return resp.JSON200.LastRunAt
+	}
 	triggerSync := func() {
 		t.Helper()
+		before := syncLastRunAt()
 		resp, err := api.HTTP.TriggerSyncWithResponse(
 			t.Context(),
 			nil,
@@ -135,7 +144,16 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 		)
 		require.NoError(err)
 		require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
-		waitForSyncIdle(t, middleman.Client(), middleman.URL)
+		require.Eventually(func() bool {
+			resp, err := api.HTTP.GetSyncStatusWithResponse(t.Context())
+			if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+				return false
+			}
+			if resp.JSON200.Running || resp.JSON200.LastRunAt == nil {
+				return false
+			}
+			return before == nil || resp.JSON200.LastRunAt.After(*before)
+		}, 5*time.Second, 10*time.Millisecond)
 	}
 	budgetSpent := func() int64 {
 		t.Helper()

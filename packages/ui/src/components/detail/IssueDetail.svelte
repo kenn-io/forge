@@ -350,6 +350,16 @@
     return data?.users ?? [];
   }
 
+  function userAvatarURL(username: string): string {
+    const login = encodeURIComponent(username.trim());
+    const host = issues.getIssueDetail()?.repo?.platform_host
+      ?? issues.getIssueDetail()?.platform_host
+      ?? platformHost
+      ?? "";
+    if (login === "" || host === "") return "";
+    return `https://${host}/${login}.png?size=40`;
+  }
+
   function onDocumentMousedown(e: MouseEvent): void {
     if (!labelPickerOpen) return;
     const target = e.target as Node;
@@ -904,6 +914,7 @@
             disabled={staleIssue || assigneeGate.unavailable}
             disabledReason={assigneeGate.unavailable ? assigneeGate.reason : undefined}
             loadCandidates={loadUserCandidates}
+            avatarUrlForUser={userAvatarURL}
             onchange={(next) => issues.setIssueAssignees(owner, name, number, next)}
           >
             {#snippet icon()}

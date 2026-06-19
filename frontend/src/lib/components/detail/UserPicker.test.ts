@@ -55,6 +55,26 @@ describe("UserPicker", () => {
     expect(screen.getAllByRole("menuitemcheckbox")).toHaveLength(2);
   });
 
+  it("renders synced profile images when an avatar URL is available", () => {
+    render(UserPicker, {
+      props: {
+        title: "Edit reviewers",
+        candidates: ["alice", "manual-user"],
+        selected: [],
+        avatarUrlForUser: (username) => (username === "alice" ? "https://github.example/alice.png?size=40" : ""),
+        ontoggle: vi.fn(),
+        onclose: vi.fn(),
+      },
+    });
+
+    const aliceRow = screen.getByRole("menuitemcheckbox", { name: /alice/i });
+    const aliceAvatar = aliceRow.querySelector("img.user-picker__avatar");
+    expect(aliceAvatar?.getAttribute("src")).toBe("https://github.example/alice.png?size=40");
+    expect(aliceAvatar?.getAttribute("alt")).toBe("");
+
+    expect(screen.getByRole("menuitemcheckbox", { name: /manual-user/i }).textContent).toContain("M");
+  });
+
   it("notifies query changes so callers can fetch matching candidates", async () => {
     const onQuery = vi.fn();
     render(UserPicker, {

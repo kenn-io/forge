@@ -29,6 +29,7 @@
     /// with "" when the picker opens and again as the user types, so
     /// candidates beyond the first page stay reachable by searching.
     loadCandidates: (query: string) => Promise<string[]>;
+    avatarUrlForUser?: ((username: string) => string) | undefined;
     onchange: (next: string[]) => Promise<unknown>;
     icon?: Snippet;
   }
@@ -41,6 +42,7 @@
     disabledReason = undefined,
     tooltipNote = undefined,
     loadCandidates,
+    avatarUrlForUser = undefined,
     onchange,
     icon = undefined,
   }: Props = $props();
@@ -267,6 +269,7 @@
         {pendingUser}
         error={mutationError ?? candidatesError}
         {autofocusFilter}
+        {avatarUrlForUser}
         onquery={onPickerQuery}
         ontoggle={toggleUser}
         onclear={clearUsers}

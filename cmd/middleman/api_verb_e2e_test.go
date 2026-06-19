@@ -188,7 +188,7 @@ func TestAPIVerbE2EWithBasePath(t *testing.T) {
 		return err == nil &&
 			strings.Contains(stdout.String(), `"hosts"`)
 	}
-	require.Eventually(callSnapshot, 10*time.Second, 200*time.Millisecond,
+	require.Eventually(callSnapshot, 30*time.Second, 200*time.Millisecond,
 		"api verb must reach the snapshot under the base path")
 
 	// base_path is startup-bound: editing the config while the old

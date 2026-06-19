@@ -115,6 +115,26 @@ describe("buildMarkdownRichPreview", () => {
     expect(orderedLists[1]).toContain('start="5"');
   });
 
+  it("aligns unchanged ordered list chunks when synthetic split starts differ", () => {
+    const preview = buildMarkdownRichPreview(
+      markdownFile([
+        { type: "context", content: "1. Alpha", old_num: 1, new_num: 1 },
+        { type: "add", content: "2. Inserted", new_num: 2 },
+        { type: "context", content: "3. Beta", old_num: 2, new_num: 3 },
+        { type: "context", content: "4. Gamma", old_num: 3, new_num: 4 },
+      ]),
+      repo,
+      { splitOldLines: [1], splitNewLines: [1, 2] },
+    );
+
+    const trailing = preview.blocks.find((block) => block.oldLines?.includes(2) && block.newLines?.includes(3));
+    expect(trailing).toBeTruthy();
+    expect(trailing!.unifiedHtml).toContain("Beta");
+    expect(trailing!.unifiedHtml).toContain('start="3"');
+    expect(trailing!.unifiedHtml).not.toContain("<del");
+    expect(trailing!.unifiedHtml).not.toContain("<ins");
+  });
+
   it("keeps nested lists inside the owning top-level split item", () => {
     const preview = buildMarkdownRichPreview(
       markdownFile([

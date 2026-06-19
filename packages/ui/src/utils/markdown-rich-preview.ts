@@ -282,7 +282,7 @@ function alignBlocks(oldBlocks: MarkdownSideBlock[], newBlocks: MarkdownSideBloc
   if (oldBlocks.length * newBlocks.length > MAX_BLOCK_COMPARISON_SIZE) {
     return renderCoarseBlocks(oldBlocks, newBlocks);
   }
-  const ops = diffSequence(oldBlocks, newBlocks, (oldBlock, newBlock) => oldBlock.html === newBlock.html);
+  const ops = diffSequence(oldBlocks, newBlocks, blocksAlign);
   const blocks: MarkdownRichPreviewBlock[] = [];
   for (let i = 0; i < ops.length; i++) {
     const op = ops[i]!;
@@ -322,6 +322,17 @@ function alignBlocks(oldBlocks: MarkdownSideBlock[], newBlocks: MarkdownSideBloc
   return blocks;
 }
 
+function blocksAlign(oldBlock: MarkdownSideBlock, newBlock: MarkdownSideBlock): boolean {
+  return alignmentHtml(oldBlock.html) === alignmentHtml(newBlock.html);
+}
+
+function alignmentHtml(html: string): string {
+  return html.replace(/<ol\b([^>]*)>/g, (tag: string, attributes: string) => {
+    if (!attributes.includes("markdown-rich-diff__split-list")) return tag;
+    return `<ol${attributes.replace(/\sstart="\d+"/, "")}>`;
+  });
+}
+
 function renderCoarseBlocks(
   oldBlocks: MarkdownSideBlock[],
   newBlocks: MarkdownSideBlock[],
@@ -352,7 +363,8 @@ function renderBlock(
     newStart: newBlock?.sourceStart,
     newEnd: newBlock?.sourceEnd,
     newLines: newBlock?.sourceLines,
-    unifiedHtml: renderMarkdownDiff(oldHtml, newHtml),
+    unifiedHtml:
+      oldBlock && newBlock && blocksAlign(oldBlock, newBlock) ? newHtml : renderMarkdownDiff(oldHtml, newHtml),
     beforeHtml: split.beforeHtml,
     afterHtml: split.afterHtml,
   };

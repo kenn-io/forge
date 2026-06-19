@@ -1420,6 +1420,62 @@ describe("DiffFile", () => {
     expect(detailsComment?.previousElementSibling?.textContent).toContain("updated details");
   });
 
+  it("keeps context-owned list items aligned when a review targets a changed detail line", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 3,
+            new_start: 1,
+            new_count: 3,
+            lines: [
+              { type: "context", content: "- Action", old_num: 1, new_num: 1 },
+              { type: "delete", content: "legacy details", old_num: 2 },
+              { type: "add", content: "updated details", new_num: 2 },
+              { type: "context", content: "- Statuses", old_num: 3, new_num: 3 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            id: "thread-context-details",
+            provider_comment_id: "comment-context-details",
+            path: "README.md",
+            old_path: "README.md",
+            line: 2,
+            new_line: 2,
+            body: "Context-owned details review note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Context-owned details review note")).toBeTruthy();
+    });
+    const preview = document.querySelector(".markdown-rich-diff--unified");
+    const deletedText = Array.from(preview?.querySelectorAll("del") ?? [])
+      .map((element) => element.textContent ?? "")
+      .join("\n");
+    const insertedText = Array.from(preview?.querySelectorAll("ins") ?? [])
+      .map((element) => element.textContent ?? "")
+      .join("\n");
+    expect(deletedText).toContain("legacy");
+    expect(deletedText).not.toContain("Statuses");
+    expect(insertedText).toContain("updated");
+    expect(insertedText).not.toContain("Statuses");
+    const detailsComment = document.querySelector("[data-review-thread-id='thread-context-details']");
+    expect(detailsComment?.previousElementSibling?.textContent).toContain("updated details");
+  });
+
   it("keeps markdown document semantics when review cards are anchored in rich preview", async () => {
     renderDiffFile(
       makeFile({

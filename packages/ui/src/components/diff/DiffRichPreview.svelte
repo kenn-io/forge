@@ -261,6 +261,8 @@
     const marker = changedListMarker(lines, targetIndex);
     if (!marker) return;
 
+    if (marker.index !== targetIndex) addDiffLineNumbers(oldLines, newLines, lines[marker.index]!);
+
     const adjacent = adjacentOppositeChangedListMarker(lines, marker);
     if (adjacent) addDiffLineNumbers(oldLines, newLines, adjacent);
 
@@ -276,7 +278,6 @@
     let crossedBlank = false;
     for (let index = targetIndex - 1; index >= 0; index--) {
       const line = lines[index]!;
-      if (line.type !== target.type) return null;
       if (line.content.trim() === "") {
         crossedBlank = true;
         continue;
@@ -295,6 +296,7 @@
     marker: ChangedListMarker,
   ): DiffHunkLine | undefined {
     const target = lines[marker.index]!;
+    if (target.type !== "add" && target.type !== "delete") return undefined;
     const oppositeType = target.type === "add" ? "delete" : "add";
     return (
       previousAdjacentOppositeChangedListMarker(lines, marker.index, marker.indent, oppositeType) ??

@@ -218,12 +218,36 @@ describe("DiffView", () => {
     expect(clearScrolling).toHaveBeenCalledOnce();
   });
 
-  it("contains wheel overscroll at diff pane boundaries", () => {
+  it("contains wheel overscroll at diff pane boundaries", async () => {
     const diff = makeDiffStore();
     const { container } = renderDiffView(diff);
     const diffArea = container.querySelector(".diff-area") as HTMLDivElement;
+    Object.defineProperty(diffArea, "clientHeight", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(diffArea, "scrollHeight", {
+      configurable: true,
+      value: 2_000,
+    });
+    await Promise.resolve();
 
     expect(diffArea.style.overscrollBehavior).toBe("contain");
+
+    diffArea.scrollTop = 0;
+    const topEvent = new WheelEvent("wheel", { deltaY: -120, cancelable: true });
+    diffArea.dispatchEvent(topEvent);
+    expect(topEvent.defaultPrevented).toBe(true);
+
+    diffArea.scrollTop = 400;
+    const middleEvent = new WheelEvent("wheel", { deltaY: 120, cancelable: true });
+    diffArea.dispatchEvent(middleEvent);
+    expect(middleEvent.defaultPrevented).toBe(false);
+
+    diffArea.scrollTop = 1_600;
+    const bottomEvent = new WheelEvent("wheel", { deltaY: 120, cancelable: true });
+    diffArea.dispatchEvent(bottomEvent);
+    expect(bottomEvent.defaultPrevented).toBe(true);
   });
 
   it("keeps a scroll target pending until the file is rendered", async () => {

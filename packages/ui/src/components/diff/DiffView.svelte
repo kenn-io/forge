@@ -483,8 +483,27 @@
     onScrollTopChange?.(area.scrollTop);
   }
 
-  function onDiffUserScrollIntent(): void {
+  function shouldContainWheelAtDiffBoundary(
+    event: WheelEvent,
+    area: HTMLElement,
+  ): boolean {
+    if (event.deltaY === 0) return false;
+
+    const maxScrollTop = Math.max(0, area.scrollHeight - area.clientHeight);
+    if (maxScrollTop === 0) return true;
+    if (event.deltaY < 0) return area.scrollTop <= 0;
+    return area.scrollTop >= maxScrollTop - 1;
+  }
+
+  function onDiffUserScrollIntent(event: Event): void {
     cancelProgrammaticScrollIfUserOverrides();
+    if (!(event instanceof WheelEvent)) return;
+
+    const area = event.currentTarget instanceof HTMLElement
+      ? event.currentTarget
+      : diffArea;
+    if (!area || !shouldContainWheelAtDiffBoundary(event, area)) return;
+    event.preventDefault();
   }
 
   function handlePageKeydown(e: KeyboardEvent): boolean {
@@ -546,7 +565,7 @@
     if (!area) return;
 
     area.tabIndex = -1;
-    area.addEventListener("wheel", onDiffUserScrollIntent);
+    area.addEventListener("wheel", onDiffUserScrollIntent, { passive: false });
     area.addEventListener("touchstart", onDiffUserScrollIntent);
     area.addEventListener("pointerdown", onDiffUserScrollIntent);
     area.addEventListener("keydown", handleDiffAreaKeydown);

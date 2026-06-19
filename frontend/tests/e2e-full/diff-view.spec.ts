@@ -622,6 +622,28 @@ async function clickTreeFileItem(pageOrLocator: Page | ReturnType<Page["locator"
   await expect(item).toHaveAttribute("aria-selected", "true");
 }
 
+async function jumpToFile(page: Page, path: string): Promise<void> {
+  await page.getByRole("button", { name: "Jump to file" }).click();
+  const menu = page.locator(".file-jump-menu");
+  await expect(menu).toBeVisible();
+  await menu.getByRole("searchbox", { name: "Jump to file" }).fill(path);
+  await menu.locator(".file-jump-option").first().click();
+  await expect(menu).toBeHidden();
+}
+
+async function scrollFileTreeToTop(page: Page): Promise<void> {
+  await page.locator(".diff-file-tree").evaluate((host) => {
+    host.scrollTop = 0;
+    const root = host.shadowRoot;
+    if (!root) return;
+    for (const element of root.querySelectorAll<HTMLElement>("*")) {
+      if (element.scrollHeight > element.clientHeight) {
+        element.scrollTop = 0;
+      }
+    }
+  });
+}
+
 const diffAdditionsSelector = '[data-content] [data-line-type="change-addition"]';
 const diffDeletionsSelector = '[data-content] [data-line-type="change-deletion"]';
 const diffContextSelector = '[data-content] [data-line-type="context"]';
@@ -1634,6 +1656,64 @@ test.describe("diff view", () => {
     await expect.poll(() => mainArea.evaluate((el) => Math.round(el.scrollTop))).toBe(0);
   });
 
+  test("diff pane boundary wheel events do not scroll the outer detail frame", async ({ page }) => {
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    const mainArea = page.locator(".main-area");
+    const diffArea = page.locator(".diff-area");
+    await page.evaluate(() => {
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
+    });
+    await mainArea.evaluate((area) => {
+      area.style.overflowY = "auto";
+      area.style.overflowAnchor = "none";
+      const filesView = area.firstElementChild;
+      if (!(filesView instanceof HTMLElement)) throw new Error("missing files view");
+      const frameHeight = Math.round(area.getBoundingClientRect().height);
+      filesView.style.flex = `0 0 ${frameHeight}px`;
+      filesView.style.minHeight = `${frameHeight}px`;
+      const topSpacer = document.createElement("div");
+      topSpacer.dataset.testid = "overscroll-top-spacer";
+      topSpacer.setAttribute("aria-hidden", "true");
+      topSpacer.style.flexShrink = "0";
+      topSpacer.style.height = "180px";
+      area.insertBefore(topSpacer, area.firstElementChild);
+      const bottomSpacer = document.createElement("div");
+      bottomSpacer.dataset.testid = "overscroll-bottom-spacer";
+      bottomSpacer.setAttribute("aria-hidden", "true");
+      bottomSpacer.style.flexShrink = "0";
+      bottomSpacer.style.height = "1200px";
+      area.appendChild(bottomSpacer);
+    });
+    await expect.poll(async () => mainArea.evaluate((area) => area.scrollHeight > area.clientHeight)).toBe(true);
+    const pinnedFrameScrollTop = await mainArea.evaluate((area) => {
+      area.scrollTop = 180;
+      return Math.round(area.scrollTop);
+    });
+    expect(pinnedFrameScrollTop).toBeGreaterThan(0);
+    await expect(diffArea).toBeVisible();
+
+    await diffArea.evaluate((area) => {
+      area.scrollTop = 0;
+    });
+    await diffArea.hover();
+    await page.mouse.wheel(0, -900);
+    await expect.poll(async () => mainArea.evaluate((area) => Math.round(area.scrollTop))).toBe(pinnedFrameScrollTop);
+
+    const bottomScrollTop = await diffArea.evaluate((area) => {
+      area.scrollTop = area.scrollHeight - area.clientHeight;
+      return Math.round(area.scrollTop);
+    });
+    expect(bottomScrollTop).toBeGreaterThan(0);
+    await diffArea.hover();
+    await page.mouse.wheel(0, 900);
+    await expect.poll(async () => mainArea.evaluate((area) => Math.round(area.scrollTop))).toBe(pinnedFrameScrollTop);
+  });
+
   test("sidebar jump to the last file preserves expanded body space above it", async ({ page }) => {
     await mockDiffApi(page, largeDiff);
     await navigateToDiff(page);
@@ -2589,6 +2669,40 @@ test.describe("diff view", () => {
     // Clearing filter restores full list.
     await filterInput.fill("");
     await expect(treeFileItems(page)).toHaveCount(50);
+  });
+
+  test("filtered file tree consumes hidden explicit file jumps without revealing stale rows", async ({ page }) => {
+    const targetPath = "src/pkg8/file_40.go";
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    const filterInput = page.locator(".diff-files-filter__input").first();
+    await filterInput.fill("file_1");
+    await expect(treeFileItems(page)).toHaveCount(11);
+    await expect(treeFileItem(page, targetPath)).toHaveCount(0);
+
+    await jumpToFile(page, targetPath);
+    await expect(page.locator(`[data-file-path="${targetPath}"]`)).toBeVisible();
+    await expect(treeFileItem(page, targetPath)).toHaveCount(0);
+    await expect(page.locator(".diff-file-tree [data-item-type='file'][aria-selected='true']")).toHaveCount(0);
+
+    await filterInput.fill("");
+    await expect(treeFileItems(page)).toHaveCount(50);
+    const targetTreeItem = treeFileItem(page, targetPath);
+    await expect(targetTreeItem).toHaveAttribute("aria-selected", "true");
+    await scrollFileTreeToTop(page);
+    expect(
+      await targetTreeItem.evaluate((item) => {
+        const rect = item.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+      }),
+    ).toBe(false);
+
+    await jumpToFile(page, targetPath);
+    await expect(targetTreeItem).toHaveAttribute("aria-selected", "true");
+    await expect(targetTreeItem).toBeInViewport();
   });
 
   test("inline file filter is hidden for small diffs", async ({ page }) => {

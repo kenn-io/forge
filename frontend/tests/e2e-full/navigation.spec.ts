@@ -1,12 +1,10 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-async function waitForPRList(page: Page): Promise<void> {
-  await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
-}
-
-async function waitForIssueList(page: Page): Promise<void> {
-  await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
-}
+// The activity-selection-restore flows, the legacy /mail fallthrough, and the
+// list-row -> detail-pane opens moved to the browser tier
+// (frontend/src/App.navigation.browser.svelte.ts). What stays here depends on the
+// external mode-shell backends (Kata/Docs/Messages) or on diff rendering, which
+// are full-stack concerns best exercised against the live backend.
 
 test.describe("view navigation", () => {
   test("header tabs switch between views", async ({ page }) => {
@@ -49,56 +47,6 @@ test.describe("view navigation", () => {
     await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 5_000 });
   });
 
-  test("returning to Activity from PRs restores the selected item", async ({ page }) => {
-    await page.goto("/");
-    await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator(".activity-table .activity-row").first().waitFor({ state: "visible", timeout: 10_000 });
-
-    // Select a PR in the feed: the split view opens and the selection is
-    // written to the URL query string.
-    const prRow = page
-      .locator(".activity-row")
-      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
-      .first();
-    await prRow.click();
-    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
-    await expect(page).toHaveURL(/\/\?.*selected=pr%3A/);
-
-    // Leave for the PRs tab, then return to Activity via the top bar.
-    await page.locator(".view-tab", { hasText: "PRs" }).click();
-    await expect(page).toHaveURL(/\/pulls\//);
-
-    await page.locator(".view-tab", { hasText: "Activity" }).click();
-
-    // The previous Activity view comes back: the selection survives in the
-    // URL and the split view reopens, instead of resetting to a bare "/".
-    await expect(page).toHaveURL(/\/\?.*selected=pr%3A/);
-    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
-  });
-
-  test("returning to Activity from the settings gear restores the selected item", async ({ page }) => {
-    await page.goto("/");
-    await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator(".activity-table .activity-row").first().waitFor({ state: "visible", timeout: 10_000 });
-
-    const prRow = page
-      .locator(".activity-row")
-      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
-      .first();
-    await prRow.click();
-    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
-    await expect(page).toHaveURL(/\/\?.*selected=pr%3A/);
-
-    // The settings gear leaves Activity without going through the tab bar.
-    await page.getByTitle("Settings").click();
-    await expect(page).toHaveURL(/\/settings$/);
-
-    await page.locator(".view-tab", { hasText: "Activity" }).click();
-
-    await expect(page).toHaveURL(/\/\?.*selected=pr%3A/);
-    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
-  });
-
   test("Kata shell does not expose repo selector or respond to PR number shortcuts", async ({ page }) => {
     await page.goto("/kata");
 
@@ -122,41 +70,6 @@ test.describe("view navigation", () => {
     await page.goto("/messages");
     await expect(page).toHaveURL(/\/messages$/);
     await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
-  });
-
-  test("old mail route does not open Messages", async ({ page }) => {
-    await page.goto("/mail?q=label%3AInbox");
-
-    await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 10_000 });
-    await expect(page.getByRole("heading", { name: "Messages" })).toHaveCount(0);
-  });
-
-  test("clicking a PR row opens the detail pane", async ({ page }) => {
-    await page.goto("/pulls");
-    await waitForPRList(page);
-
-    // Detail pane should not be showing a PR detail initially.
-    await expect(page.locator(".pull-detail")).not.toBeVisible();
-
-    // Click the first PR item.
-    await page.locator(".pull-item").first().click();
-
-    // Detail pane should now show the PR detail.
-    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
-  });
-
-  test("clicking an issue row opens the detail pane", async ({ page }) => {
-    await page.goto("/issues");
-    await waitForIssueList(page);
-
-    // Detail pane should not be showing an issue detail initially.
-    await expect(page.locator(".issue-detail")).not.toBeVisible();
-
-    // Click the first issue item.
-    await page.locator(".issue-item").first().click();
-
-    // Detail pane should now show the issue detail.
-    await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
   });
 
   test("settings button toggles back to the previous route", async ({ page }) => {

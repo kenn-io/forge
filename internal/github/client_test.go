@@ -707,7 +707,7 @@ func TestListIssueTimelineEvents(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"timelineItems":{"nodes":[{"__typename":"AssignedEvent","id":"AE_1","actor":{"login":"wesm"},"assignee":{"__typename":"User","login":"wesm"},"createdAt":"2024-06-01T12:20:00Z"}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"timelineItems":{"nodes":[{"__typename":"UnassignedEvent","id":"UE_1","actor":{"login":"alice"},"assignee":{"__typename":"Mannequin","login":"bob"},"createdAt":"2024-06-01T12:25:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"timelineItems":{"nodes":[{"__typename":"UnassignedEvent","id":"UE_1","actor":{"login":"alice"},"assignee":{"__typename":"Mannequin","login":"bob"},"createdAt":"2024-06-01T12:25:00Z"},{"__typename":"CrossReferencedEvent","id":"CRE_1","actor":{"login":"mariusvniekerk"},"createdAt":"2024-06-01T12:30:00Z","isCrossRepository":false,"willCloseTarget":false,"source":{"__typename":"PullRequest","number":860,"title":"Add global review guidelines","url":"https://github.com/kenn-io/roborev/pull/860","repository":{"owner":{"login":"kenn-io"},"name":"roborev"}}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -719,7 +719,7 @@ func TestListIssueTimelineEvents(t *testing.T) {
 
 	events, err := c.ListIssueTimelineEvents(t.Context(), "owner", "repo", 42)
 	require.NoError(err)
-	require.Len(events, 2)
+	require.Len(events, 3)
 	require.Equal("assigned", events[0].EventType)
 	require.Equal("AE_1", events[0].NodeID)
 	require.Equal("wesm", events[0].Actor)
@@ -728,6 +728,15 @@ func TestListIssueTimelineEvents(t *testing.T) {
 	require.Equal("UE_1", events[1].NodeID)
 	require.Equal("alice", events[1].Actor)
 	require.Equal("bob", events[1].Assignee)
+	require.Equal("cross_referenced", events[2].EventType)
+	require.Equal("CRE_1", events[2].NodeID)
+	require.Equal("mariusvniekerk", events[2].Actor)
+	require.Equal("PullRequest", events[2].SourceType)
+	require.Equal("kenn-io", events[2].SourceOwner)
+	require.Equal("roborev", events[2].SourceRepo)
+	require.Equal(860, events[2].SourceNumber)
+	require.Equal("Add global review guidelines", events[2].SourceTitle)
+	require.Equal("https://github.com/kenn-io/roborev/pull/860", events[2].SourceURL)
 	require.Equal(2, calls)
 }
 

@@ -372,21 +372,42 @@ func NormalizeIssueTimelineEvent(
 ) *platform.IssueEvent {
 	switch event.EventType {
 	case "assigned", "unassigned":
+		metadata, _ := json.Marshal(assignmentMetadata{
+			Assignee: event.Assignee,
+		})
+		return &platform.IssueEvent{
+			Repo:         repo,
+			IssueNumber:  issueNumber,
+			EventType:    event.EventType,
+			Author:       event.Actor,
+			Summary:      assignmentSummary(event.EventType, event.Actor, event.Assignee),
+			MetadataJSON: string(metadata),
+			CreatedAt:    event.CreatedAt,
+			DedupeKey:    timelineDedupeKey(event),
+		}
+	case "cross_referenced":
+		metadata, _ := json.Marshal(crossReferenceMetadata{
+			SourceType:        event.SourceType,
+			SourceOwner:       event.SourceOwner,
+			SourceRepo:        event.SourceRepo,
+			SourceNumber:      event.SourceNumber,
+			SourceTitle:       event.SourceTitle,
+			SourceURL:         event.SourceURL,
+			IsCrossRepository: event.IsCrossRepository,
+			WillCloseTarget:   event.WillCloseTarget,
+		})
+		return &platform.IssueEvent{
+			Repo:         repo,
+			IssueNumber:  issueNumber,
+			EventType:    "cross_referenced",
+			Author:       event.Actor,
+			Summary:      fmt.Sprintf("Referenced from %s/%s#%d", event.SourceOwner, event.SourceRepo, event.SourceNumber),
+			MetadataJSON: string(metadata),
+			CreatedAt:    event.CreatedAt,
+			DedupeKey:    timelineDedupeKey(event),
+		}
 	default:
 		return nil
-	}
-	metadata, _ := json.Marshal(assignmentMetadata{
-		Assignee: event.Assignee,
-	})
-	return &platform.IssueEvent{
-		Repo:         repo,
-		IssueNumber:  issueNumber,
-		EventType:    event.EventType,
-		Author:       event.Actor,
-		Summary:      assignmentSummary(event.EventType, event.Actor, event.Assignee),
-		MetadataJSON: string(metadata),
-		CreatedAt:    event.CreatedAt,
-		DedupeKey:    timelineDedupeKey(event),
 	}
 }
 

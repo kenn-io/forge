@@ -51,6 +51,37 @@ func TestNormalizeReviewCommentEventPreservesHTMLURL(t *testing.T) {
 	assert.Equal(t, commentURL, event.DirectURL)
 }
 
+func TestNormalizeIssueTimelineEventCrossReferenced(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	createdAt := time.Date(2024, 6, 1, 12, 30, 0, 0, time.UTC)
+
+	event := NormalizeIssueTimelineEvent(platform.RepoRef{Owner: "kenn-io", Name: "roborev"}, 859, PullRequestTimelineEvent{
+		NodeID:            "CRE_1",
+		EventType:         "cross_referenced",
+		Actor:             "mariusvniekerk",
+		CreatedAt:         createdAt,
+		SourceType:        "PullRequest",
+		SourceOwner:       "kenn-io",
+		SourceRepo:        "roborev",
+		SourceNumber:      860,
+		SourceTitle:       "Add global review guidelines",
+		SourceURL:         "https://github.com/kenn-io/roborev/pull/860",
+		IsCrossRepository: false,
+		WillCloseTarget:   false,
+	})
+
+	require.NotNil(event)
+	assert.Equal("cross_referenced", event.EventType)
+	assert.Equal("mariusvniekerk", event.Author)
+	assert.Equal("Referenced from kenn-io/roborev#860", event.Summary)
+	assert.Equal(createdAt, event.CreatedAt)
+	assert.Equal("timeline-CRE_1", event.DedupeKey)
+	assert.Contains(event.MetadataJSON, `"source_type":"PullRequest"`)
+	assert.Contains(event.MetadataJSON, `"source_title":"Add global review guidelines"`)
+	assert.Contains(event.MetadataJSON, `"source_url":"https://github.com/kenn-io/roborev/pull/860"`)
+}
+
 func TestNormalizeIssue_ExtractsAssignees(t *testing.T) {
 	require := require.New(t)
 

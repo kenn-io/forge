@@ -1084,11 +1084,19 @@ func (p gitHubClientProvider) ListIssueEvents(
 	}
 	for _, timelineEvent := range timelineEvents {
 		event := platformgithub.NormalizeIssueTimelineEvent(ref, number, platformgithub.PullRequestTimelineEvent{
-			NodeID:    timelineEvent.NodeID,
-			EventType: timelineEvent.EventType,
-			Actor:     timelineEvent.Actor,
-			Assignee:  timelineEvent.Assignee,
-			CreatedAt: timelineEvent.CreatedAt,
+			NodeID:            timelineEvent.NodeID,
+			EventType:         timelineEvent.EventType,
+			Actor:             timelineEvent.Actor,
+			Assignee:          timelineEvent.Assignee,
+			CreatedAt:         timelineEvent.CreatedAt,
+			SourceType:        timelineEvent.SourceType,
+			SourceOwner:       timelineEvent.SourceOwner,
+			SourceRepo:        timelineEvent.SourceRepo,
+			SourceNumber:      timelineEvent.SourceNumber,
+			SourceTitle:       timelineEvent.SourceTitle,
+			SourceURL:         timelineEvent.SourceURL,
+			IsCrossRepository: timelineEvent.IsCrossRepository,
+			WillCloseTarget:   timelineEvent.WillCloseTarget,
 		})
 		if event != nil {
 			out = append(out, *event)

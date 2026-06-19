@@ -140,9 +140,11 @@ describe("budget display", () => {
     expect(bars.textContent).toContain("GQL");
   });
 
-  it("budget bars show middleman count when budget enabled", async () => {
+  it("budget bars keep eager refresh budget out of the compact status", async () => {
     const bars = await mountStatusBar();
-    expect(bars.textContent).toContain("Refresh 42 / 500");
+    expect(bars.textContent).not.toContain("Refresh");
+    expect(bars.textContent).not.toContain("42 / 500");
+    expect(bars.querySelector(".budget-count")).toBeNull();
   });
 
   // The popover dialog exposes REST req, GraphQL pts, and the eager
@@ -177,9 +179,9 @@ describe("budget display", () => {
       }),
     ]);
 
-    expect(bars.textContent).toContain("Refresh 1.3k / 500");
-    const compactBudget = bars.querySelector<HTMLElement>(".budget-count");
-    expect(compactBudget?.style.color).toBe("var(--budget-red)");
+    expect(bars.textContent).not.toContain("Refresh");
+    expect(bars.textContent).not.toContain("1.3k / 500");
+    expect(bars.querySelector(".budget-count")).toBeNull();
 
     const popover = await openPopover(bars);
     const spent = popover.querySelector<HTMLElement>(".budget-spent");
@@ -307,7 +309,7 @@ describe("budget display", () => {
     expect(healthDot(popover, "github.com").style.background).toBe("var(--budget-red)");
   });
 
-  it("GQL known but REST unknown still shows budget count", async () => {
+  it("GQL known but REST unknown still hides eager refresh budget from compact status", async () => {
     const bars = await mountStatusBar([
       rateLimits({
         "github.com": {
@@ -327,8 +329,14 @@ describe("budget display", () => {
     expect(bars.textContent).toContain("GQL");
     expect(bars.textContent).not.toContain("REST");
     expect(bars.textContent).toContain("--");
-    // Budget count visible — budget is independent of REST rate observation
-    expect(bars.textContent).toContain("Refresh 10 / 500");
+    // Eager refresh budget remains available in the popover, not the compact status.
+    expect(bars.textContent).not.toContain("Refresh");
+    expect(bars.textContent).not.toContain("10 / 500");
+    expect(bars.querySelector(".budget-count")).toBeNull();
+
+    const popover = await openPopover(bars);
+    expect(popover.textContent).toContain("Eager refresh");
+    expect(popover.textContent).toContain("10 / 500 budgeted req/hr");
   });
 
   it("stale host excluded from compact bars, fresh host drives ratio", async () => {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { RateLimitHostStatus } from "@middleman/ui/api/types";
-  import { aggregateBudget, budgetColor, formatCompact, syncBudgetColor, worstCaseRatio } from "./budget-utils";
+  import { budgetColor, worstCaseRatio } from "./budget-utils";
 
   interface Props {
     hosts: Record<string, RateLimitHostStatus>;
@@ -43,13 +43,8 @@
     return budgetColor(ratio);
   }
 
-  function budget() {
-    return aggregateBudget(Object.values(hosts));
-  }
-
   const rr = $derived(restRatio());
   const gr = $derived(gqlRatio());
-  const b = $derived(budget());
   const paused = $derived(anyPaused());
 </script>
 
@@ -92,12 +87,6 @@
       {/if}
     </span>
   </span>
-
-  {#if b.hasAny}
-    <span class="budget-count" style:color={syncBudgetColor(b.spent, b.limit)}>
-      Refresh {formatCompact(b.spent)} / {formatCompact(b.limit)}
-    </span>
-  {/if}
 </button>
 
 <style>
@@ -147,9 +136,5 @@
     height: 100%;
     border-radius: 2px;
     transition: width 0.5s ease;
-  }
-  .budget-count {
-    color: var(--budget-blue);
-    font-size: var(--font-size-2xs);
   }
 </style>

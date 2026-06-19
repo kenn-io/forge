@@ -217,8 +217,8 @@
         addUniqueLine(splitNewLines, targetLine);
         continue;
       }
-      addDiffLineNumbers(splitOldLines, splitNewLines, match.hunk.lines[match.index]!);
-      addListSplitLinesForChangedLine(splitOldLines, splitNewLines, match.hunk.lines, match.index);
+      addDiffLineNumbers(splitOldLines, splitNewLines, match.lines[match.index]!);
+      addListSplitLinesForChangedLine(splitOldLines, splitNewLines, match.lines, match.index);
     }
     return {
       splitOldLines,
@@ -234,13 +234,14 @@
     source: DiffFile,
     side: "left" | "right",
     targetLine: number,
-  ): { hunk: DiffHunk; index: number } | undefined {
+  ): { lines: DiffHunk["lines"]; index: number } | undefined {
     for (const hunk of source.hunks ?? []) {
-      const index = hunk.lines.findIndex((candidate) => {
+      const lines = hunk.lines ?? [];
+      const index = lines.findIndex((candidate) => {
         const lineNumber = side === "left" ? candidate.old_num : candidate.new_num;
         return lineNumber === targetLine;
       });
-      if (index >= 0) return { hunk, index };
+      if (index >= 0) return { lines, index };
     }
     return undefined;
   }
@@ -788,6 +789,14 @@
   .markdown-rich-diff--unified :global(del.markdown-diff__block) {
     background: var(--diff-del-bg);
     border-color: color-mix(in srgb, var(--diff-del-text) 36%, transparent);
+  }
+
+  .markdown-rich-diff--unified :global(.markdown-diff__structural[data-diff-kind="insert"]) {
+    background: var(--diff-add-bg);
+  }
+
+  .markdown-rich-diff--unified :global(.markdown-diff__structural[data-diff-kind="delete"]) {
+    background: var(--diff-del-bg);
   }
 
   .markdown-rich-diff :global(.markdown-diff__structural > ins:not(.markdown-diff__block)),

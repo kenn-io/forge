@@ -89,6 +89,7 @@ afterAll(() => {
 });
 
 import DiffFile from "./DiffFile.svelte";
+import diffRichPreviewSource from "./DiffRichPreview.svelte?raw";
 import type { DiffFile as DiffFileType, FilePreview } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { DiffReviewDraftComment, DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
@@ -447,6 +448,45 @@ describe("DiffFile", () => {
       expect(document.querySelector(".markdown-rich-diff--unified del")?.textContent).toBe("old");
       expect(document.querySelector(".markdown-rich-diff--unified ins")?.textContent).toBe("new");
     });
+  });
+
+  it("keeps structural markdown rich preview changes visibly highlighted", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 2,
+            new_start: 1,
+            new_count: 2,
+            lines: [
+              { type: "delete", content: "- Removed", old_num: 1 },
+              { type: "context", content: "- Keep", old_num: 2, new_num: 1 },
+              { type: "add", content: "- Added", new_num: 2 },
+            ],
+          },
+        ],
+      }),
+      { richPreview: true },
+    );
+
+    await waitFor(() => {
+      const preview = document.querySelector(".markdown-rich-diff--unified");
+      expect(preview?.querySelector('li.markdown-diff__structural[data-diff-kind="delete"] > del')?.textContent).toBe(
+        "Removed",
+      );
+      expect(preview?.querySelector('li.markdown-diff__structural[data-diff-kind="insert"] > ins')?.textContent).toBe(
+        "Added",
+      );
+    });
+    expect(diffRichPreviewSource).toMatch(
+      /\.markdown-diff__structural\[data-diff-kind="delete"\][\s\S]*background: var\(--diff-del-bg\);/,
+    );
+    expect(diffRichPreviewSource).toMatch(
+      /\.markdown-diff__structural\[data-diff-kind="insert"\][\s\S]*background: var\(--diff-add-bg\);/,
+    );
   });
 
   it("keeps markdown rich preview side by side when split diff mode is enabled", async () => {
@@ -960,6 +1000,48 @@ describe("DiffFile", () => {
     const comment = document.querySelector("[data-review-thread-id='thread-1']");
     expect(comment?.closest("[slot^='annotation-']")).toBeNull();
     expect(comment?.closest(".markdown-rich-diff--unified")).toBeTruthy();
+  });
+
+  it("keeps markdown rich preview review threads visible when hunk lines are null", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        additions: 0,
+        deletions: 0,
+        patch: "",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 0,
+            new_start: 1,
+            new_count: 0,
+            lines: null as unknown as DiffFileType["hunks"][number]["lines"],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            path: "README.md",
+            old_path: "README.md",
+            line: 1,
+            new_line: 1,
+            body: "Nullable rich preview note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Nullable rich preview note")).toBeTruthy();
+    });
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    expect(comment?.closest(".markdown-rich-diff--unified")).toBeNull();
+    expect(comment?.classList.contains("inline-review-thread--file-level")).toBe(true);
   });
 
   it("orders markdown rich preview review cards by their target source line", async () => {

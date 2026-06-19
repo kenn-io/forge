@@ -110,6 +110,21 @@ func TestDetectChains_ForkDefaultBranchPRDoesNotHideRoot(t *testing.T) {
 	assert.Equal([]int{748, 751, 752}, stackNumbers(chains[0]))
 }
 
+func TestDetectChains_SameRepoSelfEdgeDoesNotHideRoot(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	prs := []realdb.MergeRequest{
+		makePR(1, 449, "legacy-parser-base", "legacy-parser-base", prMerged),
+		makePR(2, 748, "locate-parser-interface", "legacy-parser-base", prOpen),
+		makePR(3, 751, "provider-facade-core", "locate-parser-interface", prOpen),
+		makePR(4, 752, "provider-jsonl-source-set", "provider-facade-core", prOpen),
+	}
+
+	chains := DetectChains(prs, testRepoCloneURL)
+	require.Len(chains, 1)
+	assert.Equal([]int{748, 751, 752}, stackNumbers(chains[0]))
+}
+
 func TestDetectChains_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

@@ -34,6 +34,14 @@ func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeReques
 		return branchKey{repo: repoCloneURL, branch: pr.BaseBranch}
 	}
 
+	// A same-repo PR from a branch to itself cannot be a stack edge. If it is
+	// allowed into headMap, real PRs targeting that branch stop looking like
+	// stack roots. Fork PRs such as fork:main -> upstream:main are kept because
+	// their repo-aware head and base keys differ.
+	sorted = slices.DeleteFunc(sorted, func(pr db.MergeRequest) bool {
+		return headKey(pr) == baseKey(pr)
+	})
+
 	// head repo+branch -> PR. Prefer open over merged; within same state, lowest number wins.
 	headMap := make(map[branchKey]db.MergeRequest, len(sorted))
 	for _, pr := range sorted {

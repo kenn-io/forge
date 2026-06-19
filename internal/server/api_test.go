@@ -10328,6 +10328,184 @@ func TestE2EGraphQLBulkSyncPersistsIssueTimelineEvents(t *testing.T) {
 	assert.Equal("timeline-RE_issue_173", reopened.DedupeKey)
 }
 
+func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	const issueID int64 = 171300
+	const issueNumber = 175
+	const issueTitle = "Reopened timeline issue"
+	const issueURL = "https://github.com/acme/widget/issues/175"
+	const issueAuthor = "heidi"
+	phase := "open"
+
+	issueNode := func(updatedAt time.Time, timelineItems string) string {
+		return `{
+			"databaseId":171300,
+			"number":175,
+			"title":"Reopened timeline issue",
+			"state":"OPEN",
+			"body":"GraphQL reopened issue timeline",
+			"url":"https://github.com/acme/widget/issues/175",
+			"author":{"login":"heidi"},
+			"createdAt":"` + now.Format(time.RFC3339) + `",
+			"updatedAt":"` + updatedAt.Format(time.RFC3339) + `",
+			"closedAt":null,
+			"labels":{"nodes":[]},
+			"comments":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+			"timelineItems":{"nodes":[` + timelineItems + `],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+		}`
+	}
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+			return
+		}
+
+		nodes := "[]"
+		switch phase {
+		case "open":
+			nodes = "[" + issueNode(now, "") + "]"
+		case "closed":
+			nodes = "[]"
+		case "reopened":
+			timelineItems := `{
+				"__typename":"ClosedEvent",
+				"id":"CE_issue_175",
+				"actor":{"login":"closer"},
+				"createdAt":"` + now.Add(time.Minute).Format(time.RFC3339) + `"
+			},{
+				"__typename":"ReopenedEvent",
+				"id":"RE_issue_175",
+				"actor":{"login":"opener"},
+				"createdAt":"` + now.Add(2*time.Minute).Format(time.RFC3339) + `"
+			}`
+			nodes = "[" + issueNode(now.Add(3*time.Minute), timelineItems) + "]"
+		}
+
+		resp := `{"data":{"repository":{"issues":{"nodes":` + nodes + `,"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer gqlSrv.Close()
+
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			if phase == "closed" {
+				return nil, nil
+			}
+			state := "open"
+			updatedAt := now
+			if phase == "reopened" {
+				updatedAt = now.Add(3 * time.Minute)
+			}
+			return []*gh.Issue{{
+				ID:        new(issueID),
+				Number:    new(issueNumber),
+				Title:     new(issueTitle),
+				State:     &state,
+				HTMLURL:   new(issueURL),
+				User:      &gh.User{Login: new(issueAuthor)},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: updatedAt},
+			}}, nil
+		},
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			require.Equal(issueNumber, number)
+			state := "closed"
+			closedAt := gh.Timestamp{Time: now.Add(time.Minute)}
+			return &gh.Issue{
+				ID:        new(issueID),
+				Number:    new(issueNumber),
+				Title:     new(issueTitle),
+				State:     &state,
+				HTMLURL:   new(issueURL),
+				User:      &gh.User{Login: new(issueAuthor)},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now.Add(time.Minute)},
+				ClosedAt:  &closedAt,
+			}, nil
+		},
+	}
+
+	database := dbtest.Open(t)
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	phase = "closed"
+	srv.syncer.RunOnce(ctx)
+
+	closedResp, err := client.HTTP.GetIssueWithResponse(
+		ctx, "gh", "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, closedResp.StatusCode())
+	require.NotNil(closedResp.JSON200)
+	assert.Equal("closed", closedResp.JSON200.Issue.State)
+	require.NotNil(closedResp.JSON200.Events)
+	assert.Empty(*closedResp.JSON200.Events)
+
+	phase = "reopened"
+	srv.syncer.RunOnce(ctx)
+
+	reopenedResp, err := client.HTTP.GetIssueWithResponse(
+		ctx, "gh", "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, reopenedResp.StatusCode())
+	require.NotNil(reopenedResp.JSON200)
+	assert.Equal("open", reopenedResp.JSON200.Issue.State)
+	require.NotNil(reopenedResp.JSON200.Events)
+	require.Len(*reopenedResp.JSON200.Events, 2)
+
+	byType := make(map[string]generated.IssueEvent, len(*reopenedResp.JSON200.Events))
+	for _, event := range *reopenedResp.JSON200.Events {
+		byType[event.EventType] = event
+	}
+
+	closed, ok := byType["closed"]
+	require.True(ok)
+	assert.Equal("closer", closed.Author)
+	assert.Equal("closed this", closed.Summary)
+	assert.Equal("timeline-CE_issue_175", closed.DedupeKey)
+
+	reopened, ok := byType["reopened"]
+	require.True(ok)
+	assert.Equal("opener", reopened.Author)
+	assert.Equal("reopened this", reopened.Summary)
+	assert.Equal("timeline-RE_issue_175", reopened.DedupeKey)
+}
+
 func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

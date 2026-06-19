@@ -346,7 +346,6 @@
       resetLabel="Clear filters"
       onReset={pulls.clearLocalFilters}
       minWidth="190px"
-      align="end"
     />
     {#if isSidebarToggleEnabled()}
       <LeftSidebarToggle

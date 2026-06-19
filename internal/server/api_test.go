@@ -18851,6 +18851,116 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing
 	assert.Nil(forkResp.JSON200.Stack)
 }
 
+func TestAPIStacks_GitLabUnknownForkHeadSyncsButSkipsStackEdges(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	repoRef := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	makeMR := func(platformID int64, number int, head, base, headRepoCloneURL string) platform.MergeRequest {
+		return platform.MergeRequest{
+			Repo:               repoRef,
+			PlatformID:         platformID,
+			PlatformExternalID: fmt.Sprintf("gid://gitlab/MergeRequest/%d", platformID),
+			Number:             number,
+			URL:                fmt.Sprintf("https://gitlab.example.com/group/project/-/merge_requests/%d", number),
+			Title:              fmt.Sprintf("MR !%d: %s", number, head),
+			Author:             "ada",
+			State:              "open",
+			HeadBranch:         head,
+			BaseBranch:         base,
+			HeadSHA:            fmt.Sprintf("sha%d", number),
+			BaseSHA:            "basesha",
+			HeadRepoCloneURL:   headRepoCloneURL,
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			LastActivityAt:     now,
+		}
+	}
+	provider := &apiTestGitLabProvider{
+		ref: repoRef,
+		mergeRequests: []platform.MergeRequest{
+			makeMR(9001, 90, "feature/fork-ui", "feature/auth", ""),
+			makeMR(1001, 100, "feature/auth", "main", repoRef.CloneURL),
+			makeMR(1011, 101, "feature/auth-ui", "feature/auth", repoRef.CloneURL),
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{{
+			Platform:           platform.KindGitLab,
+			Owner:              "group",
+			Name:               "project",
+			PlatformHost:       "gitlab.example.com",
+			RepoPath:           "group/project",
+			PlatformRepoID:     4242,
+			PlatformExternalID: "gid://gitlab/Project/4242",
+			WebURL:             "https://gitlab.example.com/group/project",
+			CloneURL:           repoRef.CloneURL,
+			DefaultBranch:      "main",
+		}}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.RunOnce(ctx)
+
+	pullsResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{})
+	require.NoError(err)
+	require.Equal(http.StatusOK, pullsResp.StatusCode(), string(pullsResp.Body))
+	require.NotNil(pullsResp.JSON200)
+	pullNumbers := make([]int64, 0, len(*pullsResp.JSON200))
+	for _, pull := range *pullsResp.JSON200 {
+		pullNumbers = append(pullNumbers, pull.Number)
+	}
+	assert.ElementsMatch([]int64{90, 100, 101}, pullNumbers)
+
+	forkResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, "gitlab.example.com", "gl", "group", "project", 90)
+	require.NoError(err)
+	require.Equal(http.StatusOK, forkResp.StatusCode(), string(forkResp.Body))
+	require.NotNil(forkResp.JSON200)
+	assert.Empty(forkResp.JSON200.MergeRequest.HeadRepoCloneURL)
+	assert.Nil(forkResp.JSON200.Stack)
+
+	forkStackResp, err := client.HTTP.GetPullStackOnHostWithResponse(ctx, "gitlab.example.com", "gl", "group", "project", 90)
+	require.NoError(err)
+	assert.Equal(http.StatusNotFound, forkStackResp.StatusCode(), string(forkStackResp.Body))
+
+	tipStackResp, err := client.HTTP.GetPullStackOnHostWithResponse(ctx, "gitlab.example.com", "gl", "group", "project", 101)
+	require.NoError(err)
+	require.Equal(http.StatusOK, tipStackResp.StatusCode(), string(tipStackResp.Body))
+	require.NotNil(tipStackResp.JSON200)
+	require.NotNil(tipStackResp.JSON200.Members)
+	assert.Equal(int64(2), tipStackResp.JSON200.Size)
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(*tipStackResp.JSON200.Members))
+
+	stacksResp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
+	require.NoError(err)
+	require.Equal(http.StatusOK, stacksResp.StatusCode(), string(stacksResp.Body))
+	require.NotNil(stacksResp.JSON200)
+	require.Len(*stacksResp.JSON200, 1)
+	require.NotNil((*stacksResp.JSON200)[0].Members)
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(*(*stacksResp.JSON200)[0].Members))
+}
+
 func TestAPIStacks_DetectionViaSyncHookIgnoresSameRepoSelfEdge(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

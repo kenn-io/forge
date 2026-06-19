@@ -32,6 +32,31 @@ notice the regression:
 Regenerate OpenAPI and generated clients with `make api-generate` after Huma
 route or API type changes.
 
+## Frontend test lane selection
+
+Do not treat Playwright or full-stack e2e as a universal "must have" for every
+visible frontend fix. Pick the narrowest lane that observes the behavior's real
+owner:
+
+- Use Vitest component/store tests for UI-owned data flow, filtering, sorting,
+  hidden/disabled states, menu contents, route-derived view state, and app-shell
+  behavior that does not depend on real browser layout.
+- Use Vitest browser tests (`*.browser.svelte.ts` with `vitest-browser-svelte`)
+  when the behavior needs a real browser DOM, native focus or keyboard behavior,
+  computed styles, layout, localStorage, matchMedia, or other browser primitives,
+  but does not need an external server or Playwright navigation flow.
+- Use Playwright mock e2e when the regression is specifically about a
+  multi-step browser workflow, viewport behavior, screenshots/video, drag,
+  scroll/sticky/overflow geometry, canvas/xterm rendering, or browser navigation.
+- Use full-stack e2e or server/API tests when the disputed fact is produced by
+  backend persistence, sync, capabilities, normalization, route middleware, or
+  wire serialization.
+
+A UI regression can be sufficiently covered by a backend/server test for the
+real runtime path plus a component or Vitest browser test for presentation. Do
+not require a duplicate full-stack browser test when it would only replay data
+that is already proven at those two boundaries.
+
 ## Huma API Contract
 
 Every public operation in `/api/v1/openapi.json` must have explicit OpenAPI

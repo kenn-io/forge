@@ -119,10 +119,12 @@ make vet        # go vet
 
 ### End-to-End Tests
 
-Coverage of real behavior is non-negotiable; the lane is chosen to avoid the one expensive cost — the **browser**, not the Go backend. Two independent axes:
+Coverage of real behavior is non-negotiable; the lane is chosen by the behavior under test, not by a blanket "must have e2e" rule. Avoid the expensive lanes unless they add distinct confidence. Four independent axes:
 
-- **Browser only when you must.** Reserve Playwright for real rendering/layout: screenshots/video, `getBoundingClientRect`, scroll/sticky/overflow geometry, container queries, pointer drag, viewport emulation, canvas/xterm, computed CSS pixels. Everything else runs in **Vitest + jsdom** (`vp test`) — mount the real `App.svelte` via `frontend/src/test/appHarness.ts`. Mounting the whole app or using routing is not a reason to stay in Playwright.
-- **Real Go backend by default; mocking is the exception.** Backend-dependent behavior (sync, persistence, capabilities, normalization, wire shape) must hit real Go (`frontend/tests/e2e-full/` or `internal/server/` Go tests) — don't assert backend-computed values through a hand-written fixture. Mock the API (`frontend/src/test/mockApiFetch.ts`, never fork the Playwright copy) only for the rare scenario the seeded server can't produce.
+- **Component or app harness first.** UI-owned behavior such as filtering, sorting, hidden/disabled states, menu contents, route-derived view state, and store/component data flow should usually be covered in Vitest. Use **Vitest + jsdom** (`vp test`) when layout/browser primitives are not material; mount the real `App.svelte` via `frontend/src/test/appHarness.ts` when routing matters.
+- **Vitest browser before Playwright for real DOM needs.** Use `*.browser.svelte.ts` / `vitest-browser-svelte` (`vp test --project browser`) when the behavior needs a real browser DOM, native focus/keyboard semantics, localStorage/matchMedia, computed styles, or layout, but does not need an external HTTP server or multi-page Playwright workflow.
+- **Playwright/full-stack only for boundaries they uniquely prove.** Reserve Playwright for screenshots/video, `getBoundingClientRect`, scroll/sticky/overflow geometry, container queries, pointer drag, viewport emulation, canvas/xterm, computed CSS pixels, or workflows that must exercise browser navigation against a running app. Use `frontend/tests/e2e-full/` or `internal/server/` Go tests when the behavior depends on backend persistence, sync, capabilities, normalization, wire shape, or middleware. If a real-backend API/server test already proves the runtime path and a component/browser test proves the UI presentation, do not require duplicate full-stack e2e just to click through the same data.
+- **Mocking is the exception.** Do not assert backend-computed values through a hand-written fixture. Mock the API (`frontend/src/test/mockApiFetch.ts`, never fork the Playwright copy) only when the behavior is owned by the frontend or the seeded server cannot produce the state.
 
 ### Test Guidelines
 

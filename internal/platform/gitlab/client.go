@@ -316,7 +316,10 @@ func (c *Client) ListOpenMergeRequests(
 		}
 		for _, mr := range mrs {
 			normalized := NormalizeMergeRequest(normalizedRef, mr, nil)
-			normalized.HeadRepoCloneURL = c.headRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+			normalized.HeadRepoCloneURL, err = c.headRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+			if err != nil {
+				return nil, err
+			}
 			out = append(out, normalized)
 		}
 		if resp == nil || resp.NextPage == 0 {
@@ -340,7 +343,10 @@ func (c *Client) GetMergeRequest(
 		return platform.MergeRequest{}, mapGitLabError("get_merge_request", err)
 	}
 	normalized := NormalizeDetailedMergeRequest(normalizedRef, mr)
-	normalized.HeadRepoCloneURL = c.headRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+	normalized.HeadRepoCloneURL, err = c.headRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+	if err != nil {
+		return platform.MergeRequest{}, err
+	}
 	return normalized, nil
 }
 
@@ -349,30 +355,33 @@ func (c *Client) headRepoCloneURL(
 	ref platform.RepoRef,
 	targetProjectID int64,
 	sourceProjectID int64,
-) string {
+) (string, error) {
 	if sourceProjectID == 0 || sourceProjectID == targetProjectID || sourceProjectID == ref.PlatformID {
-		return ref.CloneURL
+		return ref.CloneURL, nil
 	}
 	return c.projectCloneURL(ctx, sourceProjectID)
 }
 
-func (c *Client) projectCloneURL(ctx context.Context, projectID int64) string {
+func (c *Client) projectCloneURL(ctx context.Context, projectID int64) (string, error) {
 	c.projectCloneURLMu.Lock()
 	cached, ok := c.projectCloneURLs[projectID]
 	c.projectCloneURLMu.Unlock()
 	if ok {
-		return cached
+		return cached, nil
 	}
 
 	project, _, err := c.api.Projects.GetProject(projectID, nil, gitlab.WithContext(ctx))
 	if err != nil || project == nil {
-		return ""
+		if err == nil {
+			err = errors.New("source project response was empty")
+		}
+		return "", mapGitLabError("get_source_project", err)
 	}
 	cloneURL := strings.TrimSpace(project.HTTPURLToRepo)
 	c.projectCloneURLMu.Lock()
 	c.projectCloneURLs[projectID] = cloneURL
 	c.projectCloneURLMu.Unlock()
-	return cloneURL
+	return cloneURL, nil
 }
 
 func (c *Client) ListMergeRequestEvents(

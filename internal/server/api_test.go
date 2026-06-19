@@ -18825,6 +18825,78 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing
 	assert.Nil(forkResp.JSON200.Stack)
 }
 
+func TestAPIStacks_DetectionViaSyncHookIgnoresSameRepoSelfEdge(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	stringPtr := func(s string) *string { return &s }
+	repoCloneURL := "https://github.com/acme/widget.git"
+	makeGHPR := func(id int64, number int, head, base string) *gh.PullRequest {
+		sha := fmt.Sprintf("sha%d", number)
+		title := fmt.Sprintf("PR #%d: %s", number, head)
+		return &gh.PullRequest{
+			ID:        &id,
+			Number:    &number,
+			State:     stringPtr("open"),
+			Title:     &title,
+			Body:      stringPtr(""),
+			User:      &gh.User{Login: stringPtr("testuser")},
+			CreatedAt: &gh.Timestamp{Time: now},
+			UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{
+				Ref:  &head,
+				SHA:  &sha,
+				Repo: &gh.Repository{CloneURL: &repoCloneURL},
+			},
+			Base: &gh.PullRequestBranch{Ref: &base, SHA: stringPtr("basesha")},
+		}
+	}
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				Name:     &repo,
+				NodeID:   &nodeID,
+				Owner:    &gh.User{Login: &owner},
+				CloneURL: &repoCloneURL,
+				Archived: new(false),
+			}, nil
+		},
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{
+				makeGHPR(4491, 449, "legacy-parser-base", "legacy-parser-base"),
+				makeGHPR(7481, 748, "locate-parser-interface", "legacy-parser-base"),
+				makeGHPR(7511, 751, "provider-facade-core", "locate-parser-interface"),
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{{
+		Owner:        "acme",
+		Name:         "widget",
+		PlatformHost: "github.com",
+		CloneURL:     repoCloneURL,
+	}})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	srv.syncer.RunOnce(ctx)
+
+	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 751)
+	require.NoError(err)
+	require.Equal(http.StatusOK, ctxResp.StatusCode(), string(ctxResp.Body))
+	require.NotNil(ctxResp.JSON200)
+	require.NotNil(ctxResp.JSON200.Members)
+	assert.Equal([]int64{748, 751}, stackMemberNumbers(*ctxResp.JSON200.Members))
+
+	selfEdgeResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 449)
+	require.NoError(err)
+	require.Equal(http.StatusOK, selfEdgeResp.StatusCode(), string(selfEdgeResp.Body))
+	require.NotNil(selfEdgeResp.JSON200)
+	assert.Nil(selfEdgeResp.JSON200.Stack)
+}
+
 func stackMemberNumbers(members []generated.StackMemberResponse) []int64 {
 	numbers := make([]int64, len(members))
 	for i, member := range members {

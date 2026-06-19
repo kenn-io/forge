@@ -140,6 +140,19 @@ func TestDetectChains_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.
 	assert.Equal([]int{100, 101}, stackNumbers(chains[0]))
 }
 
+func TestDetectChains_NormalizesRepoCloneURLs(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	prs := []realdb.MergeRequest{
+		makePRWithHeadRepo(1, 100, "feature/auth", "main", "HTTPS://GITHUB.COM/acme/widget.git/", prOpen),
+		makePRWithHeadRepo(2, 101, "feature/auth-ui", "feature/auth", "https://github.com/acme/widget", prOpen),
+	}
+
+	chains := DetectChains(prs, "https://github.com/acme/widget.git?ignored=true#fragment")
+	require.Len(chains, 1)
+	assert.Equal([]int{100, 101}, stackNumbers(chains[0]))
+}
+
 func TestDetectChains_DuplicateHeadPrefersOpen(t *testing.T) {
 	assert := Assert.New(t)
 	// Merged PR and open PR share same head branch.

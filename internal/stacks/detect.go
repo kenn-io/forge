@@ -2,6 +2,7 @@ package stacks
 
 import (
 	"context"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -28,10 +29,10 @@ func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeReques
 		if repo == "" {
 			repo = repoCloneURL
 		}
-		return branchKey{repo: repo, branch: pr.HeadBranch}
+		return branchKey{repo: normalizeRepoKey(repo), branch: pr.HeadBranch}
 	}
 	baseKey := func(pr db.MergeRequest) branchKey {
-		return branchKey{repo: repoCloneURL, branch: pr.BaseBranch}
+		return branchKey{repo: normalizeRepoKey(repoCloneURL), branch: pr.BaseBranch}
 	}
 
 	// A same-repo PR from a branch to itself cannot be a stack edge. If it is
@@ -87,6 +88,23 @@ func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeReques
 	}
 
 	return chains
+}
+
+func normalizeRepoKey(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		parsed.Scheme = strings.ToLower(parsed.Scheme)
+		parsed.Host = strings.ToLower(parsed.Host)
+		parsed.Path = strings.TrimSuffix(strings.TrimRight(parsed.Path, "/"), ".git")
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return strings.TrimRight(parsed.String(), "/")
+	}
+	return strings.TrimSuffix(strings.TrimRight(raw, "/"), ".git")
 }
 
 func walkChain(

@@ -18752,6 +18752,87 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 	assert.Equal(int64(2), ctxResp.JSON200.Size)
 }
 
+func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	stringPtr := func(s string) *string { return &s }
+	repoCloneURL := "https://github.com/acme/widget.git"
+	forkCloneURL := "https://github.com/fork/widget.git"
+	makeGHPR := func(id int64, number int, head, base, headRepoCloneURL string) *gh.PullRequest {
+		sha := fmt.Sprintf("sha%d", number)
+		title := fmt.Sprintf("PR #%d: %s", number, head)
+		return &gh.PullRequest{
+			ID:        &id,
+			Number:    &number,
+			State:     stringPtr("open"),
+			Title:     &title,
+			Body:      stringPtr(""),
+			User:      &gh.User{Login: stringPtr("testuser")},
+			CreatedAt: &gh.Timestamp{Time: now},
+			UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{
+				Ref:  &head,
+				SHA:  &sha,
+				Repo: &gh.Repository{CloneURL: &headRepoCloneURL},
+			},
+			Base: &gh.PullRequestBranch{Ref: &base, SHA: stringPtr("basesha")},
+		}
+	}
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				Name:     &repo,
+				NodeID:   &nodeID,
+				Owner:    &gh.User{Login: &owner},
+				CloneURL: &repoCloneURL,
+				Archived: new(false),
+			}, nil
+		},
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{
+				makeGHPR(9001, 90, "feature/auth", "main", forkCloneURL),
+				makeGHPR(1001, 100, "feature/auth", "main", repoCloneURL),
+				makeGHPR(1011, 101, "feature/auth-ui", "feature/auth", repoCloneURL),
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{{
+		Owner:        "acme",
+		Name:         "widget",
+		PlatformHost: "github.com",
+		CloneURL:     repoCloneURL,
+	}})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	srv.syncer.RunOnce(ctx)
+
+	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	require.NoError(err)
+	require.Equal(http.StatusOK, ctxResp.StatusCode(), string(ctxResp.Body))
+	require.NotNil(ctxResp.JSON200)
+	require.NotNil(ctxResp.JSON200.Members)
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(*ctxResp.JSON200.Members))
+
+	forkResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 90)
+	require.NoError(err)
+	require.Equal(http.StatusOK, forkResp.StatusCode(), string(forkResp.Body))
+	require.NotNil(forkResp.JSON200)
+	assert.Nil(forkResp.JSON200.Stack)
+}
+
+func stackMemberNumbers(members []generated.StackMemberResponse) []int64 {
+	numbers := make([]int64, len(members))
+	for i, member := range members {
+		numbers[i] = member.Number
+	}
+	return numbers
+}
+
 func TestAPIGetStackForPR_SingleFailingIsInProgress(t *testing.T) {
 	assert := Assert.New(t)
 	srv, database := setupTestServer(t)

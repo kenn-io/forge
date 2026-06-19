@@ -5,6 +5,7 @@
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import BoxIcon from "@lucide/svelte/icons/box";
+  import { isVisibleLaunchTarget } from "./launchTargets";
 
   interface LaunchMenuProps {
     launchTargets: LaunchTarget[];
@@ -21,9 +22,7 @@
   let open = $state(false);
   let rootEl = $state<HTMLDivElement | null>(null);
 
-  const visibleTargets = $derived(
-    launchTargets.filter((target) => target.kind !== "shell"),
-  );
+  const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
 
   function launch(targetKey: string): void {
     open = false;

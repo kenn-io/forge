@@ -9,6 +9,7 @@
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import BoxIcon from "@lucide/svelte/icons/box";
+  import { isVisibleLaunchTarget } from "./launchTargets";
 
   interface WorkspaceHomeWorkspace {
     id: string;
@@ -40,9 +41,7 @@
     onOpenSession,
   }: WorkspaceHomeProps = $props();
 
-  const visibleTargets = $derived(
-    launchTargets.filter((target) => target.kind !== "shell"),
-  );
+  const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
 
   function title(): string {
     return workspace.mr_title ?? workspace.git_head_ref;

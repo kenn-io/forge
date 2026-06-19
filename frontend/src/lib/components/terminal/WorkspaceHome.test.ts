@@ -38,6 +38,14 @@ describe("WorkspaceHome", () => {
             disabled_reason: "missing not found on PATH",
           },
           {
+            key: "disabled_config",
+            label: "Disabled config",
+            kind: "agent",
+            source: "config",
+            available: false,
+            disabled_reason: "disabled by config",
+          },
+          {
             key: "shell",
             label: "Shell",
             kind: "shell",
@@ -95,6 +103,7 @@ describe("WorkspaceHome", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Disabled config" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Plain shell" })).toBeNull();
     expect(screen.queryByRole("button", { name: "shell" })).toBeNull();
 

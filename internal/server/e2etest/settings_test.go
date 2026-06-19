@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -102,13 +103,14 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 				CollapseThreads: true,
 			},
 			Terminal: &generated.Terminal{
-				FontFamily:    "\"Iosevka Term\", monospace",
-				FontSize:      18,
-				Scrollback:    5000,
-				LineHeight:    1.15,
-				CursorBlink:   true,
-				FontLigatures: true,
-				Renderer:      generated.Xterm,
+				FontFamily:     "\"Iosevka Term\", monospace",
+				FontSize:       18,
+				Scrollback:     5000,
+				LineHeight:     1.15,
+				CursorBlink:    true,
+				FontLigatures:  true,
+				HideTmuxStatus: true,
+				Renderer:       generated.Xterm,
 			},
 		},
 	)
@@ -134,6 +136,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	assert.Equal(5000, cfgAfterUpdate.Terminal.Scrollback)
 	assert.InDelta(1.15, cfgAfterUpdate.Terminal.LineHeight, 0.001)
 	assert.True(cfgAfterUpdate.Terminal.FontLigatures)
+	assert.True(cfgAfterUpdate.Terminal.HideTmuxStatus)
 
 	reGetResp := doServerJSON(
 		t, ts.Client(), http.MethodGet,
@@ -144,6 +147,105 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	var reGet generated.SettingsResponse
 	require.NoError(json.NewDecoder(reGetResp.Body).Decode(&reGet))
 	assert.True(reGet.Activity.CollapseThreads)
+	assert.True(reGet.Terminal.HideTmuxStatus)
+}
+
+func TestSettingsAPIE2EHideTmuxStatusUpdateAffectsRuntimeSessions(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "tmux-record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
+record=%q
+printf '%%s\0' "$#" "$@" >> "$record"
+case "$1" in
+  has-session)
+    echo "can't find session: $3" >&2
+    exit 1
+    ;;
+  attach-session)
+    trap 'exit 0' HUP INT TERM
+    while :; do sleep 1; done
+    ;;
+esac
+exit 0
+`, record), 0o755))
+	workspacePath := filepath.Join(dir, "workspace")
+	require.NoError(os.MkdirAll(workspacePath, 0o755))
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, fmt.Appendf(nil, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[tmux]
+command = [%q]
+
+[[agents]]
+key = "noop"
+label = "Noop"
+command = ["/bin/sh", "-c", "sleep 60"]
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, tmuxPath), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	seedReadyRuntimeWorkspace(t, database, workspacePath)
+	syncer := github.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := server.NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		server.ServerOptions{
+			WorktreeDir:                        filepath.Join(dir, "worktrees"),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	httpServer := httptest.NewServer(srv)
+	t.Cleanup(httpServer.Close)
+
+	updateResp := doServerJSON(
+		t, httpServer.Client(), http.MethodPut,
+		httpServer.URL+"/api/v1/settings",
+		generated.UpdateSettingsRequest{
+			Terminal: &generated.Terminal{
+				FontSize:       14,
+				Scrollback:     1000,
+				LineHeight:     1,
+				CursorBlink:    true,
+				HideTmuxStatus: true,
+				Renderer:       generated.Xterm,
+			},
+		},
+	)
+	defer updateResp.Body.Close()
+	require.Equal(http.StatusOK, updateResp.StatusCode)
+
+	launchResp := doServerJSON(
+		t, httpServer.Client(), http.MethodPost,
+		httpServer.URL+"/api/v1/workspaces/ws-token-runtime/runtime/sessions",
+		map[string]string{"target_key": "noop"},
+	)
+	defer launchResp.Body.Close()
+	require.Equal(http.StatusOK, launchResp.StatusCode)
+
+	require.Eventually(func() bool {
+		raw, err := os.ReadFile(record)
+		if err != nil {
+			return false
+		}
+		data := string(raw)
+		return strings.Contains(data, "set-option\x00-q\x00-t") &&
+			strings.Contains(data, "status\x00off")
+	}, 3*time.Second, 10*time.Millisecond)
+	cfgAfterUpdate, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.True(cfgAfterUpdate.Terminal.HideTmuxStatus)
 }
 
 func TestSettingsAPIE2EPreservesMsgvaultConfig(t *testing.T) {

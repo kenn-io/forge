@@ -40,6 +40,7 @@ type Manager struct {
 	clones                 *gitclone.Manager
 	locks                  *FileLockManager
 	tmuxCmd                []string
+	hideTmuxStatusMu       sync.RWMutex
 	hideTmuxStatus         bool
 	ptyOwner               PtyOwnerClient
 	preferPtyOwner         bool
@@ -210,7 +211,15 @@ func (m *Manager) SetTmuxCommand(cmd []string) {
 // SetHideTmuxStatus controls whether newly-created tmux sessions hide
 // tmux's own status line.
 func (m *Manager) SetHideTmuxStatus(hide bool) {
+	m.hideTmuxStatusMu.Lock()
+	defer m.hideTmuxStatusMu.Unlock()
 	m.hideTmuxStatus = hide
+}
+
+func (m *Manager) currentHideTmuxStatus() bool {
+	m.hideTmuxStatusMu.RLock()
+	defer m.hideTmuxStatusMu.RUnlock()
+	return m.hideTmuxStatus
 }
 
 // tmuxExec builds an *exec.Cmd for a tmux invocation: the
@@ -2452,7 +2461,7 @@ func (m *Manager) newTmuxSession(
 		}
 		return fmt.Errorf("set tmux owner marker: %w", err)
 	}
-	if m.hideTmuxStatus {
+	if m.currentHideTmuxStatus() {
 		if err := m.setTmuxStatus(ctx, session, false); err != nil {
 			if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
 				!isTmuxKillSessionGone(killErr) {

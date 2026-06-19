@@ -1,6 +1,7 @@
 import type { KanbanStatus, PullRequest } from "../api/types.js";
 import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
+import { bucketCIChecks, parseCIChecks } from "../utils/ci-buckets.js";
 
 export type FetchPullResult =
   | { status: "found"; pull: PullRequest }
@@ -26,6 +27,8 @@ type PullsParams = {
   offset?: number;
 };
 
+export type PullAttributeFilter = "approved" | "draft" | "ready" | "merge_conflicts" | "failed_ci";
+
 export interface PullsStoreOptions {
   client: MiddlemanClient;
   getGlobalRepo?: () => string | undefined;
@@ -49,6 +52,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let loading = $state(false);
   let storeError = $state<string | null>(null);
   let filterKanban = $state<KanbanStatus | undefined>(undefined);
+  let attributeFilters = $state<PullAttributeFilter[]>([]);
+  let kanbanStatusFilters = $state<KanbanStatus[]>([]);
   let filterStarred = $state(false);
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
@@ -58,6 +63,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function getPulls(): PullRequest[] {
     return pulls;
+  }
+
+  function getFilteredPulls(): PullRequest[] {
+    return pulls.filter((pr) => matchesAttributeFilters(pr) && matchesKanbanStatusFilters(pr));
   }
 
   function isLoading(): boolean {
@@ -75,7 +84,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   /** Groups pulls by "owner/name" into a Map. */
   function pullsByRepo(): Map<string, PullRequest[]> {
     const map = new Map<string, PullRequest[]>();
-    for (const pr of pulls) {
+    for (const pr of getFilteredPulls()) {
       const key = `${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`;
       const existing = map.get(key);
       if (existing !== undefined) {
@@ -89,6 +98,18 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function getFilterKanban(): KanbanStatus | undefined {
     return filterKanban;
+  }
+
+  function getAttributeFilters(): PullAttributeFilter[] {
+    return attributeFilters;
+  }
+
+  function getKanbanStatusFilters(): KanbanStatus[] {
+    return kanbanStatusFilters;
+  }
+
+  function getLocalFilterCount(): number {
+    return attributeFilters.length + kanbanStatusFilters.length;
   }
 
   function getFilterStarred(): boolean {
@@ -121,7 +142,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       }
       return ordered;
     }
-    return pulls;
+    return getFilteredPulls();
   }
 
   function selectNextPR(): void {
@@ -170,6 +191,19 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function setFilterKanban(kanban: KanbanStatus | undefined): void {
     filterKanban = kanban;
+  }
+
+  function toggleAttributeFilter(filter: PullAttributeFilter): void {
+    attributeFilters = toggleFilterValue(attributeFilters, filter);
+  }
+
+  function toggleKanbanStatusFilter(status: KanbanStatus): void {
+    kanbanStatusFilters = toggleFilterValue(kanbanStatusFilters, status);
+  }
+
+  function clearLocalFilters(): void {
+    attributeFilters = [];
+    kanbanStatusFilters = [];
   }
 
   function getSearchQuery(): string | undefined {
@@ -326,13 +360,59 @@ export function createPullsStore(opts: PullsStoreOptions) {
     }
   }
 
+  function toggleFilterValue<T extends string>(values: T[], value: T): T[] {
+    if (values.includes(value)) {
+      return values.filter((item) => item !== value);
+    }
+    return [...values, value];
+  }
+
+  function matchesAttributeFilters(pr: PullRequest): boolean {
+    if (attributeFilters.length === 0) return true;
+    return attributeFilters.every((filter) => matchesAttributeFilter(pr, filter));
+  }
+
+  function matchesAttributeFilter(pr: PullRequest, filter: PullAttributeFilter): boolean {
+    if (filter === "approved") {
+      return pr.ReviewDecision.trim().toUpperCase() === "APPROVED";
+    }
+    if (filter === "draft") {
+      return pr.IsDraft;
+    }
+    if (filter === "ready") {
+      return pr.State === "open" && !pr.IsDraft;
+    }
+    if (filter === "merge_conflicts") {
+      return pr.MergeableState === "dirty";
+    }
+    return hasFailedCI(pr);
+  }
+
+  function hasFailedCI(pr: PullRequest): boolean {
+    const status = pr.CIStatus.trim().toLowerCase();
+    if (status === "failure" || status === "failed" || status === "error") {
+      return true;
+    }
+    const parsed = parseCIChecks(pr.CIChecksJSON);
+    if (parsed.error !== null) return false;
+    return bucketCIChecks(parsed.checks).failed.length > 0;
+  }
+
+  function matchesKanbanStatusFilters(pr: PullRequest): boolean {
+    return kanbanStatusFilters.length === 0 || kanbanStatusFilters.includes(pr.KanbanStatus as KanbanStatus);
+  }
+
   return {
     getPulls,
+    getFilteredPulls,
     isLoading,
     getError,
     getSelectedPR,
     pullsByRepo,
     getFilterKanban,
+    getAttributeFilters,
+    getKanbanStatusFilters,
+    getLocalFilterCount,
     getFilterStarred,
     setFilterStarred,
     getFilterState,
@@ -341,6 +421,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     selectNextPR,
     selectPrevPR,
     setFilterKanban,
+    toggleAttributeFilter,
+    toggleKanbanStatusFilter,
+    clearLocalFilters,
     getSearchQuery,
     setSearchQuery,
     selectPR,

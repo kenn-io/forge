@@ -3,7 +3,7 @@ import type { PullRequest } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 import { createPullsStore } from "./pulls.svelte.js";
 
-function pull(id: number, repoName: string, lastActivityAt: string): PullRequest {
+function pull(id: number, repoName: string, lastActivityAt: string, overrides: Partial<PullRequest> = {}): PullRequest {
   return {
     ID: id,
     Number: id,
@@ -18,6 +18,14 @@ function pull(id: number, repoName: string, lastActivityAt: string): PullRequest
       name: repoName,
       repo_path: `acme/${repoName}`,
     },
+    State: "open",
+    IsDraft: false,
+    ReviewDecision: "",
+    CIStatus: "success",
+    CIChecksJSON: "[]",
+    MergeableState: "clean",
+    KanbanStatus: "new",
+    ...overrides,
   } as PullRequest;
 }
 
@@ -56,5 +64,47 @@ describe("pulls store display order", () => {
     await store.loadPulls();
 
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 3, 2]);
+  });
+
+  it("filters pull requests by review state, readiness, CI, merge conflicts, and multiple kanban statuses", async () => {
+    const store = createPullsStore({
+      client: clientWithPulls([
+        pull(1, "api", "2026-05-20T15:00:00Z", {
+          ReviewDecision: "APPROVED",
+          KanbanStatus: "reviewing",
+        }),
+        pull(2, "web", "2026-05-20T14:00:00Z", {
+          IsDraft: true,
+          KanbanStatus: "waiting",
+        }),
+        pull(3, "worker", "2026-05-20T13:00:00Z", {
+          CIStatus: "failure",
+          KanbanStatus: "awaiting_merge",
+        }),
+        pull(4, "api", "2026-05-20T12:00:00Z", {
+          MergeableState: "dirty",
+          KanbanStatus: "new",
+        }),
+      ]),
+    });
+
+    await store.loadPulls();
+
+    store.toggleAttributeFilter("ready");
+    store.toggleKanbanStatusFilter("reviewing");
+    store.toggleKanbanStatusFilter("awaiting_merge");
+
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 3]);
+
+    store.toggleAttributeFilter("failed_ci");
+
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([3]);
+
+    store.toggleAttributeFilter("failed_ci");
+    store.toggleAttributeFilter("merge_conflicts");
+    store.toggleKanbanStatusFilter("reviewing");
+    store.toggleKanbanStatusFilter("awaiting_merge");
+
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([4]);
   });
 });

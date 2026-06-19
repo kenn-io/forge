@@ -6,8 +6,9 @@
   import Chip from "../shared/Chip.svelte";
   import FilterDropdown from "../shared/FilterDropdown.svelte";
   import LeftSidebarToggle from "../shared/LeftSidebarToggle.svelte";
-  import type { PullRequest } from "../../api/types.js";
+  import type { KanbanStatus, PullRequest } from "../../api/types.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
+  import type { PullAttributeFilter } from "../../stores/pulls.svelte.js";
   import {
     buildPullRequestFilesRoute,
     buildPullRequestRoute,
@@ -32,9 +33,28 @@
     grouping.getGroupingMode(),
   );
   const workflowGroups = $derived(
-    groupByWorkflow(pulls.getPulls()),
+    groupByWorkflow(pulls.getFilteredPulls()),
   );
   const pullStateOptions = ["open", "closed", "all"] as const;
+  const attributeFilterOptions: {
+    value: PullAttributeFilter;
+    label: string;
+  }[] = [
+    { value: "approved", label: "Approved" },
+    { value: "draft", label: "Draft" },
+    { value: "ready", label: "Ready" },
+    { value: "merge_conflicts", label: "Merge conflicts" },
+    { value: "failed_ci", label: "Failed CI" },
+  ];
+  const kanbanFilterOptions: {
+    value: KanbanStatus;
+    label: string;
+  }[] = [
+    { value: "new", label: "New" },
+    { value: "reviewing", label: "Reviewing" },
+    { value: "waiting", label: "Waiting" },
+    { value: "awaiting_merge", label: "Ready" },
+  ];
   const groupingOptions: {
     value: GroupingMode;
     label: string;
@@ -61,6 +81,7 @@
   let searchInput = $state(pulls.getSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
   let refreshHandle: ReturnType<typeof setInterval> | null = null;
+  const visiblePulls = $derived(pulls.getDisplayOrderPRs());
 
   $effect(() => {
     void pulls.loadPulls();
@@ -127,6 +148,26 @@
   const hasCompactFilterChanges = $derived(
     pulls.getFilterState() !== "open" || groupingMode !== "byRepo",
   );
+  const localFilterSections = $derived.by(() => [
+    {
+      title: "PR",
+      items: attributeFilterOptions.map((option) => ({
+        id: `pr-${option.value}`,
+        label: option.label,
+        active: pulls.getAttributeFilters().includes(option.value),
+        onSelect: () => pulls.toggleAttributeFilter(option.value),
+      })),
+    },
+    {
+      title: "Kanban",
+      items: kanbanFilterOptions.map((option) => ({
+        id: `kanban-${option.value}`,
+        label: option.label,
+        active: pulls.getKanbanStatusFilters().includes(option.value),
+        onSelect: () => pulls.toggleKanbanStatusFilter(option.value),
+      })),
+    },
+  ]);
   const useCompactFilters = $derived(
     sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
   );
@@ -220,7 +261,7 @@
   const selectedVisiblePR = $derived.by(() => {
     const sel = pulls.getSelectedPR();
     if (sel === null) return null;
-    const pr = pulls.getPulls().find(
+    const pr = visiblePulls.find(
       (p) => (p.repo_owner ?? "") === sel.owner
         && (p.repo_name ?? "") === sel.name
         && p.Number === sel.number
@@ -265,7 +306,7 @@
 <div class="pull-list">
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="sm" uppercase={false} class="chip--muted list-count-chip">
-      {pulls.getPulls().length} PRs
+      {visiblePulls.length} PRs
     </Chip>
     <div class="state-toggle">
       {#each pullStateOptions as s (s)}
@@ -296,6 +337,17 @@
         minWidth="160px"
       />
     </div>
+    <FilterDropdown
+      label="Filters"
+      title="Filter PRs"
+      active={pulls.getLocalFilterCount() > 0}
+      badgeCount={pulls.getLocalFilterCount()}
+      sections={localFilterSections}
+      resetLabel="Clear filters"
+      onReset={pulls.clearLocalFilters}
+      minWidth="190px"
+      align="end"
+    />
     {#if isSidebarToggleEnabled()}
       <LeftSidebarToggle
         state="expanded"
@@ -353,14 +405,16 @@
       <p class="state-message">Loading…</p>
     {:else if pulls.getError() !== null && pulls.getPulls().length === 0}
       <p class="state-message state-message--error">Error: {pulls.getError()}</p>
-    {:else if pulls.getPulls().length === 0 && sync.getSyncState()?.running}
+    {:else if visiblePulls.length === 0 && sync.getSyncState()?.running && pulls.getPulls().length === 0}
       <div class="state-message sync-message">
         <span class="sync-dot"></span>
         Syncing from GitHub…
       </div>
-    {:else if pulls.getPulls().length === 0 && !sync.getSyncState()?.last_run_at}
+    {:else if visiblePulls.length === 0 && !sync.getSyncState()?.last_run_at && pulls.getPulls().length === 0}
       <p class="state-message">Waiting for first sync…</p>
-    {:else if pulls.getPulls().length === 0}
+    {:else if visiblePulls.length === 0 && pulls.getLocalFilterCount() > 0}
+      <p class="state-message">No pull requests match these filters.</p>
+    {:else if visiblePulls.length === 0}
       <p class="state-message">No pull requests found.</p>
     {:else}
       {#if groupedPulls !== null}
@@ -407,7 +461,7 @@
           </div>
         {/each}
       {:else}
-        {#each pulls.getPulls() as pr (pr.ID)}
+        {#each visiblePulls as pr (pr.ID)}
           {@const prRef = routeRefForPull(pr)}
           {@const prSelected = isSelected(prRef)}
           <PullItem

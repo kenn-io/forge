@@ -44,6 +44,7 @@
 
   let query = $state("");
   let filterInput: HTMLInputElement | undefined = $state();
+  let failedAvatarKeys = $state<string[]>([]);
 
   onMount(() => {
     if (autofocusFilter) filterInput?.focus();
@@ -82,6 +83,16 @@
   function clearSelectedUsers(): void {
     if (pendingUser !== null || selectedNames.size === 0) return;
     void onclear?.();
+  }
+
+  function avatarKey(username: string): string {
+    return username.toLowerCase();
+  }
+
+  function markAvatarFailed(username: string): void {
+    const key = avatarKey(username);
+    if (failedAvatarKeys.includes(key)) return;
+    failedAvatarKeys = [...failedAvatarKeys, key];
   }
 </script>
 
@@ -135,6 +146,7 @@
     {#each listedUsers as username (username.toLowerCase())}
       {@const isSelected = selectedNames.has(username.toLowerCase())}
       {@const avatarURL = avatarUrlForUser?.(username) ?? ""}
+      {@const showAvatarImage = avatarURL !== "" && !failedAvatarKeys.includes(avatarKey(username))}
       <button
         type="button"
         class={["user-picker__row", { "user-picker__row--selected": isSelected }]}
@@ -143,8 +155,15 @@
         disabled={pendingUser !== null}
         onclick={() => ontoggle(username)}
       >
-        {#if avatarURL}
-          <img class="user-picker__avatar" src={avatarURL} alt="" loading="lazy" aria-hidden="true" />
+        {#if showAvatarImage}
+          <img
+            class="user-picker__avatar"
+            src={avatarURL}
+            alt=""
+            loading="lazy"
+            aria-hidden="true"
+            onerror={() => markAvatarFailed(username)}
+          />
         {:else}
           <span class="user-picker__avatar" aria-hidden="true">{username.slice(0, 1).toUpperCase()}</span>
         {/if}

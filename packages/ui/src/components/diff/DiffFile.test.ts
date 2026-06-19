@@ -1302,6 +1302,124 @@ describe("DiffFile", () => {
     }
   });
 
+  it("keeps modified list item pairs aligned when a review targets the added item", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 3,
+            new_start: 1,
+            new_count: 3,
+            lines: [
+              { type: "context", content: "- Issues", old_num: 1, new_num: 1 },
+              { type: "delete", content: "- Legacy action", old_num: 2 },
+              { type: "add", content: "- Updated action", new_num: 2 },
+              { type: "context", content: "- Statuses", old_num: 3, new_num: 3 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            id: "thread-new-action",
+            provider_comment_id: "comment-new-action",
+            path: "README.md",
+            old_path: "README.md",
+            line: 2,
+            new_line: 2,
+            body: "Updated action review note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Updated action review note")).toBeTruthy();
+    });
+    const preview = document.querySelector(".markdown-rich-diff--unified");
+    const deletedText = Array.from(preview?.querySelectorAll("del") ?? [])
+      .map((element) => element.textContent ?? "")
+      .join("\n");
+    const insertedText = Array.from(preview?.querySelectorAll("ins") ?? [])
+      .map((element) => element.textContent ?? "")
+      .join("\n");
+    expect(deletedText).toContain("Legacy");
+    expect(deletedText).not.toContain("Issues");
+    expect(deletedText).not.toContain("Statuses");
+    expect(insertedText).toContain("Updated");
+    expect(insertedText).not.toContain("Issues");
+    expect(insertedText).not.toContain("Statuses");
+    const actionComment = document.querySelector("[data-review-thread-id='thread-new-action']");
+    expect(actionComment?.previousElementSibling?.textContent).toContain("Updated action");
+  });
+
+  it("keeps modified list item pairs aligned when a review targets an added continuation", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 4,
+            new_start: 1,
+            new_count: 4,
+            lines: [
+              { type: "context", content: "- Issues", old_num: 1, new_num: 1 },
+              { type: "delete", content: "- Action", old_num: 2 },
+              { type: "delete", content: "legacy details", old_num: 3 },
+              { type: "add", content: "- Action", new_num: 2 },
+              { type: "add", content: "updated details", new_num: 3 },
+              { type: "context", content: "- Statuses", old_num: 4, new_num: 4 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            id: "thread-new-details",
+            provider_comment_id: "comment-new-details",
+            path: "README.md",
+            old_path: "README.md",
+            line: 3,
+            new_line: 3,
+            body: "Updated details review note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Updated details review note")).toBeTruthy();
+    });
+    const preview = document.querySelector(".markdown-rich-diff--unified");
+    const deletedText = Array.from(preview?.querySelectorAll("del") ?? [])
+      .map((element) => element.textContent ?? "")
+      .join("\n");
+    const insertedText = Array.from(preview?.querySelectorAll("ins") ?? [])
+      .map((element) => element.textContent ?? "")
+      .join("\n");
+    expect(deletedText).toContain("legacy");
+    expect(deletedText).not.toContain("Issues");
+    expect(deletedText).not.toContain("Statuses");
+    expect(insertedText).toContain("updated");
+    expect(insertedText).not.toContain("Issues");
+    expect(insertedText).not.toContain("Statuses");
+    const detailsComment = document.querySelector("[data-review-thread-id='thread-new-details']");
+    expect(detailsComment?.previousElementSibling?.textContent).toContain("updated details");
+  });
+
   it("keeps markdown document semantics when review cards are anchored in rich preview", async () => {
     renderDiffFile(
       makeFile({

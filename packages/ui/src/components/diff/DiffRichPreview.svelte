@@ -53,6 +53,10 @@
   };
   type DiffHunk = DiffFile["hunks"][number];
   type DiffHunkLine = DiffHunk["lines"][number];
+  type ChangedListMarker = {
+    index: number;
+    indent: number;
+  };
   type AnchoredMarkdownBlock = MarkdownRichPreviewBlock & {
     leftReviewThreads: ReviewThreadPlacement[];
     rightReviewThreads: ReviewThreadPlacement[];
@@ -214,7 +218,7 @@
         continue;
       }
       addDiffLineNumbers(splitOldLines, splitNewLines, match.hunk.lines[match.index]!);
-      addPreviousListBoundaryForChangedLine(splitOldLines, splitNewLines, match.hunk.lines, match.index);
+      addListSplitLinesForChangedLine(splitOldLines, splitNewLines, match.hunk.lines, match.index);
     }
     return {
       splitOldLines,
@@ -246,7 +250,7 @@
     if (line.new_num != null) addUniqueLine(newLines, line.new_num);
   }
 
-  function addPreviousListBoundaryForChangedLine(
+  function addListSplitLinesForChangedLine(
     oldLines: number[],
     newLines: number[],
     lines: DiffHunk["lines"],
@@ -254,17 +258,20 @@
   ): void {
     const target = lines[targetIndex]!;
     if (target.type !== "add" && target.type !== "delete") return;
-    const targetIndent = changedListMarkerIndent(lines, targetIndex);
-    if (targetIndent == null) return;
+    const marker = changedListMarker(lines, targetIndex);
+    if (!marker) return;
 
-    const boundary = comparableListMarkerLine(lines, targetIndex, targetIndent);
+    const adjacent = adjacentOppositeChangedListMarker(lines, marker);
+    if (adjacent) addDiffLineNumbers(oldLines, newLines, adjacent);
+
+    const boundary = comparableListMarkerLine(lines, targetIndex, marker.indent);
     if (boundary) addDiffLineNumbers(oldLines, newLines, boundary);
   }
 
-  function changedListMarkerIndent(lines: DiffHunk["lines"], targetIndex: number): number | null {
+  function changedListMarker(lines: DiffHunk["lines"], targetIndex: number): ChangedListMarker | null {
     const target = lines[targetIndex]!;
     const targetIndent = listMarkerIndent(target.content);
-    if (targetIndent != null) return targetIndent;
+    if (targetIndent != null) return { index: targetIndex, indent: targetIndent };
 
     let crossedBlank = false;
     for (let index = targetIndex - 1; index >= 0; index--) {
@@ -276,9 +283,110 @@
       }
       const lineIndent = listMarkerIndent(line.content);
       if (lineIndent == null) continue;
-      return isListContinuation(target.content, lineIndent, crossedBlank) ? lineIndent : null;
+      return isListContinuation(target.content, lineIndent, crossedBlank)
+        ? { index, indent: lineIndent }
+        : null;
     }
     return null;
+  }
+
+  function adjacentOppositeChangedListMarker(
+    lines: DiffHunk["lines"],
+    marker: ChangedListMarker,
+  ): DiffHunkLine | undefined {
+    const target = lines[marker.index]!;
+    const oppositeType = target.type === "add" ? "delete" : "add";
+    return (
+      previousAdjacentOppositeChangedListMarker(lines, marker.index, marker.indent, oppositeType) ??
+      nextAdjacentOppositeChangedListMarker(
+        lines,
+        changedListItemEndIndex(lines, marker.index, marker.indent),
+        marker.indent,
+        oppositeType,
+      )
+    );
+  }
+
+  function previousAdjacentOppositeChangedListMarker(
+    lines: DiffHunk["lines"],
+    startIndex: number,
+    targetIndent: number,
+    oppositeType: DiffHunkLine["type"],
+  ): DiffHunkLine | undefined {
+    let crossedBlank = false;
+    for (let index = startIndex - 1; index >= 0; index--) {
+      const line = lines[index]!;
+      if (line.content.trim() === "") {
+        crossedBlank = true;
+        continue;
+      }
+      if (line.type !== oppositeType) return undefined;
+      const lineIndent = listMarkerIndent(line.content);
+      if (lineIndent == null) {
+        if (isListContinuation(line.content, targetIndent, crossedBlank)) continue;
+        return undefined;
+      }
+      if (lineIndent < targetIndent) return undefined;
+      if (lineIndent === targetIndent) return line;
+      crossedBlank = false;
+    }
+    return undefined;
+  }
+
+  function nextAdjacentOppositeChangedListMarker(
+    lines: DiffHunk["lines"],
+    startIndex: number,
+    targetIndent: number,
+    oppositeType: DiffHunkLine["type"],
+  ): DiffHunkLine | undefined {
+    let crossedBlank = false;
+    for (let index = startIndex + 1; index < lines.length; index++) {
+      const line = lines[index]!;
+      if (line.content.trim() === "") {
+        crossedBlank = true;
+        continue;
+      }
+      if (line.type !== oppositeType) return undefined;
+      const lineIndent = listMarkerIndent(line.content);
+      if (lineIndent == null) {
+        if (isListContinuation(line.content, targetIndent, crossedBlank)) continue;
+        return undefined;
+      }
+      if (lineIndent < targetIndent) return undefined;
+      if (lineIndent === targetIndent) return line;
+      crossedBlank = false;
+    }
+    return undefined;
+  }
+
+  function changedListItemEndIndex(
+    lines: DiffHunk["lines"],
+    markerIndex: number,
+    targetIndent: number,
+  ): number {
+    const target = lines[markerIndex]!;
+    let endIndex = markerIndex;
+    let crossedBlank = false;
+    for (let index = markerIndex + 1; index < lines.length; index++) {
+      const line = lines[index]!;
+      if (line.type !== target.type) return endIndex;
+      if (line.content.trim() === "") {
+        endIndex = index;
+        crossedBlank = true;
+        continue;
+      }
+      const lineIndent = listMarkerIndent(line.content);
+      if (lineIndent != null) {
+        if (lineIndent <= targetIndent) return endIndex;
+        endIndex = index;
+        crossedBlank = false;
+        continue;
+      }
+      if (!isListContinuation(line.content, targetIndent, crossedBlank)) return endIndex;
+      endIndex = index;
+      crossedBlank = false;
+    }
+    return endIndex;
   }
 
   function comparableListMarkerLine(

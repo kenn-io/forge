@@ -2443,6 +2443,8 @@ func TestPullRequestRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 }
 
 func TestListPullRequestsFilterBySearch(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
 	d := openTestDB(t)
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
@@ -2450,11 +2452,40 @@ func TestListPullRequestsFilterBySearch(t *testing.T) {
 
 	insertTestMR(t, d, repoID, 1, "add feature", base)
 	insertTestMR(t, d, repoID, 2, "fix bug", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 3, "feature cleanup", base.Add(2*time.Hour))
 
 	prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "feature"})
-	require.NoError(t, err)
-	require.Len(t, prs, 1)
-	Assert.Equal(t, 1, prs[0].Number)
+	require.NoError(err)
+	require.Len(prs, 2)
+	assert.ElementsMatch([]int{1, 3}, []int{prs[0].Number, prs[1].Number})
+
+	prs, err = d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "feature add"})
+	require.NoError(err)
+	require.Len(prs, 1)
+	assert.Equal(1, prs[0].Number)
+}
+
+func TestListPullRequestsFilterBySearchRepoFragment(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	apiRepoID := insertTestRepo(t, d, "acme", "api")
+	workerRepoID := insertTestRepo(t, d, "tools", "worker")
+	base := baseTime()
+
+	insertTestMR(t, d, apiRepoID, 1, "fix bug", base)
+	insertTestMR(t, d, workerRepoID, 2, "fix bug", base.Add(time.Hour))
+
+	prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "acm"})
+	require.NoError(err)
+	require.Len(prs, 1)
+	assert.Equal(1, prs[0].Number)
+
+	prs, err = d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "work bug"})
+	require.NoError(err)
+	require.Len(prs, 1)
+	assert.Equal(2, prs[0].Number)
 }
 
 func TestListPullRequestsFilterBySearchNumber(t *testing.T) {
@@ -3556,6 +3587,11 @@ func TestListIssuesFilterBySearch(t *testing.T) {
 	require.Len(issues, 1)
 	assert.Equal(278, issues[0].Number)
 
+	issues, err = d.ListIssues(t.Context(), ListIssuesOpts{Search: "filter broken"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(278, issues[0].Number)
+
 	issues, err = d.ListIssues(t.Context(), ListIssuesOpts{Search: "278"})
 	require.NoError(err)
 	require.Len(issues, 1)
@@ -3570,6 +3606,29 @@ func TestListIssuesFilterBySearch(t *testing.T) {
 	issues, err = d.ListIssues(t.Context(), ListIssuesOpts{Search: "2"})
 	require.NoError(err)
 	require.Len(issues, 3)
+}
+
+func TestListIssuesFilterBySearchRepoFragment(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	apiRepoID := insertTestRepo(t, d, "acme", "api")
+	workerRepoID := insertTestRepo(t, d, "tools", "worker")
+	base := baseTime()
+
+	insertTestIssue(t, d, apiRepoID, 1, "fix bug", base)
+	insertTestIssue(t, d, workerRepoID, 2, "fix bug", base.Add(time.Hour))
+
+	issues, err := d.ListIssues(t.Context(), ListIssuesOpts{Search: "acm"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(1, issues[0].Number)
+
+	issues, err = d.ListIssues(t.Context(), ListIssuesOpts{Search: "work bug"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(2, issues[0].Number)
 }
 
 func TestListIssuesFilterBySearchLabel(t *testing.T) {

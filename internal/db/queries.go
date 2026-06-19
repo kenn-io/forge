@@ -11,13 +11,18 @@ import (
 )
 
 // listSearchCondition returns a SQL condition and args for a free-text search.
-// The title is searched as "#{number} {title}" so substring queries can match
-// the number, the title, or both at once (e.g. "278" hits "#278 fix bug").
-// Author is matched separately. Labels are matched by name for list aliases
-// with item-label join tables. The alias is the table alias used in the
-// surrounding query (e.g. "p" for merge requests, "i" for issues).
+// Unquoted whitespace-separated terms are ANDed. Within each term, the title
+// is searched as "#{number} {title}" so substring queries can match the
+// number, the title, or both at once (e.g. "278" hits "#278 fix bug").
+// Author and repository path/name are matched separately. Labels are matched
+// by name for list aliases with item-label join tables. The alias is the table
+// alias used in the surrounding query (e.g. "p" for merge requests, "i" for
+// issues), and the repository table must be joined as alias "r".
 func listSearchCondition(alias, search string) (string, []any) {
-	like := "%" + search + "%"
+	terms := listSearchTerms(search)
+	if len(terms) == 0 {
+		return "", nil
+	}
 	labelCondition := ""
 	switch alias {
 	case "p":
@@ -41,15 +46,54 @@ func listSearchCondition(alias, search string) (string, []any) {
 			alias,
 		)
 	}
-	cond := fmt.Sprintf(
-		"(('#' || %s.number || ' ' || %s.title) LIKE ? OR %s.author LIKE ?%s)",
+	termCondition := fmt.Sprintf(
+		"(('#' || %s.number || ' ' || %s.title) LIKE ? OR %s.author LIKE ? OR r.repo_path LIKE ? OR r.owner LIKE ? OR r.name LIKE ?%s)",
 		alias, alias, alias, labelCondition,
 	)
-	args := []any{like, like}
-	if labelCondition != "" {
-		args = append(args, like)
+	conds := make([]string, 0, len(terms))
+	args := make([]any, 0, len(terms)*6)
+	for _, term := range terms {
+		conds = append(conds, termCondition)
+		like := "%" + term + "%"
+		args = append(args, like, like, like, like, like)
+		if labelCondition != "" {
+			args = append(args, like)
+		}
 	}
-	return cond, args
+	return "(" + strings.Join(conds, " AND ") + ")", args
+}
+
+func listSearchTerms(search string) []string {
+	var terms []string
+	var b strings.Builder
+	var quote rune
+
+	flush := func() {
+		term := strings.TrimSpace(b.String())
+		if term != "" {
+			terms = append(terms, term)
+		}
+		b.Reset()
+	}
+
+	for _, r := range search {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+				continue
+			}
+			b.WriteRune(r)
+		case r == '"' || r == '\'':
+			quote = r
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			flush()
+		default:
+			b.WriteRune(r)
+		}
+	}
+	flush()
+	return terms
 }
 
 func appendLimitOffset(query string, args *[]any, limit, offset int) string {
@@ -2454,8 +2498,10 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	}
 	if opts.Search != "" {
 		cond, condArgs := listSearchCondition("p", opts.Search)
-		conds = append(conds, cond)
-		args = append(args, condArgs...)
+		if cond != "" {
+			conds = append(conds, cond)
+			args = append(args, condArgs...)
+		}
 	}
 
 	where := ""
@@ -3307,8 +3353,10 @@ func (d *DB) ListIssues(
 	}
 	if opts.Search != "" {
 		cond, condArgs := listSearchCondition("i", opts.Search)
-		conds = append(conds, cond)
-		args = append(args, condArgs...)
+		if cond != "" {
+			conds = append(conds, cond)
+			args = append(args, condArgs...)
+		}
 	}
 	if opts.Assignee != "" {
 		// Query JSON array structurally to avoid LIKE wildcard injection.

@@ -1992,6 +1992,46 @@ func TestAddWorktreeMergedSameRepoPRUsesPullRefWhenHeadBranchDeleted(
 	assert.Equal(headSHA, gotSHA)
 }
 
+func TestAddWorktreeGitLabMRUsesMergeRequestRefWhenHeadBranchDeleted(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	mrNumber := 546
+	headBranch := "feature/gitlab-merged"
+	headSHA := configureGitLabMRRefs(t, cloneDir, headBranch, mrNumber)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref", "-d",
+		"refs/remotes/origin/"+headBranch,
+	)
+
+	ws := &Workspace{
+		ID:              "ws-merged-gitlab-mr",
+		Platform:        "gitlab",
+		PlatformHost:    "gitlab.com",
+		RepoOwner:       "middleman",
+		RepoName:        "middleman",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      mrNumber,
+		GitHeadRef:      headBranch,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "ws-merged-gitlab-mr",
+		Status:          "creating",
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+
+	require.NoError(err)
+	assert.Equal(syntheticPRWorktreeBranch(mrNumber), branch)
+	gotSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(headSHA, gotSHA)
+}
+
 func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -2276,6 +2316,24 @@ func configureSameRepoPRRefs(
 	runWorkspaceTestGit(
 		t, cloneDir, "update-ref",
 		fmt.Sprintf("refs/pull/%d/head", prNumber), sha,
+	)
+	return sha
+}
+
+func configureGitLabMRRefs(
+	t *testing.T, cloneDir, branch string, mrNumber int,
+) string {
+	t.Helper()
+	out, err := gitOutput(t.Context(), cloneDir, "rev-parse", "main")
+	require.NoError(t, err)
+	sha := strings.TrimSpace(out)
+	require.NotEmpty(t, sha)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref", "refs/remotes/origin/"+branch, sha,
+	)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref",
+		fmt.Sprintf("refs/merge-requests/%d/head", mrNumber), sha,
 	)
 	return sha
 }

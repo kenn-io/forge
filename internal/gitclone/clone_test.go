@@ -150,11 +150,10 @@ func TestEnsureCloneSweepsPartialClone(t *testing.T) {
 	assert.True(os.IsNotExist(err), "stray file from partial clone should be gone")
 }
 
-// TestEnsureCloneInstallsBothRefspecs verifies that a fresh clone gets both
-// the remote-tracking and pull refspecs configured. Without the remote-
-// tracking refspec, git fetch never updates origin/* and branch tips
-// drift stale in the bare clone.
-func TestEnsureCloneInstallsBothRefspecs(t *testing.T) {
+// TestEnsureCloneInstallsDefaultRefspecs verifies that a fresh clone gets every
+// ref family workspace setup needs: remote branches, GitHub-style pull refs, and
+// GitLab merge request refs.
+func TestEnsureCloneInstallsDefaultRefspecs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -170,6 +169,7 @@ func TestEnsureCloneInstallsBothRefspecs(t *testing.T) {
 	refspecs := getFetchRefspecs(t, clonePath)
 	assert.Contains(refspecs, remoteTrackingRefspec)
 	assert.Contains(refspecs, pullRefspec)
+	assert.Contains(refspecs, gitlabMergeRequestRefspec)
 	assert.NotContains(refspecs, legacyBranchRefspec)
 }
 
@@ -198,6 +198,40 @@ func TestEnsureCloneFetchesNewBranchCommits(t *testing.T) {
 	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", newSHA)
 	require.NoError(err)
 	assert.Equal(newSHA, got)
+}
+
+func TestEnsureCloneFetchesGitLabMergeRequestHeads(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	remote, work := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	ctx := t.Context()
+	require.NoError(mgr.EnsureClone(
+		ctx, "gitlab.com", "testowner", "testrepo", remote))
+
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "gitlab-mr.go"), []byte("package main\n"), 0o644,
+	))
+	run(t, work, "git", "add", ".")
+	run(t, work, "git", "commit", "-m", "gitlab mr head")
+	out, err := gitcmd.New().Output(t.Context(), work, "rev-parse", "HEAD")
+	require.NoError(err)
+	headSHA := strings.TrimSpace(string(out))
+	run(t, work, "git", "push", "origin", "HEAD:refs/merge-requests/17/head")
+
+	require.NoError(mgr.EnsureClone(
+		ctx, "gitlab.com", "testowner", "testrepo", remote))
+
+	clonePath, err := mgr.ClonePath("gitlab.com", "testowner", "testrepo")
+	require.NoError(err)
+	got, err := gitcmd.New().Output(
+		t.Context(), clonePath, "rev-parse", "refs/merge-requests/17/head",
+	)
+	require.NoError(err)
+	assert.Equal(headSHA, strings.TrimSpace(string(got)))
 }
 
 // TestEnsureCloneMigratesBrokenClone simulates a clone created by the
@@ -240,6 +274,7 @@ func TestEnsureCloneMigratesBrokenClone(t *testing.T) {
 	refspecs = getFetchRefspecs(t, clonePath)
 	assert.Contains(refspecs, remoteTrackingRefspec)
 	assert.Contains(refspecs, pullRefspec)
+	assert.Contains(refspecs, gitlabMergeRequestRefspec)
 	assert.NotContains(refspecs, legacyBranchRefspec)
 
 	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", newSHA)
@@ -275,6 +310,7 @@ func TestEnsureCloneRemovesLegacyBranchRefspec(t *testing.T) {
 	refspecs = getFetchRefspecs(t, clonePath)
 	assert.Contains(refspecs, remoteTrackingRefspec)
 	assert.Contains(refspecs, pullRefspec)
+	assert.Contains(refspecs, gitlabMergeRequestRefspec)
 	assert.NotContains(refspecs, legacyBranchRefspec)
 }
 
@@ -315,6 +351,7 @@ func TestEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 	refspecs = getFetchRefspecs(t, clonePath)
 	assert.Contains(refspecs, remoteTrackingRefspec)
 	assert.Contains(refspecs, pullRefspec)
+	assert.Contains(refspecs, gitlabMergeRequestRefspec)
 	assert.NotContains(refspecs, legacyBranchRefspec)
 
 	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", newSHA)

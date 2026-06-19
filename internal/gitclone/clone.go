@@ -208,16 +208,23 @@ func (m *Manager) ensureCloneNowInNamespace(
 //     branch that a workspace has checked out.
 //   - pullRefspec makes refs/pull/<N>/head available, which is how we resolve
 //     PR heads that live on forks.
+//   - gitlabMergeRequestRefspec makes refs/merge-requests/<N>/head available,
+//     which is GitLab's equivalent merge request head ref.
 const (
-	legacyBranchRefspec   = "+refs/heads/*:refs/heads/*"
-	remoteTrackingRefspec = "+refs/heads/*:refs/remotes/origin/*"
-	pullRefspec           = "+refs/pull/*/head:refs/pull/*/head"
+	legacyBranchRefspec       = "+refs/heads/*:refs/heads/*"
+	remoteTrackingRefspec     = "+refs/heads/*:refs/remotes/origin/*"
+	pullRefspec               = "+refs/pull/*/head:refs/pull/*/head"
+	gitlabMergeRequestRefspec = "+refs/merge-requests/*/head:refs/merge-requests/*/head"
 )
 
 // defaultRefspecs returns the full list of fetch refspecs every clone should
 // have. Used by both cloneBare (fresh clones) and ensureRefspecs (migration).
 func defaultRefspecs() []string {
-	return []string{remoteTrackingRefspec, pullRefspec}
+	return []string{
+		remoteTrackingRefspec,
+		pullRefspec,
+		gitlabMergeRequestRefspec,
+	}
 }
 
 // ensureRefspecs idempotently adds any missing fetch refspecs to an

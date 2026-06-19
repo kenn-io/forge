@@ -157,7 +157,8 @@ describe("budget display", () => {
     expect(units).toContain("pts");
     expect(popover.textContent).toContain("Eager refresh");
     expect(popover.textContent).toContain("42 / 500 budgeted req/hr");
-    expect(popover.textContent).toContain("Optional detail, comment, and backfill refreshes pause when spent.");
+    expect(popover.textContent).toContain("Details, comments, and backfills pause when spent.");
+    expect(popover.textContent).not.toContain("Optional");
     expect(popover.querySelector(".budget-spent")?.textContent).toBe("42");
 
     const eagerLabel = popover.querySelector<HTMLElement>(".budget-row--eager .row-label");
@@ -187,7 +188,8 @@ describe("budget display", () => {
     const spent = popover.querySelector<HTMLElement>(".budget-spent");
     expect(spent?.textContent).toBe("1.3k");
     expect(spent?.classList.contains("budget-spent--over")).toBe(true);
-    expect(popover.textContent).toContain("eager refresh deferred");
+    expect(popover.textContent).toContain("Details, comments, and backfills are paused.");
+    expect(popover.textContent).not.toContain("eager refresh deferred");
   });
 
   it("popover dismisses on Escape", async () => {

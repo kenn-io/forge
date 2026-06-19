@@ -157,9 +157,14 @@
               class:budget-spent--over={h.budget_spent > h.budget_limit}
               style:color={syncBudgetColor(h.budget_spent, h.budget_limit)}
             >{formatCompact(h.budget_spent)}</span> / {formatCompact(h.budget_limit)} <span class="row-unit">budgeted req/hr</span>
-            {#if h.budget_spent > h.budget_limit}<span class="row-reset"> · eager refresh deferred</span>{/if}
           </span>
-          <span class="row-note">Optional detail, comment, and backfill refreshes pause when spent.</span>
+          <span class="row-note">
+            {#if h.budget_spent > h.budget_limit}
+              Details, comments, and backfills are paused.
+            {:else}
+              Details, comments, and backfills pause when spent.
+            {/if}
+          </span>
         </div>
       {/if}
 
@@ -261,10 +266,10 @@
   .row-note {
     display: block;
     grid-column: 3;
-    margin-top: 2px;
+    margin-top: 1px;
     color: var(--text-muted);
     font-size: 0.9em;
-    line-height: 1.25;
+    line-height: 1.2;
   }
   .row-unknown {
     color: var(--text-muted);

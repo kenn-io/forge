@@ -254,11 +254,31 @@
   ): void {
     const target = lines[targetIndex]!;
     if (target.type !== "add" && target.type !== "delete") return;
-    const targetIndent = listMarkerIndent(target.content);
+    const targetIndent = changedListMarkerIndent(lines, targetIndex);
     if (targetIndent == null) return;
 
     const boundary = comparableListMarkerLine(lines, targetIndex, targetIndent);
     if (boundary) addDiffLineNumbers(oldLines, newLines, boundary);
+  }
+
+  function changedListMarkerIndent(lines: DiffHunk["lines"], targetIndex: number): number | null {
+    const target = lines[targetIndex]!;
+    const targetIndent = listMarkerIndent(target.content);
+    if (targetIndent != null) return targetIndent;
+
+    let crossedBlank = false;
+    for (let index = targetIndex - 1; index >= 0; index--) {
+      const line = lines[index]!;
+      if (line.type !== target.type) return null;
+      if (line.content.trim() === "") {
+        crossedBlank = true;
+        continue;
+      }
+      const lineIndent = listMarkerIndent(line.content);
+      if (lineIndent == null) continue;
+      return isListContinuation(target.content, lineIndent, crossedBlank) ? lineIndent : null;
+    }
+    return null;
   }
 
   function comparableListMarkerLine(
@@ -469,11 +489,7 @@
     {:else}
       <div class="preview-state">Loading preview</div>
     {/if}
-  {:else if loading}
-    <div class="preview-state">Loading preview</div>
-  {:else if error}
-    <div class="preview-state preview-state--error">{error}</div>
-  {:else if preview}
+  {:else}
     {#each fallbackReviewThreads as placement (placement.thread.id)}
       <DiffReviewThreadInlineComment
         thread={placement.thread}
@@ -482,27 +498,35 @@
         {onreply}
       />
     {/each}
-    {#if kind === "markdown"}
-      <div class="diff-rich-preview markdown-body">
-        {@html renderMarkdown(text, { provider, platformHost, owner, name, repoPath })}
-      </div>
-    {:else if kind === "image"}
-      <div class="diff-image-preview">
-        <img src={dataURL} alt={file.path} />
-      </div>
-    {:else if kind === "pdf"}
-      <object
-        class="diff-object-preview"
-        data={dataURL}
-        type={preview.media_type}
-        aria-label={`${file.path} preview`}
-      >
-        <a href={dataURL}>Open PDF preview</a>
-      </object>
-    {:else if kind === "text"}
-      <pre class="diff-text-preview">{displayText}</pre>
+    {#if loading}
+      <div class="preview-state">Loading preview</div>
+    {:else if error}
+      <div class="preview-state preview-state--error">{error}</div>
+    {:else if preview}
+      {#if kind === "markdown"}
+        <div class="diff-rich-preview markdown-body">
+          {@html renderMarkdown(text, { provider, platformHost, owner, name, repoPath })}
+        </div>
+      {:else if kind === "image"}
+        <div class="diff-image-preview">
+          <img src={dataURL} alt={file.path} />
+        </div>
+      {:else if kind === "pdf"}
+        <object
+          class="diff-object-preview"
+          data={dataURL}
+          type={preview.media_type}
+          aria-label={`${file.path} preview`}
+        >
+          <a href={dataURL}>Open PDF preview</a>
+        </object>
+      {:else if kind === "text"}
+        <pre class="diff-text-preview">{displayText}</pre>
+      {:else}
+        <div class="preview-state">No rich preview for {preview.media_type}</div>
+      {/if}
     {:else}
-      <div class="preview-state">No rich preview for {preview.media_type}</div>
+      <div class="preview-state">Loading preview</div>
     {/if}
   {/if}
 </div>

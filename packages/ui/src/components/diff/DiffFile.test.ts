@@ -96,6 +96,14 @@ import { createDiffStore } from "../../stores/diff.svelte.js";
 import { renderedCodeSide } from "./pierre-dom.js";
 import type { ReviewThread } from "./review-thread-context.js";
 
+type LoadFilePreview = (
+  owner: string,
+  name: string,
+  number: number,
+  path: string,
+  side?: "old" | "new",
+) => Promise<FilePreview>;
+
 function makeFile(overrides: Partial<DiffFileType> = {}): DiffFileType {
   return {
     path: "src/foo.ts",
@@ -251,6 +259,7 @@ function renderDiffFile(
     createComment?: (body: string, range: DiffReviewLineRange) => Promise<boolean>;
     canReplyToThreads?: boolean;
     viewMode?: "unified" | "split";
+    loadFilePreview?: LoadFilePreview;
     replyToDiscussion?: (
       owner: string,
       name: string,
@@ -263,6 +272,7 @@ function renderDiffFile(
   const diff = createDiffStore();
   if (options.richPreview) diff.setRichPreview(true);
   if (options.viewMode) diff.setViewMode(options.viewMode);
+  if (options.loadFilePreview) vi.spyOn(diff, "loadFilePreview").mockImplementation(options.loadFilePreview);
   const diffReviewDraft = {
     getComments: () => options.draftComments ?? [],
     isSubmitting: () => false,
@@ -454,6 +464,57 @@ describe("DiffFile", () => {
       expect(afterPreview.querySelector("del")).toBeNull();
       expect(afterPreview.querySelector("ins")?.textContent).toBe("new");
     });
+  });
+
+  it("keeps non-Markdown rich preview review cards visible while loading", async () => {
+    let resolvePreview: (preview: FilePreview) => void = () => {};
+    renderDiffFile(makeFile({ path: "assets/chart.png", old_path: "assets/chart.png" }), {
+      richPreview: true,
+      diffHeadSHA: "diff-head",
+      loadFilePreview: () =>
+        new Promise<FilePreview>((resolve) => {
+          resolvePreview = resolve;
+        }),
+      reviewThreads: [
+        makeReviewThread({
+          path: "assets/chart.png",
+          old_path: "assets/chart.png",
+          body: "Loading non-markdown review note",
+          diff_head_sha: "diff-head",
+        }),
+      ],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Loading preview")).toBeTruthy();
+    });
+    expect(screen.getByText("Loading non-markdown review note")).toBeTruthy();
+
+    resolvePreview(textPreview("assets/chart.png", "preview content"));
+    await waitFor(() => {
+      expect(screen.getByText("preview content")).toBeTruthy();
+    });
+  });
+
+  it("keeps non-Markdown rich preview review cards visible after preview errors", async () => {
+    renderDiffFile(makeFile({ path: "assets/chart.png", old_path: "assets/chart.png" }), {
+      richPreview: true,
+      diffHeadSHA: "diff-head",
+      loadFilePreview: () => Promise.reject(new Error("preview failed")),
+      reviewThreads: [
+        makeReviewThread({
+          path: "assets/chart.png",
+          old_path: "assets/chart.png",
+          body: "Error non-markdown review note",
+          diff_head_sha: "diff-head",
+        }),
+      ],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("preview failed")).toBeTruthy();
+    });
+    expect(screen.getByText("Error non-markdown review note")).toBeTruthy();
   });
 
   it("hides content after clicking the header to collapse", async () => {
@@ -1032,8 +1093,8 @@ describe("DiffFile", () => {
         ],
       },
       {
-        name: "prepended lazy multiline",
-        targetLine: 1,
+        name: "prepended continuation",
+        targetLine: 2,
         oldCount: 2,
         newCount: 4,
         lines: [
@@ -1168,8 +1229,8 @@ describe("DiffFile", () => {
         ],
       },
       {
-        name: "first lazy multiline",
-        targetLine: 1,
+        name: "first continuation",
+        targetLine: 2,
         oldCount: 4,
         newCount: 2,
         lines: [

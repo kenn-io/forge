@@ -537,47 +537,51 @@
       {/each}
       {#if viewMode === "split"}
         <div class="diff-rich-preview markdown-rich-diff markdown-rich-diff--split">
-          <div
-            class="markdown-rich-diff__pane markdown-rich-diff__block--delete"
-            aria-label="Before markdown preview"
-          >
-            <div class="markdown-rich-diff__label">Before</div>
-            <div class="markdown-body">
-              {#each markdownPreview.blocks as block (block.key)}
-                <div class="markdown-rich-diff__anchored-block markdown-rich-diff__anchored-block--spaced">
-                  {@html block.beforeHtml ?? ""}
-                </div>
-                {#each block.leftReviewThreads as placement (placement.thread.id)}
-                  <DiffReviewThreadInlineComment
-                    thread={placement.thread}
-                    fileLevel={placement.fileLevel}
-                    canReply={canReplyToThreads}
-                    {onreply}
-                  />
-                {/each}
-              {/each}
+          <div class="markdown-rich-diff__split-header" aria-hidden="true">
+            <div class="markdown-rich-diff__split-label markdown-rich-diff__label markdown-rich-diff__block--delete">
+              Before
+            </div>
+            <div class="markdown-rich-diff__split-label markdown-rich-diff__label markdown-rich-diff__block--add">
+              After
             </div>
           </div>
-          <div
-            class="markdown-rich-diff__pane markdown-rich-diff__block--add"
-            aria-label="After markdown preview"
-          >
-            <div class="markdown-rich-diff__label">After</div>
-            <div class="markdown-body">
-              {#each markdownPreview.blocks as block (block.key)}
-                <div class="markdown-rich-diff__anchored-block markdown-rich-diff__anchored-block--spaced">
-                  {@html block.afterHtml ?? ""}
+          <div class="markdown-rich-diff__split-rows">
+            {#each markdownPreview.blocks as block (block.key)}
+              <div class="markdown-rich-diff__split-row">
+                <div
+                  class="markdown-rich-diff__pane markdown-rich-diff__block--delete markdown-body"
+                  data-markdown-rich-side="before"
+                >
+                  <div class="markdown-rich-diff__anchored-block markdown-rich-diff__anchored-block--spaced">
+                    {@html block.beforeHtml ?? ""}
+                  </div>
+                  {#each block.leftReviewThreads as placement (placement.thread.id)}
+                    <DiffReviewThreadInlineComment
+                      thread={placement.thread}
+                      fileLevel={placement.fileLevel}
+                      canReply={canReplyToThreads}
+                      {onreply}
+                    />
+                  {/each}
                 </div>
-                {#each block.rightReviewThreads as placement (placement.thread.id)}
-                  <DiffReviewThreadInlineComment
-                    thread={placement.thread}
-                    fileLevel={placement.fileLevel}
-                    canReply={canReplyToThreads}
-                    {onreply}
-                  />
-                {/each}
-              {/each}
-            </div>
+                <div
+                  class="markdown-rich-diff__pane markdown-rich-diff__block--add markdown-body"
+                  data-markdown-rich-side="after"
+                >
+                  <div class="markdown-rich-diff__anchored-block markdown-rich-diff__anchored-block--spaced">
+                    {@html block.afterHtml ?? ""}
+                  </div>
+                  {#each block.rightReviewThreads as placement (placement.thread.id)}
+                    <DiffReviewThreadInlineComment
+                      thread={placement.thread}
+                      fileLevel={placement.fileLevel}
+                      canReply={canReplyToThreads}
+                      {onreply}
+                    />
+                  {/each}
+                </div>
+              </div>
+            {/each}
           </div>
         </div>
       {:else}
@@ -670,11 +674,24 @@
   }
 
   .markdown-rich-diff--split {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: 12px;
     width: 100%;
     max-width: none;
+  }
+
+  .markdown-rich-diff__split-header,
+  .markdown-rich-diff__split-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .markdown-rich-diff__split-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .markdown-rich-diff__pane {
@@ -690,6 +707,13 @@
     font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
+  }
+
+  .markdown-rich-diff__split-label {
+    margin: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--diff-border);
+    border-radius: 6px;
   }
 
   .markdown-rich-diff__block--add {

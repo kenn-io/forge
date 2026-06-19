@@ -496,13 +496,13 @@ describe("DiffFile", () => {
     });
 
     await waitFor(() => {
-      const beforePreview = screen.getByLabelText("Before markdown preview");
-      const afterPreview = screen.getByLabelText("After markdown preview");
+      const beforePreview = document.querySelector('[data-markdown-rich-side="before"]');
+      const afterPreview = document.querySelector('[data-markdown-rich-side="after"]');
 
-      expect(beforePreview.querySelector("del")?.textContent).toBe("old");
-      expect(beforePreview.querySelector("ins")).toBeNull();
-      expect(afterPreview.querySelector("del")).toBeNull();
-      expect(afterPreview.querySelector("ins")?.textContent).toBe("new");
+      expect(beforePreview?.querySelector("del")?.textContent).toBe("old");
+      expect(beforePreview?.querySelector("ins")).toBeNull();
+      expect(afterPreview?.querySelector("del")).toBeNull();
+      expect(afterPreview?.querySelector("ins")?.textContent).toBe("new");
     });
   });
 
@@ -1681,10 +1681,69 @@ describe("DiffFile", () => {
       expect(screen.getByText("Split pane review note")).toBeTruthy();
     });
     const comment = document.querySelector("[data-review-thread-id='thread-1']");
-    expect(comment?.closest('[aria-label="Before markdown preview"]')).toBeNull();
-    expect(comment?.closest('[aria-label="After markdown preview"]')).toBeTruthy();
+    expect(comment?.closest('[data-markdown-rich-side="before"]')).toBeNull();
+    expect(comment?.closest('[data-markdown-rich-side="after"]')).toBeTruthy();
     expect(comment?.previousElementSibling?.classList.contains("markdown-rich-diff__anchored-block")).toBe(true);
     expect(document.querySelector(".preview-shell > .inline-review-thread")).toBeNull();
+  });
+
+  it("keeps split rich preview blocks paired after a side-specific review card", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 3,
+            new_start: 1,
+            new_count: 5,
+            lines: [
+              { type: "context", content: "Opening paragraph", old_num: 1, new_num: 1 },
+              { type: "context", content: "", old_num: 2, new_num: 2 },
+              { type: "add", content: "Added reviewed paragraph", new_num: 3 },
+              { type: "context", content: "", old_num: 3, new_num: 4 },
+              { type: "context", content: "Following paragraph", old_num: 4, new_num: 5 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        viewMode: "split",
+        diffHeadSHA: "diff-head",
+        reviewThreads: [
+          makeReviewThread({
+            path: "README.md",
+            old_path: "README.md",
+            line: 3,
+            new_line: 3,
+            body: "Split row review note",
+            diff_head_sha: "diff-head",
+          }),
+        ],
+      },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Split row review note")).toBeTruthy();
+    });
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    const commentRow = comment?.closest(".markdown-rich-diff__split-row");
+    expect(commentRow).toBeTruthy();
+    expect(commentRow?.querySelector('[data-markdown-rich-side="before"]')).toBeTruthy();
+    expect(commentRow?.querySelector('[data-markdown-rich-side="after"]')?.textContent).toContain(
+      "Added reviewed paragraph",
+    );
+    const followingRow = Array.from(document.querySelectorAll(".markdown-rich-diff__split-row")).find((row) =>
+      row.textContent?.includes("Following paragraph"),
+    );
+    expect(followingRow?.querySelector('[data-markdown-rich-side="before"]')?.textContent).toContain(
+      "Following paragraph",
+    );
+    expect(followingRow?.querySelector('[data-markdown-rich-side="after"]')?.textContent).toContain(
+      "Following paragraph",
+    );
   });
 
   it("keeps unmapped markdown rich preview threads in file-level fallback cards", async () => {

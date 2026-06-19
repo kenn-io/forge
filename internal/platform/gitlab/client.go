@@ -363,7 +363,10 @@ func (c *Client) optionalHeadRepoCloneURL(
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return "", ctxErr
 	}
-	return "", nil
+	if isUnavailableSourceProjectError(err) {
+		return "", nil
+	}
+	return "", err
 }
 
 func (c *Client) headRepoCloneURL(
@@ -885,6 +888,18 @@ func isGitLabStatus(err error, status int) bool {
 		return true
 	}
 	return strings.Contains(err.Error(), strconv.Itoa(status))
+}
+
+func isUnavailableSourceProjectError(err error) bool {
+	var platformErr *platform.Error
+	if errors.As(err, &platformErr) {
+		if platformErr.Code == platform.ErrCodePermissionDenied ||
+			platformErr.Code == platform.ErrCodeNotFound {
+			return true
+		}
+	}
+	return isGitLabStatus(err, http.StatusForbidden) ||
+		isGitLabStatus(err, http.StatusNotFound)
 }
 
 func partialError(namespace string, page int64, err error) PartialError {

@@ -2465,6 +2465,28 @@ func TestListPullRequestsFilterBySearch(t *testing.T) {
 	assert.Equal(1, prs[0].Number)
 }
 
+func TestListPullRequestsFilterBySearchPreservesApostrophesInTerms(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+
+	insertTestMR(t, d, repoID, 1, "can't reproduce", base)
+	insertTestMR(t, d, repoID, 2, "O'Reilly docs update", base.Add(time.Hour))
+
+	prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "can't"})
+	require.NoError(err)
+	require.Len(prs, 1)
+	assert.Equal(1, prs[0].Number)
+
+	prs, err = d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "O'Reilly"})
+	require.NoError(err)
+	require.Len(prs, 1)
+	assert.Equal(2, prs[0].Number)
+}
+
 func TestListPullRequestsFilterBySearchRepoFragment(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

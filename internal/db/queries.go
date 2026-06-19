@@ -85,7 +85,11 @@ func listSearchTerms(search string) []string {
 			}
 			b.WriteRune(r)
 		case r == '"' || r == '\'':
-			quote = r
+			if b.Len() == 0 {
+				quote = r
+				continue
+			}
+			b.WriteRune(r)
 		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
 			flush()
 		default:

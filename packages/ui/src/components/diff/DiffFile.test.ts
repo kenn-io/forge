@@ -504,6 +504,9 @@ describe("DiffFile", () => {
       expect(afterPreview?.querySelector("del")).toBeNull();
       expect(afterPreview?.querySelector("ins")?.textContent).toBe("new");
     });
+    expect(diffRichPreviewSource).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*\.markdown-rich-diff__split-header,\s*\.markdown-rich-diff__split-row[\s\S]*grid-template-columns: minmax\(0, 1fr\);/,
+    );
   });
 
   it("keeps non-Markdown rich preview review cards visible while loading", async () => {

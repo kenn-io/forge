@@ -858,7 +858,8 @@
   }
 
   @media (max-width: 760px) {
-    .markdown-rich-diff--split {
+    .markdown-rich-diff__split-header,
+    .markdown-rich-diff__split-row {
       grid-template-columns: minmax(0, 1fr);
     }
   }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { KeySpec } from "../../stores/keyboard/keyspec.js";
-  import { kbdAriaLabel, kbdGlyph } from "./useKbdLabel.js";
+  import { kbdAriaLabel, kbdGlyph, kbdGlyphJoiner } from "./useKbdLabel.js";
 
   interface Props {
     binding: KeySpec;
@@ -9,10 +9,11 @@
   let { binding }: Props = $props();
 
   const glyph = $derived(kbdGlyph(binding));
+  const joiner = $derived(kbdGlyphJoiner());
   const aria = $derived(kbdAriaLabel(binding));
 </script>
 
-<kbd class="kbd-badge" aria-label={aria}>
+<kbd class="kbd-badge" data-joiner={joiner === "" ? "compact" : "plus"} aria-label={aria}>
   {glyph}
   <span class="sr-only">{aria}</span>
 </kbd>
@@ -29,6 +30,10 @@
     color: var(--text-secondary);
     background: var(--bg-inset);
     font-family: ui-monospace, monospace;
+  }
+  .kbd-badge[data-joiner="compact"] {
+    font-family: var(--font-sans);
+    letter-spacing: 0.07em;
   }
   .sr-only {
     position: absolute;

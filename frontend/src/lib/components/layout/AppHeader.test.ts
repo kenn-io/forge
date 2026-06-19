@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { compile } from "svelte/compiler";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import headerIconButtonSource from "./HeaderIconButton.svelte?raw";
 
 const mockedContainerSize = vi.hoisted(() => ({
   value: "wide" as "narrow" | "medium" | "wide",
@@ -67,6 +69,21 @@ import { initTheme, cleanupTheme } from "../../stores/theme.svelte.js";
 import { setSidebarCollapsed } from "../../stores/sidebar.svelte.ts";
 import { navigate } from "../../stores/router.svelte.ts";
 import { isPaletteOpen, resetPaletteState } from "../../stores/keyboard/palette-state.svelte.js";
+
+function compiledStyle(source: string, selector: string): CSSStyleDeclaration {
+  const css = compile(source, { filename: "component.svelte" }).css?.code ?? "";
+  const style = document.createElement("style");
+  style.textContent = css;
+  document.head.appendChild(style);
+
+  for (const rule of Array.from(style.sheet?.cssRules ?? [])) {
+    if (!("selectorText" in rule) || !("style" in rule)) continue;
+    if (String(rule.selectorText).includes(selector)) {
+      return rule.style as CSSStyleDeclaration;
+    }
+  }
+  throw new Error(`Could not find compiled style rule for ${selector}`);
+}
 
 type MediaChangeCallback = (event: MediaQueryListEvent) => void;
 
@@ -258,6 +275,12 @@ describe("AppHeader", () => {
     expect(container.querySelector("button[title='Toggle theme'] svg")).toBeTruthy();
     expect(container.querySelector("button[title='Settings'] svg")).toBeTruthy();
     expect(container.querySelector("button[title='Select repository'] svg")).toBeTruthy();
+  });
+
+  it("spaces the command palette icon and shortcut hint", () => {
+    const buttonStyle = compiledStyle(headerIconButtonSource, "button");
+
+    expect(buttonStyle.getPropertyValue("gap")).toBe("7px");
   });
 
   it("opens the command palette from the header trigger", async () => {

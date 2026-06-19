@@ -44,6 +44,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 7px;
     line-height: 0;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
   }

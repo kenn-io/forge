@@ -408,6 +408,7 @@ describe("RepoSettings", () => {
         renderer: "xterm",
       },
       agents: [],
+      fleet: defaultFleetSettings(),
     });
     mockUpdateRepoWorktreeBasePath.mockResolvedValue({
       repos: promotedRepos,
@@ -431,6 +432,7 @@ describe("RepoSettings", () => {
         renderer: "xterm",
       },
       agents: [],
+      fleet: defaultFleetSettings(),
     });
 
     render(RepoSettings, {
@@ -603,6 +605,7 @@ describe("RepoSettings", () => {
         renderer: "xterm",
       },
       agents: [],
+      fleet: defaultFleetSettings(),
     });
     mockUpdateRepoWorktreeBasePath.mockRejectedValue(new Error("path does not exist"));
     mockRemoveRepo.mockResolvedValue();

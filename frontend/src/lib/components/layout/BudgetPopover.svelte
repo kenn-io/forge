@@ -146,18 +146,19 @@
         {/if}
       </div>
 
-      <!-- Middleman Budget -->
+      <!-- Eager refresh budget -->
       {#if h.budget_limit > 0}
         <div class="budget-row">
-          <span class="row-label">Sync budget</span>
+          <span class="row-label">Eager refresh</span>
           <span class="row-bar-cell"></span>
           <span class="row-value">
             <span
               class="budget-spent"
               class:budget-spent--over={h.budget_spent > h.budget_limit}
               style:color={syncBudgetColor(h.budget_spent, h.budget_limit)}
-            >{formatCompact(h.budget_spent)}</span> / {formatCompact(h.budget_limit)} <span class="row-unit">sync req/hr</span>
-            {#if h.budget_spent > h.budget_limit}<span class="row-reset"> · over budget</span>{/if}
+            >{formatCompact(h.budget_spent)}</span> / {formatCompact(h.budget_limit)} <span class="row-unit">budgeted req/hr</span>
+            {#if h.budget_spent > h.budget_limit}<span class="row-reset"> · eager refresh deferred</span>{/if}
+            <span class="row-note">Optional detail, comment, and backfill refreshes pause when spent.</span>
           </span>
         </div>
       {/if}
@@ -216,7 +217,7 @@
   .budget-row {
     /* label | bar | value (with inline reset) */
     display: grid;
-    grid-template-columns: 72px 48px 1fr;
+    grid-template-columns: 78px 42px 1fr;
     align-items: center;
     column-gap: 8px;
     margin-bottom: 6px;
@@ -253,6 +254,13 @@
     color: var(--text-muted);
     font-size: 0.9em;
     opacity: 0.7;
+  }
+  .row-note {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: 0.9em;
+    line-height: 1.25;
   }
   .row-unknown {
     color: var(--text-muted);

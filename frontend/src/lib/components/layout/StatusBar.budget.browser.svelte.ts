@@ -142,19 +142,20 @@ describe("budget display", () => {
 
   it("budget bars show middleman count when budget enabled", async () => {
     const bars = await mountStatusBar();
-    expect(bars.textContent).toContain("42 / 500 sync req/hr");
+    expect(bars.textContent).toContain("Eager 42 / 500");
   });
 
-  // The popover dialog exposes REST req, GraphQL pts, and the middleman
-  // budget spend from the same payload.
+  // The popover dialog exposes REST req, GraphQL pts, and the eager
+  // refresh budget spend from the same payload.
   it("clicking budget area opens popover with per-host breakdown", async () => {
     const bars = await mountStatusBar();
     const popover = await openPopover(bars);
     const units = Array.from(popover.querySelectorAll(".row-unit")).map((el) => el.textContent?.trim());
     expect(units).toContain("req");
     expect(units).toContain("pts");
-    expect(popover.textContent).toContain("Sync budget");
-    expect(popover.textContent).toContain("42 / 500 sync req/hr");
+    expect(popover.textContent).toContain("Eager refresh");
+    expect(popover.textContent).toContain("42 / 500 budgeted req/hr");
+    expect(popover.textContent).toContain("Optional detail, comment, and backfill refreshes pause when spent.");
     expect(popover.querySelector(".budget-spent")?.textContent).toBe("42");
   });
 
@@ -170,7 +171,7 @@ describe("budget display", () => {
       }),
     ]);
 
-    expect(bars.textContent).toContain("1.3k / 500 sync req/hr");
+    expect(bars.textContent).toContain("Eager 1.3k / 500");
     const compactBudget = bars.querySelector<HTMLElement>(".budget-count");
     expect(compactBudget?.style.color).toBe("var(--budget-red)");
 
@@ -178,7 +179,7 @@ describe("budget display", () => {
     const spent = popover.querySelector<HTMLElement>(".budget-spent");
     expect(spent?.textContent).toBe("1.3k");
     expect(spent?.classList.contains("budget-spent--over")).toBe(true);
-    expect(popover.textContent).toContain("over budget");
+    expect(popover.textContent).toContain("eager refresh deferred");
   });
 
   it("popover dismisses on Escape", async () => {
@@ -321,7 +322,7 @@ describe("budget display", () => {
     expect(bars.textContent).not.toContain("REST");
     expect(bars.textContent).toContain("--");
     // Budget count visible — budget is independent of REST rate observation
-    expect(bars.textContent).toContain("10 / 500 sync req/hr");
+    expect(bars.textContent).toContain("Eager 10 / 500");
   });
 
   it("stale host excluded from compact bars, fresh host drives ratio", async () => {

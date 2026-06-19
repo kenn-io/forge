@@ -31,6 +31,30 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 	assert.Equal(1, budget.Spent())
 }
 
+func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
+	assert := assert.New(t)
+
+	budget := NewSyncBudget(100)
+	bt := &budgetTransport{
+		base: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			rec := httptest.NewRecorder()
+			rec.WriteHeader(http.StatusNotModified)
+			return rec.Result(), nil
+		}),
+		budget: budget,
+	}
+
+	ctx := WithSyncBudget(t.Context())
+	req, _ := http.NewRequestWithContext(
+		ctx, "GET", "https://api.github.com/repos/o/n/pulls", nil,
+	)
+	_, err := bt.RoundTrip(req)
+	require.NoError(t, err)
+
+	assert.Equal(0, budget.Spent(),
+		"304 responses should not spend sync budget")
+}
+
 func TestBudgetTransport_SkipsNonSyncContext(t *testing.T) {
 	assert := assert.New(t)
 

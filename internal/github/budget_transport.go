@@ -23,8 +23,9 @@ func IsSyncBudgetContext(ctx context.Context) bool {
 // budgetTransport wraps an http.RoundTripper and increments a
 // SyncBudget for every RoundTrip invocation whose request
 // context carries the sync-budget key. This captures paginated
-// pages, 304 responses, and GraphQL calls made during background
-// sync without counting user-initiated server actions.
+// pages and GraphQL calls made during background sync without
+// counting user-initiated server actions or GitHub REST 304
+// responses that do not spend primary provider quota.
 //
 // Transparent retries inside net/http.Transport are not visible
 // to RoundTripper wrappers and are not counted.
@@ -36,8 +37,10 @@ type budgetTransport struct {
 func (t *budgetTransport) RoundTrip(
 	req *http.Request,
 ) (*http.Response, error) {
-	if IsSyncBudgetContext(req.Context()) {
+	resp, err := t.base.RoundTrip(req)
+	if IsSyncBudgetContext(req.Context()) &&
+		(resp == nil || resp.StatusCode != http.StatusNotModified) {
 		t.budget.Spend(1)
 	}
-	return t.base.RoundTrip(req)
+	return resp, err
 }

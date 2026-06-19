@@ -47,6 +47,13 @@ describe("force-mobile routes", () => {
     mounted = await mountBrowserApp("/issues");
 
     await vi.waitFor(() => expect(count(".focus-layout .focus-list")).toBe(1), WAIT);
+    // Assert the focus list is actually visible, not merely mounted: a regression
+    // that leaves the focus layout in the DOM but hidden by CSS must still fail.
+    const focusList = document.querySelector(".focus-layout .focus-list")!;
+    await expect.element(page.elementLocator(focusList)).toBeVisible();
+    const rect = focusList.getBoundingClientRect();
+    expect(rect.width).toBeGreaterThan(0);
+    expect(rect.height).toBeGreaterThan(0);
     expect(window.location.pathname).toBe("/issues");
     expect(count(".mobile-shell")).toBe(0);
     expect(count(".app-header")).toBe(0);

@@ -14,6 +14,9 @@ func DetectChains(prs []db.MergeRequest) [][]db.MergeRequest {
 	// Sort by number for deterministic tie-breaking.
 	sorted := slices.Clone(prs)
 	slices.SortFunc(sorted, db.MergeRequest.Compare)
+	sorted = slices.DeleteFunc(sorted, func(pr db.MergeRequest) bool {
+		return pr.HeadBranch == pr.BaseBranch
+	})
 
 	// head_branch -> PR. Prefer open over merged; within same state, lowest number wins.
 	headMap := make(map[string]db.MergeRequest, len(sorted))

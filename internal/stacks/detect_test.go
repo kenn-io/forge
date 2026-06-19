@@ -87,6 +87,21 @@ func TestDetectChains_PartialMerge(t *testing.T) {
 	assert.Len(chains[0], 2)
 }
 
+func TestDetectChains_SelfTargetingDefaultBranchPRDoesNotHideRoot(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	prs := []realdb.MergeRequest{
+		makePR(1, 449, "main", "main", prMerged),
+		makePR(2, 748, "locate-parser-interface", "main", prOpen),
+		makePR(3, 751, "provider-facade-core", "locate-parser-interface", prOpen),
+		makePR(4, 752, "provider-jsonl-source-set", "provider-facade-core", prOpen),
+	}
+
+	chains := DetectChains(prs)
+	require.Len(chains, 1)
+	assert.Equal([]int{748, 751, 752}, stackNumbers(chains[0]))
+}
+
 func TestDetectChains_DuplicateHeadPrefersOpen(t *testing.T) {
 	assert := Assert.New(t)
 	// Merged PR and open PR share same head branch.
@@ -154,6 +169,14 @@ func TestDeriveStackName(t *testing.T) {
 		makePR(1, 1, "feature/authorization", "main", prOpen),
 		makePR(2, 2, "feature/authorizer", "feature/authorization", prOpen),
 	}))
+}
+
+func stackNumbers(chain []realdb.MergeRequest) []int {
+	numbers := make([]int, len(chain))
+	for i, pr := range chain {
+		numbers[i] = pr.Number
+	}
+	return numbers
 }
 
 func openTestDB(t *testing.T) *realdb.DB {

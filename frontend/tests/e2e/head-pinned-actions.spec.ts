@@ -51,6 +51,7 @@ const providerCapabilities = {
   review_mutation: true,
   workflow_approval: true,
   ready_for_review: true,
+  draft_mutation: true,
   issue_mutation: true,
   review_draft_mutation: false,
   review_thread_resolution: false,

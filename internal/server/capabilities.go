@@ -14,6 +14,7 @@ const (
 	capabilityReviewMutation         = "review_mutation"
 	capabilityWorkflowApproval       = "workflow_approval"
 	capabilityReadyForReview         = "ready_for_review"
+	capabilityDraftMutation          = "draft_mutation"
 	capabilityIssueMutation          = "issue_mutation"
 	capabilityReadLabels             = "read_labels"
 	capabilityLabelMutation          = "label_mutation"
@@ -43,6 +44,8 @@ func capabilityEnabled(
 		return caps.WorkflowApproval
 	case capabilityReadyForReview:
 		return caps.ReadyForReview
+	case capabilityDraftMutation:
+		return caps.DraftMutation
 	case capabilityIssueMutation:
 		return caps.IssueMutation
 	case capabilityReadLabels:

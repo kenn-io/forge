@@ -19,6 +19,7 @@ const capabilities = {
   review_mutation: false,
   workflow_approval: false,
   ready_for_review: false,
+  draft_mutation: false,
   issue_mutation: true,
   label_mutation: false,
   assignee_mutation: false,

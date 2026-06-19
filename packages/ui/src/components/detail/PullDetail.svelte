@@ -109,6 +109,7 @@
     review_mutation: true,
     workflow_approval: true,
     ready_for_review: true,
+    draft_mutation: true,
     issue_mutation: true,
     label_mutation: false,
     assignee_mutation: false,
@@ -609,10 +610,15 @@
   }
 
   async function handleStateChange(
-    newState: "open" | "closed",
+    newState: "open" | "closed" | "draft",
   ): Promise<void> {
     if (stalePR) return;
-    if (!currentCapabilities().state_mutation) return;
+    const caps = currentCapabilities();
+    if (newState === "draft") {
+      if (!caps.draft_mutation) return;
+    } else if (!caps.state_mutation) {
+      return;
+    }
     stateSubmitting = true;
     stateError = null;
     try {
@@ -879,9 +885,37 @@
   let wsError = $state<string | null>(null);
   let actionMenuOpen = $state(false);
   let actionMenuWrapEl = $state<HTMLDivElement>();
+  let stateMenuOpen = $state(false);
+  let stateMenuWrapEl = $state<HTMLSpanElement>();
 
   function closeActionMenu(): void {
     actionMenuOpen = false;
+  }
+
+  function closeStateMenu(): void {
+    stateMenuOpen = false;
+  }
+
+  function visiblePRState(pr: Pick<PullRequest, "State" | "IsDraft">): "merged" | "closed" | "draft" | "open" {
+    if (pr.State === "merged") return "merged";
+    if (pr.State === "closed") return "closed";
+    if (pr.IsDraft) return "draft";
+    return "open";
+  }
+
+  function visiblePRStateLabel(pr: Pick<PullRequest, "State" | "IsDraft">): string {
+    const state = visiblePRState(pr);
+    return state.charAt(0).toUpperCase() + state.slice(1);
+  }
+
+  function toggleStateMenu(): void {
+    if (stalePR) return;
+    stateMenuOpen = !stateMenuOpen;
+  }
+
+  async function chooseState(newState: "open" | "closed" | "draft"): Promise<void> {
+    closeStateMenu();
+    await handleStateChange(newState);
   }
 
   function closeLabelPicker(): void {
@@ -1063,6 +1097,9 @@
     if (actionMenuOpen && e.key === "Escape") {
       actionMenuOpen = false;
     }
+    if (stateMenuOpen && e.key === "Escape") {
+      stateMenuOpen = false;
+    }
   }
 
   function isLabelPickerControlTarget(target: Node): boolean {
@@ -1077,6 +1114,9 @@
     const target = e.target as Node;
     if (actionMenuOpen && !actionMenuWrapEl?.contains(target)) {
       closeActionMenu();
+    }
+    if (stateMenuOpen && !stateMenuWrapEl?.contains(target)) {
+      closeStateMenu();
     }
     if (labelPickerOpen) {
       if (
@@ -1572,14 +1612,46 @@
       </div>
 
       <div class="chips-row">
-        {#if pr.State === "merged"}
-          <Chip class="chip--purple">Merged</Chip>
-        {:else if pr.State === "closed"}
-          <Chip class="chip--red">Closed</Chip>
-        {:else if pr.IsDraft}
-          <Chip class="chip--amber">Draft</Chip>
-        {:else}
-          <Chip class="chip--green">Open</Chip>
+        {#if true}
+          {@const stateLabel = visiblePRStateLabel(pr)}
+          {@const markDraftGate = operationGate(repoOperations?.mark_draft)}
+          {@const canOpenStateMenu = pr.State === "open" && !pr.IsDraft && capabilities.draft_mutation}
+          <span class="state-menu-wrap" bind:this={stateMenuWrapEl}>
+            <Chip
+              class={visiblePRState(pr) === "merged"
+                ? "chip--purple"
+                : visiblePRState(pr) === "closed"
+                  ? "chip--red"
+                  : visiblePRState(pr) === "draft"
+                    ? "chip--amber"
+                    : "chip--green"}
+              interactive={canOpenStateMenu}
+              disabled={stateSubmitting || stalePR || markDraftGate.unavailable}
+              expanded={canOpenStateMenu ? stateMenuOpen : undefined}
+              title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
+              ariaLabel={canOpenStateMenu ? `State: ${stateLabel}` : undefined}
+              onclick={canOpenStateMenu ? toggleStateMenu : undefined}
+            >
+              {stateLabel}
+              {#if canOpenStateMenu}
+                <ChevronDownIcon size="12" strokeWidth="2.2" aria-hidden="true" />
+              {/if}
+            </Chip>
+            {#if canOpenStateMenu && stateMenuOpen}
+              <div class="state-menu" role="menu" aria-label="Pull request state">
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="state-menu-item"
+                  disabled={stateSubmitting || markDraftGate.unavailable}
+                  title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
+                  onclick={() => void chooseState("draft")}
+                >
+                  Draft
+                </button>
+              </div>
+            {/if}
+          </span>
         {/if}
         {#if pr.IsLocked && lockedSupported}
           <Chip class="chip--amber" title="This pull request is locked">Locked</Chip>
@@ -2549,6 +2621,49 @@
     flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
+  }
+
+  .state-menu-wrap {
+    position: relative;
+    display: inline-flex;
+    z-index: 70;
+  }
+
+  .state-menu {
+    position: absolute;
+    z-index: 25;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 120px;
+    padding: 4px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-surface);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+  }
+
+  .state-menu-item {
+    width: 100%;
+    min-height: 30px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .state-menu-item:hover:not(:disabled) {
+    background: var(--bg-surface-hover);
+  }
+
+  .state-menu-item:disabled {
+    color: var(--text-muted);
+    cursor: not-allowed;
   }
 
   .chips-row :global(.btn--labels) {

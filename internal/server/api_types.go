@@ -28,6 +28,7 @@ type providerCapabilitiesResponse struct {
 	ReviewMutation         bool     `json:"review_mutation"`
 	WorkflowApproval       bool     `json:"workflow_approval"`
 	ReadyForReview         bool     `json:"ready_for_review"`
+	DraftMutation          bool     `json:"draft_mutation"`
 	IssueMutation          bool     `json:"issue_mutation"`
 	LabelMutation          bool     `json:"label_mutation"`
 	AssigneeMutation       bool     `json:"assignee_mutation"`

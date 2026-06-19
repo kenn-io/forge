@@ -825,6 +825,46 @@ func TestMarkPullRequestReadyForReviewUsesGraphQLMutation(t *testing.T) {
 	require.Equal([]string{"application/json", "application/json"}, contentTypes)
 }
 
+func TestConvertPullRequestToDraftUsesGraphQLMutation(t *testing.T) {
+	require := require.New(t)
+	var calls int
+	var methods []string
+	var contentTypes []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		methods = append(methods, r.Method)
+		contentTypes = append(contentTypes, r.Header.Get("Content-Type"))
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"convertPullRequestToDraft":{"pullRequest":{"databaseId":1001,"number":141,"title":"Draft PR","state":"OPEN","isDraft":true,"body":"body","url":"https://github.com/wesm/middleman/pull/141","author":{"login":"wesm"},"createdAt":"2026-04-14T00:00:00Z","updatedAt":"2026-04-14T00:05:00Z","mergedAt":null,"closedAt":null,"additions":12,"deletions":3,"mergeable":"MERGEABLE","reviewDecision":"APPROVED","headRefName":"feature","baseRefName":"main","headRefOid":"abc123","baseRefOid":"def456","headRepository":{"url":"https://github.com/wesm/middleman"},"labels":{"nodes":[]}}}}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+	require.NoError(err)
+
+	c := &liveClient{
+		gh:              ghClient,
+		httpClient:      srv.Client(),
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	pr, err := c.ConvertPullRequestToDraft(t.Context(), "wesm", "middleman", 141)
+	require.NoError(err)
+	require.NotNil(pr)
+	require.Equal(141, pr.GetNumber())
+	require.Equal("Draft PR", pr.GetTitle())
+	require.True(pr.GetDraft())
+	require.Equal(2, calls)
+	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
+	require.Equal([]string{"application/json", "application/json"}, contentTypes)
+}
+
 func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) {
 	require := require.New(t)
 	call := 0

@@ -61,6 +61,7 @@ test.beforeEach(async ({ page }) => {
           state_mutation: true,
           merge_mutation: true,
           ready_for_review: true,
+          draft_mutation: true,
           review_mutation: true,
           workflow_approval: true,
         },

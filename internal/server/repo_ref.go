@@ -186,6 +186,7 @@ func providerCapabilitiesFromPlatform(caps platform.Capabilities) providerCapabi
 		ReviewMutation:         caps.ReviewMutation,
 		WorkflowApproval:       caps.WorkflowApproval,
 		ReadyForReview:         caps.ReadyForReview,
+		DraftMutation:          caps.DraftMutation,
 		IssueMutation:          caps.IssueMutation,
 		LabelMutation:          caps.LabelMutation,
 		AssigneeMutation:       caps.AssigneeMutation,
@@ -216,6 +217,7 @@ func defaultGitHubProviderCapabilities() providerCapabilitiesResponse {
 		ReviewMutation:    true,
 		WorkflowApproval:  true,
 		ReadyForReview:    true,
+		DraftMutation:     true,
 		IssueMutation:     true,
 		LabelMutation:     false,
 	})

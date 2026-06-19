@@ -1998,6 +1998,7 @@ type ProjectWorktreeRuntimeSession struct {
 type ProviderCapabilitiesResponse struct {
 	AssigneeMutation       bool      `json:"assignee_mutation"`
 	CommentMutation        bool      `json:"comment_mutation"`
+	DraftMutation          bool      `json:"draft_mutation"`
 	IssueMutation          bool      `json:"issue_mutation"`
 	LabelMutation          bool      `json:"label_mutation"`
 	MergeMutation          bool      `json:"merge_mutation"`
@@ -2306,6 +2307,7 @@ type RepoOperations struct {
 	ClosePr             OperationAvailability `json:"close_pr"`
 	CreateIssue         OperationAvailability `json:"create_issue"`
 	EditComment         OperationAvailability `json:"edit_comment"`
+	MarkDraft           OperationAvailability `json:"mark_draft"`
 	MarkReadyForReview  OperationAvailability `json:"mark_ready_for_review"`
 	MergePr             OperationAvailability `json:"merge_pr"`
 	RemoveLabel         OperationAvailability `json:"remove_label"`

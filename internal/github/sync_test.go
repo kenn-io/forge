@@ -1299,6 +1299,15 @@ func (m *mockClient) MarkPullRequestReadyForReview(
 	return &gh.PullRequest{Number: &number, Draft: &draft}, nil
 }
 
+func (m *mockClient) ConvertPullRequestToDraft(
+	_ context.Context, _, _ string, number int,
+) (*gh.PullRequest, error) {
+	m.trackCall()
+	draft := true
+	state := "open"
+	return &gh.PullRequest{Number: &number, State: &state, Draft: &draft}, nil
+}
+
 func (m *mockClient) DismissReview(
 	_ context.Context, _, _ string, _ int, reviewID int64, message string,
 ) (*gh.PullRequestReview, error) {

@@ -59,6 +59,7 @@
     review_mutation: true,
     workflow_approval: true,
     ready_for_review: true,
+    draft_mutation: true,
     issue_mutation: true,
     label_mutation: false,
     assignee_mutation: false,

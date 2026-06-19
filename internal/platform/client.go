@@ -102,6 +102,10 @@ type ReadyForReviewMutator interface {
 	MarkReadyForReview(ctx context.Context, ref RepoRef, number int) (MergeRequest, error)
 }
 
+type DraftMutator interface {
+	ConvertMergeRequestToDraft(ctx context.Context, ref RepoRef, number int) (MergeRequest, error)
+}
+
 type IssueMutator interface {
 	CreateIssue(ctx context.Context, ref RepoRef, title string, body string) (Issue, error)
 }

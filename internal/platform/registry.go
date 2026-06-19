@@ -248,6 +248,18 @@ func (r *Registry) ReadyForReviewMutator(kind Kind, host string) (ReadyForReview
 	return mutator, nil
 }
 
+func (r *Registry) DraftMutator(kind Kind, host string) (DraftMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(DraftMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "draft_mutation")
+	}
+	return mutator, nil
+}
+
 func (r *Registry) IssueMutator(kind Kind, host string) (IssueMutator, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

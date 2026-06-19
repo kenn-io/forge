@@ -193,6 +193,7 @@ type mockGH struct {
 	createIssueFn              func(context.Context, string, string, string, string) (*gh.Issue, error)
 	getUserFn                  func(context.Context, string) (*gh.User, error)
 	markReadyForReviewFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
+	convertToDraftFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
 	dismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
 	editPullRequestFn          func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
 	editIssueFn                func(context.Context, string, string, int, string) (*gh.Issue, error)
@@ -546,6 +547,17 @@ func (m *mockGH) MarkPullRequestReadyForReview(
 	}
 	draft := false
 	return &gh.PullRequest{Number: &number, Draft: &draft}, nil
+}
+
+func (m *mockGH) ConvertPullRequestToDraft(
+	ctx context.Context, owner, repo string, number int,
+) (*gh.PullRequest, error) {
+	if m.convertToDraftFn != nil {
+		return m.convertToDraftFn(ctx, owner, repo, number)
+	}
+	draft := true
+	state := "open"
+	return &gh.PullRequest{Number: &number, State: &state, Draft: &draft}, nil
 }
 
 func (m *mockGH) MergePullRequest(
@@ -11389,6 +11401,65 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 
 	pr, _ := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
 	require.Equal(db.MergeRequestStateClosed, pr.State)
+}
+
+func TestAPIMarkPRDraftPersistsDraftFlag(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	var gotOwner string
+	var gotRepo string
+	var gotNumber int
+	mock := &mockGH{
+		convertToDraftFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			gotOwner = owner
+			gotRepo = repo
+			gotNumber = number
+			id := int64(1001)
+			title := "Draft PR"
+			state := "open"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "octocat"
+			draft := true
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			headSHA := "abc123"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				Draft:     &draft,
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				User:      &gh.User{Login: &author},
+				Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+		generated.SetPrGithubStateJSONRequestBody{State: "draft"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	assert.Equal("acme", gotOwner)
+	assert.Equal("widget", gotRepo)
+	assert.Equal(1, gotNumber)
+	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal(db.MergeRequestStateOpen, pr.State)
+	assert.True(pr.IsDraft)
+	assert.Nil(pr.ClosedAt)
 }
 
 // When MarkPullRequestReadyForReview returns (nil, nil) the handler

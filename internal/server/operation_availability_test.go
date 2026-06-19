@@ -34,6 +34,7 @@ func TestDeriveOperationAvailability(t *testing.T) {
 		ReviewDraftMutation: true,
 		WorkflowApproval:    true,
 		ReadyForReview:      true,
+		DraftMutation:       true,
 		IssueMutation:       true,
 		LabelMutation:       true,
 	}
@@ -230,6 +231,7 @@ func TestRepoOperationsWireShape(t *testing.T) {
 		"close_pr",
 		"reopen_pr",
 		"mark_ready_for_review",
+		"mark_draft",
 		"submit_review",
 		"review_draft",
 		"add_comment",
@@ -425,6 +427,8 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	assert.Equal(availabilityCodeRateLimited, merge.Code)
 	assert.True(resp.Operations.MarkReadyForReview.Available,
 		"REST write exhaustion must not gate the GraphQL-backed mutation")
+	assert.True(resp.Operations.MarkDraft.Available,
+		"REST write exhaustion must not gate GraphQL-backed draft conversion")
 
 	// PAT GraphQL budget exhausted: only the GraphQL mutation gates.
 	writeRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 4000, Reset: resetAt})
@@ -438,6 +442,9 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	rfr := resp.Operations.MarkReadyForReview
 	assert.False(rfr.Available, "write GraphQL exhaustion must gate ready-for-review")
 	assert.Equal(availabilityCodeRateLimited, rfr.Code)
+	draft := resp.Operations.MarkDraft
+	assert.False(draft.Available, "write GraphQL exhaustion must gate draft conversion")
+	assert.Equal(availabilityCodeRateLimited, draft.Code)
 }
 
 func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) {

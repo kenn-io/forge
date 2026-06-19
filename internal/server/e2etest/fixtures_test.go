@@ -287,6 +287,9 @@ func (m *mockGH) CreateReviewWithComments(
 func (m *mockGH) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }
+func (m *mockGH) ConvertPullRequestToDraft(context.Context, string, string, int) (*gh.PullRequest, error) {
+	return nil, nil
+}
 func (m *mockGH) DismissReview(ctx context.Context, owner, repo string, number int, reviewID int64, message string) (*gh.PullRequestReview, error) {
 	if m.dismissReviewFn != nil {
 		return m.dismissReviewFn(ctx, owner, repo, number, reviewID, message)

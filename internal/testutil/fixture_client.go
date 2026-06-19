@@ -949,6 +949,19 @@ func (c *FixtureClient) MarkPullRequestReadyForReview(
 	return clonePullRequest(pr), nil
 }
 
+func (c *FixtureClient) ConvertPullRequestToDraft(
+	_ context.Context, owner, repo string, number int,
+) (*gh.PullRequest, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	pr := c.updatePullRequestDraft(owner, repo, number, true)
+	if pr == nil {
+		return nil, nil
+	}
+	return clonePullRequest(pr), nil
+}
+
 // MergePullRequest returns an error (mutations not supported).
 func (c *FixtureClient) MergePullRequest(
 	_ context.Context, owner, repo string, number int, _, _, _, _ string,

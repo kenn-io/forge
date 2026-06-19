@@ -3300,31 +3300,28 @@ func isGenericGitHubErrorMessage(message string, status int) bool {
 func (s *Server) setPRGitHubState(
 	ctx context.Context, input *githubStateInput,
 ) (*githubStateOutput, error) {
-	if input.Body.State != "open" && input.Body.State != "closed" {
+	if input.Body.State != "open" && input.Body.State != "closed" && input.Body.State != "draft" {
 		return nil, problemValidation(
 			"body.state",
-			"state must be 'open' or 'closed'",
-			"open", "closed",
+			"state must be 'open', 'closed', or 'draft'",
+			"open", "closed", "draft",
 		)
 	}
 
+	requiredCapability := capabilityStateMutation
+	if input.Body.State == "draft" {
+		requiredCapability = capabilityDraftMutation
+	}
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
-		capabilityStateMutation,
+		requiredCapability,
 	)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+	if err := s.requireSyncerCapability(*repo, requiredCapability); err != nil {
 		return nil, err
-	}
-
-	mutator, err := s.syncer.StateMutator(
-		repoProviderKind(*repo), repoProviderHost(*repo),
-	)
-	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
@@ -3340,6 +3337,38 @@ func (s *Server) setPRGitHubState(
 			"cannot change state of a merged pull request",
 			nil,
 		)
+	}
+
+	if input.Body.State == "draft" {
+		mutator, err := s.syncer.DraftMutator(
+			repoProviderKind(*repo), repoProviderHost(*repo),
+		)
+		if err != nil {
+			return nil, unsupportedCapabilityProblem(*repo, capabilityDraftMutation)
+		}
+		updated, err := mutator.ConvertMergeRequestToDraft(
+			ctx, platformRepoRefFromDB(*repo), input.Number,
+		)
+		if err != nil {
+			return nil, providerCallProblemWithDetail(
+				err,
+				string(repoProviderKind(*repo)), repoProviderHost(*repo),
+				"Provider API error: "+err.Error(),
+			)
+		}
+		if _, err := s.db.UpsertMergeRequest(ctx, platform.DBMergeRequest(repo.ID, updated)); err != nil {
+			return nil, problemInternal("update mr draft state: " + err.Error())
+		}
+		out := &githubStateOutput{}
+		out.Body.State = input.Body.State
+		return out, nil
+	}
+
+	mutator, err := s.syncer.StateMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
+	if err != nil {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
 
 	if _, err := mutator.SetMergeRequestState(

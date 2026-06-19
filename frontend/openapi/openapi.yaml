@@ -4089,6 +4089,8 @@ components:
           type: boolean
         comment_mutation:
           type: boolean
+        draft_mutation:
+          type: boolean
         issue_mutation:
           type: boolean
         label_mutation:
@@ -4153,6 +4155,7 @@ components:
         - review_mutation
         - workflow_approval
         - ready_for_review
+        - draft_mutation
         - issue_mutation
         - label_mutation
         - assignee_mutation
@@ -4831,6 +4834,8 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         edit_comment:
           $ref: "#/components/schemas/OperationAvailability"
+        mark_draft:
+          $ref: "#/components/schemas/OperationAvailability"
         mark_ready_for_review:
           $ref: "#/components/schemas/OperationAvailability"
         merge_pr:
@@ -4860,6 +4865,7 @@ components:
         - close_pr
         - reopen_pr
         - mark_ready_for_review
+        - mark_draft
         - submit_review
         - review_draft
         - add_comment

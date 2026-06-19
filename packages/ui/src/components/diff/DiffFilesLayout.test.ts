@@ -30,6 +30,7 @@ const capabilities: ProviderCapabilities = {
   review_mutation: false,
   workflow_approval: false,
   ready_for_review: false,
+  draft_mutation: false,
   issue_mutation: false,
   label_mutation: false,
   assignee_mutation: false,

@@ -19,6 +19,7 @@ const (
 	operationClosePR             = "close_pr"
 	operationReopenPR            = "reopen_pr"
 	operationMarkReadyForReview  = "mark_ready_for_review"
+	operationMarkDraft           = "mark_draft"
 	operationSubmitReview        = "submit_review"
 	operationReviewDraft         = "review_draft"
 	operationAddComment          = "add_comment"
@@ -87,6 +88,7 @@ type RepoOperations struct {
 	ClosePR             OperationAvailability `json:"close_pr"`
 	ReopenPR            OperationAvailability `json:"reopen_pr"`
 	MarkReadyForReview  OperationAvailability `json:"mark_ready_for_review"`
+	MarkDraft           OperationAvailability `json:"mark_draft"`
 	SubmitReview        OperationAvailability `json:"submit_review"`
 	ReviewDraft         OperationAvailability `json:"review_draft"`
 	AddComment          OperationAvailability `json:"add_comment"`
@@ -124,6 +126,7 @@ var (
 	descClosePR            = operationDescriptor{name: operationClosePR, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
 	descReopenPR           = operationDescriptor{name: operationReopenPR, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
 	descMarkReadyForReview = operationDescriptor{name: operationMarkReadyForReview, requiredCapabilities: []string{capabilityReadyForReview}, bucket: apiBucketGraphQL}
+	descMarkDraft          = operationDescriptor{name: operationMarkDraft, requiredCapabilities: []string{capabilityDraftMutation}, bucket: apiBucketGraphQL}
 	descSubmitReview       = operationDescriptor{name: operationSubmitReview, requiredCapabilities: []string{capabilityReviewMutation}, bucket: apiBucketREST}
 	descReviewDraft        = operationDescriptor{name: operationReviewDraft, requiredCapabilities: []string{capabilityReviewDraftMutation}, bucket: apiBucketREST}
 	descAddComment         = operationDescriptor{name: operationAddComment, requiredCapabilities: []string{capabilityCommentMutation}, bucket: apiBucketREST}
@@ -173,6 +176,7 @@ func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 		ClosePR:             derive(descClosePR),
 		ReopenPR:            derive(descReopenPR),
 		MarkReadyForReview:  derive(descMarkReadyForReview),
+		MarkDraft:           derive(descMarkDraft),
 		SubmitReview:        derive(descSubmitReview),
 		ReviewDraft:         derive(descReviewDraft),
 		AddComment:          derive(descAddComment),

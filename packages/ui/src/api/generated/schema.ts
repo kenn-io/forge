@@ -5692,6 +5692,7 @@ export interface components {
         ProviderCapabilitiesResponse: {
             assignee_mutation: boolean;
             comment_mutation: boolean;
+            draft_mutation: boolean;
             issue_mutation: boolean;
             label_mutation: boolean;
             merge_mutation: boolean;
@@ -6038,6 +6039,7 @@ export interface components {
             close_pr: components["schemas"]["OperationAvailability"];
             create_issue: components["schemas"]["OperationAvailability"];
             edit_comment: components["schemas"]["OperationAvailability"];
+            mark_draft: components["schemas"]["OperationAvailability"];
             mark_ready_for_review: components["schemas"]["OperationAvailability"];
             merge_pr: components["schemas"]["OperationAvailability"];
             remove_label: components["schemas"]["OperationAvailability"];

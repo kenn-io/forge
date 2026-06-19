@@ -53,6 +53,7 @@ const providerCapabilities = {
   read_releases: true,
   read_repositories: true,
   ready_for_review: true,
+  draft_mutation: true,
   review_mutation: true,
   state_mutation: true,
   workflow_approval: true,

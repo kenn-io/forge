@@ -342,6 +342,7 @@ type Capabilities struct {
 	ReviewMutation         bool
 	WorkflowApproval       bool
 	ReadyForReview         bool
+	DraftMutation          bool
 	IssueMutation          bool
 	LabelMutation          bool
 	AssigneeMutation       bool

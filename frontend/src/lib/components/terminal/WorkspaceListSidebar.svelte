@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import SearchIcon from "@lucide/svelte/icons/search";
-  import { client } from "../../api/runtime.js";
+  import { apiErrorMessage, client } from "../../api/runtime.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import type { components } from "@middleman/ui/api/schema";
   import {
     DiffStats,
@@ -109,6 +110,13 @@
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
   let workspaceListStatus = $state<"loading" | "retrying" | "loaded">("loading");
   let fetchInFlight = false;
+  let contextMenu = $state<{
+    ws: Workspace;
+    x: number;
+    y: number;
+  } | null>(null);
+  let contextMenuEl = $state<HTMLDivElement | null>(null);
+  let contextMenuStyle = $state("");
 
   const workspaceListLoadTimeoutMs = 10_000;
   let displayOptions = $state<WorkspaceListDisplayOptions>(
@@ -253,6 +261,40 @@
     displayOptions = { ...displayOptions, [key]: value };
     saveWorkspaceListDisplayOptions(displayOptions);
   }
+
+  $effect(() => {
+    if (!contextMenu) return;
+
+    function closeForOutsideClick(event: MouseEvent): void {
+      if (
+        contextMenuEl &&
+        event.target instanceof Node &&
+        contextMenuEl.contains(event.target)
+      ) {
+        return;
+      }
+      closeContextMenu();
+    }
+
+    function closeForEscape(event: KeyboardEvent): void {
+      if (event.key === "Escape") closeContextMenu();
+    }
+
+    function reposition(): void {
+      positionContextMenu();
+    }
+
+    document.addEventListener("mousedown", closeForOutsideClick);
+    document.addEventListener("keydown", closeForEscape);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", closeContextMenu, true);
+    return () => {
+      document.removeEventListener("mousedown", closeForOutsideClick);
+      document.removeEventListener("keydown", closeForEscape);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", closeContextMenu, true);
+    };
+  });
 
   function timeValue(value: string | null | undefined): number {
     if (!value) return 0;
@@ -472,6 +514,174 @@
     return ws.repo?.provider;
   }
 
+  function workspaceHost(ws: Workspace): HostSummary | undefined {
+    if (ws.fleet_host_key) {
+      return fleetHosts.find(
+        (host) => host.configKey === ws.fleet_host_key,
+      );
+    }
+    return fleetHosts.find((host) => host.kind === "self");
+  }
+
+  function isRemoteWorkspace(ws: Workspace): boolean {
+    return Boolean(ws.fleet_host_key);
+  }
+
+  function revealLabel(ws: Workspace): string {
+    const platform = workspaceHost(ws)?.platform?.toLowerCase() ?? "";
+    if (platform === "darwin" || platform === "macos") {
+      return "Reveal in Finder";
+    }
+    if (platform.includes("win")) {
+      return "Open containing folder";
+    }
+    return "Reveal in file manager";
+  }
+
+  function providerItemURL(ws: Workspace): string | null {
+    const provider = workspaceProvider(ws)?.toLowerCase();
+    const repoPath = ws.repo?.repo_path ?? `${ws.repo_owner}/${ws.repo_name}`;
+    const encodedPath = repoPath
+      .split("/")
+      .map((part) => encodeURIComponent(part))
+      .join("/");
+    const host = ws.platform_host;
+    if (!host || !encodedPath) return null;
+    if (provider === "github") {
+      const kind = ws.item_type === "issue" ? "issues" : "pull";
+      return `https://${host}/${encodedPath}/${kind}/${ws.item_number}`;
+    }
+    if (provider === "gitlab") {
+      const kind = ws.item_type === "issue" ? "issues" : "merge_requests";
+      return `https://${host}/${encodedPath}/-/${kind}/${ws.item_number}`;
+    }
+    if (provider === "gitea" || provider === "forgejo") {
+      const kind = ws.item_type === "issue" ? "issues" : "pulls";
+      return `https://${host}/${encodedPath}/${kind}/${ws.item_number}`;
+    }
+    return null;
+  }
+
+  function providerLabel(ws: Workspace): string {
+    const provider = workspaceProvider(ws);
+    if (!provider) return "Open item on provider";
+    return `Open item on ${provider}`;
+  }
+
+  function canPush(ws: Workspace): boolean {
+    const ahead = ws.commits_ahead ?? 0;
+    const behind = ws.commits_behind ?? 0;
+    return ahead > 0 && behind === 0;
+  }
+
+  function canPull(ws: Workspace): boolean {
+    const ahead = ws.commits_ahead ?? 0;
+    const behind = ws.commits_behind ?? 0;
+    return behind > 0 && ahead === 0;
+  }
+
+  function syncActionDetail(ws: Workspace): string {
+    if (canPush(ws)) {
+      return `${ws.commits_ahead ?? 0} ahead`;
+    }
+    if (canPull(ws)) {
+      return `${ws.commits_behind ?? 0} behind`;
+    }
+    return "";
+  }
+
+  async function openContextMenu(
+    event: MouseEvent,
+    ws: Workspace,
+  ): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    contextMenu = {
+      ws,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    await tick();
+    positionContextMenu();
+  }
+
+  function positionContextMenu(): void {
+    if (!contextMenu || !contextMenuEl) return;
+    const margin = 8;
+    const width = contextMenuEl.offsetWidth;
+    const height = contextMenuEl.offsetHeight;
+    const left = Math.min(
+      Math.max(margin, contextMenu.x),
+      Math.max(margin, window.innerWidth - width - margin),
+    );
+    const top = Math.min(
+      Math.max(margin, contextMenu.y),
+      Math.max(margin, window.innerHeight - height - margin),
+    );
+    contextMenuStyle = `left: ${left}px; top: ${top}px;`;
+  }
+
+  function closeContextMenu(): void {
+    contextMenu = null;
+    contextMenuStyle = "";
+  }
+
+  async function copyMenuText(
+    value: string,
+    successMessage: string,
+  ): Promise<void> {
+    closeContextMenu();
+    try {
+      await navigator.clipboard.writeText(value);
+      showFlash(successMessage);
+    } catch {
+      showFlash("Could not copy to clipboard.");
+    }
+  }
+
+  async function refreshWorkspaceStatus(ws: Workspace): Promise<void> {
+    closeContextMenu();
+    const { error, response } = ws.fleet_host_key
+      ? await client.POST("/fleet/hosts/{host_key}/workspaces/{id}/refresh", {
+          params: {
+            path: { host_key: ws.fleet_host_key, id: ws.id },
+          },
+        })
+      : await client.POST("/workspaces/{id}/refresh", {
+          params: { path: { id: ws.id } },
+        });
+    if (!response.ok) {
+      showFlash(apiErrorMessage(error, `Refresh failed (${response.status})`));
+      return;
+    }
+    await fetchWorkspaces();
+  }
+
+  function openProviderItem(ws: Workspace): void {
+    const url = providerItemURL(ws);
+    closeContextMenu();
+    if (!url) {
+      showFlash("Provider URL is not available for this workspace.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function copyProviderItemURL(ws: Workspace): void {
+    const url = providerItemURL(ws);
+    if (!url) {
+      closeContextMenu();
+      showFlash("Provider URL is not available for this workspace.");
+      return;
+    }
+    void copyMenuText(url, "Copied item URL.");
+  }
+
+  function unavailableSyncAction(label: string): void {
+    closeContextMenu();
+    showFlash(`${label} is not available from the workspace list yet.`);
+  }
+
   function workspaceRoute(ws: Workspace): string {
     if (ws.fleet_host_key) {
       return `/terminal/fleet/${encodeURIComponent(ws.fleet_host_key)}/${encodeURIComponent(ws.id)}`;
@@ -678,6 +888,9 @@
                 navigate(workspaceRoute(ws));
               }
             }}
+            oncontextmenu={(e) => {
+              void openContextMenu(e, ws);
+            }}
             tabindex="0"
             role="button"
           >
@@ -797,6 +1010,142 @@
       <p class="filter-empty">No workspaces yet.</p>
     {/if}
   </div>
+
+  {#if contextMenu}
+    {@const menuWorkspace = contextMenu.ws}
+    {@const localWorkspace = !isRemoteWorkspace(menuWorkspace)}
+    {@const itemURL = providerItemURL(menuWorkspace)}
+    <div
+      class="workspace-context-menu filter-dropdown"
+      bind:this={contextMenuEl}
+      style={contextMenuStyle}
+      role="menu"
+      aria-label="Workspace actions"
+      tabindex="-1"
+      oncontextmenu={(e) => e.preventDefault()}
+    >
+      <div class="workspace-context-heading">
+        <div class="workspace-context-title">
+          {displayName(menuWorkspace)}
+        </div>
+        <div class="workspace-context-meta">
+          {repoLabel(menuWorkspace)} · {shortBranch(menuWorkspace.git_head_ref)}
+        </div>
+      </div>
+
+      <div class="filter-section-title">Sync branch</div>
+      {#if canPush(menuWorkspace)}
+        <button
+          class="filter-item active"
+          role="menuitem"
+          type="button"
+          onclick={() => unavailableSyncAction("Push branch")}
+        >
+          <span class="filter-dot filter-dot--success"></span>
+          <span class="filter-label">Push branch</span>
+          <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
+        </button>
+      {:else if canPull(menuWorkspace)}
+        <button
+          class="filter-item active"
+          role="menuitem"
+          type="button"
+          onclick={() => unavailableSyncAction("Pull remote changes")}
+        >
+          <span class="filter-dot filter-dot--warning"></span>
+          <span class="filter-label">Pull remote changes</span>
+          <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
+        </button>
+      {/if}
+      <button
+        class="filter-item active"
+        role="menuitem"
+        type="button"
+        onclick={() => {
+          void refreshWorkspaceStatus(menuWorkspace);
+        }}
+      >
+        <span class="filter-dot"></span>
+        <span class="filter-label">Refresh git status</span>
+      </button>
+
+      <div class="filter-divider"></div>
+      <div class="filter-section-title">Copy</div>
+      <button
+        class="filter-item active"
+        role="menuitem"
+        type="button"
+        onclick={() => {
+          void copyMenuText(
+            shortBranch(menuWorkspace.git_head_ref),
+            "Copied branch name.",
+          );
+        }}
+      >
+        <span class="filter-dot"></span>
+        <span class="filter-label">Copy branch name</span>
+      </button>
+      {#if localWorkspace}
+        <button
+          class="filter-item active"
+          role="menuitem"
+          type="button"
+          onclick={() => {
+            void copyMenuText(
+              menuWorkspace.worktree_path,
+              "Copied worktree path.",
+            );
+          }}
+        >
+          <span class="filter-dot"></span>
+          <span class="filter-label">Copy worktree path</span>
+        </button>
+        <button
+          class="filter-item active"
+          role="menuitem"
+          type="button"
+          onclick={() => unavailableSyncAction(revealLabel(menuWorkspace))}
+        >
+          <span class="filter-dot"></span>
+          <span class="filter-label">{revealLabel(menuWorkspace)}</span>
+        </button>
+      {/if}
+
+      {#if itemURL}
+        <div class="filter-divider"></div>
+        <div class="filter-section-title">Provider</div>
+        <button
+          class="filter-item active"
+          role="menuitem"
+          type="button"
+          onclick={() => openProviderItem(menuWorkspace)}
+        >
+          <span class="filter-dot"></span>
+          <span class="filter-label">{providerLabel(menuWorkspace)}</span>
+        </button>
+        <button
+          class="filter-item active"
+          role="menuitem"
+          type="button"
+          onclick={() => copyProviderItemURL(menuWorkspace)}
+        >
+          <span class="filter-dot"></span>
+          <span class="filter-label">Copy item URL</span>
+        </button>
+      {/if}
+
+      <div class="filter-divider"></div>
+      <button
+        class="filter-item active workspace-context-danger"
+        role="menuitem"
+        type="button"
+        onclick={() => unavailableSyncAction("Delete workspace")}
+      >
+        <span class="filter-dot filter-dot--danger"></span>
+        <span class="filter-label">Delete workspace...</span>
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -1382,6 +1731,124 @@
     flex-shrink: 0;
     display: inline-flex;
     font-size: var(--font-size-2xs);
+  }
+
+  .workspace-context-menu {
+    position: fixed;
+    min-width: 224px;
+    max-width: min(320px, calc(100vw - 16px));
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+    z-index: 1000;
+    padding: 4px 0;
+  }
+
+  .workspace-context-heading {
+    padding: 6px 12px 7px;
+    border-bottom: 1px solid var(--border-muted);
+    margin-bottom: 4px;
+  }
+
+  .workspace-context-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+
+  .workspace-context-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-2xs);
+  }
+
+  .filter-section-title {
+    padding: 4px 12px;
+    font-size: 0.9em;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .filter-divider {
+    height: 1px;
+    background: var(--border-muted);
+    margin: 4px 8px;
+  }
+
+  .filter-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 12px;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.08s;
+    background: transparent;
+    border: 0;
+  }
+
+  .filter-item:hover:not(:disabled) {
+    background: var(--bg-surface-hover);
+  }
+
+  .filter-item:not(.active) {
+    opacity: 0.5;
+  }
+
+  .filter-item:disabled {
+    cursor: default;
+  }
+
+  .filter-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--border-muted);
+  }
+
+  .filter-dot--success {
+    background: var(--accent-green);
+  }
+
+  .filter-dot--warning {
+    background: var(--accent-amber);
+  }
+
+  .filter-dot--danger {
+    background: var(--accent-red);
+  }
+
+  .filter-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .workspace-context-detail {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-2xs);
+  }
+
+  .workspace-context-danger {
+    color: var(--accent-red);
   }
 
   /* Width-aware hiding: shed least-critical chrome first as the

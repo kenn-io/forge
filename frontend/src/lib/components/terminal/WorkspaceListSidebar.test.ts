@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
 
 const mockGet = vi.fn();
+const mockPost = vi.fn();
 const mockNavigate = vi.fn();
 
 vi.mock("../../api/runtime.js", () => ({
   client: {
     GET: (...args: unknown[]) => mockGet(...args),
+    POST: (...args: unknown[]) => mockPost(...args),
   },
 }));
 
@@ -39,6 +41,8 @@ interface WorkspaceFixtureOptions {
   itemLastActivityAt?: string | null;
   additions?: number | null;
   deletions?: number | null;
+  commitsAhead?: number | null;
+  commitsBehind?: number | null;
 }
 
 function workspaceFixture({
@@ -56,6 +60,8 @@ function workspaceFixture({
   itemLastActivityAt = null,
   additions = null,
   deletions = null,
+  commitsAhead = null,
+  commitsBehind = null,
 }: WorkspaceFixtureOptions) {
   return {
     id,
@@ -82,6 +88,8 @@ function workspaceFixture({
     mr_state: "open",
     mr_additions: additions,
     mr_deletions: deletions,
+    commits_ahead: commitsAhead,
+    commits_behind: commitsBehind,
   };
 }
 
@@ -141,9 +149,14 @@ function deferred<T>() {
 describe("WorkspaceListSidebar", () => {
   beforeEach(() => {
     mockGet.mockReset();
+    mockPost.mockReset();
     mockNavigate.mockReset();
     localStorage.clear();
     vi.stubGlobal("EventSource", MockEventSource);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
   });
 
   afterEach(() => {
@@ -1028,5 +1041,156 @@ describe("WorkspaceListSidebar", () => {
 
     expect(container.querySelector(".workspace-diff-stats")).toBeNull();
     expect(container.querySelector(".branch-chip")).toBeTruthy();
+  });
+
+  it("opens a host-aware context menu for local macOS workspaces", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          workspaces: [
+            workspaceFixture({
+              id: "ws-local",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "kenn-io",
+              name: "middleman",
+              number: 555,
+              title: "Local mac workspace",
+            }),
+          ],
+        },
+      });
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-local" },
+    });
+    await screen.findByText("Local mac workspace");
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+
+    expect(screen.getByRole("menu", { name: "Workspace actions" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Copy worktree path" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Reveal in Finder" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Refresh git status" })).toBeTruthy();
+  });
+
+  it("omits local filesystem actions for remote workspace context menus", async () => {
+    mockGet.mockImplementation((path: string, options?: { params?: { path?: { host_key?: string } } }) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "epyc",
+                diagnostics: [],
+                id: "epyc",
+                kind: "remote",
+                name: "epyc",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "ssh",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      if (path === "/fleet/hosts/{host_key}/workspaces") {
+        expect(options?.params?.path?.host_key).toBe("epyc");
+        return Promise.resolve({
+          data: {
+            workspaces: [
+              workspaceFixture({
+                id: "ws-remote",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "remote",
+                name: "service",
+                number: 12,
+                title: "Remote workspace",
+              }),
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { workspaces: [] } });
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-remote", selectedHostKey: "epyc" },
+    });
+    await screen.findByText("Remote workspace");
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+
+    expect(screen.getByRole("menu", { name: "Workspace actions" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Copy worktree path" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Reveal in Finder" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Refresh git status" })).toBeTruthy();
+  });
+
+  it("does not show push or pull commands for diverged workspace branches", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-diverged",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 9,
+            title: "Diverged workspace",
+            commitsAhead: 1,
+            commitsBehind: 2,
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-diverged" },
+    });
+    await screen.findByText("Diverged workspace");
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+
+    expect(screen.queryByRole("menuitem", { name: "Push branch" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Pull remote changes" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Refresh git status" })).toBeTruthy();
   });
 });

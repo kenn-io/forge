@@ -539,6 +539,48 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 	assert.Equal(sourceSHA, headSHA)
 }
 
+func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	tmuxScript, tmuxRecord := writeRecorderScript(t)
+
+	mgr := NewManager(d, wtDir)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
+	require.NoError(err)
+	existingBranch := syntheticPRWorktreeBranch(42)
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", ws.WorktreePath, "-b", existingBranch, "HEAD",
+	)
+
+	require.NoError(mgr.Setup(t.Context(), ws))
+
+	got, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("ready", got.Status)
+	assert.Equal(existingBranch, got.WorkspaceBranch)
+	headBranch := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, ws.WorktreePath, "branch", "--show-current",
+	)))
+	assert.Equal(existingBranch, headBranch)
+	argvs := readRecorderArgv(t, tmuxRecord)
+	require.NotEmpty(argvs)
+	assert.Contains(argvs[0], ws.WorktreePath)
+}
+
 func TestValidateWorktreeBasePathRejectsLocalRemotes(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

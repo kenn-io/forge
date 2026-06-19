@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { RateLimitHostStatus } from "@middleman/ui/api/types";
-  import { budgetColor, formatCompact } from "./budget-utils";
+  import { budgetColor, formatCompact, syncBudgetColor } from "./budget-utils";
 
   interface Props {
     hosts: Record<string, RateLimitHostStatus>;
@@ -81,7 +81,7 @@
 >
   <div class="popover-header">API Budget</div>
 
-  {#each hostEntries() as [hostname, h], i}
+  {#each hostEntries() as [hostname, h], i (hostname)}
     {#if i > 0}
       <div class="popover-divider"></div>
     {/if}
@@ -149,10 +149,15 @@
       <!-- Middleman Budget -->
       {#if h.budget_limit > 0}
         <div class="budget-row">
-          <span class="row-label">Middleman</span>
+          <span class="row-label">Sync budget</span>
           <span class="row-bar-cell"></span>
           <span class="row-value">
-            <span class="budget-spent">{formatCompact(h.budget_spent)}</span> / {formatCompact(h.budget_limit)} <span class="row-unit">req/hr</span>
+            <span
+              class="budget-spent"
+              class:budget-spent--over={h.budget_spent > h.budget_limit}
+              style:color={syncBudgetColor(h.budget_spent, h.budget_limit)}
+            >{formatCompact(h.budget_spent)}</span> / {formatCompact(h.budget_limit)} <span class="row-unit">sync req/hr</span>
+            {#if h.budget_spent > h.budget_limit}<span class="row-reset"> · over budget</span>{/if}
           </span>
         </div>
       {/if}
@@ -211,7 +216,7 @@
   .budget-row {
     /* label | bar | value (with inline reset) */
     display: grid;
-    grid-template-columns: 60px 60px 1fr;
+    grid-template-columns: 72px 48px 1fr;
     align-items: center;
     column-gap: 8px;
     margin-bottom: 6px;
@@ -257,6 +262,9 @@
   .budget-spent {
     color: var(--budget-blue);
     font-weight: 600;
+  }
+  .budget-spent--over {
+    font-weight: 700;
   }
   .throttle-indicator {
     font-size: var(--font-size-2xs);

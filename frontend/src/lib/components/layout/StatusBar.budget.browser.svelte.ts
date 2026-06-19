@@ -142,7 +142,7 @@ describe("budget display", () => {
 
   it("budget bars show middleman count when budget enabled", async () => {
     const bars = await mountStatusBar();
-    expect(bars.textContent).toContain("42 req/hr");
+    expect(bars.textContent).toContain("42 / 500 sync req/hr");
   });
 
   // The popover dialog exposes REST req, GraphQL pts, and the middleman
@@ -153,7 +153,32 @@ describe("budget display", () => {
     const units = Array.from(popover.querySelectorAll(".row-unit")).map((el) => el.textContent?.trim());
     expect(units).toContain("req");
     expect(units).toContain("pts");
+    expect(popover.textContent).toContain("Sync budget");
+    expect(popover.textContent).toContain("42 / 500 sync req/hr");
     expect(popover.querySelector(".budget-spent")?.textContent).toBe("42");
+  });
+
+  it("marks sync budget spend that exceeds the configured limit", async () => {
+    const bars = await mountStatusBar([
+      rateLimits({
+        "github.com": {
+          ...knownHost,
+          budget_limit: 500,
+          budget_spent: 1300,
+          budget_remaining: -800,
+        },
+      }),
+    ]);
+
+    expect(bars.textContent).toContain("1.3k / 500 sync req/hr");
+    const compactBudget = bars.querySelector<HTMLElement>(".budget-count");
+    expect(compactBudget?.style.color).toBe("var(--budget-red)");
+
+    const popover = await openPopover(bars);
+    const spent = popover.querySelector<HTMLElement>(".budget-spent");
+    expect(spent?.textContent).toBe("1.3k");
+    expect(spent?.classList.contains("budget-spent--over")).toBe(true);
+    expect(popover.textContent).toContain("over budget");
   });
 
   it("popover dismisses on Escape", async () => {
@@ -296,7 +321,7 @@ describe("budget display", () => {
     expect(bars.textContent).not.toContain("REST");
     expect(bars.textContent).toContain("--");
     // Budget count visible — budget is independent of REST rate observation
-    expect(bars.textContent).toContain("10 req/hr");
+    expect(bars.textContent).toContain("10 / 500 sync req/hr");
   });
 
   it("stale host excluded from compact bars, fresh host drives ratio", async () => {

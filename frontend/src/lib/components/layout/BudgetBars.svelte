@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { RateLimitHostStatus } from "@middleman/ui/api/types";
-  import { budgetColor, worstCaseRatio, aggregateBudget } from "./budget-utils";
+  import { aggregateBudget, budgetColor, formatCompact, syncBudgetColor, worstCaseRatio } from "./budget-utils";
 
   interface Props {
     hosts: Record<string, RateLimitHostStatus>;
@@ -94,7 +94,9 @@
   </span>
 
   {#if b.hasAny}
-    <span class="budget-count">{b.spent} req/hr</span>
+    <span class="budget-count" style:color={syncBudgetColor(b.spent, b.limit)}>
+      {formatCompact(b.spent)} / {formatCompact(b.limit)} sync req/hr
+    </span>
   {/if}
 </button>
 

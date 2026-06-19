@@ -10,6 +10,11 @@ export function budgetColor(ratio: number): string {
   return "var(--budget-red)";
 }
 
+export function syncBudgetColor(spent: number, limit: number): string {
+  if (limit <= 0) return "var(--text-muted)";
+  return budgetColor(Math.max((limit - spent) / limit, 0));
+}
+
 /**
  * Returns the lowest remaining/limit ratio across known hosts.
  * Returns -1 if no hosts have known data.

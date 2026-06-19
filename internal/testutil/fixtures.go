@@ -34,6 +34,14 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/tools: %w", err)
 	}
+	const toolsCloneURL = "https://github.com/acme/tools.git"
+	if err := d.UpdateRepoProviderMetadata(ctx, toolsID, db.RepoProviderMetadata{
+		WebURL:        "https://github.com/acme/tools",
+		CloneURL:      toolsCloneURL,
+		DefaultBranch: "main",
+	}); err != nil {
+		return nil, fmt.Errorf("update acme/tools metadata: %w", err)
+	}
 	_, err = d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "archived"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/archived: %w", err)
@@ -413,6 +421,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			State:             "open",
 			HeadBranch:        pr.head,
 			BaseBranch:        pr.base,
+			HeadRepoCloneURL:  toolsCloneURL,
 			CIStatus:          pr.ci,
 			ReviewDecision:    pr.review,
 			MergeableState:    pr.mergeableState,

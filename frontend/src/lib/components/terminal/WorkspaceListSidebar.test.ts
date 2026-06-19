@@ -1090,6 +1090,8 @@ describe("WorkspaceListSidebar", () => {
     await fireEvent.contextMenu(container.querySelector(".ws-row")!);
 
     expect(screen.getByRole("menu", { name: "Workspace actions" })).toBeTruthy();
+    expect(screen.queryByText("Copy")).toBeNull();
+    expect(screen.queryByText("Provider")).toBeNull();
     expect(screen.getByRole("menuitem", { name: "Copy worktree path" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Reveal in Finder" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Refresh git status" })).toBeTruthy();

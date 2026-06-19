@@ -1070,7 +1070,6 @@
       </button>
 
       <div class="filter-divider"></div>
-      <div class="filter-section-title">Copy</div>
       <button
         class="filter-item active"
         role="menuitem"
@@ -1113,7 +1112,6 @@
 
       {#if itemURL}
         <div class="filter-divider"></div>
-        <div class="filter-section-title">Provider</div>
         <button
           class="filter-item active"
           role="menuitem"

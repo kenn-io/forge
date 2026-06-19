@@ -452,6 +452,7 @@ test.describe("workspace sidebar full-stack", () => {
             letter_spacing: 0,
             cursor_blink: true,
             font_ligatures: false,
+            hide_tmux_status: false,
             renderer: "ghostty-web",
           },
         },

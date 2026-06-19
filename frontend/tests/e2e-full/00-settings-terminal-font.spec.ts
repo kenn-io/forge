@@ -126,6 +126,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
           letter_spacing: number;
           cursor_blink: boolean;
           font_ligatures: boolean;
+          hide_tmux_status: boolean;
           renderer: string;
         };
       };
@@ -139,6 +140,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
       letter_spacing: 1,
       cursor_blink: false,
       font_ligatures: false,
+      hide_tmux_status: false,
       renderer: "ghostty-web",
     });
 

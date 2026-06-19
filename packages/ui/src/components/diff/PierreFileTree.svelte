@@ -133,12 +133,10 @@
   }
 
   function revealSelectedPathIfRequested(path: string | null, canRevealPath: boolean): void {
-    if (lastSelectedPathRevealKey === null) {
-      lastSelectedPathRevealKey = selectedPathRevealKey;
-      return;
-    }
-    if (selectedPathRevealKey === lastSelectedPathRevealKey) return;
+    const isInitialSync = lastSelectedPathRevealKey === null;
+    if (!isInitialSync && selectedPathRevealKey === lastSelectedPathRevealKey) return;
     lastSelectedPathRevealKey = selectedPathRevealKey;
+    if (selectedPathRevealKey === 0) return;
     if (!path || !canRevealPath) return;
     tree?.focusNearestPath(path);
     scheduleSelectedPathIntoView(path);

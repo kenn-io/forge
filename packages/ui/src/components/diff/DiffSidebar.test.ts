@@ -195,6 +195,32 @@ describe("DiffSidebar", () => {
     }
   });
 
+  it("scrolls the selected file tree row into view when mounted with a pending reveal key", async () => {
+    const files = Array.from({ length: 12 }, (_, i) => makeFile(`src/file-${i}.ts`));
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrolledPaths: string[] = [];
+    HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+      scrolledPaths.push(this.dataset.itemPath ?? "");
+    };
+
+    try {
+      render(PierreFileTree, {
+        props: {
+          files,
+          selectedPath: "src/file-8.ts",
+          selectedPathRevealKey: 1,
+        },
+      });
+
+      await findTreeItem("src/file-8.ts");
+      await waitFor(() => {
+        expect(scrolledPaths).toContain("src/file-8.ts");
+      });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
   it("does not reuse a stale reveal key after the selected path was filtered out", async () => {
     const files = [makeFile("src/file-0.ts"), makeFile("src/file-8.ts")];
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;

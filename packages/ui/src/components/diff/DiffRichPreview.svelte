@@ -550,6 +550,7 @@
               <div class="markdown-rich-diff__split-row">
                 <div
                   class="markdown-rich-diff__pane markdown-rich-diff__block--delete markdown-body"
+                  aria-label="Before markdown preview"
                   data-markdown-rich-side="before"
                 >
                   <div class="markdown-rich-diff__anchored-block markdown-rich-diff__anchored-block--spaced">
@@ -566,6 +567,7 @@
                 </div>
                 <div
                   class="markdown-rich-diff__pane markdown-rich-diff__block--add markdown-body"
+                  aria-label="After markdown preview"
                   data-markdown-rich-side="after"
                 >
                   <div class="markdown-rich-diff__anchored-block markdown-rich-diff__anchored-block--spaced">

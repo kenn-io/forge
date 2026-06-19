@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	prOpen   = realdb.MergeRequestStateOpen
-	prMerged = realdb.MergeRequestStateMerged
+	prOpen           = realdb.MergeRequestStateOpen
+	prMerged         = realdb.MergeRequestStateMerged
+	testRepoCloneURL = "https://github.com/acme/widget.git"
 )
 
 func makePR(id int64, number int, head, base string, state realdb.MergeRequestState) realdb.MergeRequest {
@@ -26,6 +27,12 @@ func makePR(id int64, number int, head, base string, state realdb.MergeRequestSt
 	}
 }
 
+func makePRWithHeadRepo(id int64, number int, head, base, headRepo string, state realdb.MergeRequestState) realdb.MergeRequest {
+	pr := makePR(id, number, head, base, state)
+	pr.HeadRepoCloneURL = headRepo
+	return pr
+}
+
 func TestDetectChains_LinearStack(t *testing.T) {
 	assert := Assert.New(t)
 	prs := []realdb.MergeRequest{
@@ -34,7 +41,7 @@ func TestDetectChains_LinearStack(t *testing.T) {
 		makePR(3, 102, "feature/auth-ui", "feature/auth-retry", prOpen),
 	}
 
-	chains := DetectChains(prs)
+	chains := DetectChains(prs, testRepoCloneURL)
 	assert.Len(chains, 1)
 	assert.Len(chains[0], 3)
 	assert.Equal(100, chains[0][0].Number) // base
@@ -47,7 +54,7 @@ func TestDetectChains_SinglePRNotAStack(t *testing.T) {
 	prs := []realdb.MergeRequest{
 		makePR(1, 100, "feature/solo", "main", prOpen),
 	}
-	chains := DetectChains(prs)
+	chains := DetectChains(prs, testRepoCloneURL)
 	assert.Empty(chains)
 }
 
@@ -59,7 +66,7 @@ func TestDetectChains_ForkPicksLowestNumber(t *testing.T) {
 		makePR(3, 101, "feature/child-a", "feature/base", prOpen),
 	}
 
-	chains := DetectChains(prs)
+	chains := DetectChains(prs, testRepoCloneURL)
 	assert.Len(chains, 1)
 	assert.Len(chains[0], 2)
 	assert.Equal(100, chains[0][0].Number)
@@ -72,7 +79,7 @@ func TestDetectChains_CycleSkipped(t *testing.T) {
 		makePR(1, 100, "branch-a", "branch-b", prOpen),
 		makePR(2, 101, "branch-b", "branch-a", prOpen),
 	}
-	chains := DetectChains(prs)
+	chains := DetectChains(prs, testRepoCloneURL)
 	assert.Empty(chains)
 }
 
@@ -82,24 +89,40 @@ func TestDetectChains_PartialMerge(t *testing.T) {
 		makePR(1, 100, "feature/a", "main", prMerged),
 		makePR(2, 101, "feature/b", "feature/a", prOpen),
 	}
-	chains := DetectChains(prs)
+	chains := DetectChains(prs, testRepoCloneURL)
 	assert.Len(chains, 1)
 	assert.Len(chains[0], 2)
 }
 
-func TestDetectChains_MalformedSameBranchPRDoesNotHideRoot(t *testing.T) {
+func TestDetectChains_ForkDefaultBranchPRDoesNotHideRoot(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
+	const fork = "https://github.com/mjacobs/widget.git"
 	prs := []realdb.MergeRequest{
-		makePR(1, 449, "legacy-parser-base", "legacy-parser-base", prMerged),
-		makePR(2, 748, "locate-parser-interface", "legacy-parser-base", prOpen),
+		makePRWithHeadRepo(1, 449, "main", "main", fork, prMerged),
+		makePR(2, 748, "locate-parser-interface", "main", prOpen),
 		makePR(3, 751, "provider-facade-core", "locate-parser-interface", prOpen),
 		makePR(4, 752, "provider-jsonl-source-set", "provider-facade-core", prOpen),
 	}
 
-	chains := DetectChains(prs)
+	chains := DetectChains(prs, testRepoCloneURL)
 	require.Len(chains, 1)
 	assert.Equal([]int{748, 751, 752}, stackNumbers(chains[0]))
+}
+
+func TestDetectChains_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	const fork = "https://github.com/fork/widget.git"
+	prs := []realdb.MergeRequest{
+		makePRWithHeadRepo(1, 100, "feature/auth", "main", testRepoCloneURL, prOpen),
+		makePRWithHeadRepo(2, 101, "feature/auth-ui", "feature/auth", testRepoCloneURL, prOpen),
+		makePRWithHeadRepo(3, 90, "feature/auth", "main", fork, prOpen),
+	}
+
+	chains := DetectChains(prs, testRepoCloneURL)
+	require.Len(chains, 1)
+	assert.Equal([]int{100, 101}, stackNumbers(chains[0]))
 }
 
 func TestDetectChains_DuplicateHeadPrefersOpen(t *testing.T) {
@@ -112,7 +135,7 @@ func TestDetectChains_DuplicateHeadPrefersOpen(t *testing.T) {
 		makePR(3, 200, "feature/auth", "main", prOpen),
 	}
 
-	chains := DetectChains(prs)
+	chains := DetectChains(prs, testRepoCloneURL)
 	assert.Len(chains, 1)
 	assert.Len(chains[0], 2)
 	// Open PR #200 should be base, not merged #100.
@@ -130,7 +153,7 @@ func TestDetectChains_ForkPrefersOpenOverMerged(t *testing.T) {
 		makePR(3, 102, "feature/child-open", "feature/base", prOpen),
 	}
 
-	chains := DetectChains(prs)
+	chains := DetectChains(prs, testRepoCloneURL)
 	assert.Len(chains, 1)
 	assert.Len(chains[0], 2)
 	assert.Equal(100, chains[0][0].Number)
@@ -144,7 +167,7 @@ func TestDetectChains_FullyMergedNotAStack(t *testing.T) {
 		makePR(1, 100, "feature/a", "main", prMerged),
 		makePR(2, 101, "feature/b", "feature/a", prMerged),
 	}
-	chains := DetectChains(prs)
+	chains := DetectChains(prs, testRepoCloneURL)
 	// Chain exists but all merged — RunDetection filters these out.
 	assert.Len(chains, 1)
 }
@@ -175,6 +198,14 @@ func stackNumbers(chain []realdb.MergeRequest) []int {
 	numbers := make([]int, len(chain))
 	for i, pr := range chain {
 		numbers[i] = pr.Number
+	}
+	return numbers
+}
+
+func stackNumbersFromMembers(members []realdb.StackMemberWithPR) []int {
+	numbers := make([]int, len(members))
+	for i, member := range members {
+		numbers[i] = member.Number
 	}
 	return numbers
 }
@@ -222,6 +253,57 @@ func TestRunDetection(t *testing.T) {
 	assert.Len(members, 3)
 	assert.Equal(1, members[0].Position)
 	assert.Equal(100, members[0].Number)
+}
+
+func TestRunDetection_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID, err := d.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	require.NoError(err)
+	require.NoError(d.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+		CloneURL:      testRepoCloneURL,
+		DefaultBranch: "main",
+	}))
+
+	now := time.Now()
+	prs := []realdb.MergeRequest{
+		{
+			RepoID: repoID, PlatformID: 1, Number: 100,
+			Title: "PR feature/auth", Author: "a", State: prOpen,
+			HeadBranch: "feature/auth", BaseBranch: "main",
+			HeadRepoCloneURL: testRepoCloneURL,
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+		},
+		{
+			RepoID: repoID, PlatformID: 2, Number: 101,
+			Title: "PR feature/auth-ui", Author: "a", State: prOpen,
+			HeadBranch: "feature/auth-ui", BaseBranch: "feature/auth",
+			HeadRepoCloneURL: testRepoCloneURL,
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+		},
+		{
+			RepoID: repoID, PlatformID: 3, Number: 90,
+			Title: "Fork PR feature/auth", Author: "fork", State: prOpen,
+			HeadBranch: "feature/auth", BaseBranch: "main",
+			HeadRepoCloneURL: "https://github.com/fork/repo.git",
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+		},
+	}
+	for i := range prs {
+		_, err := d.UpsertMergeRequest(ctx, &prs[i])
+		require.NoError(err)
+	}
+
+	require.NoError(RunDetection(ctx, d, repoID))
+
+	stack, members, err := d.GetStackForPR(ctx, "org", "repo", 101)
+	require.NoError(err)
+	require.NotNil(stack)
+	assert.Equal("auth", stack.Name)
+	assert.Equal([]int{100, 101}, stackNumbersFromMembers(members))
 }
 
 func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {

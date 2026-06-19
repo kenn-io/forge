@@ -11,7 +11,8 @@ import (
 // ListPRsForStackDetection returns non-closed PRs for a repo (open + merged).
 func (d *DB) ListPRsForStackDetection(ctx context.Context, repoID int64) ([]MergeRequest, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, number, title, head_branch, base_branch, state, ci_status, review_decision
+		SELECT id, number, title, head_branch, base_branch, state, ci_status, review_decision,
+		       head_repo_clone_url
 		FROM middleman_merge_requests
 		WHERE repo_id = ? AND state IN ('open', 'merged')
 		ORDER BY number`,
@@ -29,6 +30,7 @@ func (d *DB) ListPRsForStackDetection(ctx context.Context, repoID int64) ([]Merg
 		if err := rows.Scan(
 			&mr.ID, &mr.Number, &mr.Title, &mr.HeadBranch, &mr.BaseBranch,
 			&mr.State, &mr.CIStatus, &mr.ReviewDecision,
+			&mr.HeadRepoCloneURL,
 		); err != nil {
 			return nil, fmt.Errorf("scan pr for stack detection: %w", err)
 		}

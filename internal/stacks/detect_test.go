@@ -87,12 +87,12 @@ func TestDetectChains_PartialMerge(t *testing.T) {
 	assert.Len(chains[0], 2)
 }
 
-func TestDetectChains_SelfTargetingDefaultBranchPRDoesNotHideRoot(t *testing.T) {
+func TestDetectChains_MalformedSameBranchPRDoesNotHideRoot(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	prs := []realdb.MergeRequest{
-		makePR(1, 449, "main", "main", prMerged),
-		makePR(2, 748, "locate-parser-interface", "main", prOpen),
+		makePR(1, 449, "legacy-parser-base", "legacy-parser-base", prMerged),
+		makePR(2, 748, "locate-parser-interface", "legacy-parser-base", prOpen),
 		makePR(3, 751, "provider-facade-core", "locate-parser-interface", prOpen),
 		makePR(4, 752, "provider-jsonl-source-set", "provider-facade-core", prOpen),
 	}

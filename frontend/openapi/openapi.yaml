@@ -1541,6 +1541,19 @@ components:
       required:
         - is_valid
       type: object
+    FleetPeer:
+      additionalProperties: false
+      properties:
+        base_url:
+          type: string
+        key:
+          type: string
+        name:
+          type: string
+      required:
+        - key
+        - base_url
+      type: object
     FleetSSHPeer:
       additionalProperties: false
       properties:
@@ -1575,6 +1588,47 @@ components:
             $ref: "#/components/schemas/FleetSSHPeer"
           type: array
       required:
+        - ssh_peers
+        - restart_required
+      type: object
+    FleetSessions:
+      additionalProperties: false
+      properties:
+        include_unmanaged_details:
+          type: boolean
+      type: object
+    FleetSettingsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FleetSettingsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        enabled:
+          type: boolean
+        key:
+          type: string
+        peer_timeout:
+          type: string
+        peers:
+          items:
+            $ref: "#/components/schemas/FleetPeer"
+          type: array
+        restart_required:
+          type: boolean
+        sessions:
+          $ref: "#/components/schemas/FleetSessions"
+        ssh_peers:
+          items:
+            $ref: "#/components/schemas/FleetSSHPeer"
+          type: array
+      required:
+        - enabled
+        - sessions
+        - peers
         - ssh_peers
         - restart_required
       type: object
@@ -5579,6 +5633,8 @@ components:
           items:
             $ref: "#/components/schemas/Agent"
           type: array
+        fleet:
+          $ref: "#/components/schemas/FleetSettingsResponse"
         modes:
           $ref: "#/components/schemas/ModeVisibility"
         notifications:
@@ -5595,6 +5651,7 @@ components:
         - notifications
         - terminal
         - agents
+        - fleet
       type: object
     Snapshot:
       additionalProperties: false
@@ -6013,6 +6070,38 @@ components:
             $ref: "#/components/schemas/FleetSSHPeer"
           type: array
       required:
+        - ssh_peers
+      type: object
+    UpdateFleetSettingsInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/UpdateFleetSettingsInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        enabled:
+          type: boolean
+        key:
+          type: string
+        peer_timeout:
+          type: string
+        peers:
+          items:
+            $ref: "#/components/schemas/FleetPeer"
+          type: array
+        sessions:
+          $ref: "#/components/schemas/FleetSessions"
+        ssh_peers:
+          items:
+            $ref: "#/components/schemas/FleetSSHPeer"
+          type: array
+      required:
+        - enabled
+        - sessions
+        - peers
         - ssh_peers
       type: object
     UpdateSettingsRequest:
@@ -14956,6 +15045,49 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Update settings
+      tags:
+        - Settings
+  /settings/fleet:
+    get:
+      operationId: get-fleet-settings
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetSettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get fleet settings
+      tags:
+        - Settings
+    put:
+      operationId: update-fleet-settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFleetSettingsInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetSettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update fleet settings
       tags:
         - Settings
   /settings/fleet/ssh-peers:

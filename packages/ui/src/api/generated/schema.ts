@@ -3293,6 +3293,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/fleet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get fleet settings */
+        get: operations["get-fleet-settings"];
+        /** Update fleet settings */
+        put: operations["update-fleet-settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/fleet/ssh-peers": {
         parameters: {
             query?: never;
@@ -4487,6 +4505,11 @@ export interface components {
             message?: string;
             root_path?: string;
         };
+        FleetPeer: {
+            base_url: string;
+            key: string;
+            name?: string;
+        };
         FleetSSHPeer: {
             destination: string;
             key: string;
@@ -4502,6 +4525,24 @@ export interface components {
              */
             readonly $schema?: string;
             restart_required: boolean;
+            ssh_peers: components["schemas"]["FleetSSHPeer"][];
+        };
+        FleetSessions: {
+            include_unmanaged_details?: boolean;
+        };
+        FleetSettingsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FleetSettingsResponse.json
+             */
+            readonly $schema?: string;
+            enabled: boolean;
+            key?: string;
+            peer_timeout?: string;
+            peers: components["schemas"]["FleetPeer"][];
+            restart_required: boolean;
+            sessions: components["schemas"]["FleetSessions"];
             ssh_peers: components["schemas"]["FleetSSHPeer"][];
         };
         GitChangesResponse: {
@@ -6251,6 +6292,7 @@ export interface components {
             readonly $schema?: string;
             activity: components["schemas"]["Activity"];
             agents: components["schemas"]["Agent"][];
+            fleet: components["schemas"]["FleetSettingsResponse"];
             modes?: components["schemas"]["ModeVisibility"];
             notifications: components["schemas"]["NotificationsSettingsResponse"];
             repos: components["schemas"]["ConfiguredRepoStatus"][];
@@ -6443,6 +6485,20 @@ export interface components {
              * @example /api/v1/schemas/UpdateFleetSSHPeersInputBody.json
              */
             readonly $schema?: string;
+            ssh_peers: components["schemas"]["FleetSSHPeer"][];
+        };
+        UpdateFleetSettingsInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/UpdateFleetSettingsInputBody.json
+             */
+            readonly $schema?: string;
+            enabled: boolean;
+            key?: string;
+            peer_timeout?: string;
+            peers: components["schemas"]["FleetPeer"][];
+            sessions: components["schemas"]["FleetSessions"];
             ssh_peers: components["schemas"]["FleetSSHPeer"][];
         };
         UpdateSettingsRequest: {
@@ -14017,6 +14073,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-fleet-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetSettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "update-fleet-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFleetSettingsInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetSettingsResponse"];
                 };
             };
             /** @description Error */

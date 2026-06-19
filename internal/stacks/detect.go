@@ -14,9 +14,9 @@ func DetectChains(prs []db.MergeRequest) [][]db.MergeRequest {
 	// Sort by number for deterministic tie-breaking.
 	sorted := slices.Clone(prs)
 	slices.SortFunc(sorted, db.MergeRequest.Compare)
-	// Historical provider rows can contain self-targeting PRs such as
-	// main -> main. They do not describe a stack edge, and treating their
-	// head as a real PR branch hides valid stacks rooted on that branch.
+	// An unrelated self-targeting row such as main -> main would put
+	// "main" in headMap below. Then a real stack root whose base is main
+	// would no longer look like a root, so the whole stack disappears.
 	sorted = slices.DeleteFunc(sorted, func(pr db.MergeRequest) bool {
 		return pr.HeadBranch == pr.BaseBranch
 	})

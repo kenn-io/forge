@@ -140,6 +140,20 @@ func TestDetectChains_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.
 	assert.Equal([]int{100, 101}, stackNumbers(chains[0]))
 }
 
+func TestDetectChains_UnknownHeadRepoDoesNotShadowKnownUpstreamStackBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	prs := []realdb.MergeRequest{
+		makePRWithHeadRepo(1, 100, "feature/auth", "main", testRepoCloneURL, prOpen),
+		makePRWithHeadRepo(2, 101, "feature/auth-ui", "feature/auth", testRepoCloneURL, prOpen),
+		makePR(3, 90, "feature/auth", "main", prOpen),
+	}
+
+	chains := DetectChains(prs, testRepoCloneURL)
+	require.Len(chains, 1)
+	assert.Equal([]int{100, 101}, stackNumbers(chains[0]))
+}
+
 func TestDetectChains_NormalizesRepoCloneURLs(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

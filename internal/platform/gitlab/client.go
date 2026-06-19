@@ -316,7 +316,7 @@ func (c *Client) ListOpenMergeRequests(
 		}
 		for _, mr := range mrs {
 			normalized := NormalizeMergeRequest(normalizedRef, mr, nil)
-			normalized.HeadRepoCloneURL, err = c.headRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+			normalized.HeadRepoCloneURL, err = c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
 			if err != nil {
 				return nil, err
 			}
@@ -343,11 +343,27 @@ func (c *Client) GetMergeRequest(
 		return platform.MergeRequest{}, mapGitLabError("get_merge_request", err)
 	}
 	normalized := NormalizeDetailedMergeRequest(normalizedRef, mr)
-	normalized.HeadRepoCloneURL, err = c.headRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+	normalized.HeadRepoCloneURL, err = c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
 	if err != nil {
 		return platform.MergeRequest{}, err
 	}
 	return normalized, nil
+}
+
+func (c *Client) optionalHeadRepoCloneURL(
+	ctx context.Context,
+	ref platform.RepoRef,
+	targetProjectID int64,
+	sourceProjectID int64,
+) (string, error) {
+	cloneURL, err := c.headRepoCloneURL(ctx, ref, targetProjectID, sourceProjectID)
+	if err == nil {
+		return cloneURL, nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return "", ctxErr
+	}
+	return "", nil
 }
 
 func (c *Client) headRepoCloneURL(

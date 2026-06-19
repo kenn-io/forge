@@ -31,6 +31,9 @@ func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeReques
 		}
 		return branchKey{repo: normalizeRepoKey(repo), branch: pr.HeadBranch}
 	}
+	hasHeadRepo := func(pr db.MergeRequest) bool {
+		return strings.TrimSpace(pr.HeadRepoCloneURL) != ""
+	}
 	baseKey := func(pr db.MergeRequest) branchKey {
 		return branchKey{repo: normalizeRepoKey(repoCloneURL), branch: pr.BaseBranch}
 	}
@@ -50,7 +53,13 @@ func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeReques
 		existing, exists := headMap[key]
 		if !exists {
 			headMap[key] = pr
-		} else if existing.State == "merged" && pr.State == "open" {
+			continue
+		}
+		existingHasHeadRepo := hasHeadRepo(existing)
+		prHasHeadRepo := hasHeadRepo(pr)
+		if !existingHasHeadRepo && prHasHeadRepo {
+			headMap[key] = pr
+		} else if existingHasHeadRepo == prHasHeadRepo && existing.State == "merged" && pr.State == "open" {
 			headMap[key] = pr
 		}
 	}

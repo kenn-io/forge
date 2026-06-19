@@ -1266,6 +1266,284 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 	}
 }
 
+func TestDeferMergeEndpointRejectsClosedPullRequest(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	provider := &deferredMergeTestProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{ref: ref},
+		mergeCh:               make(chan deferredMergeTestMergeCall, 1),
+	}
+	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
+		App: "GitLab", Name: "pipeline", Status: "in_progress",
+	}})
+	// Closing a pull request is the only cancel a user has for a queued
+	// deferred merge, so queueing one on a closed pull request must be
+	// rejected outright rather than spawning a worker that waits on CI.
+	_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      7001,
+		Number:          7,
+		URL:             "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Title:           "Defer merge",
+		Author:          "ada",
+		State:           "closed",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "head-sha",
+		PlatformBaseSHA: "base-sha",
+		CIStatus:        "pending",
+		CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{{
+			App: "GitLab", Name: "pipeline", Status: "in_progress",
+		}}),
+		CIHadPending:   true,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(409, resp.StatusCode(), string(resp.Body))
+	require.Contains(string(resp.Body), "not_open")
+	select {
+	case call := <-provider.mergeCh:
+		require.Failf("unexpected merge", "merge call: %+v", call)
+	default:
+	}
+}
+
+func TestDeferMergeEndpointBroadcastsFailureWhenTargetClosedWhileWaiting(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	ciStarted := make(chan struct{})
+	ciRelease := make(chan struct{})
+	provider := &deferredMergeTestProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{
+			ref: ref,
+			ciChecks: map[string][]platform.CICheck{
+				"head-sha": {{
+					App:        "GitLab",
+					Name:       "pipeline",
+					Status:     "completed",
+					Conclusion: "success",
+				}},
+			},
+		},
+		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
+		ciStarted: ciStarted,
+		ciRelease: ciRelease,
+	}
+	srv, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
+		App: "GitLab", Name: "pipeline", Status: "in_progress",
+	}})
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode(), string(resp.Body))
+
+	select {
+	case <-ciStarted:
+	case <-time.After(time.Second):
+		require.FailNow("timed out waiting for deferred CI refresh to start")
+	}
+	// The pull request is closed mid-wait, even though its head and base are
+	// unchanged. The worker must abort instead of merging a retracted target.
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      7001,
+		Number:          7,
+		URL:             "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Title:           "Defer merge",
+		Author:          "ada",
+		State:           "closed",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "head-sha",
+		PlatformBaseSHA: "base-sha",
+		CIStatus:        "pending",
+		CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{{
+			App: "GitLab", Name: "pipeline", Status: "in_progress",
+		}}),
+		CIHadPending:   true,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	close(ciRelease)
+
+	var completed deferredMergeCompletedPayload
+	for range 4 {
+		select {
+		case ev := <-events:
+			if ev.Event.Type != "deferred_merge_completed" {
+				continue
+			}
+			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			require.True(ok)
+			completed = payload
+		case <-time.After(time.Second):
+			require.FailNow("timed out waiting for deferred merge closed-target event")
+		}
+		if completed.Status != "" {
+			break
+		}
+	}
+	require.Equal("failed", completed.Status)
+	require.Contains(completed.Error, "no longer open")
+	select {
+	case call := <-provider.mergeCh:
+		require.Failf("unexpected merge", "merge call: %+v", call)
+	default:
+	}
+}
+
+func TestDeferMergeEndpointBroadcastsFailureWhenProviderClosedBeforeMerge(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	ciStarted := make(chan struct{})
+	ciRelease := make(chan struct{})
+	provider := &deferredMergeTestProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{
+			ref: ref,
+			mergeRequests: []platform.MergeRequest{{
+				Repo:           ref,
+				PlatformID:     7001,
+				Number:         7,
+				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+				Title:          "Defer merge",
+				Author:         "ada",
+				State:          "open",
+				HeadBranch:     "feature",
+				BaseBranch:     "main",
+				HeadSHA:        "head-sha",
+				BaseSHA:        "base-sha",
+				CIStatus:       "pending",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				LastActivityAt: now,
+			}},
+			ciChecks: map[string][]platform.CICheck{
+				"head-sha": {{
+					App:        "GitLab",
+					Name:       "pipeline",
+					Status:     "completed",
+					Conclusion: "success",
+				}},
+			},
+		},
+		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
+		ciStarted: ciStarted,
+		ciRelease: ciRelease,
+	}
+	srv, _, _, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
+		App: "GitLab", Name: "pipeline", Status: "in_progress",
+	}})
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode(), string(resp.Body))
+
+	select {
+	case <-ciStarted:
+	case <-time.After(time.Second):
+		require.FailNow("timed out waiting for deferred CI refresh to start")
+	}
+	// The local row still says open, but the provider reports the pull request
+	// closed (e.g. closed-to-cancel before the next sync). The authoritative
+	// pre-merge provider check must block the merge.
+	provider.mergeRequests[0].State = "closed"
+	close(ciRelease)
+
+	var completed deferredMergeCompletedPayload
+	for range 4 {
+		select {
+		case ev := <-events:
+			if ev.Event.Type != "deferred_merge_completed" {
+				continue
+			}
+			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			require.True(ok)
+			completed = payload
+		case <-time.After(time.Second):
+			require.FailNow("timed out waiting for deferred merge provider-closed event")
+		}
+		if completed.Status != "" {
+			break
+		}
+	}
+	require.Equal("failed", completed.Status)
+	require.Contains(completed.Error, "no longer open")
+	select {
+	case call := <-provider.mergeCh:
+		require.Failf("unexpected merge", "merge call: %+v", call)
+	default:
+	}
+}
+
 func mustDeferredMergeChecksJSON(t *testing.T, checks []db.CICheck) string {
 	t.Helper()
 	raw, err := json.Marshal(checks)

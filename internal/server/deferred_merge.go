@@ -92,6 +92,13 @@ func (s *Server) enqueueDeferredMerge(
 	if mr == nil {
 		return deferMergePRBody{}, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
+	if mr.State != db.MergeRequestStateOpen {
+		return deferMergePRBody{}, problemConflict(
+			CodeConflict,
+			"pull request is not open",
+			map[string]any{"reason": "not_open"},
+		)
+	}
 	expectedHeadSHA, err := s.preflightMergePR(repo, mr, number, body)
 	if err != nil {
 		return deferMergePRBody{}, err
@@ -225,6 +232,9 @@ func (s *Server) refreshDeferredMergeCI(
 	if err := deferredMergeTargetMatchesDB(mr, queuedTarget); err != nil {
 		return "", err
 	}
+	if err := deferredMergeRequireOpenDB(mr); err != nil {
+		return "", err
+	}
 	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
 		deferredMergeRepoRef(repo),
@@ -246,6 +256,9 @@ func (s *Server) refreshDeferredMergeCI(
 		return "", errors.New("pull request no longer exists after CI refresh")
 	}
 	if err := deferredMergeTargetMatchesDB(refreshed, queuedTarget); err != nil {
+		return "", err
+	}
+	if err := deferredMergeRequireOpenDB(refreshed); err != nil {
 		return "", err
 	}
 	s.hub.Broadcast(Event{
@@ -374,6 +387,9 @@ func (s *Server) ensureDeferredMergeTargetUnchanged(ctx context.Context, repo db
 	if err := deferredMergeTargetMatchesDB(mr, queuedTarget); err != nil {
 		return err
 	}
+	if err := deferredMergeRequireOpenDB(mr); err != nil {
+		return err
+	}
 	reader, err := s.syncer.Registry().MergeRequestReader(repoProviderKind(repo), repoProviderHost(repo))
 	if err != nil {
 		return err
@@ -383,6 +399,9 @@ func (s *Server) ensureDeferredMergeTargetUnchanged(ctx context.Context, repo db
 		return err
 	}
 	if err := deferredMergeTargetMatchesProvider(current, queuedTarget); err != nil {
+		return err
+	}
+	if err := deferredMergeRequireOpenProvider(current); err != nil {
 		return err
 	}
 	return nil
@@ -418,6 +437,31 @@ func deferredMergeTargetMatchesProvider(mr platform.MergeRequest, queued deferre
 		strings.TrimSpace(mr.BaseBranch),
 		strings.TrimSpace(mr.BaseSHA),
 	)
+}
+
+// deferredMergeRequireOpenDB fails a deferred merge whose target is no longer
+// open in the local snapshot. Closing a pull request is the only cancel a user
+// has for a queued deferred merge, so the background worker must abort once the
+// close has synced rather than merge a pull request the maintainer retracted.
+func deferredMergeRequireOpenDB(mr *db.MergeRequest) error {
+	if mr == nil {
+		return errors.New("pull request no longer exists")
+	}
+	if mr.State != db.MergeRequestStateOpen {
+		return errors.New("pull request is no longer open; deferred merge was not performed")
+	}
+	return nil
+}
+
+// deferredMergeRequireOpenProvider re-checks open state against the provider
+// immediately before merging. This is the authoritative gate: the local row can
+// lag a close until the next sync, and a closed pull request that is reopened
+// with the same head must not be silently merged by the queued worker.
+func deferredMergeRequireOpenProvider(mr platform.MergeRequest) error {
+	if !strings.EqualFold(strings.TrimSpace(mr.State), string(db.MergeRequestStateOpen)) {
+		return errors.New("pull request is no longer open; deferred merge was not performed")
+	}
+	return nil
 }
 
 func deferredMergeTargetMatches(queued deferredMergeTargetSnapshot, headSHA, baseBranch, baseSHA string) error {

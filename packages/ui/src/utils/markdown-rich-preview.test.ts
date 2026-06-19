@@ -133,6 +133,12 @@ describe("buildMarkdownRichPreview", () => {
     expect(trailing!.unifiedHtml).toContain('start="3"');
     expect(trailing!.unifiedHtml).not.toContain("<del");
     expect(trailing!.unifiedHtml).not.toContain("<ins");
+    expect(trailing!.beforeHtml).toContain('start="2"');
+    expect(trailing!.beforeHtml).not.toContain("<del");
+    expect(trailing!.beforeHtml).not.toContain("<ins");
+    expect(trailing!.afterHtml).toContain('start="3"');
+    expect(trailing!.afterHtml).not.toContain("<del");
+    expect(trailing!.afterHtml).not.toContain("<ins");
   });
 
   it("keeps nested lists inside the owning top-level split item", () => {

@@ -1476,6 +1476,39 @@ describe("DiffFile", () => {
     expect(detailsComment?.previousElementSibling?.textContent).toContain("updated details");
   });
 
+  it("preserves spacing between consecutive markdown rich preview paragraph blocks", async () => {
+    renderDiffFile(
+      makeFile({
+        path: "README.md",
+        old_path: "README.md",
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 3,
+            new_start: 1,
+            new_count: 3,
+            lines: [
+              { type: "context", content: "First paragraph", old_num: 1, new_num: 1 },
+              { type: "context", content: "", old_num: 2, new_num: 2 },
+              { type: "context", content: "Second paragraph", old_num: 3, new_num: 3 },
+            ],
+          },
+        ],
+      }),
+      {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+      },
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector(".markdown-rich-diff--unified")).toBeTruthy();
+    });
+    const blocks = Array.from(document.querySelectorAll<HTMLElement>(".markdown-rich-diff__anchored-block"));
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]!.classList.contains("markdown-rich-diff__anchored-block--spaced")).toBe(true);
+  });
+
   it("keeps markdown document semantics when review cards are anchored in rich preview", async () => {
     renderDiffFile(
       makeFile({

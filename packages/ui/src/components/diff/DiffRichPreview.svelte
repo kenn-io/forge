@@ -543,7 +543,7 @@
             <div class="markdown-rich-diff__label">Before</div>
             <div class="markdown-body">
               {#each markdownPreview.blocks as block (block.key)}
-                <div class="markdown-rich-diff__anchored-block">
+                <div class="markdown-rich-diff__anchored-block markdown-rich-diff__anchored-block--spaced">
                   {@html block.beforeHtml ?? ""}
                 </div>
                 {#each block.leftReviewThreads as placement (placement.thread.id)}
@@ -564,7 +564,7 @@
             <div class="markdown-rich-diff__label">After</div>
             <div class="markdown-body">
               {#each markdownPreview.blocks as block (block.key)}
-                <div class="markdown-rich-diff__anchored-block">
+                <div class="markdown-rich-diff__anchored-block markdown-rich-diff__anchored-block--spaced">
                   {@html block.afterHtml ?? ""}
                 </div>
                 {#each block.rightReviewThreads as placement (placement.thread.id)}
@@ -582,7 +582,7 @@
       {:else}
         <div class="diff-rich-preview markdown-rich-diff markdown-rich-diff--unified markdown-body">
           {#each markdownPreview.blocks as block (block.key)}
-            <div class="markdown-rich-diff__anchored-block">
+            <div class="markdown-rich-diff__anchored-block markdown-rich-diff__anchored-block--spaced">
               {@html block.unifiedHtml}
             </div>
             {#each block.reviewThreads as placement (placement.thread.id)}
@@ -801,7 +801,15 @@
     margin: 0;
   }
 
-  .markdown-rich-diff__anchored-block:has(:global(.markdown-rich-diff__split-list)) {
+  .markdown-rich-diff__anchored-block--spaced {
+    margin-bottom: 1rem;
+  }
+
+  .markdown-rich-diff__anchored-block--spaced:last-child {
+    margin-bottom: 0;
+  }
+
+  .markdown-rich-diff__anchored-block--spaced:has(:global(.markdown-rich-diff__split-list)) {
     margin: 0;
   }
 

@@ -354,7 +354,8 @@ function renderBlock(
 ): MarkdownRichPreviewBlock {
   const oldHtml = oldBlock?.html ?? "";
   const newHtml = newBlock?.html ?? "";
-  const split = renderMarkdownSplitDiff(oldHtml, newHtml);
+  const aligned = oldBlock && newBlock && blocksAlign(oldBlock, newBlock);
+  const split = aligned ? { beforeHtml: oldHtml, afterHtml: newHtml } : renderMarkdownSplitDiff(oldHtml, newHtml);
   return {
     key: `${index}:${oldBlock?.key ?? ""}:${newBlock?.key ?? ""}`,
     oldStart: oldBlock?.sourceStart,
@@ -363,8 +364,7 @@ function renderBlock(
     newStart: newBlock?.sourceStart,
     newEnd: newBlock?.sourceEnd,
     newLines: newBlock?.sourceLines,
-    unifiedHtml:
-      oldBlock && newBlock && blocksAlign(oldBlock, newBlock) ? newHtml : renderMarkdownDiff(oldHtml, newHtml),
+    unifiedHtml: aligned ? newHtml : renderMarkdownDiff(oldHtml, newHtml),
     beforeHtml: split.beforeHtml,
     afterHtml: split.afterHtml,
   };

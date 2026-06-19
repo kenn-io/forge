@@ -95,7 +95,7 @@
 
   {#if b.hasAny}
     <span class="budget-count" style:color={syncBudgetColor(b.spent, b.limit)}>
-      Eager {formatCompact(b.spent)} / {formatCompact(b.limit)}
+      Refresh {formatCompact(b.spent)} / {formatCompact(b.limit)}
     </span>
   {/if}
 </button>

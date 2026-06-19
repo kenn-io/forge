@@ -148,7 +148,7 @@
 
       <!-- Eager refresh budget -->
       {#if h.budget_limit > 0}
-        <div class="budget-row">
+        <div class="budget-row budget-row--eager">
           <span class="row-label">Eager refresh</span>
           <span class="row-bar-cell"></span>
           <span class="row-value">
@@ -158,8 +158,8 @@
               style:color={syncBudgetColor(h.budget_spent, h.budget_limit)}
             >{formatCompact(h.budget_spent)}</span> / {formatCompact(h.budget_limit)} <span class="row-unit">budgeted req/hr</span>
             {#if h.budget_spent > h.budget_limit}<span class="row-reset"> · eager refresh deferred</span>{/if}
-            <span class="row-note">Optional detail, comment, and backfill refreshes pause when spent.</span>
           </span>
+          <span class="row-note">Optional detail, comment, and backfill refreshes pause when spent.</span>
         </div>
       {/if}
 
@@ -222,6 +222,9 @@
     column-gap: 8px;
     margin-bottom: 6px;
   }
+  .budget-row--eager {
+    align-items: start;
+  }
   .row-label {
     color: var(--text-muted);
     font-size: var(--font-size-2xs);
@@ -257,6 +260,7 @@
   }
   .row-note {
     display: block;
+    grid-column: 3;
     margin-top: 2px;
     color: var(--text-muted);
     font-size: 0.9em;

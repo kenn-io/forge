@@ -18,12 +18,13 @@ const (
 
 func makePR(id int64, number int, head, base string, state realdb.MergeRequestState) realdb.MergeRequest {
 	return realdb.MergeRequest{
-		ID:         id,
-		Number:     number,
-		Title:      "PR " + head,
-		HeadBranch: head,
-		BaseBranch: base,
-		State:      state,
+		ID:               id,
+		Number:           number,
+		Title:            "PR " + head,
+		HeadBranch:       head,
+		BaseBranch:       base,
+		HeadRepoCloneURL: testRepoCloneURL,
+		State:            state,
 	}
 }
 
@@ -146,7 +147,21 @@ func TestDetectChains_UnknownHeadRepoDoesNotShadowKnownUpstreamStackBranch(t *te
 	prs := []realdb.MergeRequest{
 		makePRWithHeadRepo(1, 100, "feature/auth", "main", testRepoCloneURL, prOpen),
 		makePRWithHeadRepo(2, 101, "feature/auth-ui", "feature/auth", testRepoCloneURL, prOpen),
-		makePR(3, 90, "feature/auth", "main", prOpen),
+		makePRWithHeadRepo(3, 90, "feature/auth", "main", "", prOpen),
+	}
+
+	chains := DetectChains(prs, testRepoCloneURL)
+	require.Len(chains, 1)
+	assert.Equal([]int{100, 101}, stackNumbers(chains[0]))
+}
+
+func TestDetectChains_UnknownHeadRepoDoesNotChainWithKnownUpstreamStackBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	prs := []realdb.MergeRequest{
+		makePRWithHeadRepo(1, 100, "feature/auth", "main", testRepoCloneURL, prOpen),
+		makePRWithHeadRepo(2, 101, "feature/auth-ui", "feature/auth", testRepoCloneURL, prOpen),
+		makePRWithHeadRepo(3, 90, "feature/fork-ui", "feature/auth", "", prOpen),
 	}
 
 	chains := DetectChains(prs, testRepoCloneURL)
@@ -265,6 +280,10 @@ func TestRunDetection(t *testing.T) {
 
 	repoID, err := d.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
+	require.NoError(d.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+		CloneURL:      testRepoCloneURL,
+		DefaultBranch: "main",
+	}))
 
 	// Create a 3-PR chain.
 	now := time.Now()
@@ -279,7 +298,7 @@ func TestRunDetection(t *testing.T) {
 		_, err := d.UpsertMergeRequest(ctx, &realdb.MergeRequest{
 			RepoID: repoID, PlatformID: int64(i + 1), Number: pr.num,
 			Title: "PR " + pr.head, Author: "a", State: "open",
-			HeadBranch: pr.head, BaseBranch: pr.base,
+			HeadBranch: pr.head, BaseBranch: pr.base, HeadRepoCloneURL: testRepoCloneURL,
 			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		})
 		require.NoError(err)
@@ -356,6 +375,10 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 
 	repoID, err := d.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
+	require.NoError(d.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+		CloneURL:      testRepoCloneURL,
+		DefaultBranch: "main",
+	}))
 
 	now := time.Now()
 	// Start with an open chain.
@@ -369,7 +392,7 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 		_, err := d.UpsertMergeRequest(ctx, &realdb.MergeRequest{
 			RepoID: repoID, PlatformID: int64(i + 1), Number: pr.num,
 			Title: "PR " + pr.head, Author: "a", State: "open",
-			HeadBranch: pr.head, BaseBranch: pr.base,
+			HeadBranch: pr.head, BaseBranch: pr.base, HeadRepoCloneURL: testRepoCloneURL,
 			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		})
 		require.NoError(err)
@@ -386,7 +409,8 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 		_, err := d.UpsertMergeRequest(ctx, &realdb.MergeRequest{
 			RepoID: repoID, PlatformID: int64(num - 99), Number: num,
 			Title: "PR merged", Author: "a", State: "merged",
-			HeadBranch: "feature/" + string(rune('a'+num-100)),
+			HeadRepoCloneURL: testRepoCloneURL,
+			HeadBranch:       "feature/" + string(rune('a'+num-100)),
 			BaseBranch: func() string {
 				if num == 100 {
 					return "main"

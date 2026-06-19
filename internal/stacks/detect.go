@@ -21,18 +21,18 @@ func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeReques
 	sorted := slices.Clone(prs)
 	slices.SortFunc(sorted, db.MergeRequest.Compare)
 
+	// Stack edges require a known head repository identity. When providers can
+	// list a fork MR but cannot read the fork project metadata, keeping the MR
+	// with an empty head repo would make it look like a target-repo branch.
+	sorted = slices.DeleteFunc(sorted, func(pr db.MergeRequest) bool {
+		return strings.TrimSpace(pr.HeadRepoCloneURL) == ""
+	})
+
 	// Head and base branches only form a stack edge when they are in the same
 	// repository. Forks can reuse upstream branch names, so branch-only keys
 	// would let a fork's head shadow a real upstream stack root.
 	headKey := func(pr db.MergeRequest) branchKey {
-		repo := pr.HeadRepoCloneURL
-		if repo == "" {
-			repo = repoCloneURL
-		}
-		return branchKey{repo: normalizeRepoKey(repo), branch: pr.HeadBranch}
-	}
-	hasHeadRepo := func(pr db.MergeRequest) bool {
-		return strings.TrimSpace(pr.HeadRepoCloneURL) != ""
+		return branchKey{repo: normalizeRepoKey(pr.HeadRepoCloneURL), branch: pr.HeadBranch}
 	}
 	baseKey := func(pr db.MergeRequest) branchKey {
 		return branchKey{repo: normalizeRepoKey(repoCloneURL), branch: pr.BaseBranch}
@@ -55,11 +55,7 @@ func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeReques
 			headMap[key] = pr
 			continue
 		}
-		existingHasHeadRepo := hasHeadRepo(existing)
-		prHasHeadRepo := hasHeadRepo(pr)
-		if !existingHasHeadRepo && prHasHeadRepo {
-			headMap[key] = pr
-		} else if existingHasHeadRepo == prHasHeadRepo && existing.State == "merged" && pr.State == "open" {
+		if existing.State == "merged" && pr.State == "open" {
 			headMap[key] = pr
 		}
 	}

@@ -31,6 +31,10 @@ func TestSyncCompletedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {
 		Name:         "repo",
 	})
 	require.NoError(err)
+	require.NoError(d.UpdateRepoProviderMetadata(ctx, gitlabRepoID, realdb.RepoProviderMetadata{
+		CloneURL:      "https://code.example.com/org/repo.git",
+		DefaultBranch: "main",
+	}))
 
 	now := time.Now().UTC()
 	for i, pr := range []struct {
@@ -44,7 +48,8 @@ func TestSyncCompletedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {
 			RepoID: gitlabRepoID, PlatformID: int64(i + 1),
 			Number: pr.number, Title: "MR", Author: "a", State: "open",
 			HeadBranch: pr.head, BaseBranch: pr.base,
-			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+			HeadRepoCloneURL: "https://code.example.com/org/repo.git",
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
 		})
 		require.NoError(err)
 	}

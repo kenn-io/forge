@@ -6,9 +6,104 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
+const contextMenuWorkspace = {
+  id: "ws-context-menu-geometry",
+  platform_host: "github.com",
+  repo_owner: "middleman",
+  repo_name: "middleman",
+  repo: {
+    provider: "github",
+    platform_host: "github.com",
+    owner: "middleman",
+    name: "middleman",
+    repo_path: "middleman/middleman",
+  },
+  item_type: "pull_request",
+  item_number: 555,
+  git_head_ref: "fix/issue-cross-reference-events",
+  worktree_path: "/tmp/middleman-ws-context-menu",
+  tmux_session: "middleman-ws-context-menu",
+  tmux_pane_title: null,
+  tmux_working: false,
+  status: "ready",
+  created_at: "2026-06-18T12:00:00Z",
+  item_last_activity_at: "2026-06-18T14:00:00Z",
+  mr_title: "Show GitHub issue cross-reference events",
+  mr_state: "open",
+  mr_is_draft: false,
+  mr_additions: 18,
+  mr_deletions: 4,
+  commits_ahead: 1,
+  commits_behind: 0,
+};
+
+async function mockWorkspaceContextMenuRoutes(page: import("@playwright/test").Page): Promise<void> {
+  await page.route("**/api/v1/snapshot**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hosts: [
+          {
+            configKey: "self",
+            diagnostics: [],
+            id: "self",
+            kind: "self",
+            name: "This Mac",
+            operationAvailability: {},
+            platform: "darwin",
+            preferredTransport: "local",
+            reachable: true,
+            tmuxSessions: [],
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/api/v1/workspaces", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ workspaces: [contextMenuWorkspace] }),
+    });
+  });
+}
+
 test("workspaces route renders the terminal workspace list shell", async ({ page }) => {
   await page.goto("/workspaces");
   await expect(page.getByText("Select a workspace from the sidebar")).toBeVisible();
+});
+
+test("workspace row context menu escapes the clipped sidebar", async ({ page }) => {
+  await mockWorkspaceContextMenuRoutes(page);
+  await page.setViewportSize({ width: 640, height: 480 });
+  await page.goto("/workspaces");
+
+  const row = page.getByRole("button", {
+    name: /Show GitHub issue cross-reference events/,
+  });
+  await expect(row).toBeVisible();
+  const rowBox = await row.boundingBox();
+  expect(rowBox).not.toBeNull();
+  await row.click({
+    button: "right",
+    position: {
+      x: Math.max(1, rowBox!.width - 4),
+      y: Math.max(1, rowBox!.height / 2),
+    },
+  });
+
+  const menu = page.getByRole("menu", { name: "Workspace actions" });
+  await expect(menu).toBeVisible();
+  await expect(page.locator(".workspace-list-sidebar .workspace-context-menu")).toHaveCount(0);
+
+  const menuBox = await menu.boundingBox();
+  expect(menuBox).not.toBeNull();
+  expect(menuBox!.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox!.y).toBeGreaterThanOrEqual(0);
+  expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(640);
+  expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(480);
 });
 
 test("workspaces sidebar collapses and expands through the shared control", async ({ page }) => {

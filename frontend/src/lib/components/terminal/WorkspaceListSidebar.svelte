@@ -1011,140 +1011,141 @@
     {/if}
   </div>
 
-  {#if contextMenu}
-    {@const menuWorkspace = contextMenu.ws}
-    {@const localWorkspace = !isRemoteWorkspace(menuWorkspace)}
-    {@const itemURL = providerItemURL(menuWorkspace)}
-    <div
-      class="workspace-context-menu filter-dropdown"
-      bind:this={contextMenuEl}
-      style={contextMenuStyle}
-      role="menu"
-      aria-label="Workspace actions"
-      tabindex="-1"
-      oncontextmenu={(e) => e.preventDefault()}
-    >
-      <div class="workspace-context-heading">
-        <div class="workspace-context-title">
-          {displayName(menuWorkspace)}
-        </div>
-        <div class="workspace-context-meta">
-          {repoLabel(menuWorkspace)} · {shortBranch(menuWorkspace.git_head_ref)}
-        </div>
-      </div>
+</div>
 
-      <div class="filter-section-title">Sync branch</div>
-      {#if canPush(menuWorkspace)}
-        <button
-          class="filter-item active"
-          role="menuitem"
-          type="button"
-          onclick={() => unavailableSyncAction("Push branch")}
-        >
-          <span class="filter-dot filter-dot--success"></span>
-          <span class="filter-label">Push branch</span>
-          <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
-        </button>
-      {:else if canPull(menuWorkspace)}
-        <button
-          class="filter-item active"
-          role="menuitem"
-          type="button"
-          onclick={() => unavailableSyncAction("Pull remote changes")}
-        >
-          <span class="filter-dot filter-dot--warning"></span>
-          <span class="filter-label">Pull remote changes</span>
-          <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
-        </button>
-      {/if}
+{#if contextMenu}
+  {@const menuWorkspace = contextMenu.ws}
+  {@const localWorkspace = !isRemoteWorkspace(menuWorkspace)}
+  {@const itemURL = providerItemURL(menuWorkspace)}
+  <div
+    class="workspace-context-menu filter-dropdown"
+    bind:this={contextMenuEl}
+    style={contextMenuStyle}
+    role="menu"
+    aria-label="Workspace actions"
+    tabindex="-1"
+    oncontextmenu={(e) => e.preventDefault()}
+  >
+    <div class="workspace-context-heading">
+      <div class="workspace-context-title">
+        {displayName(menuWorkspace)}
+      </div>
+      <div class="workspace-context-meta">
+        {repoLabel(menuWorkspace)} · {shortBranch(menuWorkspace.git_head_ref)}
+      </div>
+    </div>
+
+    <div class="filter-section-title">Sync branch</div>
+    {#if canPush(menuWorkspace)}
       <button
         class="filter-item active"
         role="menuitem"
         type="button"
-        onclick={() => {
-          void refreshWorkspaceStatus(menuWorkspace);
-        }}
+        onclick={() => unavailableSyncAction("Push branch")}
       >
-        <span class="filter-dot"></span>
-        <span class="filter-label">Refresh git status</span>
+        <span class="filter-dot filter-dot--success"></span>
+        <span class="filter-label">Push branch</span>
+        <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
       </button>
+    {:else if canPull(menuWorkspace)}
+      <button
+        class="filter-item active"
+        role="menuitem"
+        type="button"
+        onclick={() => unavailableSyncAction("Pull remote changes")}
+      >
+        <span class="filter-dot filter-dot--warning"></span>
+        <span class="filter-label">Pull remote changes</span>
+        <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
+      </button>
+    {/if}
+    <button
+      class="filter-item active"
+      role="menuitem"
+      type="button"
+      onclick={() => {
+        void refreshWorkspaceStatus(menuWorkspace);
+      }}
+    >
+      <span class="filter-dot"></span>
+      <span class="filter-label">Refresh git status</span>
+    </button>
 
-      <div class="filter-divider"></div>
+    <div class="filter-divider"></div>
+    <button
+      class="filter-item active"
+      role="menuitem"
+      type="button"
+      onclick={() => {
+        void copyMenuText(
+          shortBranch(menuWorkspace.git_head_ref),
+          "Copied branch name.",
+        );
+      }}
+    >
+      <span class="filter-dot"></span>
+      <span class="filter-label">Copy branch name</span>
+    </button>
+    {#if localWorkspace}
       <button
         class="filter-item active"
         role="menuitem"
         type="button"
         onclick={() => {
           void copyMenuText(
-            shortBranch(menuWorkspace.git_head_ref),
-            "Copied branch name.",
+            menuWorkspace.worktree_path,
+            "Copied worktree path.",
           );
         }}
       >
         <span class="filter-dot"></span>
-        <span class="filter-label">Copy branch name</span>
+        <span class="filter-label">Copy worktree path</span>
       </button>
-      {#if localWorkspace}
-        <button
-          class="filter-item active"
-          role="menuitem"
-          type="button"
-          onclick={() => {
-            void copyMenuText(
-              menuWorkspace.worktree_path,
-              "Copied worktree path.",
-            );
-          }}
-        >
-          <span class="filter-dot"></span>
-          <span class="filter-label">Copy worktree path</span>
-        </button>
-        <button
-          class="filter-item active"
-          role="menuitem"
-          type="button"
-          onclick={() => unavailableSyncAction(revealLabel(menuWorkspace))}
-        >
-          <span class="filter-dot"></span>
-          <span class="filter-label">{revealLabel(menuWorkspace)}</span>
-        </button>
-      {/if}
-
-      {#if itemURL}
-        <div class="filter-divider"></div>
-        <button
-          class="filter-item active"
-          role="menuitem"
-          type="button"
-          onclick={() => openProviderItem(menuWorkspace)}
-        >
-          <span class="filter-dot"></span>
-          <span class="filter-label">{providerLabel(menuWorkspace)}</span>
-        </button>
-        <button
-          class="filter-item active"
-          role="menuitem"
-          type="button"
-          onclick={() => copyProviderItemURL(menuWorkspace)}
-        >
-          <span class="filter-dot"></span>
-          <span class="filter-label">Copy item URL</span>
-        </button>
-      {/if}
-
-      <div class="filter-divider"></div>
       <button
-        class="filter-item active workspace-context-danger"
+        class="filter-item active"
         role="menuitem"
         type="button"
-        onclick={() => unavailableSyncAction("Delete workspace")}
+        onclick={() => unavailableSyncAction(revealLabel(menuWorkspace))}
       >
-        <span class="filter-dot filter-dot--danger"></span>
-        <span class="filter-label">Delete workspace...</span>
+        <span class="filter-dot"></span>
+        <span class="filter-label">{revealLabel(menuWorkspace)}</span>
       </button>
-    </div>
-  {/if}
-</div>
+    {/if}
+
+    {#if itemURL}
+      <div class="filter-divider"></div>
+      <button
+        class="filter-item active"
+        role="menuitem"
+        type="button"
+        onclick={() => openProviderItem(menuWorkspace)}
+      >
+        <span class="filter-dot"></span>
+        <span class="filter-label">{providerLabel(menuWorkspace)}</span>
+      </button>
+      <button
+        class="filter-item active"
+        role="menuitem"
+        type="button"
+        onclick={() => copyProviderItemURL(menuWorkspace)}
+      >
+        <span class="filter-dot"></span>
+        <span class="filter-label">Copy item URL</span>
+      </button>
+    {/if}
+
+    <div class="filter-divider"></div>
+    <button
+      class="filter-item active workspace-context-danger"
+      role="menuitem"
+      type="button"
+      onclick={() => unavailableSyncAction("Delete workspace")}
+    >
+      <span class="filter-dot filter-dot--danger"></span>
+      <span class="filter-label">Delete workspace...</span>
+    </button>
+  </div>
+{/if}
 
 <style>
   .workspace-list-sidebar {

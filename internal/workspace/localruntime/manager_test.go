@@ -341,14 +341,15 @@ exit 0
 	}
 	require.NotEmpty(newSession)
 	newSessionText := strings.Join(newSession, "\n")
+	scriptText := requireNewSessionPaneScript(t, newSession)
 	assert.Contains(newSession, "-E")
 	assert.NotContains(newSession, "-e")
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
-	assert.Contains(newSessionText, "__middleman_env_file=")
-	assert.Contains(newSessionText, "exec env -i")
-	assert.Contains(newSessionText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
-	assert.Contains(newSessionText, shellquote.Join(agent.Command[0]))
+	assert.Contains(scriptText, "__middleman_env_file=")
+	assert.Contains(scriptText, "exec env -i")
+	assert.Contains(scriptText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
+	assert.Contains(scriptText, shellquote.Join(agent.Command[0]))
 	assert.NotContains(newSessionText, "argv-visible-value")
 }
 
@@ -512,21 +513,22 @@ exit 0
 	}
 	require.NotEmpty(newSession)
 	newSessionText := strings.Join(newSession, "\n")
+	scriptText := requireNewSessionPaneScript(t, newSession)
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
-	assert.Contains(newSessionText, "exec env -i")
-	assert.Contains(newSessionText, shellquote.Join(os.Args[0]))
+	assert.Contains(scriptText, "exec env -i")
+	assert.Contains(scriptText, shellquote.Join(os.Args[0]))
 	assert.Contains(
-		newSessionText,
+		scriptText,
 		"XDG_RUNTIME_DIR=\"${XDG_RUNTIME_DIR-}\"",
 	)
 	assert.Contains(
-		newSessionText,
+		scriptText,
 		"MIDDLEMAN_TEST_CUSTOM_SHELL_ENV=\"${MIDDLEMAN_TEST_CUSTOM_SHELL_ENV-}\"",
 	)
 	assert.Contains(newSession, "-E")
 	assert.NotContains(newSession, "-e")
-	assert.Contains(newSessionText, "__middleman_env_file=")
+	assert.Contains(scriptText, "__middleman_env_file=")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "-t")

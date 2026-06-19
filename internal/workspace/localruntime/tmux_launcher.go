@@ -255,21 +255,61 @@ func (l tmuxLauncher) newSessionPaneCommand() (string, func(), error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("write tmux pane environment: %w", err)
 	}
+	// tmux parses shell-command with its default shell, which may not be
+	// POSIX-compatible. Keep the POSIX handoff in a script run by /bin/sh.
+	scriptPath, err := writeTmuxPaneScript(path, l.Pane.paneCommand)
+	if err != nil {
+		_ = os.Remove(path)
+		return "", nil, fmt.Errorf("write tmux pane script: %w", err)
+	}
 	cleanup := func() {
 		_ = os.Remove(path)
+		_ = os.Remove(scriptPath)
 	}
-	return strings.Join([]string{
-		"__middleman_env_file=" + shellCommand([]string{path}),
-		`__middleman_cleanup_env_file() { /bin/rm -f "$__middleman_env_file"; }`,
-		`trap __middleman_cleanup_env_file EXIT`,
+	return shellCommand([]string{"/bin/sh", scriptPath}), cleanup, nil
+}
+
+func writeTmuxPaneScript(envPath string, paneCommand string) (string, error) {
+	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "middleman-tmux-pane-*")
+	if err != nil {
+		return "", err
+	}
+	path := file.Name()
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return "", err
+	}
+
+	content := strings.Join([]string{
+		"__middleman_env_file=" + shellCommand([]string{envPath}),
+		"__middleman_script_file=" + shellCommand([]string{path}),
+		`__middleman_cleanup_tmux_files() { /bin/rm -f "$__middleman_env_file" "$__middleman_script_file"; }`,
+		`trap __middleman_cleanup_tmux_files EXIT`,
 		`if [ ! -r "$__middleman_env_file" ]; then exit 127; fi`,
 		`. "$__middleman_env_file"`,
-		`__middleman_cleanup_env_file`,
+		`__middleman_cleanup_tmux_files`,
 		`trap - EXIT`,
-		`unset -f __middleman_cleanup_env_file`,
+		`unset -f __middleman_cleanup_tmux_files`,
 		`unset __middleman_env_file`,
-		l.Pane.paneCommand,
-	}, "\n"), cleanup, nil
+		`unset __middleman_script_file`,
+		paneCommand,
+	}, "\n")
+	if _, err := file.WriteString(content); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return "", err
+	}
+	if _, err := file.WriteString("\n"); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", err
+	}
+	return path, nil
 }
 
 func writeTmuxPaneEnvironment(env []string, keys []string) (string, error) {

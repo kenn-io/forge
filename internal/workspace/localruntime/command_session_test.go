@@ -104,11 +104,11 @@ func TestEnsureCommandSessionLaunchesTmuxBackedCommand(t *testing.T) {
 		}
 	}
 	require.NotEmpty(newSession)
-	newSessionText := strings.Join(newSession, "\n")
+	scriptText := requireNewSessionPaneScript(t, newSession)
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, cwd)
-	assert.Contains(newSessionText, `CUSTOM_SESSION_VAR="${CUSTOM_SESSION_VAR-}"`)
-	assert.Contains(newSessionText, shellquote.Join("/bin/sh"))
+	assert.Contains(scriptText, `CUSTOM_SESSION_VAR="${CUSTOM_SESSION_VAR-}"`)
+	assert.Contains(scriptText, shellquote.Join("/bin/sh"))
 
 	sessions := mgr.ListSessions("scope-1")
 	require.Len(sessions, 1)

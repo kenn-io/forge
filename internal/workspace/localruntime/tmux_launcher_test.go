@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	shellquote "github.com/kballard/go-shellquote"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,25 +32,38 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	paneCommand, cleanup, err := launcher.newSessionPaneCommand()
 	require.NoError(t, err)
 	t.Cleanup(cleanup)
+	scriptText := requireTmuxPaneScript(t, paneCommand)
 	newSession := launcher.newSessionCommand(paneCommand)
 	newSessionText := strings.Join(newSession, "\n")
+	paneCommandArg := ""
+	for i, arg := range newSession {
+		if arg == ";" && i > 0 {
+			paneCommandArg = newSession[i-1]
+			break
+		}
+	}
+	require.NotEmpty(t, paneCommandArg)
 
 	assert.Equal("new-session", newSession[1])
 	assert.Contains(newSession, "-E")
 	assert.NotContains(newSession, "-e")
+	assert.Equal(paneCommand, paneCommandArg)
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
-	assert.Contains(newSessionText, "exec env -i")
+	assert.Contains(scriptText, "exec env -i")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "@middleman_owner")
 	assert.Contains(newSession, "middleman:test-owner")
-	assert.Contains(newSessionText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
-	assert.Contains(newSessionText, "__middleman_env_file=")
-	assert.Contains(newSessionText, "trap __middleman_cleanup_env_file EXIT")
-	assert.Contains(newSessionText, "trap - EXIT")
+	assert.Contains(scriptText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
+	assert.Contains(scriptText, "__middleman_env_file=")
+	assert.Contains(scriptText, "__middleman_script_file=")
+	assert.Contains(scriptText, "trap __middleman_cleanup_tmux_files EXIT")
+	assert.Contains(scriptText, "trap - EXIT")
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "secret-value")
+	assert.NotContains(scriptText, "argv-visible-value")
+	assert.NotContains(scriptText, "secret-value")
 }
 
 func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {
@@ -150,4 +164,28 @@ func readNullArgvRecord(t *testing.T, path string) [][]string {
 		i += count
 	}
 	return records
+}
+
+func requireNewSessionPaneScript(t *testing.T, newSession []string) string {
+	t.Helper()
+	require.NotEmpty(t, newSession)
+	command := newSession[len(newSession)-1]
+	for i, arg := range newSession {
+		if arg == ";" && i > 0 {
+			command = newSession[i-1]
+			break
+		}
+	}
+	return requireTmuxPaneScript(t, command)
+}
+
+func requireTmuxPaneScript(t *testing.T, command string) string {
+	t.Helper()
+	words, err := shellquote.Split(command)
+	require.NoError(t, err)
+	require.Len(t, words, 2)
+	require.Equal(t, "/bin/sh", words[0])
+	data, err := os.ReadFile(words[1])
+	require.NoError(t, err)
+	return string(data)
 }

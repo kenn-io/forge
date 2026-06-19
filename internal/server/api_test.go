@@ -21152,21 +21152,23 @@ exit 0
 		for _, argv := range readTmuxRecord(t, record) {
 			if len(argv) > 0 &&
 				argv[0] == "new-session" &&
-				strings.Contains(strings.Join(argv, "\n"), agentPath) {
+				runtimeTmuxNewSessionCommandContains(t, argv, agentPath) {
 				newSession = argv
 				return true
 			}
 		}
 		return false
 	}, 2*time.Second, 20*time.Millisecond)
+	scriptText, ok := runtimeTmuxNewSessionScript(t, newSession)
+	require.True(ok, "new-session should run generated tmux pane script")
 
 	session, ok := argAfter(newSession, "-s")
 	require.True(ok, "new-session should name a tmux session")
 	assert.True(isRuntimeTmuxSessionNameForWorkspace(ws.Id, session))
 	assert.Contains(newSession, "-d")
 	assert.Contains(newSession, "-c")
-	assert.Contains(strings.Join(newSession, "\n"), agentPath)
-	assert.Contains(strings.Join(newSession, "\n"), "--flag")
+	assert.Contains(scriptText, agentPath)
+	assert.Contains(scriptText, "--flag")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "-t")
@@ -21455,7 +21457,7 @@ exit 0
 	var sessionName string
 	require.Eventually(func() bool {
 		name, ok := findRuntimeTmuxNewSessionName(
-			readTmuxRecord(t, record), ws.Id, agentPath,
+			t, readTmuxRecord(t, record), ws.Id, "",
 		)
 		if ok {
 			sessionName = name
@@ -21520,14 +21522,19 @@ func isRuntimeTmuxSessionNameForWorkspace(
 }
 
 func findRuntimeTmuxNewSessionName(
+	t *testing.T,
 	argvs [][]string,
 	workspaceID string,
 	commandPath string,
 ) (string, bool) {
+	t.Helper()
 	for _, argv := range argvs {
 		if len(argv) == 0 ||
-			argv[0] != "new-session" ||
-			!strings.Contains(strings.Join(argv, "\n"), commandPath) {
+			argv[0] != "new-session" {
+			continue
+		}
+		if commandPath != "" &&
+			!runtimeTmuxNewSessionCommandContains(t, argv, commandPath) {
 			continue
 		}
 		name, ok := argAfter(argv, "-s")
@@ -21536,6 +21543,51 @@ func findRuntimeTmuxNewSessionName(
 		}
 	}
 	return "", false
+}
+
+func runtimeTmuxNewSessionCommandContains(
+	t *testing.T,
+	argv []string,
+	needle string,
+) bool {
+	t.Helper()
+	if strings.Contains(strings.Join(argv, "\n"), needle) {
+		return true
+	}
+	scriptText, ok := runtimeTmuxNewSessionScript(t, argv)
+	return ok && strings.Contains(scriptText, needle)
+}
+
+func runtimeTmuxNewSessionScript(t *testing.T, argv []string) (string, bool) {
+	t.Helper()
+	command := tmuxNewSessionPaneCommand(argv)
+	if command == "" {
+		return "", false
+	}
+	words, err := shellquote.Split(command)
+	if err != nil ||
+		len(words) != 2 ||
+		words[0] != "/bin/sh" {
+		return "", false
+	}
+	data, err := os.ReadFile(words[1])
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
+}
+
+func tmuxNewSessionPaneCommand(argv []string) string {
+	if len(argv) == 0 {
+		return ""
+	}
+	command := argv[len(argv)-1]
+	for i, arg := range argv {
+		if arg == ";" && i > 0 {
+			return argv[i-1]
+		}
+	}
+	return command
 }
 
 func isRuntimeSessionKeyForWorkspace(workspaceID string, key string) bool {

@@ -61,11 +61,11 @@ export function buildMarkdownRichPreview(
 
 function buildSideDocument(source: DiffFile, side: "old" | "new"): MarkdownSideDocument {
   const lines: Array<{ content: string; sourceLine?: number | undefined }> = [];
-  for (const hunk of source.hunks) {
+  for (const hunk of source.hunks ?? []) {
     if (lines.length > 0) {
       lines.push({ content: "" }, { content: "---" }, { content: "" });
     }
-    for (const line of hunk.lines) {
+    for (const line of hunk.lines ?? []) {
       const sourceLine = side === "old" ? line.old_num : line.new_num;
       if (sideIncludesLine(side, line)) lines.push({ content: line.content, sourceLine });
     }

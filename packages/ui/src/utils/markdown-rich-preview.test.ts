@@ -21,6 +21,32 @@ function markdownFile(lines: DiffFile["hunks"][number]["lines"]): DiffFile {
 describe("buildMarkdownRichPreview", () => {
   const repo = { provider: "github", owner: "acme", name: "widgets", repoPath: "acme/widgets" };
 
+  it("renders an empty preview when the API returns null hunks", () => {
+    const preview = buildMarkdownRichPreview({ ...markdownFile([]), hunks: null } as unknown as DiffFile, repo);
+
+    expect(preview.blocks).toEqual([]);
+  });
+
+  it("skips hunks whose API line payload is null", () => {
+    const preview = buildMarkdownRichPreview(
+      {
+        ...markdownFile([]),
+        hunks: [
+          {
+            old_start: 1,
+            old_count: 0,
+            new_start: 1,
+            new_count: 0,
+            lines: null,
+          },
+        ],
+      } as unknown as DiffFile,
+      repo,
+    );
+
+    expect(preview.blocks).toEqual([]);
+  });
+
   it("preserves reference context without splitting untargeted list blocks", () => {
     const preview = buildMarkdownRichPreview(
       markdownFile([

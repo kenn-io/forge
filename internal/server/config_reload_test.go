@@ -1655,6 +1655,37 @@ func TestRestartRequiredForAuthFleetSessionsAndSSHPeers(t *testing.T) {
 	require.True(snap.restartRequiredFor(peerEdited))
 }
 
+func TestRestartRequiredForNotificationIntervals(t *testing.T) {
+	require := require.New(t)
+	base := func() *config.Config {
+		cfg := &config.Config{}
+		cfg.SyncInterval = "5m"
+		cfg.Notifications.SyncInterval = "30s"
+		cfg.Notifications.PropagationInterval = "1m"
+		cfg.Notifications.BatchSize = 25
+		return cfg
+	}
+	snap := snapshotStartupConfig(base())
+
+	require.False(snap.restartRequiredFor(base()),
+		"identical notification loop config must not demand a restart")
+
+	syncIntervalChanged := base()
+	syncIntervalChanged.Notifications.SyncInterval = "2m"
+	require.True(snap.restartRequiredFor(syncIntervalChanged),
+		"notification sync_interval is bound to the startup ticker")
+
+	propagationIntervalChanged := base()
+	propagationIntervalChanged.Notifications.PropagationInterval = "5m"
+	require.True(snap.restartRequiredFor(propagationIntervalChanged),
+		"notification propagation_interval is bound to the startup ticker")
+
+	batchSizeChanged := base()
+	batchSizeChanged.Notifications.BatchSize = 50
+	require.False(snap.restartRequiredFor(batchSizeChanged),
+		"notification batch_size is snapped by the loop and does not require restart")
+}
+
 const validReloadConfigAuthGate = `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"

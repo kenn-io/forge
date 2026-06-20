@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/config"
 )
 
 func TestNotificationLoopStopWaitsForInFlightRun(t *testing.T) {
@@ -55,4 +56,21 @@ func TestNotificationLoopStopWaitsForInFlightRun(t *testing.T) {
 	case <-time.After(time.Second):
 		require.Fail("Stop did not return after notification run finished")
 	}
+}
+
+func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {
+	require := require.New(t)
+	cfg := &config.Config{}
+	cfg.Notifications.SyncInterval = "30s"
+	cfg.Notifications.PropagationInterval = "45s"
+	cfg.Notifications.BatchSize = 12
+
+	settings := notificationLoopSettingsFromConfig(cfg)
+	cfg.Notifications.SyncInterval = "5m"
+	cfg.Notifications.PropagationInterval = "10m"
+	cfg.Notifications.BatchSize = 99
+
+	require.Equal(30*time.Second, settings.syncInterval)
+	require.Equal(45*time.Second, settings.propagationInterval)
+	require.Equal(12, settings.batchSize)
 }

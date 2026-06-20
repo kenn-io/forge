@@ -16,6 +16,12 @@ type notificationLoopHandle struct {
 	wg     sync.WaitGroup
 }
 
+type notificationLoopSettings struct {
+	syncInterval        time.Duration
+	propagationInterval time.Duration
+	batchSize           int
+}
+
 func (h *notificationLoopHandle) Stop() {
 	if h == nil {
 		return
@@ -26,13 +32,22 @@ func (h *notificationLoopHandle) Stop() {
 
 func startNotificationLoops(ctx context.Context, syncer *ghclient.Syncer, cfg *config.Config) *notificationLoopHandle {
 	handle := newNotificationLoopHandle(ctx)
-	handle.startTicker("notification sync", cfg.NotificationSyncDuration(), func(runCtx context.Context) error {
+	settings := notificationLoopSettingsFromConfig(cfg)
+	handle.startTicker("notification sync", settings.syncInterval, func(runCtx context.Context) error {
 		return syncer.RunNotificationSync(runCtx)
 	})
-	handle.startTicker("notification read propagation", cfg.NotificationPropagationDuration(), func(runCtx context.Context) error {
-		return syncer.ProcessQueuedNotificationReadsForAllHosts(runCtx, cfg.NotificationBatchSize())
+	handle.startTicker("notification read propagation", settings.propagationInterval, func(runCtx context.Context) error {
+		return syncer.ProcessQueuedNotificationReadsForAllHosts(runCtx, settings.batchSize)
 	})
 	return handle
+}
+
+func notificationLoopSettingsFromConfig(cfg *config.Config) notificationLoopSettings {
+	return notificationLoopSettings{
+		syncInterval:        cfg.NotificationSyncDuration(),
+		propagationInterval: cfg.NotificationPropagationDuration(),
+		batchSize:           cfg.NotificationBatchSize(),
+	}
 }
 
 func newNotificationLoopHandle(parent context.Context) *notificationLoopHandle {

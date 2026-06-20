@@ -42,7 +42,7 @@
   }[] = [
     { value: "approved", label: "Approved" },
     { value: "draft", label: "Draft" },
-    { value: "ready", label: "Ready" },
+    { value: "ready", label: "Ready for review" },
     { value: "merge_conflicts", label: "Merge conflicts" },
     { value: "failed_ci", label: "Failed CI" },
   ];
@@ -53,7 +53,7 @@
     { value: "new", label: "New" },
     { value: "reviewing", label: "Reviewing" },
     { value: "waiting", label: "Waiting" },
-    { value: "awaiting_merge", label: "Ready" },
+    { value: "awaiting_merge", label: "Awaiting merge" },
   ];
   const groupingOptions: {
     value: GroupingMode;
@@ -68,7 +68,7 @@
   const COMPACT_FILTER_MAX_WIDTH = 430;
   // Keep the full filter groups visible at medium widths, but collapse the
   // local PR filter trigger label before it crowds the sidebar toggle.
-  const LOCAL_FILTER_ICON_ONLY_MAX_WIDTH = 930;
+  const LOCAL_FILTER_ICON_ONLY_MAX_WIDTH = 520;
 
   interface Props {
     getDetailTab?: () => string;
@@ -120,12 +120,23 @@
     return "All";
   }
 
+  function pullStateDropdownLabel(state: string): string {
+    if (state === "all") return "All states";
+    return pullStateLabel(state);
+  }
+
+  function groupingDropdownLabel(mode: GroupingMode): string {
+    if (mode === "byRepo") return "By repo";
+    if (mode === "byWorkflow") return "By status";
+    return "Flat list";
+  }
+
   function setPullState(state: string): void {
     pulls.setFilterState(state);
     void pulls.loadPulls();
   }
 
-  function clearCompactFilters(): void {
+  function resetCompactView(): void {
     pulls.clearLocalFilters();
     grouping.setGroupingMode("byRepo");
     if (pulls.getFilterState() !== "open") {
@@ -138,7 +149,7 @@
       title: "State",
       items: pullStateOptions.map((state) => ({
         id: `state-${state}`,
-        label: pullStateLabel(state),
+        label: pullStateDropdownLabel(state),
         active: pulls.getFilterState() === state,
         closeOnSelect: true,
         onSelect: () => setPullState(state),
@@ -148,7 +159,7 @@
       title: "Group",
       items: groupingOptions.map((option) => ({
         id: `group-${option.value}`,
-        label: option.label,
+        label: groupingDropdownLabel(option.value),
         active: groupingMode === option.value,
         closeOnSelect: true,
         onSelect: () => grouping.setGroupingMode(option.value),
@@ -353,8 +364,8 @@
         active={hasCompactFilterChanges}
         badgeCount={pulls.getLocalFilterCount()}
         sections={compactFilterSections}
-        resetLabel="Clear filters"
-        onReset={clearCompactFilters}
+        resetLabel="Reset view"
+        onReset={resetCompactView}
         minWidth="190px"
       />
     </div>
@@ -363,8 +374,8 @@
       class:local-filter-menu--icon-only={useIconOnlyLocalFilters}
     >
       <FilterDropdown
-        label="Filters"
-        title="Filter PRs"
+        label="PR filters"
+        title="PR filters"
         active={pulls.getLocalFilterCount() > 0}
         badgeCount={pulls.getLocalFilterCount()}
         sections={localFilterSections}

@@ -83,7 +83,7 @@ async function mockPulls(page: Page) {
 }
 
 async function openPrFilters(page: Page): Promise<void> {
-  const standaloneTrigger = page.getByTitle("Filter PRs");
+  const standaloneTrigger = page.getByTitle("PR filters");
   if (await standaloneTrigger.isVisible()) {
     await standaloneTrigger.click();
   } else {
@@ -100,16 +100,19 @@ test("PR filters stack attributes and allow multiple kanban statuses", async ({ 
   await expect(rows).toHaveCount(4);
 
   await openPrFilters(page);
-  await page.locator(".filter-dropdown").getByRole("button", { name: "Ready", exact: true }).first().click();
+  await page.locator(".filter-dropdown").getByRole("button", { name: "Ready for review" }).click();
   await page.locator(".filter-dropdown").getByRole("button", { name: "Reviewing" }).click();
-  await page.locator(".filter-dropdown").getByRole("button", { name: "Ready", exact: true }).nth(1).click();
+  await page.locator(".filter-dropdown").getByRole("button", { name: "Awaiting merge" }).click();
 
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);
 
   await page.locator(".filter-dropdown").getByRole("button", { name: "Failed CI" }).click();
   await expect(rows).toHaveText([/Ready failed workflow/]);
 
-  await page.locator(".filter-dropdown").getByRole("button", { name: "Clear filters" }).click();
+  await page
+    .locator(".filter-dropdown")
+    .getByRole("button", { name: /^(Clear filters|Reset view)$/ })
+    .click();
   await page.locator(".filter-dropdown").getByRole("button", { name: "Merge conflicts" }).click();
 
   await expect(rows).toHaveText([/Ready conflict resolver/]);

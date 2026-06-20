@@ -25508,6 +25508,171 @@ func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
 	)
 }
 
+func TestWorkspaceCreateWithLocalBaseUsesPullRefWhenHeadBranchDeleted(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const prNumber = 43
+	localRepo, remote, platformHost := setupHTTPWorktreeBaseForServerTest(
+		t, "feature",
+	)
+	wantSHA := testGitSHA(t, localRepo, "refs/remotes/origin/feature")
+	runGit(
+		t, remote, "update-ref",
+		fmt.Sprintf("refs/pull/%d/head", prNumber), wantSHA,
+	)
+	runGit(t, remote, "update-ref", "-d", "refs/heads/feature")
+	runGit(t, remote, "update-server-info")
+	runGit(t, localRepo, "fetch", "--prune", "origin")
+
+	cfg := &config.Config{Repos: []config.Repo{{
+		Platform:         "github",
+		PlatformHost:     platformHost,
+		Owner:            "acme",
+		Name:             "widget",
+		WorktreeBasePath: localRepo,
+	}}}
+	fixture := setupWorkspaceServerFixture(t, cfg)
+	ctx := t.Context()
+	seedPROnHost(
+		t, fixture.database,
+		platformHost, "acme", "widget", prNumber,
+		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
+	)
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: platformHost,
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     prNumber,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ready.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("ready", stored.Status)
+	assert.Equal(syntheticPRWorktreeBranchForTest(prNumber), stored.WorkspaceBranch)
+	assert.Equal(wantSHA, testGitSHA(t, ready.WorktreePath, "HEAD"))
+	assert.Equal(
+		syntheticPRWorktreeBranchForTest(prNumber),
+		gitOutput(t, ready.WorktreePath, "branch", "--show-current"),
+	)
+}
+
+func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
+	t.Parallel()
+
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const prNumber = 44
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForServerTest(
+		t, "feature",
+	)
+	cfg := &config.Config{Repos: []config.Repo{{
+		Platform:         "github",
+		PlatformHost:     platformHost,
+		Owner:            "acme",
+		Name:             "widget",
+		WorktreeBasePath: localRepo,
+	}}}
+	fixture := setupWorkspaceServerFixture(t, cfg)
+	ctx := t.Context()
+	existingBranch := syntheticPRWorktreeBranchForTest(prNumber)
+	worktreePath := filepath.Join(
+		fixture.worktrees, "github", platformHost, "acme", "widget",
+		fmt.Sprintf("pr-%d", prNumber),
+	)
+	runGit(
+		t, localRepo,
+		"worktree", "add", worktreePath, "-b", existingBranch, "main",
+	)
+	wantSHA := testGitSHA(t, worktreePath, "HEAD")
+	seedPROnHost(
+		t, fixture.database,
+		platformHost, "acme", "widget", prNumber,
+		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
+	)
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: platformHost,
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     prNumber,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ready.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("ready", stored.Status)
+	assert.Equal(worktreePath, stored.WorktreePath)
+	assert.Equal(existingBranch, stored.WorkspaceBranch)
+	assert.Equal(worktreePath, ready.WorktreePath)
+	assert.Equal(wantSHA, testGitSHA(t, ready.WorktreePath, "HEAD"))
+	assert.Equal(existingBranch, gitOutput(t, ready.WorktreePath, "branch", "--show-current"))
+}
+
+func syntheticPRWorktreeBranchForTest(mrNumber int) string {
+	return fmt.Sprintf("middleman/pr-%d", mrNumber)
+}
+
+func setupHTTPWorktreeBaseForServerTest(
+	t *testing.T,
+	branch string,
+) (repo, remote, platformHost string) {
+	t.Helper()
+	root := t.TempDir()
+	remote = filepath.Join(root, "acme", "widget.git")
+	repo = filepath.Join(root, "repo")
+	require.NoError(t, os.MkdirAll(filepath.Dir(remote), 0o755))
+	runGit(t, root, "init", "--bare", "--initial-branch=main", remote)
+	server := httptest.NewServer(http.FileServer(http.Dir(root)))
+	t.Cleanup(server.Close)
+	remoteURL := server.URL + "/acme/widget.git"
+	parsed, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	platformHost = parsed.Host
+
+	runGit(t, root, "init", "--initial-branch=main", repo)
+	runGit(t, repo, "config", "user.email", "test@test.com")
+	runGit(t, repo, "config", "user.name", "Test")
+	runGit(t, repo, "remote", "add", "origin", remote)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(repo, "base.txt"), []byte("base\n"), 0o644,
+	))
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-m", "base commit")
+	runGit(t, repo, "push", "origin", "HEAD:refs/heads/main")
+	runGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
+	runGit(t, repo, "push", "origin", "HEAD:refs/heads/"+branch)
+	runGit(t, remote, "update-server-info")
+	runGit(t, repo, "remote", "set-url", "origin", remoteURL)
+	runGit(t, repo, "fetch", "--prune", "origin")
+	runGit(
+		t, repo, "symbolic-ref",
+		"refs/remotes/origin/HEAD", "refs/remotes/origin/main",
+	)
+	return repo, remote, platformHost
+}
+
 func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) {
 	t.Parallel()
 

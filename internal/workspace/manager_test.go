@@ -1771,6 +1771,56 @@ func TestAddWorktreeUsesFallbackWhenLocalBasePreferredBranchCheckedOut(t *testin
 	assert.Equal(originSHA, headSHA)
 }
 
+func TestAddWorktreeLocalBaseFetchesPullRefWhenHeadBranchDeleted(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "feature/deleted"
+	const prNumber = 43
+	localRepo, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, branch,
+	)
+	wantSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/remotes/origin/"+branch,
+	)))
+	runWorkspaceTestGit(
+		t, remote, "update-ref",
+		fmt.Sprintf("refs/pull/%d/head", prNumber), wantSHA,
+	)
+	runWorkspaceTestGit(t, remote, "update-ref", "-d", "refs/heads/"+branch)
+	runWorkspaceTestGit(t, remote, "update-server-info")
+	runWorkspaceTestGit(t, localRepo, "fetch", "--prune", "origin")
+	_, exists, err := gitRefSHA(
+		t.Context(), localRepo, "refs/remotes/origin/"+branch,
+	)
+	require.NoError(err)
+	require.False(exists)
+	_, exists, err = gitRefSHA(
+		t.Context(), localRepo,
+		fmt.Sprintf("refs/pull/%d/head", prNumber),
+	)
+	require.NoError(err)
+	require.False(exists)
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	ws := &Workspace{
+		Platform:     "github",
+		PlatformHost: platformHost,
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   prNumber,
+		GitHeadRef:   branch,
+		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
+	}
+
+	gotBranch, err := mgr.addWorktree(t.Context(), localRepo, true, ws)
+
+	require.NoError(err)
+	assert.Equal(syntheticPRWorktreeBranch(prNumber), gotBranch)
+	headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(wantSHA, headSHA)
+}
+
 func TestLocalBaseExistingPRBranchIsNotDeletedOnCleanup(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

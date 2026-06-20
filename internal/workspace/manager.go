@@ -1079,6 +1079,12 @@ func (m *Manager) addWorktreeLocked(
 		return branch, nil
 	}
 	fallbackBranch := syntheticPRWorktreeBranch(ws.ItemNumber)
+	if localBase {
+		// Providers may not retain a synthetic MR head ref. Try to populate it
+		// for deleted-head recovery, then let the existing fallback selection
+		// decide whether that ref or origin/<head> is usable.
+		_ = m.fetchWorkspaceMergeRequestHeadRef(ctx, cloneDir, ws)
+	}
 	startRef, startRefErr := workspaceFallbackStartRef(ctx, cloneDir, ws)
 	if startRefErr != nil {
 		return "", fmt.Errorf(
@@ -2735,6 +2741,41 @@ func (m *Manager) fetchWorkspaceBase(
 		}
 	}
 	return fetchWorkspaceBaseWithGit(ctx, run, dir, requireOriginHead)
+}
+
+func (m *Manager) fetchWorkspaceMergeRequestHeadRef(
+	ctx context.Context,
+	dir string,
+	ws *Workspace,
+) error {
+	run := runGitWithoutHooks
+	if m.clones != nil {
+		run = func(ctx context.Context, dir string, args ...string) error {
+			out, err := m.clones.RunGit(ctx, ws.PlatformHost, dir, args...)
+			if err != nil {
+				return fmt.Errorf(
+					"%w: %s", err, strings.TrimSpace(string(out)),
+				)
+			}
+			return nil
+		}
+	}
+	return fetchWorkspaceMergeRequestHeadRefWithGit(ctx, run, dir, ws)
+}
+
+func fetchWorkspaceMergeRequestHeadRefWithGit(
+	ctx context.Context,
+	run func(context.Context, string, ...string) error,
+	dir string,
+	ws *Workspace,
+) error {
+	ref := workspaceMergeRequestHeadRef(ws)
+	return run(
+		ctx, dir, gitArgsWithoutHooks(
+			"fetch", "--no-tags", "--recurse-submodules=no",
+			"origin", "+"+ref+":"+ref,
+		)...,
+	)
 }
 
 func fetchWorkspaceBaseWithGit(

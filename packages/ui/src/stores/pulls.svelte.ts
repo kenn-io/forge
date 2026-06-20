@@ -2,6 +2,7 @@ import type { KanbanStatus, PullRequest } from "../api/types.js";
 import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 import { bucketCIChecks, parseCIChecks } from "../utils/ci-buckets.js";
+import { normalizeKanbanStatus } from "./workflow.svelte.js";
 
 export type FetchPullResult =
   | { status: "found"; pull: PullRequest }
@@ -399,7 +400,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function matchesKanbanStatusFilters(pr: PullRequest): boolean {
-    return kanbanStatusFilters.length === 0 || kanbanStatusFilters.includes(pr.KanbanStatus as KanbanStatus);
+    return kanbanStatusFilters.length === 0 || kanbanStatusFilters.includes(normalizeKanbanStatus(pr.KanbanStatus));
   }
 
   return {

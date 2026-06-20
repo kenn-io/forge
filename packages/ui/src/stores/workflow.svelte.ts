@@ -18,7 +18,7 @@ export interface WorkflowGroupEntry {
   items: PullRequest[];
 }
 
-function normalizeKanbanStatus(status: string | undefined): WorkflowGroup {
+export function normalizeKanbanStatus(status: string | undefined): KanbanStatus {
   if (status === "new" || status === "reviewing" || status === "waiting" || status === "awaiting_merge") {
     return status;
   }

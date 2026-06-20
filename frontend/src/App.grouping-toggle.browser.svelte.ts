@@ -285,7 +285,12 @@ describe("grouping toggle", () => {
     await selectPullGrouping("All");
     await vi.waitFor(() => expect(count(".repo-header")).toBe(0), WAIT);
 
-    // Remount is the browser-tier equivalent of a reload: localStorage persists.
+    // Assert the choice is written to localStorage, not just held in module
+    // state: this is what survives a real reload, and proves a regression that
+    // kept grouping only in memory would fail here rather than silently pass.
+    await vi.waitFor(() => expect(localStorage.getItem("middleman:groupingMode")).toBe("flat"), WAIT);
+
+    // Remount then rereads that persisted value: localStorage survives teardown.
     mounted?.unmount();
     mounted = await mountBrowserApp("/pulls", { overrides: overrides() });
     await vi.waitFor(() => expect(document.querySelector(".pull-item")).not.toBeNull(), WAIT);

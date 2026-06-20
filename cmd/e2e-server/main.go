@@ -1131,6 +1131,7 @@ func buildAppState(
 			caps: platform.Capabilities{
 				ReadRepositories: true,
 				ReadIssues:       true,
+				AssigneeMutation: true,
 			},
 			repos: []platform.Repository{{
 				Ref: platform.RepoRef{

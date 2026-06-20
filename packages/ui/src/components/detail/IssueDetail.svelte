@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
-  import { providerItemPath, providerRepoPath, providerRouteParams } from "../../api/provider-routes.js";
+  import { canonicalProvider, providerItemPath, providerRepoPath, providerRouteParams } from "../../api/provider-routes.js";
   import type { Label, ProviderCapabilities } from "../../api/types.js";
   import {
     getStores, getClient, getActions,
@@ -351,6 +351,7 @@
   }
 
   function userAvatarURL(username: string): string {
+    if (canonicalProvider(provider) !== "github") return "";
     const login = encodeURIComponent(username.trim());
     const host = issues.getIssueDetail()?.repo?.platform_host
       ?? issues.getIssueDetail()?.platform_host

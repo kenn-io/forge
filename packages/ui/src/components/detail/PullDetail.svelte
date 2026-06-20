@@ -71,6 +71,7 @@
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
   import {
+    canonicalProvider,
     providerItemPath,
     providerRepoPath,
     providerRouteParams,
@@ -1048,6 +1049,7 @@
   }
 
   function userAvatarURL(username: string): string {
+    if (canonicalProvider(provider) !== "github") return "";
     const login = encodeURIComponent(username.trim());
     const host = detailStore.getDetail()?.repo?.platform_host
       ?? detailStore.getDetail()?.platform_host

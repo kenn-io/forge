@@ -66,6 +66,27 @@ func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) 
 	}, paths)
 }
 
+func TestClientTestHelperDisablesRetries(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	_, err := client.GetRepository(context.Background(), platform.RepoRef{
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.example.com",
+		RepoPath: "group/project",
+	})
+
+	require.Error(err)
+	assert.Equal(1, requests)
+}
+
 func TestClientListOpenMergeRequestsPopulatesForkHeadRepoCloneURL(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -717,7 +738,10 @@ func TestSelfHostedBaseURLConstruction(t *testing.T) {
 
 func newTestClient(t *testing.T, serverURL string, opts ...ClientOption) *Client {
 	t.Helper()
-	allOpts := append([]ClientOption{WithBaseURLForTesting(serverURL + "/api/v4")}, opts...)
+	allOpts := append([]ClientOption{
+		WithBaseURLForTesting(serverURL + "/api/v4"),
+		WithoutRetriesForTesting(),
+	}, opts...)
 	client, err := NewClient("gitlab.example.com", testTokenSource("token"), allOpts...)
 	require.NoError(t, err)
 	return client

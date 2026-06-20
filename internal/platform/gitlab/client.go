@@ -28,6 +28,7 @@ type clientOptions struct {
 	baseURL           string
 	foregroundTimeout time.Duration
 	rateTracker       *ratelimit.RateTracker
+	disableRetries    bool
 }
 
 type Client struct {
@@ -84,6 +85,12 @@ func WithRateTracker(rateTracker *ratelimit.RateTracker) ClientOption {
 	}
 }
 
+func WithoutRetriesForTesting() ClientOption {
+	return func(opts *clientOptions) {
+		opts.disableRetries = true
+	}
+}
+
 func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*Client, error) {
 	opts := clientOptions{
 		baseURL:           "https://" + strings.TrimRight(host, "/") + "/api/v4",
@@ -94,6 +101,9 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 	}
 
 	clientOptions := []gitlab.ClientOptionFunc{gitlab.WithBaseURL(opts.baseURL)}
+	if opts.disableRetries {
+		clientOptions = append(clientOptions, gitlab.WithoutRetries())
+	}
 	baseTransport := http.DefaultTransport
 	if opts.rateTracker != nil {
 		baseTransport = &rateTrackingTransport{

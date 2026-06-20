@@ -495,6 +495,7 @@ type mockClient struct {
 	listPullRequestsPageFn          func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
 	listIssuesPageFn                func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
 	listNotificationsFn             func(context.Context, NotificationListOptions) ([]NotificationThread, bool, error)
+	bypassNotificationReadReserve   bool
 	getNotificationThreadFn         func(context.Context, string) (NotificationThread, error)
 	markNotificationThreadReadFn    func(context.Context, string) error
 	comments                        []*gh.IssueComment
@@ -529,6 +530,10 @@ type mockClient struct {
 	dismissedReviewID               int64
 	dismissedReviewMessage          string
 	dismissReviewCalls              atomic.Int32
+}
+
+func (m *mockClient) bypassNotificationReadRateReserve() bool {
+	return m.bypassNotificationReadReserve
 }
 
 type rateLimitSnapshotMockClient struct {
@@ -1519,7 +1524,7 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 	check.Equal("thread-ok", items[0].PlatformNotificationID)
 }
 
-func TestSyncNotificationsIgnoresReadRateReserveWhenUsingNotificationBudget(t *testing.T) {
+func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesReserve(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	d := openTestDB(t)
@@ -1537,6 +1542,7 @@ func TestSyncNotificationsIgnoresReadRateReserveWhenUsingNotificationBudget(t *t
 	syncer := NewSyncer(
 		map[string]Client{
 			"github.com": &mockClient{
+				bypassNotificationReadReserve: true,
 				listNotificationsFn: func(context.Context, NotificationListOptions) ([]NotificationThread, bool, error) {
 					calls.Add(1)
 					return []NotificationThread{{
@@ -1571,6 +1577,43 @@ func TestSyncNotificationsIgnoresReadRateReserveWhenUsingNotificationBudget(t *t
 	require.NoError(err)
 	require.Len(items, 1)
 	assert.Equal("thread-7", items[0].PlatformNotificationID)
+}
+
+func TestSyncNotificationsStopsBeforeListingWhenSharedReadRateReserveExhausted(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	rt := NewRateTracker(d, "github.com", "rest")
+	rt.UpdateFromRate(Rate{
+		Limit:     5000,
+		Remaining: RateReserveBuffer,
+		Reset:     time.Now().UTC().Add(time.Hour),
+	})
+	var calls atomic.Int32
+	syncer := NewSyncer(
+		map[string]Client{
+			"github.com": &mockClient{
+				listNotificationsFn: func(context.Context, NotificationListOptions) ([]NotificationThread, bool, error) {
+					calls.Add(1)
+					return nil, false, nil
+				},
+			},
+		},
+		d,
+		nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		map[string]*RateTracker{"github.com": rt},
+		map[string]*SyncBudget{"github.com": NewSyncBudget(10)},
+	)
+
+	syncErr := syncer.SyncNotifications(t.Context())
+
+	require.Error(syncErr)
+	require.ErrorContains(syncErr, "rate reserve exhausted")
+	assert.Equal(int32(0), calls.Load())
 }
 
 func TestSyncNotificationsStopsBeforeListingWhenSyncBudgetExhausted(t *testing.T) {

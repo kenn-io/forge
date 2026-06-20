@@ -1682,8 +1682,8 @@ func TestRestartRequiredForNotificationIntervals(t *testing.T) {
 
 	batchSizeChanged := base()
 	batchSizeChanged.Notifications.BatchSize = 50
-	require.False(snap.restartRequiredFor(batchSizeChanged),
-		"notification batch_size is snapped by the loop and does not require restart")
+	require.True(snap.restartRequiredFor(batchSizeChanged),
+		"notification batch_size is snapped by the loop")
 }
 
 const validReloadConfigAuthGate = `

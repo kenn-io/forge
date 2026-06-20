@@ -31,6 +31,24 @@ type notificationThreadGetter interface {
 	GetNotificationThread(context.Context, string) (NotificationThread, error)
 }
 
+type notificationReadRateReserveBypasser interface {
+	bypassNotificationReadRateReserve() bool
+}
+
+func notificationBypassesReadRateReserve(client notificationClient) bool {
+	if bypasser, ok := client.(notificationReadRateReserveBypasser); ok {
+		return bypasser.bypassNotificationReadRateReserve()
+	}
+	if legacy, ok := client.(interface{ GitHubClient() Client }); ok {
+		if inner := legacy.GitHubClient(); inner != nil {
+			if bypasser, ok := inner.(notificationReadRateReserveBypasser); ok {
+				return bypasser.bypassNotificationReadRateReserve()
+			}
+		}
+	}
+	return false
+}
+
 // notificationThreadGetterFor resolves the optional thread-refetch
 // capability used by the reopen-on-remote-activity check. The GitHub
 // provider exposes it on its inner REST client; other providers may
@@ -216,7 +234,7 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 			if page > notificationSyncMaxPages {
 				return fmt.Errorf("notification sync page cap reached for %s/%s on %s after %d pages", repo.Owner, repo.Name, host, notificationSyncMaxPages)
 			}
-			if err := s.ensureNotificationPageBudget(host); err != nil {
+			if err := s.ensureNotificationPageBudget(host, client); err != nil {
 				return err
 			}
 			threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
@@ -297,7 +315,7 @@ func (s *Syncer) listParticipatingNotificationIDs(
 			if page > notificationSyncMaxPages {
 				return nil, fmt.Errorf("participating notification page cap reached for %s/%s on %s after %d pages", repo.Owner, repo.Name, host, notificationSyncMaxPages)
 			}
-			if err := s.ensureNotificationPageBudget(host); err != nil {
+			if err := s.ensureNotificationPageBudget(host, client); err != nil {
 				return nil, err
 			}
 			threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
@@ -325,9 +343,15 @@ func (s *Syncer) listParticipatingNotificationIDs(
 	return participating, nil
 }
 
-func (s *Syncer) ensureNotificationPageBudget(host string) error {
+func (s *Syncer) ensureNotificationPageBudget(host string, client notificationClient) error {
 	if budget := s.budgets[host]; budget != nil && !budget.CanSpend(1) {
 		return fmt.Errorf("notification sync paused for %s: sync budget exhausted", host)
+	}
+	if notificationBypassesReadRateReserve(client) {
+		return nil
+	}
+	if rateTracker := s.rateTrackers[host]; rateTracker != nil && rateTracker.IsPaused() {
+		return fmt.Errorf("notification sync paused for %s: rate reserve exhausted", host)
 	}
 	return nil
 }

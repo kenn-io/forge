@@ -42,6 +42,7 @@ type startupConfigSnapshot struct {
 	SyncInterval                    string
 	NotificationSyncInterval        string
 	NotificationPropagationInterval string
+	NotificationBatchSize           int
 	DefaultPlatformHost             string
 	Host                            string
 	Port                            int
@@ -79,6 +80,7 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		SyncInterval:                    cfg.SyncInterval,
 		NotificationSyncInterval:        cfg.Notifications.SyncInterval,
 		NotificationPropagationInterval: cfg.Notifications.PropagationInterval,
+		NotificationBatchSize:           cfg.Notifications.BatchSize,
 		DefaultPlatformHost:             cfg.DefaultPlatformHost,
 		Host:                            cfg.Host,
 		Port:                            cfg.Port,

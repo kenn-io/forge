@@ -428,6 +428,10 @@ func (c *liveClient) splitAuthActive() bool {
 	return c.source.Descriptor().HasActiveGitHubApp()
 }
 
+func (c *liveClient) bypassNotificationReadRateReserve() bool {
+	return c.splitAuthActive()
+}
+
 // InvalidateListETagsForRepo evicts cached ETag entries for the repo's
 // list endpoints. Pass any combination of "pulls", "issues", and
 // "comments" to scope the invalidation; omitting endpoints clears

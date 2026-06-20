@@ -17,8 +17,10 @@ async function selectPullState(page: Page, label: string): Promise<void> {
     return;
   }
 
-  await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: label }).first().click();
+  const dropdown = await openCompactFilterMenu(page);
+  await dropdown.locator(".filter-item", { hasText: label }).first().click();
+  await page.keyboard.press("Escape");
+  await expect(dropdown).toBeHidden();
 }
 
 async function selectPullGrouping(page: Page, label: string): Promise<void> {
@@ -29,8 +31,10 @@ async function selectPullGrouping(page: Page, label: string): Promise<void> {
   }
 
   const compactLabel = compactPullGroupingLabel(label);
-  await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: compactLabel }).click();
+  const dropdown = await openCompactFilterMenu(page);
+  await dropdown.locator(".filter-item", { hasText: compactLabel }).click();
+  await page.keyboard.press("Escape");
+  await expect(dropdown).toBeHidden();
 }
 
 function compactPullGroupingLabel(label: string): string {
@@ -38,6 +42,15 @@ function compactPullGroupingLabel(label: string): string {
   if (label === "Status") return "By status";
   if (label === "All") return "Flat list";
   return label;
+}
+
+async function openCompactFilterMenu(page: Page) {
+  const dropdown = page.locator(".filter-dropdown");
+  if (!(await dropdown.isVisible())) {
+    await page.locator(".compact-filter-menu .filter-btn").click();
+    await expect(dropdown).toBeVisible();
+  }
+  return dropdown;
 }
 
 const longRepoName = "widgets-with-an-extremely-long-repository-name";

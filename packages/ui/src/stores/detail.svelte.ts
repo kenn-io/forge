@@ -908,7 +908,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const ref = detailRequestRef(owner, name, number, identity);
     stopDetailPolling();
     detailPollHandle = setInterval(() => {
-      void refreshDetail(owner, name, number, syncGeneration, ref);
+      void enqueueBackgroundDetailSync(owner, name, number, syncGeneration, detail?.detail_fetched_at, ref);
     }, 60_000);
     if (syncDep) {
       unsubSyncComplete = syncDep.subscribeSyncComplete(() => {

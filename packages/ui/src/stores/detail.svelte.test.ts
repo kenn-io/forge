@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { PullDetail } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
@@ -40,6 +40,10 @@ function mockClient(overrides: Partial<MiddlemanClient> = {}): MiddlemanClient {
 }
 
 describe("createDetailStore", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("syncs detail and resolves after applying the refreshed head", async () => {
     const post = vi.fn().mockResolvedValue({
       data: pullDetail("fresh-head"),
@@ -61,5 +65,33 @@ describe("createDetailStore", () => {
 
     expect(store.getDetail()?.platform_head_sha).toBe("fresh-head");
     expect(pulls.loadPulls).toHaveBeenCalledTimes(1);
+  });
+
+  it("enqueues background sync when active detail polling fires", async () => {
+    vi.useFakeTimers();
+    const post = vi.fn().mockResolvedValue({ error: undefined });
+    const get = vi.fn().mockResolvedValue({ data: pullDetail("cached-head") });
+    const store = createDetailStore({
+      client: mockClient({ GET: get, POST: post }),
+    });
+
+    store.startDetailPolling("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(post).toHaveBeenCalledWith("/pulls/{provider}/{owner}/{name}/{number}/sync/async", {
+      params: {
+        path: {
+          provider: "github",
+          owner: "acme",
+          name: "widget",
+          number: 7,
+        },
+      },
+    });
   });
 });

@@ -145,6 +145,17 @@ function flatSettings(): MockRouteOverride {
         renderer: "xterm",
       },
       agents: [],
+      // The settings-gear case routes to /settings, which renders FleetSettings;
+      // it dereferences fleet.sessions, so the override must carry a fleet block.
+      fleet: {
+        enabled: false,
+        key: "",
+        peer_timeout: "2s",
+        sessions: { include_unmanaged_details: false },
+        peers: [],
+        ssh_peers: [],
+        restart_required: false,
+      },
     });
   };
 }

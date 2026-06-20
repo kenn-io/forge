@@ -1558,6 +1558,49 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
 }
 
+func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     7000,
+		Number:         7,
+		URL:            "https://github.com/acme/widget/pull/7",
+		Title:          "Default kanban PR",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "feature/default-kanban",
+		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	kanbanState, err := database.GetKanbanState(ctx, mrID)
+	require.NoError(err)
+	require.Nil(kanbanState)
+
+	rawList := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	require.Equal(http.StatusOK, rawList.Code)
+	var list []mergeRequestResponse
+	require.NoError(json.Unmarshal(rawList.Body.Bytes(), &list))
+	require.Len(list, 1)
+	assert.Equal(db.KanbanStatusNew, list[0].KanbanStatus)
+
+	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
+	require.Equal(http.StatusOK, rawDetail.Code)
+	var detail mergeRequestDetailResponse
+	require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
+	require.NotNil(detail.MergeRequest)
+	assert.Equal(db.KanbanStatusNew, detail.MergeRequest.KanbanStatus)
+}
+
 func TestAPIListItemsIncludeWorkspaceRefs(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

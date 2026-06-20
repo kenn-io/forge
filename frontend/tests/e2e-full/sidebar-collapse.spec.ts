@@ -324,14 +324,15 @@ test.describe("collapsible sidebar", () => {
     const filterBar = await setPersistedSidebarWidth(page, "/pulls", 395, waitForPRList);
     await expectCompactFilterBar(filterBar);
 
-    let dropdown = await openCompactFilters(filterBar);
+    const dropdown = await openCompactFilters(filterBar);
     await expect(dropdown.locator(".filter-section-title", { hasText: "PR" })).toBeVisible();
     await expect(dropdown.locator(".filter-section-title", { hasText: "Kanban" })).toBeVisible();
     await dropdown.locator(".filter-item", { hasText: "Closed" }).click();
     await expect(filterBar.page().locator(".state-note")).toBeVisible();
+    await expect(dropdown).toBeVisible();
 
-    dropdown = await openCompactFilters(filterBar);
     await dropdown.locator(".filter-item", { hasText: "Flat list" }).click();
+    await expect(dropdown).toBeVisible();
     await expect(page.locator(".repo-header")).toHaveCount(0, {
       timeout: 5_000,
     });
@@ -405,12 +406,13 @@ test.describe("collapsible sidebar", () => {
     const filterBar = await setPersistedSidebarWidth(page, "/issues", 372, waitForIssueList);
     await expectCompactFilterBar(filterBar);
 
-    let dropdown = await openCompactFilters(filterBar);
+    const dropdown = await openCompactFilters(filterBar);
     await dropdown.locator(".filter-item", { hasText: "Closed" }).click();
     await expect(filterBar.page().locator(".state-note")).toBeVisible();
+    await expect(dropdown).toBeVisible();
 
-    dropdown = await openCompactFilters(filterBar);
     await dropdown.locator(".filter-item", { hasText: "All" }).last().click();
+    await expect(dropdown).toBeVisible();
     await expect(page.locator(".repo-header")).toHaveCount(0, {
       timeout: 5_000,
     });

@@ -47,6 +47,7 @@ type owner struct {
 	title                   string
 	titleParser             terminalTitleParser
 	subscribers             map[chan []byte]struct{}
+	outputClosed            bool
 	activeAttachments       int
 	activeAttachmentsAtExit bool
 	exitCode                int
@@ -90,6 +91,7 @@ func RunOwner(ctx context.Context, opts Options) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start pty command: %w", err)
 	}
+	closeOwnerPTYSlave(p)
 
 	if err := createPrivateDir(paths.Dir); err != nil {
 		killOwnerProcess(cmd.Process)
@@ -191,6 +193,12 @@ func RunOwner(ctx context.Context, opts Options) error {
 		o.stop()
 		<-o.done
 		return err
+	}
+}
+
+func closeOwnerPTYSlave(p gopty.Pty) {
+	if unixPTY, ok := p.(gopty.UnixPty); ok {
+		_ = unixPTY.Slave().Close()
 	}
 }
 
@@ -452,6 +460,7 @@ func (o *owner) drainOutput() {
 			o.broadcast(buf[:n])
 		}
 		if err != nil {
+			o.closeSubscribers()
 			return
 		}
 	}
@@ -467,12 +476,19 @@ func (o *owner) wait() {
 	o.exitCode = code
 	o.exited = true
 	o.activeAttachmentsAtExit = o.activeAttachments > 0
+	o.mu.Unlock()
+	o.closeSubscribers()
+	close(o.done)
+}
+
+func (o *owner) closeSubscribers() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.outputClosed = true
 	for ch := range o.subscribers {
 		delete(o.subscribers, ch)
 		close(ch)
 	}
-	o.mu.Unlock()
-	close(o.done)
 }
 
 func (o *owner) stop() {
@@ -518,7 +534,7 @@ func (o *owner) subscribe() (<-chan []byte, func()) {
 	if len(o.outputBuffer) > 0 {
 		ch <- append([]byte(nil), o.outputBuffer...)
 	}
-	if o.exited {
+	if o.exited || o.outputClosed {
 		close(ch)
 		o.mu.Unlock()
 		return ch, func() {}

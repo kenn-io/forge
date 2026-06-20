@@ -24147,30 +24147,38 @@ func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
 // session (TerminalPane reconnect-loops on a still-listed-but-
 // output-dead session, which looks like a hang).
 //
-// Uses the "pty-close-on-input-then-sleep" helper to deterministically
-// open the race window where drainOutput's PTY EOF precedes watchSession's
-// cmd.Wait return by hundreds of milliseconds. Without the bridge fix
-// (always send exit frame on outputDone), this test fails because the
-// 100ms timeout fires before attachment.Done — exactly the systemd-
-// run-wrapped shell case the user hit.
+// Uses the "pty-close-on-input-then-sleep" helper on the pty-owner backend to
+// deterministically open the race window where drainOutput's PTY EOF precedes
+// watchSession's cmd.Wait return by hundreds of milliseconds. Without the
+// bridge fix (always send exit frame on outputDone), this test fails because
+// the 100ms timeout fires before attachment.Done — exactly the systemd-
+// run-wrapped shell case the user hit. Real tmux does not expose that signal:
+// while the pane process is still sleeping, the attach client remains open.
 func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test fixture uses /bin/sh")
+	}
 	runParallelPTYE2E(t)
 
 	require := require.New(t)
-	tmuxCommand := isolatedRealTmuxCommandOrSkip(t)
+	dir := t.TempDir()
+	ptyOwnerDir := filepath.Join(dir, "pty-owner")
 	cfg := &config.Config{
-		Tmux: config.Tmux{Command: tmuxCommand},
+		Tmux: config.Tmux{Command: []string{filepath.Join(dir, "missing-tmux")}},
 		Shell: config.Shell{
 			Command: serverRuntimeHelperCommand("pty-close-on-input-then-sleep"),
 		},
 	}
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	fixture := setupWorkspaceServerFixtureWithOptions(
+		t, cfg, ptyOwnerServerOptions(ptyOwnerDir),
+	)
 	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
+	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	shell := launchPlainShellRuntimeSession(t, ctx, client, ws.Id)
+	shell := launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.Id)
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, shell.Key)
 
-	ts := httptest.NewServer(srv)
+	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.Id +
@@ -24222,13 +24230,8 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversExitFrameE2E(t *testing.T) {
 		// before watchSession populated ExitCode). Both are "the
 		// session ended" signals the frontend treats identically;
 		// pinning a specific value would be timing-dependent. Reject
-		// 0 only on the direct-PTY fallback path — a tmux-backed shell
-		// can report the attach client's clean detach rather than the
-		// pane command's non-zero exit status.
-		if !tmuxCommandAvailable(cfg.TmuxCommand()) {
-			require.NotEqual(0, msg.Code,
-				"non-success exit must report non-zero (or -1)")
-		}
+		require.NotEqual(0, msg.Code,
+			"non-success exit must report non-zero (or -1)")
 		return
 	}
 }
@@ -25004,15 +25007,6 @@ func isolatedRealTmuxCommandIfAvailable(t *testing.T) []string {
 	tmuxPath, err := exec.LookPath("tmux")
 	if err != nil {
 		return nil
-	}
-	return isolatedRealTmuxCommand(t, tmuxPath)
-}
-
-func isolatedRealTmuxCommandOrSkip(t *testing.T) []string {
-	t.Helper()
-	tmuxPath, err := exec.LookPath("tmux")
-	if err != nil {
-		t.Skip("tmux not available")
 	}
 	return isolatedRealTmuxCommand(t, tmuxPath)
 }

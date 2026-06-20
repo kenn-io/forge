@@ -1,5 +1,13 @@
 import { expect, test } from "@playwright/test";
 
+// These app-startup cases stay full-stack: they need control surfaces the
+// vitest-browser harness deliberately does not provide. The browser mock
+// short-circuits /healthz and /livez to always return 200 (so ordinary browser
+// tests never spin on readiness), so the 503 readiness-gating in the first case
+// cannot be reproduced there; the second case fast-forwards a fake clock past
+// the 8s settings-startup timeout, which the browser harness has no equivalent
+// for. Playwright's page.route and page.clock are the right tools for both.
+
 test.describe("app startup", () => {
   // Bumped above the 8s SETTINGS_STARTUP_TIMEOUT_MS so the timeout
   // path can complete and the app can finish booting.

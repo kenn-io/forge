@@ -23,8 +23,17 @@ async function selectPullGrouping(page: Page, label: string | RegExp): Promise<v
     return;
   }
 
+  const compactLabel = compactPullGroupingLabel(label);
   await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: label }).last().click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: compactLabel }).click();
+}
+
+function compactPullGroupingLabel(label: string | RegExp): string | RegExp {
+  if (typeof label !== "string") return label;
+  if (label === "Repo") return "By repo";
+  if (label === "Status") return "By status";
+  if (label === "All") return "Flat list";
+  return label;
 }
 
 test.describe("grouping toggle", () => {

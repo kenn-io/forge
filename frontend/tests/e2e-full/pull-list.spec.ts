@@ -28,8 +28,16 @@ async function selectPullGrouping(page: Page, label: string): Promise<void> {
     return;
   }
 
+  const compactLabel = compactPullGroupingLabel(label);
   await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: label }).last().click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: compactLabel }).click();
+}
+
+function compactPullGroupingLabel(label: string): string {
+  if (label === "Repo") return "By repo";
+  if (label === "Status") return "By status";
+  if (label === "All") return "Flat list";
+  return label;
 }
 
 const longRepoName = "widgets-with-an-extremely-long-repository-name";

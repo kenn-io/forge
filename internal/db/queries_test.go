@@ -2597,14 +2597,13 @@ func TestListPullRequestsFilterByKanban(t *testing.T) {
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	base := baseTime()
 
-	id1 := insertTestMR(t, d, repoID, 1, "pr 1", base)
+	insertTestMR(t, d, repoID, 1, "pr 1", base)
 	id2 := insertTestMR(t, d, repoID, 2, "pr 2", base.Add(time.Hour))
 	id3 := insertTestMR(t, d, repoID, 3, "pr 3", base.Add(2*time.Hour))
 
 	// Set PR 2 to "reviewing".
 	require.NoError(d.SetKanbanState(ctx, id2, "reviewing"))
-	// Ensure kanban for PR 1 and 3 (status = "new").
-	require.NoError(d.EnsureKanbanState(ctx, id1))
+	// Leave PR 1 without a kanban row; the board treats missing rows as "new".
 	require.NoError(d.EnsureKanbanState(ctx, id3))
 
 	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{KanbanState: "reviewing"})
@@ -2612,6 +2611,11 @@ func TestListPullRequestsFilterByKanban(t *testing.T) {
 	require.Len(prs, 1)
 	assert.Equal(2, prs[0].Number)
 	assert.Equal(KanbanStatusReviewing, prs[0].KanbanStatus)
+
+	prs, err = d.ListMergeRequests(ctx, ListMergeRequestsOpts{KanbanState: "new"})
+	require.NoError(err)
+	require.Len(prs, 2)
+	assert.Equal([]int{3, 1}, []int{prs[0].Number, prs[1].Number})
 }
 
 func TestListMergeRequests_AttachesLabels(t *testing.T) {

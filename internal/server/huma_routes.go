@@ -1621,15 +1621,18 @@ func (s *Server) buildPullDetailResponse(
 }
 
 func mergeRequestResponseModel(mr db.MergeRequest) db.MergeRequest {
-	mr.KanbanStatus = mergeRequestResponseKanbanStatus(mr.KanbanStatus)
+	mr.KanbanStatus = mergeRequestResponseKanbanStatus(mr)
 	return mr
 }
 
-func mergeRequestResponseKanbanStatus(status db.KanbanStatus) db.KanbanStatus {
-	switch status {
+func mergeRequestResponseKanbanStatus(mr db.MergeRequest) db.KanbanStatus {
+	switch mr.KanbanStatus {
 	case db.KanbanStatusNew, db.KanbanStatusReviewing, db.KanbanStatusWaiting, db.KanbanStatusAwaitingMerge:
-		return status
+		return mr.KanbanStatus
+	case "":
+		return db.KanbanStatusNew
 	default:
+		slog.Warn("normalizing unexpected kanban status in merge request response", "merge_request_id", mr.ID, "status", mr.KanbanStatus)
 		return db.KanbanStatusNew
 	}
 }

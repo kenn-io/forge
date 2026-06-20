@@ -1593,6 +1593,13 @@ func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
 	require.Len(list, 1)
 	assert.Equal(db.KanbanStatusNew, list[0].KanbanStatus)
 
+	rawNewList := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?kanban=new", nil)
+	require.Equal(http.StatusOK, rawNewList.Code)
+	var newList []mergeRequestResponse
+	require.NoError(json.Unmarshal(rawNewList.Body.Bytes(), &newList))
+	require.Len(newList, 1)
+	assert.Equal(db.KanbanStatusNew, newList[0].KanbanStatus)
+
 	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
 	require.Equal(http.StatusOK, rawDetail.Code)
 	var detail mergeRequestDetailResponse

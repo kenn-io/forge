@@ -2499,7 +2499,11 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		args = append(args, owner, name)
 	}
 	if opts.KanbanState != "" {
-		conds = append(conds, "COALESCE(k.status, '') = ?")
+		if opts.KanbanState == string(KanbanStatusNew) {
+			conds = append(conds, "COALESCE(k.status, 'new') = ?")
+		} else {
+			conds = append(conds, "k.status = ?")
+		}
 		args = append(args, opts.KanbanState)
 	}
 	if opts.Starred {

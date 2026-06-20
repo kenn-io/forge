@@ -2632,10 +2632,10 @@ func shellFromPasswdLine(line string) string {
 }
 
 // runGitWithoutHooks executes a git mutation in dir and returns combined
-// output on error. It is the only git mutation runner in this package:
-// workspace git dirs may be user-owned local worktree bases whose repo-local
-// hooks middleman must never run, so there is deliberately no hook-executing
-// variant.
+// output on error. Internal workspace setup and cleanup paths must not run
+// repo-local hooks from user-owned worktree bases; user-triggered foreground
+// actions such as branch push/pull may call gitCombinedOutput directly when
+// hooks are expected to run.
 func runGitWithoutHooks(ctx context.Context, dir string, args ...string) error {
 	_, err := gitCombinedOutput(ctx, dir, gitArgsWithoutHooks(args...)...)
 	return err

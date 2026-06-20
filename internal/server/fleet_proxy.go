@@ -124,6 +124,36 @@ func (s *Server) registerFleetOperationRoutes(api huma.API) {
 			},
 		},
 		{
+			operationID: "push-fleet-workspace-branch",
+			method:      http.MethodPost,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/push",
+			summary:     "Push workspace branch on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/push"
+			},
+		},
+		{
+			operationID: "pull-fleet-workspace-branch",
+			method:      http.MethodPost,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/pull",
+			summary:     "Pull workspace branch on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/pull"
+			},
+		},
+		{
+			operationID: "reveal-fleet-workspace",
+			method:      http.MethodPost,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/reveal",
+			summary:     "Reveal workspace folder on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/reveal"
+			},
+		},
+		{
 			operationID: "get-fleet-workspace-runtime",
 			method:      http.MethodGet,
 			path:        "/fleet/hosts/{host_key}/workspaces/{id}/runtime",

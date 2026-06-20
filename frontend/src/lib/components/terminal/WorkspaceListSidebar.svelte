@@ -115,6 +115,10 @@
     x: number;
     y: number;
   } | null>(null);
+  let workspaceAction = $state<{
+    workspaceKey: string;
+    action: "push" | "pull" | "reveal" | "delete";
+  } | null>(null);
   let contextMenuEl = $state<HTMLDivElement | null>(null);
   let contextMenuStyle = $state("");
 
@@ -657,6 +661,136 @@
     await fetchWorkspaces();
   }
 
+  function workspaceActionMatches(
+    ws: Workspace,
+    action?: "push" | "pull" | "reveal" | "delete",
+  ): boolean {
+    return (
+      workspaceAction?.workspaceKey === workspaceRowKey(ws) &&
+      (action === undefined || workspaceAction.action === action)
+    );
+  }
+
+  function workspaceBusyLabel(ws: Workspace): string {
+    if (!workspaceActionMatches(ws)) return "";
+    if (workspaceAction?.action === "push") return "Pushing branch";
+    if (workspaceAction?.action === "pull") return "Pulling branch";
+    if (workspaceAction?.action === "reveal") return "Opening folder";
+    if (workspaceAction?.action === "delete") return "Deleting workspace";
+    return "";
+  }
+
+  function startWorkspaceAction(
+    ws: Workspace,
+    action: "push" | "pull" | "reveal" | "delete",
+  ): boolean {
+    if (workspaceAction !== null) return false;
+    workspaceAction = { workspaceKey: workspaceRowKey(ws), action };
+    return true;
+  }
+
+  function finishWorkspaceAction(ws: Workspace): void {
+    if (workspaceActionMatches(ws)) {
+      workspaceAction = null;
+    }
+  }
+
+  async function syncWorkspaceBranch(
+    ws: Workspace,
+    action: "push" | "pull",
+  ): Promise<void> {
+    if (!startWorkspaceAction(ws, action)) return;
+    const label = action === "push" ? "Push branch" : "Pull remote changes";
+    try {
+      const { error, response } = ws.fleet_host_key
+        ? await client.POST(
+            action === "push"
+              ? "/fleet/hosts/{host_key}/workspaces/{id}/push"
+              : "/fleet/hosts/{host_key}/workspaces/{id}/pull",
+            {
+              params: {
+                path: { host_key: ws.fleet_host_key, id: ws.id },
+              },
+            },
+          )
+        : await client.POST(
+            action === "push" ? "/workspaces/{id}/push" : "/workspaces/{id}/pull",
+            {
+              params: { path: { id: ws.id } },
+            },
+          );
+      if (!response.ok) {
+        showFlash(apiErrorMessage(error, `${label} failed (${response.status})`));
+        return;
+      }
+      await fetchWorkspaces();
+      closeContextMenu();
+    } catch (err) {
+      showFlash(err instanceof Error ? err.message : `${label} failed.`);
+    } finally {
+      finishWorkspaceAction(ws);
+    }
+  }
+
+  async function revealWorkspacePath(ws: Workspace): Promise<void> {
+    if (!startWorkspaceAction(ws, "reveal")) return;
+    const label = revealLabel(ws);
+    try {
+      const { error, response } = ws.fleet_host_key
+        ? await client.POST("/fleet/hosts/{host_key}/workspaces/{id}/reveal", {
+            params: {
+              path: { host_key: ws.fleet_host_key, id: ws.id },
+            },
+          })
+        : await client.POST("/workspaces/{id}/reveal", {
+            params: { path: { id: ws.id } },
+          });
+      if (!response.ok) {
+        showFlash(apiErrorMessage(error, `${label} failed (${response.status})`));
+        return;
+      }
+      closeContextMenu();
+    } catch (err) {
+      showFlash(err instanceof Error ? err.message : `${label} failed.`);
+    } finally {
+      finishWorkspaceAction(ws);
+    }
+  }
+
+  async function deleteWorkspaceFromList(ws: Workspace): Promise<void> {
+    const confirmed = window.confirm(
+      `Delete workspace "${displayName(ws)}"?\n\nThis removes its managed worktree and runtime sessions.`,
+    );
+    if (!confirmed || !startWorkspaceAction(ws, "delete")) return;
+    try {
+      const { error, response } = ws.fleet_host_key
+        ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
+            params: {
+              path: { host_key: ws.fleet_host_key, id: ws.id },
+            },
+          })
+        : await client.DELETE("/workspaces/{id}", {
+            params: { path: { id: ws.id } },
+          });
+      if (!response.ok && response.status !== 204) {
+        const fallback = response.status === 409
+          ? "Workspace has uncommitted changes. Open it to force delete."
+          : `Delete failed (${response.status})`;
+        showFlash(apiErrorMessage(error, fallback));
+        return;
+      }
+      await fetchWorkspaces();
+      closeContextMenu();
+      if (isSelectedWorkspace(ws)) {
+        navigate("/workspaces");
+      }
+    } catch (err) {
+      showFlash(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      finishWorkspaceAction(ws);
+    }
+  }
+
   function openProviderItem(ws: Workspace): void {
     const url = providerItemURL(ws);
     closeContextMenu();
@@ -675,11 +809,6 @@
       return;
     }
     void copyMenuText(url, "Copied item URL.");
-  }
-
-  function unavailableSyncAction(label: string): void {
-    closeContextMenu();
-    showFlash(`${label} is not available from the workspace list yet.`);
   }
 
   function workspaceRoute(ws: Workspace): string {
@@ -908,6 +1037,12 @@
                     title={workingTitle(ws)}
                     aria-label={workingTitle(ws)}
                   ></span>
+                {:else if workspaceActionMatches(ws)}
+                  <span
+                    class="working-pulse"
+                    title={workspaceBusyLabel(ws)}
+                    aria-label={workspaceBusyLabel(ws)}
+                  ></span>
                 {/if}
               </div>
               <div class="ws-row-meta">
@@ -1017,6 +1152,7 @@
   {@const menuWorkspace = contextMenu.ws}
   {@const localWorkspace = !isRemoteWorkspace(menuWorkspace)}
   {@const itemURL = providerItemURL(menuWorkspace)}
+  {@const actionBusy = workspaceAction !== null}
   <div
     class="workspace-context-menu filter-dropdown"
     bind:this={contextMenuEl}
@@ -1041,10 +1177,13 @@
         class="filter-item active"
         role="menuitem"
         type="button"
-        onclick={() => unavailableSyncAction("Push branch")}
+        disabled={actionBusy}
+        onclick={() => {
+          void syncWorkspaceBranch(menuWorkspace, "push");
+        }}
       >
         <span class="filter-dot filter-dot--success"></span>
-        <span class="filter-label">Push branch</span>
+        <span class="filter-label">{workspaceActionMatches(menuWorkspace, "push") ? "Pushing..." : "Push branch"}</span>
         <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
       </button>
     {:else if canPull(menuWorkspace)}
@@ -1052,10 +1191,13 @@
         class="filter-item active"
         role="menuitem"
         type="button"
-        onclick={() => unavailableSyncAction("Pull remote changes")}
+        disabled={actionBusy}
+        onclick={() => {
+          void syncWorkspaceBranch(menuWorkspace, "pull");
+        }}
       >
         <span class="filter-dot filter-dot--warning"></span>
-        <span class="filter-label">Pull remote changes</span>
+        <span class="filter-label">{workspaceActionMatches(menuWorkspace, "pull") ? "Pulling..." : "Pull remote changes"}</span>
         <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
       </button>
     {/if}
@@ -1063,6 +1205,7 @@
       class="filter-item active"
       role="menuitem"
       type="button"
+      disabled={actionBusy}
       onclick={() => {
         void refreshWorkspaceStatus(menuWorkspace);
       }}
@@ -1076,6 +1219,7 @@
       class="filter-item active"
       role="menuitem"
       type="button"
+      disabled={actionBusy}
       onclick={() => {
         void copyMenuText(
           shortBranch(menuWorkspace.git_head_ref),
@@ -1091,6 +1235,7 @@
         class="filter-item active"
         role="menuitem"
         type="button"
+        disabled={actionBusy}
         onclick={() => {
           void copyMenuText(
             menuWorkspace.worktree_path,
@@ -1105,10 +1250,13 @@
         class="filter-item active"
         role="menuitem"
         type="button"
-        onclick={() => unavailableSyncAction(revealLabel(menuWorkspace))}
+        disabled={actionBusy}
+        onclick={() => {
+          void revealWorkspacePath(menuWorkspace);
+        }}
       >
         <span class="filter-dot"></span>
-        <span class="filter-label">{revealLabel(menuWorkspace)}</span>
+        <span class="filter-label">{workspaceActionMatches(menuWorkspace, "reveal") ? "Opening..." : revealLabel(menuWorkspace)}</span>
       </button>
     {/if}
 
@@ -1118,6 +1266,7 @@
         class="filter-item active"
         role="menuitem"
         type="button"
+        disabled={actionBusy}
         onclick={() => openProviderItem(menuWorkspace)}
       >
         <span class="filter-dot"></span>
@@ -1127,6 +1276,7 @@
         class="filter-item active"
         role="menuitem"
         type="button"
+        disabled={actionBusy}
         onclick={() => copyProviderItemURL(menuWorkspace)}
       >
         <span class="filter-dot"></span>
@@ -1139,10 +1289,13 @@
       class="filter-item active workspace-context-danger"
       role="menuitem"
       type="button"
-      onclick={() => unavailableSyncAction("Delete workspace")}
+      disabled={actionBusy}
+      onclick={() => {
+        void deleteWorkspaceFromList(menuWorkspace);
+      }}
     >
       <span class="filter-dot filter-dot--danger"></span>
-      <span class="filter-label">Delete workspace...</span>
+      <span class="filter-label">{workspaceActionMatches(menuWorkspace, "delete") ? "Deleting..." : "Delete workspace..."}</span>
     </button>
   </div>
 {/if}

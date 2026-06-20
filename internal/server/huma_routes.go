@@ -787,6 +787,28 @@ func (s *Server) registerAPI(api huma.API) {
 		Tags:        []string{"Workspaces"},
 	}, s.refreshWorkspace)
 	huma.Register(api, huma.Operation{
+		OperationID: "push-workspace-branch",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/push",
+		Summary:     "Push workspace branch",
+		Tags:        []string{"Workspaces"},
+	}, s.pushWorkspaceBranch)
+	huma.Register(api, huma.Operation{
+		OperationID: "pull-workspace-branch",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/pull",
+		Summary:     "Pull workspace branch",
+		Tags:        []string{"Workspaces"},
+	}, s.pullWorkspaceBranch)
+	huma.Register(api, huma.Operation{
+		OperationID:   "reveal-workspace",
+		Method:        http.MethodPost,
+		Path:          "/workspaces/{id}/reveal",
+		DefaultStatus: http.StatusNoContent,
+		Summary:       "Reveal workspace folder",
+		Tags:          []string{"Workspaces"},
+	}, s.revealWorkspace)
+	huma.Register(api, huma.Operation{
 		OperationID: "get-workspace-runtime",
 		Method:      http.MethodGet,
 		Path:        "/workspaces/{id}/runtime",

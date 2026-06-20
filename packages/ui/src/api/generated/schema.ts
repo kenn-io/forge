@@ -776,6 +776,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/fleet/hosts/{host_key}/workspaces/{id}/pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pull workspace branch on fleet host */
+        post: operations["pull-fleet-workspace-branch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Push workspace branch on fleet host */
+        post: operations["push-fleet-workspace-branch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/fleet/hosts/{host_key}/workspaces/{id}/refresh": {
         parameters: {
             query?: never;
@@ -804,6 +838,23 @@ export interface paths {
         put?: never;
         /** Retry workspace setup on fleet host */
         post: operations["retry-fleet-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/workspaces/{id}/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reveal workspace folder on fleet host */
+        post: operations["reveal-fleet-workspace"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3536,6 +3587,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{id}/pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pull workspace branch */
+        post: operations["pull-workspace-branch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Push workspace branch */
+        post: operations["push-workspace-branch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{id}/refresh": {
         parameters: {
             query?: never;
@@ -3564,6 +3649,23 @@ export interface paths {
         put?: never;
         /** Retry workspace */
         post: operations["retry-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reveal workspace folder */
+        post: operations["reveal-workspace"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8131,6 +8233,58 @@ export interface operations {
             };
         };
     };
+    "pull-fleet-workspace-branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "push-fleet-workspace-branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "refresh-fleet-workspace": {
         parameters: {
             query?: never;
@@ -8158,6 +8312,32 @@ export interface operations {
         };
     };
     "retry-fleet-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "reveal-fleet-workspace": {
         parameters: {
             query?: never;
             header?: never;
@@ -14517,6 +14697,68 @@ export interface operations {
             };
         };
     };
+    "pull-workspace-branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "push-workspace-branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "refresh-workspace": {
         parameters: {
             query?: never;
@@ -14567,6 +14809,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkspaceResponse"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "reveal-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

@@ -6,10 +6,12 @@ import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
+const mockDelete = vi.fn();
 const mockNavigate = vi.fn();
 
 vi.mock("../../api/runtime.js", () => ({
   client: {
+    DELETE: (...args: unknown[]) => mockDelete(...args),
     GET: (...args: unknown[]) => mockGet(...args),
     POST: (...args: unknown[]) => mockPost(...args),
   },
@@ -150,6 +152,7 @@ describe("WorkspaceListSidebar", () => {
   beforeEach(() => {
     mockGet.mockReset();
     mockPost.mockReset();
+    mockDelete.mockReset();
     mockNavigate.mockReset();
     localStorage.clear();
     vi.stubGlobal("EventSource", MockEventSource);
@@ -1095,6 +1098,252 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByRole("menuitem", { name: "Copy worktree path" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Reveal in Finder" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Refresh git status" })).toBeTruthy();
+  });
+
+  it("pushes an ahead workspace branch and shows a busy state while pending", async () => {
+    const push = deferred<{
+      error?: unknown;
+      response: { ok: boolean; status: number };
+    }>();
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-ahead",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 9,
+            title: "Ahead workspace",
+            commitsAhead: 2,
+          }),
+        ],
+      },
+    });
+    mockPost.mockImplementation((path: string) => {
+      if (path === "/workspaces/{id}/push") return push.promise;
+      return Promise.resolve({ data: {}, response: { ok: true, status: 200 } });
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-ahead" },
+    });
+    await screen.findByText("Ahead workspace");
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Push branch/ }));
+
+    expect(mockPost).toHaveBeenCalledWith("/workspaces/{id}/push", {
+      params: { path: { id: "ws-ahead" } },
+    });
+    expect((screen.getByRole("menuitem", { name: /Pushing\.\.\./ }) as HTMLButtonElement).disabled).toBe(true);
+
+    push.resolve({ response: { ok: true, status: 200 } });
+    await waitFor(() => {
+      expect(screen.queryByRole("menuitem", { name: /Pushing\.\.\./ })).toBeNull();
+    });
+  });
+
+  it("pulls a behind workspace branch and shows a busy state while pending", async () => {
+    const pull = deferred<{
+      error?: unknown;
+      response: { ok: boolean; status: number };
+    }>();
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-behind",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 9,
+            title: "Behind workspace",
+            commitsBehind: 1,
+          }),
+        ],
+      },
+    });
+    mockPost.mockImplementation((path: string) => {
+      if (path === "/workspaces/{id}/pull") return pull.promise;
+      return Promise.resolve({ data: {}, response: { ok: true, status: 200 } });
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-behind" },
+    });
+    await screen.findByText("Behind workspace");
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Pull remote changes/ }));
+
+    expect(mockPost).toHaveBeenCalledWith("/workspaces/{id}/pull", {
+      params: { path: { id: "ws-behind" } },
+    });
+    expect((screen.getByRole("menuitem", { name: /Pulling\.\.\./ }) as HTMLButtonElement).disabled).toBe(true);
+
+    pull.resolve({ response: { ok: true, status: 200 } });
+    await waitFor(() => {
+      expect(screen.queryByRole("menuitem", { name: /Pulling\.\.\./ })).toBeNull();
+    });
+  });
+
+  it("opens a local workspace path from the context menu", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          workspaces: [
+            workspaceFixture({
+              id: "ws-reveal",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "kenn-io",
+              name: "middleman",
+              number: 12,
+              title: "Reveal me",
+            }),
+          ],
+        },
+      });
+    });
+    mockPost.mockResolvedValue({
+      error: undefined,
+      response: { ok: true, status: 204 },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-reveal" },
+    });
+    await screen.findByText("Reveal me");
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Reveal in Finder" }));
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith("/workspaces/{id}/reveal", {
+        params: { path: { id: "ws-reveal" } },
+      });
+    });
+  });
+
+  it("deletes a workspace from the context menu after confirmation", async () => {
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          workspaces: [
+            workspaceFixture({
+              id: "ws-delete",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "kenn-io",
+              name: "middleman",
+              number: 10,
+              title: "Delete me",
+            }),
+          ],
+        },
+      });
+    });
+    mockDelete.mockResolvedValue({
+      error: undefined,
+      response: { ok: true, status: 204 },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-delete" },
+    });
+    await screen.findByText("Delete me");
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Delete workspace "Delete me"?'));
+      expect(mockDelete).toHaveBeenCalledWith("/workspaces/{id}", {
+        params: { path: { id: "ws-delete" } },
+      });
+    });
+    expect(mockNavigate).toHaveBeenCalledWith("/workspaces");
+  });
+
+  it("keeps a workspace when context menu deletion is cancelled", async () => {
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => false),
+    );
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-keep",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 11,
+            title: "Keep me",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-keep" },
+    });
+    await screen.findByText("Keep me");
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
+
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it("omits local filesystem actions for remote workspace context menus", async () => {

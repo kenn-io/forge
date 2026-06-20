@@ -7988,6 +7988,62 @@ paths:
       summary: Get workspace files on fleet host
       tags:
         - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/pull:
+    post:
+      operationId: pull-fleet-workspace-branch
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Pull workspace branch on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/push:
+    post:
+      operationId: push-fleet-workspace-branch
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Push workspace branch on fleet host
+      tags:
+        - Fleet
   /fleet/hosts/{host_key}/workspaces/{id}/refresh:
     post:
       operationId: refresh-fleet-workspace
@@ -8042,6 +8098,34 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Response returned by the owning fleet host.
       summary: Retry workspace setup on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/reveal:
+    post:
+      operationId: reveal-fleet-workspace
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Reveal workspace folder on fleet host
       tags:
         - Fleet
   /fleet/hosts/{host_key}/workspaces/{id}/runtime:
@@ -15330,6 +15414,56 @@ paths:
       summary: Get workspace files
       tags:
         - Workspaces
+  /workspaces/{id}/pull:
+    post:
+      operationId: pull-workspace-branch
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Pull workspace branch
+      tags:
+        - Workspaces
+  /workspaces/{id}/push:
+    post:
+      operationId: push-workspace-branch
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Push workspace branch
+      tags:
+        - Workspaces
   /workspaces/{id}/refresh:
     post:
       operationId: refresh-workspace
@@ -15378,6 +15512,27 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Retry workspace
+      tags:
+        - Workspaces
+  /workspaces/{id}/reveal:
+    post:
+      operationId: reveal-workspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Reveal workspace folder
       tags:
         - Workspaces
   /workspaces/{id}/runtime:

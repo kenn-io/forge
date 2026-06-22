@@ -200,9 +200,8 @@ func TestClientListOpenMergeRequestsPropagatesTransientForkHeadRepoLookupFailure
 	_, err := client.ListOpenMergeRequests(context.Background(), ref)
 	require.Error(err)
 	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeInvalidRepoRef, platformErr.Code)
-	assert.Equal("get_source_project", platformErr.Capability)
+	assert.NotErrorAs(err, &platformErr)
+	assert.Contains(err.Error(), "temporary failure")
 }
 
 func TestClientGetMergeRequestContinuesWhenForkHeadRepoLookupFails(t *testing.T) {

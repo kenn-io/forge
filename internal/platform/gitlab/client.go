@@ -411,7 +411,7 @@ func (c *Client) projectCloneURL(ctx context.Context, projectID int64) (string, 
 		if err == nil {
 			err = errors.New("source project response was empty")
 		}
-		return "", mapGitLabError("get_source_project", err)
+		return "", mapSourceProjectLookupError(err)
 	}
 	cloneURL := strings.TrimSpace(project.HTTPURLToRepo)
 	c.projectCloneURLMu.Lock()
@@ -897,6 +897,26 @@ func mapGitLabErrorForHost(platformHost, capability string, err error) error {
 		Capability:   capability,
 		Err:          err,
 	}
+}
+
+func mapSourceProjectLookupError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, gitlab.ErrNotFound) {
+		return err
+	}
+	var gitlabErr *gitlab.ErrorResponse
+	if errors.As(err, &gitlabErr) {
+		switch {
+		case gitlabErr.HasStatusCode(http.StatusUnauthorized),
+			gitlabErr.HasStatusCode(http.StatusForbidden),
+			gitlabErr.HasStatusCode(http.StatusNotFound),
+			gitlabErr.HasStatusCode(http.StatusTooManyRequests):
+			return mapGitLabError("get_source_project", err)
+		}
+	}
+	return err
 }
 
 // isGitLabStatus reports whether err carries a typed GitLab response with the

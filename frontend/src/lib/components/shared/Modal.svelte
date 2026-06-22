@@ -13,6 +13,11 @@
     ariaLabel?: string | undefined;
     width?: number | undefined;
     frameId?: string | undefined;
+    // Header close (X) button. Leave on for form/content dialogs that benefit
+    // from a quick escape hatch; turn off for confirmation dialogs whose footer
+    // already offers an explicit Cancel, so the X does not duplicate Cancel or
+    // join the tab cycle.
+    showClose?: boolean;
     onClose: () => void;
     children: Snippet;
     footer?: Snippet | undefined;
@@ -24,6 +29,7 @@
     ariaLabel = undefined,
     width = 440,
     frameId = undefined,
+    showClose = true,
     onClose,
     children,
     footer = undefined,
@@ -130,9 +136,11 @@
       {#if title}
         <header class="dialog-head">
           <h2 class="dialog-title">{title}</h2>
-          <button class="dialog-close" type="button" onclick={onClose} aria-label="Close">
-            <XIcon size={14} strokeWidth={1.75} aria-hidden="true" />
-          </button>
+          {#if showClose}
+            <button class="dialog-close" type="button" onclick={onClose} aria-label="Close">
+              <XIcon size={14} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          {/if}
         </header>
       {/if}
       <div class="dialog-body">

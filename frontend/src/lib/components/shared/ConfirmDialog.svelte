@@ -41,7 +41,7 @@
   }
 </script>
 
-<Modal {open} {title} onClose={closeDialog} {width} {frameId}>
+<Modal {open} {title} onClose={closeDialog} {width} {frameId} showClose={false}>
   <div class="confirm-content">
     <p class="confirm-message">{message}</p>
     {#if hint}

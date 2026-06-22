@@ -13,10 +13,10 @@
     ariaLabel?: string | undefined;
     width?: number | undefined;
     frameId?: string | undefined;
-    // Header close (X) button. Leave on for form/content dialogs that benefit
-    // from a quick escape hatch; turn off for confirmation dialogs whose footer
-    // already offers an explicit Cancel, so the X does not duplicate Cancel or
-    // join the tab cycle.
+    // Header close (X) button, off by default. Dialogs here provide an explicit
+    // Cancel/close in their footer, so an X would duplicate it and add a stop to
+    // the focus trap. Opt in with showClose only for content-only dialogs that
+    // have no other dismiss control (Escape and backdrop click always close).
     showClose?: boolean;
     onClose: () => void;
     children: Snippet;
@@ -29,7 +29,7 @@
     ariaLabel = undefined,
     width = 440,
     frameId = undefined,
-    showClose = true,
+    showClose = false,
     onClose,
     children,
     footer = undefined,

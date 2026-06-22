@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 var (
@@ -19,10 +21,56 @@ type branchUpstream struct {
 	branch string
 }
 
+// networkedBranchGit runs a branch-sync git command that contacts the remote
+// (fetch or push) in the worktree dir. It returns only an error because branch
+// sync never needs the command's stdout, and the managed implementation
+// deliberately discards git's raw output so credential material in a remote
+// error string cannot leak back through the API.
+type networkedBranchGit func(ctx context.Context, dir string, args ...string) error
+
+// branchSyncGit returns the runner used for the networked steps of branch
+// push/pull. With clone management configured it routes fetch and push through
+// the authenticated gitclone runner so the provider host's PAT or GitHub App
+// credential is injected, expired tokens are re-resolved on auth failure, and
+// raw git remote output is redacted out of returned errors. Without clone
+// management (unmanaged local checkouts and unit tests) it falls back to plain
+// git, which carries no injected credential.
+func (m *Manager) branchSyncGit(platformHost string) networkedBranchGit {
+	if m.clones == nil {
+		return func(ctx context.Context, dir string, args ...string) error {
+			_, err := gitCombinedOutput(ctx, dir, args...)
+			return err
+		}
+	}
+	return func(ctx context.Context, dir string, args ...string) error {
+		if _, err := m.clones.RunGit(ctx, platformHost, dir, args...); err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
 // PushWorktreeBranch pushes the current branch to its configured upstream.
 // This is a user-triggered git operation, so it intentionally uses normal git
-// hook behavior instead of the internal no-hooks mutation helper.
-func PushWorktreeBranch(ctx context.Context, dir string) error {
+// hook behavior instead of the internal no-hooks mutation helper. The fetch
+// and push are networked: they run through the host's authenticated git runner
+// so managed HTTPS workspaces inject the provider credential, and the push is
+// marked as a mutation so it stays on the user's own PAT chain rather than a
+// GitHub App installation token.
+func (m *Manager) PushWorktreeBranch(ctx context.Context, platformHost, dir string) error {
+	return pushWorktreeBranch(ctx, m.branchSyncGit(platformHost), dir)
+}
+
+// PullWorktreeBranch fast-forwards the current branch from its configured
+// upstream. It rejects dirty or diverged worktrees so the UI action cannot
+// silently merge, rebase, or overwrite local work. The upstream refresh is
+// networked and runs through the host's authenticated git runner; the merge
+// itself is local against the already-fetched tracking ref.
+func (m *Manager) PullWorktreeBranch(ctx context.Context, platformHost, dir string) error {
+	return pullWorktreeBranch(ctx, m.branchSyncGit(platformHost), dir)
+}
+
+func pushWorktreeBranch(ctx context.Context, run networkedBranchGit, dir string) error {
 	if err := ensureBranchSyncClean(ctx, dir); err != nil {
 		return err
 	}
@@ -30,7 +78,7 @@ func PushWorktreeBranch(ctx context.Context, dir string) error {
 	if err != nil {
 		return err
 	}
-	if err := refreshBranchUpstream(ctx, dir, upstream); err != nil {
+	if err := refreshBranchUpstream(ctx, run, dir, upstream); err != nil {
 		return err
 	}
 	div, err := branchSyncDivergence(ctx, dir)
@@ -43,19 +91,21 @@ func PushWorktreeBranch(ctx context.Context, dir string) error {
 	if div.Ahead == 0 {
 		return ErrWorktreeInSync
 	}
-	if _, err := gitCombinedOutput(ctx, dir, "push", upstream.remote, "HEAD:"+upstream.branch); err != nil {
+	// Writes stay on the user's own credential chain so the pushed commits
+	// are attributed to the user instead of a GitHub App bot.
+	if err := run(
+		tokenauth.WithMutationAuth(ctx), dir,
+		"push", upstream.remote, "HEAD:"+upstream.branch,
+	); err != nil {
 		return fmt.Errorf("git push: %w", err)
 	}
-	if err := refreshBranchUpstream(ctx, dir, upstream); err != nil {
+	if err := refreshBranchUpstream(ctx, run, dir, upstream); err != nil {
 		return fmt.Errorf("refresh after push: %w", err)
 	}
 	return nil
 }
 
-// PullWorktreeBranch fast-forwards the current branch from its configured
-// upstream. It rejects dirty or diverged worktrees so the UI action cannot
-// silently merge, rebase, or overwrite local work.
-func PullWorktreeBranch(ctx context.Context, dir string) error {
+func pullWorktreeBranch(ctx context.Context, run networkedBranchGit, dir string) error {
 	if err := ensureBranchSyncClean(ctx, dir); err != nil {
 		return err
 	}
@@ -63,7 +113,7 @@ func PullWorktreeBranch(ctx context.Context, dir string) error {
 	if err != nil {
 		return err
 	}
-	if err := refreshBranchUpstream(ctx, dir, upstream); err != nil {
+	if err := refreshBranchUpstream(ctx, run, dir, upstream); err != nil {
 		return err
 	}
 	div, err := branchSyncDivergence(ctx, dir)
@@ -121,9 +171,11 @@ func currentBranchUpstream(ctx context.Context, dir string) (branchUpstream, err
 	return upstream, nil
 }
 
-func refreshBranchUpstream(ctx context.Context, dir string, upstream branchUpstream) error {
+func refreshBranchUpstream(
+	ctx context.Context, run networkedBranchGit, dir string, upstream branchUpstream,
+) error {
 	refspec := "+refs/heads/" + upstream.branch + ":refs/remotes/" + upstream.remote + "/" + upstream.branch
-	if _, err := gitCombinedOutput(ctx, dir, "fetch", "--prune", upstream.remote, refspec); err != nil {
+	if err := run(ctx, dir, "fetch", "--prune", upstream.remote, refspec); err != nil {
 		return fmt.Errorf("git fetch %s %s: %w", upstream.remote, upstream.branch, err)
 	}
 	return nil

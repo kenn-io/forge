@@ -44,7 +44,7 @@ func TestWorkspacePullBranchRouteFastForwardsBehindBranch(t *testing.T) {
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
-	err := workspace.PushWorktreeBranch(ctx, ws.WorktreePath)
+	err := srv.workspaces.PushWorktreeBranch(ctx, ws.PlatformHost, ws.WorktreePath)
 	if err != nil && !errors.Is(err, workspace.ErrWorktreeInSync) {
 		require.NoError(err)
 	}

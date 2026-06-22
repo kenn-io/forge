@@ -24,14 +24,14 @@ func (s *Server) pushWorkspaceBranch(
 	ctx context.Context,
 	input *workspaceBranchActionInput,
 ) (*workspaceBranchActionOutput, error) {
-	return s.runWorkspaceBranchAction(ctx, input.ID, workspace.PushWorktreeBranch)
+	return s.runWorkspaceBranchAction(ctx, input.ID, s.workspaces.PushWorktreeBranch)
 }
 
 func (s *Server) pullWorkspaceBranch(
 	ctx context.Context,
 	input *workspaceBranchActionInput,
 ) (*workspaceBranchActionOutput, error) {
-	return s.runWorkspaceBranchAction(ctx, input.ID, workspace.PullWorktreeBranch)
+	return s.runWorkspaceBranchAction(ctx, input.ID, s.workspaces.PullWorktreeBranch)
 }
 
 func (s *Server) revealWorkspace(
@@ -54,13 +54,13 @@ func (s *Server) revealWorkspace(
 func (s *Server) runWorkspaceBranchAction(
 	ctx context.Context,
 	id string,
-	action func(context.Context, string) error,
+	action func(ctx context.Context, platformHost, dir string) error,
 ) (*workspaceBranchActionOutput, error) {
 	summary, err := s.getWorkspaceActionSummary(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := action(ctx, summary.WorktreePath); err != nil {
+	if err := action(ctx, summary.PlatformHost, summary.WorktreePath); err != nil {
 		return nil, workspaceBranchActionProblem(err)
 	}
 	refreshed, err := s.workspaces.GetSummary(ctx, id)

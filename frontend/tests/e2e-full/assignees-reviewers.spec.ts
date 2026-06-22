@@ -1,10 +1,26 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { startIsolatedE2EServer, startIsolatedE2EServerWithOptions, type IsolatedE2EServer } from "./support/e2eServer";
+
+const transparentPixelPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+async function stubGitHubAvatarRequests(page: Page) {
+  await page.route("https://github.com/*.png?size=40", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: transparentPixelPng,
+    });
+  });
+}
 
 test.describe("assignee and reviewer editing", () => {
   test("pull detail edits assignees and persists across reload", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
+      await stubGitHubAvatarRequests(page);
       isolatedServer = await startIsolatedE2EServer();
       const baseURL = isolatedServer.info.base_url;
 
@@ -53,6 +69,7 @@ test.describe("assignee and reviewer editing", () => {
   test("pull detail requests and removes reviewers", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
+      await stubGitHubAvatarRequests(page);
       isolatedServer = await startIsolatedE2EServer();
       const baseURL = isolatedServer.info.base_url;
 
@@ -94,6 +111,7 @@ test.describe("assignee and reviewer editing", () => {
   test("pull detail searches candidates server-side and assigns a typed username", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
+      await stubGitHubAvatarRequests(page);
       isolatedServer = await startIsolatedE2EServer();
       const baseURL = isolatedServer.info.base_url;
 

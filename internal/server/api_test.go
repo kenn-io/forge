@@ -6270,6 +6270,70 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	assert.Equal([]db.CommentAutocompleteReference{{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"}}, body.References)
 }
 
+func TestAPICommentAutocompleteReferencesScopesByProvider(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	githubRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	giteaRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         githubRepoID,
+		PlatformID:     17001,
+		Number:         1,
+		URL:            "https://github.com/acme/widget/issues/1",
+		Title:          "Provider collision issue",
+		Author:         "alice",
+		State:          "open",
+		CreatedAt:      now.Add(-2 * time.Hour),
+		UpdatedAt:      now.Add(-2 * time.Hour),
+		LastActivityAt: now.Add(-2 * time.Hour),
+	})
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         giteaRepoID,
+		PlatformID:     17901,
+		Number:         901,
+		URL:            "https://github.com/acme/widget/issues/901",
+		Title:          "Provider collision issue",
+		Author:         "gina",
+		State:          "open",
+		CreatedAt:      now.Add(-time.Hour),
+		UpdatedAt:      now.Add(-time.Hour),
+		LastActivityAt: now.Add(-time.Hour),
+	})
+	require.NoError(err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/host/github.com/repo/gitea/acme/widget/comment-autocomplete?trigger=%23&q=collision&limit=10", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var body commentAutocompleteResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.Equal([]db.CommentAutocompleteReference{
+		{Kind: "issue", Number: 901, Title: "Provider collision issue", State: "open"},
+	}, body.References)
+	assert.Empty(body.Users)
+}
+
 func TestAPISyncStatus(t *testing.T) {
 	require := require.New(t)
 

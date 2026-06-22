@@ -62,6 +62,88 @@ func setupGitLabCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string) {
 	return cloneURL, baseSHA, headSHA
 }
 
+func TestGitLabSyncPRSurfacesTransientForkSourceProjectLookupAsUpstream(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	recorder := &gitlabAPIRecorder{}
+
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder.record(r)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.EscapedPath() == "/api/v4/projects/4242/merge_requests/7" && r.Method == http.MethodGet:
+			writeGitLabJSON(w, `{
+				"id": 7001, "iid": 7, "project_id": 4242, "target_project_id": 4242, "source_project_id": 404,
+				"title": "Fork MR", "state": "opened",
+				"source_branch": "feature", "target_branch": "main",
+				"author": {"username": "author"},
+				"created_at": "2026-05-01T09:00:00Z",
+				"updated_at": "2026-05-01T10:00:00Z"
+			}`)
+		case r.URL.EscapedPath() == "/api/v4/projects/404" && r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusBadGateway)
+			writeGitLabJSON(w, `{"message": "temporary failure"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+
+	client, err := platformgitlab.NewClient(
+		"gitlab.com",
+		staticGitLabTokenSource("token"),
+		platformgitlab.WithBaseURLForTesting(api.URL+"/api/v4"),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(client)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	_, err = database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "4242",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "gitlab.com",
+		RepoPath:           "acme/widget",
+		PlatformRepoID:     4242,
+		PlatformExternalID: "4242",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, gitclone.New(t.TempDir(), nil), []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+
+	rr := doGitLabJSON(t, srv, http.MethodPost, "/api/v1/pulls/gitlab/acme/widget/7/sync", `{}`)
+	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
+
+	var problem struct {
+		Code    string         `json:"code"`
+		Detail  string         `json:"detail"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("upstreamError", problem.Code)
+	assert.Contains(problem.Detail, "temporary failure")
+	assert.Equal("gitlab", problem.Details["provider"])
+	assert.Equal("gitlab.com", problem.Details["platformHost"])
+
+	_, lookedUp := recorder.find(http.MethodGet, "/api/v4/projects/404")
+	assert.True(lookedUp, "sync should attempt the fork source project lookup")
+}
+
 func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

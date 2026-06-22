@@ -460,7 +460,6 @@ func (o *owner) drainOutput() {
 			o.broadcast(buf[:n])
 		}
 		if err != nil {
-			o.closeSubscribers()
 			return
 		}
 	}

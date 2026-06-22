@@ -206,15 +206,24 @@ async function selectPullGrouping(label: string): Promise<void> {
   // inline group buttons are CSS-hidden and grouping lives in the "Filters"
   // compact dropdown. The "Group" section is last, so pick the last item whose
   // label matches (the State section may also expose an "All" entry).
-  const filtersBtn = Array.from(document.querySelectorAll(".compact-filter-menu .filter-btn")).find((b) =>
-    (b.textContent ?? "").includes("Filters"),
-  )!;
+  await vi.waitFor(() => expect(document.querySelector(".compact-filter-menu .filter-btn")).not.toBeNull(), WAIT);
+  const filtersBtn = document.querySelector(".compact-filter-menu .filter-btn")!;
   await page.elementLocator(filtersBtn).click();
   await vi.waitFor(() => expect(document.querySelector(".compact-filter-menu .filter-dropdown")).not.toBeNull(), WAIT);
+  const compactLabel = compactPullGroupingLabel(label);
   const items = Array.from(document.querySelectorAll(".compact-filter-menu .filter-dropdown .filter-item")).filter(
-    (el) => (el.querySelector(".filter-label")?.textContent ?? el.textContent ?? "").trim() === label,
+    (el) => (el.querySelector(".filter-label")?.textContent ?? el.textContent ?? "").trim() === compactLabel,
   );
-  await page.elementLocator(items[items.length - 1]!).click();
+  const item = items[items.length - 1];
+  expect(item).toBeDefined();
+  await page.elementLocator(item!).click();
+}
+
+function compactPullGroupingLabel(label: string): string {
+  if (label === "Repo") return "By repo";
+  if (label === "Status") return "By status";
+  if (label === "All") return "Flat list";
+  return label;
 }
 
 function activityViewBtn(): Element {

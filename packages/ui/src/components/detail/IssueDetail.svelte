@@ -449,6 +449,8 @@
 
   let workspaceCreating = $state(false);
   let workspaceError = $state<string | null>(null);
+  const createWorkspaceTitle =
+    "Create an issue worktree, then open Workspaces to launch agents or shells on that branch.";
   const ISSUE_WORKSPACE_BRANCH_CONFLICT_TYPE =
     "urn:middleman:error:issue-workspace-branch-conflict";
 
@@ -1048,6 +1050,9 @@
             tone="info"
             surface="soft"
             size="sm"
+            title={staleIssue
+              ? "Refresh details before creating a workspace."
+              : createWorkspaceTitle}
             label={workspaceCreating ? "Creating..." : "Create Workspace"}
             shortLabel={workspaceCreating ? "Creating..." : "Create Workspace"}
           >

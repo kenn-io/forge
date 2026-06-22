@@ -1,6 +1,8 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
+  import SparklesIcon from "@lucide/svelte/icons/sparkles";
+  import TerminalIcon from "@lucide/svelte/icons/terminal";
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
@@ -201,6 +203,10 @@
   );
   let terminalLayoutWorkspaceId = $state("");
   let terminalLaunching = $state(false);
+  let workspaceListState = $state<{
+    status: "loading" | "retrying" | "loaded";
+    total: number;
+  }>({ status: "loading", total: 0 });
 
   const SIDEBAR_TAB_KEY = "middleman-workspace-sidebar-tab";
   const SIDEBAR_OPEN_KEY = "middleman-workspace-sidebar-open";
@@ -234,6 +240,12 @@
         Math.round(value),
       ),
     );
+  }
+
+  function updateWorkspaceListState(
+    state: { status: "loading" | "retrying" | "loaded"; total: number },
+  ): void {
+    workspaceListState = state;
   }
 
   function readLocalStorage(key: string): string | null {
@@ -2437,9 +2449,50 @@
   {#snippet terminalMainContent()}
     <div class="terminal-main">
       {#if !workspaceId}
-        <div class="state-message">
-          Select a workspace from the sidebar
-        </div>
+        {#if workspaceListState.status === "loaded" && workspaceListState.total === 0}
+          <section class="workspace-zero-state" aria-label="Workspaces empty state">
+            <div class="workspace-zero-copy">
+              <p class="workspace-zero-eyebrow">Workspaces</p>
+              <h2>Create a workspace to run agents on a PR head</h2>
+              <p>
+                Workspaces are git worktrees created from PR or issue
+                heads. Open a PR or issue and choose Create Workspace to
+                check out an isolated branch here.
+              </p>
+              <p>
+                Once it exists, this pane can start agents, local review
+                sessions, or a shell inside that worktree.
+              </p>
+            </div>
+            <div class="disabled-session-preview" aria-label="New session preview">
+              <div class="disabled-session-toolbar">
+                <button type="button" disabled>New session</button>
+              </div>
+              <div class="disabled-session-menu" aria-label="Disabled run configurations">
+                <div class="disabled-session-heading">Run configurations</div>
+                <button type="button" disabled>
+                  <SparklesIcon size="13" strokeWidth="2" aria-hidden="true" />
+                  <span>Codex review agent</span>
+                  <span>agent</span>
+                </button>
+                <button type="button" disabled>
+                  <SparklesIcon size="13" strokeWidth="2" aria-hidden="true" />
+                  <span>Claude review agent</span>
+                  <span>agent</span>
+                </button>
+                <button type="button" disabled>
+                  <TerminalIcon size="13" strokeWidth="2" aria-hidden="true" />
+                  <span>Shell</span>
+                  <span>shell</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        {:else}
+          <div class="state-message">
+            Select a workspace from the sidebar
+          </div>
+        {/if}
       {:else if loadError && !workspace}
         <div class="state-message error">
           <span
@@ -2832,6 +2885,7 @@
           {isSidebarToggleEnabled}
           onCollapseSidebar={onToggleSidebar}
           onOpenItemSidebar={openItemSidebar}
+          onWorkspaceListStateChange={updateWorkspaceListState}
         />
       {/snippet}
       {@render terminalMainContent()}
@@ -3027,6 +3081,131 @@
 
   .state-message.error {
     color: var(--accent-red);
+  }
+
+  .workspace-zero-state {
+    display: grid;
+    grid-template-columns: minmax(260px, 460px) minmax(220px, 320px);
+    align-items: start;
+    justify-content: center;
+    gap: 28px;
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+    padding: 56px 28px;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+  }
+
+  .workspace-zero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .workspace-zero-eyebrow {
+    margin: 0;
+    color: var(--accent-green);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .workspace-zero-copy h2 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-xl);
+    font-weight: 650;
+    line-height: 1.25;
+  }
+
+  .workspace-zero-copy p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-md);
+    line-height: 1.5;
+  }
+
+  .disabled-session-preview {
+    min-width: 0;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-surface);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 4px 16px rgba(0, 0, 0, 0.1);
+    opacity: 0.72;
+  }
+
+  .disabled-session-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 6px;
+    border-bottom: 1px solid var(--border-muted);
+    background: var(--bg-inset);
+  }
+
+  .disabled-session-toolbar button {
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--border-default);
+    border-radius: 3px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+  }
+
+  .disabled-session-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px;
+  }
+
+  .disabled-session-heading {
+    margin-bottom: 3px;
+    padding: 4px 8px 6px;
+    border-bottom: 1px solid var(--border-muted);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .disabled-session-menu button {
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 26px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    text-align: left;
+  }
+
+  .disabled-session-menu button span:last-child {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    text-transform: lowercase;
+  }
+
+  @media (max-width: 760px) {
+    .workspace-zero-state {
+      grid-template-columns: 1fr;
+      padding: 28px 18px;
+    }
   }
 
   .error-icon-badge {

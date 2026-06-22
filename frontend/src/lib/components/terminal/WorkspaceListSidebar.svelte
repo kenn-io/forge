@@ -85,6 +85,9 @@
       tab: "pr" | "issue",
       hostKey?: string,
     ) => void;
+    onWorkspaceListStateChange?: (
+      state: { status: "loading" | "retrying" | "loaded"; total: number },
+    ) => void;
     isSidebarToggleEnabled?: boolean;
     onCollapseSidebar?: (() => void) | undefined;
   }
@@ -93,6 +96,7 @@
     selectedId,
     selectedHostKey = undefined,
     onOpenItemSidebar,
+    onWorkspaceListStateChange,
     isSidebarToggleEnabled = false,
     onCollapseSidebar,
   }: Props = $props();
@@ -298,6 +302,13 @@
       window.removeEventListener("resize", reposition);
       window.removeEventListener("scroll", closeContextMenu, true);
     };
+  });
+
+  $effect(() => {
+    onWorkspaceListStateChange?.({
+      status: workspaceListStatus,
+      total: workspaces.length,
+    });
   });
 
   function timeValue(value: string | null | undefined): number {

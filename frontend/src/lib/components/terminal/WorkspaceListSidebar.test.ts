@@ -263,6 +263,45 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.queryByText("local")).toBeNull();
   });
 
+  it("reports when no workspaces exist", async () => {
+    const onWorkspaceListStateChange = vi.fn();
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "member",
+                diagnostics: [],
+                id: "member",
+                kind: "self",
+                name: "member",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { workspaces: [] } });
+    });
+
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "", onWorkspaceListStateChange },
+    });
+
+    expect(await screen.findByText("No workspaces yet.")).toBeTruthy();
+    await waitFor(() => {
+      expect(onWorkspaceListStateChange).toHaveBeenLastCalledWith({
+        status: "loaded",
+        total: 0,
+      });
+    });
+  });
+
   it("loads workspaces from reachable ssh fleet hosts", async () => {
     mockGet.mockImplementation((path: string, options?: { params?: { path?: { host_key?: string } } }) => {
       if (path === "/snapshot") {

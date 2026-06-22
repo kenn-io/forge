@@ -137,6 +137,9 @@ function renderPullDetail(
       data: {},
     })),
   },
+  options = {
+    hideWorkspaceAction: true,
+  },
 ) {
   const detailStore = {
     loadDetail: vi.fn(async () => undefined),
@@ -163,7 +166,7 @@ function renderPullDetail(
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
-      hideWorkspaceAction: true,
+      hideWorkspaceAction: options.hideWorkspaceAction,
     },
     context: new Map<symbol, unknown>([
       [API_CLIENT_KEY, apiClient],
@@ -217,6 +220,18 @@ describe("PullDetail approvals", () => {
     await fireEvent.mouseDown(document.body);
 
     expect(document.querySelector(".approval-popup")).toBeNull();
+  });
+
+  it("explains that creating a workspace enables agent sessions", () => {
+    renderPullDetail(pullDetail(), undefined, undefined, { hideWorkspaceAction: false });
+
+    const buttons = screen.getAllByRole("button", { name: "Create Workspace" });
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) {
+      expect(button.getAttribute("title")).toContain("PR head worktree");
+      expect(button.getAttribute("title")).toContain("launch agents");
+      expect(button.getAttribute("title")).toContain("local review sessions");
+    }
   });
 
   it("normalizes backend review decision casing before enabling approver popup", async () => {

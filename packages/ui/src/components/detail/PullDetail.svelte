@@ -883,6 +883,8 @@
   const workspace = $derived(detailStore.getDetail()?.workspace);
   let wsCreating = $state(false);
   let wsError = $state<string | null>(null);
+  const createWorkspaceTitle =
+    "Create a PR head worktree, then open Workspaces to launch agents, shells, or local review sessions on that branch.";
   let actionMenuOpen = $state(false);
   let actionMenuWrapEl = $state<HTMLDivElement>();
   let stateMenuOpen = $state(false);
@@ -1983,6 +1985,9 @@
             tone="info"
             surface="soft"
             size="sm"
+            title={stalePR
+              ? "Refresh details before creating a workspace."
+              : createWorkspaceTitle}
             label={wsCreating ? "Creating..." : "Create Workspace"}
             shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
           >

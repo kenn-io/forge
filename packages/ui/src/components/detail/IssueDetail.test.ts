@@ -185,4 +185,13 @@ describe("IssueDetail activity view", () => {
     expect(container.querySelectorAll(".event-card--compact-row")).toHaveLength(1);
     expect(container.textContent).toContain("Issue activity preview");
   });
+
+  it("explains that creating a workspace enables agent sessions", () => {
+    renderIssueDetail(issueDetail());
+
+    const button = screen.getByRole("button", { name: "Create Workspace" });
+    expect(button.getAttribute("title")).toContain("issue worktree");
+    expect(button.getAttribute("title")).toContain("launch agents");
+    expect(button.getAttribute("title")).toContain("shells");
+  });
 });

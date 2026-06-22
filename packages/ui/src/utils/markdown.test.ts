@@ -252,4 +252,32 @@ describe("renderMarkdown details blocks", () => {
     expect(blocks[0]?.html).toContain("<h3>You can add a header</h3>");
     expect(blocks[0]?.html).toContain("</details>");
   });
+
+  it("does not treat details tags inside fenced code as block boundaries", () => {
+    const blocks = renderMarkdownBlocks(
+      [
+        "<details>",
+        "",
+        "<summary>Markup sample</summary>",
+        "",
+        "```html",
+        "</details>",
+        "```",
+        "",
+        "Still inside the collapsed section.",
+        "",
+        "</details>",
+        "",
+        "Afterwards.",
+      ].join("\n"),
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]?.html).toContain("<details>");
+    expect(blocks[0]?.html).toContain("&lt;/details&gt;");
+    expect(blocks[0]?.html).toContain("<p>Still inside the collapsed section.</p>");
+    expect(blocks[0]?.html).toContain("</details>");
+    expect(blocks[0]?.html).not.toContain("Afterwards.");
+    expect(blocks[1]?.html).toContain("<p>Afterwards.</p>");
+  });
 });

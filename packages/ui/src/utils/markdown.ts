@@ -313,16 +313,17 @@ function tokenRendersVisibleBlock(token: Tokens.Generic): boolean {
   return token.type !== "space" && token.type !== "def";
 }
 
-function detailsDepthDelta(raw: string): number {
+function detailsDepthDelta(token: Tokens.Generic): number {
+  if (token.type !== "html") return 0;
   let depth = 0;
-  for (const match of raw.matchAll(/<\/?details\b[^>]*>/gi)) {
+  for (const match of token.raw.matchAll(/<\/?details\b[^>]*>/gi)) {
     depth += match[0].startsWith("</") ? -1 : 1;
   }
   return depth;
 }
 
 function opensDetailsBlock(token: Tokens.Generic): boolean {
-  return token.type === "html" && detailsDepthDelta(token.raw) > 0;
+  return detailsDepthDelta(token) > 0;
 }
 
 function tokenRaw(tokens: Tokens.Generic[]): string {
@@ -345,11 +346,11 @@ export function renderMarkdownBlocks(
     const startLine = line;
     if (opensDetailsBlock(token)) {
       const groupedTokens = [token];
-      let depth = detailsDepthDelta(token.raw);
+      let depth = detailsDepthDelta(token);
       while (depth > 0 && i + 1 < tokens.length) {
         const next = tokens[++i]!;
         groupedTokens.push(next);
-        depth += detailsDepthDelta(next.raw);
+        depth += detailsDepthDelta(next);
       }
       const raw = tokenRaw(groupedTokens);
       const lineCount = visibleTokenLineCount(raw);

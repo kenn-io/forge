@@ -957,11 +957,15 @@ func TestProviderCanonicalReadPathsUseLookupKeys(t *testing.T) {
 	require.NotNil(refreshedIssue)
 	assert.NotNil(refreshedIssue.DetailFetchedAt)
 
-	users, err := d.ListCommentAutocompleteUsers(ctx, "gitlab.example.com", "group/subgroup", "projectname", "auth", 10)
+	users, err := d.ListCommentAutocompleteUsers(
+		ctx, "gitlab", "gitlab.example.com", "group/subgroup", "projectname", "auth", 10,
+	)
 	require.NoError(err)
 	assert.Equal([]string{"author"}, users)
 
-	refs, err := d.ListCommentAutocompleteReferences(ctx, "gitlab.example.com", "group/subgroup", "projectname", "GitLab", "", 10)
+	refs, err := d.ListCommentAutocompleteReferences(
+		ctx, "gitlab", "gitlab.example.com", "group/subgroup", "projectname", "GitLab", "", 10,
+	)
 	require.NoError(err)
 	require.Len(refs, 2)
 	assert.Equal([]int{8, 7}, []int{refs[0].Number, refs[1].Number})
@@ -3904,13 +3908,54 @@ func TestListCommentAutocompleteUsers(t *testing.T) {
 		DedupeKey: "issue-comment-1",
 	}}))
 
-	users, err := d.ListCommentAutocompleteUsers(ctx, "github.com", "acme", "widget", "al", 10)
+	users, err := d.ListCommentAutocompleteUsers(ctx, "github", "github.com", "acme", "widget", "al", 10)
 	require.NoError(err)
 	assert.Equal([]string{"alice", "albert", "alex"}, users)
 
-	users, err = d.ListCommentAutocompleteUsers(ctx, "github.com", "acme", "widget", "bert", 10)
+	users, err = d.ListCommentAutocompleteUsers(ctx, "github", "github.com", "acme", "widget", "bert", 10)
 	require.NoError(err)
 	assert.Equal([]string{"albert"}, users)
+}
+
+func TestListCommentAutocompleteUsersScopesByProvider(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	githubRepoID := insertTestRepo(t, d, "acme", "widget")
+	giteaRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+
+	insertTestIssueWithOptions(t, d, testIssue(
+		githubRepoID,
+		1,
+		withIssueTitle("GitHub collision issue"),
+		withIssueAuthor("alice"),
+		withIssueActivity(base.Add(time.Hour)),
+	))
+	insertTestIssueWithOptions(t, d, testIssue(
+		giteaRepoID,
+		901,
+		withIssueTitle("Gitea collision issue"),
+		withIssueAuthor("gina"),
+		withIssueActivity(base.Add(2*time.Hour)),
+	))
+
+	users, err := d.ListCommentAutocompleteUsers(ctx, "gitea", "github.com", "acme", "widget", "", 10)
+	require.NoError(err)
+	assert.Equal([]string{"gina"}, users)
+
+	users, err = d.ListCommentAutocompleteUsers(ctx, "github", "github.com", "acme", "widget", "", 10)
+	require.NoError(err)
+	assert.Equal([]string{"alice"}, users)
 }
 
 func TestListCommentAutocompleteReferences(t *testing.T) {
@@ -3926,29 +3971,72 @@ func TestListCommentAutocompleteReferences(t *testing.T) {
 	insertTestIssue(t, d, repoID, 17, "Mention bug", base.Add(2*time.Hour))
 	insertTestIssue(t, d, repoID, 101, "Numbered item", base.Add(time.Hour))
 
-	refs, err := d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "1", "", 10)
+	refs, err := d.ListCommentAutocompleteReferences(ctx, "github", "github.com", "acme", "widget", "1", "", 10)
 	require.NoError(err)
 	require.Len(refs, 3)
 	assert.Equal(CommentAutocompleteReference{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"}, refs[0])
 	assert.Equal(CommentAutocompleteReference{Kind: "issue", Number: 17, Title: "Mention bug", State: "open"}, refs[1])
 	assert.Equal(CommentAutocompleteReference{Kind: "issue", Number: 101, Title: "Numbered item", State: "open"}, refs[2])
 
-	refs, err = d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "doc", "", 10)
+	refs, err = d.ListCommentAutocompleteReferences(ctx, "github", "github.com", "acme", "widget", "doc", "", 10)
 	require.NoError(err)
 	require.Len(refs, 1)
 	assert.Equal(CommentAutocompleteReference{Kind: "pull", Number: 3, Title: "Add docs", State: "open"}, refs[0])
 
-	refs, err = d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "1", "issue", 10)
+	refs, err = d.ListCommentAutocompleteReferences(ctx, "github", "github.com", "acme", "widget", "1", "issue", 10)
 	require.NoError(err)
 	assert.Equal([]CommentAutocompleteReference{
 		{Kind: "issue", Number: 17, Title: "Mention bug", State: "open"},
 		{Kind: "issue", Number: 101, Title: "Numbered item", State: "open"},
 	}, refs)
 
-	refs, err = d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "1", "pull", 10)
+	refs, err = d.ListCommentAutocompleteReferences(ctx, "github", "github.com", "acme", "widget", "1", "pull", 10)
 	require.NoError(err)
 	assert.Equal([]CommentAutocompleteReference{
 		{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"},
+	}, refs)
+}
+
+func TestListCommentAutocompleteReferencesScopesByProvider(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	githubRepoID := insertTestRepo(t, d, "acme", "widget")
+	giteaRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+
+	insertTestIssueWithOptions(t, d, testIssue(
+		githubRepoID,
+		1,
+		withIssueTitle("Provider collision issue"),
+		withIssueActivity(base.Add(time.Hour)),
+	))
+	insertTestIssueWithOptions(t, d, testIssue(
+		giteaRepoID,
+		901,
+		withIssueTitle("Provider collision issue"),
+		withIssueActivity(base.Add(2*time.Hour)),
+	))
+
+	refs, err := d.ListCommentAutocompleteReferences(ctx, "gitea", "github.com", "acme", "widget", "collision", "", 10)
+	require.NoError(err)
+	assert.Equal([]CommentAutocompleteReference{
+		{Kind: "issue", Number: 901, Title: "Provider collision issue", State: "open"},
+	}, refs)
+
+	refs, err = d.ListCommentAutocompleteReferences(ctx, "github", "github.com", "acme", "widget", "collision", "", 10)
+	require.NoError(err)
+	assert.Equal([]CommentAutocompleteReference{
+		{Kind: "issue", Number: 1, Title: "Provider collision issue", State: "open"},
 	}, refs)
 }
 

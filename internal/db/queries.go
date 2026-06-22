@@ -141,6 +141,14 @@ func canonicalRepoLookupIdentifier(host, owner, name string) (string, string, st
 		strings.ToLower(strings.TrimSpace(name))
 }
 
+func canonicalRepoPlatform(platform string) string {
+	platform = strings.ToLower(strings.TrimSpace(platform))
+	if platform == "" {
+		return "github"
+	}
+	return platform
+}
+
 func canonicalRepoPathKey(path string) string {
 	parts := strings.Split(strings.Trim(path, "/ "), "/")
 	kept := parts[:0]
@@ -217,10 +225,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 }
 
 func canonicalRepoIdentity(identity RepoIdentity) RepoIdentity {
-	identity.Platform = strings.ToLower(strings.TrimSpace(identity.Platform))
-	if identity.Platform == "" {
-		identity.Platform = "github"
-	}
+	identity.Platform = canonicalRepoPlatform(identity.Platform)
 	identity.PlatformHost = strings.ToLower(strings.TrimSpace(identity.PlatformHost))
 	if identity.PlatformHost == "" && identity.Platform == "github" {
 		identity.PlatformHost = "github.com"
@@ -3931,9 +3936,10 @@ func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, 
 // ListCommentAutocompleteUsers returns repo-scoped username suggestions for comment mentions.
 func (d *DB) ListCommentAutocompleteUsers(
 	ctx context.Context,
-	platformHost, owner, name, query string,
+	platform, platformHost, owner, name, query string,
 	limit int,
 ) ([]string, error) {
+	platform = canonicalRepoPlatform(platform)
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	if limit <= 0 {
 		limit = 10
@@ -3946,7 +3952,7 @@ func (d *DB) ListCommentAutocompleteUsers(
 		WITH repo AS (
 			SELECT id
 			FROM middleman_repos
-			WHERE platform_host = ? AND owner_key = ? AND name_key = ?
+			WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
 		), candidates AS (
 			SELECT mr.author AS login, mr.last_activity_at AS last_seen
 			FROM middleman_merge_requests mr
@@ -3979,7 +3985,7 @@ func (d *DB) ListCommentAutocompleteUsers(
 			last_seen DESC,
 			login ASC
 		LIMIT ?`,
-		platformHost, owner, name,
+		platform, platformHost, owner, name,
 		query, containsQuery,
 		query, prefixQuery,
 		limit,
@@ -4006,9 +4012,10 @@ func (d *DB) ListCommentAutocompleteUsers(
 // ListCommentAutocompleteReferences returns repo-scoped item reference suggestions.
 func (d *DB) ListCommentAutocompleteReferences(
 	ctx context.Context,
-	platformHost, owner, name, query, itemKind string,
+	platform, platformHost, owner, name, query, itemKind string,
 	limit int,
 ) ([]CommentAutocompleteReference, error) {
+	platform = canonicalRepoPlatform(platform)
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	if limit <= 0 {
 		limit = 10
@@ -4022,7 +4029,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 		WITH repo AS (
 			SELECT id
 			FROM middleman_repos
-			WHERE platform_host = ? AND owner_key = ? AND name_key = ?
+			WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
 		), candidates AS (
 			SELECT 'pull' AS kind, mr.number, mr.title, mr.state, mr.last_activity_at
 			FROM middleman_merge_requests mr
@@ -4046,7 +4053,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 			last_activity_at DESC,
 			number DESC
 		LIMIT ?`,
-		platformHost, owner, name,
+		platform, platformHost, owner, name,
 		itemKind, itemKind,
 		query, numberPrefix, titleQuery,
 		query, numberPrefix,

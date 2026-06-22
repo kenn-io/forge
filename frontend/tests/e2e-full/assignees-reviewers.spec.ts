@@ -312,10 +312,11 @@ test.describe("assignee and reviewer editing", () => {
       await page.getByRole("button", { name: "Edit assignees" }).click();
       await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeVisible();
 
-      const aliceRow = page.getByRole("menuitemcheckbox", { name: /alice/i });
-      await expect(aliceRow).toHaveAttribute("aria-checked", "false");
-      await expect(aliceRow.locator("img.user-picker__avatar")).toHaveCount(0);
-      await expect(aliceRow.locator(".user-picker__avatar")).toHaveText("A");
+      const ginaRow = page.getByRole("menuitemcheckbox", { name: /gina/i });
+      await expect(ginaRow).toHaveAttribute("aria-checked", "false");
+      await expect(ginaRow.locator("img.user-picker__avatar")).toHaveCount(0);
+      await expect(ginaRow.locator(".user-picker__avatar")).toHaveText("G");
+      await expect(page.getByRole("menuitemcheckbox", { name: /alice/i })).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();
     }

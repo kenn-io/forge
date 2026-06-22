@@ -178,10 +178,10 @@ func TestClientListOpenMergeRequestsPropagatesTransientForkHeadRepoLookupFailure
 		switch r.URL.EscapedPath() {
 		case "/api/v4/projects/42/merge_requests":
 			writeJSON(w, `[
-				{"id": 1001, "iid": 7, "project_id": 42, "source_project_id": 77, "target_project_id": 42, "source_branch": "feature/auth", "target_branch": "main", "title": "Fork base", "state": "opened"}
+				{"id": 1001, "iid": 7, "project_id": 42, "source_project_id": 404, "target_project_id": 42, "source_branch": "feature/auth", "target_branch": "main", "title": "Fork base", "state": "opened"}
 			]`)
-		case "/api/v4/projects/77":
-			http.Error(w, "rate limited", http.StatusTooManyRequests)
+		case "/api/v4/projects/404":
+			http.Error(w, "temporary failure", http.StatusBadGateway)
 		default:
 			http.NotFound(w, r)
 		}
@@ -201,7 +201,7 @@ func TestClientListOpenMergeRequestsPropagatesTransientForkHeadRepoLookupFailure
 	require.Error(err)
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeRateLimited, platformErr.Code)
+	assert.Equal(platform.ErrCodeInvalidRepoRef, platformErr.Code)
 	assert.Equal("get_source_project", platformErr.Capability)
 }
 

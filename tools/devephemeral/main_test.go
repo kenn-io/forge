@@ -389,6 +389,38 @@ func TestLockEphemeralWorkDirRejectsConcurrentLock(t *testing.T) {
 	require.NoError(release())
 }
 
+func TestRunReusesLiveStatusWhenStartupLockIsStillHeld(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	statusPath := filepath.Join(dir, "dev-ephemeral.json")
+	scriptPath := filepath.Join(dir, "blocking.sh")
+	writeBlockingScript(t, scriptPath)
+	backend, _ := startTestCommand(t, commandSpec{name: scriptPath})
+	frontend, _ := startTestCommand(t, commandSpec{name: scriptPath})
+	launcherStartedAt, err := processStartTime(os.Getpid())
+	require.NoError(err)
+	backendStartedAt, err := processStartTime(backend.Process.Pid)
+	require.NoError(err)
+	frontendStartedAt, err := processStartTime(frontend.Process.Pid)
+	require.NoError(err)
+	release, err := lockEphemeralWorkDir(dir)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(release()) })
+	require.NoError(writeStatusFile(statusPath, ephemeralStatus{
+		PID:               os.Getpid(),
+		PIDStartedAt:      launcherStartedAt,
+		BackendPID:        backend.Process.Pid,
+		BackendStartedAt:  backendStartedAt,
+		FrontendPID:       frontend.Process.Pid,
+		FrontendStartedAt: frontendStartedAt,
+		BackendURL:        "http://127.0.0.1:39411",
+		FrontendURL:       "http://127.0.0.1:39412",
+	}))
+
+	err = run(context.Background(), []string{"-work-dir", dir})
+	require.NoError(err)
+}
+
 func TestReadRunningEphemeralStatusReturnsLiveStatus(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()

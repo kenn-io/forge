@@ -35,6 +35,8 @@ const (
 	stopWaitGrace      = 500 * time.Millisecond
 )
 
+var errEphemeralWorkDirLocked = errors.New("ephemeral work directory is locked")
+
 type ephemeralOptions struct {
 	sourceConfigPath string
 	workDir          string
@@ -145,6 +147,18 @@ func run(ctx context.Context, args []string) error {
 
 	releaseLock, err := lockEphemeralWorkDir(resolvedWorkDir)
 	if err != nil {
+		if errors.Is(err, errEphemeralWorkDirLocked) {
+			existingStatusPath := statusPathForWorkDir(resolvedWorkDir)
+			existingStatus, running, statusErr := readLiveEphemeralStatus(existingStatusPath)
+			if statusErr != nil {
+				return errors.Join(err, statusErr)
+			}
+			if running {
+				fmt.Printf("ephemeral dev stack already running\n")
+				printStatus(existingStatus, existingStatusPath)
+				return nil
+			}
+		}
 		return err
 	}
 	locked := true
@@ -416,7 +430,7 @@ func lockEphemeralWorkDir(workDir string) (func() error, error) {
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = file.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
-			return nil, fmt.Errorf("ephemeral work directory is locked: %s", workDir)
+			return nil, fmt.Errorf("%w: %s", errEphemeralWorkDirLocked, workDir)
 		}
 		return nil, fmt.Errorf("lock ephemeral work directory: %w", err)
 	}
@@ -453,6 +467,37 @@ func stopEphemeralStack(statusPath string) error {
 }
 
 func readRunningEphemeralStatus(statusPath string) (ephemeralStatus, bool, error) {
+	status, running, err := readLiveEphemeralStatus(statusPath)
+	if err != nil {
+		return ephemeralStatus{}, false, err
+	}
+	if running {
+		return status, true, nil
+	}
+
+	content, err := os.ReadFile(statusPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ephemeralStatus{}, false, nil
+		}
+		return ephemeralStatus{}, false, fmt.Errorf("read status file: %w", err)
+	}
+	var staleStatus ephemeralStatus
+	if err := json.Unmarshal(content, &staleStatus); err != nil {
+		return ephemeralStatus{}, false, fmt.Errorf("decode status file: %w", err)
+	}
+	refs, identityErrs := verifiedProcessRefs(statusProcessRefs(staleStatus))
+	stopErrs := append(identityErrs, stopEphemeralProcesses(refs)...)
+	if len(stopErrs) > 0 {
+		return ephemeralStatus{}, false, errors.Join(stopErrs...)
+	}
+	if err := os.Remove(statusPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ephemeralStatus{}, false, fmt.Errorf("remove stale status file: %w", err)
+	}
+	return ephemeralStatus{}, false, nil
+}
+
+func readLiveEphemeralStatus(statusPath string) (ephemeralStatus, bool, error) {
 	content, err := os.ReadFile(statusPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -470,14 +515,6 @@ func readRunningEphemeralStatus(statusPath string) (ephemeralStatus, bool, error
 	}
 	if running {
 		return status, true, nil
-	}
-	refs, identityErrs := verifiedProcessRefs(statusProcessRefs(status))
-	stopErrs := append(identityErrs, stopEphemeralProcesses(refs)...)
-	if len(stopErrs) > 0 {
-		return ephemeralStatus{}, false, errors.Join(stopErrs...)
-	}
-	if err := os.Remove(statusPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return ephemeralStatus{}, false, fmt.Errorf("remove stale status file: %w", err)
 	}
 	return ephemeralStatus{}, false, nil
 }

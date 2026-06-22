@@ -20,7 +20,7 @@
     type RepoLabelIdentity,
   } from "@middleman/ui/utils/repo-label";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
-  import WorkspaceDeleteDialog from "./WorkspaceDeleteDialog.svelte";
+  import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import {
     defaultWorkspaceListDisplayOptions,
     defaultWorkspaceListSort,
@@ -1315,7 +1315,7 @@
   </div>
 {/if}
 
-<WorkspaceDeleteDialog
+<ConfirmDialog
   open={deleteConfirmWorkspace !== null}
   title="Delete workspace?"
   message={deleteConfirmWorkspace
@@ -1325,6 +1325,7 @@
   confirmLabel="Delete workspace"
   pendingLabel="Deleting…"
   busy={deleteConfirmBusy}
+  tone="danger"
   frameId="workspace-sidebar-delete"
   onCancel={closeDeleteWorkspaceDialog}
   onConfirm={() => void confirmDeleteWorkspaceFromList()}

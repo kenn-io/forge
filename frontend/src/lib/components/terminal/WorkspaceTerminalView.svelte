@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { tick, untrack } from "svelte";
-  import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
+  import { tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
-  import WorkspaceDeleteDialog from "./WorkspaceDeleteDialog.svelte";
+  import Modal from "../shared/Modal.svelte";
+  import ConfirmDialog from "../shared/ConfirmDialog.svelte";
+  import DialogButton from "../shared/DialogButton.svelte";
   import WorkspaceHome from "./WorkspaceHome.svelte";
   import LaunchMenu from "./LaunchMenu.svelte";
   import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
@@ -170,7 +171,6 @@
   let forceDeleting = $state(false);
   let stopPromptSession = $state<RuntimeSession | null>(null);
   let stopSessionStopping = $state(false);
-  let cancelStopBtnEl = $state<HTMLButtonElement | null>(null);
   let renamePrompt = $state<{
     sessionKey: string;
     originalLabel: string;
@@ -2202,58 +2202,12 @@
 
   let previouslyFocusedEl: HTMLElement | null = null;
 
-  function cancelActiveModal(): void {
-    if (renamePrompt !== null) {
-      cancelRenamePrompt();
-      return;
-    }
-    if (stopPromptSession !== null) {
-      cancelStopSession();
-      return;
-    }
-    cancelForceDelete();
-  }
-
-  function handleConfirmPromptKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      cancelActiveModal();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const container = event.currentTarget;
-    if (!(container instanceof HTMLElement)) return;
-    const dialog = container.querySelector("[role='dialog']");
-    if (!(dialog instanceof HTMLElement)) return;
-    const focusable = Array.from(
-      dialog.querySelectorAll<HTMLElement>(
-        "button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])",
-      ),
-    );
-    if (focusable.length === 0) return;
-    const currentIndex = focusable.findIndex(
-      (el) => el === document.activeElement,
-    );
-    const nextIndex = event.shiftKey
-      ? currentIndex <= 0
-        ? focusable.length - 1
-        : currentIndex - 1
-      : currentIndex < 0 ||
-          currentIndex >= focusable.length - 1
-        ? 0
-        : currentIndex + 1;
-    event.preventDefault();
-    focusable[nextIndex]?.focus();
-  }
-
   $effect(() => {
     if (renamePrompt !== null) {
       void tick().then(() => {
         renameInputEl?.focus();
         renameInputEl?.select();
       });
-    } else if (stopPromptSession !== null) {
-      void tick().then(() => cancelStopBtnEl?.focus());
     } else if (!modalOpen && previouslyFocusedEl !== null) {
       const triggerEl = previouslyFocusedEl;
       previouslyFocusedEl = null;
@@ -2263,20 +2217,6 @@
         }
       });
     }
-  });
-
-  $effect(() => {
-    if (stopPromptSession === null) return;
-    return untrack(() =>
-      pushModalFrame("workspace-stop-session", []),
-    );
-  });
-
-  $effect(() => {
-    if (renamePrompt === null) return;
-    return untrack(() =>
-      pushModalFrame("workspace-rename-session", []),
-    );
   });
 
   $effect(() => {
@@ -2831,114 +2771,68 @@
 </div>
 
 {#if renamePrompt !== null}
-  <div
-    class="force-delete-backdrop"
-    role="presentation"
-    onkeydown={handleConfirmPromptKeydown}
+  <Modal
+    open={renamePrompt !== null}
+    title="Rename tab"
+    width={460}
+    frameId="workspace-rename-session"
+    onClose={cancelRenamePrompt}
   >
-    <div
-      class="force-delete-dialog rename-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="rename-session-title"
-      aria-describedby="rename-session-message"
+    <form
+      id="rename-session-form"
+      class="rename-form"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void saveRenamePrompt();
+      }}
     >
-      <form
-        class="rename-form"
-        onsubmit={(event) => {
-          event.preventDefault();
-          void saveRenamePrompt();
-        }}
-      >
-        <div class="force-delete-header">
-          <h2 id="rename-session-title">Rename tab</h2>
-        </div>
-        <p id="rename-session-message" class="force-delete-message">
-          Choose the label shown in the workflow and terminal panes.
-        </p>
-        <label class="rename-field">
-          <span>Name</span>
-          <input
-            bind:this={renameInputEl}
-            bind:value={renameInputValue}
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </label>
-        <div class="force-delete-actions">
-          <button
-            type="button"
-            class="force-delete-cancel"
-            disabled={renameSaving}
-            onclick={cancelRenamePrompt}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            class="rename-confirm"
-            disabled={renameSaving || renameInputValue.trim() === ""}
-          >
-            {renameSaving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-{/if}
-
-{#if stopPromptSession !== null}
-  <div
-    class="force-delete-backdrop"
-    role="presentation"
-    onkeydown={handleConfirmPromptKeydown}
-  >
-    <div
-      class="force-delete-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="stop-session-title"
-      aria-describedby="stop-session-message"
-    >
-      <div class="force-delete-header">
-        <AlertIcon
-          class="force-delete-icon"
-          size="20"
-          strokeWidth="2"
-          aria-hidden="true"
+      <p class="rename-message">
+        Choose the label shown in the workflow and terminal panes.
+      </p>
+      <label class="rename-field">
+        <span>Name</span>
+        <input
+          bind:this={renameInputEl}
+          bind:value={renameInputValue}
+          autocomplete="off"
+          spellcheck="false"
         />
-        <h2 id="stop-session-title">Stop {stopPromptSession.label}?</h2>
-      </div>
-      <p id="stop-session-message" class="force-delete-message">
-        This will stop the running session and close its pane.
-      </p>
-      <p class="force-delete-hint">
-        Any foreground command running inside this session may be interrupted.
-      </p>
-      <div class="force-delete-actions">
-        <button
-          type="button"
-          class="force-delete-cancel"
-          disabled={stopSessionStopping}
-          bind:this={cancelStopBtnEl}
-          onclick={cancelStopSession}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="force-delete-confirm"
-          disabled={stopSessionStopping}
-          onclick={() => void confirmStopSession()}
-        >
-          {stopSessionStopping ? "Stopping…" : "Stop session"}
-        </button>
-      </div>
-    </div>
-  </div>
+      </label>
+    </form>
+
+    {#snippet footer()}
+      <DialogButton disabled={renameSaving} onclick={cancelRenamePrompt}>
+        Cancel
+      </DialogButton>
+      <DialogButton
+        type="submit"
+        form="rename-session-form"
+        tone="primary"
+        disabled={renameSaving || renameInputValue.trim() === ""}
+      >
+        {renameSaving ? "Saving..." : "Save"}
+      </DialogButton>
+    {/snippet}
+  </Modal>
 {/if}
 
-<WorkspaceDeleteDialog
+<ConfirmDialog
+  open={stopPromptSession !== null}
+  title={stopPromptSession
+    ? `Stop ${stopPromptSession.label}?`
+    : "Stop session?"}
+  message="This will stop the running session and close its pane."
+  hint="Any foreground command running inside this session may be interrupted."
+  confirmLabel="Stop session"
+  pendingLabel="Stopping…"
+  busy={stopSessionStopping}
+  tone="danger"
+  frameId="workspace-stop-session"
+  onCancel={cancelStopSession}
+  onConfirm={() => void confirmStopSession()}
+/>
+
+<ConfirmDialog
   open={forcePromptMessage !== null}
   title="Force delete workspace?"
   message={forcePromptMessage ?? ""}
@@ -2946,6 +2840,7 @@
   confirmLabel="Force delete"
   pendingLabel="Deleting…"
   busy={forceDeleting}
+  tone="danger"
   frameId="workspace-force-delete"
   onCancel={cancelForceDelete}
   onConfirm={() => void confirmForceDelete()}
@@ -3257,83 +3152,25 @@
     z-index: 80;
   }
 
-  .force-delete-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 50;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    background: color-mix(in srgb, black 50%, transparent);
-    backdrop-filter: blur(2px);
-    animation: force-delete-fade 120ms ease-out;
-  }
-
-  .force-delete-dialog {
-    width: min(420px, 100%);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 24px 80px rgb(0 0 0 / 35%);
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    animation: force-delete-pop 160ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .rename-dialog {
-    width: min(460px, 100%);
-  }
-
   .rename-form {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: 12px;
     margin: 0;
   }
 
-  .force-delete-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  :global(.force-delete-icon) {
-    color: var(--accent-red);
-    flex-shrink: 0;
-  }
-
-  .force-delete-header h2 {
+  .rename-message {
     margin: 0;
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .force-delete-message {
-    margin: 0;
-    font-size: var(--font-size-md);
     color: var(--text-secondary);
-    line-height: 1.5;
-  }
-
-  .force-delete-hint {
-    margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-    line-height: 1.5;
+    font-size: var(--font-size-md);
+    line-height: 1.45;
   }
 
   .rename-field {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: 6px;
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: 600;
-    color: var(--text-secondary);
   }
 
   .rename-field input {
@@ -3354,85 +3191,4 @@
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 22%, transparent);
   }
 
-  .force-delete-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 4px;
-  }
-
-  .force-delete-cancel,
-  .force-delete-confirm,
-  .rename-confirm {
-    height: 30px;
-    padding: 0 14px;
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: background-color 80ms ease, color 80ms ease,
-      border-color 80ms ease;
-  }
-
-  .force-delete-cancel {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    color: var(--text-secondary);
-  }
-
-  .force-delete-cancel:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .force-delete-confirm {
-    background: var(--accent-red);
-    border: 1px solid var(--accent-red);
-    color: #fff;
-    font-weight: 600;
-  }
-
-  .rename-confirm {
-    background: var(--accent-blue);
-    border: 1px solid var(--accent-blue);
-    color: #fff;
-    font-weight: 600;
-  }
-
-  .force-delete-confirm:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent-red) 88%, black);
-    border-color: color-mix(in srgb, var(--accent-red) 88%, black);
-  }
-
-  .rename-confirm:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent-blue) 88%, black);
-    border-color: color-mix(in srgb, var(--accent-blue) 88%, black);
-  }
-
-  .force-delete-cancel:disabled,
-  .force-delete-confirm:disabled,
-  .rename-confirm:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  @keyframes force-delete-fade {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  @keyframes force-delete-pop {
-    from {
-      opacity: 0;
-      transform: scale(0.96) translateY(4px);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1) translateY(0);
-    }
-  }
 </style>

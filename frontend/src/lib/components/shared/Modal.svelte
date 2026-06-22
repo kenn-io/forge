@@ -1,6 +1,7 @@
 <script lang="ts">
   import XIcon from "@lucide/svelte/icons/x";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
+  import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import type { Snippet } from "svelte";
 
   interface Props {
@@ -8,6 +9,7 @@
     title?: string | undefined;
     ariaLabel?: string | undefined;
     width?: number | undefined;
+    frameId?: string | undefined;
     onClose: () => void;
     children: Snippet;
     footer?: Snippet | undefined;
@@ -18,6 +20,7 @@
     title = undefined,
     ariaLabel = undefined,
     width = 440,
+    frameId = undefined,
     onClose,
     children,
     footer = undefined,
@@ -68,6 +71,11 @@
       first.focus();
     }
   }
+
+  $effect(() => {
+    if (!open || !frameId) return;
+    return untrack(() => pushModalFrame(frameId, []));
+  });
 
   $effect(() => {
     if (open) {

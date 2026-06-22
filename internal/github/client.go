@@ -941,40 +941,7 @@ const convertToDraftMutation = `
 mutation($pullRequestId: ID!) {
   convertPullRequestToDraft(input: {pullRequestId: $pullRequestId}) {
     pullRequest {
-      databaseId
-      number
-      title
-      state
-      isDraft
-      locked
-      body
-      url
-      author {
-        login
-      }
-      createdAt
-      updatedAt
-      mergedAt
-      closedAt
-      additions
-      deletions
-      mergeable
-      reviewDecision
-      headRefName
-      baseRefName
-      headRefOid
-      baseRefOid
-      headRepository {
-        url
-      }
-      labels(first: 100) {
-        nodes {
-          name
-          color
-          description
-          isDefault
-        }
-      }
+      id
     }
   }
 }`
@@ -2683,7 +2650,9 @@ func (c *liveClient) ConvertPullRequestToDraft(
 		Errors []graphQLError `json:"errors"`
 		Data   struct {
 			ConvertPullRequestToDraft *struct {
-				PullRequest *gqlPR `json:"pullRequest"`
+				PullRequest *struct {
+					ID string `json:"id"`
+				} `json:"pullRequest"`
 			} `json:"convertPullRequestToDraft"`
 		} `json:"data"`
 	}
@@ -2790,7 +2759,15 @@ func (c *liveClient) ConvertPullRequestToDraft(
 		)
 	}
 
-	return adaptPR(mutationResult.Data.ConvertPullRequestToDraft.PullRequest), nil
+	draft := true
+	state := "open"
+	nodeID := mutationResult.Data.ConvertPullRequestToDraft.PullRequest.ID
+	return &gh.PullRequest{
+		NodeID: &nodeID,
+		Number: &number,
+		State:  &state,
+		Draft:  &draft,
+	}, nil
 }
 
 func (c *liveClient) MergePullRequest(

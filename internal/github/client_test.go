@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -830,17 +831,26 @@ func TestConvertPullRequestToDraftUsesGraphQLMutation(t *testing.T) {
 	var calls int
 	var methods []string
 	var contentTypes []string
+	var requestBodies []string
+	var readBodyErr error
 	mux := http.NewServeMux()
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		methods = append(methods, r.Method)
 		contentTypes = append(contentTypes, r.Header.Get("Content-Type"))
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			readBodyErr = err
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		requestBodies = append(requestBodies, string(body))
 		w.Header().Set("Content-Type", "application/json")
 		if calls == 1 {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"convertPullRequestToDraft":{"pullRequest":{"databaseId":1001,"number":141,"title":"Draft PR","state":"OPEN","isDraft":true,"body":"body","url":"https://github.com/wesm/middleman/pull/141","author":{"login":"wesm"},"createdAt":"2026-04-14T00:00:00Z","updatedAt":"2026-04-14T00:05:00Z","mergedAt":null,"closedAt":null,"additions":12,"deletions":3,"mergeable":"MERGEABLE","reviewDecision":"APPROVED","headRefName":"feature","baseRefName":"main","headRefOid":"abc123","baseRefOid":"def456","headRepository":{"url":"https://github.com/wesm/middleman"},"labels":{"nodes":[]}}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"convertPullRequestToDraft":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -858,11 +868,15 @@ func TestConvertPullRequestToDraftUsesGraphQLMutation(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(pr)
 	require.Equal(141, pr.GetNumber())
-	require.Equal("Draft PR", pr.GetTitle())
 	require.True(pr.GetDraft())
 	require.Equal(2, calls)
 	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
 	require.Equal([]string{"application/json", "application/json"}, contentTypes)
+	require.NoError(readBodyErr)
+	require.Len(requestBodies, 2)
+	require.Contains(requestBodies[1], "convertPullRequestToDraft")
+	require.NotContains(requestBodies[1], "reviewDecision")
+	require.NotContains(requestBodies[1], "databaseId")
 }
 
 func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) {

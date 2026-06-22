@@ -3179,6 +3179,21 @@ func (d *DB) UpdateMRState(
 	return nil
 }
 
+// UpdateMRDraftState records a provider-confirmed draft flag without
+// treating the mutation response as a full merge-request snapshot.
+func (d *DB) UpdateMRDraftState(ctx context.Context, repoID int64, number int, isDraft bool) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET is_draft = ?
+		WHERE repo_id = ? AND number = ?`,
+		isDraft, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update mr draft state: %w", err)
+	}
+	return nil
+}
+
 // --- Issues ---
 
 // UpsertIssue inserts or updates an issue, returning its internal ID. Before

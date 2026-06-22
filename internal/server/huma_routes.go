@@ -3346,17 +3346,16 @@ func (s *Server) setPRGitHubState(
 		if err != nil {
 			return nil, unsupportedCapabilityProblem(*repo, capabilityDraftMutation)
 		}
-		updated, err := mutator.ConvertMergeRequestToDraft(
+		if _, err := mutator.ConvertMergeRequestToDraft(
 			ctx, platformRepoRefFromDB(*repo), input.Number,
-		)
-		if err != nil {
+		); err != nil {
 			return nil, providerCallProblemWithDetail(
 				err,
 				string(repoProviderKind(*repo)), repoProviderHost(*repo),
 				"Provider API error: "+err.Error(),
 			)
 		}
-		if _, err := s.db.UpsertMergeRequest(ctx, platform.DBMergeRequest(repo.ID, updated)); err != nil {
+		if err := s.db.UpdateMRDraftState(ctx, repo.ID, input.Number, true); err != nil {
 			return nil, problemInternal("update mr draft state: " + err.Error())
 		}
 		out := &githubStateOutput{}

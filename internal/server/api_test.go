@@ -11420,7 +11420,7 @@ func TestAPIMarkPRDraftPersistsDraftFlag(t *testing.T) {
 			url := "https://github.com/acme/widget/pull/1"
 			author := "octocat"
 			draft := true
-			now := gh.Timestamp{Time: time.Now().UTC()}
+			now := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute)}
 			headSHA := "abc123"
 			baseSHA := "def456"
 			featureRef := "feature"
@@ -11442,6 +11442,18 @@ func TestAPIMarkPRDraftPersistsDraftFlag(t *testing.T) {
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
+	before, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(before)
+	before.CommentCount = 7
+	before.CIStatus = "success"
+	before.CIChecksJSON = `[{"name":"ci","status":"success"}]`
+	before.ReviewDecision = "APPROVED"
+	before.AssigneesJSON = `["alice"]`
+	before.ReviewersJSON = `["bob"]`
+	before.MergeableState = "clean"
+	_, err = database.UpsertMergeRequest(t.Context(), before)
+	require.NoError(err)
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
@@ -11460,6 +11472,13 @@ func TestAPIMarkPRDraftPersistsDraftFlag(t *testing.T) {
 	assert.Equal(db.MergeRequestStateOpen, pr.State)
 	assert.True(pr.IsDraft)
 	assert.Nil(pr.ClosedAt)
+	assert.Equal(7, pr.CommentCount)
+	assert.Equal("success", pr.CIStatus)
+	assert.JSONEq(`[{"name":"ci","status":"success"}]`, pr.CIChecksJSON)
+	assert.Equal("APPROVED", pr.ReviewDecision)
+	assert.Equal([]string{"alice"}, pr.Assignees)
+	assert.Equal([]string{"bob"}, pr.RequestedReviewers)
+	assert.Equal("clean", pr.MergeableState)
 }
 
 // When MarkPullRequestReadyForReview returns (nil, nil) the handler

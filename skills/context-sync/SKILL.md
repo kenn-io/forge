@@ -1,7 +1,6 @@
 ---
 name: context-sync
 description: Scan middleman's context docs for staleness against the current Go/Svelte code, verify anchored claims, surface knowledge gaps, and draft reviewed updates. Use on demand when context/ docs, the root CLAUDE.md, or docs/ specs may have drifted from the code, after large refactors, or when an agent hits a gotcha context should have prevented.
-disable-model-invocation: true
 argument-hint: "[area] [--check | --audit-claims]"
 ---
 

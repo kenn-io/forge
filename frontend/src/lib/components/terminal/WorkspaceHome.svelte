@@ -256,6 +256,10 @@
     color: var(--accent-green);
   }
 
+  .workspace-home.readonly :global(.section-icon) {
+    color: var(--text-muted);
+  }
+
   .section-title {
     font-size: var(--font-size-xs);
     font-weight: 700;

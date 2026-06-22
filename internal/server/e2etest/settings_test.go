@@ -73,6 +73,15 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	assert.Equal("acme", settings.Repos[0].Owner)
 	assert.Equal(generated.Threaded, settings.Activity.ViewMode)
 	assert.True(settings.Activity.CollapseThreads)
+	require.NotNil(settings.LaunchTargets)
+	assert.NotEmpty(*settings.LaunchTargets)
+	plainShellTarget := findSettingsLaunchTarget(
+		t, *settings.LaunchTargets, "plain_shell",
+	)
+	assert.Equal("Shell", plainShellTarget.Label)
+	assert.Equal("plain_shell", plainShellTarget.Kind)
+	assert.Equal("system", plainShellTarget.Source)
+	assert.True(plainShellTarget.Available)
 
 	invalidResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
@@ -148,6 +157,21 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	require.NoError(json.NewDecoder(reGetResp.Body).Decode(&reGet))
 	assert.True(reGet.Activity.CollapseThreads)
 	assert.True(reGet.Terminal.HideTmuxStatus)
+}
+
+func findSettingsLaunchTarget(
+	t *testing.T,
+	targets []generated.LaunchTarget,
+	key string,
+) generated.LaunchTarget {
+	t.Helper()
+	for _, target := range targets {
+		if target.Key == key {
+			return target
+		}
+	}
+	require.Failf(t, "target not found", "key %q", key)
+	return generated.LaunchTarget{}
 }
 
 func TestSettingsAPIE2EHideTmuxStatusUpdateAffectsRuntimeSessions(t *testing.T) {

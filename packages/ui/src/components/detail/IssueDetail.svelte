@@ -451,6 +451,8 @@
   let workspaceError = $state<string | null>(null);
   const createWorkspaceTitle =
     "Create an issue worktree, then open Workspaces to launch agents or shells on that branch.";
+  const createWorkspaceDescriptionId =
+    "issue-create-workspace-description";
   const ISSUE_WORKSPACE_BRANCH_CONFLICT_TYPE =
     "urn:middleman:error:issue-workspace-branch-conflict";
 
@@ -1053,11 +1055,19 @@
             title={staleIssue
               ? "Refresh details before creating a workspace."
               : createWorkspaceTitle}
+            ariaDescribedby={createWorkspaceDescriptionId}
             label={workspaceCreating ? "Creating..." : "Create Workspace"}
             shortLabel={workspaceCreating ? "Creating..." : "Create Workspace"}
           >
             <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
+        {/if}
+        {#if !workspace}
+          <span id={createWorkspaceDescriptionId} class="sr-only">
+            {staleIssue
+              ? "Refresh details before creating a workspace."
+              : createWorkspaceTitle}
+          </span>
         {/if}
         {#if issue.State === "open" && capabilities.state_mutation}
           {@const closeGate = operationGate(repoOperations?.close_issue)}
@@ -1320,6 +1330,18 @@
 
   .state-msg--error {
     color: var(--accent-red);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .issue-detail {

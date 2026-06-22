@@ -885,6 +885,8 @@
   let wsError = $state<string | null>(null);
   const createWorkspaceTitle =
     "Create a PR head worktree, then open Workspaces to launch agents, shells, or local review sessions on that branch.";
+  const createWorkspaceDescriptionId =
+    "pull-create-workspace-description";
   let actionMenuOpen = $state(false);
   let actionMenuWrapEl = $state<HTMLDivElement>();
   let stateMenuOpen = $state(false);
@@ -1988,6 +1990,7 @@
             title={stalePR
               ? "Refresh details before creating a workspace."
               : createWorkspaceTitle}
+            ariaDescribedby={createWorkspaceDescriptionId}
             label={wsCreating ? "Creating..." : "Create Workspace"}
             shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
           >
@@ -1997,6 +2000,11 @@
       {/snippet}
 
       <!-- Approve / Merge / Close / Reopen actions -->
+      {#if !workspace}
+        <span id={createWorkspaceDescriptionId} class="sr-only">
+          {stalePR ? "Refresh details before creating a workspace." : createWorkspaceTitle}
+        </span>
+      {/if}
       {#if pr.State !== "merged" && !stalePR}
         <div class="primary-actions-wrap">
           <div class="actions-row actions-row--primary">
@@ -2906,6 +2914,18 @@
   .action-error--workspace-compact {
     display: block;
     margin-top: 6px;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .section {

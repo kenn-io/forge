@@ -419,17 +419,19 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    expect(await screen.findByText("Create a workspace to run agents on a PR head")).toBeTruthy();
-    expect(screen.getByText(/From a PR or issue, use this button/i)).toBeTruthy();
+    expect(await screen.findByText("Create a workspace to run agents from a PR or issue")).toBeTruthy();
+    expect(screen.getByText(/Workspaces are git worktrees created from PR or issue heads\./i)).toBeTruthy();
+    expect(screen.getByText(/From a PR or issue, use the/i)).toBeTruthy();
     const exampleCard = screen.getByLabelText("Workspace workflow example");
     expect(exampleCard).toBeTruthy();
-    expect(screen.getByText("Example workflow")).toBeTruthy();
+    expect(screen.queryByText("Example workflow")).toBeNull();
     const createWorkspaceButton = screen.getByRole("button", {
       name: "Create Workspace",
     }) as HTMLButtonElement;
     expect(createWorkspaceButton.disabled).toBe(true);
     expect(createWorkspaceButton.getAttribute("title")).toContain("launch agents");
     const capabilityCopy = screen.getByText(/start agents, local review sessions, or a shell/i);
+    expect(screen.getByText("You can then launch configured agents via the buttons provided")).toBeTruthy();
     const exampleHeading = await screen.findByText("Launch");
     expect(capabilityCopy.compareDocumentPosition(exampleHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText("New session")).toBeNull();

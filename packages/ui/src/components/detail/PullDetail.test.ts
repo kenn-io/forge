@@ -231,6 +231,9 @@ describe("PullDetail approvals", () => {
       expect(button.getAttribute("title")).toContain("PR head worktree");
       expect(button.getAttribute("title")).toContain("launch agents");
       expect(button.getAttribute("title")).toContain("local review sessions");
+      const descriptionId = button.getAttribute("aria-describedby");
+      expect(descriptionId).toBeTruthy();
+      expect(document.getElementById(descriptionId ?? "")?.textContent).toContain(button.getAttribute("title"));
     }
   });
 

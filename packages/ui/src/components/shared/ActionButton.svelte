@@ -13,6 +13,7 @@
     disabled?: boolean;
     title?: string | undefined;
     ariaLabel?: string | undefined;
+    ariaDescribedby?: string | undefined;
     label?: string;
     shortLabel?: string;
     ariaExpanded?: boolean;
@@ -30,6 +31,7 @@
     disabled = false,
     title = undefined,
     ariaLabel = undefined,
+    ariaDescribedby = undefined,
     label = undefined,
     shortLabel = undefined,
     ariaExpanded = undefined,
@@ -57,6 +59,7 @@
   {title}
   aria-expanded={ariaExpanded}
   aria-label={ariaLabel ?? (label && shortLabel ? label : undefined)}
+  aria-describedby={ariaDescribedby}
   onclick={onclick}
 >
   {#if children}

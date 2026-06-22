@@ -222,9 +222,9 @@
     "middleman-workspace-terminal-layout:";
   const WORKFLOW_PRESETS_KEY = "middleman-workspace-layout-presets";
   const PLAIN_SHELL_TARGET = "plain_shell";
+  type EmptyLaunchTargetsState = "idle" | "loading" | "loaded" | "error";
   let emptyLaunchTargets = $state.raw<LaunchTarget[]>([]);
-  let emptyLaunchTargetsLoaded = $state(false);
-  let emptyLaunchTargetsLoading = $state(false);
+  let emptyLaunchTargetsState = $state<EmptyLaunchTargetsState>("idle");
 
   let workflowPresets = $state<WorkflowPreset[]>(loadWorkflowPresets());
   let selectedWorkflowPresetId = $state<string | null>(null);
@@ -255,17 +255,20 @@
   }
 
   async function loadEmptyLaunchTargets(): Promise<void> {
-    if (emptyLaunchTargetsLoaded || emptyLaunchTargetsLoading) return;
-    emptyLaunchTargetsLoading = true;
+    if (
+      emptyLaunchTargetsState === "loaded" ||
+      emptyLaunchTargetsState === "loading"
+    ) {
+      return;
+    }
+    emptyLaunchTargetsState = "loading";
     try {
       const { data } = await client.GET("/settings");
       emptyLaunchTargets = data?.launch_targets ?? [];
-      emptyLaunchTargetsLoaded = true;
+      emptyLaunchTargetsState = "loaded";
     } catch {
       emptyLaunchTargets = [];
-      emptyLaunchTargetsLoaded = true;
-    } finally {
-      emptyLaunchTargetsLoading = false;
+      emptyLaunchTargetsState = "error";
     }
   }
 
@@ -2485,10 +2488,13 @@
           <section class="workspace-zero-state" aria-label="Workspaces empty state">
             <div class="workspace-zero-copy">
               <p class="workspace-zero-eyebrow">Workspaces</p>
-              <h2>Create a workspace to run agents on a PR head</h2>
+              <h2>Create a workspace to run agents from a PR or issue</h2>
               <p>
                 Workspaces are git worktrees created from PR or issue
-                heads. From a PR or issue, use this button
+                heads.
+              </p>
+              <p>
+                From a PR or issue, use the
                 <span
                   class="workspace-zero-inline-action"
                   aria-label="Create Workspace example"
@@ -2510,7 +2516,7 @@
                     />
                   </ActionButton>
                 </span>
-                to launch a workspace.
+                button to launch a workspace.
               </p>
               <p>
                 Once it exists, this pane can start agents, local review
@@ -2518,9 +2524,10 @@
               </p>
             </div>
             <div class="workspace-zero-example-card" aria-label="Workspace workflow example">
-              <div class="workspace-zero-example-heading">Example workflow</div>
               <div class="workspace-zero-example" aria-label="Launch surface example">
-                <span class="workspace-zero-example-label">Then run agents here</span>
+                <span class="workspace-zero-example-label">
+                  You can then launch configured agents via the buttons provided
+                </span>
                 {#if emptyLaunchTargets.length > 0}
                   <WorkspaceHome
                     launchTargets={emptyLaunchTargets}
@@ -2528,10 +2535,18 @@
                     readonly
                     showHeader={false}
                   />
-                {:else}
+                {:else if emptyLaunchTargetsState === "error"}
+                  <p class="workspace-zero-example-empty">
+                    Launch targets could not be loaded.
+                  </p>
+                {:else if emptyLaunchTargetsState === "loaded"}
                   <p class="workspace-zero-example-empty">
                     Launch targets appear here after agent tools are configured
                     or detected.
+                  </p>
+                {:else}
+                  <p class="workspace-zero-example-empty">
+                    Loading launch targets...
                   </p>
                 {/if}
               </div>
@@ -3201,14 +3216,6 @@
     box-shadow:
       0 1px 2px rgba(0, 0, 0, 0.04),
       0 4px 14px rgba(0, 0, 0, 0.08);
-  }
-
-  .workspace-zero-example-heading {
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
   }
 
   .workspace-zero-example {

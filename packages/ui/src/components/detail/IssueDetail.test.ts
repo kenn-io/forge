@@ -193,5 +193,8 @@ describe("IssueDetail activity view", () => {
     expect(button.getAttribute("title")).toContain("issue worktree");
     expect(button.getAttribute("title")).toContain("launch agents");
     expect(button.getAttribute("title")).toContain("shells");
+    const descriptionId = button.getAttribute("aria-describedby");
+    expect(descriptionId).toBeTruthy();
+    expect(document.getElementById(descriptionId ?? "")?.textContent).toContain(button.getAttribute("title"));
   });
 });

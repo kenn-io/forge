@@ -121,6 +121,59 @@ test.describe("workspace sidebar full-stack", () => {
     }
   });
 
+  test("empty Workspaces pane explains creation and renders launch targets from settings", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const seedResponse = await api.put("/api/v1/settings", {
+        data: {
+          agents: [
+            {
+              key: "e2e-agent",
+              label: "E2E Agent",
+              command: ["/bin/sh", "-lc", "true"],
+              enabled: true,
+            },
+          ],
+        },
+      });
+      const seedBody = await seedResponse.text();
+      expect(seedResponse.status(), `PUT /api/v1/settings failed: ${seedBody}`).toBe(200);
+
+      await page.goto(`${isolatedServer.info.base_url}/workspaces`);
+
+      await expect(
+        page.getByRole("heading", {
+          name: "Create a workspace to run agents from a PR or issue",
+        }),
+      ).toBeVisible();
+      await expect(page.getByText("Workspaces are git worktrees created from PR or issue heads.")).toBeVisible();
+      await expect(page.getByText(/From a PR or issue, use the/)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Create Workspace" })).toBeDisabled();
+      await expect(page.getByText("No workspaces yet.")).toBeVisible();
+
+      const launchSurface = page.getByLabel("Launch surface example");
+      await expect(
+        launchSurface.getByText("You can then launch configured agents via the buttons provided"),
+      ).toBeVisible();
+      await expect(launchSurface.getByText("Launch", { exact: true })).toBeVisible();
+      await expect(launchSurface.getByRole("button", { name: "E2E Agent" })).toBeDisabled();
+      await expect(launchSurface.getByRole("button", { name: "Shell" })).toBeDisabled();
+
+      const iconColor = await launchSurface.locator(".section-icon").evaluate((node) => getComputedStyle(node).color);
+      const sectionColor = await launchSurface.locator(".section-bar").evaluate((node) => getComputedStyle(node).color);
+      expect(iconColor).toBe(sectionColor);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("shows provider icons in group headers when workspaces span multiple providers", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;

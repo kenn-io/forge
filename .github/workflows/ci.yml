@@ -59,7 +59,8 @@ jobs:
       - name: Run NilAway
         run: make nilaway
 
-  test:
+  test_go:
+    name: Go tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -70,20 +71,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1  # v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
-
       - name: Stub frontend embed dir
         run: |
           mkdir -p internal/web/dist
           echo ok > internal/web/dist/stub.html
-
-      - name: Run frontend unit tests
-        run: cd frontend && vp test run --project unit
 
       - name: Run tests
         run: |
@@ -130,6 +121,43 @@ jobs:
           path: tmp/test-integration-output.json
           reporter: golang-json
           fail-on-error: false
+
+  test_frontend:
+    name: Frontend unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1  # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Run frontend unit tests
+        run: cd frontend && vp test run --project unit
+
+  test:
+    runs-on: ubuntu-latest
+    needs: [test_go, test_frontend]
+    if: ${{ always() }}
+    steps:
+      - name: Check split test jobs
+        env:
+          GO_TESTS_RESULT: ${{ needs.test_go.result }}
+          FRONTEND_TESTS_RESULT: ${{ needs.test_frontend.result }}
+        run: |
+          if [ "$GO_TESTS_RESULT" != "success" ]; then
+            echo "Go tests finished with result: $GO_TESTS_RESULT" >&2
+            exit 1
+          fi
+          if [ "$FRONTEND_TESTS_RESULT" != "success" ]; then
+            echo "Frontend unit tests finished with result: $FRONTEND_TESTS_RESULT" >&2
+            exit 1
+          fi
 
   pty-windows:
     name: PTY tests (windows)

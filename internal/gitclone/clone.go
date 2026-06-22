@@ -208,8 +208,8 @@ func (m *Manager) ensureCloneNowInNamespace(
 //     branch that a workspace has checked out.
 //   - pullRefspec makes refs/pull/<N>/head available, which is how we resolve
 //     PR heads that live on forks.
-//   - gitlabMergeRequestRefspec makes refs/merge-requests/<N>/head available,
-//     which is GitLab's equivalent merge request head ref.
+//   - gitlabMergeRequestRefspec is intentionally not a default refspec. GitLab
+//     MR heads are fetched one at a time by explicit workspace operations.
 const (
 	legacyBranchRefspec       = "+refs/heads/*:refs/heads/*"
 	remoteTrackingRefspec     = "+refs/heads/*:refs/remotes/origin/*"
@@ -223,7 +223,6 @@ func defaultRefspecs() []string {
 	return []string{
 		remoteTrackingRefspec,
 		pullRefspec,
-		gitlabMergeRequestRefspec,
 	}
 }
 
@@ -256,6 +255,18 @@ func (m *Manager) ensureRefspecs(
 				"path", clonePath, "refspec", legacyBranchRefspec, "err", err)
 		} else {
 			delete(existing, legacyBranchRefspec)
+		}
+	}
+	if existing[gitlabMergeRequestRefspec] {
+		if _, err := m.git(
+			ctx, clonePath,
+			"config", "--fixed-value", "--unset-all",
+			"remote.origin.fetch", gitlabMergeRequestRefspec,
+		); err != nil {
+			slog.Warn("failed to remove unbounded GitLab MR refspec from existing clone",
+				"path", clonePath, "refspec", gitlabMergeRequestRefspec, "err", err)
+		} else {
+			delete(existing, gitlabMergeRequestRefspec)
 		}
 	}
 	for _, refspec := range defaultRefspecs() {

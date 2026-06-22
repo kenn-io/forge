@@ -581,6 +581,62 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	assert.Contains(argvs[0], ws.WorktreePath)
 }
 
+func TestSetupRejectsExistingSyntheticPRWorktreeOnStaleHead(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	localRepo, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	tmuxScript, _ := writeRecorderScript(t)
+
+	mgr := NewManager(d, wtDir)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
+	require.NoError(err)
+	existingBranch := syntheticPRWorktreeBranch(42)
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", ws.WorktreePath, "-b", existingBranch, "HEAD",
+	)
+
+	require.NoError(os.WriteFile(
+		filepath.Join(localRepo, "new-head.txt"), []byte("new head\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, localRepo, "add", ".")
+	runWorkspaceTestGit(t, localRepo, "commit", "-m", "new pr head")
+	newHead := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "HEAD",
+	)))
+	runWorkspaceTestGit(
+		t, localRepo, "push", remote,
+		"HEAD:refs/heads/feature/thing",
+	)
+	runWorkspaceTestGit(t, remote, "update-server-info")
+
+	err = mgr.Setup(t.Context(), ws)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "not current workspace head")
+	got, getErr := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(getErr)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+	require.NotNil(got.ErrorMessage)
+	assert.Contains(*got.ErrorMessage, "not current workspace head")
+	gotHead := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/remotes/origin/feature/thing",
+	)))
+	assert.Equal(newHead, gotHead)
+}
+
 func TestSetupReusesExistingLocalBasePRHeadBranchWithoutManagingIt(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -2141,6 +2197,10 @@ func TestAddWorktreeMergedSameRepoPRUsesPullRefWhenHeadBranchDeleted(
 	headBranch := "codex/wildcard-promote-local-clones"
 	headSHA := configureSameRepoPRRefs(t, cloneDir, headBranch, prNumber)
 	runWorkspaceTestGit(
+		t, cloneDir, "push", "origin",
+		fmt.Sprintf("%s:refs/pull/%d/head", headSHA, prNumber),
+	)
+	runWorkspaceTestGit(
 		t, cloneDir, "update-ref", "-d",
 		"refs/remotes/origin/"+headBranch,
 	)
@@ -2181,6 +2241,10 @@ func TestAddWorktreeGitLabMRUsesMergeRequestRefWhenHeadBranchDeleted(
 	headBranch := "feature/gitlab-merged"
 	headSHA := configureGitLabMRRefs(t, cloneDir, headBranch, mrNumber)
 	runWorkspaceTestGit(
+		t, cloneDir, "push", "origin",
+		fmt.Sprintf("%s:refs/merge-requests/%d/head", headSHA, mrNumber),
+	)
+	runWorkspaceTestGit(
 		t, cloneDir, "update-ref", "-d",
 		"refs/remotes/origin/"+headBranch,
 	)
@@ -2208,6 +2272,55 @@ func TestAddWorktreeGitLabMRUsesMergeRequestRefWhenHeadBranchDeleted(
 	gotSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
 	require.NoError(err)
 	assert.Equal(headSHA, gotSHA)
+}
+
+func TestAddWorktreeGitLabMRFetchesSpecificMergeRequestRef(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	mrNumber := 546
+	headBranch := "feature/gitlab-merged"
+	treeSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, cloneDir, "rev-parse", "main^{tree}",
+	)))
+	headSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, cloneDir, "commit-tree", treeSHA, "-p", "main",
+		"-m", "remote mr head",
+	)))
+	runWorkspaceTestGit(
+		t, cloneDir, "push", "origin",
+		fmt.Sprintf("%s:refs/merge-requests/%d/head", headSHA, mrNumber),
+	)
+
+	ws := &Workspace{
+		ID:              "ws-merged-gitlab-mr-specific-fetch",
+		Platform:        "gitlab",
+		PlatformHost:    "gitlab.com",
+		RepoOwner:       "middleman",
+		RepoName:        "middleman",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      mrNumber,
+		GitHeadRef:      headBranch,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "ws-merged-gitlab-mr-specific-fetch",
+		Status:          "creating",
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+
+	require.NoError(err)
+	assert.Equal(syntheticPRWorktreeBranch(mrNumber), branch)
+	gotSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(headSHA, gotSHA)
+	gotRef := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, cloneDir, "rev-parse",
+		fmt.Sprintf("refs/merge-requests/%d/head", mrNumber),
+	)))
+	assert.Equal(headSHA, gotRef)
 }
 
 func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {

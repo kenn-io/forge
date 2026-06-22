@@ -613,21 +613,56 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 	if err != nil {
 		return "", false, err
 	}
-	currentBranch, err := worktreeCurrentBranch(ctx, ws.WorktreePath)
-	if err != nil {
-		return "", false, err
-	}
-	branch, ok, err := existingWorkspacePersistedBranch(ctx, ws, currentBranch, localBase)
-	if err != nil {
-		return "", false, err
-	}
-	if !ok {
-		return "", false, fmt.Errorf(
-			"existing worktree branch %q does not match workspace-owned branch for %s #%d",
-			currentBranch, ws.ItemType, ws.ItemNumber,
+	var branch string
+	if err := m.withRepoLockForGitDir(ctx, commonDir, func() error {
+		useMergeRequestHeadRef, refreshErr := m.refreshExistingWorkspaceWorktree(
+			ctx, commonDir, ws,
 		)
+		if refreshErr != nil {
+			return refreshErr
+		}
+		currentBranch, branchErr := worktreeCurrentBranch(ctx, ws.WorktreePath)
+		if branchErr != nil {
+			return branchErr
+		}
+		var ok bool
+		branch, ok, branchErr = existingWorkspacePersistedBranch(
+			ctx, commonDir, ws, currentBranch, localBase, useMergeRequestHeadRef,
+		)
+		if branchErr != nil {
+			return branchErr
+		}
+		if !ok {
+			return fmt.Errorf(
+				"existing worktree branch %q does not match workspace-owned branch for %s #%d",
+				currentBranch, ws.ItemType, ws.ItemNumber,
+			)
+		}
+		return nil
+	}); err != nil {
+		return "", false, err
 	}
 	return branch, true, nil
+}
+
+func (m *Manager) refreshExistingWorkspaceWorktree(
+	ctx context.Context,
+	commonDir string,
+	ws *Workspace,
+) (bool, error) {
+	if err := m.fetchWorkspaceBase(ctx, commonDir, ws.PlatformHost, false); err != nil {
+		return false, err
+	}
+	if ws.ItemType != db.WorkspaceItemTypePullRequest {
+		return false, nil
+	}
+	if err := m.fetchWorkspaceMergeRequestHeadRef(ctx, commonDir, ws); err != nil {
+		if ws.MRHeadRepo != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func (m *Manager) workspaceWorktreeUsesLocalBase(
@@ -658,18 +693,35 @@ func (m *Manager) workspaceWorktreeUsesLocalBase(
 
 func existingWorkspacePersistedBranch(
 	ctx context.Context,
+	gitDir string,
 	ws *Workspace,
 	currentBranch string,
 	localBase bool,
+	useMergeRequestHeadRef bool,
 ) (string, bool, error) {
+	if ws.ItemType == db.WorkspaceItemTypePullRequest &&
+		currentBranch == syntheticPRWorktreeBranch(ws.ItemNumber) {
+		ok, err := existingWorkspaceHeadMatchesCurrentHead(
+			ctx, gitDir, ws, currentBranch, useMergeRequestHeadRef,
+		)
+		return currentBranch, ok, err
+	}
 	if ws.WorkspaceBranch != "" && ws.WorkspaceBranch != workspaceBranchUnknown {
 		return ws.WorkspaceBranch, currentBranch == ws.WorkspaceBranch, nil
 	}
-	if ws.ItemType == db.WorkspaceItemTypePullRequest &&
-		currentBranch == syntheticPRWorktreeBranch(ws.ItemNumber) {
-		return currentBranch, true, nil
-	}
 	if currentBranch != "" && currentBranch == ws.GitHeadRef {
+		if ws.ItemType == db.WorkspaceItemTypePullRequest {
+			ok, err := existingWorkspaceHeadMatchesCurrentHead(
+				ctx, gitDir, ws, currentBranch, useMergeRequestHeadRef,
+			)
+			if err != nil || !ok {
+				return "", false, err
+			}
+			if localBase {
+				return "", true, nil
+			}
+			return currentBranch, true, nil
+		}
 		headSHA, ok, err := gitRefSHA(ctx, ws.WorktreePath, "HEAD")
 		if err != nil || !ok {
 			return "", false, err
@@ -681,12 +733,39 @@ func existingWorkspacePersistedBranch(
 		if headSHA != startSHA {
 			return "", false, nil
 		}
-		if localBase && ws.ItemType == db.WorkspaceItemTypePullRequest {
-			return "", true, nil
-		}
 		return currentBranch, true, nil
 	}
 	return "", false, nil
+}
+
+func existingWorkspaceHeadMatchesCurrentHead(
+	ctx context.Context,
+	gitDir string,
+	ws *Workspace,
+	currentBranch string,
+	useMergeRequestHeadRef bool,
+) (bool, error) {
+	headSHA, ok, err := gitRefSHA(ctx, ws.WorktreePath, "HEAD")
+	if err != nil || !ok {
+		return false, err
+	}
+	expectedRef, err := workspaceFallbackStartRef(
+		ctx, gitDir, ws, useMergeRequestHeadRef,
+	)
+	if err != nil {
+		return false, err
+	}
+	expectedSHA, ok, err := gitRefSHA(ctx, gitDir, expectedRef)
+	if err != nil || !ok {
+		return false, err
+	}
+	if headSHA != expectedSHA {
+		return false, fmt.Errorf(
+			"existing worktree branch %q points at %s, not current workspace head %s",
+			currentBranch, headSHA, expectedSHA,
+		)
+	}
+	return true, nil
 }
 
 func worktreeCurrentBranch(ctx context.Context, path string) (string, error) {
@@ -1141,14 +1220,16 @@ func (m *Manager) addWorktreeLocked(
 		return branch, nil
 	}
 	fallbackBranch := syntheticPRWorktreeBranch(ws.ItemNumber)
-	useMergeRequestHeadRef := !localBase
-	if localBase {
-		// Providers may not retain a synthetic MR head ref. Try to populate it
-		// for deleted-head recovery, but do not trust a local stale copy when
-		// the exact refresh fails.
-		useMergeRequestHeadRef = m.fetchWorkspaceMergeRequestHeadRef(
-			ctx, cloneDir, ws,
-		) == nil
+	// Providers may not retain a synthetic MR head ref. Try to populate the
+	// specific ref needed for this workspace, but do not trust a local stale
+	// copy when the exact refresh fails.
+	fetchHeadErr := m.fetchWorkspaceMergeRequestHeadRef(ctx, cloneDir, ws)
+	useMergeRequestHeadRef := fetchHeadErr == nil
+	if !useMergeRequestHeadRef && ws.MRHeadRepo != nil {
+		return "", fmt.Errorf(
+			"preferred branch %q failed: %w; fallback branch %q failed: fetch merge request head ref: %w",
+			ws.GitHeadRef, err, fallbackBranch, fetchHeadErr,
+		)
 	}
 	startRef, startRefErr := workspaceFallbackStartRef(
 		ctx, cloneDir, ws, useMergeRequestHeadRef,

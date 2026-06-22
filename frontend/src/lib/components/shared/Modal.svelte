@@ -90,8 +90,15 @@
         const primary = body?.querySelector<HTMLElement>(
           "input:not([type='hidden']), textarea, [tabindex]:not([tabindex='-1'])",
         );
-        const fallback = dialog?.querySelector<HTMLElement>("button, [tabindex]:not([tabindex='-1'])");
-        (primary ?? fallback ?? dialog)?.focus();
+        // Prefer a body or footer control so confirmation dialogs land on their
+        // first action (Cancel) instead of the header close button; only fall
+        // back to the close button when there is nothing else to focus.
+        const action = dialog?.querySelector<HTMLElement>(
+          ".dialog-body button:not([disabled]), .dialog-body [tabindex]:not([tabindex='-1'])," +
+            " .dialog-foot button:not([disabled]), .dialog-foot [tabindex]:not([tabindex='-1'])",
+        );
+        const close = dialog?.querySelector<HTMLElement>(".dialog-close");
+        (primary ?? action ?? close ?? dialog)?.focus();
       });
     } else if (previousFocus) {
       const restore = previousFocus;

@@ -140,6 +140,12 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - Use `openTestDB(t)` helper for database tests
 - All tests use `t.TempDir()` for temp directories
 - Tests should be fast and isolated
+- Shell script tests must exercise observable behavior by running the script
+  against controlled inputs and asserting outputs, side effects, or exit
+  codes. Do not add bash tests that grep shell scripts, workflows, config
+  files, or docs for expected implementation text; those checks are usually
+  tautological and should be replaced with real execution, parser/tool-native
+  validation, or a documented manual release check.
 - Do not run tests with `-v` (especially `go test`) — default output has enough signal to debug failures, and verbose output wastes tokens. Only use `-v` if the user asks for it or a failure genuinely needs the extra detail
 - For provider-specific live or container test fixtures used when fake transports can't catch endpoint or auth drift, follow `context/testing.md` and `context/platform-sync-invariants.md`. The GitHub GraphQL gate is `MIDDLEMAN_LIVE_GITHUB_TESTS=1`.
 

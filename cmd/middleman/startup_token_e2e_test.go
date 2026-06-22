@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,16 +69,11 @@ name = "widget"
 	set := tokenauth.NewSourceSet(tokenauth.Options{
 		GitHubCLI: config.GitHubCLITokenForHost,
 	})
-	// This e2e pins host-scoped startup wiring, not gh timeout behavior.
-	// Use an explicit test deadline so package-level load cannot make a
-	// fake local gh process miss the production startup guard.
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	sources, err := collectProviderTokenSources(ctx, cfg, set)
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
 	require.NoError(err)
 
 	key := providerHostKey("github", "ghe.example.com")
-	got, err := sources[key].Token(ctx)
+	got, err := sources[key].Token(t.Context())
 	require.NoError(err)
 	assert.Equal(fakeToken, got,
 		"GHE provider key should resolve to the gh-supplied host token")

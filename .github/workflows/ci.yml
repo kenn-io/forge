@@ -140,25 +140,6 @@ jobs:
       - name: Run frontend unit tests
         run: cd frontend && vp test run --project unit
 
-  test:
-    runs-on: ubuntu-latest
-    needs: [test_go, test_frontend]
-    if: ${{ always() }}
-    steps:
-      - name: Check split test jobs
-        env:
-          GO_TESTS_RESULT: ${{ needs.test_go.result }}
-          FRONTEND_TESTS_RESULT: ${{ needs.test_frontend.result }}
-        run: |
-          if [ "$GO_TESTS_RESULT" != "success" ]; then
-            echo "Go tests finished with result: $GO_TESTS_RESULT" >&2
-            exit 1
-          fi
-          if [ "$FRONTEND_TESTS_RESULT" != "success" ]; then
-            echo "Frontend unit tests finished with result: $FRONTEND_TESTS_RESULT" >&2
-            exit 1
-          fi
-
   pty-windows:
     name: PTY tests (windows)
     runs-on: windows-latest

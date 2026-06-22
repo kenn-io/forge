@@ -52,6 +52,40 @@ describe("project-intake api", () => {
     );
   });
 
+  it("uses fleet routes when registering on a host", async () => {
+    mocks.get.mockResolvedValue({
+      data: { is_valid: true, root_path: "/srv/repo" },
+      error: undefined,
+    });
+    mocks.post.mockResolvedValue({
+      data: { id: "prj_remote" },
+      error: undefined,
+    });
+
+    await expect(
+      registerExistingProject("/srv/repo/pkg", { hostKey: "epyc" }),
+    ).resolves.toMatchObject({
+      id: "prj_remote",
+    });
+
+    expect(mocks.get).toHaveBeenCalledWith(
+      "/fleet/hosts/{host_key}/filesystem/validate-repo",
+      {
+        params: {
+          path: { host_key: "epyc" },
+          query: { path: "/srv/repo/pkg" },
+        },
+      },
+    );
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/fleet/hosts/{host_key}/projects",
+      {
+        params: { path: { host_key: "epyc" } },
+        body: { local_path: "/srv/repo" },
+      },
+    );
+  });
+
   it("rejects invalid repository paths before registering", async () => {
     mocks.get.mockResolvedValue({
       data: { is_valid: false, message: "Not a git repository" },
@@ -85,6 +119,33 @@ describe("project-intake api", () => {
           url: "git@github.com:octo/repo.git",
           path: "/tmp/repo",
           branch: "main",
+        },
+      },
+    );
+  });
+
+  it("uses the fleet clone route when cloning on a host", async () => {
+    mocks.post.mockResolvedValue({
+      data: { id: "prj_remote_clone" },
+      error: undefined,
+    });
+
+    await expect(
+      cloneProject(
+        "git@github.com:octo/repo.git",
+        "/srv/repo",
+        undefined,
+        { hostKey: "epyc" },
+      ),
+    ).resolves.toMatchObject({ id: "prj_remote_clone" });
+
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/fleet/hosts/{host_key}/projects/clone",
+      {
+        params: { path: { host_key: "epyc" } },
+        body: {
+          url: "git@github.com:octo/repo.git",
+          path: "/srv/repo",
         },
       },
     );

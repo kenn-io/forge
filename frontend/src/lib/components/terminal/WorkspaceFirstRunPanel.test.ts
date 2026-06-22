@@ -152,6 +152,67 @@ describe("WorkspaceFirstRunPanel", () => {
     );
   });
 
+  it("adds a project on a scoped host", async () => {
+    mocks.registerExistingProject.mockResolvedValue(project("prj_remote"));
+    const command = setupConfig({ ghAuthed: true });
+    win.__middleman_config.workspace = {
+      selectedHostKey: "local",
+      selectedWorktreeKey: null,
+      hosts: [
+        {
+          key: "local",
+          label: "Local",
+          connectionState: "connected",
+          platform: "github",
+          projects: [],
+          sessions: [],
+          resources: null,
+        },
+        {
+          key: "epyc",
+          label: "EPYC",
+          connectionState: "connected",
+          platform: "github",
+          projects: [],
+          sessions: [],
+          resources: null,
+        },
+      ],
+    };
+    win.__middleman_notify_config_changed?.();
+
+    render(WorkspaceFirstRunPanel, {
+      props: { firstRun: false, hostKey: "epyc" },
+    });
+
+    expect(screen.getByText("Add a project.")).toBeTruthy();
+    expect(screen.getByText("Host: EPYC")).toBeTruthy();
+
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: /Add an existing repository/i,
+      }),
+    );
+    await fireEvent.input(screen.getByLabelText("Repository path"), {
+      target: { value: "/srv/repo" },
+    });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Add repository" }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.registerExistingProject).toHaveBeenCalledWith(
+        "/srv/repo",
+        { hostKey: "epyc" },
+      );
+    });
+    expect(command).toHaveBeenCalledWith("project-registered", {
+      projectId: "prj_remote",
+      hostKey: "epyc",
+    });
+    expect(mocks.navigate).toHaveBeenCalledWith("/workspaces");
+  });
+
   it("clones a Git URL and notifies the host", async () => {
     mocks.cloneProject.mockResolvedValue(project("prj_clone"));
     const command = setupConfig({ ghAuthed: true });

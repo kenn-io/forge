@@ -45,6 +45,7 @@ export type Route =
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
   | { page: "reviews"; jobId?: number }
+  | { page: "project-intake"; hostKey?: string }
   | { page: "terminal"; workspaceId: string; hostKey?: string }
   // Embed-targetable workspace surfaces. Hosts mount these
   // routes to render a single component of the workspaces UX
@@ -332,6 +333,14 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "reviews" };
   }
+  if (path === "/project-intake") {
+    const sp = new URLSearchParams(search);
+    const hostKey = emptyToNull(sp.get("host"));
+    return {
+      page: "project-intake",
+      ...(hostKey ? { hostKey } : {}),
+    };
+  }
   const fleetTerminalMatch = path.match(/^\/terminal\/fleet\/([^/]+)\/([^/]+)$/);
   if (fleetTerminalMatch) {
     return {
@@ -562,7 +571,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "messages";
   } else if (r.page === "reviews") {
     navType = "reviews";
-  } else if (isWorkspacePage(r.page)) {
+  } else if (r.page === "project-intake" || isWorkspacePage(r.page)) {
     navType = "workspaces";
   } else if (r.page === "design-system") {
     navType = "activity";

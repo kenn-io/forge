@@ -30,6 +30,7 @@
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
   import WorkspaceEmbedShell from "./lib/components/terminal/WorkspaceEmbedShell.svelte";
+  import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import KataFeature from "./lib/features/kata/KataFeature.svelte";
   import { fetchKataDaemons } from "./lib/api/kata/daemons.js";
@@ -1192,6 +1193,14 @@
           <ReviewsView jobId={route.jobId} />
         {:else}
           <ReviewsView />
+        {/if}
+      {:else if getPage() === "project-intake"}
+        {@const route = getRoute()}
+        {#if route.page === "project-intake"}
+          <WorkspaceFirstRunPanel
+            firstRun={false}
+            hostKey={route.hostKey}
+          />
         {/if}
       {:else if getPage() === "workspaces" || getPage() === "terminal"}
         {@const r = getRoute()}

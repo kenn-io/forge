@@ -479,6 +479,17 @@ describe("router embed-workspace routes", () => {
     expect(getPage()).toBe("embed-workspace-project");
   });
 
+  it("parses /project-intake with an optional host", () => {
+    navigate("/project-intake");
+    expect(getRoute()).toEqual({ page: "project-intake" });
+
+    navigate("/project-intake?host=epyc");
+    expect(getRoute()).toEqual({
+      page: "project-intake",
+      hostKey: "epyc",
+    });
+  });
+
   it("falls back to the standalone workspaces page for unknown project_id shapes", () => {
     navigate("/workspaces/embed/project/has slash/extra");
     expect(getRoute()).toEqual({ page: "workspaces" });
@@ -606,6 +617,7 @@ describe("router navigation events", () => {
       "/workspaces/embed/empty/noWorkspace",
       "/workspaces/embed/first-run",
       "/workspaces/embed/project/prj_abc123",
+      "/project-intake?host=epyc",
     ];
 
     for (const path of embedPaths) {

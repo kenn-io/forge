@@ -1,7 +1,7 @@
 <script lang="ts">
-  // WorkspaceFirstRunPanel renders when the project registry is empty.
-  // Project registration is owned here so embedders only need to react
-  // after a project exists.
+  // WorkspaceFirstRunPanel owns project registration for both the
+  // empty-registry first run and explicit add-project routes. Embedders
+  // only need to react after a project exists.
 
   import {
     cloneProject,
@@ -19,6 +19,11 @@
   import ToolingStatusBlock from "./ToolingStatusBlock.svelte";
 
   type ActionId = "add-existing" | "clone" | "connect-github";
+
+  interface Props {
+    firstRun?: boolean;
+    hostKey?: string | null;
+  }
 
   interface ActionDefinition {
     id: ActionId;
@@ -48,6 +53,7 @@
     },
   ];
 
+  let { firstRun = true, hostKey = null }: Props = $props();
   let mode = $state<ActionId | null>(null);
   let inFlight = $state(false);
   let lastError = $state<string | null>(null);
@@ -65,12 +71,51 @@
   let githubBranch = $state("");
 
   const tooling = $derived(resolveToolingStatus());
-  const provider = $derived.by(() => {
-    const workspace = getWorkspaceData();
+  const scopedHostKey = $derived(hostKey?.trim() || undefined);
+  const projectOptions = $derived(
+    scopedHostKey ? { hostKey: scopedHostKey } : undefined,
+  );
+  const workspaceData = $derived(getWorkspaceData());
+  const selectedHost = $derived.by(() => {
+    const workspace = workspaceData;
     if (!workspace) return undefined;
-    const selectedHost = workspace.hosts.find(
-      (host) => host.key === workspace.selectedHostKey,
+    if (scopedHostKey) {
+      return workspace.hosts.find(
+        (candidate) => candidate.key === scopedHostKey,
+      );
+    }
+    return workspace.hosts.find(
+      (candidate) => candidate.key === workspace.selectedHostKey,
     ) ?? workspace.hosts[0];
+  });
+  const actionDefinitions = $derived(
+    ACTIONS.map((action) => {
+      if (action.id !== "add-existing") return action;
+      return {
+        ...action,
+        label: scopedHostKey
+          ? "Add an existing repository"
+          : "Add an existing local repository",
+        description: scopedHostKey
+          ? "Register a checkout that already exists on this host."
+          : "Register a checkout that already exists here.",
+      };
+    }),
+  );
+  const title = $derived(
+    firstRun ? "Get to your first worktree." : "Add a project.",
+  );
+  const lede = $derived(
+    firstRun
+      ? "Worktrees keep one branch checked out per directory so each change you start has its own working tree, terminal, and agent. Pick a starting point below."
+      : "Register an existing checkout or clone a repository so it can be used for worktrees.",
+  );
+  const hostLabel = $derived(
+    scopedHostKey
+      ? selectedHost?.label ?? scopedHostKey
+      : null,
+  );
+  const provider = $derived.by(() => {
     return selectedHost?.platform;
   });
   const ghAuthed = $derived(
@@ -137,15 +182,40 @@
   }
 
   async function finishProject(project: ProjectResponse): Promise<void> {
-    const result = await emitWorkspaceCommand("project-registered", {
+    const payload: Record<string, unknown> = {
       projectId: project.id,
-    });
+    };
+    if (scopedHostKey) payload.hostKey = scopedHostKey;
+
+    const result = await emitWorkspaceCommand("project-registered", payload);
     if (!result.ok) {
       lastError =
         result.message ?? "Project registered, but the host did not refresh.";
       return;
     }
-    navigate(`/workspaces/embed/project/${encodeURIComponent(project.id)}`);
+    if (scopedHostKey) {
+      navigate("/workspaces");
+    } else {
+      navigate(`/workspaces/embed/project/${encodeURIComponent(project.id)}`);
+    }
+  }
+
+  function registerProject(path: string): Promise<ProjectResponse> {
+    if (projectOptions) {
+      return registerExistingProject(path, projectOptions);
+    }
+    return registerExistingProject(path);
+  }
+
+  function cloneProjectForHost(
+    url: string,
+    path: string,
+    branch?: string,
+  ): Promise<ProjectResponse> {
+    if (projectOptions) {
+      return cloneProject(url, path, branch, projectOptions);
+    }
+    return cloneProject(url, path, branch);
   }
 
   async function submitExisting(): Promise<void> {
@@ -153,7 +223,7 @@
     inFlight = true;
     lastError = null;
     try {
-      await finishProject(await registerExistingProject(existingPath));
+      await finishProject(await registerProject(existingPath));
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -167,7 +237,7 @@
     lastError = null;
     try {
       await finishProject(
-        await cloneProject(cloneURL, clonePath, cloneBranch),
+        await cloneProjectForHost(cloneURL, clonePath, cloneBranch),
       );
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
@@ -186,7 +256,7 @@
     lastError = null;
     try {
       await finishProject(
-        await cloneProject(
+        await cloneProjectForHost(
           chosenGithubRepo.ssh_url,
           githubPath,
           githubBranch,
@@ -203,18 +273,19 @@
 <section class="first-run" aria-labelledby="first-run-title">
   <div class="first-run__intro">
     <h1 id="first-run-title" class="first-run__title">
-      Get to your first worktree.
+      {title}
     </h1>
     <p class="first-run__lede">
-      Worktrees keep one branch checked out per directory so each
-      change you start has its own working tree, terminal, and
-      agent. Pick a starting point below.
+      {lede}
     </p>
+    {#if hostLabel}
+      <p class="first-run__host">Host: {hostLabel}</p>
+    {/if}
   </div>
 
   {#if mode === null}
     <ul class="first-run__actions">
-      {#each ACTIONS as action (action.id)}
+      {#each actionDefinitions as action (action.id)}
         {@const disabled = isDisabled(action)}
         {@const reason = disabledReason(action)}
         <li class="first-run-action">
@@ -249,7 +320,7 @@
     <div class="first-run-form">
       <div class="first-run-form__header">
         <h2 class="first-run-form__title">
-          {ACTIONS.find((action) => action.id === mode)?.label}
+          {actionDefinitions.find((action) => action.id === mode)?.label}
         </h2>
         <button
           type="button"
@@ -456,6 +527,13 @@
     color: var(--text-secondary);
     font-size: var(--font-size-md);
     line-height: 1.5;
+  }
+
+  .first-run__host {
+    margin: 0;
+    color: var(--text-muted);
+    font-family: var(--font-mono, monospace);
+    font-size: var(--font-size-sm);
   }
 
   .first-run__actions {

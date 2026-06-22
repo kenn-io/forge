@@ -4,23 +4,40 @@ import { apiErrorMessage, client } from "./runtime.ts";
 
 export type ProjectResponse = components["schemas"]["ProjectResponse"];
 export type UserRepository = components["schemas"]["UserRepository"];
+type ProblemError = components["schemas"]["ProblemError"];
+type RepoValidation = components["schemas"]["FilesystemValidateRepoOutputBody"];
+
+export interface ProjectIntakeOptions {
+  hostKey?: string | null;
+}
+
+function normalizedHostKey(options?: ProjectIntakeOptions): string | undefined {
+  const hostKey = options?.hostKey?.trim();
+  return hostKey ? hostKey : undefined;
+}
 
 export async function registerExistingProject(
   path: string,
+  options?: ProjectIntakeOptions,
 ): Promise<ProjectResponse> {
   const trimmed = path.trim();
   if (!trimmed) {
     throw new Error("Repository path is required.");
   }
 
-  const { data: validation, error: validationError } =
-    await client.GET("/filesystem/validate-repo", {
+  const hostKey = normalizedHostKey(options);
+  const validationResult = hostKey
+    ? await client.GET("/fleet/hosts/{host_key}/filesystem/validate-repo", {
+        params: { path: { host_key: hostKey }, query: { path: trimmed } },
+      })
+    : await client.GET("/filesystem/validate-repo", {
       params: { query: { path: trimmed } },
     });
+  const validation = validationResult.data as RepoValidation | undefined;
   if (!validation) {
     throw new Error(
       apiErrorMessage(
-        validationError,
+        validationResult.error as ProblemError | undefined,
         "Couldn't validate repository path.",
       ),
     );
@@ -29,12 +46,20 @@ export async function registerExistingProject(
     throw new Error(validation.message ?? "Not a git repository.");
   }
 
-  const { data, error } = await client.POST("/projects", {
-    body: { local_path: validation.root_path ?? trimmed },
-  });
+  const body = { local_path: validation.root_path ?? trimmed };
+  const result = hostKey
+    ? await client.POST("/fleet/hosts/{host_key}/projects", {
+        params: { path: { host_key: hostKey } },
+        body,
+      })
+    : await client.POST("/projects", { body });
+  const data = result.data as ProjectResponse | undefined;
   if (!data) {
     throw new Error(
-      apiErrorMessage(error, "Couldn't register repository."),
+      apiErrorMessage(
+        result.error as ProblemError | undefined,
+        "Couldn't register repository.",
+      ),
     );
   }
   return data;
@@ -44,6 +69,7 @@ export async function cloneProject(
   url: string,
   path: string,
   branch?: string,
+  options?: ProjectIntakeOptions,
 ): Promise<ProjectResponse> {
   const trimmedURL = url.trim();
   const trimmedPath = path.trim();
@@ -55,15 +81,26 @@ export async function cloneProject(
     throw new Error("Destination path is required.");
   }
 
-  const { data, error } = await client.POST("/projects/clone", {
-    body: {
-      url: trimmedURL,
-      path: trimmedPath,
-      ...(trimmedBranch ? { branch: trimmedBranch } : {}),
-    },
-  });
+  const hostKey = normalizedHostKey(options);
+  const body = {
+    url: trimmedURL,
+    path: trimmedPath,
+    ...(trimmedBranch ? { branch: trimmedBranch } : {}),
+  };
+  const result = hostKey
+    ? await client.POST("/fleet/hosts/{host_key}/projects/clone", {
+        params: { path: { host_key: hostKey } },
+        body,
+      })
+    : await client.POST("/projects/clone", { body });
+  const data = result.data as ProjectResponse | undefined;
   if (!data) {
-    throw new Error(apiErrorMessage(error, "Couldn't clone repository."));
+    throw new Error(
+      apiErrorMessage(
+        result.error as ProblemError | undefined,
+        "Couldn't clone repository.",
+      ),
+    );
   }
   return data;
 }

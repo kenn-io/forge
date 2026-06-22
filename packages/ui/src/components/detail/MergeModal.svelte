@@ -9,7 +9,14 @@
 
   const client = getClient();
 
-  onMount(() => pushModalFrame("merge-modal", []));
+  onMount(() => {
+    const cleanupFrame = pushModalFrame("merge-modal", []);
+    window.addEventListener("keydown", handleKeydown, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", handleKeydown, { capture: true });
+      cleanupFrame();
+    };
+  });
 
   interface Props {
     owner: string;
@@ -168,6 +175,7 @@
   function handleKeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") {
       e.preventDefault();
+      e.stopImmediatePropagation();
       onclose();
     }
   }

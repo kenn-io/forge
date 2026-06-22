@@ -961,6 +961,24 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail.locator(".list-layout > .resize-handle")).toHaveCount(0);
   });
 
+  test("Escape from merge modal keeps activity split detail open", async ({ page }) => {
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const detail = await openActivityPRSplit(page);
+    await detail.locator(".btn--merge").first().click();
+
+    const modal = page.locator(".modal", { hasText: "Merge Pull Request" });
+    await expect(modal).toBeVisible();
+
+    await page.keyboard.press("Escape");
+
+    await expect(modal).toHaveCount(0);
+    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
+    await expect(detail).toBeVisible();
+    await expect(detail.locator(".pull-detail")).toBeVisible();
+  });
+
   test("kanban drawer Files tab renders the file/commit sidebar", async ({ page }) => {
     await mockDiffForAllPRs(page, tinyDiff);
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { buildCanonicalProviderItemURL } from "./item-reference.js";
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdown, renderMarkdownBlocks } from "./markdown.js";
 
 describe("renderMarkdown task lists", () => {
   it("renders item references with the shared internal route and data attributes", () => {
@@ -209,5 +209,47 @@ describe("renderMarkdown mermaid diagrams", () => {
 
     expect(html).toContain('<pre class="mermaid">graph TD\n  A --&gt; B</pre>');
     expect(html).not.toContain("language-mermaid");
+  });
+});
+
+describe("renderMarkdown details blocks", () => {
+  const source = [
+    "<details open>",
+    "",
+    "<summary>Tips for collapsed sections</summary>",
+    "",
+    "### You can add a header",
+    "",
+    "You can add text within a collapsed section.",
+    "",
+    "```ruby",
+    'puts "Hello World"',
+    "```",
+    "",
+    "</details>",
+  ].join("\n");
+
+  it("preserves GitHub-style details blocks with rendered markdown inside", () => {
+    const html = renderMarkdown(source);
+
+    expect(html).toContain("<details");
+    expect(html).toContain('open=""');
+    expect(html).toContain("<summary>Tips for collapsed sections</summary>");
+    expect(html).toContain("<h3>You can add a header</h3>");
+    expect(html).toContain("<p>You can add text within a collapsed section.</p>");
+    expect(html).toContain('<code class="language-ruby">puts "Hello World"');
+    expect(html).toContain("</details>");
+  });
+
+  it("keeps details blocks as one rendered block for rich markdown previews", () => {
+    const blocks = renderMarkdownBlocks(source);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.startLine).toBe(1);
+    expect(blocks[0]?.endLine).toBe(13);
+    expect(blocks[0]?.html).toContain("<details");
+    expect(blocks[0]?.html).toContain("<summary>Tips for collapsed sections</summary>");
+    expect(blocks[0]?.html).toContain("<h3>You can add a header</h3>");
+    expect(blocks[0]?.html).toContain("</details>");
   });
 });

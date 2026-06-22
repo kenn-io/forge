@@ -163,6 +163,28 @@ describe("renderDocsMarkdown", () => {
     expect(html).not.toContain("/api/v1/docs/folders/notes/blob");
     expect(html).toContain("assets/diagram.svg");
   });
+
+  test("preserves GitHub-style details blocks with rendered markdown inside", () => {
+    const source = [
+      "<details open>",
+      "",
+      "<summary>Tips for collapsed sections</summary>",
+      "",
+      "### You can add a header",
+      "",
+      "You can add text within a collapsed section.",
+      "",
+      "</details>",
+    ].join("\n");
+    const html = renderDocsMarkdown(source, baseOptions);
+
+    expect(html).toContain("<details");
+    expect(html).toContain('open=""');
+    expect(html).toContain("<summary>Tips for collapsed sections</summary>");
+    expect(html).toContain('<h3 id="you-can-add-a-header">You can add a header</h3>');
+    expect(html).toContain("<p>You can add text within a collapsed section.</p>");
+    expect(html).toContain("</details>");
+  });
 });
 
 describe("hardened rendering", () => {

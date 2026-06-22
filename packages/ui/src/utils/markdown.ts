@@ -313,6 +313,22 @@ function tokenRendersVisibleBlock(token: Tokens.Generic): boolean {
   return token.type !== "space" && token.type !== "def";
 }
 
+function detailsDepthDelta(raw: string): number {
+  let depth = 0;
+  for (const match of raw.matchAll(/<\/?details\b[^>]*>/gi)) {
+    depth += match[0].startsWith("</") ? -1 : 1;
+  }
+  return depth;
+}
+
+function opensDetailsBlock(token: Tokens.Generic): boolean {
+  return token.type === "html" && detailsDepthDelta(token.raw) > 0;
+}
+
+function tokenRaw(tokens: Tokens.Generic[]): string {
+  return tokens.map((token) => token.raw).join("");
+}
+
 export function renderMarkdownBlocks(
   raw: string,
   repo?: RepoContext,
@@ -324,8 +340,30 @@ export function renderMarkdownBlocks(
   resetRenderState(opts);
   const blocks: RenderedMarkdownBlock[] = [];
   let line = 1;
-  for (const token of tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
     const startLine = line;
+    if (opensDetailsBlock(token)) {
+      const groupedTokens = [token];
+      let depth = detailsDepthDelta(token.raw);
+      while (depth > 0 && i + 1 < tokens.length) {
+        const next = tokens[++i]!;
+        groupedTokens.push(next);
+        depth += detailsDepthDelta(next.raw);
+      }
+      const raw = tokenRaw(groupedTokens);
+      const lineCount = visibleTokenLineCount(raw);
+      if (lineCount > 0) {
+        blocks.push({
+          key: `${blocks.length}:details:${startLine}`,
+          startLine,
+          endLine: startLine + lineCount - 1,
+          html: sanitizeMarkdownHtml(marked.parser(groupedTokens) as string),
+        });
+      }
+      line += tokenLineBreakCount(raw);
+      continue;
+    }
     const lineCount = visibleTokenLineCount(token.raw);
     if (tokenRendersVisibleBlock(token) && lineCount > 0) {
       blocks.push({

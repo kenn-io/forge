@@ -551,6 +551,16 @@ a:hover {
   color: var(--text-secondary);
   margin: 6px 0;
 }
+.markdown-body details {
+  margin: 6px 0;
+}
+.markdown-body summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.markdown-body details[open] > summary {
+  margin-bottom: 0.5em;
+}
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3 {

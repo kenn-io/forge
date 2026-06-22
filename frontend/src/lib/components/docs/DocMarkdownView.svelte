@@ -363,6 +363,19 @@
     color: var(--text-secondary);
   }
 
+  .doc-markdown :global(details) {
+    margin: 0 0 12px;
+  }
+
+  .doc-markdown :global(summary) {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .doc-markdown :global(details[open] > summary) {
+    margin-bottom: 8px;
+  }
+
   .doc-markdown :global(img) {
     max-width: 100%;
     height: auto;

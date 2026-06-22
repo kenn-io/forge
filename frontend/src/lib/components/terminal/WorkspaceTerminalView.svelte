@@ -4,6 +4,7 @@
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
+  import WorkspaceDeleteDialog from "./WorkspaceDeleteDialog.svelte";
   import WorkspaceHome from "./WorkspaceHome.svelte";
   import LaunchMenu from "./LaunchMenu.svelte";
   import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
@@ -167,7 +168,6 @@
   let forcePromptMessage = $state<string | null>(null);
   let forcePromptForId = $state<string | null>(null);
   let forceDeleting = $state(false);
-  let cancelForceBtnEl = $state<HTMLButtonElement | null>(null);
   let stopPromptSession = $state<RuntimeSession | null>(null);
   let stopSessionStopping = $state(false);
   let cancelStopBtnEl = $state<HTMLButtonElement | null>(null);
@@ -2254,8 +2254,6 @@
       });
     } else if (stopPromptSession !== null) {
       void tick().then(() => cancelStopBtnEl?.focus());
-    } else if (forcePromptMessage !== null) {
-      void tick().then(() => cancelForceBtnEl?.focus());
     } else if (!modalOpen && previouslyFocusedEl !== null) {
       const triggerEl = previouslyFocusedEl;
       previouslyFocusedEl = null;
@@ -2265,13 +2263,6 @@
         }
       });
     }
-  });
-
-  $effect(() => {
-    if (forcePromptMessage === null) return;
-    return untrack(() =>
-      pushModalFrame("workspace-force-delete", []),
-    );
   });
 
   $effect(() => {
@@ -2947,57 +2938,18 @@
   </div>
 {/if}
 
-{#if forcePromptMessage !== null}
-  <div
-    class="force-delete-backdrop"
-    role="presentation"
-    onkeydown={handleConfirmPromptKeydown}
-  >
-    <div
-      class="force-delete-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="force-delete-title"
-      aria-describedby="force-delete-message"
-    >
-      <div class="force-delete-header">
-        <AlertIcon
-          class="force-delete-icon"
-          size="20"
-          strokeWidth="2"
-          aria-hidden="true"
-        />
-        <h2 id="force-delete-title">Force delete workspace?</h2>
-      </div>
-      <p id="force-delete-message" class="force-delete-message">
-        {forcePromptMessage}
-      </p>
-      <p class="force-delete-hint">
-        Force-deleting discards any uncommitted changes in the
-        worktree. This cannot be undone.
-      </p>
-      <div class="force-delete-actions">
-        <button
-          type="button"
-          class="force-delete-cancel"
-          disabled={forceDeleting}
-          bind:this={cancelForceBtnEl}
-          onclick={cancelForceDelete}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="force-delete-confirm"
-          disabled={forceDeleting}
-          onclick={() => void confirmForceDelete()}
-        >
-          {forceDeleting ? "Deleting…" : "Force delete"}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+<WorkspaceDeleteDialog
+  open={forcePromptMessage !== null}
+  title="Force delete workspace?"
+  message={forcePromptMessage ?? ""}
+  hint="Force-deleting discards any uncommitted changes in the worktree. This cannot be undone."
+  confirmLabel="Force delete"
+  pendingLabel="Deleting…"
+  busy={forceDeleting}
+  frameId="workspace-force-delete"
+  onCancel={cancelForceDelete}
+  onConfirm={() => void confirmForceDelete()}
+/>
 
 <style>
   .terminal-view {

@@ -19,8 +19,8 @@
     repoIdentityKey,
     type RepoLabelIdentity,
   } from "@middleman/ui/utils/repo-label";
-  import Modal from "../shared/Modal.svelte";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
+  import WorkspaceDeleteDialog from "./WorkspaceDeleteDialog.svelte";
   import {
     defaultWorkspaceListDisplayOptions,
     defaultWorkspaceListSort,
@@ -1315,39 +1315,20 @@
   </div>
 {/if}
 
-{#if deleteConfirmWorkspace}
-  <Modal
-    open={deleteConfirmWorkspace !== null}
-    title="Delete workspace"
-    onClose={closeDeleteWorkspaceDialog}
-    width={420}
-  >
-    <p class="delete-dialog-body">
-      Delete workspace "{displayName(deleteConfirmWorkspace)}"?
-    </p>
-    <p class="delete-dialog-hint">
-      This removes its managed worktree and runtime sessions.
-    </p>
-    {#snippet footer()}
-      <button
-        type="button"
-        class="dialog-btn dialog-btn-secondary"
-        disabled={deleteConfirmBusy}
-        onclick={closeDeleteWorkspaceDialog}
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="dialog-btn dialog-btn-danger"
-        disabled={deleteConfirmBusy}
-        onclick={() => void confirmDeleteWorkspaceFromList()}
-      >
-        {deleteConfirmBusy ? "Deleting..." : "Delete workspace"}
-      </button>
-    {/snippet}
-  </Modal>
-{/if}
+<WorkspaceDeleteDialog
+  open={deleteConfirmWorkspace !== null}
+  title="Delete workspace?"
+  message={deleteConfirmWorkspace
+    ? `Delete workspace "${displayName(deleteConfirmWorkspace)}"?`
+    : ""}
+  hint="This removes its managed worktree and runtime sessions."
+  confirmLabel="Delete workspace"
+  pendingLabel="Deleting…"
+  busy={deleteConfirmBusy}
+  frameId="workspace-sidebar-delete"
+  onCancel={closeDeleteWorkspaceDialog}
+  onConfirm={() => void confirmDeleteWorkspaceFromList()}
+/>
 
 <style>
   .workspace-list-sidebar {
@@ -2050,54 +2031,6 @@
 
   .workspace-context-danger {
     color: var(--accent-red);
-  }
-
-  .delete-dialog-body {
-    margin: 0;
-    color: var(--text-primary);
-    font-size: var(--font-size-md);
-    font-weight: 600;
-    line-height: 1.45;
-  }
-
-  .delete-dialog-hint {
-    margin: 8px 0 0;
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    line-height: 1.45;
-  }
-
-  .dialog-btn {
-    padding: 6px 12px;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .dialog-btn:disabled {
-    cursor: not-allowed;
-    opacity: 0.65;
-  }
-
-  .dialog-btn-secondary {
-    border: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-  }
-
-  .dialog-btn-secondary:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-  }
-
-  .dialog-btn-danger {
-    border: 1px solid var(--accent-red);
-    background: var(--accent-red);
-    color: white;
-  }
-
-  .dialog-btn-danger:hover:not(:disabled) {
-    filter: brightness(1.08);
   }
 
   /* Width-aware hiding: shed least-critical chrome first as the

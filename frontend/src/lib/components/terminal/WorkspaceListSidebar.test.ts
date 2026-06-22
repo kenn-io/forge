@@ -1306,7 +1306,7 @@ describe("WorkspaceListSidebar", () => {
     await fireEvent.contextMenu(container.querySelector(".ws-row")!);
     await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Delete workspace" });
+    const dialog = await screen.findByRole("dialog", { name: "Delete workspace?" });
     expect(dialog.textContent).toContain('Delete workspace "Delete me"?');
     expect(dialog.textContent).toContain("This removes its managed worktree and runtime sessions.");
     expect(window.confirm).not.toHaveBeenCalled();
@@ -1350,10 +1350,10 @@ describe("WorkspaceListSidebar", () => {
 
     await fireEvent.contextMenu(container.querySelector(".ws-row")!);
     await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
-    const dialog = await screen.findByRole("dialog", { name: "Delete workspace" });
+    const dialog = await screen.findByRole("dialog", { name: "Delete workspace?" });
     await fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByRole("dialog", { name: "Delete workspace" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Delete workspace?" })).toBeNull();
     expect(window.confirm).not.toHaveBeenCalled();
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();

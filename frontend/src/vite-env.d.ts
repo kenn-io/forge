@@ -218,8 +218,33 @@ interface WorkspaceDetailContext {
   host: WorkspaceHost | null;
 }
 
+type MiddlemanNavigatePage =
+  | "pulls"
+  | "issues"
+  | "activity"
+  | "repos"
+  | "kata"
+  | "docs"
+  | "messages"
+  | "board"
+  | "reviews"
+  | "workspaces";
+
+type MiddlemanNavigateType =
+  | "pull"
+  | "issue"
+  | "activity"
+  | "repos"
+  | "kata"
+  | "docs"
+  | "messages"
+  | "board"
+  | "reviews"
+  | "workspaces";
+
 interface MiddlemanNavigateEvent {
-  type: "pull" | "issue" | "activity" | "repos" | "kata" | "docs" | "messages" | "board" | "reviews" | "workspaces";
+  page: MiddlemanNavigatePage;
+  type: MiddlemanNavigateType;
   owner?: string;
   name?: string;
   number?: number;

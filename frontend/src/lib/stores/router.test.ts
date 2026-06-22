@@ -529,6 +529,7 @@ describe("router navigation events", () => {
 
     expect(spy).toHaveBeenCalledTimes(1);
     const payload = spy.mock.calls[0]![0];
+    expect(payload.page).toBe("pulls");
     expect(payload.type).toBe("pull");
     expect(payload.focus).toBe(false);
     expect(payload.owner).toBe("acme");
@@ -544,7 +545,24 @@ describe("router navigation events", () => {
 
     expect(spy).toHaveBeenCalledTimes(1);
     const payload = spy.mock.calls[0]![0];
+    expect(payload.page).toBe("pulls");
     expect(payload.type).toBe("pull");
+    expect(payload.owner).toBe("acme");
+    expect(payload.name).toBe("widgets");
+    expect(payload.number).toBe(42);
+  });
+
+  it("fires onNavigate with pulls page for focus pull route", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate(focusPrRoute);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const payload = spy.mock.calls[0]![0];
+    expect(payload.page).toBe("pulls");
+    expect(payload.type).toBe("pull");
+    expect(payload.focus).toBe(true);
     expect(payload.owner).toBe("acme");
     expect(payload.name).toBe("widgets");
     expect(payload.number).toBe(42);
@@ -558,7 +576,25 @@ describe("router navigation events", () => {
 
     expect(spy).toHaveBeenCalledTimes(1);
     const payload = spy.mock.calls[0]![0];
-    expect(payload).toEqual({ type: "pull", focus: false, view: "/pulls" });
+    expect(payload).toEqual({
+      page: "pulls",
+      type: "pull",
+      focus: false,
+      view: "/pulls",
+    });
+  });
+
+  it("fires onNavigate with board page for /pulls/board", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/pulls/board");
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const payload = spy.mock.calls[0]![0];
+    expect(payload.page).toBe("board");
+    expect(payload.type).toBe("board");
+    expect(payload.focus).toBe(false);
   });
 
   it("maps /design-system to activity navigation events", () => {
@@ -569,6 +605,7 @@ describe("router navigation events", () => {
 
     expect(spy).toHaveBeenCalledTimes(1);
     const payload = spy.mock.calls[0]![0];
+    expect(payload.page).toBe("activity");
     expect(payload.type).toBe("activity");
     expect(payload.view).toBe("/design-system");
   });
@@ -580,6 +617,7 @@ describe("router navigation events", () => {
     navigate("/kata");
 
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.page).toBe("kata");
     expect(payload.type).toBe("kata");
     expect(payload.view).toBe("/kata");
   });
@@ -591,6 +629,7 @@ describe("router navigation events", () => {
     navigate("/docs?folder=notes&doc=Daily%2Ftoday.md");
 
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.page).toBe("docs");
     expect(payload.type).toBe("docs");
     expect(payload.view).toBe("/docs?folder=notes&doc=Daily%2Ftoday.md");
   });
@@ -602,6 +641,7 @@ describe("router navigation events", () => {
     navigate("/messages?q=from%3Aops");
 
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.page).toBe("messages");
     expect(payload.type).toBe("messages");
     expect(payload.view).toBe("/messages?q=from%3Aops");
   });
@@ -624,6 +664,7 @@ describe("router navigation events", () => {
       spy.mockClear();
       navigate(path);
       const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+      expect(payload.page, `page for ${path}`).toBe("workspaces");
       expect(payload.type, `type for ${path}`).toBe("workspaces");
       expect(payload.focus, `focus for ${path}`).toBe(false);
     }

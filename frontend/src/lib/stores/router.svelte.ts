@@ -542,7 +542,7 @@ export function navigate(path: string, state?: Record<string, unknown>): void {
 
 function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
   const focus = r.page === "focus";
-  let navType: MiddlemanNavigateEvent["type"];
+  let navType: MiddlemanNavigateType;
   if (r.page === "focus") {
     if (r.itemType === "mrs") {
       navType = "pull";
@@ -579,7 +579,17 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "activity";
   }
 
+  let page: MiddlemanNavigatePage;
+  if (navType === "pull") {
+    page = "pulls";
+  } else if (navType === "issue") {
+    page = "issues";
+  } else {
+    page = navType;
+  }
+
   const event: MiddlemanNavigateEvent = {
+    page,
     type: navType,
     focus,
     view: stripBase(window.location.pathname) + window.location.search,

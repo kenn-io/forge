@@ -58,6 +58,19 @@ func newNotificationLoopHandle(parent context.Context) *notificationLoopHandle {
 func (h *notificationLoopHandle) startTicker(name string, interval time.Duration, run func(context.Context) error) {
 	h.wg.Go(func() {
 		ctx := h.ctx
+		runOnce := func() {
+			if err := run(ctx); err != nil && ctx.Err() == nil {
+				slog.Warn(name+" failed", "err", err)
+			}
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		runOnce()
+		if ctx.Err() != nil {
+			return
+		}
+
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -65,9 +78,7 @@ func (h *notificationLoopHandle) startTicker(name string, interval time.Duration
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := run(ctx); err != nil && ctx.Err() == nil {
-					slog.Warn(name+" failed", "err", err)
-				}
+				runOnce()
 			}
 		}
 	})

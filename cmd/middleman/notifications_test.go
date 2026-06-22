@@ -58,6 +58,29 @@ func TestNotificationLoopStopWaitsForInFlightRun(t *testing.T) {
 	}
 }
 
+func TestNotificationLoopRunsBeforeFirstTickerInterval(t *testing.T) {
+	parent, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	handle := newNotificationLoopHandle(parent)
+	defer handle.Stop()
+
+	started := make(chan struct{})
+	var startedOnce sync.Once
+	handle.startTicker("test notification", time.Hour, func(runCtx context.Context) error {
+		startedOnce.Do(func() { close(started) })
+		return nil
+	})
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-started:
+			return true
+		default:
+			return false
+		}
+	}, 200*time.Millisecond, 10*time.Millisecond, "notification loop should run before first ticker interval")
+}
+
 func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {
 	require := require.New(t)
 	cfg := &config.Config{}

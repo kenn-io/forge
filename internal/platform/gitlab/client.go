@@ -275,7 +275,7 @@ func (c *Client) PreviewNamespace(
 	if err == nil {
 		return result.finish(), nil
 	}
-	if !isGitLabStatus(err, http.StatusNotFound) {
+	if !isGitLabNotFound(err) {
 		return PreviewResult{}, mapGitLabError("preview_group", err)
 	}
 	if err := ctx.Err(); err != nil {
@@ -882,12 +882,27 @@ func mapGitLabErrorForHost(platformHost, capability string, err error) error {
 	}
 }
 
+// isGitLabStatus reports whether err carries a typed GitLab response with the
+// given status. It matches only on the typed *gitlab.ErrorResponse (errors.As
+// unwraps platform.Error). It deliberately does NOT fall back to substring
+// matching on err.Error(): that string embeds the request URL, so an unrelated
+// host:port (for example an ephemeral httptest port like 127.0.0.1:40404, or a
+// project ID) could contain "404"/"403" and misclassify a transient 429/5xx as
+// a not-found/forbidden error that callers then silently swallow.
+//
+// Note: go-gitlab does not return a typed *gitlab.ErrorResponse for 404s; it
+// returns the sentinel gitlab.ErrNotFound. Use isGitLabNotFound for those.
 func isGitLabStatus(err error, status int) bool {
 	var gitlabErr *gitlab.ErrorResponse
-	if errors.As(err, &gitlabErr) && gitlabErr.HasStatusCode(status) {
-		return true
-	}
-	return strings.Contains(err.Error(), strconv.Itoa(status))
+	return errors.As(err, &gitlabErr) && gitlabErr.HasStatusCode(status)
+}
+
+// isGitLabNotFound reports whether err is a GitLab 404. go-gitlab's
+// CheckResponse returns the sentinel gitlab.ErrNotFound (a plain error, not a
+// *gitlab.ErrorResponse) for every 404, so errors.Is is the only reliable
+// detection. errors.Is unwraps platform.Error, so wrapped errors match too.
+func isGitLabNotFound(err error) bool {
+	return errors.Is(err, gitlab.ErrNotFound)
 }
 
 func isUnavailableSourceProjectError(err error) bool {
@@ -898,8 +913,7 @@ func isUnavailableSourceProjectError(err error) bool {
 			return true
 		}
 	}
-	return isGitLabStatus(err, http.StatusForbidden) ||
-		isGitLabStatus(err, http.StatusNotFound)
+	return isGitLabNotFound(err) || isGitLabStatus(err, http.StatusForbidden)
 }
 
 func partialError(namespace string, page int64, err error) PartialError {

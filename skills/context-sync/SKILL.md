@@ -23,11 +23,11 @@ single-surface context layout: root `CLAUDE.md` routes to flat `context/*.md` to
 
 This repo installs Claude Code and Codex `Stop` hooks that require context-sync to check
 the current worktree state before a turn completes. When a Stop hook asks for context
-sync, run `context-sync --check` first. If it reports drift, address the drift or report
-the findings before marking the state as checked.
+sync, run `scripts/context-sync --check` first. If it reports drift, address the drift
+or report the findings before marking the state as checked.
 
-After any successful `context-sync --check` or full context-sync run, mark the current
-worktree state:
+After any successful `scripts/context-sync --check` or full context-sync run, mark the
+current worktree state:
 
 ```bash
 scripts/hooks/context-sync-stop.sh mark

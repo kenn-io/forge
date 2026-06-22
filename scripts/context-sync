@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'USAGE'
+usage: scripts/context-sync --check
+
+Run the repo-local context-sync preflight used by stop hooks. The automated
+check validates that routed context docs referenced by CLAUDE.md still exist
+and that AGENTS.md resolves to CLAUDE.md.
+USAGE
+}
+
+root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+mode="${1:-}"
+
+if [ "$mode" != "--check" ]; then
+  usage
+  exit 64
+fi
+
+status=0
+
+require_file() {
+  local path="$1"
+  if [ ! -f "$root/$path" ]; then
+    printf 'context-sync: missing required file: %s\n' "$path" >&2
+    status=1
+  fi
+}
+
+require_file "CLAUDE.md"
+require_file "AGENTS.md"
+require_file "skills/context-sync/SKILL.md"
+
+if [ -e "$root/AGENTS.md" ] && [ "$(cd "$root" && realpath AGENTS.md)" != "$(cd "$root" && realpath CLAUDE.md)" ]; then
+  printf 'context-sync: AGENTS.md does not resolve to CLAUDE.md\n' >&2
+  status=1
+fi
+
+if [ -f "$root/CLAUDE.md" ]; then
+  while IFS= read -r ref; do
+    [ -n "$ref" ] || continue
+    if [ ! -f "$root/$ref" ]; then
+      printf 'context-sync: CLAUDE.md references missing context file: %s\n' "$ref" >&2
+      status=1
+    fi
+  done < <(
+    grep -Eo '(context|docs)/[A-Za-z0-9._/-]+\.md' "$root/CLAUDE.md" |
+      sort -u
+  )
+fi
+
+if [ "$status" -eq 0 ]; then
+  echo "context-sync: check passed"
+else
+  echo "context-sync: check failed" >&2
+fi
+
+exit "$status"

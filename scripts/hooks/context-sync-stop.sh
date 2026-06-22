@@ -6,7 +6,7 @@ usage() {
 usage: context-sync-stop.sh stop|mark|status
 
 stop    Enforce that context-sync has checked the current worktree state.
-mark    Record the current worktree state after context-sync --check or sync.
+mark    Record the current worktree state after scripts/context-sync --check or sync.
 status  Print whether the current worktree state is marked.
 USAGE
 }
@@ -76,7 +76,7 @@ require_marked() {
 middleman context-sync is required before this turn can complete.
 
 Run:
-  context-sync --check
+  scripts/context-sync --check
   scripts/hooks/context-sync-stop.sh mark
 
 If context-sync reports drift, address it or report the findings before marking.

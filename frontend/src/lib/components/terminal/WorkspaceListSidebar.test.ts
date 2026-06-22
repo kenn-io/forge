@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -1249,10 +1249,12 @@ describe("WorkspaceListSidebar", () => {
     });
   });
 
-  it("deletes a workspace from the context menu after confirmation", async () => {
+  it("deletes a workspace from the context menu after in-app confirmation", async () => {
     vi.stubGlobal(
       "confirm",
-      vi.fn(() => true),
+      vi.fn(() => {
+        throw new Error("native confirm should not be used");
+      }),
     );
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
@@ -1304,8 +1306,13 @@ describe("WorkspaceListSidebar", () => {
     await fireEvent.contextMenu(container.querySelector(".ws-row")!);
     await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
 
+    const dialog = await screen.findByRole("dialog", { name: "Delete workspace" });
+    expect(dialog.textContent).toContain('Delete workspace "Delete me"?');
+    expect(dialog.textContent).toContain("This removes its managed worktree and runtime sessions.");
+    expect(window.confirm).not.toHaveBeenCalled();
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Delete workspace" }));
+
     await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Delete workspace "Delete me"?'));
       expect(mockDelete).toHaveBeenCalledWith("/workspaces/{id}", {
         params: { path: { id: "ws-delete" } },
       });
@@ -1313,10 +1320,12 @@ describe("WorkspaceListSidebar", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/workspaces");
   });
 
-  it("keeps a workspace when context menu deletion is cancelled", async () => {
+  it("keeps a workspace when context menu deletion is cancelled in-app", async () => {
     vi.stubGlobal(
       "confirm",
-      vi.fn(() => false),
+      vi.fn(() => {
+        throw new Error("native confirm should not be used");
+      }),
     );
     mockGet.mockResolvedValue({
       data: {
@@ -1341,7 +1350,11 @@ describe("WorkspaceListSidebar", () => {
 
     await fireEvent.contextMenu(container.querySelector(".ws-row")!);
     await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete workspace" });
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
+    expect(screen.queryByRole("dialog", { name: "Delete workspace" })).toBeNull();
+    expect(window.confirm).not.toHaveBeenCalled();
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
   });

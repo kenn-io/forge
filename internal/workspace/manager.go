@@ -609,9 +609,14 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 	if !owned {
 		return "", false, nil
 	}
-	localBase, err := m.workspaceWorktreeUsesLocalBase(ctx, commonDir, ws)
+	localBase, reusable, err := m.existingWorkspaceWorktreeProvenance(
+		ctx, commonDir, ws,
+	)
 	if err != nil {
 		return "", false, err
+	}
+	if !reusable {
+		return "", false, nil
 	}
 	var branch string
 	if err := m.withRepoLockForGitDir(ctx, commonDir, func() error {
@@ -643,6 +648,75 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 		return "", false, err
 	}
 	return branch, true, nil
+}
+
+// existingWorkspaceWorktreeProvenance decides whether the path already
+// recorded for this workspace may be refreshed and reused. The ownership
+// matrix is intentionally narrow:
+//   - expected managed clone: reusable for synthetic PR branches, persisted
+//     workspace branches, issue branches, and detached/unknown heads that later
+//     pass branch validation;
+//   - current configured local base: reusable only for same-repo workspaces
+//     after validating the actual worktree config, hooks, refspecs, and origin;
+//   - fork PR/MR: reusable only from the managed clone, never from a local base;
+//   - matching origin from any other git dir, stale local-base config, or a
+//     user-created checkout at the deterministic path: not reusable.
+//
+// If reuse fails after this point, Setup records an error and leaves the
+// worktree in place. Cleanup later deletes only branches that the persisted
+// workspace branch proves middleman owns; an empty or unknown branch marker is
+// deliberately treated as user-owned.
+func (m *Manager) existingWorkspaceWorktreeProvenance(
+	ctx context.Context,
+	commonDir string,
+	ws *Workspace,
+) (localBase bool, reusable bool, err error) {
+	if m.existingWorktreeUsesManagedClone(ctx, commonDir, ws) {
+		return false, true, nil
+	}
+	if ws.MRHeadRepo != nil {
+		return false, false, nil
+	}
+	usesLocalBase, err := m.workspaceWorktreeUsesLocalBase(ctx, commonDir, ws)
+	if err != nil || !usesLocalBase {
+		return false, false, err
+	}
+	if _, err := ValidateWorktreeBasePath(
+		ctx, ws.WorktreePath, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	); err != nil {
+		return false, false, err
+	}
+	return true, true, nil
+}
+
+func (m *Manager) existingWorktreeUsesManagedClone(
+	ctx context.Context,
+	commonDir string,
+	ws *Workspace,
+) bool {
+	if m.clones == nil {
+		return false
+	}
+	cloneDir, err := m.clones.ClonePathInNamespace(
+		workspaceCloneNamespace(ws.Platform),
+		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
+	if err != nil {
+		return false
+	}
+	ready, err := gitCloneDirReady(cloneDir)
+	if err != nil || !ready {
+		return false
+	}
+	actualDir, err := canonicalFilesystemPath(commonDir)
+	if err != nil {
+		return false
+	}
+	expectedDir, err := canonicalFilesystemPath(cloneDir)
+	if err != nil {
+		return false
+	}
+	return actualDir == expectedDir
 }
 
 func (m *Manager) refreshExistingWorkspaceWorktree(
@@ -1169,7 +1243,8 @@ func localGitConfigKeysForScope(
 		}
 		if scope == "--worktree" &&
 			(strings.Contains(out, "extensions.worktreeConfig") ||
-				strings.Contains(out, "extension worktreeConfig")) {
+				strings.Contains(out, "extension worktreeConfig") ||
+				strings.Contains(out, "config.worktree")) {
 			return nil, nil
 		}
 		return nil, err
@@ -1215,6 +1290,13 @@ func (m *Manager) addWorktreeLocked(
 	if ws.ItemType == db.WorkspaceItemTypeIssue {
 		return m.addIssueWorktree(ctx, cloneDir, ws)
 	}
+	mergeRequestHeadRefFetched := false
+	if ws.MRHeadRepo != nil {
+		if err := m.fetchWorkspaceMergeRequestHeadRef(ctx, cloneDir, ws); err != nil {
+			return "", fmt.Errorf("fetch merge request head ref: %w", err)
+		}
+		mergeRequestHeadRefFetched = true
+	}
 	branch, err := m.addPreferredWorktree(ctx, cloneDir, localBase, ws)
 	if err == nil {
 		return branch, nil
@@ -1223,8 +1305,12 @@ func (m *Manager) addWorktreeLocked(
 	// Providers may not retain a synthetic MR head ref. Try to populate the
 	// specific ref needed for this workspace, but do not trust a local stale
 	// copy when the exact refresh fails.
-	fetchHeadErr := m.fetchWorkspaceMergeRequestHeadRef(ctx, cloneDir, ws)
-	useMergeRequestHeadRef := fetchHeadErr == nil
+	var fetchHeadErr error
+	useMergeRequestHeadRef := mergeRequestHeadRefFetched
+	if !useMergeRequestHeadRef {
+		fetchHeadErr = m.fetchWorkspaceMergeRequestHeadRef(ctx, cloneDir, ws)
+		useMergeRequestHeadRef = fetchHeadErr == nil
+	}
 	if !useMergeRequestHeadRef && ws.MRHeadRepo != nil {
 		return "", fmt.Errorf(
 			"preferred branch %q failed: %w; fallback branch %q failed: fetch merge request head ref: %w",

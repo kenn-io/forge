@@ -581,6 +581,85 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	assert.Contains(argvs[0], ws.WorktreePath)
 }
 
+func TestSetupDoesNotReuseUnconfiguredMatchingOriginWorktree(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	tmuxScript, _ := writeRecorderScript(t)
+
+	mgr := NewManager(d, wtDir)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+
+	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
+	require.NoError(err)
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", ws.WorktreePath,
+		"-b", syntheticPRWorktreeBranch(42), "HEAD",
+	)
+
+	err = mgr.Setup(t.Context(), ws)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "clone manager not set")
+	got, getErr := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(getErr)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+	assert.Equal(workspaceBranchUnknown, got.WorkspaceBranch)
+}
+
+func TestSetupRejectsExistingLocalBaseWorktreeWithExecutableConfig(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	tmuxScript, _ := writeRecorderScript(t)
+
+	mgr := NewManager(d, wtDir)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
+	require.NoError(err)
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", ws.WorktreePath,
+		"-b", syntheticPRWorktreeBranch(42), "HEAD",
+	)
+	runWorkspaceTestGit(t, localRepo, "config", "extensions.worktreeConfig", "true")
+	runWorkspaceTestGit(
+		t, ws.WorktreePath,
+		"config", "--worktree", "core.fsmonitor", "demo-fsmonitor",
+	)
+
+	err = mgr.Setup(t.Context(), ws)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "local git config")
+	assert.Contains(err.Error(), "core.fsmonitor")
+	got, getErr := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(getErr)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+	assert.Equal(workspaceBranchUnknown, got.WorkspaceBranch)
+}
+
 func TestSetupRejectsExistingSyntheticPRWorktreeOnStaleHead(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -2184,6 +2263,51 @@ func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
 			assert.Equal(want.mergeRef, mergeRef)
 		})
 	}
+}
+
+func TestAddWorktreeGitLabForkMRFetchesHeadBeforePreferredBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	mrNumber := 547
+	headBranch := "contributor/gitlab-fork"
+	treeSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, cloneDir, "rev-parse", "main^{tree}",
+	)))
+	headSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, cloneDir, "commit-tree", treeSHA, "-p", "main",
+		"-m", "remote fork mr head",
+	)))
+	runWorkspaceTestGit(
+		t, cloneDir, "push", "origin",
+		fmt.Sprintf("%s:refs/merge-requests/%d/head", headSHA, mrNumber),
+	)
+	headRepo := "https://gitlab.com/contributor/widget.git"
+	ws := &Workspace{
+		ID:              "ws-gitlab-fork-mr-preferred",
+		Platform:        "gitlab",
+		PlatformHost:    "gitlab.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      mrNumber,
+		GitHeadRef:      headBranch,
+		MRHeadRepo:      &headRepo,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "ws-gitlab-fork-mr-preferred",
+		Status:          "creating",
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+
+	require.NoError(err)
+	assert.Equal(headBranch, branch)
+	gotSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(headSHA, gotSHA)
 }
 
 func TestAddWorktreeMergedSameRepoPRUsesPullRefWhenHeadBranchDeleted(

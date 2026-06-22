@@ -242,7 +242,7 @@ func TestClientGetMergeRequestPropagatesTransientForkHeadRepoLookupFailures(t *t
 				"state": "opened"
 			}`)
 		case "/api/v4/projects/77":
-			http.Error(w, "temporary failure", http.StatusBadGateway)
+			http.Error(w, "rate limited", http.StatusTooManyRequests)
 		default:
 			http.NotFound(w, r)
 		}
@@ -262,7 +262,7 @@ func TestClientGetMergeRequestPropagatesTransientForkHeadRepoLookupFailures(t *t
 	require.Error(err)
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeInvalidRepoRef, platformErr.Code)
+	assert.Equal(platform.ErrCodeRateLimited, platformErr.Code)
 	assert.Equal("get_source_project", platformErr.Capability)
 }
 

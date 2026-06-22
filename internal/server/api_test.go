@@ -6334,6 +6334,74 @@ func TestAPICommentAutocompleteReferencesScopesByProvider(t *testing.T) {
 	assert.Empty(body.Users)
 }
 
+func TestAPICommentAutocompleteGitLabMergeRequestReferencesScopesByProvider(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	giteaRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	gitlabRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         giteaRepoID,
+		PlatformID:     12001,
+		Number:         1,
+		URL:            "https://gitlab.example.com/acme/widget/pulls/1",
+		Title:          "Provider collision merge request",
+		Author:         "gina",
+		State:          "open",
+		HeadBranch:     "feature-gitea",
+		BaseBranch:     "main",
+		CreatedAt:      now.Add(-2 * time.Hour),
+		UpdatedAt:      now.Add(-2 * time.Hour),
+		LastActivityAt: now.Add(-2 * time.Hour),
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         gitlabRepoID,
+		PlatformID:     12901,
+		Number:         901,
+		URL:            "https://gitlab.example.com/acme/widget/-/merge_requests/901",
+		Title:          "Provider collision merge request",
+		Author:         "glenda",
+		State:          "open",
+		HeadBranch:     "feature-gitlab",
+		BaseBranch:     "main",
+		CreatedAt:      now.Add(-time.Hour),
+		UpdatedAt:      now.Add(-time.Hour),
+		LastActivityAt: now.Add(-time.Hour),
+	})
+	require.NoError(err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/host/gitlab.example.com/repo/gitlab/acme/widget/comment-autocomplete?trigger=!&q=collision&limit=10", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var body commentAutocompleteResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.Equal([]db.CommentAutocompleteReference{
+		{Kind: "pull", Number: 901, Title: "Provider collision merge request", State: "open"},
+	}, body.References)
+	assert.Empty(body.Users)
+}
+
 func TestAPISyncStatus(t *testing.T) {
 	require := require.New(t)
 

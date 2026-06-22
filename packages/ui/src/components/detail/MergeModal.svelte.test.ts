@@ -74,6 +74,14 @@ describe("MergeModal head pinning", () => {
     });
   }
 
+  function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
   async function confirmMerge(): Promise<void> {
     await fireEvent.click(screen.getByText("Squash and merge", { selector: ".modal-footer button" }));
   }
@@ -165,6 +173,22 @@ describe("MergeModal head pinning", () => {
     expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge/deferred");
     expect(init.body.method).toBe("squash");
     expect(onclose).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the deferred merge action while scheduling the merge", async () => {
+    const scheduled = deferred<{ data: Record<string, never>; error: undefined; response: Response }>();
+    const post = vi.fn().mockReturnValue(scheduled.promise);
+    renderModal(post, {
+      deferUntilChecksPass: true,
+    });
+
+    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".modal-footer button" }));
+
+    const pendingButton = screen.getByRole<HTMLButtonElement>("button", { name: "Merge scheduled..." });
+    expect(pendingButton.disabled).toBe(true);
+    expect(post).toHaveBeenCalledTimes(1);
+
+    scheduled.resolve({ data: {}, error: undefined, response: new Response("{}") });
   });
 
   it("enqueues a deferred merge when requested without granular pending checks", async () => {

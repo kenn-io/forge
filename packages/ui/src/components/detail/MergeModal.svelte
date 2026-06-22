@@ -188,7 +188,7 @@
   }
 
   function primaryButtonLabel(): string {
-    if (merging) return "Merging...";
+    if (merging) return deferUntilChecksPass ? "Merge scheduled..." : "Merging...";
     return deferUntilChecksPass ? "Merge after CI is complete" : methodLabel();
   }
 </script>

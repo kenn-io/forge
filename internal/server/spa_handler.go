@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+const (
+	spaFrameAncestorsPolicy = "frame-ancestors 'none'"
+	spaXFrameOptions        = "DENY"
+)
+
 func newSPAAssetHandler(
 	frontend fs.FS,
 	basePath string,
@@ -30,6 +35,8 @@ func newSPAAssetHandler(
 		idx := strings.Replace(indexTemplate, "<head>",
 			`<head><script>`+script+`</script>`, 1)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", spaFrameAncestorsPolicy)
+		w.Header().Set("X-Frame-Options", spaXFrameOptions)
 		// index.html references content-hashed bundles. Browsers
 		// must always re-fetch it so a rebuild is picked up; the
 		// hashed assets it references can still be cached forever.

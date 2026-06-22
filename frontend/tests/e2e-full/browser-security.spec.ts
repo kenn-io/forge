@@ -12,10 +12,10 @@ type ExternalOrigin = {
   url: string;
 };
 
-async function startExternalOrigin(): Promise<ExternalOrigin> {
+async function startExternalOrigin(body = "<!doctype html><title>external origin</title>"): Promise<ExternalOrigin> {
   const server = createServer((_req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end("<!doctype html><title>external origin</title>");
+    res.end(body);
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -137,6 +137,49 @@ test("same-origin browser JSON mutations reach the API", async ({ page, baseURL 
   });
 
   expect(result.status).toBe(400);
+});
+
+test("SPA shell cannot be framed by another origin", async ({ page, baseURL }) => {
+  expect(baseURL).toBeTruthy();
+  const target = apiURL(baseURL!, "/workspaces");
+  const response = await page.request.get(target);
+  const headers = response.headers();
+  expect(headers["content-security-policy"]).toBe("frame-ancestors 'none'");
+  expect(headers["x-frame-options"]).toBe("DENY");
+
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
+
+  const escapedTarget = target.replaceAll('"', "&quot;");
+  const externalOrigin = await startExternalOrigin(
+    `<!doctype html><title>frame attempt</title><iframe id="middleman-frame" src="${escapedTarget}"></iframe>`,
+  );
+
+  try {
+    await page.goto(externalOrigin.url);
+
+    await expect
+      .poll(
+        () =>
+          consoleErrors.some(
+            (text) =>
+              text.includes("frame-ancestors") || text.includes("X-Frame-Options") || text.includes("Refused to frame"),
+          ),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+
+    const frameHandle = await page.locator("#middleman-frame").elementHandle();
+    expect(frameHandle).not.toBeNull();
+    const frame = await frameHandle!.contentFrame();
+    expect(await frame?.locator(".workspace-list-sidebar").count()).toBeFalsy();
+  } finally {
+    await externalOrigin.close();
+  }
 });
 
 test("same-origin browser non-JSON mutations return a JSON 415 error", async ({ page, baseURL }) => {

@@ -350,6 +350,59 @@ test.describe("workspace sidebar full-stack", () => {
     }
   });
 
+  test("context menu delete removes the workspace through the real backend", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const deletedWorkspace = await createIssueWorkspace(api, 10);
+      await createIssueWorkspace(api, 11);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${deletedWorkspace.id}`);
+
+      const rows = page.locator(".workspace-list-sidebar .ws-row");
+      await expect(rows).toHaveCount(2);
+
+      const deletedRow = rows.filter({ hasText: "Widget rendering broken on Safari" });
+      await expect(deletedRow).toHaveCount(1);
+      await deletedRow.click({ button: "right" });
+
+      await page
+        .getByRole("menu", { name: "Workspace actions" })
+        .getByRole("menuitem", { name: "Delete workspace..." })
+        .click();
+
+      const dialog = page.getByRole("dialog", { name: "Delete workspace?" });
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText("Widget rendering broken on Safari");
+
+      const deleteResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "DELETE" &&
+          new URL(response.url()).pathname === `/api/v1/workspaces/${deletedWorkspace.id}`,
+      );
+      await dialog.getByRole("button", { name: "Delete workspace" }).click();
+      expect((await deleteResponse).status()).toBe(204);
+
+      await expect(page).toHaveURL(/\/workspaces$/);
+      await expect(rows).toHaveCount(1);
+      await expect(rows).not.toContainText("Widget rendering broken on Safari");
+      await expect(rows).toContainText("Add dark mode support");
+
+      const workspacesResponse = await api.get("/api/v1/workspaces");
+      expect(workspacesResponse.ok()).toBe(true);
+      const workspacesPayload = (await workspacesResponse.json()) as WorkspaceListResponse;
+      expect(workspacesPayload.workspaces.map((workspace) => workspace.id)).not.toContain(deletedWorkspace.id);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("filters real workspace API results and expands collapsed matches during search", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;

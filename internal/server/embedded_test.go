@@ -146,3 +146,46 @@ func TestSPACacheHeaders(t *testing.T) {
 		})
 	}
 }
+
+func TestSPAFrameProtectionHeaders(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
+		},
+		"assets/index-DEADBEEF.js": &fstest.MapFile{
+			Data: []byte(`console.log("bundle");`),
+		},
+	}
+
+	srv := setupEmbeddedServer(t, "/", frontend, ServerOptions{})
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{name: "index", path: "/"},
+		{name: "spa fallback", path: "/workspaces"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			assert := Assert.New(t)
+			assert.Equal(http.StatusOK, rr.Code)
+			assert.Equal(spaFrameAncestorsPolicy, rr.Header().Get("Content-Security-Policy"))
+			assert.Equal(spaXFrameOptions, rr.Header().Get("X-Frame-Options"))
+		})
+	}
+
+	t.Run("asset", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/assets/index-DEADBEEF.js", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		assert := Assert.New(t)
+		assert.Equal(http.StatusOK, rr.Code)
+		assert.Empty(rr.Header().Get("Content-Security-Policy"))
+		assert.Empty(rr.Header().Get("X-Frame-Options"))
+	})
+}

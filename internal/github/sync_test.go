@@ -3019,6 +3019,91 @@ func TestRepoSyncMarksClosedLinkedNotificationsDone(t *testing.T) {
 	assert.NotNil(done[0].DoneAt)
 }
 
+func TestSyncIssueOnProviderMarksClosedLinkedNotificationsDone(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	number := 11
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     2001,
+		Number:         number,
+		URL:            "https://gitlab.com/acme/widget/-/issues/11",
+		Title:          "stale issue",
+		Author:         "grace",
+		State:          "open",
+		CreatedAt:      now.Add(-time.Hour),
+		UpdatedAt:      now.Add(-time.Hour),
+		LastActivityAt: now.Add(-time.Hour),
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertNotifications(ctx, []db.Notification{{
+		Platform:               "gitlab",
+		PlatformHost:           "gitlab.com",
+		PlatformNotificationID: "thread-closed-issue",
+		RepoID:                 &repoID,
+		RepoOwner:              "acme",
+		RepoName:               "widget",
+		SubjectType:            "Issue",
+		SubjectTitle:           "Close me",
+		WebURL:                 "https://gitlab.com/acme/widget/-/issues/11",
+		ItemNumber:             &number,
+		ItemType:               "issue",
+		Reason:                 "mention",
+		Unread:                 true,
+		SourceUpdatedAt:        now,
+		SyncedAt:               now,
+	}}))
+
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{
+			kind: platform.KindGitLab,
+			host: "gitlab.com",
+		},
+		issues: []platform.Issue{{
+			Repo:           platformRepoRef(repo),
+			PlatformID:     2001,
+			Number:         number,
+			URL:            "https://gitlab.com/acme/widget/-/issues/11",
+			Title:          "closed issue",
+			Author:         "grace",
+			State:          "closed",
+			CreatedAt:      now,
+			UpdatedAt:      now.Add(time.Minute),
+			LastActivityAt: now.Add(time.Minute),
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+
+	active, err := d.ListNotifications(ctx, db.ListNotificationsOpts{State: "active"})
+	require.NoError(err)
+	require.Len(active, 1)
+
+	require.NoError(syncer.SyncIssueOnProvider(ctx, platform.KindGitLab, "gitlab.com", "acme", "widget", number))
+
+	active, err = d.ListNotifications(ctx, db.ListNotificationsOpts{State: "active"})
+	require.NoError(err)
+	assert.Empty(active)
+	done, err := d.ListNotifications(ctx, db.ListNotificationsOpts{State: "done"})
+	require.NoError(err)
+	require.Len(done, 1)
+	assert.Equal("closed", done[0].DoneReason)
+	assert.NotNil(done[0].DoneAt)
+}
+
 func TestDiffSyncErrorUserMessageSanitized(t *testing.T) {
 	assert := Assert.New(t)
 	// A representative leak: clone path, ref, SHA, and command stderr.

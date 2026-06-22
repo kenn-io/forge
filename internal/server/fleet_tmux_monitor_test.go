@@ -158,6 +158,7 @@ exit 0
 			mon := newFleetTmuxMonitor(
 				[]string{writeFleetTmuxMonitorScript(t, tc.script)}, false, nil,
 			)
+			mon.probeTimeout = 5 * time.Second
 
 			mon.refreshInventory(context.Background())
 

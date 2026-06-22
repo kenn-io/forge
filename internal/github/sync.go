@@ -7930,7 +7930,7 @@ func (s *Syncer) SyncIssueOnProvider(
 	if _, err := s.fetchIssueDetail(ctx, repo, repoID, number); err != nil {
 		return err
 	}
-	return nil
+	return s.markClosedLinkedNotificationsDone(ctx)
 }
 
 func (s *Syncer) syncIssueWithHost(

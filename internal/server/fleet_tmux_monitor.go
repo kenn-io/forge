@@ -30,6 +30,7 @@ type fleetTmuxMonitor struct {
 	tmuxCmd                 []string
 	includeUnmanagedDetails bool
 	clock                   func() time.Time
+	probeTimeout            time.Duration
 
 	currentInventory     fleetTmuxInventorySample
 	previousInventory    fleetTmuxInventorySample
@@ -107,6 +108,7 @@ func newFleetTmuxMonitor(
 		tmuxCmd:                 slices.Clone(tmuxCmd),
 		includeUnmanagedDetails: includeUnmanagedDetails,
 		clock:                   clock,
+		probeTimeout:            fleetTmuxProbeTimeout,
 	}
 }
 
@@ -181,7 +183,7 @@ func (m *fleetTmuxMonitor) recordMetricsSample(sample fleetTmuxMetricsSample) {
 }
 
 func (m *fleetTmuxMonitor) refreshInventory(ctx context.Context) {
-	cctx, cancel := context.WithTimeout(ctx, fleetTmuxProbeTimeout)
+	cctx, cancel := context.WithTimeout(ctx, m.probeTimeout)
 	defer cancel()
 
 	// Fixed-format fields come first and the free-text session name last, so
@@ -241,7 +243,7 @@ func (m *fleetTmuxMonitor) refreshInventory(ctx context.Context) {
 }
 
 func (m *fleetTmuxMonitor) refreshMetrics(ctx context.Context) {
-	cctx, cancel := context.WithTimeout(ctx, fleetTmuxProbeTimeout)
+	cctx, cancel := context.WithTimeout(ctx, m.probeTimeout)
 	defer cancel()
 
 	snap := m.snapshot()

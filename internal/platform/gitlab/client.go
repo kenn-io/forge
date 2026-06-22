@@ -399,7 +399,14 @@ func (c *Client) projectCloneURL(ctx context.Context, projectID int64) (string, 
 		return cached, nil
 	}
 
-	project, _, err := c.api.Projects.GetProject(projectID, nil, gitlab.WithContext(ctx))
+	project, _, err := c.api.Projects.GetProject(
+		projectID,
+		nil,
+		gitlab.WithContext(ctx),
+		gitlab.WithRequestRetry(func(context.Context, *http.Response, error) (bool, error) {
+			return false, nil
+		}),
+	)
 	if err != nil || project == nil {
 		if err == nil {
 			err = errors.New("source project response was empty")

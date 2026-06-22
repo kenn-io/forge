@@ -597,6 +597,19 @@ describe("router navigation events", () => {
     expect(payload.focus).toBe(false);
   });
 
+  it("fires onNavigate with issues page for issue list route", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/issues");
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const payload = spy.mock.calls[0]![0];
+    expect(payload.page).toBe("issues");
+    expect(payload.type).toBe("issue");
+    expect(payload.focus).toBe(false);
+  });
+
   it("maps /design-system to activity navigation events", () => {
     const spy = vi.fn();
     installOnNavigate(spy);

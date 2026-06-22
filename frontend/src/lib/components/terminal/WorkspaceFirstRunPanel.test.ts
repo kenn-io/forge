@@ -1,37 +1,66 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 import WorkspaceFirstRunPanel from "./WorkspaceFirstRunPanel.svelte";
 
+const mocks = vi.hoisted(() => ({
+  cloneProject: vi.fn(),
+  listUserRepositories: vi.fn(),
+  navigate: vi.fn(),
+  registerExistingProject: vi.fn(),
+}));
+
+vi.mock("../../api/project-intake.ts", () => ({
+  cloneProject: mocks.cloneProject,
+  listUserRepositories: mocks.listUserRepositories,
+  registerExistingProject: mocks.registerExistingProject,
+}));
+
+vi.mock("../../stores/router.svelte.ts", () => ({
+  navigate: mocks.navigate,
+}));
+
 const win = window as any;
+
+function project(id = "prj_1") {
+  return {
+    id,
+    display_name: "Repo",
+    local_path: "/tmp/repo",
+    created_at: "2026-06-22T00:00:00Z",
+    updated_at: "2026-06-22T00:00:00Z",
+  };
+}
 
 interface SetupArgs {
   ghAuthed: boolean;
   ghAvailable?: boolean;
-  handlers?: Partial<Record<string, (ctx: unknown) => CommandResult | Promise<CommandResult>>>;
+  onWorkspaceCommand?: (
+    command: string,
+    payload: Record<string, unknown>,
+  ) => CommandResult | Promise<CommandResult>;
 }
 
-function setupConfig({ ghAuthed, ghAvailable = true, handlers = {} }: SetupArgs): void {
+function setupConfig({
+  ghAuthed,
+  ghAvailable = true,
+  onWorkspaceCommand = vi.fn().mockResolvedValue({ ok: true }),
+}: SetupArgs): typeof onWorkspaceCommand {
   win.__middleman_config = {
-    actions: {
-      project: [
-        {
-          id: "add-existing",
-          label: "Add Existing",
-          handler: handlers["add-existing"] ?? vi.fn().mockResolvedValue({ ok: true }),
-        },
-        {
-          id: "clone",
-          label: "Clone",
-          handler: handlers["clone"] ?? vi.fn().mockResolvedValue({ ok: true }),
-        },
-        {
-          id: "connect-github",
-          label: "Connect GH",
-          handler: handlers["connect-github"] ?? vi.fn().mockResolvedValue({ ok: true }),
-        },
-      ],
-    },
+    onWorkspaceCommand,
     embed: {
       tooling: {
         git: { available: true, version: "2.45.0" },
@@ -40,6 +69,7 @@ function setupConfig({ ghAuthed, ghAvailable = true, handlers = {} }: SetupArgs)
     },
   };
   win.__middleman_notify_config_changed?.();
+  return onWorkspaceCommand;
 }
 
 describe("WorkspaceFirstRunPanel", () => {
@@ -48,6 +78,10 @@ describe("WorkspaceFirstRunPanel", () => {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
     });
+    mocks.cloneProject.mockReset();
+    mocks.listUserRepositories.mockReset();
+    mocks.navigate.mockReset();
+    mocks.registerExistingProject.mockReset();
   });
 
   afterEach(() => {
@@ -90,46 +124,9 @@ describe("WorkspaceFirstRunPanel", () => {
     expect(screen.getByText("Install gh to use this option.")).toBeTruthy();
   });
 
-  it("invokes the action handler when the user clicks", async () => {
-    const handler = vi.fn().mockResolvedValue({ ok: true });
-    setupConfig({
-      ghAuthed: true,
-      handlers: { "add-existing": handler },
-    });
-    render(WorkspaceFirstRunPanel);
-
-    const button = screen.getByRole("button", {
-      name: /Add an existing local repository/i,
-    });
-    await fireEvent.click(button);
-    expect(handler).toHaveBeenCalledWith({
-      surface: "first-run-panel",
-    });
-  });
-
-  it("renders the failure message when an action returns ok: false", async () => {
-    const handler = vi.fn().mockResolvedValue({
-      ok: false,
-      message: "Couldn't reach the remote",
-    });
-    setupConfig({ ghAuthed: true, handlers: { clone: handler } });
-    render(WorkspaceFirstRunPanel);
-
-    await fireEvent.click(screen.getByRole("button", { name: /Clone a repository/i }));
-    expect(await screen.findByText("Couldn't reach the remote")).toBeTruthy();
-  });
-
-  it("renders an upgrade-host hint when the action is not registered", async () => {
-    win.__middleman_config = {
-      actions: { project: [] },
-      embed: {
-        tooling: {
-          git: { available: true },
-          gh: { available: true, authenticated: true },
-        },
-      },
-    };
-    win.__middleman_notify_config_changed?.();
+  it("registers an existing repository and notifies the host", async () => {
+    mocks.registerExistingProject.mockResolvedValue(project("prj_existing"));
+    const command = setupConfig({ ghAuthed: true });
     render(WorkspaceFirstRunPanel);
 
     await fireEvent.click(
@@ -137,7 +134,124 @@ describe("WorkspaceFirstRunPanel", () => {
         name: /Add an existing local repository/i,
       }),
     );
-    expect(await screen.findByText(/not available in this build/i)).toBeTruthy();
+    await fireEvent.input(screen.getByLabelText("Repository path"), {
+      target: { value: "/tmp/repo" },
+    });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Add repository" }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.registerExistingProject).toHaveBeenCalledWith("/tmp/repo");
+    });
+    expect(command).toHaveBeenCalledWith("project-registered", {
+      projectId: "prj_existing",
+    });
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      "/workspaces/embed/project/prj_existing",
+    );
+  });
+
+  it("clones a Git URL and notifies the host", async () => {
+    mocks.cloneProject.mockResolvedValue(project("prj_clone"));
+    const command = setupConfig({ ghAuthed: true });
+    render(WorkspaceFirstRunPanel);
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Clone a repository/i }),
+    );
+    await fireEvent.input(screen.getByLabelText("Repository URL"), {
+      target: { value: "git@github.com:octo/repo.git" },
+    });
+    await fireEvent.input(screen.getByLabelText("Destination path"), {
+      target: { value: "/tmp/repo" },
+    });
+    await fireEvent.input(screen.getByLabelText("Branch"), {
+      target: { value: "main" },
+    });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Clone repository" }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.cloneProject).toHaveBeenCalledWith(
+        "git@github.com:octo/repo.git",
+        "/tmp/repo",
+        "main",
+      );
+    });
+    expect(command).toHaveBeenCalledWith("project-registered", {
+      projectId: "prj_clone",
+    });
+  });
+
+  it("loads GitHub repositories and clones the selected repository", async () => {
+    mocks.listUserRepositories.mockResolvedValue([
+      {
+        name_with_owner: "octo/one",
+        ssh_url: "git@github.com:octo/one.git",
+        default_branch: "main",
+      },
+      {
+        name_with_owner: "octo/two",
+        ssh_url: "git@github.com:octo/two.git",
+        default_branch: "trunk",
+      },
+    ]);
+    mocks.cloneProject.mockResolvedValue(project("prj_gh"));
+    setupConfig({ ghAuthed: true });
+    render(WorkspaceFirstRunPanel);
+
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: /Connect a GitHub repository/i,
+      }),
+    );
+    const repoSelect = await screen.findByLabelText("GitHub repository");
+    await fireEvent.change(repoSelect, {
+      target: { value: "octo/two" },
+    });
+    await fireEvent.input(screen.getByLabelText("Destination path"), {
+      target: { value: "/tmp/two" },
+    });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Clone repository" }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.cloneProject).toHaveBeenCalledWith(
+        "git@github.com:octo/two.git",
+        "/tmp/two",
+        "",
+      );
+    });
+  });
+
+  it("surfaces host callback failures after registration", async () => {
+    mocks.registerExistingProject.mockResolvedValue(project("prj_existing"));
+    setupConfig({
+      ghAuthed: true,
+      onWorkspaceCommand: vi.fn().mockResolvedValue({
+        ok: false,
+        message: "refresh failed",
+      }),
+    });
+    render(WorkspaceFirstRunPanel);
+
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: /Add an existing local repository/i,
+      }),
+    );
+    await fireEvent.input(screen.getByLabelText("Repository path"), {
+      target: { value: "/tmp/repo" },
+    });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Add repository" }),
+    );
+
+    expect(await screen.findByText("refresh failed")).toBeTruthy();
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it("renders the tooling status block beneath the actions", () => {

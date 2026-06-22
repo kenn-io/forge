@@ -95,11 +95,10 @@ interface ActionHookDef {
   }) => void | Promise<void>;
 }
 
-// ProjectActionDef is the registry shape for project-scoped actions
-// (add-existing, clone, connect-github, new-worktree). The handler MUST
-// return a CommandResult so the firing surface can render success/failure
-// instead of a fire-and-forget click. The action ID is the identifier the
-// surface uses to look up the handler.
+// ProjectActionDef is the registry shape for project-scoped actions such
+// as new-worktree. The handler MUST return a CommandResult so the firing
+// surface can render success/failure instead of a fire-and-forget click.
+// The action ID is the identifier the surface uses to look up the handler.
 interface ProjectActionDef {
   id: string;
   label: string;

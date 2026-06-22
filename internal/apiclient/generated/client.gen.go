@@ -2620,6 +2620,7 @@ type SettingsResponse struct {
 	Activity      Activity                      `json:"activity"`
 	Agents        []Agent                       `json:"agents"`
 	Fleet         FleetSettingsResponse         `json:"fleet"`
+	LaunchTargets *[]LaunchTarget               `json:"launch_targets,omitempty"`
 	Modes         *ModeVisibility               `json:"modes,omitempty"`
 	Notifications NotificationsSettingsResponse `json:"notifications"`
 	Repos         []ConfiguredRepoStatus        `json:"repos"`

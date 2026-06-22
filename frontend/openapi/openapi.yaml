@@ -5641,6 +5641,12 @@ components:
           type: array
         fleet:
           $ref: "#/components/schemas/FleetSettingsResponse"
+        launch_targets:
+          items:
+            $ref: "#/components/schemas/LaunchTarget"
+          type:
+            - array
+            - "null"
         modes:
           $ref: "#/components/schemas/ModeVisibility"
         notifications:

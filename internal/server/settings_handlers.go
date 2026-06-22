@@ -24,6 +24,7 @@ type settingsResponse struct {
 	Terminal      config.Terminal                 `json:"terminal"`
 	Modes         config.ModeVisibility           `json:"modes,omitzero"`
 	Agents        []config.Agent                  `json:"agents" nullable:"false"`
+	LaunchTargets []localruntime.LaunchTarget     `json:"launch_targets,omitempty"`
 	Fleet         fleetSettingsResponse           `json:"fleet"`
 }
 
@@ -65,8 +66,13 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	terminal := s.cfg.Terminal
 	modes := cloneModeVisibility(s.cfg.Modes).WithDefaults()
 	agents := cloneConfigAgents(s.cfg.Agents)
+	tmuxCommand := s.cfg.TmuxCommand()
 	fleetSettings := s.buildFleetSettingsResponseLocked()
 	s.cfgMu.Unlock()
+	launchTargets := localruntime.ResolveLaunchTargets(agents, tmuxCommand, nil)
+	if launchTargets == nil {
+		launchTargets = []localruntime.LaunchTarget{}
+	}
 
 	tracked := s.syncer.TrackedRepos()
 	configured := make(
@@ -85,14 +91,15 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		}
 	}
 	return settingsResponse{
-		Repos:         configured,
-		Activity:      activity,
+		Repos:    configured,
+		Activity: activity,
 		// Notifications are a built-in capability with no enable/disable
 		// setting; report them as always available.
 		Notifications: notificationsSettingsResponse{Enabled: true},
 		Terminal:      terminal,
 		Modes:         modes,
 		Agents:        agents,
+		LaunchTargets: launchTargets,
 		Fleet:         fleetSettings,
 	}
 }

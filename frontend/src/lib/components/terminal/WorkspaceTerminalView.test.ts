@@ -387,6 +387,28 @@ describe("WorkspaceTerminalView", () => {
             }),
           );
         }
+        if (pathname.endsWith("/api/v1/settings")) {
+          return Promise.resolve(
+            Response.json({
+              launch_targets: [
+                {
+                  key: "configured-agent",
+                  label: "Configured Agent",
+                  kind: "agent",
+                  source: "config",
+                  available: true,
+                },
+                {
+                  key: "plain_shell",
+                  label: "Shell",
+                  kind: "plain_shell",
+                  source: "system",
+                  available: true,
+                },
+              ],
+            }),
+          );
+        }
         return Promise.resolve(Response.json({}));
       }),
     );
@@ -398,12 +420,22 @@ describe("WorkspaceTerminalView", () => {
     });
 
     expect(await screen.findByText("Create a workspace to run agents on a PR head")).toBeTruthy();
-    expect(screen.getByText(/choose Create Workspace/i)).toBeTruthy();
-    expect(screen.getByText(/start agents, local review sessions, or a shell/i)).toBeTruthy();
-    expect(screen.getByText("New session")).toBeTruthy();
-    expect(screen.getByText("Run configurations")).toBeTruthy();
-    expect((screen.getByRole("button", { name: /Codex review agent/i }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: /Claude review agent/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/From a PR or issue, use this button/i)).toBeTruthy();
+    const exampleCard = screen.getByLabelText("Workspace workflow example");
+    expect(exampleCard).toBeTruthy();
+    expect(screen.getByText("Example workflow")).toBeTruthy();
+    const createWorkspaceButton = screen.getByRole("button", {
+      name: "Create Workspace",
+    }) as HTMLButtonElement;
+    expect(createWorkspaceButton.disabled).toBe(true);
+    expect(createWorkspaceButton.getAttribute("title")).toContain("launch agents");
+    const capabilityCopy = screen.getByText(/start agents, local review sessions, or a shell/i);
+    const exampleHeading = await screen.findByText("Launch");
+    expect(capabilityCopy.compareDocumentPosition(exampleHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText("New session")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Codex review agent/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Claude review agent/i })).toBeNull();
+    expect((screen.getByRole("button", { name: /Configured Agent/i }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: /Shell/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 

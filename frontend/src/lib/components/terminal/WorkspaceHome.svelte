@@ -22,11 +22,13 @@
   }
 
   interface WorkspaceHomeProps {
-    workspace: WorkspaceHomeWorkspace;
+    workspace?: WorkspaceHomeWorkspace;
     launchTargets: LaunchTarget[];
     sessions: RuntimeSession[];
     displayLabels?: Record<string, string>;
     launchingKey?: string | null;
+    readonly?: boolean;
+    showHeader?: boolean;
     onLaunch?: (targetKey: string) => void;
     onOpenSession?: (sessionKey: string) => void;
   }
@@ -37,6 +39,8 @@
     sessions,
     displayLabels = {},
     launchingKey = null,
+    readonly = false,
+    showHeader = true,
     onLaunch,
     onOpenSession,
   }: WorkspaceHomeProps = $props();
@@ -44,7 +48,7 @@
   const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
 
   function title(): string {
-    return workspace.mr_title ?? workspace.git_head_ref;
+    return workspace?.mr_title ?? workspace?.git_head_ref ?? "Workspace";
   }
 
   function sourceLabel(target: LaunchTarget): string {
@@ -69,24 +73,26 @@
   }
 </script>
 
-<section class="workspace-home" aria-label="Worktree Home">
-  <header class="home-header">
-    <h2 class="home-title">{title()}</h2>
-    <div class="home-meta">
-      <span class="meta-chip">
-        {workspace.repo_owner}/{workspace.repo_name}
-        <span class="meta-chip-num">#{workspace.item_number}</span>
-      </span>
-      <span class="meta-chip mono">
-        <GitBranchIcon size="11" strokeWidth="2" aria-hidden="true" />
-        {workspace.git_head_ref}
-      </span>
-      <span class="meta-chip mono path" title={workspace.worktree_path}>
-        <FolderIcon size="11" strokeWidth="2" aria-hidden="true" />
-        {workspace.worktree_path}
-      </span>
-    </div>
-  </header>
+<section class={["workspace-home", readonly && "readonly"]} aria-label="Worktree Home">
+  {#if showHeader && workspace}
+    <header class="home-header">
+      <h2 class="home-title">{title()}</h2>
+      <div class="home-meta">
+        <span class="meta-chip">
+          {workspace.repo_owner}/{workspace.repo_name}
+          <span class="meta-chip-num">#{workspace.item_number}</span>
+        </span>
+        <span class="meta-chip mono">
+          <GitBranchIcon size="11" strokeWidth="2" aria-hidden="true" />
+          {workspace.git_head_ref}
+        </span>
+        <span class="meta-chip mono path" title={workspace.worktree_path}>
+          <FolderIcon size="11" strokeWidth="2" aria-hidden="true" />
+          {workspace.worktree_path}
+        </span>
+      </div>
+    </header>
+  {/if}
 
   <div class="home-section">
     <div class="section-bar">
@@ -106,7 +112,7 @@
         {@const isLaunching = launchingKey === target.key}
         <button
           class="launch-card"
-          disabled={!target.available || isLaunching}
+          disabled={readonly || !target.available || isLaunching}
           title={target.disabled_reason ?? targetLabel(target)}
           aria-label={targetLabel(target)}
           onclick={() => onLaunch?.(target.key)}
@@ -140,6 +146,7 @@
         {#each sessions as session (session.key)}
           <button
             class="session-row"
+            disabled={readonly}
             onclick={() => onOpenSession?.(session.key)}
           >
             <span
@@ -166,6 +173,10 @@
     overflow: auto;
     background: var(--bg-primary);
     color: var(--text-primary);
+  }
+
+  .workspace-home.readonly {
+    pointer-events: none;
   }
 
   .home-header {

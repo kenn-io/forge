@@ -6397,6 +6397,7 @@ export interface components {
             activity: components["schemas"]["Activity"];
             agents: components["schemas"]["Agent"][];
             fleet: components["schemas"]["FleetSettingsResponse"];
+            launch_targets?: components["schemas"]["LaunchTarget"][] | null;
             modes?: components["schemas"]["ModeVisibility"];
             notifications: components["schemas"]["NotificationsSettingsResponse"];
             repos: components["schemas"]["ConfiguredRepoStatus"][];

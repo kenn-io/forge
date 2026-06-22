@@ -581,6 +581,43 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	assert.Contains(argvs[0], ws.WorktreePath)
 }
 
+func TestSetupRejectsExistingPRWorktreeOnUnexpectedBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	tmuxScript, _ := writeRecorderScript(t)
+
+	mgr := NewManager(d, wtDir)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
+	require.NoError(err)
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", ws.WorktreePath, "-b", "wrong/main", "main",
+	)
+
+	err = mgr.Setup(t.Context(), ws)
+
+	require.Error(err)
+	got, getErr := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(getErr)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+	require.NotNil(got.ErrorMessage)
+	assert.Contains(*got.ErrorMessage, "existing worktree branch")
+	assert.Contains(*got.ErrorMessage, "wrong/main")
+}
+
 func TestValidateWorktreeBasePathRejectsLocalRemotes(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -1819,6 +1856,54 @@ func TestAddWorktreeLocalBaseFetchesPullRefWhenHeadBranchDeleted(t *testing.T) {
 	headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
 	require.NoError(err)
 	assert.Equal(wantSHA, headSHA)
+}
+
+func TestAddWorktreeLocalBaseIgnoresStalePullRefWhenFetchFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "feature/live"
+	const prNumber = 44
+	localRepo, _, _ := setupHTTPWorktreeBaseForWorkspaceGitTest(t, branch)
+	originSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/remotes/origin/"+branch,
+	)))
+	treeSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "main^{tree}",
+	)))
+	staleSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo,
+		"commit-tree", treeSHA,
+		"-p", originSHA,
+		"-m", "stale pull head",
+	)))
+	require.NotEqual(originSHA, staleSHA)
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref",
+		fmt.Sprintf("refs/pull/%d/head", prNumber), staleSHA,
+	)
+	existingWorktree := filepath.Join(t.TempDir(), "existing")
+	runWorkspaceTestGit(
+		t, localRepo, "worktree", "add", existingWorktree,
+		"-b", branch, "refs/remotes/origin/"+branch,
+	)
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	ws := &Workspace{
+		Platform:     "github",
+		PlatformHost: "127.0.0.1",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   prNumber,
+		GitHeadRef:   branch,
+		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
+	}
+
+	gotBranch, err := mgr.addWorktree(t.Context(), localRepo, true, ws)
+
+	require.NoError(err)
+	assert.Equal(syntheticPRWorktreeBranch(prNumber), gotBranch)
+	headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(originSHA, headSHA)
 }
 
 func TestLocalBaseExistingPRBranchIsNotDeletedOnCleanup(t *testing.T) {

@@ -3441,7 +3441,7 @@ func TestUpdateMRDraftStateAdvancesTimestampToRejectStaleSync(t *testing.T) {
 	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
-	base := baseTime()
+	base := time.Now().UTC().Add(time.Hour)
 	insertTestMR(t, d, repoID, 1, "current pr", base)
 
 	require.NoError(d.UpdateMRDraftState(ctx, repoID, 1, true))
@@ -3457,7 +3457,17 @@ func TestUpdateMRDraftStateAdvancesTimestampToRejectStaleSync(t *testing.T) {
 	assert.True(pr.IsDraft)
 	assert.Equal("current pr", pr.Title)
 	assert.True(pr.UpdatedAt.After(base))
-	assert.True(pr.LastActivityAt.After(base))
+	assert.False(pr.LastActivityAt.Before(base))
+}
+
+func TestUpdateMRDraftStateReturnsErrorWhenMissing(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "o", "r")
+	err := d.UpdateMRDraftState(ctx, repoID, 404, true)
+	require.Error(err)
 }
 
 func TestListIssues_AttachesLabels(t *testing.T) {

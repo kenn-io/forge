@@ -1337,15 +1337,15 @@ func (p gitHubClientProvider) ConvertMergeRequestToDraft(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
-) (platform.MergeRequest, error) {
+) error {
 	pr, err := p.client.ConvertPullRequestToDraft(ctx, ref.Owner, ref.Name, number)
 	if err != nil {
-		return platform.MergeRequest{}, err
+		return err
 	}
 	if pr == nil {
-		return platform.MergeRequest{}, fmt.Errorf("provider returned no pull request")
+		return fmt.Errorf("provider returned no pull request")
 	}
-	return platformgithub.NormalizePullRequest(ref, pr)
+	return nil
 }
 
 func (p gitHubClientProvider) CreateIssue(

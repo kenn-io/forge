@@ -103,7 +103,7 @@ type ReadyForReviewMutator interface {
 }
 
 type DraftMutator interface {
-	ConvertMergeRequestToDraft(ctx context.Context, ref RepoRef, number int) (MergeRequest, error)
+	ConvertMergeRequestToDraft(ctx context.Context, ref RepoRef, number int) error
 }
 
 type IssueMutator interface {

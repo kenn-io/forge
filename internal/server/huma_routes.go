@@ -3346,7 +3346,7 @@ func (s *Server) setPRGitHubState(
 		if err != nil {
 			return nil, unsupportedCapabilityProblem(*repo, capabilityDraftMutation)
 		}
-		if _, err := mutator.ConvertMergeRequestToDraft(
+		if err := mutator.ConvertMergeRequestToDraft(
 			ctx, platformRepoRefFromDB(*repo), input.Number,
 		); err != nil {
 			return nil, providerCallProblemWithDetail(

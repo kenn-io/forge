@@ -3182,17 +3182,47 @@ func (d *DB) UpdateMRState(
 // UpdateMRDraftState records a provider-confirmed draft flag without
 // treating the mutation response as a full merge-request snapshot.
 func (d *DB) UpdateMRDraftState(ctx context.Context, repoID int64, number int, isDraft bool) error {
-	now := time.Now().UTC()
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET is_draft = ?,
-		    updated_at = ?,
-		    last_activity_at = ?
-		WHERE repo_id = ? AND number = ?`,
-		isDraft, now, now, repoID, number,
-	)
+	tx, err := d.rw.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("begin update mr draft state: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var updatedAt time.Time
+	var lastActivityAt time.Time
+	if err := tx.QueryRowContext(ctx, `
+		SELECT updated_at, last_activity_at
+		FROM middleman_merge_requests
+		WHERE repo_id = ? AND number = ?`,
+		repoID, number,
+	).Scan(&updatedAt, &lastActivityAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("update mr draft state: %w", sql.ErrNoRows)
+		}
+		return fmt.Errorf("load mr draft state timestamps: %w", err)
+	}
+
+	mutationAt := time.Now().UTC()
+	if !mutationAt.After(updatedAt) {
+		mutationAt = updatedAt.Add(time.Nanosecond)
+	}
+	activityAt := mutationAt
+	if lastActivityAt.After(activityAt) {
+		activityAt = lastActivityAt
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+			UPDATE middleman_merge_requests
+			SET is_draft = ?,
+			    updated_at = ?,
+			    last_activity_at = ?
+			WHERE repo_id = ? AND number = ?`,
+		isDraft, mutationAt, activityAt, repoID, number,
+	); err != nil {
 		return fmt.Errorf("update mr draft state: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update mr draft state: %w", err)
 	}
 	return nil
 }

@@ -7524,6 +7524,137 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	assert.True(finalPR.UpdatedAt.Equal(readyUpdatedAt))
 }
 
+func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	staleUpdatedAt := time.Date(2026, 4, 12, 1, 0, 0, 0, time.UTC)
+	syncStarted := make(chan struct{}, 1)
+	releaseSync := make(chan struct{})
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			syncStarted <- struct{}{}
+			<-releaseSync
+
+			id := int64(101)
+			state := "open"
+			title := "stale sync"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "alice"
+			draft := false
+			headSHA := "abc123"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			createdAt := gh.Timestamp{Time: staleUpdatedAt.Add(-time.Hour)}
+			updatedAt := gh.Timestamp{Time: staleUpdatedAt}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				Draft:     &draft,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &createdAt,
+				UpdatedAt: &updatedAt,
+				Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+		convertToDraftFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			id := int64(101)
+			state := "open"
+			draft := true
+			return &gh.PullRequest{
+				ID:     &id,
+				Number: &number,
+				State:  &state,
+				Draft:  &draft,
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	client := setupTestClient(t, srv)
+
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+
+	prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      101,
+		Number:          1,
+		URL:             "https://github.com/acme/widget/pull/1",
+		Title:           "ready PR",
+		Author:          "alice",
+		State:           "open",
+		IsDraft:         false,
+		Body:            "",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "abc123",
+		PlatformBaseSHA: "def456",
+		Additions:       0,
+		Deletions:       0,
+		CommentCount:    0,
+		ReviewDecision:  "",
+		CIStatus:        "",
+		CreatedAt:       staleUpdatedAt.Add(-time.Hour),
+		UpdatedAt:       staleUpdatedAt,
+		LastActivityAt:  staleUpdatedAt,
+	})
+	require.NoError(err)
+	require.NoError(database.EnsureKanbanState(t.Context(), prID))
+
+	syncDone := make(chan *generated.SyncPullResponse, 1)
+	syncErr := make(chan error, 1)
+	go func() {
+		resp, err := client.HTTP.SyncPullWithResponse(
+			t.Context(), "gh", "acme", "widget", 1,
+		)
+		if err != nil {
+			syncErr <- err
+			return
+		}
+		syncDone <- resp
+	}()
+
+	<-syncStarted
+
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+		generated.SetPrGithubStateJSONRequestBody{State: "draft"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	draftPR, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	require.NoError(err)
+	require.True(draftPR.IsDraft)
+	assert.True(draftPR.UpdatedAt.After(staleUpdatedAt))
+
+	close(releaseSync)
+
+	completed := false
+	select {
+	case err := <-syncErr:
+		require.NoError(err)
+		completed = true
+	case resp := <-syncDone:
+		require.Equal(http.StatusOK, resp.StatusCode())
+		completed = true
+	case <-time.After(5 * time.Second):
+	}
+	require.True(completed, "timed out waiting for stale draft sync")
+
+	finalPR, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	require.NoError(err)
+	assert.True(finalPR.IsDraft)
+	assert.Equal("ready PR", finalPR.Title)
+	assert.True(finalPR.UpdatedAt.Equal(draftPR.UpdatedAt))
+}
+
 func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

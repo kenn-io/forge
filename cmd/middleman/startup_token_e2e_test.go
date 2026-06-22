@@ -71,6 +71,9 @@ name = "widget"
 	set := tokenauth.NewSourceSet(tokenauth.Options{
 		GitHubCLI: config.GitHubCLITokenForHost,
 	})
+	// This e2e pins host-scoped startup wiring, not gh timeout behavior.
+	// Use an explicit test deadline so package-level load cannot make a
+	// fake local gh process miss the production startup guard.
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	sources, err := collectProviderTokenSources(ctx, cfg, set)

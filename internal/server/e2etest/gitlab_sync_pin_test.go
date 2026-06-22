@@ -142,6 +142,17 @@ func TestGitLabSyncPRSurfacesTransientForkSourceProjectLookupAsUpstream(t *testi
 
 	_, lookedUp := recorder.find(http.MethodGet, "/api/v4/projects/404")
 	assert.True(lookedUp, "sync should attempt the fork source project lookup")
+
+	repoRow, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	require.NotNil(repoRow)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoRow.ID, 7)
+	require.NoError(err)
+	assert.Nil(mr, "failed detail sync must not persist a partial merge request row")
 }
 
 func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {

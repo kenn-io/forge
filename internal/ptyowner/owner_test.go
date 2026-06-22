@@ -144,6 +144,64 @@ func TestOwnerQuickExitRemainsAttachable(t *testing.T) {
 	}
 }
 
+func TestOwnerPTYEOFClosesAttachmentBeforeProcessWait(t *testing.T) {
+	require := require.New(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("test fixture uses Unix PTY signal semantics")
+	}
+
+	root := t.TempDir()
+	session := "middleman-pty-eof-before-wait"
+	t.Setenv("MIDDLEMAN_PTYOWNER_CLOSE_PTY_HELPER", "1")
+	done := make(chan error, 1)
+	go func() {
+		done <- RunOwner(t.Context(), Options{
+			Root:    root,
+			Session: session,
+			Cwd:     t.TempDir(),
+			Command: []string{
+				os.Args[0],
+				"-test.run=TestPtyOwnerClosePTYThenSleepHelperProcess",
+				"--",
+			},
+		})
+	}()
+
+	client := Client{Root: root}
+	waitOwnerReady(t, done, client, session)
+
+	attach, err := client.Attach(context.Background(), session, 120, 30)
+	require.NoError(err)
+	defer attach.Close()
+
+	select {
+	case <-attach.Done:
+	case <-time.After(500 * time.Millisecond):
+		require.Fail("attachment did not close promptly after PTY EOF")
+	}
+	require.Equal(-1, attach.ExitCode())
+	attach.Close()
+
+	select {
+	case err := <-done:
+		require.NoError(err)
+	case <-time.After(ownerFirstRequestTimeout + 3*time.Second):
+		require.Fail("owner did not exit after helper sleep")
+	}
+}
+
+func TestPtyOwnerClosePTYThenSleepHelperProcess(t *testing.T) {
+	if os.Getenv("MIDDLEMAN_PTYOWNER_CLOSE_PTY_HELPER") != "1" {
+		return
+	}
+	ignorePtyOwnerHangupForTest()
+	_ = os.Stdin.Close()
+	_ = os.Stdout.Close()
+	_ = os.Stderr.Close()
+	time.Sleep(2 * time.Second)
+	os.Exit(7)
+}
+
 func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

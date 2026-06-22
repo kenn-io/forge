@@ -453,6 +453,7 @@ func decodeOwnerRequest(
 }
 
 func (o *owner) drainOutput() {
+	defer o.closeSubscribers()
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := o.pty.Read(buf)

@@ -609,11 +609,15 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 	if !owned {
 		return "", false, nil
 	}
+	localBase, err := m.workspaceWorktreeUsesLocalBase(ctx, commonDir, ws)
+	if err != nil {
+		return "", false, err
+	}
 	currentBranch, err := worktreeCurrentBranch(ctx, ws.WorktreePath)
 	if err != nil {
 		return "", false, err
 	}
-	branch, ok, err := existingWorkspacePersistedBranch(ctx, ws, currentBranch)
+	branch, ok, err := existingWorkspacePersistedBranch(ctx, ws, currentBranch, localBase)
 	if err != nil {
 		return "", false, err
 	}
@@ -626,10 +630,37 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 	return branch, true, nil
 }
 
+func (m *Manager) workspaceWorktreeUsesLocalBase(
+	ctx context.Context,
+	commonDir string,
+	ws *Workspace,
+) (bool, error) {
+	baseDir, ok, err := m.localWorktreeBaseDir(
+		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
+	if err != nil || !ok {
+		return false, err
+	}
+	baseCommonDir, err := worktreeCommonGitDir(ctx, baseDir)
+	if err != nil {
+		return false, fmt.Errorf("inspect local worktree base: %w", err)
+	}
+	actualDir, err := canonicalFilesystemPath(commonDir)
+	if err != nil {
+		return false, fmt.Errorf("resolve existing worktree git dir: %w", err)
+	}
+	expectedDir, err := canonicalFilesystemPath(baseCommonDir)
+	if err != nil {
+		return false, fmt.Errorf("resolve local worktree base git dir: %w", err)
+	}
+	return actualDir == expectedDir, nil
+}
+
 func existingWorkspacePersistedBranch(
 	ctx context.Context,
 	ws *Workspace,
 	currentBranch string,
+	localBase bool,
 ) (string, bool, error) {
 	if ws.WorkspaceBranch != "" && ws.WorkspaceBranch != workspaceBranchUnknown {
 		return ws.WorkspaceBranch, currentBranch == ws.WorkspaceBranch, nil
@@ -647,7 +678,13 @@ func existingWorkspacePersistedBranch(
 		if err != nil || !ok {
 			return "", false, err
 		}
-		return currentBranch, headSHA == startSHA, nil
+		if headSHA != startSHA {
+			return "", false, nil
+		}
+		if localBase && ws.ItemType == db.WorkspaceItemTypePullRequest {
+			return "", true, nil
+		}
+		return currentBranch, true, nil
 	}
 	return "", false, nil
 }

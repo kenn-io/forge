@@ -581,6 +581,49 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	assert.Contains(argvs[0], ws.WorktreePath)
 }
 
+func TestSetupReusesExistingLocalBasePRHeadBranchWithoutManagingIt(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	tmuxScript, _ := writeRecorderScript(t)
+
+	mgr := NewManager(d, wtDir)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
+	require.NoError(err)
+	runWorkspaceTestGit(
+		t, localRepo,
+		"branch", "feature/thing", "refs/remotes/origin/feature/thing",
+	)
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", ws.WorktreePath, "feature/thing",
+	)
+
+	require.NoError(mgr.Setup(t.Context(), ws))
+
+	got, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("ready", got.Status)
+	assert.Empty(got.WorkspaceBranch)
+
+	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), got))
+	exists, err := localBranchExists(t.Context(), localRepo, "feature/thing")
+	require.NoError(err)
+	assert.True(exists)
+}
+
 func TestSetupRejectsExistingPRWorktreeOnUnexpectedBranch(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

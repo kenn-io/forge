@@ -24705,7 +24705,7 @@ func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
 			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
 		},
 		Shell: config.Shell{
-			Command: serverRuntimeHelperCommand("pty-close-then-sleep"),
+			Command: serverRuntimeHelperCommand("pty-close-on-input-then-sleep"),
 		},
 	}
 	ptyOwnerDir := filepath.Join(t.TempDir(), "pty-owner")
@@ -24729,8 +24729,8 @@ func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.Id +
 		"/runtime/sessions/" + first.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(err)
+	conn := dialWebSocketForTest(t, ctx, wsURL, "plain shell after exit")
+	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("exit\n")))
 	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	for {

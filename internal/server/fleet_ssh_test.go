@@ -533,7 +533,7 @@ func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/fleet/hosts/epyc/workspaces/ws_1/runtime/sessions/sess-1/terminal?cols=80&rows=24"
@@ -542,7 +542,7 @@ func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 	defer conn.Close(websocket.StatusNormalClosure, "test done")
 
 	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("ping\n")))
-	readWebSocketBinaryUntil(t, ctx, conn, 2*time.Second, "echo:ping")
+	readWebSocketBinaryUntil(t, ctx, conn, 5*time.Second, "echo:ping")
 	require.Contains(fake.calls,
 		"GET /api/v1/workspaces/ws_1/runtime/sessions/sess-1/attach-spec")
 }

@@ -4,6 +4,9 @@
   import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import type { Snippet } from "svelte";
 
+  // Shared in-app dialog shell: backdrop, dialog frame, header, footer slot,
+  // focus trap, Escape close, focus restore, and optional modal-stack frame.
+  // Feature components own only their body content and domain actions.
   interface Props {
     open: boolean;
     title?: string | undefined;

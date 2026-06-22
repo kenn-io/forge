@@ -73,27 +73,11 @@ Intent:
 
 If a new repeated button treatment is needed, extend `ActionButton` rather than creating another local button pattern.
 
-### Modal
+### Modal primitives
 
-Use `Modal` for in-app dialogs that block background interaction.
-
-Intent:
-
-- one shared backdrop, dialog shell, header, footer slot, focus trap, and close
-  behavior
-- consistent modal geometry, z-index, and theme treatment across feature areas
-- modal-stack ownership through `frameId` when the surface must suppress
-  background shortcuts
-
-Use `ConfirmDialog` for simple confirmation flows with a message, optional
-hint, cancel action, and primary/destructive confirm action. Use `DialogButton`
-for modal footer actions when custom modal body content still needs the shared
-button treatment.
-
-Do not add local modal backdrop, shell, header, footer, Escape handling, or Tab
-trapping CSS/logic in feature components. Feature components may style the
-modal body content they own, such as a form field, preview table, or explanatory
-copy.
+- `Modal`
+- `ConfirmDialog`
+- `DialogButton`
 
 ### LeftSidebarToggle
 

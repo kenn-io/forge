@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
 
+  // Shared modal footer button. Keep modal action sizing and tones here so
+  // custom modal bodies can still avoid local footer-button CSS.
   interface Props {
     type?: "button" | "submit" | "reset";
     tone?: "secondary" | "primary" | "danger";

@@ -2,6 +2,9 @@
   import DialogButton from "./DialogButton.svelte";
   import Modal from "./Modal.svelte";
 
+  // Shared confirmation dialog for simple cancel/confirm flows. Use this
+  // instead of rebuilding modal body copy, footer buttons, or destructive
+  // button treatment in feature components.
   interface Props {
     open: boolean;
     title: string;

@@ -71,6 +71,10 @@
       "svelte": "./src/stores/diff.svelte.ts",
       "default": "./src/stores/diff.svelte.ts"
     },
+    "./stores/repo-browser": {
+      "svelte": "./src/stores/repo-browser.svelte.ts",
+      "default": "./src/stores/repo-browser.svelte.ts"
+    },
     "./stores/grouping": {
       "svelte": "./src/stores/grouping.svelte.ts",
       "default": "./src/stores/grouping.svelte.ts"

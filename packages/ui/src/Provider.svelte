@@ -62,6 +62,9 @@
     createDiffReviewDraftStore,
   } from "./stores/diff-review-draft.svelte.js";
   import {
+    createRepoBrowserStore,
+  } from "./stores/repo-browser.svelte.js";
+  import {
     createGroupingStore,
   } from "./stores/grouping.svelte.js";
   import {
@@ -212,6 +215,7 @@
       diffOpts.getBasePath = () => bp;
     }
     const diffStore = createDiffStore(diffOpts);
+    const repoBrowserStore = createRepoBrowserStore({ client: cl });
     const diffReviewDraftStore = createDiffReviewDraftStore({
       client: cl,
       onPublished: (ref, number) =>
@@ -373,6 +377,7 @@
       activity: activityStore,
       sync: syncStore,
       diff: diffStore,
+      repoBrowser: repoBrowserStore,
       diffReviewDraft: diffReviewDraftStore,
       grouping,
       detailActivityView,

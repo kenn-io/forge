@@ -18,6 +18,7 @@ export type {
   ActivityStore,
   SyncStore,
   DiffStore,
+  RepoBrowserStore,
   DiffReviewDraftStore,
   GroupingStore,
   DetailActivityViewStore,
@@ -49,6 +50,7 @@ export {
   buildIssueRoute,
   buildPullRequestFilesRoute,
   buildPullRequestRoute,
+  buildRepoBrowserRoute,
   buildRoutedItemRoute,
 } from "./routes.js";
 export { supportsLocked } from "./api/provider-capabilities.js";
@@ -56,11 +58,19 @@ export { firstUnavailableGate, operationGate } from "./components/detail/operati
 export type { OperationGate } from "./components/detail/operation-gates.js";
 export { providerDefaultHost } from "./api/provider-routes.js";
 export { DEFAULT_MODE_VISIBILITY, DEFAULT_TERMINAL_SETTINGS } from "./api/types.js";
+export {
+  buildSourceBrowserFileEntries,
+  countSourceBrowserFileEntriesByCategory,
+  filterSourceBrowserFileEntriesByCategory,
+} from "./utils/source-browser-files.js";
+export type { SourceBrowserFileEntry } from "./utils/source-browser-files.js";
 export type {
   FocusListRouteRef,
   IssueRouteRef,
   NumberedRouteItemRef,
   PullRequestRouteRef,
+  RepoBrowserRouteRef,
+  RepoBrowserViewMode,
   RepositoryRouteRef,
   RoutedItemRef,
 } from "./routes.js";
@@ -72,6 +82,8 @@ export { createDetailStore } from "./stores/detail.svelte.js";
 export { createActivityStore } from "./stores/activity.svelte.js";
 export { createSyncStore } from "./stores/sync.svelte.js";
 export { createDiffStore } from "./stores/diff.svelte.js";
+export { createRepoBrowserStore } from "./stores/repo-browser.svelte.js";
+export type { RepoBrowserStoreOptions } from "./stores/repo-browser.svelte.js";
 export { createDiffReviewDraftStore } from "./stores/diff-review-draft.svelte.js";
 export { createGroupingStore } from "./stores/grouping.svelte.js";
 export { createDetailActivityViewStore } from "./stores/detail-activity-view.svelte.js";

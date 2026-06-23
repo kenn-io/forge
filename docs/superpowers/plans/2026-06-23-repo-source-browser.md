@@ -132,6 +132,7 @@ func TestRepoBrowserListTreeCapsAndIncludesTrackedDotfiles(t *testing.T)
 func TestRepoBrowserReadBlobWorksWhenTreeIsTruncated(t *testing.T)
 func TestRepoBrowserReadBlobRejectsTraversalAndReportsLargeState(t *testing.T)
 func TestRepoBrowserLastChangedBatchCapsPaths(t *testing.T)
+func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T)
 func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T)
 func TestRepoBrowserResponsesIncludeRefMetadata(t *testing.T)
 func TestRepoBrowserCloneIdentitySeparatesProvidersAndNestedPaths(t *testing.T)
@@ -178,6 +179,7 @@ const (
 	RepoBrowserTreeEntryLimit      = 20000
 	RepoBrowserBlobSizeLimit       = 1 << 20
 	RepoBrowserLastChangedBatchMax = 250
+	RepoBrowserLastChangedLogLimit = 500
 	RepoBrowserHistoryLimit        = 50
 )
 
@@ -318,6 +320,7 @@ func TestRepoBrowserRoutesRequireRepoPathForNestedRepos(t *testing.T)
 func TestRepoBrowserBranchSHAReportsStaleRef(t *testing.T)
 func TestRepoBrowserTreeTruncationKeepsDirectBlobReadable(t *testing.T)
 func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T)
+func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T)
 func TestRepoBrowserMarkdownAssetReturnsSafeMimeAndCacheHeaders(t *testing.T)
 func TestRepoBrowserAssetBytesRejectsNonRenderableStates(t *testing.T)
 func TestRepoBrowserRejectsUnknownRefAndUnsafePath(t *testing.T)

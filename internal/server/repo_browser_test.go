@@ -191,6 +191,31 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	assert.Equal(historyBody.Commits[0].SHA, commitBody.Commit.SHA)
 }
 
+func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+	readmeSHA := testGitSHA(t, work, "HEAD")
+
+	for i := range gitclone.RepoBrowserLastChangedLogLimit + 1 {
+		require.NoError(os.WriteFile(filepath.Join(work, "churn.txt"), fmt.Appendf(nil, "%d\n", i), 0o644))
+		serverRepoBrowserGit(t, work, "add", ".")
+		serverRepoBrowserGit(t, work, "commit", "-m", fmt.Sprintf("churn %03d", i))
+	}
+	churnSHA := testGitSHA(t, work, "HEAD")
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+
+	rr := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md&path=churn.txt",
+	)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var body repoBrowserLastChangedResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal(readmeSHA, body.Commits["README.md"].SHA)
+	assert.Equal(churnSHA, body.Commits["churn.txt"].SHA)
+}
+
 func TestRepoBrowserAssetRejectsActiveContentTypes(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -79,6 +79,73 @@ func TestRepoBrowserRefsReportsTruncationForLargeRefSets(t *testing.T) {
 	assert.Equal(mainSHA, body.DefaultRef.SHA)
 }
 
+func TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	githubRemote, githubWork := setupServerRepoBrowserGitRepo(t)
+	gitlabRemote, gitlabWork := setupServerRepoBrowserGitRepo(t)
+	require.NoError(os.WriteFile(filepath.Join(githubWork, "README.md"), []byte("github repo\n"), 0o644))
+	serverRepoBrowserGit(t, githubWork, "add", ".")
+	serverRepoBrowserGit(t, githubWork, "commit", "-m", "github content")
+	serverRepoBrowserGit(t, githubWork, "push", "origin", "main")
+	require.NoError(os.WriteFile(filepath.Join(gitlabWork, "README.md"), []byte("gitlab repo\n"), 0o644))
+	serverRepoBrowserGit(t, gitlabWork, "add", ".")
+	serverRepoBrowserGit(t, gitlabWork, "commit", "-m", "gitlab content")
+	serverRepoBrowserGit(t, gitlabWork, "push", "origin", "main")
+
+	for _, repo := range []struct {
+		provider string
+		cloneURL string
+	}{
+		{provider: "github", cloneURL: githubRemote},
+		{provider: "gitlab", cloneURL: gitlabRemote},
+	} {
+		repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+			Platform:     repo.provider,
+			PlatformHost: "git.example.com",
+			Owner:        "acme",
+			Name:         "widgets",
+			RepoPath:     "acme/widgets",
+		})
+		require.NoError(err)
+		require.NoError(database.UpdateRepoProviderMetadata(
+			t.Context(),
+			repoID,
+			db.RepoProviderMetadata{
+				WebURL:        "https://git.example.com/acme/widgets",
+				CloneURL:      repo.cloneURL,
+				DefaultBranch: "main",
+			},
+		))
+	}
+	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(srv.Shutdown(ctx))
+	})
+
+	githubBlob := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/host/git.example.com/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md",
+	)
+	require.Equal(http.StatusOK, githubBlob.Code)
+	var githubBody repoBrowserBlobResponse
+	require.NoError(json.Unmarshal(githubBlob.Body.Bytes(), &githubBody))
+	assert.Equal("github repo\n", githubBody.Blob.Content)
+
+	gitlabBlob := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/host/git.example.com/repo/gitlab/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md",
+	)
+	require.Equal(http.StatusOK, gitlabBlob.Code)
+	var gitlabBody repoBrowserBlobResponse
+	require.NoError(json.Unmarshal(gitlabBlob.Body.Bytes(), &gitlabBody))
+	assert.Equal("gitlab repo\n", gitlabBody.Blob.Content)
+}
+
 func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

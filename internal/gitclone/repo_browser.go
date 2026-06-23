@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -46,6 +48,7 @@ const (
 )
 
 type RepoBrowserRepoRef struct {
+	Provider  string
 	Host      string
 	Owner     string
 	Name      string
@@ -116,7 +119,7 @@ func (m *Manager) ListRepoBrowserRefs(
 		}
 		return refs[i].Name < refs[j].Name
 	})
-	branch, sha, err := m.ResolveDefaultBranch(ctx, repo.Host, repo.Owner, repo.Name, defaultBranch)
+	branch, sha, err := m.resolveRepoBrowserDefaultBranch(ctx, repo, defaultBranch)
 	if err != nil {
 		return refs, RepoBrowserRef{}, truncated, err
 	}
@@ -681,12 +684,12 @@ func (m *Manager) resolveRepoBrowserRef(
 		if strings.TrimSpace(ref.Name) == "" {
 			return "", "", false, fmt.Errorf("%w: empty branch", ErrNotFound)
 		}
-		sha, err = m.resolveRefInDir(ctx, dir, remoteBranchRef(ref.Name))
+		sha, err = m.resolveExactRefInDir(ctx, dir, remoteBranchRef(ref.Name))
 	case RepoBrowserRefTag:
 		if strings.TrimSpace(ref.Name) == "" {
 			return "", "", false, fmt.Errorf("%w: empty tag", ErrNotFound)
 		}
-		sha, err = m.resolveRefInDir(ctx, dir, "refs/tags/"+ref.Name)
+		sha, err = m.resolveExactRefInDir(ctx, dir, "refs/tags/"+ref.Name)
 	case RepoBrowserRefCommit:
 		if !isFullHexSHA(ref.SHA) {
 			return "", "", false, fmt.Errorf("%w: %s", ErrNotFound, ref.SHA)
@@ -702,7 +705,85 @@ func (m *Manager) resolveRepoBrowserRef(
 }
 
 func (m *Manager) repoBrowserClonePath(repo RepoBrowserRepoRef) (string, error) {
-	return m.ClonePath(repo.Host, repo.Owner, repo.Name)
+	return m.ClonePathInNamespace(repoBrowserCloneNamespace(repo), repo.Host, repo.Owner, repo.Name)
+}
+
+func (m *Manager) EnsureRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
+	return m.EnsureCloneInNamespace(
+		ctx,
+		repoBrowserCloneNamespace(repo),
+		repo.Host,
+		repo.Owner,
+		repo.Name,
+		repo.RemoteURL,
+	)
+}
+
+func repoBrowserCloneNamespace(repo RepoBrowserRepoRef) string {
+	identity := strings.Join([]string{
+		strings.TrimSpace(repo.Provider),
+		strings.TrimSpace(repo.Host),
+		strings.Trim(strings.TrimSpace(repo.RepoPath), "/"),
+	}, "\x00")
+	sum := sha256.Sum256([]byte(identity))
+	return "repo-browser-" + hex.EncodeToString(sum[:8])
+}
+
+func (m *Manager) resolveRepoBrowserDefaultBranch(
+	ctx context.Context,
+	repo RepoBrowserRepoRef,
+	preferred string,
+) (branch string, ref string, err error) {
+	dir, err := m.repoBrowserClonePath(repo)
+	if err != nil {
+		return "", "", err
+	}
+
+	preferred = strings.TrimSpace(preferred)
+	if preferred != "" {
+		for _, candidate := range branchActivityRefCandidates(preferred) {
+			if sha, err := m.resolveExactRefInDir(ctx, dir, candidate); err == nil {
+				return defaultBranchNameForResolvedCandidate(preferred, candidate), sha, nil
+			} else if !isMissingRefError(err) {
+				return "", "", fmt.Errorf("resolve preferred default branch %s: %w", preferred, err)
+			}
+		}
+	}
+
+	out, err := m.git(ctx, dir,
+		"symbolic-ref", "--quiet", "refs/remotes/origin/HEAD",
+	)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve origin HEAD: %w", err)
+	}
+	remoteRef := strings.TrimSpace(string(out))
+	branch, ok := strings.CutPrefix(remoteRef, "refs/remotes/origin/")
+	if !ok || branch == "" || branch == "HEAD" {
+		return "", "", fmt.Errorf("resolve origin HEAD: %w", ErrNotFound)
+	}
+	sha, err := m.resolveExactRefInDir(ctx, dir, remoteRef)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve origin HEAD target %s: %w", remoteRef, err)
+	}
+	return branch, sha, nil
+}
+
+func (m *Manager) resolveExactRefInDir(
+	ctx context.Context,
+	dir string,
+	ref string,
+) (string, error) {
+	out, err := m.git(ctx, dir,
+		"show-ref", "--verify", "--hash", ref,
+	)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrNotFound, err)
+	}
+	objectID := strings.TrimSpace(string(out))
+	if objectID == "" {
+		return "", fmt.Errorf("%w: %s", ErrNotFound, ref)
+	}
+	return m.resolveRefInDir(ctx, dir, objectID)
 }
 
 func cleanRepoBrowserPath(pathName string) (string, error) {

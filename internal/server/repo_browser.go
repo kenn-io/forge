@@ -423,13 +423,14 @@ func (s *Server) ensureRepoBrowserClone(
 		return nil, gitclone.RepoBrowserRepoRef{}, errRepoBrowserCloneUnavailable
 	}
 	repoRef := gitclone.RepoBrowserRepoRef{
+		Provider:  repo.Platform,
 		Host:      repo.PlatformHost,
 		Owner:     repo.Owner,
 		Name:      repo.Name,
 		RepoPath:  repo.RepoPath,
 		RemoteURL: repo.CloneURL,
 	}
-	if err := s.clones.EnsureClone(ctx, repoRef.Host, repoRef.Owner, repoRef.Name, repoRef.RemoteURL); err != nil {
+	if err := s.clones.EnsureRepoBrowserClone(ctx, repoRef); err != nil {
 		return nil, gitclone.RepoBrowserRepoRef{}, err
 	}
 	return repo, repoRef, nil

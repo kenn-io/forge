@@ -2948,6 +2948,10 @@
           onCollapseSidebar={onToggleSidebar}
           onOpenItemSidebar={openItemSidebar}
           onWorkspaceListStateChange={updateWorkspaceListState}
+          isWorkspaceActionDisabled={(id, hostKey) =>
+            deletingWorkspaceTargets.some((target) =>
+              isDeletingWorkspaceTarget(target, id, hostKey),
+            )}
         />
       {/snippet}
       {@render terminalMainContent()}

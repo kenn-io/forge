@@ -89,6 +89,10 @@
     onWorkspaceListStateChange?: (
       state: { status: "loading" | "retrying" | "loaded"; total: number },
     ) => void;
+    isWorkspaceActionDisabled?: (
+      workspaceId: string,
+      hostKey?: string,
+    ) => boolean;
     isSidebarToggleEnabled?: boolean;
     onCollapseSidebar?: (() => void) | undefined;
   }
@@ -98,6 +102,7 @@
     selectedHostKey = undefined,
     onOpenItemSidebar,
     onWorkspaceListStateChange,
+    isWorkspaceActionDisabled,
     isSidebarToggleEnabled = false,
     onCollapseSidebar,
   }: Props = $props();
@@ -661,6 +666,7 @@
   }
 
   async function refreshWorkspaceStatus(ws: Workspace): Promise<void> {
+    if (workspaceActionsDisabled(ws)) return;
     closeContextMenu();
     const { error, response } = ws.fleet_host_key
       ? await client.POST("/fleet/hosts/{host_key}/workspaces/{id}/refresh", {
@@ -688,7 +694,12 @@
     );
   }
 
+  function workspaceActionsDisabled(ws: Workspace): boolean {
+    return isWorkspaceActionDisabled?.(ws.id, ws.fleet_host_key) ?? false;
+  }
+
   function workspaceBusyLabel(ws: Workspace): string {
+    if (workspaceActionsDisabled(ws)) return "Deleting workspace";
     if (!workspaceActionMatches(ws)) return "";
     if (workspaceAction?.action === "push") return "Pushing branch";
     if (workspaceAction?.action === "pull") return "Pulling branch";
@@ -701,7 +712,7 @@
     ws: Workspace,
     action: "push" | "pull" | "reveal" | "delete",
   ): boolean {
-    if (workspaceAction !== null) return false;
+    if (workspaceAction !== null || workspaceActionsDisabled(ws)) return false;
     workspaceAction = { workspaceKey: workspaceRowKey(ws), action };
     return true;
   }
@@ -786,7 +797,7 @@
 
   async function confirmDeleteWorkspaceFromList(): Promise<void> {
     const ws = deleteConfirmWorkspace;
-    if (!ws || !startWorkspaceAction(ws, "delete")) return;
+    if (!ws || workspaceActionsDisabled(ws) || !startWorkspaceAction(ws, "delete")) return;
     try {
       const { error, response } = ws.fleet_host_key
         ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
@@ -1063,7 +1074,7 @@
                     title={workingTitle(ws)}
                     aria-label={workingTitle(ws)}
                   ></span>
-                {:else if workspaceActionMatches(ws)}
+                {:else if workspaceActionMatches(ws) || workspaceActionsDisabled(ws)}
                   <span
                     class="working-pulse"
                     title={workspaceBusyLabel(ws)}
@@ -1179,6 +1190,7 @@
   {@const localWorkspace = !isRemoteWorkspace(menuWorkspace)}
   {@const itemURL = providerItemURL(menuWorkspace)}
   {@const actionBusy = workspaceAction !== null}
+  {@const actionDisabled = actionBusy || workspaceActionsDisabled(menuWorkspace)}
   <div
     class="workspace-context-menu filter-dropdown"
     bind:this={contextMenuEl}
@@ -1203,7 +1215,7 @@
         class="filter-item active"
         role="menuitem"
         type="button"
-        disabled={actionBusy}
+        disabled={actionDisabled}
         onclick={() => {
           void syncWorkspaceBranch(menuWorkspace, "push");
         }}
@@ -1217,7 +1229,7 @@
         class="filter-item active"
         role="menuitem"
         type="button"
-        disabled={actionBusy}
+        disabled={actionDisabled}
         onclick={() => {
           void syncWorkspaceBranch(menuWorkspace, "pull");
         }}
@@ -1231,7 +1243,7 @@
       class="filter-item active"
       role="menuitem"
       type="button"
-      disabled={actionBusy}
+      disabled={actionDisabled}
       onclick={() => {
         void refreshWorkspaceStatus(menuWorkspace);
       }}
@@ -1276,7 +1288,7 @@
         class="filter-item active"
         role="menuitem"
         type="button"
-        disabled={actionBusy}
+        disabled={actionDisabled}
         onclick={() => {
           void revealWorkspacePath(menuWorkspace);
         }}
@@ -1315,7 +1327,7 @@
       class="filter-item active workspace-context-danger"
       role="menuitem"
       type="button"
-      disabled={actionBusy}
+      disabled={actionDisabled}
       onclick={() => {
         openDeleteWorkspaceDialog(menuWorkspace);
       }}

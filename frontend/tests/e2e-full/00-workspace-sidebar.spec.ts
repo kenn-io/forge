@@ -550,7 +550,7 @@ test.describe("workspace sidebar full-stack", () => {
       });
 
       const deletingWorkspace = await createIssueWorkspace(api, 10);
-      await createIssueWorkspace(api, 13);
+      const otherWorkspace = await createIssueWorkspace(api, 13);
 
       let releaseDelete!: () => void;
       const deleteMayContinue = new Promise<void>((resolve) => {
@@ -560,6 +560,14 @@ test.describe("workspace sidebar full-stack", () => {
       const deleteStarted = new Promise<void>((resolve) => {
         markDeleteStarted = resolve;
       });
+      let releaseOtherDelete!: () => void;
+      const otherDeleteMayContinue = new Promise<void>((resolve) => {
+        releaseOtherDelete = resolve;
+      });
+      let markOtherDeleteStarted!: () => void;
+      const otherDeleteStarted = new Promise<void>((resolve) => {
+        markOtherDeleteStarted = resolve;
+      });
 
       await page.route(`**/api/v1/workspaces/${deletingWorkspace.id}`, async (route) => {
         if (route.request().method() !== "DELETE") {
@@ -568,6 +576,15 @@ test.describe("workspace sidebar full-stack", () => {
         }
         markDeleteStarted();
         await deleteMayContinue;
+        await route.continue();
+      });
+      await page.route(`**/api/v1/workspaces/${otherWorkspace.id}`, async (route) => {
+        if (route.request().method() !== "DELETE") {
+          await route.continue();
+          return;
+        }
+        markOtherDeleteStarted();
+        await otherDeleteMayContinue;
         await route.continue();
       });
 
@@ -585,11 +602,28 @@ test.describe("workspace sidebar full-stack", () => {
 
       await page.locator(".workspace-list-sidebar .ws-row:not(.selected)").click();
       await expect(page).not.toHaveURL(new RegExp(`/terminal/${deletingWorkspace.id}$`));
+      await expect(page).toHaveURL(new RegExp(`/terminal/${otherWorkspace.id}$`));
+
+      page.once("dialog", (dialog) => {
+        void dialog.accept();
+      });
+      await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+      await otherDeleteStarted;
+      await expect(page.locator(".header-bar").getByRole("button", { name: "Delete" })).toBeDisabled();
+
+      await page.locator(".workspace-list-sidebar .ws-row.selected").click({ button: "right" });
+      await expect(page.getByRole("menuitem", { name: /Delete workspace/ })).toBeDisabled();
+      await page.keyboard.press("Escape");
 
       await page.locator(".workspace-list-sidebar .ws-row:not(.selected)").click();
       await expect(page).toHaveURL(new RegExp(`/terminal/${deletingWorkspace.id}$`));
       await expect(deleteButton).toBeDisabled();
 
+      await page.locator(".workspace-list-sidebar .ws-row.selected").click({ button: "right" });
+      await expect(page.getByRole("menuitem", { name: /Delete workspace/ })).toBeDisabled();
+      await page.keyboard.press("Escape");
+
+      releaseOtherDelete();
       releaseDelete();
       await expect(page).toHaveURL(/\/workspaces$/);
     } finally {

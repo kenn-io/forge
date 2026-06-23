@@ -27,10 +27,10 @@ function testClient(): TestClient {
             data: {
               repo,
               refs: [
-                { type: "branch", name: "main", sha: "main-sha" },
-                { type: "tag", name: "v1.0.0", sha: "tag-sha" },
+                { type: "branch", name: "main", sha: "main-sha", stale: false },
+                { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
               ],
-              default_ref: { type: "branch", name: "main", sha: "main-sha" },
+              default_ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
             },
             response: new Response(null, { status: 200 }),
           };
@@ -42,7 +42,7 @@ function testClient(): TestClient {
           return {
             data: {
               repo,
-              ref: { type: "branch", name: "main", sha: "main-sha" },
+              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
               entries: [
                 { path: "README.md", type: "blob", size: 12 },
                 { path: "src/app.ts", type: "blob", size: 30 },
@@ -59,7 +59,7 @@ function testClient(): TestClient {
           return {
             data: {
               repo,
-              ref: { type: "branch", name: "main", sha: "main-sha" },
+              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
               commits: {
                 "README.md": commit("readme changed"),
                 "src/app.ts": commit("app changed"),
@@ -75,7 +75,7 @@ function testClient(): TestClient {
           return {
             data: {
               repo,
-              ref: { type: "branch", name: "main", sha: "main-sha" },
+              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
               blob: {
                 path: "README.md",
                 sha: "blob-sha",
@@ -97,9 +97,45 @@ function testClient(): TestClient {
           return {
             data: {
               repo,
-              ref: { type: "branch", name: "main", sha: "main-sha" },
+              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
               path: "README.md",
               commits: [commit("readme changed")],
+            },
+            response: new Response(null, { status: 200 }),
+          };
+        }
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+        ) {
+          return {
+            data: {
+              repo,
+              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+              blob: {
+                path: "src/app.ts",
+                sha: "app-blob-sha",
+                size: 30,
+                media_type: "text/typescript; charset=utf-8",
+                encoding: "utf-8",
+                content: "export const app = true;\n",
+                binary: false,
+                too_large: false,
+              },
+            },
+            response: new Response(null, { status: 200 }),
+          };
+        }
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+        ) {
+          return {
+            data: {
+              repo,
+              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+              path: "src/app.ts",
+              commits: [commit("app changed")],
             },
             response: new Response(null, { status: 200 }),
           };
@@ -142,6 +178,83 @@ describe("createRepoBrowserStore", () => {
     expect(store.getViewMode()).toBe("preview");
     expect(localStorage.getItem("repo-browser-view-mode")).toBe("preview");
   });
+
+  it("ignores stale blob and history responses after selecting another path", async () => {
+    const base = testClient();
+    const readmeBlob = deferredResponse();
+    const readmeHistory = deferredResponse();
+    let deferReadme = false;
+    const client = {
+      GET: vi.fn(
+        (path: string, options?: { params?: { path?: Record<string, string>; query?: Record<string, unknown> } }) => {
+          const url = testURL(path, options);
+          if (
+            deferReadme &&
+            url ===
+              "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+          ) {
+            return readmeBlob.promise;
+          }
+          if (
+            deferReadme &&
+            url ===
+              "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+          ) {
+            return readmeHistory.promise;
+          }
+          return base.GET(path, options);
+        },
+      ),
+    } as unknown as TestClient;
+    const store = createRepoBrowserStore({ client });
+    await store.loadRepo(repo);
+
+    deferReadme = true;
+    const staleReadme = store.selectPath("README.md");
+    await store.selectPath("src/app.ts");
+    readmeBlob.resolve(blobResponse("README.md", "# stale\n"));
+    readmeHistory.resolve(historyResponse("README.md", "stale readme"));
+    await staleReadme;
+
+    expect(store.getSelectedPath()).toBe("src/app.ts");
+    expect(store.getBlob()?.path).toBe("src/app.ts");
+    expect(store.getBlob()?.content).toBe("export const app = true;\n");
+    expect(store.getFileHistory().map((item) => item.subject)).toEqual(["app changed"]);
+    expect(store.isBlobLoading()).toBe(false);
+  });
+
+  it("clears dependent state and reports errors when ref switching fails", async () => {
+    const base = testClient();
+    const client = {
+      GET: vi.fn(
+        (path: string, options?: { params?: { path?: Record<string, string>; query?: Record<string, unknown> } }) => {
+          const url = testURL(path, options);
+          if (
+            url ===
+            "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha"
+          ) {
+            return Promise.resolve({
+              error: { detail: "tree failed" },
+              response: new Response(null, { status: 500 }),
+            });
+          }
+          return base.GET(path, options);
+        },
+      ),
+    } as unknown as TestClient;
+    const store = createRepoBrowserStore({ client });
+    await store.loadRepo(repo);
+
+    await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false });
+
+    expect(store.getSelectedRef()?.name).toBe("v1.0.0");
+    expect(store.getTree()).toEqual([]);
+    expect(store.getSelectedPath()).toBeNull();
+    expect(store.getBlob()).toBeNull();
+    expect(store.getFileHistory()).toEqual([]);
+    expect(store.getError()).toBe("tree failed");
+    expect(store.isLoading()).toBe(false);
+  });
 });
 
 function testURL(
@@ -173,4 +286,44 @@ function commit(subject: string) {
     author_email: "alice@example.com",
     authored_at: "2026-06-01T00:00:00Z",
   };
+}
+
+function blobResponse(path: string, content: string) {
+  return {
+    data: {
+      repo,
+      ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+      blob: {
+        path,
+        sha: `${path}-blob-sha`,
+        size: content.length,
+        media_type: "text/plain; charset=utf-8",
+        encoding: "utf-8",
+        content,
+        binary: false,
+        too_large: false,
+      },
+    },
+    response: new Response(null, { status: 200 }),
+  };
+}
+
+function historyResponse(path: string, subject: string) {
+  return {
+    data: {
+      repo,
+      ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+      path,
+      commits: [commit(subject)],
+    },
+    response: new Response(null, { status: 200 }),
+  };
+}
+
+function deferredResponse() {
+  let resolve!: (value: unknown) => void;
+  const promise = new Promise<unknown>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
 }

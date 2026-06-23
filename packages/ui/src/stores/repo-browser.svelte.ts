@@ -75,6 +75,8 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
   let loading = $state(false);
   let blobLoading = $state(false);
   let error = $state<string | null>(null);
+  let treeRequestGeneration = 0;
+  let pathRequestGeneration = 0;
 
   const fileEntries = $derived(buildSourceBrowserFileEntries(tree, lastChanged));
   const visibleFileEntries = $derived(filterSourceBrowserFileEntriesByCategory(fileEntries, fileCategoryFilter));
@@ -95,9 +97,11 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     nextRepo: ProviderRouteRef,
     initial?: { ref?: RepoBrowserRef; path?: string | null },
   ): Promise<void> {
+    const generation = nextTreeRequestGeneration();
     repo = nextRepo;
     loading = true;
     error = null;
+    clearRepoData();
     try {
       const {
         data,
@@ -109,14 +113,17 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
           query: { repo_path: nextRepo.repoPath },
         },
       });
+      if (!isCurrentTreeRequest(generation)) return;
       if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
       applyRefs(data as RepoBrowserRefsResponse, initial?.ref);
-      await loadTree(initial?.path ?? null);
+      await loadTree(initial?.path ?? null, generation);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-      clearRepoData();
+      if (isCurrentTreeRequest(generation)) {
+        error = err instanceof Error ? err.message : String(err);
+        clearRepoData();
+      }
     } finally {
-      loading = false;
+      if (isCurrentTreeRequest(generation)) loading = false;
     }
   }
 
@@ -131,9 +138,13 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     return defaultRef ?? refs[0] ?? null;
   }
 
-  async function loadTree(requestedPath: string | null = null): Promise<void> {
+  async function loadTree(
+    requestedPath: string | null = null,
+    generation = nextTreeRequestGeneration(),
+  ): Promise<void> {
     const ref = repo;
-    if (!ref || !selectedRef) return;
+    const requestedRef = selectedRef;
+    if (!ref || !requestedRef) return;
     const {
       data,
       error: apiError,
@@ -141,14 +152,17 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     } = await client.GET(providerRepoPath(ref, "/browser/tree"), {
       params: {
         path: providerRouteParams(ref),
-        query: queryFor(ref),
+        query: queryFor(ref, requestedRef),
       },
     });
+    if (!isCurrentTreeRequest(generation)) return;
     if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
     const payload = data as RepoBrowserTreeResponse;
+    selectedRef = payload.ref ?? requestedRef;
     tree = payload.entries ?? [];
     treeTruncated = payload.truncated;
-    await loadLastChanged();
+    await loadLastChanged(generation);
+    if (!isCurrentTreeRequest(generation)) return;
     const firstPath =
       requestedPath && tree.some((entry) => entry.path === requestedPath) ? requestedPath : (tree[0]?.path ?? null);
     if (firstPath) {
@@ -157,10 +171,11 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       selectedPath = null;
       blob = null;
       fileHistory = [];
+      selectedCommit = null;
     }
   }
 
-  async function loadLastChanged(): Promise<void> {
+  async function loadLastChanged(generation = treeRequestGeneration): Promise<void> {
     const ref = repo;
     if (!ref || !selectedRef) return;
     const paths = tree.slice(0, 250).map((entry) => entry.path);
@@ -181,18 +196,34 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
         },
       },
     });
+    if (!isCurrentTreeRequest(generation)) return;
     if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
     lastChanged = (data as RepoBrowserLastChangedResponse).commits ?? {};
   }
 
   async function selectRef(ref: RepoBrowserRef): Promise<void> {
+    const generation = nextTreeRequestGeneration();
     selectedRef = ref;
-    await loadTree(null);
+    loading = true;
+    error = null;
+    clearTreeData();
+    try {
+      await loadTree(null, generation);
+    } catch (err) {
+      if (isCurrentTreeRequest(generation)) {
+        error = err instanceof Error ? err.message : String(err);
+        clearTreeData();
+      }
+    } finally {
+      if (isCurrentTreeRequest(generation)) loading = false;
+    }
   }
 
   async function selectPath(path: string): Promise<void> {
     const ref = repo;
-    if (!ref || !selectedRef) return;
+    const requestedRef = selectedRef;
+    if (!ref || !requestedRef) return;
+    const generation = nextPathRequestGeneration();
     selectedPath = path;
     blobLoading = true;
     error = null;
@@ -202,7 +233,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
           params: {
             path: providerRouteParams(ref),
             query: {
-              ...queryFor(ref),
+              ...queryFor(ref, requestedRef),
               path,
             },
           },
@@ -211,12 +242,13 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
           params: {
             path: providerRouteParams(ref),
             query: {
-              ...queryFor(ref),
+              ...queryFor(ref, requestedRef),
               path,
             },
           },
         }),
       ]);
+      if (!isCurrentPathRequest(generation)) return;
       if (!blobData) throw new Error(apiErrorMessage(blobError, `HTTP ${blobResponse.status}`));
       if (!historyResponse.data) {
         throw new Error(apiErrorMessage(historyResponse.error, `HTTP ${historyResponse.response.status}`));
@@ -225,18 +257,23 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       fileHistory = (historyResponse.data as RepoBrowserHistoryResponse).commits ?? [];
       selectedCommit = fileHistory[0] ?? null;
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-      blob = null;
-      fileHistory = [];
-      selectedCommit = null;
+      if (isCurrentPathRequest(generation)) {
+        error = err instanceof Error ? err.message : String(err);
+        blob = null;
+        fileHistory = [];
+        selectedCommit = null;
+      }
     } finally {
-      blobLoading = false;
+      if (isCurrentPathRequest(generation)) blobLoading = false;
     }
   }
 
   async function selectCommit(sha: string): Promise<void> {
     const ref = repo;
-    if (!ref || !selectedRef || !selectedPath) return;
+    const requestedRef = selectedRef;
+    const path = selectedPath;
+    const generation = pathRequestGeneration;
+    if (!ref || !requestedRef || !path) return;
     const {
       data,
       error: apiError,
@@ -245,12 +282,13 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       params: {
         path: providerRouteParams(ref),
         query: {
-          ...queryFor(ref),
-          path: selectedPath,
+          ...queryFor(ref, requestedRef),
+          path,
           sha,
         },
       },
     });
+    if (!isCurrentPathRequest(generation)) return;
     if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
     selectedCommit = (data as RepoBrowserCommitResponse).commit;
   }
@@ -259,6 +297,10 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     refs = [];
     defaultRef = null;
     selectedRef = null;
+    clearTreeData();
+  }
+
+  function clearTreeData(): void {
     tree = [];
     treeTruncated = false;
     lastChanged = {};
@@ -266,6 +308,26 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     blob = null;
     fileHistory = [];
     selectedCommit = null;
+    blobLoading = false;
+  }
+
+  function nextTreeRequestGeneration(): number {
+    treeRequestGeneration += 1;
+    pathRequestGeneration += 1;
+    return treeRequestGeneration;
+  }
+
+  function nextPathRequestGeneration(): number {
+    pathRequestGeneration += 1;
+    return pathRequestGeneration;
+  }
+
+  function isCurrentTreeRequest(generation: number): boolean {
+    return generation === treeRequestGeneration;
+  }
+
+  function isCurrentPathRequest(generation: number): boolean {
+    return generation === pathRequestGeneration;
   }
 
   function setFileCategoryFilter(filter: DiffFileCategoryFilter): void {

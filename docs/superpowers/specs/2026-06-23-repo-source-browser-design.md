@@ -8,10 +8,12 @@ The view should feel like a sibling of the existing pull request Files view: a
 resizable file sidebar, a central source viewer, and a collapsible right rail for
 selected-file history.
 
-The source of truth is middleman's local bare clone cache, not provider contents
-APIs. Opening the browser ensures the clone exists and fetches once for the
-browser session. Branch and tag switching then reads from that fetched clone until
-the user manually refreshes.
+The source of truth is middleman's shared local bare clone cache, not provider
+contents APIs. Opening the browser ensures the clone exists and fetches before
+the first read. Branch and tag reads resolve against the current shared clone
+state for each request, so another fetch can move those refs without the current
+browser tab pressing refresh; responses expose the resolved SHA and stale-token
+metadata so the UI can show that movement explicitly.
 
 ## Goals
 
@@ -106,9 +108,10 @@ existing platform metadata and route-helper rules.
 ## Backend Data Flow
 
 Opening the repo browser ensures/fetches the bare clone and returns repo-code
-metadata for the requested ref. Fetch happens once on initial browser open.
-Branch and tag switches use the fetched clone. Manual refresh fetches branches
-and tags again, including tag pruning, before rereading refs.
+metadata for the requested ref. Manual refresh fetches branches and tags again,
+including tag pruning, before rereading refs. Other reads use the shared clone as
+it exists at request time; the backend must not promise per-tab ref pinning for
+branch or tag display refs.
 
 The API surface should cover:
 
@@ -162,9 +165,10 @@ routes accept an explicit ref identity:
 Branch and tag names can contain slashes and can share the same display name, so
 `ref_type` is part of the identity. Branch and tag requests resolve `ref_name`
 fresh for each request. If a branch/tag request also supplies `ref_sha`, that SHA
-is a staleness token only: the server does not pin to it, and the response must
-report `stale_ref` metadata when the current resolved SHA differs. Immutable
-views use `ref_type=commit` with a full 40-character `ref_sha` and no `ref_name`.
+is a staleness token only: the server does not pin to it, and the successful
+response must include `stale: true`, the supplied SHA, and the current resolved
+SHA when they differ. Immutable views use `ref_type=commit` with a full
+40-character `ref_sha` and no `ref_name`.
 
 A path is always an encoded repository-relative path, never a filesystem path.
 The server rejects NUL bytes, absolute paths, empty path segments that normalize
@@ -268,11 +272,13 @@ link/image resolver from Docs mode:
 
 The asset endpoint must set MIME type from detected content, enforce the same
 size and binary caps as blob reads, reject path traversal, and use the same
-stateless ref validation as blob reads. SVG assets are served only as
-`image/svg+xml` when they pass the normal path/ref checks; they are not inlined
-into the DOM by the Markdown renderer. Cache headers are immutable for
+stateless ref validation as blob reads. SVG assets are not rendered as preview
+images in v1, even when requested through Markdown, because opening same-origin
+repository SVG directly would make untrusted repository content an app-origin
+script surface. SVG requests return a safe unsupported-asset state instead of
+inline or directly renderable SVG. Cache headers are immutable for
 `ref_type=commit` reads and conservative (`no-store` or revalidate-on-use) for
-branch/tag display refs that can move after refresh.
+branch/tag display refs that can move between requests.
 
 Other file-type previews are deferred. The renderer boundary should still make
 future image or other preview renderers possible without reshaping the page.
@@ -284,34 +290,38 @@ repo browser. The view does not navigate back to the repo summary page on error.
 Each state should explain what failed and offer retry or refresh when that action
 can help.
 
-API errors should use stable error codes/details consistent with
+API errors should use stable camelCase problem codes/details consistent with
 `context/error-handling.md`; the frontend should branch on those codes/details,
-not prose.
+not prose. Do not add repo-browser-specific problem codes for normal readable
+states when the request succeeds.
 
-The first version uses these stable codes:
+The first version uses existing problem codes for failures:
 
-- `clone_unavailable`: clone cannot be created or fetched
-- `unavailable_ref`: branch, tag, or commit cannot be resolved
-- `stale_ref`: supplied branch/tag `ref_sha` differs from the current resolved
-  SHA when the request asks for strict SHA matching
-- `unsafe_path`: requested path is not a safe repo-relative path
-- `missing_path`: path does not exist at the selected resolved SHA
-- `truncated_tree`: tree response exceeded the entry cap
-- `oversized_blob`: blob or asset exceeds the size cap
-- `binary_blob`: source view requested a binary blob
-- `oversized_asset`: Markdown asset exceeds the size cap
-- `binary_asset`: Markdown asset cannot be safely rendered by the preview
+- `serviceUnavailable` with `details.reason = "clone_unavailable"` when the
+  local clone cannot be created or fetched
+- `validationError` with `details.field` for malformed ref or path inputs
+- `notFound` or `repoNotFound` when the repository, ref, commit, or path cannot
+  be found; include `details.reason` such as `unavailable_ref` or `missing_path`
+- `payloadTooLarge` only for request payload limits, not for readable repository
+  blob states
+- `internalError` for unexpected local Git or filesystem failures
 
-The "browser session" freshness rule is scoped to a mounted browser instance and
-its in-memory store. Reloading the page starts a new browser session and may fetch
-again. Multiple tabs do not coordinate freshness; each tab may perform its own
-initial fetch. Manual refresh always asks the backend to fetch before rereading
-refs/tree/blob data.
+Tree truncation, stale branch/tag tokens, binary blobs, oversized blobs/assets,
+and unsupported SVG assets are modeled as successful response state enums with
+metadata. They are not problem envelopes unless the request itself is malformed
+or the server cannot compute the requested state.
+
+There is no per-browser-session freshness guarantee for branch or tag reads.
+Reloading the page starts a new frontend store, but all tabs use the same shared
+clone cache and refs can move after any fetch. Manual refresh asks the backend to
+fetch before rereading refs/tree/blob data; non-refresh reads report the current
+resolved SHA and stale-token state for the shared clone snapshot they actually
+used.
 
 ## Success Criteria
 
-- Opening from a repo summary card fetches once, resolves the default branch, and
-  restores the README when one exists.
+- Opening from a repo summary card ensures/fetches the shared clone, resolves
+  the default branch, and restores the README when one exists.
 - Opening from a selected pull request, merge request, or workspace uses a
   contextual branch only when that branch resolves in the fetched bare clone;
   otherwise it falls back to default branch with an inline explanation.
@@ -319,8 +329,8 @@ refs/tree/blob data.
   path, and source/preview mode.
 - Branch and tag names with slashes and duplicate display names are
   disambiguated by `ref_type` and resolved SHA.
-- Large text, binary, over-cap tree, and unavailable-ref cases return typed API
-  states that the UI renders inline.
+- Large text, binary, over-cap tree, stale-token, unsupported SVG asset, and
+  unavailable-ref cases return typed API states that the UI renders inline.
 - Host-prefixed provider routes work for non-default hosts.
 - GitHub, GitLab, Forgejo, and Gitea use the same provider-neutral repo lookup
   contract, with provider-specific differences hidden behind platform metadata
@@ -348,7 +358,7 @@ Cover:
 - blob caps and binary detection
 - Markdown asset path safety
 - file history and commit metadata
-- stale branch/tag `ref_sha` semantics
+- stale branch/tag `ref_sha` response-state semantics
 - ref/path validation, including duplicate branch/tag names and slash-containing
   refs
 - contextual ref fallback inputs

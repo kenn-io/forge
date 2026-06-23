@@ -50,7 +50,7 @@ Do not use `git rebase` directly on this stack.
 - `internal/server/api_types.go`: repo browser response/request wire types.
 - `internal/server/huma_routes.go`: route registration for `/repo/.../browser/*` and `/host/{platform_host}/repo/.../browser/*`, with required `repo_path` query parameters for repo-browser operations.
 - `packages/ui/src/api/provider-routes.ts`: typed repo browser suffixes.
-- `frontend/openapi/openapi.yaml`, `internal/apiclient/spec/openapi.json`, `internal/apiclient/generated/client.gen.go`, `packages/ui/src/api/generated/schema.ts`, `packages/ui/src/api/generated/client.ts`: generated artifacts from `make api-generate`.
+- `frontend/openapi/openapi.yaml`, `internal/apiclient/generated/client.gen.go`, `packages/ui/src/api/generated/schema.ts`, `packages/ui/src/api/generated/client.ts`: checked-in generated artifacts from `make api-generate`. `internal/apiclient/spec/openapi.json` may be regenerated locally but remains ignored and is not committed.
 - `packages/ui/src/stores/repo-browser.svelte.ts`: repo browser store over generated API types.
 - `frontend/src/lib/stores/router.svelte.ts`: route parsing/building for repo browser page.
 - `packages/ui/src/components/repo-browser/`: shared source browser components.
@@ -70,7 +70,6 @@ Do not use `git rebase` directly on this stack.
 - Modify: `internal/server/huma_routes.go`
 - Modify: `packages/ui/src/api/provider-routes.ts`
 - Generated: `frontend/openapi/openapi.yaml`
-- Generated: `internal/apiclient/spec/openapi.json`
 - Generated: `internal/apiclient/generated/client.gen.go`
 - Generated: `packages/ui/src/api/generated/schema.ts`
 - Generated: `packages/ui/src/api/generated/client.ts`
@@ -94,15 +93,15 @@ Write the API contract in server request/response types before handlers:
   `/repo/{provider}/{owner}/{name}/browser/{operation}?repo_path={repo_path}` and
   `/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/{operation}?repo_path={repo_path}`
 - repository lookup key:
-  `(provider, platform_host, repo_path)`; owner/name route params are display hints only
+  `(provider, platform_host, repo_path)`; owner/name route params are display hints derived from the stored display owner/name and must not drive identity, cache keys, or clone paths for nested providers
 - ref semantics:
-  branch/tag `ref_name` resolves fresh per request; branch/tag `ref_sha` is a staleness token; commit views use `ref_type=commit` plus a full 40-character `ref_sha`
-- stable codes:
-  `clone_unavailable`, `unavailable_ref`, `stale_ref`, `unsafe_path`, `missing_path`, `truncated_tree`, `oversized_blob`, `binary_blob`, `oversized_asset`, `binary_asset`
+  branch/tag `ref_name` resolves fresh per request; branch/tag `ref_sha` is a staleness token returned as metadata on every successful branch/tag response; commit views use `ref_type=commit` plus a full 40-character `ref_sha`
+- error/state contract:
+  use existing camelCase problem codes for failures; put repo-browser reasons such as `clone_unavailable`, `unavailable_ref`, and `missing_path` in `details.reason`; model truncation, stale-token, binary, oversized, and unsupported-SVG cases as successful response states
 - caps:
   `RepoBrowserTreeEntryLimit`, `RepoBrowserBlobSizeLimit`, `RepoBrowserLastChangedBatchMax`, `RepoBrowserHistoryLimit`
 - Markdown asset contract:
-  path/ref validation, MIME detection, SVG-as-image-only policy, blob-size caps, conservative branch/tag cache headers, immutable commit cache headers
+  path/ref validation, MIME detection, metadata/preflight for Markdown images, unsupported SVG state with no renderable bytes, blob-size caps, conservative branch/tag cache headers, immutable commit cache headers
 
 - [ ] **Step 3: Write failing gitclone tests**
 
@@ -246,7 +245,7 @@ Add response types in `internal/server/api_types.go` for refs, tree, README prob
 make api-generate
 ```
 
-Expected: `frontend/openapi/openapi.yaml`, `internal/apiclient/spec/openapi.json`, `internal/apiclient/generated/client.gen.go`, `packages/ui/src/api/generated/schema.ts`, and `packages/ui/src/api/generated/client.ts` include repo browser routes.
+Expected: `frontend/openapi/openapi.yaml`, `internal/apiclient/generated/client.gen.go`, `packages/ui/src/api/generated/schema.ts`, and `packages/ui/src/api/generated/client.ts` include repo browser routes. `internal/apiclient/spec/openapi.json` may be regenerated locally but stays ignored.
 
 - [ ] **Step 11: Run backend/API verification**
 
@@ -262,7 +261,7 @@ Expected: PASS.
 
 ```bash
 git status --short
-git add internal/gitclone/repo_browser.go internal/gitclone/repo_browser_test.go internal/server/repo_browser.go internal/server/repo_browser_test.go internal/server/api_types.go internal/server/huma_routes.go frontend/openapi/openapi.yaml internal/apiclient/spec/openapi.json internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts packages/ui/src/api/generated/client.ts packages/ui/src/api/provider-routes.ts
+git add internal/gitclone/repo_browser.go internal/gitclone/repo_browser_test.go internal/server/repo_browser.go internal/server/repo_browser_test.go internal/server/api_types.go internal/server/huma_routes.go frontend/openapi/openapi.yaml internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts packages/ui/src/api/generated/client.ts packages/ui/src/api/provider-routes.ts
 git commit -m "feat: add repo browser read APIs" -m "The repo source browser needs a provider-aware local-clone API foundation before UI branches can consume stable generated types. This slice keeps the surface read-only, bounded, and ref-safe so later stack branches do not invent frontend-only models."
 git-spice upstack restack --no-prompt
 ```
@@ -375,6 +374,7 @@ git-spice upstack restack --no-prompt
 - Modify: `frontend/src/lib/components/repositories/RepoSummaryPage.test.ts`
 - Modify: `frontend/src/lib/components/keyboard/Palette.svelte`
 - Modify: palette tests that own selected-context commands.
+- Create: `frontend/tests/e2e-full/repo-browser.spec.ts`
 
 - [ ] **Step 1: Create branch and claim tasks**
 

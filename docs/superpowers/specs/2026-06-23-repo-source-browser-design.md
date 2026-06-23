@@ -165,9 +165,10 @@ routes accept an explicit ref identity:
 Branch and tag names can contain slashes and can share the same display name, so
 `ref_type` is part of the identity. Branch and tag requests resolve `ref_name`
 fresh for each request. If a branch/tag request also supplies `ref_sha`, that SHA
-is a staleness token only: the server does not pin to it, and the successful
-response must include `stale: true`, the supplied SHA, and the current resolved
-SHA when they differ. Immutable views use `ref_type=commit` with a full
+is a staleness token only: the server does not pin to it, and every successful
+branch/tag response shape (refs/open metadata, tree, blob, history, commit
+detail, and asset) must include `stale: true`, the supplied SHA, and the current
+resolved SHA when they differ. Immutable views use `ref_type=commit` with a full
 40-character `ref_sha` and no `ref_name`.
 
 A path is always an encoded repository-relative path, never a filesystem path.
@@ -246,8 +247,12 @@ query parameter for repo-browser endpoints. Default-host routes use
 `/repo/{provider}/{owner}/{name}/browser/{operation}` and custom-host routes use
 `/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/{operation}`.
 Handlers must look up the repository by `(provider, platform_host, repo_path)`;
-owner/name route placeholders are display hints and test coverage must include a
-nested repo path where owner/name alone is insufficient.
+owner/name route placeholders are display hints derived from the repository
+record's stored display owner and display name. For nested providers, the
+authoritative `repo_path` may be `group/subgroup/repo` while owner/name remain
+the display values used by existing provider route helpers; handlers must never
+derive identity, cache keys, or clone paths from owner/name alone. Test coverage
+must include a nested repo path where owner/name alone is insufficient.
 
 When no path is present, the browser auto-selects a README variant if present.
 If no README exists, it shows the tree with no selected file.
@@ -275,8 +280,12 @@ size and binary caps as blob reads, reject path traversal, and use the same
 stateless ref validation as blob reads. SVG assets are not rendered as preview
 images in v1, even when requested through Markdown, because opening same-origin
 repository SVG directly would make untrusted repository content an app-origin
-script surface. SVG requests return a safe unsupported-asset state instead of
-inline or directly renderable SVG. Cache headers are immutable for
+script surface. SVG requests return a successful non-renderable asset response
+with `state: "unsupportedAsset"`, `reason: "svg"`, the resolved ref metadata, and
+no renderable bytes. Markdown preview must request asset metadata before emitting
+an `<img>` URL or use an equivalent custom renderer, so unsupported assets can be
+replaced with the inline broken-asset affordance instead of relying on a direct
+image request to carry JSON state. Cache headers are immutable for
 `ref_type=commit` reads and conservative (`no-store` or revalidate-on-use) for
 branch/tag display refs that can move between requests.
 
@@ -309,7 +318,9 @@ The first version uses existing problem codes for failures:
 Tree truncation, stale branch/tag tokens, binary blobs, oversized blobs/assets,
 and unsupported SVG assets are modeled as successful response state enums with
 metadata. They are not problem envelopes unless the request itself is malformed
-or the server cannot compute the requested state.
+or the server cannot compute the requested state. Missing refs, commits, and
+paths are non-2xx problem envelopes; the repo browser renders those failures
+inline instead of navigating away.
 
 There is no per-browser-session freshness guarantee for branch or tag reads.
 Reloading the page starts a new frontend store, but all tabs use the same shared
@@ -329,8 +340,10 @@ used.
   path, and source/preview mode.
 - Branch and tag names with slashes and duplicate display names are
   disambiguated by `ref_type` and resolved SHA.
-- Large text, binary, over-cap tree, stale-token, unsupported SVG asset, and
-  unavailable-ref cases return typed API states that the UI renders inline.
+- Large text, binary, over-cap tree, stale-token, and unsupported SVG asset
+  cases return typed successful API states that the UI renders inline.
+- Unavailable ref, missing commit, and missing path problem envelopes are
+  rendered inline by the repo browser rather than navigating away.
 - Host-prefixed provider routes work for non-default hosts.
 - GitHub, GitLab, Forgejo, and Gitea use the same provider-neutral repo lookup
   contract, with provider-specific differences hidden behind platform metadata
@@ -358,7 +371,8 @@ Cover:
 - blob caps and binary detection
 - Markdown asset path safety
 - file history and commit metadata
-- stale branch/tag `ref_sha` response-state semantics
+- stale branch/tag `ref_sha` response-state semantics on every successful
+  branch/tag endpoint response shape
 - ref/path validation, including duplicate branch/tag names and slash-containing
   refs
 - contextual ref fallback inputs

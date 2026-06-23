@@ -122,10 +122,12 @@ from route owner/name placeholders or from the encoded clone path.
 ## Backend Data Flow
 
 Opening the repo browser ensures/fetches the bare clone and returns repo-code
-metadata for the requested ref. Manual refresh fetches branches and tags again,
-including tag pruning, before rereading refs. Other reads use the shared clone as
-it exists at request time; the backend must not promise per-tab ref pinning for
-branch or tag display refs.
+metadata for the requested ref. Manual refresh fetches branches and tags again
+before rereading refs, but repo-browser request/refresh hot paths must not prune
+tags from the middleman-owned clone. Deleted remote tags may remain visible until
+a separate cache maintenance or repair path handles cleanup. Other reads use the
+shared clone as it exists at request time; the backend must not promise per-tab
+ref pinning for branch or tag display refs.
 
 The API surface should cover:
 

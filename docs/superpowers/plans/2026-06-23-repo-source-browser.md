@@ -112,6 +112,8 @@ Write the API contract in server request/response types before handlers:
   `RepoBrowserTreeEntryLimit`, `RepoBrowserBlobSizeLimit`, `RepoBrowserLastChangedBatchMax`, `RepoBrowserHistoryLimit`
 - Markdown asset contract:
   separate `asset-metadata` JSON preflight and `asset-bytes` byte routes; metadata emits commit-pinned byte URLs only for renderable assets; path/ref validation, MIME detection, unsupported SVG state with no byte URL, byte route problem envelopes for SVG/non-renderable assets, blob-size caps, conservative branch/tag metadata cache headers, immutable byte cache headers
+- fetch behavior:
+  repo-browser ensure/fetch/read and manual refresh hot paths must fetch branch/tag updates without pruning tags from the middleman-owned clone; deleted remote tags can remain visible until a separate cache maintenance or repair path cleans them up
 
 - [ ] **Step 3: Write failing gitclone tests**
 
@@ -119,7 +121,7 @@ Add table-driven tests in `internal/gitclone/repo_browser_test.go` covering:
 
 ```go
 func TestRepoBrowserListRefsDisambiguatesBranchAndTag(t *testing.T)
-func TestRepoBrowserFetchPrunesDeletedTags(t *testing.T)
+func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T)
 func TestRepoBrowserListTreeCapsAndIncludesTrackedDotfiles(t *testing.T)
 func TestRepoBrowserReadBlobWorksWhenTreeIsTruncated(t *testing.T)
 func TestRepoBrowserReadBlobRejectsTraversalAndReportsLargeState(t *testing.T)
@@ -139,6 +141,11 @@ return the successful typed `tooLarge` state and metadata. Gitclone tests should
 assert typed Git-layer results, ref metadata, and errors only; HTTP problem
 envelopes, status codes, and response headers belong in `internal/server`
 tests.
+`TestRepoBrowserFetchDoesNotPruneTagsOnHotPath` must prove repo-browser
+ensure/fetch and manual refresh behavior does not pass tag-pruning options and
+does not remove an existing local tag when the remote tag has disappeared.
+Deleted remote tags are allowed to remain visible until a separate maintenance
+path handles cache cleanup.
 `TestRepoBrowserCloneIdentitySeparatesProvidersAndNestedPaths` must cover two
 repositories with the same `platform_host` and `repo_path` but different
 providers, plus slash-containing nested `repo_path` values. It must prove clone
@@ -392,7 +399,7 @@ In `packages/ui/src/components/diff/PierreFileTree.test.ts`, test rendering repo
 - [ ] **Step 5: Run route/store/UI tests red**
 
 ```bash
-cd frontend && ../node_modules/.bin/vp test run --project unit src/lib/stores/router.test.ts ../packages/ui/src/stores/repo-browser.svelte.test.ts ../packages/ui/src/components/diff/PierreFileTree.test.ts ../packages/ui/src/components/repo-browser/RepoSourceViewer.test.ts
+(cd frontend && ../node_modules/.bin/vp test run --project unit src/lib/stores/router.test.ts ../packages/ui/src/stores/repo-browser.svelte.test.ts ../packages/ui/src/components/diff/PierreFileTree.test.ts ../packages/ui/src/components/repo-browser/RepoSourceViewer.test.ts)
 ```
 
 - [ ] **Step 6: Implement route, store, and shared UI boundary**
@@ -403,7 +410,7 @@ Extend `PierreFileTree.svelte` with a narrow prop for repository entries while p
 - [ ] **Step 7: Run route/store/UI tests green and commit**
 
 ```bash
-cd frontend && ../node_modules/.bin/vp test run --project unit src/lib/stores/router.test.ts ../packages/ui/src/stores/repo-browser.svelte.test.ts ../packages/ui/src/components/diff/PierreFileTree.test.ts ../packages/ui/src/components/repo-browser/RepoSourceViewer.test.ts
+(cd frontend && ../node_modules/.bin/vp test run --project unit src/lib/stores/router.test.ts ../packages/ui/src/stores/repo-browser.svelte.test.ts ../packages/ui/src/components/diff/PierreFileTree.test.ts ../packages/ui/src/components/repo-browser/RepoSourceViewer.test.ts)
 git diff --check
 git add frontend/src/lib/stores/router.svelte.ts frontend/src/lib/stores/router.test.ts packages/ui/src/stores/repo-browser.svelte.ts packages/ui/src/stores/repo-browser.svelte.test.ts packages/ui/src/components/diff/PierreFileTree.svelte packages/ui/src/components/diff/PierreFileTree.test.ts packages/ui/src/components/repo-browser/RepoSourceViewer.svelte packages/ui/src/components/repo-browser/RepoSourceViewer.test.ts
 git commit -m "feat: add repo browser state and file UI"
@@ -438,7 +445,7 @@ Test sidebar path filter/category counts/last-changed metadata, browser header/r
 - [ ] **Step 3: Run UI tests red**
 
 ```bash
-cd frontend && ../node_modules/.bin/vp test run --project unit ../packages/ui/src/components/repo-browser/RepoBrowserSidebar.test.ts ../packages/ui/src/components/repo-browser/RepoBrowserView.test.ts ../packages/ui/src/components/repo-browser/RepoBrowserHistoryRail.test.ts
+(cd frontend && ../node_modules/.bin/vp test run --project unit ../packages/ui/src/components/repo-browser/RepoBrowserSidebar.test.ts ../packages/ui/src/components/repo-browser/RepoBrowserView.test.ts ../packages/ui/src/components/repo-browser/RepoBrowserHistoryRail.test.ts)
 ```
 
 - [ ] **Step 4: Implement sidebar, main view, Markdown preview, and history rail**
@@ -451,7 +458,7 @@ alias is needed unless the import path changes.
 - [ ] **Step 5: Run UI tests green and commit**
 
 ```bash
-cd frontend && ../node_modules/.bin/vp test run --project unit ../packages/ui/src/components/repo-browser/RepoBrowserSidebar.test.ts ../packages/ui/src/components/repo-browser/RepoBrowserView.test.ts ../packages/ui/src/components/repo-browser/RepoBrowserHistoryRail.test.ts
+(cd frontend && ../node_modules/.bin/vp test run --project unit ../packages/ui/src/components/repo-browser/RepoBrowserSidebar.test.ts ../packages/ui/src/components/repo-browser/RepoBrowserView.test.ts ../packages/ui/src/components/repo-browser/RepoBrowserHistoryRail.test.ts)
 git diff --check
 git add packages/ui/src/components/repo-browser packages/ui/src/index.ts
 git commit -m "feat: add repo browser interface"
@@ -485,7 +492,7 @@ Test repo card `View repo` navigation. Test command palette visibility for selec
 - [ ] **Step 3: Run entry point tests red**
 
 ```bash
-cd frontend && ../node_modules/.bin/vp test run --project unit src/App.test.ts src/lib/components/repositories/RepoSummaryPage.test.ts src/lib/components/keyboard/Palette.svelte.test.ts
+(cd frontend && ../node_modules/.bin/vp test run --project unit src/App.test.ts src/lib/components/repositories/RepoSummaryPage.test.ts src/lib/components/keyboard/Palette.svelte.test.ts)
 ```
 
 - [ ] **Step 4: Implement app route and entry point actions**
@@ -495,7 +502,7 @@ Wire the route to `RepoBrowserView`, add `View repo` to repository summary cards
 - [ ] **Step 5: Run entry point tests green**
 
 ```bash
-cd frontend && ../node_modules/.bin/vp test run --project unit src/App.test.ts src/lib/components/repositories/RepoSummaryPage.test.ts src/lib/components/keyboard/Palette.svelte.test.ts
+(cd frontend && ../node_modules/.bin/vp test run --project unit src/App.test.ts src/lib/components/repositories/RepoSummaryPage.test.ts src/lib/components/keyboard/Palette.svelte.test.ts)
 ```
 
 - [ ] Run backend affected tests:
@@ -507,7 +514,7 @@ go test ./internal/gitclone ./internal/server -run 'TestRepoBrowser' -shuffle=on
 - [ ] Run full frontend unit suite after final frontend edits:
 
 ```bash
-cd frontend && ../node_modules/.bin/vp test run --project unit
+(cd frontend && ../node_modules/.bin/vp test run --project unit)
 ```
 
 - [ ] Run package checks:
@@ -520,7 +527,7 @@ git diff --check
 - [ ] Run one full-stack browser/e2e smoke against the real HTTP API:
 
 ```bash
-cd frontend && MIDDLEMAN_E2E_OUTPUT_FILE=../tmp/repo-browser-e2e.log node ./scripts/run-e2e-to-file.ts --project=chromium tests/e2e-full/repo-browser.spec.ts
+(cd frontend && MIDDLEMAN_E2E_OUTPUT_FILE=../tmp/repo-browser-e2e.log node ./scripts/run-e2e-to-file.ts --project=chromium tests/e2e-full/repo-browser.spec.ts)
 ```
 
 Expected: seeded repository data opens from the app, renders the file tree, reads a blob, switches refs, and renders Markdown preview assets through the backend endpoint.

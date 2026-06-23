@@ -985,9 +985,6 @@ func ValidateWorktreeBasePath(
 	if err := validateNoExecutableLocalGitConfig(ctx, abs); err != nil {
 		return "", err
 	}
-	if err := validateNoExecutableGitHooks(ctx, abs); err != nil {
-		return "", err
-	}
 	if err := validateOriginFetchRefspec(ctx, abs); err != nil {
 		return "", err
 	}
@@ -1029,34 +1026,6 @@ func validateNoExecutableLocalGitConfig(ctx context.Context, dir string) error {
 				"local git config %q may execute or rewrite git commands",
 				key,
 			)
-		}
-	}
-	return nil
-}
-
-func validateNoExecutableGitHooks(ctx context.Context, dir string) error {
-	commonDir, err := worktreeCommonGitDir(ctx, dir)
-	if err != nil {
-		return fmt.Errorf("inspect git hooks dir: %w", err)
-	}
-	hooksDir := filepath.Join(commonDir, "hooks")
-	entries, err := os.ReadDir(hooksDir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf("read git hooks dir: %w", err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || strings.HasSuffix(entry.Name(), ".sample") {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return fmt.Errorf("inspect git hook %q: %w", entry.Name(), err)
-		}
-		if info.Mode()&0o111 != 0 {
-			return fmt.Errorf("git hook %q must not be executable", entry.Name())
 		}
 	}
 	return nil

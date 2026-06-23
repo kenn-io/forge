@@ -885,6 +885,11 @@ func TestValidateWorktreeBasePathAcceptsConfiguredHooksPath(t *testing.T) {
 	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
 	hooksPath := t.TempDir()
 	runWorkspaceTestGit(t, localRepo, "config", "core.hooksPath", hooksPath)
+	commonDir := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "--path-format=absolute", "--git-common-dir",
+	)))
+	hookPath := filepath.Join(commonDir, "hooks", "post-commit")
+	require.NoError(os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 
 	got, err := ValidateWorktreeBasePath(
 		t.Context(), localRepo, "github.com", "acme", "widget",
@@ -894,27 +899,6 @@ func TestValidateWorktreeBasePathAcceptsConfiguredHooksPath(t *testing.T) {
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
 	require.NoError(err)
 	assert.Equal(canonicalLocalRepo, got)
-}
-
-func TestValidateWorktreeBasePathRejectsExecutableGitHooks(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-
-	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
-	commonDir := strings.TrimSpace(string(runWorkspaceTestGit(
-		t, localRepo, "rev-parse", "--path-format=absolute", "--git-common-dir",
-	)))
-	hookPath := filepath.Join(commonDir, "hooks", "reference-transaction")
-	require.NoError(os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 1\n"), 0o755))
-
-	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
-
-	require.Empty(got)
-	require.Error(err)
-	assert.Contains(err.Error(), "reference-transaction")
-	assert.Contains(err.Error(), "must not be executable")
 }
 
 func TestValidateWorktreeBasePathRejectsUnsafeOriginSchemes(t *testing.T) {

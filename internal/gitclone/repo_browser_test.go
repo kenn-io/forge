@@ -150,6 +150,28 @@ func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T) {
 	}
 }
 
+func TestRepoBrowserCommitDetailRequiresSelectedFileHistory(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+
+	require.NoError(os.WriteFile(filepath.Join(work, "other.txt"), []byte("other\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "other file")
+	otherSHA := gitSHA(t, work, "HEAD")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	require.NoError(mgr.EnsureClone(t.Context(), repo.Host, repo.Owner, repo.Name, repo.RemoteURL))
+	ref := repoBrowserMainRef(t, mgr, repo)
+
+	_, err := mgr.RepoBrowserCommitDetail(t.Context(), repo, ref, "README.md", otherSHA)
+	require.ErrorIs(err, ErrCommitOutOfScope)
+
+	commit, err := mgr.RepoBrowserCommitDetail(t.Context(), repo, ref, "other.txt", otherSHA)
+	require.NoError(err)
+	assert.Equal(otherSHA, commit.SHA)
+	assert.Equal("other file", commit.Subject)
+}
+
 func TestRepoBrowserMarkdownAssetRejectsUnsafeAndOversizedPaths(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

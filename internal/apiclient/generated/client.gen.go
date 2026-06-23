@@ -2348,11 +2348,20 @@ type RepoBrowserLastChangedResponse struct {
 
 // RepoBrowserRef defines model for RepoBrowserRef.
 type RepoBrowserRef struct {
-	Name         string  `json:"name"`
+	// Name Selected branch or tag name. Commit refs leave this empty.
+	Name string `json:"name"`
+
+	// RequestedSha Caller-supplied branch or tag SHA when it differs from the resolved SHA.
 	RequestedSha *string `json:"requested_sha,omitempty"`
-	Sha          string  `json:"sha"`
-	Stale        bool    `json:"stale"`
-	Type         string  `json:"type"`
+
+	// Sha Resolved commit SHA used for the read.
+	Sha string `json:"sha"`
+
+	// Stale True when a caller-supplied branch or tag SHA no longer matches the current ref target.
+	Stale bool `json:"stale"`
+
+	// Type Selected ref type: branch, tag, or commit.
+	Type string `json:"type"`
 }
 
 // RepoBrowserRefsResponse defines model for RepoBrowserRefsResponse.

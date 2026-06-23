@@ -29,6 +29,7 @@ var (
 	ErrTooManyPaths     = errors.New("too many repo browser paths")
 	ErrTooLargeAsset    = errors.New("repo browser asset too large")
 	ErrUnsupportedAsset = errors.New("unsupported repo browser asset type")
+	ErrCommitOutOfScope = errors.New("repo browser commit outside selected file history")
 )
 
 type RepoBrowserRefType string
@@ -48,11 +49,11 @@ type RepoBrowserRepoRef struct {
 }
 
 type RepoBrowserRef struct {
-	Type         RepoBrowserRefType `json:"type"`
-	Name         string             `json:"name"`
-	SHA          string             `json:"sha"`
-	RequestedSHA string             `json:"requested_sha,omitempty"`
-	Stale        bool               `json:"stale"`
+	Type         RepoBrowserRefType `json:"type" doc:"Selected ref type: branch, tag, or commit."`
+	Name         string             `json:"name" doc:"Selected branch or tag name. Commit refs leave this empty."`
+	SHA          string             `json:"sha" doc:"Resolved commit SHA used for the read."`
+	RequestedSHA string             `json:"requested_sha,omitempty" doc:"Caller-supplied branch or tag SHA when it differs from the resolved SHA."`
+	Stale        bool               `json:"stale" doc:"True when a caller-supplied branch or tag SHA no longer matches the current ref target."`
 }
 
 type RepoBrowserTreeEntry struct {
@@ -433,15 +434,23 @@ func (m *Manager) RepoBrowserCommitDetail(
 	pathName string,
 	sha string,
 ) (RepoBrowserCommit, error) {
-	if _, err := cleanRepoBrowserPath(pathName); err != nil {
+	cleanPath, err := cleanRepoBrowserPath(pathName)
+	if err != nil {
 		return RepoBrowserCommit{}, err
 	}
 	if !isFullHexSHA(sha) {
 		return RepoBrowserCommit{}, fmt.Errorf("%w: %s", ErrNotFound, sha)
 	}
-	dir, _, _, err := m.resolveRepoBrowserRef(ctx, repo, root)
+	dir, rootSHA, _, err := m.resolveRepoBrowserRef(ctx, repo, root)
 	if err != nil {
 		return RepoBrowserCommit{}, err
+	}
+	inScope, err := m.repoBrowserCommitTouchesPath(ctx, dir, rootSHA, cleanPath, sha)
+	if err != nil {
+		return RepoBrowserCommit{}, err
+	}
+	if !inScope {
+		return RepoBrowserCommit{}, fmt.Errorf("%w: %s", ErrCommitOutOfScope, sha)
 	}
 	out, err := m.git(ctx, dir,
 		"show", "-s", "--format="+repoBrowserCommitFormat, "--end-of-options", sha,
@@ -457,6 +466,34 @@ func (m *Manager) RepoBrowserCommitDetail(
 		return RepoBrowserCommit{}, fmt.Errorf("%w: %s", ErrNotFound, sha)
 	}
 	return commits[0], nil
+}
+
+func (m *Manager) repoBrowserCommitTouchesPath(
+	ctx context.Context,
+	dir string,
+	rootSHA string,
+	pathName string,
+	sha string,
+) (bool, error) {
+	out, err := m.git(ctx, dir,
+		"log",
+		"--max-count="+strconv.Itoa(RepoBrowserHistoryLimit),
+		"--format=%H",
+		"--end-of-options",
+		rootSHA,
+		"--",
+		pathName,
+	)
+	if err != nil {
+		return false, fmt.Errorf("repo browser commit scope %s: %w", pathName, err)
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		if scanner.Text() == sha {
+			return true, nil
+		}
+	}
+	return false, scanner.Err()
 }
 
 func (m *Manager) ResolveRepoBrowserRef(

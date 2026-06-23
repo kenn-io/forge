@@ -6326,10 +6326,15 @@ export interface components {
             repo: components["schemas"]["RepoRefResponse"];
         };
         RepoBrowserRef: {
+            /** @description Selected branch or tag name. Commit refs leave this empty. */
             name: string;
+            /** @description Caller-supplied branch or tag SHA when it differs from the resolved SHA. */
             requested_sha?: string;
+            /** @description Resolved commit SHA used for the read. */
             sha: string;
+            /** @description True when a caller-supplied branch or tag SHA no longer matches the current ref target. */
             stale: boolean;
+            /** @description Selected ref type: branch, tag, or commit. */
             type: string;
         };
         RepoBrowserRefsResponse: {

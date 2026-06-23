@@ -501,6 +501,9 @@ func repoBrowserProblem(err error) error {
 	if errors.Is(err, gitclone.ErrUnsupportedAsset) {
 		return newProblem(http.StatusUnsupportedMediaType, CodeBadRequest, err.Error(), map[string]any{"reason": "unsupported_asset"})
 	}
+	if errors.Is(err, gitclone.ErrCommitOutOfScope) {
+		return problemNotFound(CodeNotFound, err.Error(), map[string]any{"reason": "commit_out_of_scope"})
+	}
 	if errors.Is(err, gitclone.ErrNotFound) {
 		return problemNotFound(CodeNotFound, err.Error(), map[string]any{"reason": "not_found"})
 	}

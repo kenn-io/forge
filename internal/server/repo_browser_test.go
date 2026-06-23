@@ -157,6 +157,14 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	require.NoError(json.Unmarshal(history.Body.Bytes(), &historyBody))
 	require.NotEmpty(historyBody.Commits)
 	assert.Equal("docs asset", historyBody.Commits[0].Subject)
+
+	commitDetail := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md&sha="+url.QueryEscape(historyBody.Commits[0].SHA),
+	)
+	require.Equal(http.StatusOK, commitDetail.Code)
+	var commitBody repoBrowserCommitResponse
+	require.NoError(json.Unmarshal(commitDetail.Body.Bytes(), &commitBody))
+	assert.Equal(historyBody.Commits[0].SHA, commitBody.Commit.SHA)
 }
 
 func TestRepoBrowserAssetRejectsActiveContentTypes(t *testing.T) {
@@ -177,6 +185,33 @@ func TestRepoBrowserAssetRejectsActiveContentTypes(t *testing.T) {
 		assert.Equal(http.StatusUnsupportedMediaType, rr.Code, path)
 		assert.Contains(rr.Body.String(), "unsupported_asset")
 	}
+}
+
+func TestRepoBrowserCommitRejectsSHAOutsideSelectedFileHistory(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+	require.NoError(os.WriteFile(filepath.Join(work, "other.txt"), []byte("other\n"), 0o644))
+	serverRepoBrowserGit(t, work, "add", ".")
+	serverRepoBrowserGit(t, work, "commit", "-m", "other file")
+	otherSHA := testGitSHA(t, work, "HEAD")
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+
+	rr := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/commit?ref_type=branch&ref_name=main&path=README.md&sha="+url.QueryEscape(otherSHA),
+	)
+
+	require.Equal(http.StatusNotFound, rr.Code)
+	assert.Contains(rr.Body.String(), "commit_out_of_scope")
+
+	ok := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/commit?ref_type=branch&ref_name=main&path=other.txt&sha="+url.QueryEscape(otherSHA),
+	)
+	require.Equal(http.StatusOK, ok.Code)
+	var body repoBrowserCommitResponse
+	require.NoError(json.Unmarshal(ok.Body.Bytes(), &body))
+	assert.Equal(otherSHA, body.Commit.SHA)
+	assert.Equal("other file", body.Commit.Subject)
 }
 
 func TestRepoBrowserRejectsUnsafePath(t *testing.T) {

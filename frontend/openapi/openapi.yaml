@@ -4940,14 +4940,19 @@ components:
       additionalProperties: false
       properties:
         name:
+          description: Selected branch or tag name. Commit refs leave this empty.
           type: string
         requested_sha:
+          description: Caller-supplied branch or tag SHA when it differs from the resolved SHA.
           type: string
         sha:
+          description: Resolved commit SHA used for the read.
           type: string
         stale:
+          description: True when a caller-supplied branch or tag SHA no longer matches the current ref target.
           type: boolean
         type:
+          description: "Selected ref type: branch, tag, or commit."
           type: string
       required:
         - type

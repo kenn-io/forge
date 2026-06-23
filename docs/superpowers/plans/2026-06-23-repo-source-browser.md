@@ -156,7 +156,7 @@ clone/fetch orchestration.
 - [ ] **Step 4: Run gitclone tests red**
 
 ```bash
-go test ./internal/gitclone -run 'TestRepoBrowser' -shuffle=on
+go test -tags integration ./internal/gitclone -run 'TestRepoBrowser' -shuffle=on
 ```
 
 Expected: FAIL because repo browser APIs do not exist yet.
@@ -286,7 +286,7 @@ single bounded Git history walk per batch, not one process per path.
 - [ ] **Step 6: Run gitclone tests green**
 
 ```bash
-go test ./internal/gitclone -run 'TestRepoBrowser' -shuffle=on
+go test -tags integration ./internal/gitclone -run 'TestRepoBrowser' -shuffle=on
 ```
 
 Expected: PASS.
@@ -347,7 +347,7 @@ Expected: `frontend/openapi/openapi.yaml`, `internal/apiclient/generated/client.
 - [ ] **Step 11: Run backend/API verification**
 
 ```bash
-go test ./internal/gitclone -run 'TestRepoBrowser' -shuffle=on
+go test -tags integration ./internal/gitclone -run 'TestRepoBrowser' -shuffle=on
 go test ./internal/server -run 'TestRepoBrowser' -shuffle=on
 git diff --check
 ```
@@ -508,7 +508,7 @@ Wire the route to `RepoBrowserView`, add `View repo` to repository summary cards
 - [ ] Run backend affected tests:
 
 ```bash
-go test ./internal/gitclone ./internal/server -run 'TestRepoBrowser' -shuffle=on
+go test -tags integration ./internal/gitclone ./internal/server -run 'TestRepoBrowser' -shuffle=on
 ```
 
 - [ ] Run full frontend unit suite after final frontend edits:

@@ -130,6 +130,8 @@
       ? "board"
       : getPage() === "terminal"
         ? "workspaces"
+        : getPage() === "repo-browser"
+          ? "repos"
       : getPage(),
   );
   type StickyMode = "kata" | "docs" | "messages";
@@ -270,7 +272,11 @@
           </button>
         {/if}
         {#if showMode("repos")}
-          <button class="view-tab" class:active={getPage() === "repos"} onclick={() => navigateTab("repos")}>
+          <button
+            class="view-tab"
+            class:active={getPage() === "repos" || getPage() === "repo-browser"}
+            onclick={() => navigateTab("repos")}
+          >
             Repos
           </button>
         {/if}

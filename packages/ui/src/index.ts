@@ -63,6 +63,8 @@ export {
   filterSourceBrowserFileEntriesByCategory,
 } from "./utils/source-browser-files.js";
 export type { SourceBrowserFileEntry } from "./utils/source-browser-files.js";
+export { diffFileCategoryOptions } from "./utils/diff-categories.js";
+export type { DiffFileCategoryFilter } from "./utils/diff-categories.js";
 export type {
   FocusListRouteRef,
   IssueRouteRef,
@@ -164,4 +166,6 @@ export { default as WorkspaceDiffPanel } from "./components/workspace/WorkspaceD
 export { default as DiffSidebar } from "./components/diff/DiffSidebar.svelte";
 export { default as DiffToolbar } from "./components/diff/DiffToolbar.svelte";
 export { default as DiffView } from "./components/diff/DiffView.svelte";
+export { default as PierreFileTree } from "./components/diff/PierreFileTree.svelte";
+export type { FileTreeEntry } from "./components/diff/file-tree-entry.js";
 export { default as KbdBadge } from "./components/keyboard/KbdBadge.svelte";

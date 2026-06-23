@@ -10,6 +10,8 @@ const baseUrl =
     ? new URL(`${basePath.replace(/\/$/, "")}/api/v1`, window.location.origin).toString()
     : "http://localhost/api/v1";
 
+export const apiBaseURL = baseUrl;
+
 export const querySerializer: QuerySerializerOptions = {
   array: {
     style: "form",

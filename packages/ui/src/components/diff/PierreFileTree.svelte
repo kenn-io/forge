@@ -3,16 +3,10 @@
   import type { FileTreeOptions } from "@pierre/trees";
   import { onMount, untrack } from "svelte";
   import type { DiffFile } from "../../api/types.js";
+  import type { FileTreeEntry } from "./file-tree-entry.js";
 
   type TreeGitStatus = NonNullable<FileTreeOptions["gitStatus"]>[number];
   type TreeRowDecoration = NonNullable<FileTreeOptions["renderRowDecoration"]>;
-
-  export interface FileTreeEntry {
-    path: string;
-    status?: TreeGitStatus["status"] | undefined;
-    decoration?: string | null | undefined;
-    decorationTitle?: string | undefined;
-  }
 
   interface Props {
     files: readonly DiffFile[] | null | undefined;

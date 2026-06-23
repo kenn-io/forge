@@ -16,8 +16,10 @@
   import {
     buildFocusPullRequestFilesRoute,
     buildFocusPullRequestRoute,
+    buildRepoBrowserRoute,
     buildRoutedItemRoute,
     type PullRequestRouteRef,
+    type RepoBrowserRouteRef,
     type RoutedItemRef,
   } from "@middleman/ui/routes";
   import { client } from "./lib/api/runtime.js";
@@ -33,6 +35,7 @@
   import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import KataFeature from "./lib/features/kata/KataFeature.svelte";
+  import RepoBrowserFeature from "./lib/features/repo-browser/RepoBrowserFeature.svelte";
   import { fetchKataDaemons } from "./lib/api/kata/daemons.js";
   import { kataLinkingEnabledForEffectiveDaemon } from "./lib/api/kata/daemonSelection.js";
   import { createKataTaskAPI } from "./lib/api/kata/taskClient.js";
@@ -242,6 +245,12 @@
 
   function updateKataRoute(update: KataRouteUpdate): void {
     navigate(kataHref({ ...currentKataRouteUpdate(), ...update }));
+  }
+
+  function updateRepoBrowserRoute(route: RepoBrowserRouteRef, options?: { replace?: boolean }): void {
+    const href = buildRepoBrowserRoute(route);
+    if (options?.replace) replaceUrl(href);
+    else navigate(href);
   }
 
   function openMessage(messageId: number): void {
@@ -1113,6 +1122,15 @@
         />
       {:else if getPage() === "repos"}
         <RepoSummaryPage />
+      {:else if getPage() === "repo-browser"}
+        {@const route = getRoute()}
+        {#if route.page === "repo-browser"}
+          <RepoBrowserFeature
+            {client}
+            {route}
+            onRouteChange={updateRepoBrowserRoute}
+          />
+        {/if}
       {:else if getPage() === "kata"}
         {@const route = getRoute()}
         {#if route.page === "kata"}

@@ -27,6 +27,19 @@ export type Route =
   | { page: "kata"; issue?: string; view?: KataTaskViewName; scope?: string }
   | { page: "docs"; folder: string | null; doc: string | null }
   | { page: "messages"; q: string | null; message: string | null; view?: "linked" }
+  | {
+      page: "repo-browser";
+      provider: string;
+      platformHost?: string | undefined;
+      repoPath: string;
+      owner: string;
+      name: string;
+      refType?: string | undefined;
+      refName?: string | undefined;
+      refSHA?: string | undefined;
+      path?: string | undefined;
+      mode?: "source" | "preview" | undefined;
+    }
   | { page: "workspaces" }
   | {
       page: "pulls";
@@ -264,6 +277,32 @@ function parseRoute(fullPath: string): Route {
   }
   if (path === "/repos") {
     return { page: "repos" };
+  }
+  if (path === "/repo/browser") {
+    const sp = new URLSearchParams(search);
+    const provider = emptyToNull(sp.get("provider"));
+    const repoPath = emptyToNull(sp.get("repo_path"))?.replace(/^\/+|\/+$/g, "");
+    const repo = repoPath ? splitRepoPath(repoPath) : undefined;
+    if (!provider || !repoPath || !repo) return { page: "repos" };
+    const platformHost = emptyToNull(sp.get("platform_host")) ?? defaultPlatformHost(provider);
+    const refType = parseRepoBrowserRefType(sp.get("ref_type"));
+    const refName = emptyToNull(sp.get("ref_name"));
+    const refSHA = emptyToNull(sp.get("ref_sha"));
+    const selectedPath = emptyToNull(sp.get("path"));
+    const mode = parseRepoBrowserViewMode(sp.get("mode"));
+    return {
+      page: "repo-browser",
+      provider,
+      ...(platformHost ? { platformHost } : {}),
+      repoPath,
+      owner: repo.owner,
+      name: repo.name,
+      ...(refType ? { refType } : {}),
+      ...(refName ? { refName } : {}),
+      ...(refSHA ? { refSHA } : {}),
+      ...(selectedPath ? { path: selectedPath } : {}),
+      ...(mode ? { mode } : {}),
+    };
   }
   if (path === "/kata") {
     const sp = new URLSearchParams(search);
@@ -641,6 +680,14 @@ function emptyToNull(value: string | null): string | null {
 function parseKataView(value: string | null): KataTaskViewName | undefined {
   if (value === null) return undefined;
   return kataViewNames.has(value as KataTaskViewName) ? (value as KataTaskViewName) : undefined;
+}
+
+function parseRepoBrowserRefType(value: string | null): "branch" | "tag" | "commit" | undefined {
+  return value === "branch" || value === "tag" || value === "commit" ? value : undefined;
+}
+
+function parseRepoBrowserViewMode(value: string | null): "source" | "preview" | undefined {
+  return value === "source" || value === "preview" ? value : undefined;
 }
 
 export function isWorkspacePage(page: Page): boolean {

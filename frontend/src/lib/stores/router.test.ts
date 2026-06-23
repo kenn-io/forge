@@ -229,6 +229,27 @@ describe("router basic routes", () => {
     expect(getRoute()).toEqual({ page: "repos" });
   });
 
+  it("parses repo browser routes with selected ref, path, and view mode", () => {
+    navigate(
+      "/repo/browser?provider=gitlab&platform_host=gitlab.example.com&repo_path=Group%2FSub%20Team%2FProject&ref_type=branch&ref_name=feature%2Frepo-browser&ref_sha=abc123&path=docs%2FREADME.md&mode=preview",
+    );
+
+    expect(getRoute()).toEqual({
+      page: "repo-browser",
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      repoPath: "Group/Sub Team/Project",
+      owner: "Group/Sub Team",
+      name: "Project",
+      refType: "branch",
+      refName: "feature/repo-browser",
+      refSHA: "abc123",
+      path: "docs/README.md",
+      mode: "preview",
+    });
+    expect(getPage()).toBe("repo-browser");
+  });
+
   it("parses /kata", () => {
     navigate("/kata");
     expect(getRoute()).toEqual({ page: "kata" });

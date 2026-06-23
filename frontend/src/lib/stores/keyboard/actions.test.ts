@@ -358,6 +358,46 @@ describe("defaultActions", () => {
     expect(locationPath()).toBe("/repo/browser?provider=forgejo&platform_host=code.example.com&repo_path=team%2Ftools");
   });
 
+  it("opens the repo browser from focus routes without stale selected item state", () => {
+    const action = command("repo.browser.open");
+    const pullContext = ctx("focus", {
+      selectedPR: staleSelected,
+      route: {
+        page: "focus",
+        itemType: "pr",
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        owner: "group",
+        name: "project",
+        repoPath: "group/project",
+        number: 42,
+      } as never,
+    });
+
+    expect(action.when(pullContext)).toBe(true);
+    action.handler(pullContext);
+    expect(locationPath()).toBe(
+      "/repo/browser?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fproject",
+    );
+
+    const issueContext = ctx("focus", {
+      selectedIssue: staleSelected,
+      route: {
+        page: "focus",
+        itemType: "issue",
+        provider: "forgejo",
+        platformHost: "code.example.com",
+        owner: "team",
+        name: "docs",
+        repoPath: "team/docs",
+        number: 7,
+      } as never,
+    });
+
+    action.handler(issueContext);
+    expect(locationPath()).toBe("/repo/browser?provider=forgejo&platform_host=code.example.com&repo_path=team%2Fdocs");
+  });
+
   it("opens the repo browser for a uniquely configured workspace repo", () => {
     const action = command("repo.browser.open");
     window.__middleman_config = {

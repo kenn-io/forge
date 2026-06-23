@@ -202,6 +202,15 @@ function routeRepoRef(ctx: Context): RepositoryRouteRef | null {
         name: ctx.route.name,
         repoPath: cleanRepoPath(ctx.route.repoPath),
       };
+    case "focus":
+      if (ctx.route.itemType !== "pr" && ctx.route.itemType !== "issue") return null;
+      return {
+        provider: ctx.route.provider,
+        platformHost: ctx.route.platformHost,
+        owner: ctx.route.owner,
+        name: ctx.route.name,
+        repoPath: cleanRepoPath(ctx.route.repoPath),
+      };
     default:
       return null;
   }

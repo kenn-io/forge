@@ -317,11 +317,11 @@ image request to carry JSON state. Metadata cache headers are immutable for
 `ref_type=commit` reads and conservative (`no-store` or revalidate-on-use) for
 branch/tag display refs that can move between requests.
 
-Direct `asset-bytes` failures use these problem envelopes:
+Direct `asset-bytes` failures use this exhaustive problem-envelope matrix:
 
 - unsafe path: `400 validationError`, `details.reason = "unsafe_path"`
-- missing path/ref: `404 notFound`, `details.reason = "missing_path"` or
-  `"unavailable_ref"`
+- missing path: `404 notFound`, `details.reason = "missing_path"`
+- unavailable ref: `404 notFound`, `details.reason = "unavailable_ref"`
 - mutable branch/tag ref: `400 validationError`,
   `details.reason = "mutable_ref_not_allowed"`
 - oversized asset: `400 validationError`, `details.reason = "oversized_asset"`
@@ -329,8 +329,10 @@ Direct `asset-bytes` failures use these problem envelopes:
   `details.reason = "unsupported_asset"`
 - SVG asset: `415 badRequest`, `details.reason = "svg"`
 
-These direct byte failure responses use `Cache-Control: no-store` because they
-are recovery/error states, not immutable asset bytes.
+Server tests must assert the matrix for unsafe traversal, missing paths,
+unavailable refs, mutable branch/tag refs, oversized assets, unsupported media,
+and SVG. These direct byte failure responses use `Cache-Control: no-store`
+because they are recovery/error states, not immutable asset bytes.
 
 Other file-type previews are deferred. The renderer boundary should still make
 future image or other preview renderers possible without reshaping the page.

@@ -168,17 +168,20 @@ Branch and tag names can contain slashes and can share the same display name, so
 `ref_type` is part of the identity. Branch and tag requests resolve `ref_name`
 fresh for each request. If a branch/tag request also supplies `ref_sha`, that SHA
 is a staleness token only: the server does not pin to it, and every successful
-branch/tag response shape (refs/open metadata, tree, blob, history, commit
-detail, and asset) must include `stale: true`, the supplied SHA, and the current
-resolved SHA when they differ. Immutable views use `ref_type=commit` with a full
-40-character `ref_sha` and no `ref_name`.
+branch/tag JSON response shape (refs/open metadata, tree, blob, history, commit
+detail, and asset metadata) must include `stale: true`, the supplied SHA, and the
+current resolved SHA when they differ. Immutable views use `ref_type=commit` with
+a full 40-character `ref_sha` and no `ref_name`.
 
-Every successful repo browser response includes a reusable ref object:
+Every successful JSON repo browser response includes a reusable ref object:
 `ref: { type, name?, resolvedSha, requestedSha?, stale }`. Branch/tag responses
 set `name`, `resolvedSha`, and `stale`; they set `requestedSha` when the request
 included a `ref_sha` token. Non-stale responses use `stale: false` and still
 include `resolvedSha` so the store never has to infer which SHA backed the read.
 Commit responses use `type: "commit"`, `resolvedSha`, and `stale: false`.
+Successful `asset-bytes` responses are raw bytes and do not include the JSON ref
+object; their generated URLs are commit-pinned with `ref_type=commit` and the
+metadata response's `resolvedSha`.
 
 A path is always an encoded repository-relative path, never a filesystem path.
 The server rejects NUL bytes, absolute paths, empty path segments that normalize
@@ -320,6 +323,9 @@ Direct `asset-bytes` failures use these problem envelopes:
 - unsupported non-SVG media type: `415 validationError`,
   `details.reason = "unsupported_asset"`
 - SVG asset: `415 validationError`, `details.reason = "svg"`
+
+These direct byte failure responses use `Cache-Control: no-store` because they
+are recovery/error states, not immutable asset bytes.
 
 Other file-type previews are deferred. The renderer boundary should still make
 future image or other preview renderers possible without reshaping the page.

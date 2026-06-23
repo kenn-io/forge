@@ -95,7 +95,7 @@ Write the API contract in server request/response types before handlers:
 - repository lookup key:
   `(provider, platform_host, repo_path)`; owner/name route params are display hints derived from the stored display owner/name and must not drive identity, cache keys, or clone paths for nested providers
 - ref semantics:
-  branch/tag `ref_name` resolves fresh per request; branch/tag `ref_sha` is a staleness token returned as `ref: { type, name?, resolvedSha, requestedSha?, stale }` on every successful repo-browser response; commit views use `ref_type=commit` plus a full 40-character `ref_sha`
+  branch/tag `ref_name` resolves fresh per request; branch/tag `ref_sha` is a staleness token returned as `ref: { type, name?, resolvedSha, requestedSha?, stale }` on every successful JSON repo-browser response; commit-pinned `asset-bytes` successes are raw bytes and rely on the SHA in the generated URL
 - error/state contract:
   use existing camelCase problem codes for failures; put repo-browser reasons such as `clone_unavailable`, `unavailable_ref`, and `missing_path` in `details.reason`; model truncation, stale-token, binary, oversized, and unsupported-SVG cases as successful response states
 - caps:
@@ -123,7 +123,7 @@ func TestRepoBrowserMarkdownAssetBytesRejectsNonRenderableStates(t *testing.T)
 
 Each test should create a real temporary Git repository with `t.TempDir()` and run Git commands through the existing test helper pattern used in `internal/gitclone/*_test.go`.
 `TestRepoBrowserResponsesIncludeRefMetadata` must exercise tree, blob, history,
-commit detail, asset metadata, and asset bytes responses. The asset-bytes
+commit detail, and asset metadata JSON responses. The asset-bytes
 non-renderable test must cover SVG, oversized assets, unsafe traversal, missing
 paths, and unknown/non-renderable media types with exact problem code and
 `details.reason` assertions.

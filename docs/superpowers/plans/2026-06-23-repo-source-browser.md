@@ -358,7 +358,7 @@ Expected: PASS.
 
 ```bash
 git status --short
-git add internal/gitclone/repo_browser.go internal/gitclone/repo_browser_test.go internal/server/repo_browser.go internal/server/repo_browser_test.go internal/server/api_types.go internal/server/huma_routes.go frontend/openapi/openapi.yaml internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts packages/ui/src/api/generated/client.ts packages/ui/src/api/provider-routes.ts
+git add internal/gitclone/clone.go internal/gitclone/clone_test.go internal/gitclone/repo_browser.go internal/gitclone/repo_browser_test.go internal/server/repo_browser.go internal/server/repo_browser_test.go internal/server/api_types.go internal/server/huma_routes.go frontend/openapi/openapi.yaml internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts packages/ui/src/api/generated/client.ts packages/ui/src/api/provider-routes.ts
 git commit -m "feat: add repo browser read APIs" -m "The repo source browser needs a provider-aware local-clone API foundation before UI branches can consume stable generated types. This slice keeps the surface read-only, bounded, and ref-safe so later stack branches do not invent frontend-only models."
 git-spice upstack restack --no-prompt
 ```

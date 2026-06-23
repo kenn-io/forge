@@ -52,12 +52,16 @@ selection is repository-bound. Valid contexts are:
 
 If a workspace has no selected worktree or project, or the selected workspace
 context is ambiguous, the command is hidden. The command uses the most relevant
-ref for its context: pull requests open at the PR head ref when known, workspaces
-open at their branch, and issues/activity fall back to the repository default
+ref for its context. Pull requests and merge requests open at a head branch only
+when the head is in the same repository and that branch resolves in the fetched
+bare clone. Fork heads and provider-specific synthetic PR/MR refs are deferred
+from v1; those contexts fall back to the repository default branch with an inline
+note. Workspaces open at their branch only when that branch resolves in the
+fetched bare clone. Issues and activity fall back to the repository default
 branch.
 
 Workspace entry remains bare-clone backed. A workspace branch is only used when
-it resolves to an allowlisted branch or commit that exists in the fetched bare
+it resolves to a branch or reachable commit that exists in the fetched bare
 clone. Local-only or unpushed workspace commits are not read through this view.
 If the workspace branch is not present after the initial fetch, the browser opens
 the repository default branch and shows an inline note that the workspace branch
@@ -88,25 +92,29 @@ Reuse should happen below that surface:
 
 Backend APIs live under provider-aware repo routes and are backed by
 `internal/gitclone.Manager` plus read-only Git commands against the bare clone.
-They preserve repository identity as `(provider, platform_host, owner, name)`.
+They preserve repository identity as `(provider, platform_host, repo_path)`,
+with owner/name retained only as display and compatibility inputs already
+present on repository records.
 
 The server first resolves that identity through the provider-neutral repository
 model. The lookup contract must return the clone URL, default branch, canonical
-repo path, platform host, and forge URL builder inputs. GitHub-only URL assembly
-does not belong in the repo browser. Nested repo paths, self-hosted platform
-hosts, and provider default hosts must follow the existing platform metadata and
-route-helper rules.
+repo path, platform host, owner/name display values, and forge URL builder
+inputs. GitHub-only URL assembly does not belong in the repo browser. Nested repo
+paths, self-hosted platform hosts, and provider default hosts must follow the
+existing platform metadata and route-helper rules.
 
 ## Backend Data Flow
 
 Opening the repo browser ensures/fetches the bare clone and returns repo-code
 metadata for the requested ref. Fetch happens once on initial browser open.
-Branch and tag switches use the fetched clone. Manual refresh fetches again.
+Branch and tag switches use the fetched clone. Manual refresh fetches branches
+and tags again, including tag pruning, before rereading refs.
 
 The API surface should cover:
 
 - refs: default branch, remote branches, tags, stable ref ids, and resolved SHAs
-- tree: all tracked file paths at a selected ref
+- tree: tracked file paths at a selected ref, capped with a typed truncation
+  state
 - last-changed batch metadata: file path to last commit date, author, and short
   SHA, loaded lazily after the tree renders
 - blob: selected file metadata and content at a selected ref/path
@@ -123,35 +131,52 @@ Tree and history operations are also bounded:
 
 - tree responses cap total entries and return a typed truncation state when the
   selected ref exceeds that cap
+- direct blob reads for an explicit path still work when the tree is truncated;
+  truncation disables full-tree-only sidebar affordances but does not make deep
+  links unreadable
+- README auto-selection uses a separate bounded README candidate probe, so a
+  capped tree does not by itself prevent README restoration
 - the frontend tree must remain virtualized or otherwise bounded so large
   allowed trees do not render every row eagerly
 - last-changed metadata is requested in batches for currently visible or nearby
   file rows, with a maximum path count per request
+- last-changed batches must use one bounded Git history walk per batch, not one
+  `git log` process per path
 - file history returns a fixed maximum number of commits, newest first
-- commit detail is only available for commits returned by file history or for
-  allowlisted commit SHAs already resolved by the repo-code API
+- commit detail is available when the request includes the selected root ref and
+  enough path/history context for the server to recompute that the commit is in
+  the bounded file-history result
 
 The implementation plan should choose exact numeric limits before code is
 written and pin them in tests.
 
 ## Ref And Path Identity
 
-Do not pass raw user-provided revision expressions into Git commands. The client
-selects refs from the refs API, and server routes accept an explicit ref identity:
+Do not pass raw user-provided revision expressions into Git commands. Server
+routes accept an explicit ref identity:
 
 - `ref_type`: `branch`, `tag`, or `commit`
 - `ref_name`: the provider/display name for branches and tags
 - `ref_sha`: the canonical resolved commit SHA returned by the refs API
 
 Branch and tag names can contain slashes and can share the same display name, so
-`ref_type` and `ref_sha` are part of the identity. A path is always an encoded
-repository-relative path, never a filesystem path. The server rejects paths that
-normalize outside the selected Git tree and rejects ref names or SHAs that were
-not returned by the refs/open metadata flow.
+`ref_type` is part of the identity. Branch and tag requests resolve `ref_name`
+fresh for each request. If a branch/tag request also supplies `ref_sha`, that SHA
+is a staleness token only: the server does not pin to it, and the response must
+report `stale_ref` metadata when the current resolved SHA differs. Immutable
+views use `ref_type=commit` with a full 40-character `ref_sha` and no `ref_name`.
 
-Deep links may carry the display ref name for readability, but the server must
-resolve it through the allowlisted refs model and return the canonical SHA used
-for subsequent tree/blob/history requests.
+A path is always an encoded repository-relative path, never a filesystem path.
+The server rejects NUL bytes, absolute paths, empty path segments that normalize
+outside the selected Git tree, and ambiguous raw revision expressions. Git
+commands must resolve refs to object IDs before path reads, use
+`--end-of-options` where available, and put `--` before path arguments.
+
+Validation must be stateless and derivable from the request plus the current
+clone. The server may not depend on a hidden browser-session allowlist. It
+resolves branch/tag refs by type/name, verifies commit SHAs are reachable from a
+selected root ref or recomputable bounded history context, and returns the
+canonical SHA used for the current tree/blob/history read.
 
 ## UI Layout
 
@@ -202,10 +227,23 @@ tag's resolved commit SHA as the history root.
 The repo browser deep link carries:
 
 - provider and platform host when needed
-- owner/name or repo path, following existing provider-aware route conventions
+- `repo_path` as the canonical repository identity
 - selected ref type, display ref name, and resolved SHA when known
 - selected file path
 - source/preview mode
+
+The app route is query-based to avoid collisions between slash-containing repo
+paths, branch names, and file paths:
+
+`/repo/browser?provider={provider}&platform_host={host}&repo_path={repo_path}&ref_type={branch|tag|commit}&ref_name={name}&ref_sha={sha}&path={path}&view={source|preview}`
+
+The backend API uses provider-aware repo routes with `repo_path` as a required
+query parameter for repo-browser endpoints. Default-host routes use
+`/repo/{provider}/{owner}/{name}/browser/{operation}` and custom-host routes use
+`/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/{operation}`.
+Handlers must look up the repository by `(provider, platform_host, repo_path)`;
+owner/name route placeholders are display hints and test coverage must include a
+nested repo path where owner/name alone is insufficient.
 
 When no path is present, the browser auto-selects a README variant if present.
 If no README exists, it shows the tree with no selected file.
@@ -229,10 +267,12 @@ link/image resolver from Docs mode:
   affordance rather than reaching outside the selected Git tree
 
 The asset endpoint must set MIME type from detected content, enforce the same
-size and binary caps as blob reads, reject path traversal, reject refs outside
-the allowlisted ref model, and define an SVG policy before implementation. Cache
-headers should be safe for immutable `ref_sha` reads and conservative for display
-ref-name reads that can move after refresh.
+size and binary caps as blob reads, reject path traversal, and use the same
+stateless ref validation as blob reads. SVG assets are served only as
+`image/svg+xml` when they pass the normal path/ref checks; they are not inlined
+into the DOM by the Markdown renderer. Cache headers are immutable for
+`ref_type=commit` reads and conservative (`no-store` or revalidate-on-use) for
+branch/tag display refs that can move after refresh.
 
 Other file-type previews are deferred. The renderer boundary should still make
 future image or other preview renderers possible without reshaping the page.
@@ -248,6 +288,20 @@ API errors should use stable error codes/details consistent with
 `context/error-handling.md`; the frontend should branch on those codes/details,
 not prose.
 
+The first version uses these stable codes:
+
+- `clone_unavailable`: clone cannot be created or fetched
+- `unavailable_ref`: branch, tag, or commit cannot be resolved
+- `stale_ref`: supplied branch/tag `ref_sha` differs from the current resolved
+  SHA when the request asks for strict SHA matching
+- `unsafe_path`: requested path is not a safe repo-relative path
+- `missing_path`: path does not exist at the selected resolved SHA
+- `truncated_tree`: tree response exceeded the entry cap
+- `oversized_blob`: blob or asset exceeds the size cap
+- `binary_blob`: source view requested a binary blob
+- `oversized_asset`: Markdown asset exceeds the size cap
+- `binary_asset`: Markdown asset cannot be safely rendered by the preview
+
 The "browser session" freshness rule is scoped to a mounted browser instance and
 its in-memory store. Reloading the page starts a new browser session and may fetch
 again. Multiple tabs do not coordinate freshness; each tab may perform its own
@@ -258,11 +312,11 @@ refs/tree/blob data.
 
 - Opening from a repo summary card fetches once, resolves the default branch, and
   restores the README when one exists.
-- Opening from a selected pull request or workspace uses a contextual ref only
-  when that ref resolves in the fetched bare clone; otherwise it falls back to
-  default branch with an inline explanation.
-- Deep links restore provider identity, ref type/name/SHA, selected path, and
-  source/preview mode.
+- Opening from a selected pull request, merge request, or workspace uses a
+  contextual branch only when that branch resolves in the fetched bare clone;
+  otherwise it falls back to default branch with an inline explanation.
+- Deep links restore provider identity, `repo_path`, ref type/name/SHA, selected
+  path, and source/preview mode.
 - Branch and tag names with slashes and duplicate display names are
   disambiguated by `ref_type` and resolved SHA.
 - Large text, binary, over-cap tree, and unavailable-ref cases return typed API
@@ -273,6 +327,9 @@ refs/tree/blob data.
   and capability boundaries.
 - File history is bounded, scoped to the selected resolved SHA, and never runs an
   unbounded per-file log across the whole tree.
+- Repo tree category filters are path-only in v1. The Generated category reuses
+  existing path heuristics from `diff-categories.ts`; Linguist or
+  `git check-attr` generated metadata is deferred.
 
 ## Testing
 
@@ -287,13 +344,16 @@ Cover:
 - branch and tag listing
 - full tree listing, including dotfiles and noisy tracked paths
 - tree truncation and last-changed batch limits
+- direct blob and README restoration when the tree is truncated
 - blob caps and binary detection
 - Markdown asset path safety
 - file history and commit metadata
+- stale branch/tag `ref_sha` semantics
 - ref/path validation, including duplicate branch/tag names and slash-containing
   refs
 - contextual ref fallback inputs
 - provider-aware host routing
+- nested `repo_path` repository lookup
 
 Frontend tests should primarily use Vitest/component coverage:
 
@@ -307,8 +367,10 @@ Frontend tests should primarily use Vitest/component coverage:
 - command palette visibility for repository-bound selections
 
 Use browser-tier tests only where real DOM behavior matters, such as resize or
-layout. Reserve Playwright for a full-page smoke or screenshot only if the final
-implementation materially changes the visible shell.
+layout. The final stack must include one full-stack browser or e2e-full smoke
+that seeds repository data and verifies navigation into the repo browser, tree
+rendering, blob rendering, ref switching, and Markdown preview against the real
+HTTP API.
 
 ## Implementation Notes
 

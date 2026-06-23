@@ -1,4 +1,5 @@
 import { getDetailTab, getSelectedPRFromRoute, navigate, replaceUrl } from "../router.svelte.js";
+import { getUIConfig } from "../embed-config.svelte.js";
 import { isSidebarToggleEnabled, toggleSidebar } from "../sidebar.svelte.js";
 import { toggleTheme } from "../theme.svelte.js";
 import { toggleCheatsheet } from "./cheatsheet-state.svelte.js";
@@ -7,9 +8,16 @@ import {
   openLabelPickerFor,
   type OpenLabelPickerDetail,
 } from "../../../../../packages/ui/src/components/detail/labelPickerCommand.js";
-import { buildPullRequestFilesRoute, buildPullRequestRoute } from "@middleman/ui/routes";
+import {
+  buildPullRequestFilesRoute,
+  buildPullRequestRoute,
+  buildRepoBrowserRoute,
+  type RepositoryRouteRef,
+} from "@middleman/ui/routes";
+import type { ConfigRepo } from "@middleman/ui/api/types";
 import type { StoreInstances } from "@middleman/ui";
-import type { Action, Context } from "./types.js";
+import type { Action, Context, PreviewBlock } from "./types.js";
+import { parseActivitySelection } from "../../utils/activitySelection.js";
 
 let storesGetter: (() => StoreInstances) | null = null;
 
@@ -120,6 +128,126 @@ function labelPickerDetail(ctx: Context): OpenLabelPickerDetail | null {
   if (ctx.page === "pulls") return prLabelPickerDetail(ctx);
   if (ctx.page === "issues") return issueLabelPickerDetail(ctx);
   return null;
+}
+
+function cleanRepoPath(repoPath: string | undefined): string {
+  return (repoPath ?? "").replace(/^\/+|\/+$/g, "");
+}
+
+type RepoSelectionRef = {
+  provider?: string | undefined;
+  platformHost?: string | undefined;
+  owner?: string | undefined;
+  name?: string | undefined;
+  repoPath?: string | undefined;
+};
+
+function itemRepoRef(ref: RepoSelectionRef | null): RepositoryRouteRef | null {
+  if (!ref) return null;
+  const repoPath = cleanRepoPath(ref.repoPath);
+  if (!ref.provider || !repoPath || !ref.owner || !ref.name) return null;
+  return {
+    provider: ref.provider,
+    platformHost: ref.platformHost,
+    owner: ref.owner,
+    name: ref.name,
+    repoPath,
+  };
+}
+
+function configuredRepoRef(repo: ConfigRepo): RepositoryRouteRef | null {
+  if (repo.is_glob) return null;
+  const repoPath = cleanRepoPath(repo.repo_path || `${repo.owner}/${repo.name}`);
+  if (!repo.provider || !repo.platform_host || !repo.owner || !repo.name || !repoPath) {
+    return null;
+  }
+  return {
+    provider: repo.provider,
+    platformHost: repo.platform_host,
+    owner: repo.owner,
+    name: repo.name,
+    repoPath,
+  };
+}
+
+function workspaceRepoRef(): RepositoryRouteRef | null {
+  const selectedRepo = getUIConfig().repo;
+  if (!selectedRepo) return null;
+  if (!storesGetter) return null;
+
+  const matches = stores()
+    .settings.getConfiguredRepos()
+    .filter((repo) => !repo.is_glob)
+    .filter((repo) => repo.owner === selectedRepo.owner && repo.name === selectedRepo.name)
+    .map(configuredRepoRef)
+    .filter((repo): repo is RepositoryRouteRef => repo !== null);
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+
+function routeRepoRef(ctx: Context): RepositoryRouteRef | null {
+  switch (ctx.route.page) {
+    case "repo-browser":
+      return {
+        provider: ctx.route.provider,
+        platformHost: ctx.route.platformHost,
+        owner: ctx.route.owner,
+        name: ctx.route.name,
+        repoPath: cleanRepoPath(ctx.route.repoPath),
+      };
+    case "embed-workspace-detail":
+      return {
+        provider: ctx.route.provider,
+        platformHost: ctx.route.platformHost,
+        owner: ctx.route.owner,
+        name: ctx.route.name,
+        repoPath: cleanRepoPath(ctx.route.repoPath),
+      };
+    default:
+      return null;
+  }
+}
+
+function workspacePageRepoRef(ctx: Context): RepositoryRouteRef | null {
+  switch (ctx.page) {
+    case "workspaces":
+    case "terminal":
+    case "embed-workspace-terminal":
+    case "embed-workspace-project":
+      return workspaceRepoRef();
+    default:
+      return null;
+  }
+}
+
+function repoBrowserCommandRef(ctx: Context): RepositoryRouteRef | null {
+  const routeRef = routeRepoRef(ctx);
+  if (routeRef) return routeRef;
+  const selectedPRRef = itemRepoRef(ctx.selectedPR);
+  if (selectedPRRef) return selectedPRRef;
+  const selectedIssueRef = itemRepoRef(ctx.selectedIssue);
+  if (selectedIssueRef) return selectedIssueRef;
+  if (ctx.page === "activity") {
+    return itemRepoRef(parseActivitySelection(window.location.search));
+  }
+  return workspacePageRepoRef(ctx);
+}
+
+function repoBrowserSubtitle(ref: RepositoryRouteRef | null): string | undefined {
+  if (!ref) return undefined;
+  return ref.platformHost ? `${ref.platformHost}/${ref.repoPath}` : ref.repoPath;
+}
+
+function repoBrowserPreview(ctx: Context): PreviewBlock {
+  const subtitle = repoBrowserSubtitle(repoBrowserCommandRef(ctx));
+  if (subtitle) {
+    return {
+      title: "View repository source",
+      subtitle,
+    };
+  }
+  return {
+    title: "View repository source",
+  };
 }
 
 // Mirrors App.svelte's pre-migration page exclusions for `1`/`2`/`f`/etc.:
@@ -276,6 +404,20 @@ export const defaultActions: Action[] = [
     priority: 0,
     when: always,
     handler: () => togglePalette(),
+  },
+  {
+    id: "repo.browser.open",
+    label: "View repository source",
+    scope: "global",
+    binding: null,
+    priority: 0,
+    when: (ctx) => repoBrowserCommandRef(ctx) !== null,
+    handler: (ctx) => {
+      const ref = repoBrowserCommandRef(ctx);
+      if (!ref) return;
+      navigate(buildRepoBrowserRoute(ref));
+    },
+    preview: repoBrowserPreview,
   },
   {
     id: "cheatsheet.open",

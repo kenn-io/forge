@@ -7,6 +7,7 @@ const approvedIconNames = [
   "AlertIcon",
   "ChevronDownIcon",
   "ExternalLinkIcon",
+  "FolderTreeIcon",
   "MergeConflictIcon",
   "MonitorIcon",
   "MoonIcon",

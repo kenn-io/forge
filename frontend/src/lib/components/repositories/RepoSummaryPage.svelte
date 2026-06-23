@@ -6,7 +6,7 @@
     providerRouteParams,
   } from "@middleman/ui/api/provider-routes";
   import type { RepoSummary } from "@middleman/ui/api/types";
-  import { buildIssueRoute } from "@middleman/ui/routes";
+  import { buildIssueRoute, buildRepoBrowserRoute } from "@middleman/ui/routes";
 
   import {
     RefreshIcon,
@@ -226,6 +226,19 @@
   ): void {
     setGlobalRepo(repoStateKey(summary));
     navigate(path);
+  }
+
+  function viewRepo(summary: RepoSummaryCardData): void {
+    filterAndNavigate(
+      summary,
+      buildRepoBrowserRoute({
+        provider: summary.repo.provider,
+        platformHost: summary.repo.platform_host,
+        owner: summary.repo.owner,
+        name: summary.repo.name,
+        repoPath: summary.repo.repo_path,
+      }),
+    );
   }
 
   function openComposer(summary: RepoSummaryCardData): void {
@@ -477,6 +490,7 @@
             filterAndNavigate(summary, "/pulls")}
           onviewissues={() =>
             filterAndNavigate(summary, "/issues")}
+          onviewrepo={() => viewRepo(summary)}
           onopencomposer={() => openComposer(summary)}
           onopenissue={(number) =>
             filterAndNavigate(

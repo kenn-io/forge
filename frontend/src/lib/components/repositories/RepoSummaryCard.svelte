@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ActionButton, Chip, operationGate } from "@middleman/ui";
   import { timeAgo } from "@middleman/ui/utils/time";
-  import { ExternalLinkIcon } from "../../icons.js";
+  import { ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
   import {
@@ -29,6 +29,7 @@
     showProviderIcon?: boolean;
     onviewprs: () => void;
     onviewissues: () => void;
+    onviewrepo: () => void;
     onopencomposer: () => void;
     onopenissue: (number: number) => void;
   }
@@ -38,6 +39,7 @@
     showProviderIcon = false,
     onviewprs,
     onviewissues,
+    onviewrepo,
     onopencomposer,
     onopenissue,
   }: Props = $props();
@@ -222,9 +224,18 @@
       {/if}
     </div>
 
-    {#if summary.repo.capabilities.issue_mutation}
-      {@const createIssueGate = operationGate(summary.operations?.create_issue)}
-      <div class="repo-card__actions">
+    <div class="repo-card__actions">
+      <ActionButton
+        size="sm"
+        tone="neutral"
+        surface="outline"
+        onclick={onviewrepo}
+      >
+        <FolderTreeIcon size="14" strokeWidth="2" aria-hidden="true" />
+        View repo
+      </ActionButton>
+      {#if summary.repo.capabilities.issue_mutation}
+        {@const createIssueGate = operationGate(summary.operations?.create_issue)}
         <ActionButton
           size="sm"
           tone="neutral"
@@ -235,8 +246,8 @@
         >
           New issue
         </ActionButton>
-      </div>
-    {/if}
+      {/if}
+    </div>
   </div>
 
   <RepoMetricGrid {metrics} compact />

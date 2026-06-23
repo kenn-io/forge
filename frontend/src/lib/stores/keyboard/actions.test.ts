@@ -39,9 +39,52 @@ const selected = {
   number: 1,
 };
 
+function command(id: string) {
+  const action = defaultActions.find((a) => a.id === id);
+  expect(action).toBeDefined();
+  return action!;
+}
+
+function locationPath(): string {
+  return window.location.pathname + window.location.search;
+}
+
+function configuredRepo(overrides: {
+  provider?: string;
+  platformHost?: string;
+  owner: string;
+  name: string;
+  repoPath?: string;
+  isGlob?: boolean;
+}) {
+  const repoPath = overrides.repoPath ?? `${overrides.owner}/${overrides.name}`;
+  return {
+    provider: overrides.provider ?? "github",
+    platform_host: overrides.platformHost ?? "github.com",
+    owner: overrides.owner,
+    name: overrides.name,
+    repo_path: repoPath,
+    is_glob: overrides.isGlob ?? false,
+    matched_repo_count: 1,
+  };
+}
+
+function setConfiguredRepos(repos: ReturnType<typeof configuredRepo>[]): void {
+  setStoreInstances(
+    () =>
+      ({
+        settings: {
+          getConfiguredRepos: () => repos,
+        },
+      }) as never,
+  );
+}
+
 describe("defaultActions", () => {
   afterEach(() => {
     setSidebarCollapsed(false);
+    delete window.__middleman_config;
+    window.history.replaceState(null, "", "/");
   });
 
   it("includes the migrated globals", () => {
@@ -57,6 +100,7 @@ describe("defaultActions", () => {
         "nav.pulls.board",
         "sidebar.toggle",
         "palette.open",
+        "repo.browser.open",
         "cheatsheet.open",
         "sync.repos",
         "theme.toggle",
@@ -251,5 +295,98 @@ describe("defaultActions", () => {
     expect(board!.when(ctx("kata"))).toBe(false);
     expect(list!.when(ctx("pulls"))).toBe(true);
     expect(board!.when(ctx("pulls"))).toBe(true);
+  });
+
+  it("opens the repo browser from a selected pull request", () => {
+    const action = command("repo.browser.open");
+    const context = ctx("pulls", { selectedPR: selected });
+
+    expect(action.when(context)).toBe(true);
+    action.handler(context);
+
+    expect(locationPath()).toBe("/repo/browser?provider=github&platform_host=github.com&repo_path=octo%2Frepo");
+  });
+
+  it("opens the repo browser from selected issue and activity contexts", () => {
+    const action = command("repo.browser.open");
+
+    expect(action.when(ctx("issues", { selectedIssue: selected }))).toBe(true);
+
+    window.history.replaceState(
+      null,
+      "",
+      "/?selected=issue:8&provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fproject",
+    );
+    const context = ctx("activity");
+    expect(action.when(context)).toBe(true);
+    action.handler(context);
+
+    expect(locationPath()).toBe(
+      "/repo/browser?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fproject",
+    );
+  });
+
+  it("opens the repo browser for the current repo-browser route", () => {
+    const action = command("repo.browser.open");
+    const context = ctx("repo-browser", {
+      route: {
+        page: "repo-browser",
+        provider: "forgejo",
+        platformHost: "code.example.com",
+        owner: "team",
+        name: "tools",
+        repoPath: "team/tools",
+      },
+    });
+
+    expect(action.when(context)).toBe(true);
+    action.handler(context);
+
+    expect(locationPath()).toBe("/repo/browser?provider=forgejo&platform_host=code.example.com&repo_path=team%2Ftools");
+  });
+
+  it("opens the repo browser for a uniquely configured workspace repo", () => {
+    const action = command("repo.browser.open");
+    window.__middleman_config = {
+      ui: {
+        repo: { owner: "acme", name: "widgets" },
+      },
+    };
+    setConfiguredRepos([
+      configuredRepo({
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+      }),
+    ]);
+    const context = ctx("workspaces");
+
+    expect(action.when(context)).toBe(true);
+    action.handler(context);
+
+    expect(locationPath()).toBe("/repo/browser?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets");
+  });
+
+  it("hides the repo browser command when workspace repo context is ambiguous", () => {
+    const action = command("repo.browser.open");
+    window.__middleman_config = {
+      ui: {
+        repo: { owner: "acme", name: "widgets" },
+      },
+    };
+    setConfiguredRepos([
+      configuredRepo({
+        owner: "acme",
+        name: "widgets",
+        platformHost: "github.com",
+      }),
+      configuredRepo({
+        owner: "acme",
+        name: "widgets",
+        platformHost: "ghe.example.com",
+      }),
+    ]);
+
+    expect(action.when(ctx("workspaces"))).toBe(false);
   });
 });

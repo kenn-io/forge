@@ -2286,6 +2286,99 @@ type ReplyToDiscussionInputBody struct {
 	Body   string  `json:"body"`
 }
 
+// RepoBrowserBlob defines model for RepoBrowserBlob.
+type RepoBrowserBlob struct {
+	Binary    bool   `json:"binary"`
+	Content   string `json:"content"`
+	Encoding  string `json:"encoding"`
+	MediaType string `json:"media_type"`
+	Path      string `json:"path"`
+	Sha       string `json:"sha"`
+	Size      int64  `json:"size"`
+	TooLarge  bool   `json:"too_large"`
+}
+
+// RepoBrowserBlobResponse defines model for RepoBrowserBlobResponse.
+type RepoBrowserBlobResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string         `json:"$schema,omitempty"`
+	Blob   RepoBrowserBlob `json:"blob"`
+	Ref    RepoBrowserRef  `json:"ref"`
+	Repo   RepoRefResponse `json:"repo"`
+}
+
+// RepoBrowserCommit defines model for RepoBrowserCommit.
+type RepoBrowserCommit struct {
+	AuthorEmail string    `json:"author_email"`
+	AuthorName  string    `json:"author_name"`
+	AuthoredAt  time.Time `json:"authored_at"`
+	Body        string    `json:"body"`
+	Sha         string    `json:"sha"`
+	Subject     string    `json:"subject"`
+}
+
+// RepoBrowserCommitResponse defines model for RepoBrowserCommitResponse.
+type RepoBrowserCommitResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string           `json:"$schema,omitempty"`
+	Commit RepoBrowserCommit `json:"commit"`
+	Path   string            `json:"path"`
+	Ref    RepoBrowserRef    `json:"ref"`
+	Repo   RepoRefResponse   `json:"repo"`
+}
+
+// RepoBrowserHistoryResponse defines model for RepoBrowserHistoryResponse.
+type RepoBrowserHistoryResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string              `json:"$schema,omitempty"`
+	Commits *[]RepoBrowserCommit `json:"commits"`
+	Path    string               `json:"path"`
+	Ref     RepoBrowserRef       `json:"ref"`
+	Repo    RepoRefResponse      `json:"repo"`
+}
+
+// RepoBrowserLastChangedResponse defines model for RepoBrowserLastChangedResponse.
+type RepoBrowserLastChangedResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string                      `json:"$schema,omitempty"`
+	Commits map[string]RepoBrowserCommit `json:"commits"`
+	Ref     RepoBrowserRef               `json:"ref"`
+	Repo    RepoRefResponse              `json:"repo"`
+}
+
+// RepoBrowserRef defines model for RepoBrowserRef.
+type RepoBrowserRef struct {
+	Name string `json:"name"`
+	Sha  string `json:"sha"`
+	Type string `json:"type"`
+}
+
+// RepoBrowserRefsResponse defines model for RepoBrowserRefsResponse.
+type RepoBrowserRefsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string           `json:"$schema,omitempty"`
+	DefaultRef RepoBrowserRef    `json:"default_ref"`
+	Refs       *[]RepoBrowserRef `json:"refs"`
+	Repo       RepoRefResponse   `json:"repo"`
+}
+
+// RepoBrowserTreeEntry defines model for RepoBrowserTreeEntry.
+type RepoBrowserTreeEntry struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+	Type string `json:"type"`
+}
+
+// RepoBrowserTreeResponse defines model for RepoBrowserTreeResponse.
+type RepoBrowserTreeResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string                 `json:"$schema,omitempty"`
+	Entries   *[]RepoBrowserTreeEntry `json:"entries"`
+	Ref       RepoBrowserRef          `json:"ref"`
+	Repo      RepoRefResponse         `json:"repo"`
+	Truncated bool                    `json:"truncated"`
+}
+
 // RepoLabelsResponse defines model for RepoLabelsResponse.
 type RepoLabelsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -3172,6 +3265,65 @@ type GetPullFilePreviewOnHostParams struct {
 // GetPullFilePreviewOnHostParamsSide defines parameters for GetPullFilePreviewOnHost.
 type GetPullFilePreviewOnHostParamsSide string
 
+// GetRepoBrowserAssetOnHostParams defines parameters for GetRepoBrowserAssetOnHost.
+type GetRepoBrowserAssetOnHostParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+	Path     *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// GetRepoBrowserBlobOnHostParams defines parameters for GetRepoBrowserBlobOnHost.
+type GetRepoBrowserBlobOnHostParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+	Path     *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// GetRepoBrowserCommitOnHostParams defines parameters for GetRepoBrowserCommitOnHost.
+type GetRepoBrowserCommitOnHostParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+	Path     *string `form:"path,omitempty" json:"path,omitempty"`
+	Sha      *string `form:"sha,omitempty" json:"sha,omitempty"`
+}
+
+// GetRepoBrowserHistoryOnHostParams defines parameters for GetRepoBrowserHistoryOnHost.
+type GetRepoBrowserHistoryOnHostParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+	Path     *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// GetRepoBrowserLastChangedOnHostParams defines parameters for GetRepoBrowserLastChangedOnHost.
+type GetRepoBrowserLastChangedOnHostParams struct {
+	RepoPath *string   `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string   `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string   `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string   `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+	Path     *[]string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// ListRepoBrowserRefsOnHostParams defines parameters for ListRepoBrowserRefsOnHost.
+type ListRepoBrowserRefsOnHostParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+}
+
+// ListRepoBrowserTreeOnHostParams defines parameters for ListRepoBrowserTreeOnHost.
+type ListRepoBrowserTreeOnHostParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+}
+
 // GetCommentAutocompleteOnHostParams defines parameters for GetCommentAutocompleteOnHost.
 type GetCommentAutocompleteOnHostParams struct {
 	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
@@ -3311,6 +3463,65 @@ type GetPullFilePreviewParams struct {
 
 // GetPullFilePreviewParamsSide defines parameters for GetPullFilePreview.
 type GetPullFilePreviewParamsSide string
+
+// GetRepoBrowserAssetParams defines parameters for GetRepoBrowserAsset.
+type GetRepoBrowserAssetParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+	Path     *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// GetRepoBrowserBlobParams defines parameters for GetRepoBrowserBlob.
+type GetRepoBrowserBlobParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+	Path     *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// GetRepoBrowserCommitParams defines parameters for GetRepoBrowserCommit.
+type GetRepoBrowserCommitParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+	Path     *string `form:"path,omitempty" json:"path,omitempty"`
+	Sha      *string `form:"sha,omitempty" json:"sha,omitempty"`
+}
+
+// GetRepoBrowserHistoryParams defines parameters for GetRepoBrowserHistory.
+type GetRepoBrowserHistoryParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+	Path     *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// GetRepoBrowserLastChangedParams defines parameters for GetRepoBrowserLastChanged.
+type GetRepoBrowserLastChangedParams struct {
+	RepoPath *string   `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string   `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string   `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string   `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+	Path     *[]string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// ListRepoBrowserRefsParams defines parameters for ListRepoBrowserRefs.
+type ListRepoBrowserRefsParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+}
+
+// ListRepoBrowserTreeParams defines parameters for ListRepoBrowserTree.
+type ListRepoBrowserTreeParams struct {
+	RepoPath *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	RefType  *string `form:"ref_type,omitempty" json:"ref_type,omitempty"`
+	RefName  *string `form:"ref_name,omitempty" json:"ref_name,omitempty"`
+	RefSha   *string `form:"ref_sha,omitempty" json:"ref_sha,omitempty"`
+}
 
 // GetCommentAutocompleteParams defines parameters for GetCommentAutocomplete.
 type GetCommentAutocompleteParams struct {
@@ -4215,6 +4426,27 @@ type ClientInterface interface {
 	// GetRepoOnHost request
 	GetRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetRepoBrowserAssetOnHost request
+	GetRepoBrowserAssetOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserAssetOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoBrowserBlobOnHost request
+	GetRepoBrowserBlobOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserBlobOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoBrowserCommitOnHost request
+	GetRepoBrowserCommitOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserCommitOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoBrowserHistoryOnHost request
+	GetRepoBrowserHistoryOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserHistoryOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoBrowserLastChangedOnHost request
+	GetRepoBrowserLastChangedOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserLastChangedOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRepoBrowserRefsOnHost request
+	ListRepoBrowserRefsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *ListRepoBrowserRefsOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRepoBrowserTreeOnHost request
+	ListRepoBrowserTreeOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *ListRepoBrowserTreeOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetCommentAutocompleteOnHost request
 	GetCommentAutocompleteOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -4574,6 +4806,27 @@ type ClientInterface interface {
 
 	// GetRepo request
 	GetRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoBrowserAsset request
+	GetRepoBrowserAsset(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserAssetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoBrowserBlob request
+	GetRepoBrowserBlob(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserBlobParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoBrowserCommit request
+	GetRepoBrowserCommit(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserCommitParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoBrowserHistory request
+	GetRepoBrowserHistory(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserHistoryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoBrowserLastChanged request
+	GetRepoBrowserLastChanged(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserLastChangedParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRepoBrowserRefs request
+	ListRepoBrowserRefs(ctx context.Context, provider string, owner string, name string, params *ListRepoBrowserRefsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRepoBrowserTree request
+	ListRepoBrowserTree(ctx context.Context, provider string, owner string, name string, params *ListRepoBrowserTreeParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetCommentAutocomplete request
 	GetCommentAutocomplete(ctx context.Context, provider string, owner string, name string, params *GetCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6615,6 +6868,90 @@ func (c *Client) GetRepoOnHost(ctx context.Context, platformHost string, provide
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetRepoBrowserAssetOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserAssetOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoBrowserAssetOnHostRequest(c.Server, platformHost, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoBrowserBlobOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserBlobOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoBrowserBlobOnHostRequest(c.Server, platformHost, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoBrowserCommitOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserCommitOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoBrowserCommitOnHostRequest(c.Server, platformHost, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoBrowserHistoryOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserHistoryOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoBrowserHistoryOnHostRequest(c.Server, platformHost, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoBrowserLastChangedOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserLastChangedOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoBrowserLastChangedOnHostRequest(c.Server, platformHost, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListRepoBrowserRefsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *ListRepoBrowserRefsOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRepoBrowserRefsOnHostRequest(c.Server, platformHost, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListRepoBrowserTreeOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *ListRepoBrowserTreeOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRepoBrowserTreeOnHostRequest(c.Server, platformHost, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetCommentAutocompleteOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetCommentAutocompleteOnHostRequest(c.Server, platformHost, provider, owner, name, params)
 	if err != nil {
@@ -8201,6 +8538,90 @@ func (c *Client) DeleteRepo(ctx context.Context, provider string, owner string, 
 
 func (c *Client) GetRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetRepoRequest(c.Server, provider, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoBrowserAsset(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserAssetParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoBrowserAssetRequest(c.Server, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoBrowserBlob(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserBlobParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoBrowserBlobRequest(c.Server, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoBrowserCommit(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserCommitParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoBrowserCommitRequest(c.Server, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoBrowserHistory(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserHistoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoBrowserHistoryRequest(c.Server, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoBrowserLastChanged(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserLastChangedParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoBrowserLastChangedRequest(c.Server, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListRepoBrowserRefs(ctx context.Context, provider string, owner string, name string, params *ListRepoBrowserRefsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRepoBrowserRefsRequest(c.Server, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListRepoBrowserTree(ctx context.Context, provider string, owner string, name string, params *ListRepoBrowserTreeParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRepoBrowserTreeRequest(c.Server, provider, owner, name, params)
 	if err != nil {
 		return nil, err
 	}
@@ -15845,6 +16266,868 @@ func NewGetRepoOnHostRequest(server string, platformHost string, provider string
 	return req, nil
 }
 
+// NewGetRepoBrowserAssetOnHostRequest generates requests for GetRepoBrowserAssetOnHost
+func NewGetRepoBrowserAssetOnHostRequest(server string, platformHost string, provider string, owner string, name string, params *GetRepoBrowserAssetOnHostParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/browser/asset", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRepoBrowserBlobOnHostRequest generates requests for GetRepoBrowserBlobOnHost
+func NewGetRepoBrowserBlobOnHostRequest(server string, platformHost string, provider string, owner string, name string, params *GetRepoBrowserBlobOnHostParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/browser/blob", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRepoBrowserCommitOnHostRequest generates requests for GetRepoBrowserCommitOnHost
+func NewGetRepoBrowserCommitOnHostRequest(server string, platformHost string, provider string, owner string, name string, params *GetRepoBrowserCommitOnHostParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/browser/commit", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Sha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sha", *params.Sha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRepoBrowserHistoryOnHostRequest generates requests for GetRepoBrowserHistoryOnHost
+func NewGetRepoBrowserHistoryOnHostRequest(server string, platformHost string, provider string, owner string, name string, params *GetRepoBrowserHistoryOnHostParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/browser/history", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRepoBrowserLastChangedOnHostRequest generates requests for GetRepoBrowserLastChangedOnHost
+func NewGetRepoBrowserLastChangedOnHostRequest(server string, platformHost string, provider string, owner string, name string, params *GetRepoBrowserLastChangedOnHostParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/browser/last-changed", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListRepoBrowserRefsOnHostRequest generates requests for ListRepoBrowserRefsOnHost
+func NewListRepoBrowserRefsOnHostRequest(server string, platformHost string, provider string, owner string, name string, params *ListRepoBrowserRefsOnHostParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/browser/refs", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListRepoBrowserTreeOnHostRequest generates requests for ListRepoBrowserTreeOnHost
+func NewListRepoBrowserTreeOnHostRequest(server string, platformHost string, provider string, owner string, name string, params *ListRepoBrowserTreeOnHostParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/browser/tree", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetCommentAutocompleteOnHostRequest generates requests for GetCommentAutocompleteOnHost
 func NewGetCommentAutocompleteOnHostRequest(server string, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams) (*http.Request, error) {
 	var err error
@@ -21488,6 +22771,819 @@ func NewGetRepoRequest(server string, provider string, owner string, name string
 	return req, nil
 }
 
+// NewGetRepoBrowserAssetRequest generates requests for GetRepoBrowserAsset
+func NewGetRepoBrowserAssetRequest(server string, provider string, owner string, name string, params *GetRepoBrowserAssetParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/browser/asset", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRepoBrowserBlobRequest generates requests for GetRepoBrowserBlob
+func NewGetRepoBrowserBlobRequest(server string, provider string, owner string, name string, params *GetRepoBrowserBlobParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/browser/blob", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRepoBrowserCommitRequest generates requests for GetRepoBrowserCommit
+func NewGetRepoBrowserCommitRequest(server string, provider string, owner string, name string, params *GetRepoBrowserCommitParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/browser/commit", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Sha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sha", *params.Sha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRepoBrowserHistoryRequest generates requests for GetRepoBrowserHistory
+func NewGetRepoBrowserHistoryRequest(server string, provider string, owner string, name string, params *GetRepoBrowserHistoryParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/browser/history", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRepoBrowserLastChangedRequest generates requests for GetRepoBrowserLastChanged
+func NewGetRepoBrowserLastChangedRequest(server string, provider string, owner string, name string, params *GetRepoBrowserLastChangedParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/browser/last-changed", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListRepoBrowserRefsRequest generates requests for ListRepoBrowserRefs
+func NewListRepoBrowserRefsRequest(server string, provider string, owner string, name string, params *ListRepoBrowserRefsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/browser/refs", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListRepoBrowserTreeRequest generates requests for ListRepoBrowserTree
+func NewListRepoBrowserTreeRequest(server string, provider string, owner string, name string, params *ListRepoBrowserTreeParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/browser/tree", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_type", *params.RefType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_name", *params.RefName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RefSha != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "ref_sha", *params.RefSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetCommentAutocompleteRequest generates requests for GetCommentAutocomplete
 func NewGetCommentAutocompleteRequest(server string, provider string, owner string, name string, params *GetCommentAutocompleteParams) (*http.Request, error) {
 	var err error
@@ -24346,6 +26442,27 @@ type ClientWithResponsesInterface interface {
 	// GetRepoOnHostWithResponse request
 	GetRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetRepoOnHostResponse, error)
 
+	// GetRepoBrowserAssetOnHostWithResponse request
+	GetRepoBrowserAssetOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserAssetOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserAssetOnHostResponse, error)
+
+	// GetRepoBrowserBlobOnHostWithResponse request
+	GetRepoBrowserBlobOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserBlobOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserBlobOnHostResponse, error)
+
+	// GetRepoBrowserCommitOnHostWithResponse request
+	GetRepoBrowserCommitOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserCommitOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserCommitOnHostResponse, error)
+
+	// GetRepoBrowserHistoryOnHostWithResponse request
+	GetRepoBrowserHistoryOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserHistoryOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserHistoryOnHostResponse, error)
+
+	// GetRepoBrowserLastChangedOnHostWithResponse request
+	GetRepoBrowserLastChangedOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserLastChangedOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserLastChangedOnHostResponse, error)
+
+	// ListRepoBrowserRefsOnHostWithResponse request
+	ListRepoBrowserRefsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *ListRepoBrowserRefsOnHostParams, reqEditors ...RequestEditorFn) (*ListRepoBrowserRefsOnHostResponse, error)
+
+	// ListRepoBrowserTreeOnHostWithResponse request
+	ListRepoBrowserTreeOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *ListRepoBrowserTreeOnHostParams, reqEditors ...RequestEditorFn) (*ListRepoBrowserTreeOnHostResponse, error)
+
 	// GetCommentAutocompleteOnHostWithResponse request
 	GetCommentAutocompleteOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*GetCommentAutocompleteOnHostResponse, error)
 
@@ -24705,6 +26822,27 @@ type ClientWithResponsesInterface interface {
 
 	// GetRepoWithResponse request
 	GetRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetRepoResponse, error)
+
+	// GetRepoBrowserAssetWithResponse request
+	GetRepoBrowserAssetWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserAssetParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserAssetResponse, error)
+
+	// GetRepoBrowserBlobWithResponse request
+	GetRepoBrowserBlobWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserBlobParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserBlobResponse, error)
+
+	// GetRepoBrowserCommitWithResponse request
+	GetRepoBrowserCommitWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserCommitParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserCommitResponse, error)
+
+	// GetRepoBrowserHistoryWithResponse request
+	GetRepoBrowserHistoryWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserHistoryParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserHistoryResponse, error)
+
+	// GetRepoBrowserLastChangedWithResponse request
+	GetRepoBrowserLastChangedWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserLastChangedParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserLastChangedResponse, error)
+
+	// ListRepoBrowserRefsWithResponse request
+	ListRepoBrowserRefsWithResponse(ctx context.Context, provider string, owner string, name string, params *ListRepoBrowserRefsParams, reqEditors ...RequestEditorFn) (*ListRepoBrowserRefsResponse, error)
+
+	// ListRepoBrowserTreeWithResponse request
+	ListRepoBrowserTreeWithResponse(ctx context.Context, provider string, owner string, name string, params *ListRepoBrowserTreeParams, reqEditors ...RequestEditorFn) (*ListRepoBrowserTreeResponse, error)
 
 	// GetCommentAutocompleteWithResponse request
 	GetCommentAutocompleteWithResponse(ctx context.Context, provider string, owner string, name string, params *GetCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetCommentAutocompleteResponse, error)
@@ -27393,6 +29531,167 @@ func (r GetRepoOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type GetRepoBrowserAssetOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *string
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoBrowserAssetOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoBrowserAssetOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoBrowserBlobOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserBlobResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoBrowserBlobOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoBrowserBlobOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoBrowserCommitOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserCommitResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoBrowserCommitOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoBrowserCommitOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoBrowserHistoryOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserHistoryResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoBrowserHistoryOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoBrowserHistoryOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoBrowserLastChangedOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserLastChangedResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoBrowserLastChangedOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoBrowserLastChangedOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListRepoBrowserRefsOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserRefsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRepoBrowserRefsOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRepoBrowserRefsOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListRepoBrowserTreeOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserTreeResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRepoBrowserTreeOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRepoBrowserTreeOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetCommentAutocompleteOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -29533,6 +31832,167 @@ func (r GetRepoResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetRepoResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoBrowserAssetResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *string
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoBrowserAssetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoBrowserAssetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoBrowserBlobResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserBlobResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoBrowserBlobResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoBrowserBlobResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoBrowserCommitResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserCommitResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoBrowserCommitResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoBrowserCommitResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoBrowserHistoryResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserHistoryResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoBrowserHistoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoBrowserHistoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoBrowserLastChangedResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserLastChangedResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoBrowserLastChangedResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoBrowserLastChangedResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListRepoBrowserRefsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserRefsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRepoBrowserRefsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRepoBrowserRefsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListRepoBrowserTreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoBrowserTreeResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRepoBrowserTreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRepoBrowserTreeResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -32083,6 +34543,69 @@ func (c *ClientWithResponses) GetRepoOnHostWithResponse(ctx context.Context, pla
 	return ParseGetRepoOnHostResponse(rsp)
 }
 
+// GetRepoBrowserAssetOnHostWithResponse request returning *GetRepoBrowserAssetOnHostResponse
+func (c *ClientWithResponses) GetRepoBrowserAssetOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserAssetOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserAssetOnHostResponse, error) {
+	rsp, err := c.GetRepoBrowserAssetOnHost(ctx, platformHost, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoBrowserAssetOnHostResponse(rsp)
+}
+
+// GetRepoBrowserBlobOnHostWithResponse request returning *GetRepoBrowserBlobOnHostResponse
+func (c *ClientWithResponses) GetRepoBrowserBlobOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserBlobOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserBlobOnHostResponse, error) {
+	rsp, err := c.GetRepoBrowserBlobOnHost(ctx, platformHost, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoBrowserBlobOnHostResponse(rsp)
+}
+
+// GetRepoBrowserCommitOnHostWithResponse request returning *GetRepoBrowserCommitOnHostResponse
+func (c *ClientWithResponses) GetRepoBrowserCommitOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserCommitOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserCommitOnHostResponse, error) {
+	rsp, err := c.GetRepoBrowserCommitOnHost(ctx, platformHost, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoBrowserCommitOnHostResponse(rsp)
+}
+
+// GetRepoBrowserHistoryOnHostWithResponse request returning *GetRepoBrowserHistoryOnHostResponse
+func (c *ClientWithResponses) GetRepoBrowserHistoryOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserHistoryOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserHistoryOnHostResponse, error) {
+	rsp, err := c.GetRepoBrowserHistoryOnHost(ctx, platformHost, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoBrowserHistoryOnHostResponse(rsp)
+}
+
+// GetRepoBrowserLastChangedOnHostWithResponse request returning *GetRepoBrowserLastChangedOnHostResponse
+func (c *ClientWithResponses) GetRepoBrowserLastChangedOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetRepoBrowserLastChangedOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserLastChangedOnHostResponse, error) {
+	rsp, err := c.GetRepoBrowserLastChangedOnHost(ctx, platformHost, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoBrowserLastChangedOnHostResponse(rsp)
+}
+
+// ListRepoBrowserRefsOnHostWithResponse request returning *ListRepoBrowserRefsOnHostResponse
+func (c *ClientWithResponses) ListRepoBrowserRefsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *ListRepoBrowserRefsOnHostParams, reqEditors ...RequestEditorFn) (*ListRepoBrowserRefsOnHostResponse, error) {
+	rsp, err := c.ListRepoBrowserRefsOnHost(ctx, platformHost, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRepoBrowserRefsOnHostResponse(rsp)
+}
+
+// ListRepoBrowserTreeOnHostWithResponse request returning *ListRepoBrowserTreeOnHostResponse
+func (c *ClientWithResponses) ListRepoBrowserTreeOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *ListRepoBrowserTreeOnHostParams, reqEditors ...RequestEditorFn) (*ListRepoBrowserTreeOnHostResponse, error) {
+	rsp, err := c.ListRepoBrowserTreeOnHost(ctx, platformHost, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRepoBrowserTreeOnHostResponse(rsp)
+}
+
 // GetCommentAutocompleteOnHostWithResponse request returning *GetCommentAutocompleteOnHostResponse
 func (c *ClientWithResponses) GetCommentAutocompleteOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*GetCommentAutocompleteOnHostResponse, error) {
 	rsp, err := c.GetCommentAutocompleteOnHost(ctx, platformHost, provider, owner, name, params, reqEditors...)
@@ -33239,6 +35762,69 @@ func (c *ClientWithResponses) GetRepoWithResponse(ctx context.Context, provider 
 		return nil, err
 	}
 	return ParseGetRepoResponse(rsp)
+}
+
+// GetRepoBrowserAssetWithResponse request returning *GetRepoBrowserAssetResponse
+func (c *ClientWithResponses) GetRepoBrowserAssetWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserAssetParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserAssetResponse, error) {
+	rsp, err := c.GetRepoBrowserAsset(ctx, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoBrowserAssetResponse(rsp)
+}
+
+// GetRepoBrowserBlobWithResponse request returning *GetRepoBrowserBlobResponse
+func (c *ClientWithResponses) GetRepoBrowserBlobWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserBlobParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserBlobResponse, error) {
+	rsp, err := c.GetRepoBrowserBlob(ctx, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoBrowserBlobResponse(rsp)
+}
+
+// GetRepoBrowserCommitWithResponse request returning *GetRepoBrowserCommitResponse
+func (c *ClientWithResponses) GetRepoBrowserCommitWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserCommitParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserCommitResponse, error) {
+	rsp, err := c.GetRepoBrowserCommit(ctx, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoBrowserCommitResponse(rsp)
+}
+
+// GetRepoBrowserHistoryWithResponse request returning *GetRepoBrowserHistoryResponse
+func (c *ClientWithResponses) GetRepoBrowserHistoryWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserHistoryParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserHistoryResponse, error) {
+	rsp, err := c.GetRepoBrowserHistory(ctx, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoBrowserHistoryResponse(rsp)
+}
+
+// GetRepoBrowserLastChangedWithResponse request returning *GetRepoBrowserLastChangedResponse
+func (c *ClientWithResponses) GetRepoBrowserLastChangedWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoBrowserLastChangedParams, reqEditors ...RequestEditorFn) (*GetRepoBrowserLastChangedResponse, error) {
+	rsp, err := c.GetRepoBrowserLastChanged(ctx, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoBrowserLastChangedResponse(rsp)
+}
+
+// ListRepoBrowserRefsWithResponse request returning *ListRepoBrowserRefsResponse
+func (c *ClientWithResponses) ListRepoBrowserRefsWithResponse(ctx context.Context, provider string, owner string, name string, params *ListRepoBrowserRefsParams, reqEditors ...RequestEditorFn) (*ListRepoBrowserRefsResponse, error) {
+	rsp, err := c.ListRepoBrowserRefs(ctx, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRepoBrowserRefsResponse(rsp)
+}
+
+// ListRepoBrowserTreeWithResponse request returning *ListRepoBrowserTreeResponse
+func (c *ClientWithResponses) ListRepoBrowserTreeWithResponse(ctx context.Context, provider string, owner string, name string, params *ListRepoBrowserTreeParams, reqEditors ...RequestEditorFn) (*ListRepoBrowserTreeResponse, error) {
+	rsp, err := c.ListRepoBrowserTree(ctx, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRepoBrowserTreeResponse(rsp)
 }
 
 // GetCommentAutocompleteWithResponse request returning *GetCommentAutocompleteResponse
@@ -37359,6 +39945,237 @@ func ParseGetRepoOnHostResponse(rsp *http.Response) (*GetRepoOnHostResponse, err
 	return response, nil
 }
 
+// ParseGetRepoBrowserAssetOnHostResponse parses an HTTP response from a GetRepoBrowserAssetOnHostWithResponse call
+func ParseGetRepoBrowserAssetOnHostResponse(rsp *http.Response) (*GetRepoBrowserAssetOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoBrowserAssetOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest string
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoBrowserBlobOnHostResponse parses an HTTP response from a GetRepoBrowserBlobOnHostWithResponse call
+func ParseGetRepoBrowserBlobOnHostResponse(rsp *http.Response) (*GetRepoBrowserBlobOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoBrowserBlobOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserBlobResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoBrowserCommitOnHostResponse parses an HTTP response from a GetRepoBrowserCommitOnHostWithResponse call
+func ParseGetRepoBrowserCommitOnHostResponse(rsp *http.Response) (*GetRepoBrowserCommitOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoBrowserCommitOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserCommitResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoBrowserHistoryOnHostResponse parses an HTTP response from a GetRepoBrowserHistoryOnHostWithResponse call
+func ParseGetRepoBrowserHistoryOnHostResponse(rsp *http.Response) (*GetRepoBrowserHistoryOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoBrowserHistoryOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserHistoryResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoBrowserLastChangedOnHostResponse parses an HTTP response from a GetRepoBrowserLastChangedOnHostWithResponse call
+func ParseGetRepoBrowserLastChangedOnHostResponse(rsp *http.Response) (*GetRepoBrowserLastChangedOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoBrowserLastChangedOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserLastChangedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListRepoBrowserRefsOnHostResponse parses an HTTP response from a ListRepoBrowserRefsOnHostWithResponse call
+func ParseListRepoBrowserRefsOnHostResponse(rsp *http.Response) (*ListRepoBrowserRefsOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRepoBrowserRefsOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserRefsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListRepoBrowserTreeOnHostResponse parses an HTTP response from a ListRepoBrowserTreeOnHostWithResponse call
+func ParseListRepoBrowserTreeOnHostResponse(rsp *http.Response) (*ListRepoBrowserTreeOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRepoBrowserTreeOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserTreeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetCommentAutocompleteOnHostResponse parses an HTTP response from a GetCommentAutocompleteOnHostWithResponse call
 func ParseGetCommentAutocompleteOnHostResponse(rsp *http.Response) (*GetCommentAutocompleteOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -40332,6 +43149,237 @@ func ParseGetRepoResponse(rsp *http.Response) (*GetRepoResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest RepoResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoBrowserAssetResponse parses an HTTP response from a GetRepoBrowserAssetWithResponse call
+func ParseGetRepoBrowserAssetResponse(rsp *http.Response) (*GetRepoBrowserAssetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoBrowserAssetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest string
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoBrowserBlobResponse parses an HTTP response from a GetRepoBrowserBlobWithResponse call
+func ParseGetRepoBrowserBlobResponse(rsp *http.Response) (*GetRepoBrowserBlobResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoBrowserBlobResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserBlobResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoBrowserCommitResponse parses an HTTP response from a GetRepoBrowserCommitWithResponse call
+func ParseGetRepoBrowserCommitResponse(rsp *http.Response) (*GetRepoBrowserCommitResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoBrowserCommitResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserCommitResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoBrowserHistoryResponse parses an HTTP response from a GetRepoBrowserHistoryWithResponse call
+func ParseGetRepoBrowserHistoryResponse(rsp *http.Response) (*GetRepoBrowserHistoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoBrowserHistoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserHistoryResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoBrowserLastChangedResponse parses an HTTP response from a GetRepoBrowserLastChangedWithResponse call
+func ParseGetRepoBrowserLastChangedResponse(rsp *http.Response) (*GetRepoBrowserLastChangedResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoBrowserLastChangedResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserLastChangedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListRepoBrowserRefsResponse parses an HTTP response from a ListRepoBrowserRefsWithResponse call
+func ParseListRepoBrowserRefsResponse(rsp *http.Response) (*ListRepoBrowserRefsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRepoBrowserRefsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserRefsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListRepoBrowserTreeResponse parses an HTTP response from a ListRepoBrowserTreeWithResponse call
+func ParseListRepoBrowserTreeResponse(rsp *http.Response) (*ListRepoBrowserTreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRepoBrowserTreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoBrowserTreeResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -1232,6 +1232,34 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 		documentOperation("get-repo", "Get repository", "Repositories"))
 	huma.Get(api, hostRepoPath, s.getRepoOnHost,
 		documentOperation("get-repo-on-host", "Get repository", "Repositories"))
+	huma.Get(api, repoPath+"/browser/refs", s.listRepoBrowserRefs,
+		documentOperation("list-repo-browser-refs", "List repository browser refs", "Repositories"))
+	huma.Get(api, hostRepoPath+"/browser/refs", s.listRepoBrowserRefsOnHost,
+		documentOperation("list-repo-browser-refs-on-host", "List repository browser refs", "Repositories"))
+	huma.Get(api, repoPath+"/browser/tree", s.listRepoBrowserTree,
+		documentOperation("list-repo-browser-tree", "List repository browser tree", "Repositories"))
+	huma.Get(api, hostRepoPath+"/browser/tree", s.listRepoBrowserTreeOnHost,
+		documentOperation("list-repo-browser-tree-on-host", "List repository browser tree", "Repositories"))
+	huma.Get(api, repoPath+"/browser/blob", s.getRepoBrowserBlob,
+		documentOperation("get-repo-browser-blob", "Get repository browser blob", "Repositories"))
+	huma.Get(api, hostRepoPath+"/browser/blob", s.getRepoBrowserBlobOnHost,
+		documentOperation("get-repo-browser-blob-on-host", "Get repository browser blob", "Repositories"))
+	huma.Get(api, repoPath+"/browser/asset", s.getRepoBrowserAsset,
+		documentOperation("get-repo-browser-asset", "Get repository browser asset", "Repositories"))
+	huma.Get(api, hostRepoPath+"/browser/asset", s.getRepoBrowserAssetOnHost,
+		documentOperation("get-repo-browser-asset-on-host", "Get repository browser asset", "Repositories"))
+	huma.Get(api, repoPath+"/browser/last-changed", s.getRepoBrowserLastChanged,
+		documentOperation("get-repo-browser-last-changed", "Get repository browser last changed commits", "Repositories"))
+	huma.Get(api, hostRepoPath+"/browser/last-changed", s.getRepoBrowserLastChangedOnHost,
+		documentOperation("get-repo-browser-last-changed-on-host", "Get repository browser last changed commits", "Repositories"))
+	huma.Get(api, repoPath+"/browser/history", s.getRepoBrowserHistory,
+		documentOperation("get-repo-browser-history", "Get repository browser file history", "Repositories"))
+	huma.Get(api, hostRepoPath+"/browser/history", s.getRepoBrowserHistoryOnHost,
+		documentOperation("get-repo-browser-history-on-host", "Get repository browser file history", "Repositories"))
+	huma.Get(api, repoPath+"/browser/commit", s.getRepoBrowserCommit,
+		documentOperation("get-repo-browser-commit", "Get repository browser commit", "Repositories"))
+	huma.Get(api, hostRepoPath+"/browser/commit", s.getRepoBrowserCommitOnHost,
+		documentOperation("get-repo-browser-commit-on-host", "Get repository browser commit", "Repositories"))
 	huma.Get(api, repoPath+"/commits/{sha}/diff", s.getRepoCommitDiff,
 		documentOperation("get-repo-commit-diff", "Get repository commit diff", "Repositories"))
 	huma.Get(api, hostRepoPath+"/commits/{sha}/diff", s.getRepoCommitDiffOnHost,

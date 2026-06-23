@@ -1634,6 +1634,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository browser asset */
+        get: operations["get-repo-browser-asset-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/blob": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository browser blob */
+        get: operations["get-repo-browser-blob-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository browser commit */
+        get: operations["get-repo-browser-commit-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository browser file history */
+        get: operations["get-repo-browser-history-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/last-changed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository browser last changed commits */
+        get: operations["get-repo-browser-last-changed-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/refs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List repository browser refs */
+        get: operations["list-repo-browser-refs-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List repository browser tree */
+        get: operations["list-repo-browser-tree-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete": {
         parameters: {
             query?: never;
@@ -3083,6 +3202,125 @@ export interface paths {
         post?: never;
         /** Delete repository */
         delete: operations["delete-repo"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/browser/asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository browser asset */
+        get: operations["get-repo-browser-asset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/browser/blob": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository browser blob */
+        get: operations["get-repo-browser-blob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/browser/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository browser commit */
+        get: operations["get-repo-browser-commit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/browser/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository browser file history */
+        get: operations["get-repo-browser-history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/browser/last-changed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository browser last changed commits */
+        get: operations["get-repo-browser-last-changed"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/browser/refs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List repository browser refs */
+        get: operations["list-repo-browser-refs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/browser/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List repository browser tree */
+        get: operations["list-repo-browser-tree"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -6018,6 +6256,108 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+        };
+        RepoBrowserBlob: {
+            binary: boolean;
+            content: string;
+            encoding: string;
+            media_type: string;
+            path: string;
+            sha: string;
+            /** Format: int64 */
+            size: number;
+            too_large: boolean;
+        };
+        RepoBrowserBlobResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoBrowserBlobResponse.json
+             */
+            readonly $schema?: string;
+            blob: components["schemas"]["RepoBrowserBlob"];
+            ref: components["schemas"]["RepoBrowserRef"];
+            repo: components["schemas"]["RepoRefResponse"];
+        };
+        RepoBrowserCommit: {
+            author_email: string;
+            author_name: string;
+            /** Format: date-time */
+            authored_at: string;
+            body: string;
+            sha: string;
+            subject: string;
+        };
+        RepoBrowserCommitResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoBrowserCommitResponse.json
+             */
+            readonly $schema?: string;
+            commit: components["schemas"]["RepoBrowserCommit"];
+            path: string;
+            ref: components["schemas"]["RepoBrowserRef"];
+            repo: components["schemas"]["RepoRefResponse"];
+        };
+        RepoBrowserHistoryResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoBrowserHistoryResponse.json
+             */
+            readonly $schema?: string;
+            commits: components["schemas"]["RepoBrowserCommit"][] | null;
+            path: string;
+            ref: components["schemas"]["RepoBrowserRef"];
+            repo: components["schemas"]["RepoRefResponse"];
+        };
+        RepoBrowserLastChangedResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoBrowserLastChangedResponse.json
+             */
+            readonly $schema?: string;
+            commits: {
+                [key: string]: components["schemas"]["RepoBrowserCommit"];
+            };
+            ref: components["schemas"]["RepoBrowserRef"];
+            repo: components["schemas"]["RepoRefResponse"];
+        };
+        RepoBrowserRef: {
+            name: string;
+            sha: string;
+            type: string;
+        };
+        RepoBrowserRefsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoBrowserRefsResponse.json
+             */
+            readonly $schema?: string;
+            default_ref: components["schemas"]["RepoBrowserRef"];
+            refs: components["schemas"]["RepoBrowserRef"][] | null;
+            repo: components["schemas"]["RepoRefResponse"];
+        };
+        RepoBrowserTreeEntry: {
+            path: string;
+            /** Format: int64 */
+            size: number;
+            type: string;
+        };
+        RepoBrowserTreeResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoBrowserTreeResponse.json
+             */
+            readonly $schema?: string;
+            entries: components["schemas"]["RepoBrowserTreeEntry"][] | null;
+            ref: components["schemas"]["RepoBrowserRef"];
+            repo: components["schemas"]["RepoRefResponse"];
+            truncated: boolean;
         };
         RepoLabelsResponse: {
             /**
@@ -10461,6 +10801,286 @@ export interface operations {
             };
         };
     };
+    "get-repo-browser-asset-on-host": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+                path?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Length"?: string;
+                    "Content-Type"?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-browser-blob-on-host": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+                path?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserBlobResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-browser-commit-on-host": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+                path?: string;
+                sha?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserCommitResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-browser-history-on-host": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+                path?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserHistoryResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-browser-last-changed-on-host": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+                path?: string[] | null;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserLastChangedResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-repo-browser-refs-on-host": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserRefsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-repo-browser-tree-on-host": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserTreeResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "get-comment-autocomplete-on-host": {
         parameters: {
             query?: {
@@ -13730,6 +14350,279 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-browser-asset": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+                path?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Length"?: string;
+                    "Content-Type"?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-browser-blob": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+                path?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserBlobResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-browser-commit": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+                path?: string;
+                sha?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserCommitResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-browser-history": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+                path?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserHistoryResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-browser-last-changed": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+                path?: string[] | null;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserLastChangedResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-repo-browser-refs": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserRefsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-repo-browser-tree": {
+        parameters: {
+            query?: {
+                repo_path?: string;
+                ref_type?: string;
+                ref_name?: string;
+                ref_sha?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBrowserTreeResponse"];
+                };
             };
             /** @description Error */
             default: {

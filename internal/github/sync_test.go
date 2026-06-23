@@ -346,7 +346,7 @@ case "$*" in
 		echo "+refs/heads/*:refs/remotes/origin/*"
 		echo "+refs/pull/*/head:refs/pull/*/head"
 		;;
-	"fetch --prune origin")
+	"fetch --prune --prune-tags origin")
 		;;
 	"remote set-head origin -a")
 		touch "${MIDDLEMAN_TEST_CANCEL_FILE:?}"

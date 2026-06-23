@@ -118,6 +118,13 @@ export function providerItemPath(kind: "pulls" | "issues", ref: ProviderRouteRef
 
 type RepoSuffix =
   | ""
+  | "/browser/asset"
+  | "/browser/blob"
+  | "/browser/commit"
+  | "/browser/history"
+  | "/browser/last-changed"
+  | "/browser/refs"
+  | "/browser/tree"
   | "/comment-autocomplete"
   | "/commits/{sha}/diff"
   | "/labels"

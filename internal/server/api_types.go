@@ -211,6 +211,45 @@ type repoSummaryResponse struct {
 	Operations           RepoOperations                   `json:"operations"`
 }
 
+type repoBrowserRefsResponse struct {
+	Repo       repoRefResponse           `json:"repo"`
+	Refs       []gitclone.RepoBrowserRef `json:"refs"`
+	DefaultRef gitclone.RepoBrowserRef   `json:"default_ref"`
+}
+
+type repoBrowserTreeResponse struct {
+	Repo      repoRefResponse                 `json:"repo"`
+	Ref       gitclone.RepoBrowserRef         `json:"ref"`
+	Entries   []gitclone.RepoBrowserTreeEntry `json:"entries"`
+	Truncated bool                            `json:"truncated"`
+}
+
+type repoBrowserBlobResponse struct {
+	Repo repoRefResponse          `json:"repo"`
+	Ref  gitclone.RepoBrowserRef  `json:"ref"`
+	Blob gitclone.RepoBrowserBlob `json:"blob"`
+}
+
+type repoBrowserLastChangedResponse struct {
+	Repo    repoRefResponse                       `json:"repo"`
+	Ref     gitclone.RepoBrowserRef               `json:"ref"`
+	Commits map[string]gitclone.RepoBrowserCommit `json:"commits"`
+}
+
+type repoBrowserHistoryResponse struct {
+	Repo    repoRefResponse              `json:"repo"`
+	Ref     gitclone.RepoBrowserRef      `json:"ref"`
+	Path    string                       `json:"path"`
+	Commits []gitclone.RepoBrowserCommit `json:"commits"`
+}
+
+type repoBrowserCommitResponse struct {
+	Repo   repoRefResponse            `json:"repo"`
+	Ref    gitclone.RepoBrowserRef    `json:"ref"`
+	Path   string                     `json:"path"`
+	Commit gitclone.RepoBrowserCommit `json:"commit"`
+}
+
 type commentAutocompleteResponse struct {
 	Users      []string                          `json:"users,omitempty"`
 	References []db.CommentAutocompleteReference `json:"references,omitempty"`

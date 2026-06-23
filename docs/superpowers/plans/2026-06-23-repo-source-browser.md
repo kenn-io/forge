@@ -101,7 +101,7 @@ Write the API contract in server request/response types before handlers:
 - caps:
   `RepoBrowserTreeEntryLimit`, `RepoBrowserBlobSizeLimit`, `RepoBrowserLastChangedBatchMax`, `RepoBrowserHistoryLimit`
 - Markdown asset contract:
-  separate `asset-metadata` JSON preflight and `asset-bytes` byte routes; path/ref validation, MIME detection, unsupported SVG state with no byte URL, byte route rejection for SVG/non-renderable assets, blob-size caps, conservative branch/tag cache headers, immutable commit cache headers
+  separate `asset-metadata` JSON preflight and `asset-bytes` byte routes; metadata emits commit-pinned byte URLs only for renderable assets; path/ref validation, MIME detection, unsupported SVG state with no byte URL, byte route problem envelopes for SVG/non-renderable assets, blob-size caps, conservative branch/tag metadata cache headers, immutable byte cache headers
 
 - [ ] **Step 3: Write failing gitclone tests**
 
@@ -118,10 +118,15 @@ func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T)
 func TestRepoBrowserResponsesIncludeRefMetadata(t *testing.T)
 func TestRepoBrowserMarkdownAssetRejectsUnsafeAndOversizedPaths(t *testing.T)
 func TestRepoBrowserMarkdownAssetMetadataRejectsSVG(t *testing.T)
-func TestRepoBrowserMarkdownAssetBytesNeverServesSVG(t *testing.T)
+func TestRepoBrowserMarkdownAssetBytesRejectsNonRenderableStates(t *testing.T)
 ```
 
 Each test should create a real temporary Git repository with `t.TempDir()` and run Git commands through the existing test helper pattern used in `internal/gitclone/*_test.go`.
+`TestRepoBrowserResponsesIncludeRefMetadata` must exercise tree, blob, history,
+commit detail, asset metadata, and asset bytes responses. The asset-bytes
+non-renderable test must cover SVG, oversized assets, unsafe traversal, missing
+paths, and unknown/non-renderable media types with exact problem code and
+`details.reason` assertions.
 
 - [ ] **Step 4: Run gitclone tests red**
 

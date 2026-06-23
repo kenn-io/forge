@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { createQuerySerializer, type QuerySerializerOptions } from "openapi-fetch";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { createRepoBrowserStore } from "./repo-browser.svelte.js";
 import type { RepoBrowserStoreOptions } from "./repo-browser.svelte.js";
@@ -13,139 +14,145 @@ const repo = {
 };
 
 type TestClient = NonNullable<RepoBrowserStoreOptions["client"]>;
+type TestGetOptions = {
+  params?: { path?: Record<string, string>; query?: Record<string, unknown> };
+  querySerializer?: QuerySerializerOptions;
+};
+
+const runtimeQuerySerializerOptions: QuerySerializerOptions = {
+  array: {
+    style: "form",
+    explode: false,
+  },
+};
 
 function testClient(): TestClient {
   return {
-    GET: vi.fn(
-      async (
-        path: string,
-        options?: { params?: { path?: Record<string, string>; query?: Record<string, unknown> } },
-      ) => {
-        const url = testURL(path, options);
-        if (url === "/repo/github/acme/widgets/browser/refs?repo_path=acme%2Fwidgets") {
-          return {
-            data: {
-              repo,
-              refs: [
-                { type: "branch", name: "main", sha: "main-sha", stale: false },
-                { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
-              ],
-              default_ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
-            },
-            response: new Response(null, { status: 200 }),
-          };
-        }
-        if (
-          url ===
-          "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha"
-        ) {
-          return {
-            data: {
-              repo,
-              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
-              entries: [
-                { path: "README.md", type: "blob", size: 12 },
-                { path: "src/app.ts", type: "blob", size: 30 },
-              ],
-              truncated: false,
-            },
-            response: new Response(null, { status: 200 }),
-          };
-        }
-        if (
-          url ===
-          "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&path=src%2Fapp.ts"
-        ) {
-          return {
-            data: {
-              repo,
-              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
-              commits: {
-                "README.md": commit("readme changed"),
-                "src/app.ts": commit("app changed"),
-              },
-            },
-            response: new Response(null, { status: 200 }),
-          };
-        }
-        if (
-          url ===
-          "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
-        ) {
-          return {
-            data: {
-              repo,
-              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
-              blob: {
-                path: "README.md",
-                sha: "blob-sha",
-                size: 12,
-                media_type: "text/markdown; charset=utf-8",
-                encoding: "utf-8",
-                content: "# Widgets\n",
-                binary: false,
-                too_large: false,
-              },
-            },
-            response: new Response(null, { status: 200 }),
-          };
-        }
-        if (
-          url ===
-          "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
-        ) {
-          return {
-            data: {
-              repo,
-              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
-              path: "README.md",
-              commits: [commit("readme changed")],
-            },
-            response: new Response(null, { status: 200 }),
-          };
-        }
-        if (
-          url ===
-          "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
-        ) {
-          return {
-            data: {
-              repo,
-              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
-              blob: {
-                path: "src/app.ts",
-                sha: "app-blob-sha",
-                size: 30,
-                media_type: "text/typescript; charset=utf-8",
-                encoding: "utf-8",
-                content: "export const app = true;\n",
-                binary: false,
-                too_large: false,
-              },
-            },
-            response: new Response(null, { status: 200 }),
-          };
-        }
-        if (
-          url ===
-          "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
-        ) {
-          return {
-            data: {
-              repo,
-              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
-              path: "src/app.ts",
-              commits: [commit("app changed")],
-            },
-            response: new Response(null, { status: 200 }),
-          };
-        }
+    GET: vi.fn(async (path: string, options?: TestGetOptions) => {
+      const url = testURL(path, options);
+      if (url === "/repo/github/acme/widgets/browser/refs?repo_path=acme%2Fwidgets") {
         return {
-          error: { detail: `unexpected ${url}` },
-          response: new Response(null, { status: 404 }),
+          data: {
+            repo,
+            refs: [
+              { type: "branch", name: "main", sha: "main-sha", stale: false },
+              { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
+            ],
+            default_ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+          },
+          response: new Response(null, { status: 200 }),
         };
-      },
-    ),
+      }
+      if (
+        url ===
+        "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+            entries: [
+              { path: "README.md", type: "blob", size: 12 },
+              { path: "src/app.ts", type: "blob", size: 30 },
+            ],
+            truncated: false,
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
+        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&path=src%2Fapp.ts"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+            commits: {
+              "README.md": commit("readme changed"),
+              "src/app.ts": commit("app changed"),
+            },
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+            blob: {
+              path: "README.md",
+              sha: "blob-sha",
+              size: 12,
+              media_type: "text/markdown; charset=utf-8",
+              encoding: "utf-8",
+              content: "# Widgets\n",
+              binary: false,
+              too_large: false,
+            },
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+            path: "README.md",
+            commits: [commit("readme changed")],
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+            blob: {
+              path: "src/app.ts",
+              sha: "app-blob-sha",
+              size: 30,
+              media_type: "text/typescript; charset=utf-8",
+              encoding: "utf-8",
+              content: "export const app = true;\n",
+              binary: false,
+              too_large: false,
+            },
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+            path: "src/app.ts",
+            commits: [commit("app changed")],
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      return {
+        error: { detail: `unexpected ${url}` },
+        response: new Response(null, { status: 404 }),
+      };
+    }),
   } as unknown as TestClient;
 }
 
@@ -185,26 +192,24 @@ describe("createRepoBrowserStore", () => {
     const readmeHistory = deferredResponse();
     let deferReadme = false;
     const client = {
-      GET: vi.fn(
-        (path: string, options?: { params?: { path?: Record<string, string>; query?: Record<string, unknown> } }) => {
-          const url = testURL(path, options);
-          if (
-            deferReadme &&
-            url ===
-              "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
-          ) {
-            return readmeBlob.promise;
-          }
-          if (
-            deferReadme &&
-            url ===
-              "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
-          ) {
-            return readmeHistory.promise;
-          }
-          return base.GET(path, options);
-        },
-      ),
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          deferReadme &&
+          url ===
+            "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+        ) {
+          return readmeBlob.promise;
+        }
+        if (
+          deferReadme &&
+          url ===
+            "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+        ) {
+          return readmeHistory.promise;
+        }
+        return base.GET(path, options);
+      }),
     } as unknown as TestClient;
     const store = createRepoBrowserStore({ client });
     await store.loadRepo(repo);
@@ -229,26 +234,24 @@ describe("createRepoBrowserStore", () => {
     const srcHistory = deferredResponse();
     let deferSrc = false;
     const client = {
-      GET: vi.fn(
-        (path: string, options?: { params?: { path?: Record<string, string>; query?: Record<string, unknown> } }) => {
-          const url = testURL(path, options);
-          if (
-            deferSrc &&
-            url ===
-              "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
-          ) {
-            return srcBlob.promise;
-          }
-          if (
-            deferSrc &&
-            url ===
-              "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
-          ) {
-            return srcHistory.promise;
-          }
-          return base.GET(path, options);
-        },
-      ),
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          deferSrc &&
+          url ===
+            "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+        ) {
+          return srcBlob.promise;
+        }
+        if (
+          deferSrc &&
+          url ===
+            "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+        ) {
+          return srcHistory.promise;
+        }
+        return base.GET(path, options);
+      }),
     } as unknown as TestClient;
     const store = createRepoBrowserStore({ client });
     await store.loadRepo(repo);
@@ -275,33 +278,31 @@ describe("createRepoBrowserStore", () => {
     const base = testClient();
     const slowCommit = deferredResponse();
     const client = {
-      GET: vi.fn(
-        (path: string, options?: { params?: { path?: Record<string, string>; query?: Record<string, unknown> } }) => {
-          const url = testURL(path, options);
-          if (
-            url ===
-            "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=slow-sha"
-          ) {
-            return slowCommit.promise;
-          }
-          if (
-            url ===
-            "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=fast-sha"
-          ) {
-            return Promise.resolve(commitResponse("fast-sha", "fast commit"));
-          }
-          if (
-            url ===
-            "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=missing-sha"
-          ) {
-            return Promise.resolve({
-              error: { detail: "commit failed" },
-              response: new Response(null, { status: 404 }),
-            });
-          }
-          return base.GET(path, options);
-        },
-      ),
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=slow-sha"
+        ) {
+          return slowCommit.promise;
+        }
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=fast-sha"
+        ) {
+          return Promise.resolve(commitResponse("fast-sha", "fast commit"));
+        }
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=missing-sha"
+        ) {
+          return Promise.resolve({
+            error: { detail: "commit failed" },
+            response: new Response(null, { status: 404 }),
+          });
+        }
+        return base.GET(path, options);
+      }),
     } as unknown as TestClient;
     const store = createRepoBrowserStore({ client });
     await store.loadRepo(repo);
@@ -322,21 +323,19 @@ describe("createRepoBrowserStore", () => {
   it("clears dependent state and reports errors when ref switching fails", async () => {
     const base = testClient();
     const client = {
-      GET: vi.fn(
-        (path: string, options?: { params?: { path?: Record<string, string>; query?: Record<string, unknown> } }) => {
-          const url = testURL(path, options);
-          if (
-            url ===
-            "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha"
-          ) {
-            return Promise.resolve({
-              error: { detail: "tree failed" },
-              response: new Response(null, { status: 500 }),
-            });
-          }
-          return base.GET(path, options);
-        },
-      ),
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha"
+        ) {
+          return Promise.resolve({
+            error: { detail: "tree failed" },
+            response: new Response(null, { status: 500 }),
+          });
+        }
+        return base.GET(path, options);
+      }),
     } as unknown as TestClient;
     const store = createRepoBrowserStore({ client });
     await store.loadRepo(repo);
@@ -353,23 +352,13 @@ describe("createRepoBrowserStore", () => {
   });
 });
 
-function testURL(
-  path: string,
-  options?: { params?: { path?: Record<string, string>; query?: Record<string, unknown> } },
-): string {
+function testURL(path: string, options?: TestGetOptions): string {
   let url = path;
   for (const [key, value] of Object.entries(options?.params?.path ?? {})) {
     url = url.replace(`{${key}}`, encodeURIComponent(String(value)));
   }
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(options?.params?.query ?? {})) {
-    if (Array.isArray(value)) {
-      for (const item of value) query.append(key, String(item));
-    } else if (value !== undefined) {
-      query.set(key, String(value));
-    }
-  }
-  const qs = query.toString();
+  const serializer = createQuerySerializer(options?.querySerializer ?? runtimeQuerySerializerOptions);
+  const qs = serializer(options?.params?.query ?? {});
   return qs ? `${url}?${qs}` : url;
 }
 

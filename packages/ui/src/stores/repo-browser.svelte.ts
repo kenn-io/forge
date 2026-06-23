@@ -1,3 +1,4 @@
+import type { QuerySerializerOptions } from "openapi-fetch";
 import type { RepoBrowserBlob, RepoBrowserCommit, RepoBrowserRef, RepoBrowserTreeEntry } from "../api/types.js";
 import { providerRepoPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
@@ -26,6 +27,12 @@ type RepoBrowserCommitResponse = components["schemas"]["RepoBrowserCommitRespons
 
 const viewModeStorageKey = "repo-browser-view-mode";
 const validViewModes: RepoBrowserViewMode[] = ["source", "preview"];
+const repeatedPathQuerySerializer: QuerySerializerOptions = {
+  array: {
+    style: "form",
+    explode: true,
+  },
+};
 
 function safeGetItem(key: string): string | null {
   try {
@@ -189,6 +196,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       error: apiError,
       response,
     } = await client.GET(providerRepoPath(ref, "/browser/last-changed"), {
+      querySerializer: repeatedPathQuerySerializer,
       params: {
         path: providerRouteParams(ref),
         query: {

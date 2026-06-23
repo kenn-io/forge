@@ -27,6 +27,7 @@
     tabIcon?: Snippet<[TabbedPanelDescriptor]> | undefined;
     tabActions?: Snippet<[TabbedPanelDescriptor]> | undefined;
     scrollPanels?: boolean;
+    disabled?: boolean;
     tablistLabel?: string;
     leafLabel?: string;
     resizeLabel?: string;
@@ -58,6 +59,7 @@
     tabIcon = undefined,
     tabActions = undefined,
     scrollPanels = false,
+    disabled = false,
     tablistLabel = "Panel group tabs",
     leafLabel = "Panel group",
     resizeLabel = "Resize panel split",
@@ -88,6 +90,7 @@
   }
 
   function startTabDrag(event: DragEvent, tab: TabbedPanelDescriptor): void {
+    if (disabled) return;
     if (!tabDragEnabled()) return;
     if (onStartTabDrag) {
       onStartTabDrag(event, tab);
@@ -104,6 +107,7 @@
   }
 
   function readDraggedTab(event: DragEvent): string | null {
+    if (disabled) return null;
     return onReadDraggedTab ? onReadDraggedTab(event) : readTabbedPanelTabDrag(event, dragScope);
   }
 
@@ -122,6 +126,7 @@
   }
 
   function handleTabDragOver(event: DragEvent, targetTabKey: string): void {
+    if (disabled) return;
     if (!canSortTabs()) return;
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null) return;
@@ -142,6 +147,7 @@
   }
 
   function handleTabStripDragOver(event: DragEvent): void {
+    if (disabled) return;
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null) return;
     const target = event.target;
@@ -164,6 +170,7 @@
   }
 
   function handleSplitDragOver(event: DragEvent): void {
+    if (disabled) return;
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null) return;
     const edge = splitEdgeFromEvent(event);
@@ -284,6 +291,7 @@
   }
 
   function dropOnTab(event: DragEvent, targetTabKey: string): void {
+    if (disabled) return;
     if (!canSortTabs()) return;
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null || sourceTabKey === targetTabKey) return;
@@ -298,6 +306,7 @@
   }
 
   function dropIntoLeaf(event: DragEvent, leafID: string): void {
+    if (disabled) return;
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null) return;
     if (tabSortPreview && canSortTabs()) {
@@ -312,6 +321,7 @@
   }
 
   function dropSplit(event: DragEvent, leafID: string): void {
+    if (disabled) return;
     const sourceTabKey = readDraggedTab(event);
     const edge = splitEdgeFromEvent(event);
     if (sourceTabKey === null) return;
@@ -380,6 +390,7 @@
   }
 
   function startResize(event: PointerEvent): void {
+    if (disabled) return;
     if (node.type !== "split" || !splitEl) return;
     event.preventDefault();
     const rect = splitEl.getBoundingClientRect();
@@ -411,11 +422,11 @@
   }
 
   function tabDragEnabled(): boolean {
-    return Boolean(onStartTabDrag || onMoveTabBefore || onAppendTabToLeaf || onSplitTab);
+    return !disabled && Boolean(onStartTabDrag || onMoveTabBefore || onAppendTabToLeaf || onSplitTab);
   }
 
   function canSortTabs(): boolean {
-    return Boolean(onMoveTabBefore);
+    return !disabled && Boolean(onMoveTabBefore);
   }
 </script>
 
@@ -459,6 +470,7 @@
             <button
               class="tabbed-panel-tab-button"
               draggable={tabDragEnabled()}
+              disabled={disabled}
               ondragstart={(event) => startTabDrag(event, tab)}
               ondragend={finishTabDrag}
               ondblclick={() => onTabDoubleClick?.(tab.key)}
@@ -541,6 +553,7 @@
         {tabIcon}
         {tabActions}
         {scrollPanels}
+        {disabled}
         {tablistLabel}
         {leafLabel}
         {resizeLabel}
@@ -559,6 +572,7 @@
     <button
       class="tabbed-panel-split-divider"
       aria-label={resizeLabel}
+      disabled={disabled}
       onpointerdown={startResize}
     ></button>
     <div class="tabbed-panel-split-child second">
@@ -571,6 +585,7 @@
         {tabIcon}
         {tabActions}
         {scrollPanels}
+        {disabled}
         {tablistLabel}
         {leafLabel}
         {resizeLabel}
@@ -642,6 +657,16 @@
   .tabbed-panel-split-divider:focus-visible {
     background: var(--accent-blue);
     outline: none;
+  }
+
+  .tabbed-panel-split-divider:disabled {
+    cursor: default;
+    opacity: 0.62;
+  }
+
+  .tabbed-panel-split-divider:disabled:hover,
+  .tabbed-panel-split-divider:disabled:focus-visible {
+    background: var(--border-muted);
   }
 
   :global(.tabbed-panel-split.horizontal
@@ -767,12 +792,17 @@
     cursor: grab;
   }
 
+  .tabbed-panel-tab-button:disabled {
+    cursor: default;
+    color: inherit;
+  }
+
   .tabbed-panel-tabs.drag-sorting .tabbed-panel-tab-button {
     cursor: grabbing;
   }
 
-  .tabbed-panel-tab-button:hover,
-  .tabbed-panel-tab-button:focus-visible {
+  .tabbed-panel-tab-button:hover:not(:disabled),
+  .tabbed-panel-tab-button:focus-visible:not(:disabled) {
     color: var(--text-primary);
     outline: none;
   }

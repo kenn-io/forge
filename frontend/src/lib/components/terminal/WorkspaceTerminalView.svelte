@@ -2242,6 +2242,7 @@
     const targetHostKey = workspaceHostKey;
     const targetGen = workspaceGen;
     forceDeleting = true;
+    addDeletingWorkspaceTarget(targetId, targetHostKey);
     actionError = null;
     try {
       const { error, response } = targetHostKey
@@ -2281,6 +2282,7 @@
       if (!isCurrentTerminalRoute(targetId)) return;
       navigate("/workspaces");
     } finally {
+      removeDeletingWorkspaceTarget(targetId, targetHostKey);
       forceDeleting = false;
     }
   }

@@ -95,6 +95,7 @@
   {node}
   {tabs}
   {activeTabKey}
+  {disabled}
   tablistLabel="Workflow group tabs"
   leafLabel="Workflow group"
   dropTargetsLabel="Workflow group drop targets"

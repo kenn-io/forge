@@ -239,4 +239,52 @@ describe("TabbedPanelTree", () => {
 
     expect(onRatioChange).toHaveBeenCalledWith("split-1", 0.7);
   });
+
+  it("disables tab movement and split resizing", async () => {
+    const onMoveTabBefore = vi.fn();
+    const onAppendTabToLeaf = vi.fn();
+    const onSplitTab = vi.fn();
+    const onRatioChange = vi.fn();
+    render(TabbedPanelTreeTestHarness, {
+      props: {
+        node: splitNode(),
+        disabled: true,
+        onMoveTabBefore,
+        onAppendTabToLeaf,
+        onSplitTab,
+        onRatioChange,
+      },
+    });
+    const dataTransfer = fakeDataTransfer();
+    const filesTab = screen.getByRole("tab", { name: /Files/ });
+    const feedHost = screen.getByRole("tab", { name: /Feed/ }).closest(".tabbed-panel-tab");
+    expect(feedHost).toBeTruthy();
+
+    expect(filesTab.hasAttribute("disabled")).toBe(true);
+    expect(filesTab.getAttribute("draggable")).toBe("false");
+
+    await fireEvent.dragStart(filesTab, { dataTransfer });
+    await fireEvent.dragOver(feedHost!, {
+      clientX: 210,
+      dataTransfer,
+    });
+    await fireEvent.drop(feedHost!, {
+      clientX: 210,
+      dataTransfer,
+    });
+
+    expect(screen.queryByTestId("tabbed-panel-tab-drop-placeholder")).toBeNull();
+    expect(onMoveTabBefore).not.toHaveBeenCalled();
+    expect(onAppendTabToLeaf).not.toHaveBeenCalled();
+    expect(onSplitTab).not.toHaveBeenCalled();
+
+    const divider = screen.getByRole("button", {
+      name: "Resize test split",
+    });
+    expect(divider.hasAttribute("disabled")).toBe(true);
+    await fireEvent.pointerDown(divider, { clientX: 400, pointerId: 1 });
+    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 700, bubbles: true }));
+
+    expect(onRatioChange).not.toHaveBeenCalled();
+  });
 });

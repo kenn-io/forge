@@ -20,6 +20,7 @@
         ) => void)
       | undefined;
     onRatioChange?: ((splitID: string, ratio: number) => void) | undefined;
+    disabled?: boolean;
   }
 
   const {
@@ -29,6 +30,7 @@
     onAppendTabToLeaf,
     onSplitTab,
     onRatioChange,
+    disabled = false,
   }: Props = $props();
 
   const tabs: TabbedPanelDescriptor[] = [
@@ -47,6 +49,7 @@
   leafLabel="Test panel group"
   dropTargetsLabel="Test panel drop targets"
   resizeLabel="Resize test split"
+  {disabled}
   {onMoveTabBefore}
   {onAppendTabToLeaf}
   {onSplitTab}

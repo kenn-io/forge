@@ -56,6 +56,14 @@ ref for its context: pull requests open at the PR head ref when known, workspace
 open at their branch, and issues/activity fall back to the repository default
 branch.
 
+Workspace entry remains bare-clone backed. A workspace branch is only used when
+it resolves to an allowlisted branch or commit that exists in the fetched bare
+clone. Local-only or unpushed workspace commits are not read through this view.
+If the workspace branch is not present after the initial fetch, the browser opens
+the repository default branch and shows an inline note that the workspace branch
+is not available in the fetched clone. This feature does not add a worktree-backed
+source browser mode.
+
 ## Architecture
 
 The repo browser owns a new route and store. It should not overload the PR diff
@@ -82,6 +90,13 @@ Backend APIs live under provider-aware repo routes and are backed by
 `internal/gitclone.Manager` plus read-only Git commands against the bare clone.
 They preserve repository identity as `(provider, platform_host, owner, name)`.
 
+The server first resolves that identity through the provider-neutral repository
+model. The lookup contract must return the clone URL, default branch, canonical
+repo path, platform host, and forge URL builder inputs. GitHub-only URL assembly
+does not belong in the repo browser. Nested repo paths, self-hosted platform
+hosts, and provider default hosts must follow the existing platform metadata and
+route-helper rules.
+
 ## Backend Data Flow
 
 Opening the repo browser ensures/fetches the bare clone and returns repo-code
@@ -90,7 +105,7 @@ Branch and tag switches use the fetched clone. Manual refresh fetches again.
 
 The API surface should cover:
 
-- refs: default branch, remote branches, and tags
+- refs: default branch, remote branches, tags, stable ref ids, and resolved SHAs
 - tree: all tracked file paths at a selected ref
 - last-changed batch metadata: file path to last commit date, author, and short
   SHA, loaded lazily after the tree renders
@@ -103,6 +118,40 @@ The API surface should cover:
 All file reads are bounded. Large text files return metadata and a clear
 too-large state. Binary files return metadata and a binary-file state. The first
 version does not stream partial text.
+
+Tree and history operations are also bounded:
+
+- tree responses cap total entries and return a typed truncation state when the
+  selected ref exceeds that cap
+- the frontend tree must remain virtualized or otherwise bounded so large
+  allowed trees do not render every row eagerly
+- last-changed metadata is requested in batches for currently visible or nearby
+  file rows, with a maximum path count per request
+- file history returns a fixed maximum number of commits, newest first
+- commit detail is only available for commits returned by file history or for
+  allowlisted commit SHAs already resolved by the repo-code API
+
+The implementation plan should choose exact numeric limits before code is
+written and pin them in tests.
+
+## Ref And Path Identity
+
+Do not pass raw user-provided revision expressions into Git commands. The client
+selects refs from the refs API, and server routes accept an explicit ref identity:
+
+- `ref_type`: `branch`, `tag`, or `commit`
+- `ref_name`: the provider/display name for branches and tags
+- `ref_sha`: the canonical resolved commit SHA returned by the refs API
+
+Branch and tag names can contain slashes and can share the same display name, so
+`ref_type` and `ref_sha` are part of the identity. A path is always an encoded
+repository-relative path, never a filesystem path. The server rejects paths that
+normalize outside the selected Git tree and rejects ref names or SHAs that were
+not returned by the refs/open metadata flow.
+
+Deep links may carry the display ref name for readability, but the server must
+resolve it through the allowlisted refs model and return the canonical SHA used
+for subsequent tree/blob/history requests.
 
 ## UI Layout
 
@@ -142,13 +191,19 @@ Right rail:
 - selecting a commit shows a metadata-only detail panel below the list, in the
   same list-row-selects-detail style as Kata and roborev surfaces
 
+History is scoped to the selected ref. For branches and tags, file history walks
+backward from the selected resolved SHA. Rename following is deferred unless Git
+can provide it cheaply within the fixed history limit; the first version may show
+history for the selected path name only. Tag browsing is read-only and uses the
+tag's resolved commit SHA as the history root.
+
 ## Routing
 
 The repo browser deep link carries:
 
 - provider and platform host when needed
 - owner/name or repo path, following existing provider-aware route conventions
-- selected branch/tag/ref
+- selected ref type, display ref name, and resolved SHA when known
 - selected file path
 - source/preview mode
 
@@ -173,6 +228,12 @@ link/image resolver from Docs mode:
 - unsupported or unsafe asset paths fail closed with an inline broken-asset
   affordance rather than reaching outside the selected Git tree
 
+The asset endpoint must set MIME type from detected content, enforce the same
+size and binary caps as blob reads, reject path traversal, reject refs outside
+the allowlisted ref model, and define an SVG policy before implementation. Cache
+headers should be safe for immutable `ref_sha` reads and conservative for display
+ref-name reads that can move after refresh.
+
 Other file-type previews are deferred. The renderer boundary should still make
 future image or other preview renderers possible without reshaping the page.
 
@@ -187,18 +248,50 @@ API errors should use stable error codes/details consistent with
 `context/error-handling.md`; the frontend should branch on those codes/details,
 not prose.
 
+The "browser session" freshness rule is scoped to a mounted browser instance and
+its in-memory store. Reloading the page starts a new browser session and may fetch
+again. Multiple tabs do not coordinate freshness; each tab may perform its own
+initial fetch. Manual refresh always asks the backend to fetch before rereading
+refs/tree/blob data.
+
+## Success Criteria
+
+- Opening from a repo summary card fetches once, resolves the default branch, and
+  restores the README when one exists.
+- Opening from a selected pull request or workspace uses a contextual ref only
+  when that ref resolves in the fetched bare clone; otherwise it falls back to
+  default branch with an inline explanation.
+- Deep links restore provider identity, ref type/name/SHA, selected path, and
+  source/preview mode.
+- Branch and tag names with slashes and duplicate display names are
+  disambiguated by `ref_type` and resolved SHA.
+- Large text, binary, over-cap tree, and unavailable-ref cases return typed API
+  states that the UI renders inline.
+- Host-prefixed provider routes work for non-default hosts.
+- GitHub, GitLab, Forgejo, and Gitea use the same provider-neutral repo lookup
+  contract, with provider-specific differences hidden behind platform metadata
+  and capability boundaries.
+- File history is bounded, scoped to the selected resolved SHA, and never runs an
+  unbounded per-file log across the whole tree.
+
 ## Testing
 
 Backend tests should use real temporary Git repositories and exercise observable
 API behavior through `srv.ServeHTTP` or the generated API client where it fits.
+New repo-code routes should include full-stack API plus SQLite coverage so route
+resolution, repository lookup, provider identity, and generated client shapes are
+tested together.
 Cover:
 
 - ensure/fetch behavior
 - branch and tag listing
 - full tree listing, including dotfiles and noisy tracked paths
+- tree truncation and last-changed batch limits
 - blob caps and binary detection
 - Markdown asset path safety
 - file history and commit metadata
+- ref/path validation, including duplicate branch/tag names and slash-containing
+  refs
 - contextual ref fallback inputs
 - provider-aware host routing
 
@@ -226,3 +319,19 @@ from the start.
 The first implementation should keep history detail metadata-only. Do not add an
 inline patch viewer inside the right rail until that interaction is designed
 separately.
+
+Recommended implementation order:
+
+1. Define repo-code API models, ref identity, caps, stable errors, route helpers,
+   and provider-neutral repository lookup.
+2. Implement backend refs/tree/blob/history/asset endpoints with full-stack API
+   tests and generated client updates.
+3. Add the frontend route and store over the generated client shapes.
+4. Adapt shared file tree/source viewer boundaries for full repo tree entries and
+   read-only blobs.
+5. Build the repo browser layout, sidebar filters, README selection, ref switch
+   behavior, and inline states.
+6. Add Markdown preview asset resolution.
+7. Add the right history rail.
+8. Add repo card and command palette entry points.
+9. Run the affected frontend suite and backend tests after final edits.

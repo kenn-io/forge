@@ -1,7 +1,7 @@
 <script lang="ts">
   // WorkspaceFirstRunPanel owns project registration for both the
-  // empty-registry first run and explicit add-project routes. Embedders
-  // only need to react after a project exists.
+  // empty-registry first run and explicit add-project routes. Project-card
+  // actions only need to react after a project exists.
 
   import {
     cloneProject,

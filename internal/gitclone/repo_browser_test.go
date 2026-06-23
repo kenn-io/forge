@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -219,6 +220,27 @@ func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(readmeSHA, changed["README.md"].SHA)
 	assert.Equal(gitSHA(t, work, "HEAD"), changed["churn.txt"].SHA)
+}
+
+func TestRepoBrowserLastChangedHandlesCommitPrefixedPathsAndUTCTimes(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+
+	pathName := "commit:notes.md"
+	require.NoError(os.WriteFile(filepath.Join(work, pathName), []byte("notes\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "--date=2026-06-01T12:34:56-07:00", "-m", "commit-prefixed path")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	ref := repoBrowserMainRef(t, mgr, repo)
+
+	changed, err := mgr.RepoBrowserLastChanged(t.Context(), repo, ref, []string{pathName})
+	require.NoError(err)
+
+	require.Contains(changed, pathName)
+	assert.Equal(gitSHA(t, work, "HEAD"), changed[pathName].SHA)
+	assert.Equal(time.Date(2026, 6, 1, 19, 34, 56, 0, time.UTC), changed[pathName].AuthoredAt)
 }
 
 func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T) {

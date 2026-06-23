@@ -422,8 +422,9 @@ func (m *Manager) RepoBrowserLastChanged(
 	}
 	args := []string{
 		"log",
+		"-z",
 		"--max-count=" + strconv.Itoa(RepoBrowserLastChangedLogLimit),
-		"--format=" + repoBrowserCommitMarker + repoBrowserCommitFormat,
+		"--format=" + repoBrowserCommitFormat,
 		"--name-only",
 		"--end-of-options",
 		sha,
@@ -458,31 +459,27 @@ func (m *Manager) RepoBrowserLastChanged(
 func parseRepoBrowserLastChanged(out []byte, wanted map[string]bool) (map[string]RepoBrowserCommit, error) {
 	changed := make(map[string]RepoBrowserCommit, len(wanted))
 	var current RepoBrowserCommit
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	scanner.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
+	var haveCurrent bool
+	for part := range bytes.SplitSeq(out, []byte{0}) {
+		token := strings.TrimPrefix(string(part), "\n")
+		if token == "" {
 			continue
 		}
-		if payload, ok := strings.CutPrefix(line, repoBrowserCommitMarker); ok {
-			commit, err := parseRepoBrowserCommitLine(payload)
-			if err != nil {
-				return nil, err
-			}
+		if commit, err := parseRepoBrowserCommitLine(token); err == nil {
 			current = commit
+			haveCurrent = true
 			continue
 		}
-		if wanted[line] {
-			if _, exists := changed[line]; !exists {
-				changed[line] = current
+		if wanted[token] && haveCurrent {
+			if _, exists := changed[token]; !exists {
+				changed[token] = current
 			}
 		}
 		if len(changed) == len(wanted) {
 			break
 		}
 	}
-	return changed, scanner.Err()
+	return changed, nil
 }
 
 func (m *Manager) repoBrowserLastChangedForPath(
@@ -630,7 +627,6 @@ func (m *Manager) ResolveRepoBrowserRef(
 }
 
 const (
-	repoBrowserCommitMarker = "commit:"
 	repoBrowserCommitFormat = "%H%x1f%an%x1f%ae%x1f%aI%x1f%s"
 )
 
@@ -665,7 +661,7 @@ func parseRepoBrowserCommitLine(line string) (RepoBrowserCommit, error) {
 		SHA:         parts[0],
 		AuthorName:  truncateCommitText(parts[1], commitIdentityMaxBytes),
 		AuthorEmail: truncateCommitText(parts[2], commitIdentityMaxBytes),
-		AuthoredAt:  authoredAt,
+		AuthoredAt:  authoredAt.UTC(),
 		Subject:     truncateCommitText(parts[4], commitMessageMaxBytes),
 	}, nil
 }

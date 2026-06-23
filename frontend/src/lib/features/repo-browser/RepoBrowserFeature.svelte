@@ -51,6 +51,7 @@
   const store = createRepoBrowserStore({ client });
 
   let repoLoadKey = "";
+  let routeLoadGeneration = 0;
   let pathFilter = $state("");
   let selectedPathRevealKey = $state(0);
   let pendingMarkdownAnchor = $state(initialMarkdownAnchor());
@@ -82,6 +83,7 @@
       return;
     }
     if (route.path && route.path !== store.getSelectedPath()) {
+      routeLoadGeneration += 1;
       void selectPath(route.path, { replace: true });
     }
     const nextMode = routeViewMode(route);
@@ -102,19 +104,24 @@
   }
 
   async function loadRoute(value: RepoBrowserFeatureRoute): Promise<void> {
+    const generation = routeLoadGeneration + 1;
+    routeLoadGeneration = generation;
     store.setViewMode(routeViewMode(value));
     const requestedRef = routeRef(value);
     await store.loadRepo(repoRef(value), {
       ...(requestedRef ? { ref: requestedRef } : {}),
       path: value.path ?? null,
     });
+    if (generation !== routeLoadGeneration) return;
     if (!value.path) {
       const initialPath = chooseRepoBrowserInitialPath(store.getTree());
       if (initialPath && initialPath !== store.getSelectedPath()) {
         await store.selectPath(initialPath);
+        if (generation !== routeLoadGeneration) return;
       }
       if (initialPath) pushRoute({ path: initialPath }, { replace: true });
     }
+    if (generation !== routeLoadGeneration) return;
     selectedPathRevealKey += 1;
   }
 
@@ -266,6 +273,7 @@
           viewMode: "preview",
         }) + (anchor ? `#${encodeURIComponent(anchor)}` : ""),
       buildBlobURL: (_folderID: string, relPath: string) => assetURL(relPath),
+      allowExternalImages: false,
     };
   }
 

@@ -26,6 +26,9 @@ export interface DocsMarkdownOptions {
   // Resolves an image path (relative or absolute within the folder) to a
   // network URL the browser can fetch.
   buildBlobURL: (folderID: string, relPath: string) => string;
+  // Repository previews disable this so contributor-controlled Markdown
+  // cannot make the maintainer's browser fetch arbitrary network URLs.
+  allowExternalImages?: boolean;
 }
 
 export interface FrontmatterSplit {
@@ -437,6 +440,10 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
       }
       const imgAttrs = `loading="lazy" decoding="async"`;
       if (isExternal(href)) {
+        if (options.allowExternalImages === false) {
+          const label = token.text ? escapeHtml(token.text) : escapeHtml(href);
+          return `<a href="${escapeAttr(href)}" target="_blank" rel="noreferrer"${title}>${label}</a>`;
+        }
         return `<img ${trustedImageAttr(imageToken)} src="${escapeAttr(href)}" alt="${alt}" ${imgAttrs}${title}>`;
       }
       if (!isAssetRef(href)) {

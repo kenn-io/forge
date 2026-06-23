@@ -241,6 +241,7 @@
             {sessions}
             {displayLabels}
             {activeSessionKey}
+            {disabled}
             {onSelect}
             {onClose}
             {onRename}
@@ -266,7 +267,7 @@
         <div class="terminal-selector" aria-label="Terminal selector">
           {#each sessions as session (session.key)}
             <button
-              draggable="true"
+              draggable={!disabled}
               ondragstart={(event) => startSessionDrag(event, session)}
               ondragend={clearActiveTerminalDrag}
               class={[
@@ -276,7 +277,10 @@
                   visible: visibleKeys.includes(session.key),
                 },
               ]}
-              onclick={() => onSelect?.(session.key)}
+              onclick={() => {
+                if (disabled) return;
+                onSelect?.(session.key);
+              }}
               disabled={disabled}
               ondblclick={() => {
                 if (disabled) return;

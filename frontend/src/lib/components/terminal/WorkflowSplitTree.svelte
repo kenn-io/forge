@@ -112,7 +112,10 @@
     if (disabled) return;
     onRenameTab?.(workflowTabFrom(tabKey));
   }}
-  {onRatioChange}
+  onRatioChange={(splitID, ratio) => {
+    if (disabled) return;
+    onRatioChange?.(splitID, ratio);
+  }}
   onStartTabDrag={(event, tab) =>
     !disabled && startWorkflowTabDrag(event, {
       workspaceId,

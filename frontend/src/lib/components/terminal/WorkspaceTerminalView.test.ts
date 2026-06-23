@@ -1148,6 +1148,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("disables middle-pane workspace controls while the selected workspace is deleting", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
     const deleteRequest = deferred<Response>();
     const fetchMock = vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
@@ -1184,6 +1185,10 @@ describe("WorkspaceTerminalView", () => {
     });
 
     await screen.findByRole("button", { name: "Launch" });
+    await fireEvent.click(screen.getByRole("button", { name: "Open terminal panel" }));
+    const shellPaneButton = await screen.findByRole("button", { name: "Focus Shell" });
+    expect(shellPaneButton.getAttribute("draggable")).toBe("true");
+
     await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => {
       expect(
@@ -1203,6 +1208,17 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByRole("button", { name: "Reviews" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Terminal options" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Focus Shell" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Focus Shell" }).getAttribute("draggable")).toBe("false");
+    expect(screen.getByRole("button", { name: "Rename Shell" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Move Shell to workflow" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Close Shell" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Shell" }).every((button) => button.hasAttribute("disabled"))).toBe(
+      true,
+    );
+    expect(
+      screen.getAllByRole("button", { name: "Shell" }).every((button) => button.getAttribute("draggable") === "false"),
+    ).toBe(true);
 
     deleteRequest.resolve(new Response(null, { status: 204 }));
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));

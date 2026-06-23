@@ -1319,6 +1319,7 @@
   }
 
   async function toggleTerminalPanel(): Promise<void> {
+    if (actionsBlocked) return;
     if (terminalLayout.open) {
       terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
         ...terminalLayout,
@@ -1338,6 +1339,7 @@
   }
 
   function selectTerminalSession(sessionKey: string): void {
+    if (actionsBlocked) return;
     const group = terminalGroupForSession(terminalLayout.terminalGroups, sessionKey);
     const groups = terminalLayout.terminalGroups.map((candidate) =>
       candidate.id === group?.id
@@ -1361,6 +1363,7 @@
   }
 
   function selectTerminalGroup(groupID: string): void {
+    if (actionsBlocked) return;
     terminalLayout = normalizeLayoutForSessions(
       runtimeSessions,
       layoutWithTerminalGroups(
@@ -1375,6 +1378,7 @@
   }
 
   function moveSessionToTerminal(sessionKey: string): void {
+    if (actionsBlocked) return;
     const session = runtimeSessions.find((s) => s.key === sessionKey);
     if (!session) return;
     const groups = addTerminalGroup(terminalLayout.terminalGroups, sessionKey);
@@ -1400,6 +1404,7 @@
   }
 
   function moveSessionToWorkflow(sessionKey: string): void {
+    if (actionsBlocked) return;
     const terminalGroups = closeSessionInTerminalGroups(
       terminalLayout.terminalGroups,
       sessionKey,
@@ -1456,6 +1461,7 @@
     sourceTabKey: WorkflowTabKey,
     targetTabKey: WorkflowTabKey,
   ): void {
+    if (actionsBlocked) return;
     if (sourceTabKey === targetTabKey) return;
     const prepared = normalizeLayoutForSessions(
       runtimeSessions,
@@ -1476,6 +1482,7 @@
     sourceTabKey: WorkflowTabKey,
     leafID: string,
   ): void {
+    if (actionsBlocked) return;
     const prepared = normalizeLayoutForSessions(
       runtimeSessions,
       layoutWithWorkflowTab(sourceTabKey, terminalLayout),
@@ -1497,6 +1504,7 @@
     direction: SplitDirection,
     placement: "before" | "after",
   ): void {
+    if (actionsBlocked) return;
     const prepared = normalizeLayoutForSessions(
       runtimeSessions,
       layoutWithWorkflowTab(sourceTabKey, terminalLayout),
@@ -1515,6 +1523,7 @@
   }
 
   function closeWorkflowTab(tabKey: WorkflowTabKey): void {
+    if (actionsBlocked) return;
     if (tabKey === "terminal") {
       terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
         ...terminalLayout,
@@ -1534,6 +1543,7 @@
   }
 
   function moveWorkflowTabToTerminal(tabKey: WorkflowTabKey): void {
+    if (actionsBlocked) return;
     const sessionKey = sessionKeyFromWorkflowTab(tabKey);
     if (sessionKey !== null) {
       moveSessionToTerminal(sessionKey);
@@ -1541,6 +1551,7 @@
   }
 
   function renameWorkflowTab(tabKey: WorkflowTabKey): void {
+    if (actionsBlocked) return;
     const sessionKey = sessionKeyFromWorkflowTab(tabKey);
     if (sessionKey === null) return;
     const session = runtimeSessions.find((s) => s.key === sessionKey);
@@ -1912,6 +1923,7 @@
   }
 
   function dockTerminalPanel(dock: TerminalDock): void {
+    if (actionsBlocked) return;
     terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
       ...terminalLayout,
       dock,
@@ -1925,6 +1937,7 @@
   }
 
   function resizeTerminalPanel(height: number): void {
+    if (actionsBlocked) return;
     terminalLayout = {
       ...terminalLayout,
       height: clampTerminalHeight(height),
@@ -1932,6 +1945,7 @@
   }
 
   function updateActiveTerminalTree(tree: PaneNode | null): void {
+    if (actionsBlocked) return;
     const activeGroupID = terminalLayout.activeTerminalGroupID;
     terminalLayout = {
       ...terminalLayout,
@@ -1951,6 +1965,7 @@
   }
 
   function handleWorkflowDragOver(event: DragEvent): void {
+    if (actionsBlocked) return;
     if (readDroppedSession(event) === null) return;
     event.preventDefault();
     if (event.dataTransfer) {
@@ -1959,6 +1974,7 @@
   }
 
   function handleWorkflowDrop(event: DragEvent): void {
+    if (actionsBlocked) return;
     const sessionKey = readDroppedSession(event);
     if (sessionKey === null) return;
     event.preventDefault();

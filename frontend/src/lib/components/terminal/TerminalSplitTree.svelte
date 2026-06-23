@@ -37,6 +37,7 @@
     displayLabels: Record<string, string>;
     activeSessionKey: string | null;
     borderTrim?: BorderTrim | undefined;
+    disabled?: boolean;
     onSelect?: ((sessionKey: string) => void) | undefined;
     onClose?: ((session: RuntimeSession) => void) | undefined;
     onRename?: ((session: RuntimeSession) => void) | undefined;
@@ -61,6 +62,7 @@
     displayLabels,
     activeSessionKey,
     borderTrim = {},
+    disabled = false,
     onSelect,
     onClose,
     onRename,
@@ -86,6 +88,7 @@
     event: DragEvent,
     session: RuntimeSession,
   ): void {
+    if (disabled) return;
     startRuntimeSessionDrag(event, {
       workspaceId: session.workspace_id,
       sessionKey: session.key,
@@ -93,6 +96,7 @@
   }
 
   function readDroppedSession(event: DragEvent): string | null {
+    if (disabled) return null;
     const sessionKey = readRuntimeSessionDrag(event, workspaceId);
     if (
       sessionKey === null ||
@@ -112,6 +116,7 @@
   }
 
   function handleDragOver(event: DragEvent): void {
+    if (disabled) return;
     if (node.type !== "leaf" || readDroppedSession(event) === null) return;
     event.preventDefault();
     event.stopPropagation();
@@ -128,6 +133,7 @@
   }
 
   function handleDragLeave(event: DragEvent): void {
+    if (disabled) return;
     const current = event.currentTarget;
     const next = event.relatedTarget;
     if (
@@ -141,6 +147,7 @@
   }
 
   function dropSplit(event: DragEvent): void {
+    if (disabled) return;
     if (node.type !== "leaf") return;
     const sessionKey = readDroppedSession(event);
     const edge = splitEdgeFromEvent(event);
@@ -154,6 +161,7 @@
   }
 
   function startResize(event: PointerEvent): void {
+    if (disabled) return;
     if (node.type !== "split" || !splitEl) return;
     event.preventDefault();
     const rect = splitEl.getBoundingClientRect();
@@ -246,17 +254,21 @@
           class="leaf-header"
           role="group"
           aria-label={`${labelFor(session)} terminal pane`}
-          draggable="true"
+          draggable={!disabled}
           ondragstart={(event) => startSessionDrag(event, session)}
           ondragend={clearActiveTerminalDrag}
         >
           <button
             class="leaf-title"
-            draggable="true"
+            draggable={!disabled}
             ondragstart={(event) => startSessionDrag(event, session)}
             ondragend={clearActiveTerminalDrag}
-            onclick={() => onSelect?.(session.key)}
+            onclick={() => {
+              if (disabled) return;
+              onSelect?.(session.key);
+            }}
             aria-label={`Focus ${labelFor(session)}`}
+            disabled={disabled}
           >
             <span class="leaf-icon" aria-hidden="true">
               {#if session.kind === "plain_shell"}
@@ -273,7 +285,11 @@
               class="leaf-action"
               title="Rename"
               aria-label={`Rename ${labelFor(session)}`}
-              onclick={() => onRename?.(session)}
+              disabled={disabled}
+              onclick={() => {
+                if (disabled) return;
+                onRename?.(session);
+              }}
             >
               <PencilIcon size="12" strokeWidth="2" aria-hidden="true" />
             </button>
@@ -281,7 +297,11 @@
               class="leaf-action"
               title="Move to workflow"
               aria-label={`Move ${labelFor(session)} to workflow`}
-              onclick={() => onMoveToWorkflow?.(session.key)}
+              disabled={disabled}
+              onclick={() => {
+                if (disabled) return;
+                onMoveToWorkflow?.(session.key);
+              }}
             >
               <MoveIcon size="12" strokeWidth="2" aria-hidden="true" />
             </button>
@@ -289,7 +309,11 @@
               class="leaf-action"
               title="Close"
               aria-label={`Close ${labelFor(session)}`}
-              onclick={() => onClose?.(session)}
+              disabled={disabled}
+              onclick={() => {
+                if (disabled) return;
+                onClose?.(session);
+              }}
             >
               <XIcon size="12" strokeWidth="2.2" aria-hidden="true" />
             </button>
@@ -304,8 +328,14 @@
           ]}
           role="group"
           aria-label={`${labelFor(session)} split drop targets`}
-          onpointerdown={() => onSelect?.(session.key)}
-          onfocusin={() => onSelect?.(session.key)}
+          onpointerdown={() => {
+            if (disabled) return;
+            onSelect?.(session.key);
+          }}
+          onfocusin={() => {
+            if (disabled) return;
+            onSelect?.(session.key);
+          }}
           ondragover={handleDragOver}
           ondragleave={handleDragLeave}
           ondrop={dropSplit}
@@ -349,6 +379,7 @@
         {sessions}
         {displayLabels}
         {activeSessionKey}
+        {disabled}
         borderTrim={firstChildTrim(node.direction)}
         {onSelect}
         {onClose}
@@ -362,6 +393,7 @@
     <button
       class="split-divider"
       aria-label="Resize split"
+      disabled={disabled}
       onpointerdown={startResize}
     ></button>
     <div class="split-child second">
@@ -372,6 +404,7 @@
         {sessions}
         {displayLabels}
         {activeSessionKey}
+        {disabled}
         borderTrim={secondChildTrim(node.direction)}
         {onSelect}
         {onClose}
@@ -496,6 +529,12 @@
     cursor: grab;
   }
 
+  .leaf-title:disabled {
+    color: var(--text-muted);
+    cursor: default;
+    opacity: 0.65;
+  }
+
   .terminal-leaf.active .leaf-title {
     color: var(--text-primary);
   }
@@ -560,6 +599,17 @@
     background: var(--bg-surface-hover);
     color: var(--text-primary);
     outline: none;
+  }
+
+  .leaf-action:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+
+  .leaf-action:disabled:hover,
+  .leaf-action:disabled:focus-visible {
+    background: transparent;
+    color: var(--text-muted);
   }
 
   .missing-session {

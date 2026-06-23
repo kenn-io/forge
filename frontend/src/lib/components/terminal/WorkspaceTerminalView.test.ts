@@ -1198,6 +1198,9 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getAllByRole("button", { name: "Launch" }).every((button) => button.hasAttribute("disabled"))).toBe(
       true,
     );
+    expect(screen.getByRole("button", { name: "Diff" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "PR" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Reviews" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Terminal options" }).hasAttribute("disabled")).toBe(true);
 

@@ -487,6 +487,7 @@
   });
 
   function handleSegmentClick(tab: SidebarTab): void {
+    if (actionsBlocked) return;
     if (sidebarOpen && sidebarTab === tab) {
       sidebarOpen = false;
     } else {
@@ -2584,6 +2585,7 @@
                 <button
                   class="seg-btn"
                   class:active={sidebarOpen && sidebarTab === "diff"}
+                  disabled={actionsBlocked}
                   onclick={() => handleSegmentClick("diff")}
                 >
                   Diff
@@ -2592,6 +2594,7 @@
                   <button
                     class="seg-btn"
                     class:active={sidebarOpen && sidebarTab === "issue"}
+                    disabled={actionsBlocked}
                     onclick={() => handleSegmentClick("issue")}
                   >
                     Issue
@@ -2601,6 +2604,7 @@
                   <button
                     class="seg-btn"
                     class:active={sidebarOpen && sidebarTab === "pr"}
+                    disabled={actionsBlocked}
                     onclick={() => handleSegmentClick("pr")}
                   >
                     PR
@@ -2610,6 +2614,7 @@
                   <button
                     class="seg-btn"
                     class:active={sidebarOpen && sidebarTab === "reviews"}
+                    disabled={actionsBlocked}
                     onclick={() => handleSegmentClick("reviews")}
                   >
                     Reviews
@@ -3377,15 +3382,29 @@
     border-left: 1px solid var(--border-default);
   }
 
-  .seg-btn:hover:not(.active) {
+  .seg-btn:hover:not(.active):not(:disabled) {
     color: var(--text-primary);
     background: var(--bg-surface-hover);
   }
 
-  .seg-btn.active {
+  .seg-btn.active:not(:disabled) {
     background: var(--accent-blue);
     color: #fff;
     font-weight: 600;
+  }
+
+  .seg-btn:disabled {
+    cursor: not-allowed;
+    color: color-mix(in srgb, var(--text-muted) 75%, var(--bg-surface));
+    background: var(--bg-surface);
+    opacity: 1;
+  }
+
+  .seg-control .seg-btn.active:disabled {
+    background: color-mix(in srgb, rgb(128 128 128) 28%, var(--bg-surface)) !important;
+    color: color-mix(in srgb, rgb(115 115 115) 80%, var(--text-primary)) !important;
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, rgb(128 128 128) 35%, var(--border-muted));
   }
 
   .terminal-and-sidebar {

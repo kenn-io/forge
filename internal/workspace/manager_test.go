@@ -841,7 +841,6 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 		{name: "alternate refs command", key: "core.alternateRefsCommand", value: "demo-alternates"},
 		{name: "askpass", key: "core.askPass", value: "demo-askpass"},
 		{name: "git proxy", key: "core.gitProxy", value: "demo-proxy"},
-		{name: "hooks path", key: "core.hooksPath", value: filepath.Join(t.TempDir(), "hooks")},
 		{name: "ssh command", key: "core.sshCommand", value: "demo-ssh"},
 		{name: "credential helper", key: "credential.helper", value: "!demo-helper"},
 		{name: "diff external", key: "diff.external", value: "demo-diff"},
@@ -877,6 +876,24 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 			assert.Contains(err.Error(), "may execute or rewrite git commands")
 		})
 	}
+}
+
+func TestValidateWorktreeBasePathAcceptsConfiguredHooksPath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	hooksPath := t.TempDir()
+	runWorkspaceTestGit(t, localRepo, "config", "core.hooksPath", hooksPath)
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, "github.com", "acme", "widget",
+	)
+
+	require.NoError(err)
+	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
+	require.NoError(err)
+	assert.Equal(canonicalLocalRepo, got)
 }
 
 func TestValidateWorktreeBasePathRejectsExecutableGitHooks(t *testing.T) {

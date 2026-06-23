@@ -1068,7 +1068,6 @@ func localGitConfigKeyMayExecute(key string) bool {
 		key == "core.alternaterefscommand" ||
 		key == "core.askpass" ||
 		key == "core.gitproxy" ||
-		key == "core.hookspath" ||
 		key == "core.sshcommand" ||
 		key == "credential.helper" ||
 		key == "diff.external" ||

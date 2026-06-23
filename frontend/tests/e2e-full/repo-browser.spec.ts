@@ -73,11 +73,17 @@ test.describe("repository source browser", () => {
       await expect(viewer.locator(".repo-browser__markdown h1")).toHaveText("Widget Service");
       await expect(viewer.locator(".repo-browser__source")).toHaveCount(0);
       await expect(page).toHaveURL(/mode=preview/);
+      await expect(viewer.getByRole("link", { name: "Tracker" })).toHaveAttribute(
+        "href",
+        "https://example.com/tracker.png",
+      );
+      await expect(viewer.locator('.repo-browser__markdown img[src="https://example.com/tracker.png"]')).toHaveCount(0);
 
       const guideBlobLoaded = blobResponse(page, "docs/guide.md");
       await viewer.getByRole("link", { name: "API reference" }).click();
       await guideBlobLoaded;
       await expect(viewer.locator(".repo-browser__path")).toContainText("docs/guide.md");
+      await expect(page).toHaveURL(/path=docs%2Fguide\.md&mode=preview#api-reference$/);
       await expectHeadingScrolledIntoView(viewer.locator("#api-reference"));
 
       const directGuideBlobLoaded = blobResponse(page, "docs/guide.md");

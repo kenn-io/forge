@@ -451,6 +451,8 @@ A simple HTTP service for widget management.
 
 See the [API reference](docs/guide.md#api-reference).
 
+![Tracker](https://example.com/tracker.png)
+
 ## Getting Started
 
 Run the server with:
@@ -464,6 +466,8 @@ const readmeHead = `# Widget Service
 A simple HTTP service for widget management.
 
 See the [API reference](docs/guide.md#api-reference).
+
+![Tracker](https://example.com/tracker.png)
 
 ## Getting Started
 

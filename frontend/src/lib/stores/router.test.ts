@@ -250,6 +250,21 @@ describe("router basic routes", () => {
     expect(getPage()).toBe("repo-browser");
   });
 
+  it("parses repo browser routes without letting URL fragments corrupt query params", () => {
+    navigate("/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=docs%2Fguide.md&mode=preview#api-reference");
+
+    expect(getRoute()).toEqual({
+      page: "repo-browser",
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      path: "docs/guide.md",
+      mode: "preview",
+    });
+  });
+
   it("parses /kata", () => {
     navigate("/kata");
     expect(getRoute()).toEqual({ page: "kata" });

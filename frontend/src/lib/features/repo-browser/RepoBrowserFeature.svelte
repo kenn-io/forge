@@ -87,8 +87,9 @@
       return;
     }
     if (route.path && route.path !== store.getSelectedPath()) {
-      routeLoadGeneration += 1;
-      void selectPath(route.path, { replace: true });
+      const generation = routeLoadGeneration + 1;
+      routeLoadGeneration = generation;
+      void syncRoutePath(route.path, generation);
     }
     const nextMode = routeViewMode(route);
     if (nextMode !== store.getViewMode()) {
@@ -185,6 +186,12 @@
     await store.selectPath(path);
     selectedPathRevealKey += 1;
     pushRoute({ path }, options);
+  }
+
+  async function syncRoutePath(path: string, generation: number): Promise<void> {
+    await store.selectPath(path);
+    if (generation !== routeLoadGeneration) return;
+    selectedPathRevealKey += 1;
   }
 
   async function selectRefByKey(key: string): Promise<void> {

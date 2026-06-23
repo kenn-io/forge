@@ -206,9 +206,11 @@ function splitRepoPath(repoPath: string): { owner: string; name: string } | unde
 }
 
 function parseRoute(fullPath: string): Route {
-  const qIdx = fullPath.indexOf("?");
-  const pathname = qIdx >= 0 ? fullPath.slice(0, qIdx) : fullPath;
-  const search = qIdx >= 0 ? fullPath.slice(qIdx + 1) : "";
+  const hashIdx = fullPath.indexOf("#");
+  const routePath = hashIdx >= 0 ? fullPath.slice(0, hashIdx) : fullPath;
+  const qIdx = routePath.indexOf("?");
+  const pathname = qIdx >= 0 ? routePath.slice(0, qIdx) : routePath;
+  const search = qIdx >= 0 ? routePath.slice(qIdx + 1) : "";
   const path = stripBase(pathname).replace(/\/+$/, "") || "/";
   const parts = path.split("/").filter(Boolean);
   if (path === "/m" || path === "/m/activity") {

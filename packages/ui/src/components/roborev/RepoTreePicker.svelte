@@ -14,6 +14,7 @@
   let expandedRepo = $state<string | undefined>(undefined);
   let branches = $state<BranchWithCount[]>([]);
   let loadingBranches = $state(false);
+  let pickerRef = $state<HTMLDivElement>();
 
   const selectedRepo = $derived(
     stores.roborevJobs?.getFilterRepo(),
@@ -95,11 +96,19 @@
   function handleKeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") open = false;
   }
+
+  function handleDocumentMousedown(e: MouseEvent): void {
+    if (!open) return;
+    const target = e.target;
+    if (target instanceof Node && pickerRef?.contains(target)) return;
+    open = false;
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
+<svelte:document onmousedown={handleDocumentMousedown} />
 
-<div class="repo-picker">
+<div class="repo-picker" bind:this={pickerRef}>
   <button
     class="picker-button"
     onclick={toggle}

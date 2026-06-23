@@ -36,6 +36,7 @@
     dock: TerminalDock;
     height: number;
     loading?: boolean;
+    disabled?: boolean;
     onToggle?: (() => void) | undefined;
     onNewTerminal?: (() => void) | undefined;
     onSplit?: ((direction: SplitDirection) => void) | undefined;
@@ -69,6 +70,7 @@
     dock,
     height,
     loading = false,
+    disabled = false,
     onToggle,
     onNewTerminal,
     onSplit,
@@ -98,6 +100,7 @@
     event: DragEvent,
     session: RuntimeSession,
   ): void {
+    if (disabled) return;
     startRuntimeSessionDrag(event, {
       workspaceId: session.workspace_id,
       sessionKey: session.key,
@@ -109,6 +112,7 @@
   }
 
   function handleDragOver(event: DragEvent): void {
+    if (disabled) return;
     if (readDroppedSession(event) === null) return;
     event.preventDefault();
     if (event.dataTransfer) {
@@ -117,6 +121,7 @@
   }
 
   function handleDrop(event: DragEvent): void {
+    if (disabled) return;
     const sessionKey = readDroppedSession(event);
     if (sessionKey === null) return;
     event.preventDefault();
@@ -125,6 +130,7 @@
   }
 
   function startPanelResize(event: PointerEvent): void {
+    if (disabled) return;
     if (dock !== "bottom") return;
     event.preventDefault();
     const startY = event.clientY;
@@ -155,6 +161,7 @@
     <button
       class="panel-resizer"
       aria-label="Resize terminal panel"
+      disabled={disabled}
       onpointerdown={startPanelResize}
     ></button>
   {/if}
@@ -163,6 +170,7 @@
     <button
       class="panel-title"
       aria-label={open ? "Close terminal panel" : "Open terminal panel"}
+      disabled={disabled}
       onclick={() => onToggle?.()}
     >
       <TerminalIcon size="14" strokeWidth="2" aria-hidden="true" />
@@ -174,7 +182,7 @@
         class="panel-action"
         title="New terminal"
         aria-label="New terminal"
-        disabled={loading}
+        disabled={disabled || loading}
         onclick={() => onNewTerminal?.()}
       >
         <PlusIcon size="13" strokeWidth="2.2" aria-hidden="true" />
@@ -183,7 +191,7 @@
         class="panel-action"
         title="Split right"
         aria-label="Split terminal right"
-        disabled={!canSplit || loading}
+        disabled={disabled || !canSplit || loading}
         onclick={() => onSplit?.("horizontal")}
       >
         <Columns2Icon size="13" strokeWidth="2" aria-hidden="true" />
@@ -192,7 +200,7 @@
         class="panel-action"
         title="Split down"
         aria-label="Split terminal down"
-        disabled={!canSplit || loading}
+        disabled={disabled || !canSplit || loading}
         onclick={() => onSplit?.("vertical")}
       >
         <Rows2Icon size="13" strokeWidth="2" aria-hidden="true" />
@@ -201,6 +209,7 @@
         class="panel-action"
         title={dock === "bottom" ? "Move to workflow" : "Move to bottom"}
         aria-label={dock === "bottom" ? "Move terminal panel to workflow" : "Move terminal panel to bottom"}
+        disabled={disabled}
         onclick={() => onDock?.(dock === "bottom" ? "top" : "bottom")}
       >
         {#if dock === "bottom"}
@@ -213,6 +222,7 @@
         class="panel-action"
         title="Close panel"
         aria-label="Close terminal panel"
+        disabled={disabled}
         onclick={() => onToggle?.()}
       >
         <XIcon size="13" strokeWidth="2.2" aria-hidden="true" />
@@ -244,7 +254,7 @@
             <span>{loading ? "Starting terminal..." : "No terminals"}</span>
             <button
               class="empty-action"
-              disabled={loading}
+              disabled={disabled || loading}
               onclick={() => onNewTerminal?.()}
             >
               New terminal
@@ -267,7 +277,11 @@
                 },
               ]}
               onclick={() => onSelect?.(session.key)}
-              ondblclick={() => onRename?.(session)}
+              disabled={disabled}
+              ondblclick={() => {
+                if (disabled) return;
+                onRename?.(session);
+              }}
             >
               <span class={["selector-dot", session.status]}></span>
               <span class="selector-label">{labelFor(session)}</span>

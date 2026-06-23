@@ -15,6 +15,7 @@
     showRichPreview?: boolean;
     showScopePicker?: boolean;
     showFileJump?: boolean;
+    disabled?: boolean;
   }
 
   let {
@@ -24,6 +25,7 @@
     showRichPreview = true,
     showScopePicker = true,
     showFileJump = false,
+    disabled = false,
   }: Props = $props();
 
   const { diff } = getStores();
@@ -45,7 +47,12 @@
   let menuOpen = $state(false);
   let compactMenuRef = $state<HTMLDivElement>();
 
+  $effect(() => {
+    if (disabled) menuOpen = false;
+  });
+
   function setFileCategoryFilter(value: DiffFileCategoryFilter): void {
+    if (disabled) return;
     diff.setFileCategoryFilter(value);
   }
 
@@ -76,6 +83,7 @@
             class:compact-menu-item--active={activeCategory === option.value}
             aria-pressed={activeCategory === option.value}
             type="button"
+            disabled={disabled}
             onclick={() => setFileCategoryFilter(option.value)}
           >
             <span>{option.label}</span>
@@ -89,6 +97,7 @@
     <button
       class="compact-menu-action"
       type="button"
+      disabled={disabled}
       onclick={() => diff.setAllVisibleFilesCollapsed(!allVisibleFilesCollapsed)}
     >
       {collapseAllLabel}
@@ -103,6 +112,7 @@
           class:compact-menu-item--active={diff.getTabWidth() === opt}
           aria-pressed={diff.getTabWidth() === opt}
           type="button"
+          disabled={disabled}
           onclick={() => diff.setTabWidth(opt)}
         >
           {opt}
@@ -118,6 +128,7 @@
         role="switch"
         aria-label="File list"
         aria-checked={!fileListHidden}
+        disabled={disabled}
         onclick={onToggleFileList}
       >
         <span>File list</span>
@@ -136,6 +147,7 @@
       role="switch"
       aria-label="Hide whitespace changes"
       aria-checked={diff.getHideWhitespace()}
+      disabled={disabled}
       onclick={() => diff.setHideWhitespace(!diff.getHideWhitespace())}
     >
       <span>Hide whitespace</span>
@@ -153,6 +165,7 @@
       role="switch"
       aria-label="Side-by-side diffs"
       aria-checked={diff.getViewMode() === "split"}
+      disabled={disabled}
       onclick={() => diff.setViewMode(diff.getViewMode() === "split" ? "unified" : "split")}
     >
       <span>Side-by-side</span>
@@ -169,6 +182,7 @@
       type="button"
       role="switch"
       aria-checked={diff.getWordWrap()}
+      disabled={disabled}
       onclick={() => diff.setWordWrap(!diff.getWordWrap())}
     >
       <span>Word wrap</span>
@@ -186,6 +200,7 @@
         type="button"
         role="switch"
         aria-checked={diff.getRichPreview()}
+        disabled={disabled}
         onclick={() => diff.setRichPreview(!diff.getRichPreview())}
       >
         <span>Rich preview</span>
@@ -222,6 +237,7 @@
             class="category-btn"
             class:category-btn--active={activeCategory === option.value}
             aria-pressed={activeCategory === option.value}
+            disabled={disabled}
             onclick={() => setFileCategoryFilter(option.value)}
           >
             <span>{option.label}</span> <span class="category-count">({categoryCounts[option.value]})</span>
@@ -231,11 +247,11 @@
     </div>
   {/if}
   {#if showScopePicker}
-    <DiffScopePicker />
+    <DiffScopePicker {disabled} />
   {/if}
   <div class="toolbar-actions">
     {#if shouldShowFileJump}
-      <FileJumpPicker />
+      <FileJumpPicker {disabled} />
     {/if}
     <div class="compact-menu-wrap" bind:this={compactMenuRef}>
       <button
@@ -245,7 +261,9 @@
         aria-label="More diff filters"
         aria-expanded={menuOpen}
         title="More diff filters"
+        disabled={disabled}
         onclick={() => {
+          if (disabled) return;
           menuOpen = !menuOpen;
         }}
       >

@@ -28,6 +28,7 @@
     tabs: WorkflowTabDescriptor[];
     activeTabKey: WorkflowTabKey;
     renderTab: Snippet<[WorkflowTabKey, boolean]>;
+    disabled?: boolean;
     onSelectTab?: ((tabKey: WorkflowTabKey) => void) | undefined;
     onMoveTabBefore?:
       | ((sourceTabKey: WorkflowTabKey, targetTabKey: WorkflowTabKey) => void)
@@ -53,6 +54,7 @@
     tabs,
     activeTabKey,
     renderTab: renderWorkflowTab,
+    disabled = false,
     onSelectTab,
     onMoveTabBefore,
     onAppendTabToLeaf,
@@ -97,20 +99,26 @@
   leafLabel="Workflow group"
   dropTargetsLabel="Workflow group drop targets"
   resizeLabel="Resize workflow split"
-  onSelectTab={(tabKey) => onSelectTab?.(workflowTabFrom(tabKey))}
+  onSelectTab={(tabKey) => {
+    if (disabled) return;
+    onSelectTab?.(workflowTabFrom(tabKey));
+  }}
   onMoveTabBefore={(source, target) =>
-    onMoveTabBefore?.(workflowTabFrom(source), workflowTabFrom(target))}
-  onAppendTabToLeaf={(source, leafID) => onAppendTabToLeaf?.(workflowTabFrom(source), leafID)}
+    !disabled && onMoveTabBefore?.(workflowTabFrom(source), workflowTabFrom(target))}
+  onAppendTabToLeaf={(source, leafID) => !disabled && onAppendTabToLeaf?.(workflowTabFrom(source), leafID)}
   onSplitTab={(source, leafID, direction, placement) =>
-    onSplitTab?.(workflowTabFrom(source), leafID, splitDirectionFrom(direction), placement)}
-  onTabDoubleClick={(tabKey) => onRenameTab?.(workflowTabFrom(tabKey))}
+    !disabled && onSplitTab?.(workflowTabFrom(source), leafID, splitDirectionFrom(direction), placement)}
+  onTabDoubleClick={(tabKey) => {
+    if (disabled) return;
+    onRenameTab?.(workflowTabFrom(tabKey));
+  }}
   {onRatioChange}
   onStartTabDrag={(event, tab) =>
-    startWorkflowTabDrag(event, {
+    !disabled && startWorkflowTabDrag(event, {
       workspaceId,
       tabKey: workflowTabFrom(tab.key),
     })}
-  onReadDraggedTab={(event) => readWorkflowTabDrag(event, workspaceId)}
+  onReadDraggedTab={(event) => disabled ? null : readWorkflowTabDrag(event, workspaceId)}
   onClearDrag={clearActiveTerminalDrag}
 >
   {#snippet renderTab(tabKey, active)}
@@ -134,7 +142,11 @@
         class="tabbed-panel-tab-tool"
         title="Rename"
         aria-label={`Rename ${tab.label}`}
-        onclick={() => onRenameTab?.(tabKey)}
+        disabled={disabled}
+        onclick={() => {
+          if (disabled) return;
+          onRenameTab?.(tabKey);
+        }}
       >
         <PencilIcon size="11" strokeWidth="2.2" aria-hidden="true" />
       </button>
@@ -144,7 +156,11 @@
         class="tabbed-panel-tab-tool"
         title="Move to terminal"
         aria-label={`Move ${tab.label} to terminal`}
-        onclick={() => onMoveTabToTerminal?.(tabKey)}
+        disabled={disabled}
+        onclick={() => {
+          if (disabled) return;
+          onMoveTabToTerminal?.(tabKey);
+        }}
       >
         <MoveIcon size="11" strokeWidth="2.2" aria-hidden="true" />
       </button>
@@ -154,7 +170,11 @@
         class="tabbed-panel-tab-tool"
         title="Close"
         aria-label={`Close ${tab.label}`}
-        onclick={() => onCloseTab?.(tabKey)}
+        disabled={disabled}
+        onclick={() => {
+          if (disabled) return;
+          onCloseTab?.(tabKey);
+        }}
       >
         <XIcon size="11" strokeWidth="2.3" aria-hidden="true" />
       </button>

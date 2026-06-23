@@ -35,6 +35,27 @@ function renderSidebar(refreshToken = 0) {
   });
 }
 
+function renderDisabledSidebar() {
+  return render(WorkspaceRightSidebar, {
+    props: {
+      activeTab: "diff",
+      workspaceID: "ws-1",
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widgets",
+      repoPath: "acme/widgets",
+      ownerItemType: "pull_request",
+      ownerItemNumber: 7,
+      associatedPRNumber: 7,
+      branch: "feature/widgets",
+      roborevBaseUrl: "http://localhost/api/roborev",
+      disabled: true,
+    },
+    context: new Map([[STORES_KEY, makeStores()]]),
+  });
+}
+
 describe("WorkspaceRightSidebar", () => {
   afterEach(() => {
     cleanup();
@@ -115,5 +136,38 @@ describe("WorkspaceRightSidebar", () => {
     expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/commits"))).toBe(true);
     expect(screen.getByRole("button", { name: "Compare with merge target" }).getAttribute("aria-pressed")).toBe("true");
     expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/diff?base=head"))).toBe(false);
+  });
+
+  it("disables diff controls while the workspace is deleting", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
+      if (url.includes("/api/roborev/api/repos")) {
+        return Response.json({ repos: [] });
+      }
+      if (url.includes("/api/v1/workspaces/ws-1/files")) {
+        return Response.json({
+          stale: false,
+          whitespace_only_count: 0,
+          files: [],
+        });
+      }
+      if (url.includes("/api/v1/workspaces/ws-1/diff")) {
+        return Response.json({
+          stale: false,
+          whitespace_only_count: 0,
+          files: [],
+        });
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    renderDisabledSidebar();
+
+    expect(screen.getByRole("button", { name: "Compare with HEAD" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Compare with pushed branch" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Compare with merge target" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: /Select commit range/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "More diff filters" }).hasAttribute("disabled")).toBe(true);
   });
 });

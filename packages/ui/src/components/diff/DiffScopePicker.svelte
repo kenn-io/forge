@@ -7,9 +7,10 @@
 
   interface Props {
     compact?: boolean;
+    disabled?: boolean;
   }
 
-  const { compact = false }: Props = $props();
+  const { compact = false, disabled = false }: Props = $props();
   const { diff: diffStore } = getStores();
 
   let open = $state(false);
@@ -21,7 +22,12 @@
   const scope = $derived(diffStore.getScope());
   const scopeLabel = $derived(formatDiffScopeLabel(scope));
 
+  $effect(() => {
+    if (disabled) open = false;
+  });
+
   function toggle(): void {
+    if (disabled) return;
     open = !open;
     if (open) {
       void diffStore.loadCommits();
@@ -43,6 +49,7 @@
   }
 
   function handleCommitClick(sha: string, shiftKey: boolean): void {
+    if (disabled) return;
     if (shiftKey && scope.kind === "commit") {
       diffStore.selectRange(scope.sha, sha);
     } else {
@@ -75,6 +82,7 @@
       aria-label={`Select commit range: ${scopeLabel}`}
       aria-expanded={open}
       title="Commits"
+      disabled={disabled}
       onclick={toggle}
     >
       {#if compact}
@@ -95,6 +103,7 @@
           <button
             class="diff-scope-picker__reset"
             type="button"
+            disabled={disabled}
             onclick={diffStore.resetToHead}
           >
             Clear

@@ -9,6 +9,7 @@
     presets: WorkflowPreset[];
     selectedPresetId?: string | null;
     applying?: boolean;
+    disabled?: boolean;
     onSaveNew?: (() => void) | undefined;
     onUpdate?: ((presetId: string) => void) | undefined;
     onApply?: ((presetId: string) => void) | undefined;
@@ -19,6 +20,7 @@
     presets,
     selectedPresetId = null,
     applying = false,
+    disabled = false,
     onSaveNew,
     onUpdate,
     onApply,
@@ -31,6 +33,10 @@
   const selectedPreset = $derived(
     presets.find((preset) => preset.id === selectedPresetId) ?? null,
   );
+
+  $effect(() => {
+    if (disabled) open = false;
+  });
 
   $effect(() => {
     if (!open) return;
@@ -64,8 +70,9 @@
     aria-label="Workflow presets"
     aria-haspopup="true"
     aria-expanded={open}
-    disabled={applying}
+    disabled={disabled || applying}
     onclick={() => {
+      if (disabled) return;
       open = !open;
     }}
   >
@@ -79,7 +86,9 @@
       <button
         class="preset-command"
         type="button"
+        disabled={disabled}
         onclick={() => {
+          if (disabled) return;
           open = false;
           onSaveNew?.();
         }}
@@ -90,8 +99,9 @@
       <button
         class="preset-command"
         type="button"
-        disabled={!selectedPreset}
+        disabled={disabled || !selectedPreset}
         onclick={() => {
+          if (disabled) return;
           if (!selectedPreset) return;
           open = false;
           onUpdate?.(selectedPreset.id);
@@ -109,8 +119,9 @@
               <button
                 class="preset-apply"
                 type="button"
-                disabled={applying}
+                disabled={disabled || applying}
                 onclick={() => {
+                  if (disabled) return;
                   open = false;
                   onApply?.(preset.id);
                 }}
@@ -122,7 +133,11 @@
                 class="preset-delete"
                 type="button"
                 aria-label={`Delete ${preset.name}`}
-                onclick={() => onDelete?.(preset.id)}
+                disabled={disabled}
+                onclick={() => {
+                  if (disabled) return;
+                  onDelete?.(preset.id);
+                }}
               >
                 <TrashIcon size="12" strokeWidth="2.2" aria-hidden="true" />
               </button>

@@ -170,6 +170,7 @@
   let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);
+  let deletingWorkspace = $state(false);
   let sidebarRefreshToken = $state(0);
   let forcePromptMessage = $state<string | null>(null);
   let forcePromptForId = $state<string | null>(null);
@@ -443,7 +444,7 @@
       (workspace.id !== workspaceId ||
         workspaceHostKey !== selectedWorkspaceHostKey(workspace)),
   );
-  const actionsBlocked = $derived(transitioning);
+  const actionsBlocked = $derived(transitioning || deletingWorkspace || forceDeleting);
   const modalOpen = $derived(
     forcePromptMessage !== null ||
       stopPromptSession !== null ||
@@ -2136,44 +2137,51 @@
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    const { error, response } = targetHostKey
-      ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
-          params: { path: { host_key: targetHostKey, id: targetId } },
-        })
-      : await client.DELETE("/workspaces/{id}", {
-          params: { path: { id: targetId } },
-        });
-    // Different workspace now: the user has moved on and nothing
-    // about this response applies.
-    if (!isCurrentWorkspace(targetId, targetHostKey)) return;
-    if (response.status === 409) {
-      // A 409 that lands after the user briefly left and returned
-      // to the same workspace would feel like an unrequested
-      // prompt; suppress it on a generation mismatch and let the
-      // user retry if they want.
-      if (targetGen !== workspaceGen) return;
-      previouslyFocusedEl = triggerEl;
-      forcePromptForId = targetId;
-      forcePromptMessage = apiErrorMessage(
-        error,
-        "Workspace has uncommitted changes.",
-      );
-      return;
+    deletingWorkspace = true;
+    try {
+      const { error, response } = targetHostKey
+        ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
+            params: { path: { host_key: targetHostKey, id: targetId } },
+          })
+        : await client.DELETE("/workspaces/{id}", {
+            params: { path: { id: targetId } },
+          });
+      // Different workspace now: the user has moved on and nothing
+      // about this response applies.
+      if (!isCurrentWorkspace(targetId, targetHostKey)) return;
+      if (response.status === 409) {
+        // A 409 that lands after the user briefly left and returned
+        // to the same workspace would feel like an unrequested
+        // prompt; suppress it on a generation mismatch and let the
+        // user retry if they want.
+        if (targetGen !== workspaceGen) return;
+        previouslyFocusedEl = triggerEl;
+        forcePromptForId = targetId;
+        forcePromptMessage = apiErrorMessage(
+          error,
+          "Workspace has uncommitted changes.",
+        );
+        return;
+      }
+      if (!response.ok && response.status !== 204) {
+        if (targetGen !== workspaceGen) return;
+        actionError = apiErrorMessage(
+          error,
+          `Delete failed (${response.status})`,
+        );
+        return;
+      }
+      // Successful delete: the server destroyed this workspace and
+      // the user is still looking at it. Navigate away even after
+      // an A→B→A round trip — otherwise they'd be staring at a
+      // workspace that no longer exists.
+      if (!isCurrentTerminalRoute(targetId)) return;
+      navigate("/workspaces");
+    } finally {
+      if (isCurrentWorkspace(targetId, targetHostKey)) {
+        deletingWorkspace = false;
+      }
     }
-    if (!response.ok && response.status !== 204) {
-      if (targetGen !== workspaceGen) return;
-      actionError = apiErrorMessage(
-        error,
-        `Delete failed (${response.status})`,
-      );
-      return;
-    }
-    // Successful delete: the server destroyed this workspace and
-    // the user is still looking at it. Navigate away even after
-    // an A→B→A round trip — otherwise they'd be staring at a
-    // workspace that no longer exists.
-    if (!isCurrentTerminalRoute(targetId)) return;
-    navigate("/workspaces");
   }
 
   function isCurrentTerminalRoute(targetId: string): boolean {
@@ -2306,6 +2314,7 @@
     // leave these flags stuck true on the next workspace.
     retryingSetup = false;
     refreshingWorkspace = false;
+    deletingWorkspace = false;
 
     // Errors/transient flags from the prior workspace should not
     // bleed across — clear them but don't touch workspace/runtime.
@@ -2655,11 +2664,13 @@
                     onUpdate={updateWorkflowPreset}
                     onApply={(presetId) => void applyWorkflowPreset(presetId)}
                     onDelete={deleteWorkflowPreset}
+                    disabled={actionsBlocked}
                   />
-                  <TerminalOptionsMenu />
+                  <TerminalOptionsMenu disabled={actionsBlocked} />
                   <LaunchMenu
                     launchTargets={launchTargets}
                     {launchingKey}
+                    disabled={actionsBlocked}
                     onLaunch={(key) => void handleLaunch(key)}
                   />
                 </div>
@@ -2691,6 +2702,7 @@
                       node={terminalLayout.workflowTree}
                       tabs={workflowTabDescriptors}
                       {activeTabKey}
+                      disabled={actionsBlocked}
                       onSelectTab={(tabKey) => {
                         if (tabKey === "terminal") {
                           terminalLayout = { ...terminalLayout, open: true };
@@ -2725,6 +2737,7 @@
                               sessions={runtimeSessions}
                               displayLabels={sessionDisplayLabels}
                               {launchingKey}
+                              readonly={actionsBlocked}
                               onLaunch={(key) => void handleLaunch(key)}
                               onOpenSession={openSession}
                             />
@@ -2741,6 +2754,7 @@
                             dock={terminalLayout.dock}
                             height={terminalLayout.height}
                             loading={terminalLaunching}
+                            disabled={actionsBlocked}
                             onToggle={() => void toggleTerminalPanel()}
                             onNewTerminal={() => void launchTerminalSession()}
                             onSplit={(direction) => void splitTerminal(direction)}
@@ -2801,6 +2815,7 @@
                   dock={terminalLayout.dock}
                   height={terminalLayout.height}
                   loading={terminalLaunching}
+                  disabled={actionsBlocked}
                   onToggle={() => void toggleTerminalPanel()}
                   onNewTerminal={() => void launchTerminalSession()}
                   onSplit={(direction) => void splitTerminal(direction)}
@@ -2852,6 +2867,7 @@
                 branch={workspace.git_head_ref}
                 roborevBaseUrl={basePath + "/api/roborev"}
                 refreshToken={sidebarRefreshToken}
+                disabled={actionsBlocked}
               />
             </div>
           {/if}

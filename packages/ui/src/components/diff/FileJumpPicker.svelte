@@ -6,6 +6,11 @@
   import { getStores } from "../../context.js";
   import { floatingPopoverStyle } from "../shared/floatingPosition.js";
 
+  interface Props {
+    disabled?: boolean;
+  }
+
+  const { disabled = false }: Props = $props();
   const { diff } = getStores();
 
   let open = $state(false);
@@ -29,6 +34,10 @@
     if (highlightIndex > filteredFiles.length - 1) {
       highlightIndex = Math.max(filteredFiles.length - 1, 0);
     }
+  });
+
+  $effect(() => {
+    if (disabled) close();
   });
 
   $effect(() => {
@@ -72,6 +81,7 @@
   }
 
   async function toggle(): Promise<void> {
+    if (disabled) return;
     if (open) {
       close();
       return;
@@ -113,6 +123,7 @@
   }
 
   function selectFile(file: DiffFile): void {
+    if (disabled) return;
     diff.requestScrollToFile(file.path);
     close();
   }
@@ -145,7 +156,7 @@
     aria-label="Jump to file"
     aria-expanded={open}
     title="Jump to file"
-    disabled={files.length === 0}
+    disabled={disabled || files.length === 0}
     onclick={toggle}
   >
     <FileSearchIcon size={16} strokeWidth={1.9} aria-hidden="true" />
@@ -176,6 +187,7 @@
             type="button"
             role="option"
             aria-selected={file.path === activeFile}
+            disabled={disabled}
             onmouseenter={() => {
               highlightIndex = index;
             }}

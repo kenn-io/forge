@@ -4,6 +4,11 @@
   import type { TerminalSettings as TerminalSettingsType } from "@middleman/ui/api/types";
   import TerminalSettings from "../settings/TerminalSettings.svelte";
 
+  interface Props {
+    disabled?: boolean;
+  }
+
+  const { disabled = false }: Props = $props();
   const { settings: settingsStore } = getStores();
 
   let open = $state(false);
@@ -13,7 +18,12 @@
   );
   let childSaving = $state(false);
 
+  $effect(() => {
+    if (disabled) open = false;
+  });
+
   function toggleOpen(): void {
+    if (disabled) return;
     if (childSaving) return;
     if (!open) {
       terminal = settingsStore.getTerminalSettings();
@@ -55,6 +65,7 @@
     aria-haspopup="true"
     aria-expanded={open}
     title="Terminal options"
+    disabled={disabled}
     onclick={toggleOpen}
   >
     <SettingsIcon size="13" strokeWidth="2" aria-hidden="true" />

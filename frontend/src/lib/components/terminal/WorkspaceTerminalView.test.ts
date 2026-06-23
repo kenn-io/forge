@@ -193,6 +193,13 @@ const workspaceResponse = {
   platform_host: "github.com",
   repo_owner: "acme",
   repo_name: "widget",
+  repo: {
+    provider: "github",
+    platform_host: "github.com",
+    owner: "acme",
+    name: "widget",
+    repo_path: "acme/widget",
+  },
   item_type: "pull_request",
   item_number: 7,
   git_head_ref: "feature/session-exit",
@@ -216,7 +223,15 @@ function runtimeWithSession(createdAt: string) {
 
 function runtimeWithStaleSession() {
   return {
-    launch_targets: [],
+    launch_targets: [
+      {
+        key: "helper",
+        label: "Helper",
+        kind: "agent",
+        source: "config",
+        available: true,
+      },
+    ],
     sessions: [runningSession],
   };
 }
@@ -1129,5 +1144,64 @@ describe("WorkspaceTerminalView", () => {
     await fireEvent.click(collapseButton);
 
     expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables middle-pane workspace controls while the selected workspace is deleting", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    const deleteRequest = deferred<Response>();
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      const { pathname } = new URL(url, "http://localhost");
+      if (method === "DELETE" && pathname.endsWith("/workspaces/ws-1")) {
+        return deleteRequest.promise;
+      }
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(Response.json(workspaceResponse));
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+      }
+      if (pathname.endsWith("/workspaces/ws-1/files")) {
+        return Promise.resolve(Response.json({ stale: false, whitespace_only_count: 0, files: [] }));
+      }
+      if (pathname.endsWith("/workspaces/ws-1/diff")) {
+        return Promise.resolve(Response.json({ stale: false, whitespace_only_count: 0, files: [] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    window.history.pushState({}, "", "/terminal/ws-1");
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("button", { name: "Launch" });
+    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) => {
+          if (!(input instanceof Request)) return false;
+          const { pathname } = new URL(input.url);
+          return input.method === "DELETE" && pathname === "/api/v1/workspaces/ws-1";
+        }),
+      ).toBe(true);
+    });
+
+    expect(screen.getAllByRole("button", { name: "Launch" }).every((button) => button.hasAttribute("disabled"))).toBe(
+      true,
+    );
+    expect(screen.getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Terminal options" }).hasAttribute("disabled")).toBe(true);
+
+    deleteRequest.resolve(new Response(null, { status: 204 }));
+    await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));
   });
 });

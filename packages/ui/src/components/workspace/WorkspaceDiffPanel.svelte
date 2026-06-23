@@ -16,6 +16,7 @@
     itemNumber: number;
     active?: boolean;
     refreshToken?: number;
+    disabled?: boolean;
   }
 
   const {
@@ -29,6 +30,7 @@
     itemNumber,
     active = false,
     refreshToken = 0,
+    disabled = false,
   }: Props = $props();
   const { diff } = getStores();
 
@@ -47,6 +49,7 @@
   });
 
   function selectBase(nextBase: WorkspaceDiffBase): void {
+    if (disabled) return;
     base = nextBase;
   }
 </script>
@@ -61,6 +64,7 @@
         aria-pressed={base === "head"}
         aria-label="Compare with HEAD"
         title="HEAD"
+        disabled={disabled}
         onclick={() => selectBase("head")}
       >
         HEAD
@@ -71,6 +75,7 @@
         aria-pressed={base === "pushed"}
         aria-label="Compare with pushed branch"
         title="Pushed branch"
+        disabled={disabled}
         onclick={() => selectBase("pushed")}
       >
         Branch
@@ -81,18 +86,20 @@
         aria-pressed={base === "merge-target"}
         aria-label="Compare with merge target"
         title="Merge target"
+        disabled={disabled}
         onclick={() => selectBase("merge-target")}
       >
         Target
       </button>
     </div>
-    <DiffScopePicker compact />
+    <DiffScopePicker compact {disabled} />
   </div>
   <DiffToolbar
     compact
     showRichPreview={false}
     showFileJump
     showScopePicker={false}
+    {disabled}
   />
   <div class="workspace-diff-layout">
     <div class="workspace-diff-main">

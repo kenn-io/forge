@@ -52,6 +52,7 @@
     branch: string;
     roborevBaseUrl: string;
     refreshToken?: number;
+    disabled?: boolean;
   }
 
   let {
@@ -69,6 +70,7 @@
     branch,
     roborevBaseUrl,
     refreshToken = 0,
+    disabled = false,
   }: Props = $props();
 
   const parentStores = getStores();
@@ -294,6 +296,7 @@
         itemNumber={ownerItemNumber}
         active={activeTab === "diff"}
         {refreshToken}
+        {disabled}
       />
     {/key}
   {:else if activeTab === "pr"}

@@ -10,12 +10,14 @@
   interface LaunchMenuProps {
     launchTargets: LaunchTarget[];
     launchingKey?: string | null;
+    disabled?: boolean;
     onLaunch?: (targetKey: string) => void;
   }
 
   const {
     launchTargets,
     launchingKey = null,
+    disabled = false,
     onLaunch,
   }: LaunchMenuProps = $props();
 
@@ -24,7 +26,12 @@
 
   const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
 
+  $effect(() => {
+    if (disabled) open = false;
+  });
+
   function launch(targetKey: string): void {
+    if (disabled) return;
     open = false;
     onLaunch?.(targetKey);
   }
@@ -68,7 +75,9 @@
     aria-label="Launch"
     aria-haspopup="true"
     aria-expanded={open}
+    disabled={disabled}
     onclick={() => {
+      if (disabled) return;
       open = !open;
     }}
   >
@@ -94,7 +103,7 @@
         {@const isAgent = target.kind === "agent"}
         <button
           class="launch-option"
-          disabled={!target.available || launchingKey === target.key}
+          disabled={disabled || !target.available || launchingKey === target.key}
           title={target.disabled_reason ?? targetLabel(target)}
           onclick={() => launch(target.key)}
         >

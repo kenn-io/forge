@@ -2,8 +2,10 @@ package gitclone
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,7 +39,7 @@ func TestRepoBrowserListRefsDisambiguatesBranchAndTag(t *testing.T) {
 	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "release", SHA: mainSHA})
 }
 
-func TestRepoBrowserFetchPrunesDeletedTags(t *testing.T) {
+func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	mgr, repo, work := setupRepoBrowserTestRepo(t)
@@ -56,7 +58,27 @@ func TestRepoBrowserFetchPrunesDeletedTags(t *testing.T) {
 
 	refs, _, err = mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
 	require.NoError(err)
-	assert.NotContains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
+	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
+}
+
+func TestRepoBrowserListTreeReaderStopsAtEntryLimit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var input strings.Builder
+	for i := range RepoBrowserTreeEntryLimit + 1 {
+		_, err := fmt.Fprintf(&input, "100644 blob %040d %d\tfile-%05d.txt\x00", i, i, i)
+		require.NoError(err)
+	}
+	canceled := false
+
+	entries, truncated, err := readRepoBrowserTreeEntries(strings.NewReader(input.String()), func() {
+		canceled = true
+	})
+
+	require.NoError(err)
+	assert.True(truncated)
+	assert.True(canceled)
+	assert.Len(entries, RepoBrowserTreeEntryLimit)
 }
 
 func TestRepoBrowserListTreeIncludesTrackedDotfiles(t *testing.T) {

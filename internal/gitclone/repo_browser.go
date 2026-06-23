@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"path"
@@ -15,12 +16,15 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 const (
 	RepoBrowserTreeEntryLimit      = 20000
 	RepoBrowserBlobSizeLimit       = 1 << 20
 	RepoBrowserLastChangedBatchMax = 250
+	RepoBrowserLastChangedLogLimit = 500
 	RepoBrowserHistoryLimit        = 50
 )
 
@@ -155,47 +159,96 @@ func (m *Manager) ListRepoBrowserTree(
 	if err != nil {
 		return nil, false, err
 	}
-	out, err := m.git(ctx, dir,
+	return m.listRepoBrowserTreeEntries(ctx, dir, sha)
+}
+
+func (m *Manager) listRepoBrowserTreeEntries(
+	ctx context.Context,
+	dir string,
+	sha string,
+) ([]RepoBrowserTreeEntry, bool, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd := newGitRunner().Command(ctx, dir,
 		"ls-tree", "-r", "-z", "-l", "--full-tree", "--end-of-options", sha,
 	)
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, false, fmt.Errorf("list repo browser tree: %w", err)
+		return nil, false, fmt.Errorf("list repo browser tree pipe: %w", err)
 	}
-	entries := parseRepoBrowserTree(out)
-	truncated := len(entries) > RepoBrowserTreeEntryLimit
-	if truncated {
-		entries = entries[:RepoBrowserTreeEntryLimit]
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	release, err := procutil.TryAcquire(ctx, "git subprocess capacity")
+	if err != nil {
+		return nil, false, err
 	}
+	defer release()
+
+	if err := cmd.Start(); err != nil {
+		return nil, false, fmt.Errorf("list repo browser tree start: %w", err)
+	}
+
+	entries, truncated, readErr := readRepoBrowserTreeEntries(stdout, cancel)
+	waitErr := cmd.Wait()
+	if readErr != nil {
+		return nil, false, fmt.Errorf("list repo browser tree read: %w", readErr)
+	}
+	if waitErr != nil && !truncated {
+		return nil, false, fmt.Errorf("list repo browser tree: %w", wrapGitError(waitErr, stderr.Bytes()))
+	}
+	SortRepoBrowserTree(entries)
 	return entries, truncated, nil
 }
 
-func parseRepoBrowserTree(out []byte) []RepoBrowserTreeEntry {
-	records := bytes.Split(out, []byte{0})
-	entries := make([]RepoBrowserTreeEntry, 0, len(records))
-	for _, record := range records {
-		if len(record) == 0 {
-			continue
+func readRepoBrowserTreeEntries(
+	r io.Reader,
+	cancel context.CancelFunc,
+) ([]RepoBrowserTreeEntry, bool, error) {
+	reader := bufio.NewReader(r)
+	entries := make([]RepoBrowserTreeEntry, 0, RepoBrowserTreeEntryLimit)
+	for {
+		record, err := reader.ReadBytes(0)
+		if len(record) > 0 {
+			record = bytes.TrimSuffix(record, []byte{0})
+			if entry, ok := parseRepoBrowserTreeRecord(record); ok {
+				if len(entries) == RepoBrowserTreeEntryLimit {
+					cancel()
+					return entries, true, nil
+				}
+				entries = append(entries, entry)
+			}
 		}
-		header, pathBytes, ok := bytes.Cut(record, []byte{'\t'})
-		if !ok {
-			continue
+		if errors.Is(err, io.EOF) {
+			return entries, false, nil
 		}
-		fields := strings.Fields(string(header))
-		if len(fields) < 4 {
-			continue
+		if err != nil {
+			return nil, false, err
 		}
-		size := int64(0)
-		if fields[3] != "-" {
-			size, _ = strconv.ParseInt(fields[3], 10, 64)
-		}
-		entries = append(entries, RepoBrowserTreeEntry{
-			Path: string(pathBytes),
-			Type: fields[1],
-			Size: size,
-		})
 	}
-	SortRepoBrowserTree(entries)
-	return entries
+}
+
+func parseRepoBrowserTreeRecord(record []byte) (RepoBrowserTreeEntry, bool) {
+	if len(record) == 0 {
+		return RepoBrowserTreeEntry{}, false
+	}
+	header, pathBytes, ok := bytes.Cut(record, []byte{'\t'})
+	if !ok {
+		return RepoBrowserTreeEntry{}, false
+	}
+	fields := strings.Fields(string(header))
+	if len(fields) < 4 {
+		return RepoBrowserTreeEntry{}, false
+	}
+	size := int64(0)
+	if fields[3] != "-" {
+		size, _ = strconv.ParseInt(fields[3], 10, 64)
+	}
+	return RepoBrowserTreeEntry{
+		Path: string(pathBytes),
+		Type: fields[1],
+		Size: size,
+	}, true
 }
 
 func SortRepoBrowserTree(entries []RepoBrowserTreeEntry) {
@@ -354,6 +407,7 @@ func (m *Manager) RepoBrowserLastChanged(
 	}
 	args := []string{
 		"log",
+		"--max-count=" + strconv.Itoa(RepoBrowserLastChangedLogLimit),
 		"--format=" + repoBrowserCommitMarker + repoBrowserCommitFormat,
 		"--name-only",
 		"--end-of-options",

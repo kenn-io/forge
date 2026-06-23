@@ -665,6 +665,22 @@ func documentOperation(
 	}
 }
 
+func repoBrowserAssetResponses() map[string]*huma.Response {
+	return map[string]*huma.Response{
+		"200": {
+			Description: "Image response",
+			Content: map[string]*huma.MediaType{
+				"image/avif": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/bmp":  {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/gif":  {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/jpeg": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/png":  {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/webp": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+			},
+		},
+	}
+}
+
 func (s *Server) registerAPI(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-version",
@@ -1244,10 +1260,24 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 		documentOperation("get-repo-browser-blob", "Get repository browser blob", "Repositories"))
 	huma.Get(api, hostRepoPath+"/browser/blob", s.getRepoBrowserBlobOnHost,
 		documentOperation("get-repo-browser-blob-on-host", "Get repository browser blob", "Repositories"))
-	huma.Get(api, repoPath+"/browser/asset", s.getRepoBrowserAsset,
-		documentOperation("get-repo-browser-asset", "Get repository browser asset", "Repositories"))
-	huma.Get(api, hostRepoPath+"/browser/asset", s.getRepoBrowserAssetOnHost,
-		documentOperation("get-repo-browser-asset-on-host", "Get repository browser asset", "Repositories"))
+	huma.Register(api, huma.Operation{
+		OperationID:   "get-repo-browser-asset",
+		Method:        http.MethodGet,
+		Path:          repoPath + "/browser/asset",
+		DefaultStatus: http.StatusOK,
+		Summary:       "Get repository browser asset",
+		Tags:          []string{"Repositories"},
+		Responses:     repoBrowserAssetResponses(),
+	}, s.getRepoBrowserAsset)
+	huma.Register(api, huma.Operation{
+		OperationID:   "get-repo-browser-asset-on-host",
+		Method:        http.MethodGet,
+		Path:          hostRepoPath + "/browser/asset",
+		DefaultStatus: http.StatusOK,
+		Summary:       "Get repository browser asset",
+		Tags:          []string{"Repositories"},
+		Responses:     repoBrowserAssetResponses(),
+	}, s.getRepoBrowserAssetOnHost)
 	huma.Get(api, repoPath+"/browser/last-changed", s.getRepoBrowserLastChanged,
 		documentOperation("get-repo-browser-last-changed", "Get repository browser last changed commits", "Repositories"))
 	huma.Get(api, hostRepoPath+"/browser/last-changed", s.getRepoBrowserLastChangedOnHost,

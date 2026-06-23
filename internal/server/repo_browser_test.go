@@ -187,6 +187,30 @@ func TestRepoBrowserAssetRejectsActiveContentTypes(t *testing.T) {
 	}
 }
 
+func TestRepoBrowserAssetOpenAPIResponseIsBinary(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	doc := NewOpenAPI()
+	for _, path := range []string{
+		"/repo/{provider}/{owner}/{name}/browser/asset",
+		"/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/asset",
+	} {
+		item := doc.Paths[path]
+		require.NotNil(item, path)
+		require.NotNil(item.Get, path)
+		resp := item.Get.Responses["200"]
+		require.NotNil(resp, path)
+
+		assert.Contains(resp.Content, "image/png", path)
+		assert.Contains(resp.Content, "image/jpeg", path)
+		assert.NotContains(resp.Content, "application/json", path)
+		schema := resp.Content["image/png"].Schema
+		require.NotNil(schema, path)
+		assert.Equal("string", schema.Type, path)
+		assert.Equal("binary", schema.Format, path)
+	}
+}
+
 func TestRepoBrowserCommitRejectsSHAOutsideSelectedFileHistory(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

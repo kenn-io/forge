@@ -29545,7 +29545,6 @@ func (r GetRepoOnHostResponse) StatusCode() int {
 type GetRepoBrowserAssetOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *string
 	ApplicationproblemJSONDefault *ProblemError
 }
 
@@ -31852,7 +31851,6 @@ func (r GetRepoResponse) StatusCode() int {
 type GetRepoBrowserAssetResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *string
 	ApplicationproblemJSONDefault *ProblemError
 }
 
@@ -39970,13 +39968,6 @@ func ParseGetRepoBrowserAssetOnHostResponse(rsp *http.Response) (*GetRepoBrowser
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest string
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -43191,13 +43182,6 @@ func ParseGetRepoBrowserAssetResponse(rsp *http.Response) (*GetRepoBrowserAssetR
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest string
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

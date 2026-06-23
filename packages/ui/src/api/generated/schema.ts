@@ -10828,7 +10828,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description Image response */
             200: {
                 headers: {
                     "Cache-Control"?: string;
@@ -10838,7 +10838,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string;
+                    "image/avif": string;
+                    "image/bmp": string;
+                    "image/gif": string;
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
                 };
             };
             /** @description Error */
@@ -14388,7 +14393,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description Image response */
             200: {
                 headers: {
                     "Cache-Control"?: string;
@@ -14398,7 +14403,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string;
+                    "image/avif": string;
+                    "image/bmp": string;
+                    "image/gif": string;
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
                 };
             };
             /** @description Error */

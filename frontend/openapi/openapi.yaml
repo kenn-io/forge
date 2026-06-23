@@ -11208,11 +11208,37 @@ paths:
       responses:
         "200":
           content:
-            application/json:
+            image/avif:
               schema:
-                contentEncoding: base64
+                contentMediaType: application/octet-stream
+                format: binary
                 type: string
-          description: OK
+            image/bmp:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/gif:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/jpeg:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/png:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/webp:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: Image response
           headers:
             Cache-Control:
               schema:
@@ -15417,11 +15443,37 @@ paths:
       responses:
         "200":
           content:
-            application/json:
+            image/avif:
               schema:
-                contentEncoding: base64
+                contentMediaType: application/octet-stream
+                format: binary
                 type: string
-          description: OK
+            image/bmp:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/gif:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/jpeg:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/png:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/webp:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: Image response
           headers:
             Cache-Control:
               schema:

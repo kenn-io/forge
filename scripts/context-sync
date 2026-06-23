@@ -5,9 +5,11 @@ usage() {
   cat >&2 <<'USAGE'
 usage: scripts/context-sync --check
 
-Run the repo-local context-sync preflight used by stop hooks. The automated
-check validates that routed context docs referenced by CLAUDE.md still exist
-and that AGENTS.md resolves to CLAUDE.md.
+Run the repo-local context-sync preflight used by Stop hooks. This is not a
+full context-sync review and does not propose or apply documentation updates.
+
+The automated preflight validates that routed context docs referenced by
+CLAUDE.md still exist and that AGENTS.md resolves to CLAUDE.md.
 USAGE
 }
 
@@ -52,9 +54,9 @@ if [ -f "$root/CLAUDE.md" ]; then
 fi
 
 if [ "$status" -eq 0 ]; then
-  echo "context-sync: check passed"
+  echo "context-sync: preflight passed"
 else
-  echo "context-sync: check failed" >&2
+  echo "context-sync: preflight failed" >&2
 fi
 
 exit "$status"

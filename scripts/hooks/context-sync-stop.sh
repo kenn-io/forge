@@ -5,8 +5,8 @@ usage() {
   cat >&2 <<'USAGE'
 usage: context-sync-stop.sh stop|mark|status
 
-stop    Enforce that context-sync has checked the current worktree state.
-mark    Record the current worktree state after scripts/context-sync --check or sync.
+stop    Enforce that the context-sync Stop-hook preflight has checked the current worktree state.
+mark    Record the current worktree state after the preflight or a full context-sync run.
 status  Print whether the current worktree state is marked.
 USAGE
 }
@@ -73,13 +73,15 @@ require_marked() {
   fi
 
   cat >&2 <<'MESSAGE'
-middleman context-sync is required before this turn can complete.
+middleman context-sync Stop-hook preflight is required before this turn can complete.
 
 Run:
   scripts/context-sync --check
   scripts/hooks/context-sync-stop.sh mark
 
 If context-sync reports drift, address it or report the findings before marking.
+For user-requested context documentation updates, run the full context-sync skill
+workflow; this preflight only checks hook-critical routing.
 MESSAGE
   exit 2
 }

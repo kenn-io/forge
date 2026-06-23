@@ -12,29 +12,48 @@ and draft updates for review. Adapted for this repo's Go + Svelte stack and its
 single-surface context layout: root `CLAUDE.md` routes to flat `context/*.md` topic docs.
 
 **Arguments:**
-- No args: sync every area in the area map below.
+- No args: sync every area in the area map below and produce reviewed context-doc
+  updates or concrete improvement suggestions.
 - `$1 = area`: sync one area (see Area Map, e.g. `platform`, `github-sync`, `db`,
-  `server`, `frontend`, `errors`, `testing`, `mobile`, `kata`, `docs`, `messages`).
-- `--check`: report staleness only, propose nothing.
+  `server`, `frontend`, `errors`, `testing`, `mobile`, `kata`, `docs`, `messages`) and
+  produce reviewed updates or suggestions for that area.
+- `--check`: Stop-hook preflight only. Report structural staleness and obvious drift,
+  but do not propose or apply doc changes.
 - `--audit-claims`: run the four-tag claim verification (see `claim-verifier.md`) over
   every anchored claim in the scanned docs.
 
+## Operating Mode
+
+Default to a full sync whenever the user asks to sync, update, improve, review, or fix
+context documentation. A full sync must end with one of these outcomes:
+
+- proposed doc diffs ready for maintainer approval;
+- applied, approved doc updates;
+- a confidence-tagged list of concrete improvements/gaps when the code alone cannot
+  justify a diff;
+- a clear "no context changes suggested" result with the evidence checked.
+
+Do not satisfy a user-initiated context-sync request by only running
+`scripts/context-sync --check`. That script is a cheap Stop-hook preflight, not the
+context-sync workflow.
+
 ## Stop Hook Completion
 
-This repo installs Claude Code and Codex `Stop` hooks that require context-sync to check
-the current worktree state before a turn completes. When a Stop hook asks for context
-sync, run `scripts/context-sync --check` first. If it reports drift, address the drift
-or report the findings before marking the state as checked.
+This repo installs Claude Code and Codex `Stop` hooks that require a cheap context-sync
+preflight before a turn completes. When a Stop hook asks for context sync, run
+`scripts/context-sync --check` first. If it reports drift, address the drift or report
+the findings before marking the state as checked.
 
-After any successful `scripts/context-sync --check` or full context-sync run, mark the
-current worktree state:
+After any successful Stop-hook preflight or full context-sync run, mark the current
+worktree state:
 
 ```bash
 scripts/hooks/context-sync-stop.sh mark
 ```
 
 Do not mark first. The marker is only a loop guard proving the current git worktree
-fingerprint has already been checked.
+fingerprint has already been checked. The marker does not mean the docs were audited,
+updated, or improved.
 
 ## Step 1: Load the Guide
 

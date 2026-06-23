@@ -2952,6 +2952,13 @@
             deletingWorkspaceTargets.some((target) =>
               isDeletingWorkspaceTarget(target, id, hostKey),
             )}
+          onWorkspaceDeletePendingChange={(id, hostKey, pending) => {
+            if (pending) {
+              addDeletingWorkspaceTarget(id, hostKey);
+            } else {
+              removeDeletingWorkspaceTarget(id, hostKey);
+            }
+          }}
         />
       {/snippet}
       {@render terminalMainContent()}

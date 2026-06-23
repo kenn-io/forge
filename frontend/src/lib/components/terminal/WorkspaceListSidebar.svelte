@@ -93,6 +93,11 @@
       workspaceId: string,
       hostKey?: string,
     ) => boolean;
+    onWorkspaceDeletePendingChange?: (
+      workspaceId: string,
+      hostKey: string | undefined,
+      pending: boolean,
+    ) => void;
     isSidebarToggleEnabled?: boolean;
     onCollapseSidebar?: (() => void) | undefined;
   }
@@ -103,6 +108,7 @@
     onOpenItemSidebar,
     onWorkspaceListStateChange,
     isWorkspaceActionDisabled,
+    onWorkspaceDeletePendingChange,
     isSidebarToggleEnabled = false,
     onCollapseSidebar,
   }: Props = $props();
@@ -798,6 +804,7 @@
   async function confirmDeleteWorkspaceFromList(): Promise<void> {
     const ws = deleteConfirmWorkspace;
     if (!ws || workspaceActionsDisabled(ws) || !startWorkspaceAction(ws, "delete")) return;
+    onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
     try {
       const { error, response } = ws.fleet_host_key
         ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
@@ -823,6 +830,7 @@
     } catch (err) {
       showFlash(err instanceof Error ? err.message : "Delete failed.");
     } finally {
+      onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, false);
       finishWorkspaceAction(ws);
       deleteConfirmWorkspace = null;
     }

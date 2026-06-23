@@ -591,14 +591,16 @@ test.describe("workspace sidebar full-stack", () => {
       await page.goto(`${isolatedServer.info.base_url}/terminal/${deletingWorkspace.id}`);
       await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(2);
 
+      await page.locator(".workspace-list-sidebar .ws-row.selected").click({ button: "right" });
       page.once("dialog", (dialog) => {
         void dialog.accept();
       });
-      await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+      await page.getByRole("menuitem", { name: /Delete workspace/ }).click();
       await deleteStarted;
 
       const deleteButton = page.locator(".header-bar").getByRole("button", { name: "Delete" });
       await expect(deleteButton).toBeDisabled();
+      await page.keyboard.press("Escape");
 
       await page.locator(".workspace-list-sidebar .ws-row:not(.selected)").click();
       await expect(page).not.toHaveURL(new RegExp(`/terminal/${deletingWorkspace.id}$`));
@@ -612,7 +614,7 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(page.locator(".header-bar").getByRole("button", { name: "Delete" })).toBeDisabled();
 
       await page.locator(".workspace-list-sidebar .ws-row.selected").click({ button: "right" });
-      await expect(page.getByRole("menuitem", { name: /Delete workspace/ })).toBeDisabled();
+      await expect(page.getByRole("menuitem", { name: /Delete workspace|Deleting/ })).toBeDisabled();
       await page.keyboard.press("Escape");
 
       await page.locator(".workspace-list-sidebar .ws-row:not(.selected)").click();
@@ -620,7 +622,7 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(deleteButton).toBeDisabled();
 
       await page.locator(".workspace-list-sidebar .ws-row.selected").click({ button: "right" });
-      await expect(page.getByRole("menuitem", { name: /Delete workspace/ })).toBeDisabled();
+      await expect(page.getByRole("menuitem", { name: /Delete workspace|Deleting/ })).toBeDisabled();
       await page.keyboard.press("Escape");
 
       releaseOtherDelete();

@@ -6347,6 +6347,7 @@ export interface components {
             default_ref: components["schemas"]["RepoBrowserRef"];
             refs: components["schemas"]["RepoBrowserRef"][] | null;
             repo: components["schemas"]["RepoRefResponse"];
+            truncated: boolean;
         };
         RepoBrowserTreeEntry: {
             path: string;

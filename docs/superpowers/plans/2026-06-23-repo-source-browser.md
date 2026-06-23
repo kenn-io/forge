@@ -261,7 +261,7 @@ type RepoBrowserCommitDetail struct {
 Add methods on `*Manager`:
 
 ```go
-ListRepoBrowserRefs(ctx context.Context, repo RepoBrowserRepoRef, defaultBranch string) ([]RepoBrowserRef, RepoBrowserRef, error)
+ListRepoBrowserRefs(ctx context.Context, repo RepoBrowserRepoRef, defaultBranch string) ([]RepoBrowserRef, RepoBrowserRef, bool, error)
 ListRepoBrowserTree(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef) (RepoBrowserTree, error)
 ProbeRepoBrowserREADME(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef) (RepoBrowserREADMEProbe, error)
 ReadRepoBrowserBlob(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef, path string) (RepoBrowserBlob, error)

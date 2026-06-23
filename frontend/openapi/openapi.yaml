@@ -4980,10 +4980,13 @@ components:
             - "null"
         repo:
           $ref: "#/components/schemas/RepoRefResponse"
+        truncated:
+          type: boolean
       required:
         - repo
         - refs
         - default_ref
+        - truncated
       type: object
     RepoBrowserTreeEntry:
       additionalProperties: false

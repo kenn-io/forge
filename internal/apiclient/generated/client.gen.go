@@ -2371,6 +2371,7 @@ type RepoBrowserRefsResponse struct {
 	DefaultRef RepoBrowserRef    `json:"default_ref"`
 	Refs       *[]RepoBrowserRef `json:"refs"`
 	Repo       RepoRefResponse   `json:"repo"`
+	Truncated  bool              `json:"truncated"`
 }
 
 // RepoBrowserTreeEntry defines model for RepoBrowserTreeEntry.

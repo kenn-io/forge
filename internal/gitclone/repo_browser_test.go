@@ -29,14 +29,31 @@ func TestRepoBrowserListRefsDisambiguatesBranchAndTag(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "origin", "refs/tags/release")
 	require.NoError(mgr.EnsureClone(t.Context(), repo.Host, repo.Owner, repo.Name, repo.RemoteURL))
 
-	refs, defaultRef, err := mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
+	refs, defaultRef, truncated, err := mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
 	require.NoError(err)
 
 	assert.Equal(RepoBrowserRefBranch, defaultRef.Type)
 	assert.Equal("main", defaultRef.Name)
 	assert.Equal(mainSHA, defaultRef.SHA)
+	assert.False(truncated)
 	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "release", SHA: branchSHA})
 	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "release", SHA: mainSHA})
+}
+
+func TestRepoBrowserListRefsCapsLargeRefSets(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	refs := make([]RepoBrowserRef, RepoBrowserRefLimit+1)
+	for i := range refs {
+		refs[i] = RepoBrowserRef{Type: RepoBrowserRefBranch, Name: fmt.Sprintf("branch-%04d", i), SHA: fmt.Sprintf("%040d", i)}
+	}
+
+	capped, truncated := capRepoBrowserRefs(refs)
+
+	assert.True(truncated)
+	require.Len(capped, RepoBrowserRefLimit)
+	assert.Equal("branch-0000", capped[0].Name)
+	assert.Equal(fmt.Sprintf("branch-%04d", RepoBrowserRefLimit-1), capped[len(capped)-1].Name)
 }
 
 func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T) {
@@ -48,16 +65,18 @@ func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T) {
 	commitTestRun(t, work, "git", "tag", "v1.0.0", mainSHA)
 	commitTestRun(t, work, "git", "push", "origin", "refs/tags/v1.0.0")
 	require.NoError(mgr.EnsureClone(t.Context(), repo.Host, repo.Owner, repo.Name, repo.RemoteURL))
-	refs, _, err := mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
+	refs, _, truncated, err := mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
 	require.NoError(err)
+	assert.False(truncated)
 	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
 
 	commitTestRun(t, work, "git", "tag", "-d", "v1.0.0")
 	commitTestRun(t, work, "git", "push", "origin", ":refs/tags/v1.0.0")
 	require.NoError(mgr.EnsureClone(t.Context(), repo.Host, repo.Owner, repo.Name, repo.RemoteURL))
 
-	refs, _, err = mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
+	refs, _, truncated, err = mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
 	require.NoError(err)
+	assert.False(truncated)
 	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
 }
 
@@ -192,6 +211,37 @@ func TestRepoBrowserCommitDetailRequiresSelectedFileHistory(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(otherSHA, commit.SHA)
 	assert.Equal("other file", commit.Subject)
+}
+
+func TestRepoBrowserHistoryTreatsPathspecMagicAsLiteral(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+
+	magicPath := ":(glob)*.md"
+	require.NoError(os.WriteFile(filepath.Join(work, magicPath), []byte("literal\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "literal pathspec file")
+	literalSHA := gitSHA(t, work, "HEAD")
+
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Widgets\n\nUpdated\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "readme update")
+	readmeSHA := gitSHA(t, work, "HEAD")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	require.NoError(mgr.EnsureClone(t.Context(), repo.Host, repo.Owner, repo.Name, repo.RemoteURL))
+	ref := repoBrowserMainRef(t, mgr, repo)
+
+	history, err := mgr.RepoBrowserFileHistory(t.Context(), repo, ref, magicPath)
+	require.NoError(err)
+	require.NotEmpty(history)
+	assert.Equal(literalSHA, history[0].SHA)
+	for _, commit := range history {
+		assert.NotEqual(readmeSHA, commit.SHA)
+	}
+
+	_, err = mgr.RepoBrowserCommitDetail(t.Context(), repo, ref, magicPath, readmeSHA)
+	require.ErrorIs(err, ErrCommitOutOfScope)
 }
 
 func TestRepoBrowserMarkdownAssetRejectsUnsafeAndOversizedPaths(t *testing.T) {

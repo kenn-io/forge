@@ -215,6 +215,7 @@ type repoBrowserRefsResponse struct {
 	Repo       repoRefResponse           `json:"repo"`
 	Refs       []gitclone.RepoBrowserRef `json:"refs"`
 	DefaultRef gitclone.RepoBrowserRef   `json:"default_ref"`
+	Truncated  bool                      `json:"truncated"`
 }
 
 type repoBrowserTreeResponse struct {

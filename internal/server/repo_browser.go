@@ -153,7 +153,7 @@ func (s *Server) listRepoBrowserRefsFor(
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	refs, defaultRef, err := s.clones.ListRepoBrowserRefs(ctx, repoRef, repo.DefaultBranch)
+	refs, defaultRef, truncated, err := s.clones.ListRepoBrowserRefs(ctx, repoRef, repo.DefaultBranch)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
@@ -161,6 +161,7 @@ func (s *Server) listRepoBrowserRefsFor(
 		Repo:       s.repoRefFromRepo(*repo),
 		Refs:       refs,
 		DefaultRef: defaultRef,
+		Truncated:  truncated,
 	}}, nil
 }
 

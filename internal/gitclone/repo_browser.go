@@ -21,6 +21,7 @@ import (
 )
 
 const (
+	RepoBrowserRefLimit            = 1000
 	RepoBrowserTreeEntryLimit      = 20000
 	RepoBrowserBlobSizeLimit       = 1 << 20
 	RepoBrowserLastChangedBatchMax = 250
@@ -90,21 +91,23 @@ func (m *Manager) ListRepoBrowserRefs(
 	ctx context.Context,
 	repo RepoBrowserRepoRef,
 	defaultBranch string,
-) ([]RepoBrowserRef, RepoBrowserRef, error) {
+) ([]RepoBrowserRef, RepoBrowserRef, bool, error) {
 	dir, err := m.repoBrowserClonePath(repo)
 	if err != nil {
-		return nil, RepoBrowserRef{}, err
+		return nil, RepoBrowserRef{}, false, err
 	}
 	out, err := m.git(ctx, dir,
 		"for-each-ref",
+		"--count="+strconv.Itoa(RepoBrowserRefLimit+1),
 		"--format=%(refname)%00%(objectname)%00%(*objectname)",
 		"refs/remotes/origin",
 		"refs/tags",
 	)
 	if err != nil {
-		return nil, RepoBrowserRef{}, fmt.Errorf("list repo browser refs: %w", err)
+		return nil, RepoBrowserRef{}, false, fmt.Errorf("list repo browser refs: %w", err)
 	}
 	refs := parseRepoBrowserRefs(out)
+	refs, truncated := capRepoBrowserRefs(refs)
 	sort.Slice(refs, func(i, j int) bool {
 		if refs[i].Type != refs[j].Type {
 			return refs[i].Type < refs[j].Type
@@ -113,9 +116,9 @@ func (m *Manager) ListRepoBrowserRefs(
 	})
 	branch, sha, err := m.ResolveDefaultBranch(ctx, repo.Host, repo.Owner, repo.Name, defaultBranch)
 	if err != nil {
-		return refs, RepoBrowserRef{}, err
+		return refs, RepoBrowserRef{}, truncated, err
 	}
-	return refs, RepoBrowserRef{Type: RepoBrowserRefBranch, Name: branch, SHA: sha}, nil
+	return refs, RepoBrowserRef{Type: RepoBrowserRefBranch, Name: branch, SHA: sha}, truncated, nil
 }
 
 func parseRepoBrowserRefs(out []byte) []RepoBrowserRef {
@@ -148,6 +151,13 @@ func parseRepoBrowserRefs(out []byte) []RepoBrowserRef {
 		}
 	}
 	return refs
+}
+
+func capRepoBrowserRefs(refs []RepoBrowserRef) ([]RepoBrowserRef, bool) {
+	if len(refs) <= RepoBrowserRefLimit {
+		return refs, false
+	}
+	return refs[:RepoBrowserRefLimit], true
 }
 
 func (m *Manager) ListRepoBrowserTree(
@@ -345,7 +355,7 @@ func (m *Manager) lookupRepoBrowserTreeEntry(
 	dir, sha, pathName string,
 ) (repoBrowserTreeEntryLookup, error) {
 	out, err := m.git(ctx, dir,
-		"ls-tree", "-z", "-l", "--full-tree", "--end-of-options", sha, "--", pathName,
+		"ls-tree", "-z", "-l", "--full-tree", "--end-of-options", sha, "--", literalRepoBrowserPathspec(pathName),
 	)
 	if err != nil {
 		return repoBrowserTreeEntryLookup{}, fmt.Errorf("lookup repo browser path %s: %w", pathName, err)
@@ -414,7 +424,9 @@ func (m *Manager) RepoBrowserLastChanged(
 		sha,
 		"--",
 	}
-	args = append(args, cleanPaths...)
+	for _, cleanPath := range cleanPaths {
+		args = append(args, literalRepoBrowserPathspec(cleanPath))
+	}
 	out, err := m.git(ctx, dir, args...)
 	if err != nil {
 		return nil, fmt.Errorf("repo browser last changed: %w", err)
@@ -473,7 +485,7 @@ func (m *Manager) RepoBrowserFileHistory(
 		"--end-of-options",
 		sha,
 		"--",
-		cleanPath,
+		literalRepoBrowserPathspec(cleanPath),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("repo browser file history %s: %w", cleanPath, err)
@@ -536,7 +548,7 @@ func (m *Manager) repoBrowserCommitTouchesPath(
 		"--end-of-options",
 		rootSHA,
 		"--",
-		pathName,
+		literalRepoBrowserPathspec(pathName),
 	)
 	if err != nil {
 		return false, fmt.Errorf("repo browser commit scope %s: %w", pathName, err)
@@ -656,6 +668,10 @@ func cleanRepoBrowserPath(pathName string) (string, error) {
 		return "", ErrUnsafePath
 	}
 	return cleaned, nil
+}
+
+func literalRepoBrowserPathspec(pathName string) string {
+	return ":(literal)" + pathName
 }
 
 func mediaTypeForRepoBrowserPath(pathName string) string {

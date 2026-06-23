@@ -8,6 +8,7 @@ import {
   buildProviderIssueRoute,
   buildProviderPullRequestFilesRoute,
   buildProviderPullRequestRoute,
+  buildRepoBrowserRoute,
   buildPullRequestFilesRoute,
   buildPullRequestRoute,
   buildRoutedItemRoute,
@@ -116,5 +117,38 @@ describe("route item builders", () => {
     expect(buildRoutedItemRoute(issue, { focus: true })).toBe(
       "/focus/host/ghe.example.com/issues/github/acme/widgets/7",
     );
+  });
+
+  it("builds repo browser deep links with repo identity and selected source state", () => {
+    expect(
+      buildRepoBrowserRoute({
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        owner: "Group/SubGroup",
+        name: "Project",
+        repoPath: "Group/SubGroup/Project",
+        refType: "branch",
+        refName: "feature/search",
+        refSHA: "abcd",
+        path: "docs/README.md",
+        viewMode: "preview",
+      }),
+    ).toBe(
+      "/repo/browser?provider=gitlab&platform_host=gitlab.example.com&repo_path=Group%2FSubGroup%2FProject&ref_type=branch&ref_name=feature%2Fsearch&ref_sha=abcd&path=docs%2FREADME.md&mode=preview",
+    );
+  });
+
+  it("builds repo browser markdown anchor links with URL fragments", () => {
+    expect(
+      buildRepoBrowserRoute({
+        provider: "github",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+        path: "README.md",
+        viewMode: "preview",
+        anchor: "install guide",
+      }),
+    ).toBe("/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=README.md&mode=preview#install%20guide");
   });
 });

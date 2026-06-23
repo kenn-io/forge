@@ -25,7 +25,7 @@
   import { apiBaseURL } from "../../api/runtime.js";
   import type { FolderIndex } from "../../api/docs/folderLinks";
 
-  export type RepoBrowserFeatureRoute = {
+  type RepoBrowserFeatureRoute = {
     page: "repo-browser";
     provider: string;
     platformHost?: string | undefined;
@@ -44,6 +44,10 @@
     route: RepoBrowserFeatureRoute;
     onRouteChange: (route: RepoBrowserRouteRef, options?: { replace?: boolean }) => void;
   }
+
+  type RepoBrowserRouteUpdate = Partial<Pick<RepoBrowserFeatureRoute, "path" | "mode">> & {
+    anchor?: string | null;
+  };
 
   let { client, route, onRouteChange }: Props = $props();
 
@@ -151,7 +155,7 @@
   }
 
   function pushRoute(
-    update: Partial<Pick<RepoBrowserFeatureRoute, "path" | "mode">> = {},
+    update: RepoBrowserRouteUpdate = {},
     options?: { replace?: boolean },
   ): void {
     const ref = store.getSelectedRef();
@@ -171,6 +175,7 @@
         } : {}),
         ...(path ? { path } : {}),
         viewMode: mode,
+        ...(update.anchor ? { anchor: update.anchor } : {}),
       },
       options,
     );
@@ -313,10 +318,12 @@
   function openMarkdownDoc(path: string, anchor?: string): void {
     void (async () => {
       if (path !== store.getSelectedPath()) {
-        await selectPath(path, { replace: false });
+        await store.selectPath(path);
+        selectedPathRevealKey += 1;
       }
       pendingMarkdownAnchor = anchor ?? null;
-      setViewMode("preview");
+      store.setViewMode("preview");
+      pushRoute({ path, mode: "preview", anchor: anchor ?? null });
     })();
   }
 

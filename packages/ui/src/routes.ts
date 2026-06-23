@@ -37,6 +37,7 @@ export type RepoBrowserRouteRef = RepositoryRouteRef & {
   refSHA?: string | undefined;
   path?: string | undefined;
   viewMode?: RepoBrowserViewMode | undefined;
+  anchor?: string | undefined;
 };
 
 export function buildPullRequestRoute(ref: PullRequestRouteRef): string {
@@ -78,6 +79,20 @@ export function buildFocusIssueRoute(ref: IssueRouteRef): string {
 export function buildFocusListRoute(ref: FocusListRouteRef): string {
   const route = `/focus/${ref.itemType}`;
   return ref.repo ? `${route}?repo=${encodeURIComponent(ref.repo)}` : route;
+}
+
+export function buildRepoBrowserRoute(ref: RepoBrowserRouteRef): string {
+  const params = new URLSearchParams();
+  params.set("provider", requireRouteText(ref.provider, "provider"));
+  if (ref.platformHost) params.set("platform_host", ref.platformHost);
+  params.set("repo_path", requireRouteText(ref.repoPath, "repoPath").replace(/^\/+|\/+$/g, ""));
+  if (ref.refType) params.set("ref_type", ref.refType);
+  if (ref.refName) params.set("ref_name", ref.refName);
+  if (ref.refSHA) params.set("ref_sha", ref.refSHA);
+  if (ref.path) params.set("path", ref.path);
+  if (ref.viewMode && ref.viewMode !== "source") params.set("mode", ref.viewMode);
+  const route = `/repo/browser?${params.toString()}`;
+  return ref.anchor ? `${route}#${encodeURIComponent(ref.anchor)}` : route;
 }
 
 export function buildRoutedItemRoute(ref: RoutedItemRef, options: { focus?: boolean } = {}): string {

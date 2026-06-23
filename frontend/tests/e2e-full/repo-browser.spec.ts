@@ -14,6 +14,18 @@ function blobResponse(page: Page, path: string): Promise<Response> {
   });
 }
 
+function treeResponse(page: Page, refName: string): Promise<Response> {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      url.pathname === "/api/v1/repo/github/acme/widgets/browser/tree" &&
+      url.searchParams.get("ref_name") === refName &&
+      response.ok()
+    );
+  });
+}
+
 async function expectHeadingScrolledIntoView(heading: Locator): Promise<void> {
   await expect(heading).toBeVisible();
   const scrollTop = await heading.evaluate((node) => {
@@ -32,9 +44,17 @@ test.describe("repository source browser", () => {
         localStorage.setItem("repo-browser-view-mode", "preview");
       });
 
+      const treeLoaded = treeResponse(page, "main");
       const blobLoaded = blobResponse(page, "README.md");
 
-      await page.goto(`${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=README.md`);
+      await page.goto(
+        `${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md`,
+      );
+      const initialTree = await treeLoaded;
+      const initialTreeURL = new URL(initialTree.url());
+      expect(initialTreeURL.searchParams.get("ref_sha")).not.toBe("main");
+      const initialTreeBody = (await initialTree.json()) as { ref: { stale: boolean } };
+      expect(initialTreeBody.ref.stale).toBe(false);
       await blobLoaded;
 
       const browser = page.getByRole("region", { name: "Repository source browser" });

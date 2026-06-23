@@ -117,7 +117,9 @@ Write the API contract in server request/response types before handlers:
 - Markdown asset contract:
   separate `asset-metadata` JSON preflight and `asset-bytes` byte routes; metadata emits commit-pinned byte URLs only for renderable assets; path/ref validation, MIME detection, unsupported SVG state with no byte URL, byte route problem envelopes for SVG/non-renderable assets, blob-size caps, conservative branch/tag metadata cache headers, immutable byte cache headers
 - fetch behavior:
-  repo-browser ensure/fetch/read and manual refresh hot paths must fetch branch/tag updates without pruning tags from the middleman-owned clone; deleted remote tags can remain visible until a separate cache maintenance or repair path cleans them up
+  repo-browser ensure/fetch/read and manual refresh hot paths must fetch branch/tag updates without pruning tags from the middleman-owned clone; deleted remote tags can remain visible until an explicit cache maintenance path such as clone repair/rebuild cleans them up, and no request-time or periodic sync path should add tag pruning implicitly
+- last-changed fallback budget:
+  the batch scan is capped by `RepoBrowserLastChangedLogLimit`; fallback may run at most one `git log --max-count=1` process per requested path missed by the batch, so total fallback processes are bounded by `RepoBrowserLastChangedBatchMax`. This returns complete metadata for the requested batch under that process cap but can still traverse deep history inside Git; UI callers must request visible/filtered rows rather than entire truncated trees.
 
 - [ ] **Step 3: Write failing gitclone tests**
 
@@ -150,7 +152,8 @@ ensure/fetch and manual refresh behavior does not pass tag-pruning options and
 does not remove an existing local tag when the remote tag has disappeared. It
 must also prove new remote tags pointing at already-present objects are fetched
 without pruning tags. Deleted remote tags are allowed to remain visible until a
-separate maintenance path handles cache cleanup.
+explicit cache maintenance path such as clone repair/rebuild handles cleanup.
+Do not add request-time or periodic tag pruning as part of repo-browser fetch.
 `TestRepoBrowserCloneIdentitySeparatesProvidersAndNestedPaths` must cover two
 repositories with the same `platform_host` and `repo_path` but different
 providers, plus slash-containing nested `repo_path` values. It must prove clone
@@ -287,9 +290,12 @@ owner/name are display hints only and must not participate in clone paths or
 cache keys. The shared identity helper must be the only place that encodes
 provider, canonical platform host, and slash-containing repo path for clone
 paths and fetch singleflight keys. Last-changed batches should use one bounded
-Git history walk for the batch, then a bounded `--max-count=1` per-path fallback
-only for requested paths not found in that capped batch so old paths do not look
-historyless.
+Git history walk for the batch, then a `--max-count=1` per-path fallback only
+for requested paths not found in that capped batch so old paths do not look
+historyless. The fallback process count is bounded by
+`RepoBrowserLastChangedBatchMax`, but each fallback can still traverse deep
+history inside Git; frontend callers must keep last-changed batches scoped to
+visible/filtered rows, not whole large repositories.
 
 - [ ] **Step 6: Run gitclone tests green**
 

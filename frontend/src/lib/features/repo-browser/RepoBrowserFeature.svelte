@@ -83,8 +83,9 @@
     if (route.path && route.path !== store.getSelectedPath()) {
       void selectPath(route.path, { replace: true });
     }
-    if (route.mode && route.mode !== store.getViewMode()) {
-      store.setViewMode(route.mode);
+    const nextMode = routeViewMode(route);
+    if (nextMode !== store.getViewMode()) {
+      store.setViewMode(nextMode);
     }
   });
 
@@ -100,7 +101,7 @@
   }
 
   async function loadRoute(value: RepoBrowserFeatureRoute): Promise<void> {
-    if (value.mode) store.setViewMode(value.mode);
+    store.setViewMode(routeViewMode(value));
     const requestedRef = routeRef(value);
     await store.loadRepo(repoRef(value), {
       ...(requestedRef ? { ref: requestedRef } : {}),
@@ -133,7 +134,12 @@
       type,
       name: value.refName ?? value.refSHA ?? "",
       sha: value.refSHA ?? value.refName ?? "",
+      stale: false,
     };
+  }
+
+  function routeViewMode(value: RepoBrowserFeatureRoute): RepoBrowserViewMode {
+    return value.mode ?? "source";
   }
 
   function pushRoute(

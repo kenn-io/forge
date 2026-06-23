@@ -179,6 +179,17 @@ func SetupDiffRepo(
 		ctx, repoID, 1, headSHA, baseSHA); err != nil {
 		return nil, fmt.Errorf("update platform SHAs: %w", err)
 	}
+	if err := d.UpdateRepoProviderMetadata(
+		ctx,
+		repoID,
+		db.RepoProviderMetadata{
+			WebURL:        "https://github.com/acme/widgets",
+			CloneURL:      barePath,
+			DefaultBranch: "main",
+		},
+	); err != nil {
+		return nil, fmt.Errorf("update repo provider metadata: %w", err)
+	}
 
 	mgr := gitclone.New(cloneBase, nil)
 

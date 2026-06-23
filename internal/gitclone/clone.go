@@ -325,10 +325,16 @@ func (m *Manager) fetch(
 	// GitHub's smart-HTTP endpoint sporadically returns 5xx on /info/refs.
 	// Retry inline so a transient blip does not drop the entire sync cycle.
 	_, err := retryTransient(ctx, "git fetch", func() ([]byte, error) {
-		return m.gitNetworked(ctx, host, clonePath, nil, "fetch", "--prune", "--tags", "origin")
+		return m.gitNetworked(ctx, host, clonePath, nil, "fetch", "--prune", "origin")
 	})
 	if err != nil {
 		return fmt.Errorf("git fetch: %w", err)
+	}
+	_, err = retryTransient(ctx, "git fetch tags", func() ([]byte, error) {
+		return m.gitNetworked(ctx, host, clonePath, nil, "fetch", "origin", "+refs/tags/*:refs/tags/*")
+	})
+	if err != nil {
+		return fmt.Errorf("git fetch tags: %w", err)
 	}
 	// set-head -a is networked (it consults the remote's HEAD via
 	// /info/refs) and so subject to the same transient 5xx as fetch.

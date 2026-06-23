@@ -263,6 +263,9 @@ func (s *Server) getRepoBrowserAssetFor(
 	ref gitclone.RepoBrowserRef,
 	path string,
 ) (*repoBrowserAssetOutput, error) {
+	if !repoBrowserAssetRefIsImmutable(ref) {
+		return nil, repoBrowserProblem(errRepoBrowserMutableAssetRef)
+	}
 	_, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -282,6 +285,25 @@ func (s *Server) getRepoBrowserAssetFor(
 		ContentTypeOptions: "nosniff",
 		Body:               []byte(blob.Content),
 	}, nil
+}
+
+func repoBrowserAssetRefIsImmutable(ref gitclone.RepoBrowserRef) bool {
+	return ref.Type == gitclone.RepoBrowserRefCommit && isRepoBrowserFullHexSHA(ref.SHA)
+}
+
+func isRepoBrowserFullHexSHA(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, ch := range value {
+		if (ch >= '0' && ch <= '9') ||
+			(ch >= 'a' && ch <= 'f') ||
+			(ch >= 'A' && ch <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (s *Server) getRepoBrowserLastChanged(
@@ -465,6 +487,7 @@ func canonicalRepoBrowserRepoPath(owner, name, repoPath string) string {
 }
 
 var errRepoBrowserCloneUnavailable = errors.New("repo browser clone unavailable")
+var errRepoBrowserMutableAssetRef = errors.New("repo browser asset requires immutable commit ref")
 
 func repoBrowserRef(refType, name, sha string) gitclone.RepoBrowserRef {
 	typ := gitclone.RepoBrowserRefType(strings.TrimSpace(refType))
@@ -490,6 +513,9 @@ func repoBrowserProblem(err error) error {
 	}
 	if errors.Is(err, errRepoBrowserCloneUnavailable) {
 		return problemNotFound(CodeNotFound, "repo browser clone unavailable", map[string]any{"reason": "clone_unavailable"})
+	}
+	if errors.Is(err, errRepoBrowserMutableAssetRef) {
+		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "mutable_ref_not_allowed"})
 	}
 	if errors.Is(err, gitclone.ErrUnsafePath) {
 		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "unsafe_path"})

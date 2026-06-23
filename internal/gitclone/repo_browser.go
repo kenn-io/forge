@@ -524,6 +524,13 @@ func (m *Manager) RepoBrowserFileHistory(
 	if err != nil {
 		return nil, err
 	}
+	entry, err := m.lookupRepoBrowserTreeEntry(ctx, dir, sha, cleanPath)
+	if err != nil {
+		return nil, err
+	}
+	if entry.Type != "blob" {
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, cleanPath)
+	}
 	out, err := m.git(ctx, dir,
 		"log",
 		"--max-count="+strconv.Itoa(RepoBrowserHistoryLimit),

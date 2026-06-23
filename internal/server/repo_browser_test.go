@@ -212,6 +212,7 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Test\n\nUpdated\n"), 0o644))
 	serverRepoBrowserGit(t, work, "add", ".")
 	serverRepoBrowserGit(t, work, "commit", "-m", "docs asset")
+	currentSHA := testGitSHA(t, work, "HEAD")
 	serverRepoBrowserGit(t, work, "push", "origin", "main")
 
 	tree := repoBrowserRequest(t, srv, http.MethodGet,
@@ -224,7 +225,7 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	assert.Contains(repoBrowserEntryPaths(treeBody.Entries), "docs/image.png")
 
 	asset := repoBrowserRequest(t, srv, http.MethodGet,
-		"/api/v1/repo/github/acme/widgets/browser/asset?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=docs%2Fimage.png",
+		"/api/v1/repo/github/acme/widgets/browser/asset?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(currentSHA)+"&path=docs%2Fimage.png",
 	)
 	require.Equal(http.StatusOK, asset.Code)
 	assert.Equal("image/png", asset.Header().Get("Content-Type"))
@@ -256,6 +257,18 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	var commitBody repoBrowserCommitResponse
 	require.NoError(json.Unmarshal(commitDetail.Body.Bytes(), &commitBody))
 	assert.Equal(historyBody.Commits[0].SHA, commitBody.Commit.SHA)
+
+	mutableAsset := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/asset?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=docs%2Fimage.png",
+	)
+	require.Equal(http.StatusBadRequest, mutableAsset.Code)
+	assert.Contains(mutableAsset.Body.String(), "mutable_ref_not_allowed")
+
+	missingHistory := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(currentSHA)+"&path=missing.md",
+	)
+	require.Equal(http.StatusNotFound, missingHistory.Code)
+	assert.Contains(missingHistory.Body.String(), "not_found")
 }
 
 func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
@@ -292,11 +305,12 @@ func TestRepoBrowserAssetRejectsActiveContentTypes(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(work, "script.js"), []byte(`alert(1)`), 0o644))
 	serverRepoBrowserGit(t, work, "add", ".")
 	serverRepoBrowserGit(t, work, "commit", "-m", "active assets")
+	currentSHA := testGitSHA(t, work, "HEAD")
 	serverRepoBrowserGit(t, work, "push", "origin", "main")
 
 	for _, path := range []string{"image.svg", "page.html", "script.js"} {
 		rr := repoBrowserRequest(t, srv, http.MethodGet,
-			"/api/v1/repo/github/acme/widgets/browser/asset?ref_type=branch&ref_name=main&path="+url.QueryEscape(path),
+			"/api/v1/repo/github/acme/widgets/browser/asset?ref_type=commit&ref_sha="+url.QueryEscape(currentSHA)+"&path="+url.QueryEscape(path),
 		)
 		assert.Equal(http.StatusUnsupportedMediaType, rr.Code, path)
 		assert.Contains(rr.Body.String(), "unsupported_asset")

@@ -273,6 +273,21 @@ func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T) {
 	}
 }
 
+func TestRepoBrowserFileHistoryRequiresSelectedTreePath(t *testing.T) {
+	require := require.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+
+	require.NoError(os.WriteFile(filepath.Join(work, "later.md"), []byte("later\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "later file")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	ref := RepoBrowserRef{Type: RepoBrowserRefCommit, SHA: gitSHA(t, work, "HEAD~1")}
+
+	_, err := mgr.RepoBrowserFileHistory(t.Context(), repo, ref, "later.md")
+	require.ErrorIs(err, ErrNotFound)
+}
+
 func TestRepoBrowserCommitDetailRequiresSelectedFileHistory(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

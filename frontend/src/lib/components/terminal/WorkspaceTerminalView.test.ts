@@ -1156,6 +1156,7 @@ describe("WorkspaceTerminalView", () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
     const deleteRequest = deferred<Response>();
+    const otherDeleteRequest = deferred<Response>();
     const otherWorkspaceResponse = {
       ...workspaceResponse,
       id: "ws-2",
@@ -1168,6 +1169,9 @@ describe("WorkspaceTerminalView", () => {
       const { pathname } = new URL(url, "http://localhost");
       if (method === "DELETE" && pathname.endsWith("/workspaces/ws-1")) {
         return deleteRequest.promise;
+      }
+      if (method === "DELETE" && pathname.endsWith("/workspaces/ws-2")) {
+        return otherDeleteRequest.promise;
       }
       if (pathname.endsWith("/workspaces/ws-1")) {
         return Promise.resolve(Response.json(workspaceResponse));
@@ -1246,6 +1250,17 @@ describe("WorkspaceTerminalView", () => {
         }),
       ).toBe(true);
     });
+    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) => {
+          if (!(input instanceof Request)) return false;
+          const { pathname } = new URL(input.url);
+          return input.method === "DELETE" && pathname === "/api/v1/workspaces/ws-2";
+        }),
+      ).toBe(true);
+    });
+    expect(screen.getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(true);
 
     window.history.pushState({}, "", "/terminal/ws-1");
     await view.rerender({ workspaceId: "ws-1" });
@@ -1257,6 +1272,7 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByRole("button", { name: "Move Shell to workflow" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Close Shell" }).hasAttribute("disabled")).toBe(true);
 
+    otherDeleteRequest.resolve(new Response(null, { status: 204 }));
     deleteRequest.resolve(new Response(null, { status: 204 }));
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));
   });

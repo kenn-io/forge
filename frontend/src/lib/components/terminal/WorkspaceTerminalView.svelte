@@ -170,10 +170,11 @@
   let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);
-  let deletingWorkspaceTarget = $state<{
+  type DeletingWorkspaceTarget = {
     id: string;
     hostKey: string | undefined;
-  } | null>(null);
+  };
+  let deletingWorkspaceTargets = $state<DeletingWorkspaceTarget[]>([]);
   let sidebarRefreshToken = $state(0);
   let forcePromptMessage = $state<string | null>(null);
   let forcePromptForId = $state<string | null>(null);
@@ -447,9 +448,9 @@
         workspaceHostKey !== selectedWorkspaceHostKey(workspace)),
   );
   const deletingSelectedWorkspace = $derived(
-    deletingWorkspaceTarget !== null &&
-      deletingWorkspaceTarget.id === workspaceId &&
-      deletingWorkspaceTarget.hostKey === workspaceHostKey,
+    deletingWorkspaceTargets.some((target) =>
+      isDeletingWorkspaceTarget(target, workspaceId, workspaceHostKey),
+    ),
   );
   const actionsBlocked = $derived(transitioning || deletingSelectedWorkspace || forceDeleting);
   const modalOpen = $derived(
@@ -2160,7 +2161,7 @@
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    deletingWorkspaceTarget = { id: targetId, hostKey: targetHostKey };
+    addDeletingWorkspaceTarget(targetId, targetHostKey);
     try {
       const { error, response } = targetHostKey
         ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
@@ -2195,13 +2196,39 @@
       if (!isCurrentTerminalRoute(targetId)) return;
       navigate("/workspaces");
     } finally {
-      if (
-        deletingWorkspaceTarget?.id === targetId &&
-        deletingWorkspaceTarget.hostKey === targetHostKey
-      ) {
-        deletingWorkspaceTarget = null;
-      }
+      removeDeletingWorkspaceTarget(targetId, targetHostKey);
     }
+  }
+
+  function isDeletingWorkspaceTarget(
+    target: DeletingWorkspaceTarget,
+    id: string,
+    hostKey: string | undefined,
+  ): boolean {
+    return target.id === id && target.hostKey === hostKey;
+  }
+
+  function addDeletingWorkspaceTarget(
+    id: string,
+    hostKey: string | undefined,
+  ): void {
+    if (
+      deletingWorkspaceTargets.some((target) =>
+        isDeletingWorkspaceTarget(target, id, hostKey),
+      )
+    ) {
+      return;
+    }
+    deletingWorkspaceTargets = [...deletingWorkspaceTargets, { id, hostKey }];
+  }
+
+  function removeDeletingWorkspaceTarget(
+    id: string,
+    hostKey: string | undefined,
+  ): void {
+    deletingWorkspaceTargets = deletingWorkspaceTargets.filter(
+      (target) => !isDeletingWorkspaceTarget(target, id, hostKey),
+    );
   }
 
   function isCurrentTerminalRoute(targetId: string): boolean {

@@ -2600,13 +2600,14 @@
           </span>
           <button
             class="retry-btn"
-            disabled={retryingSetup}
+            disabled={actionsBlocked || retryingSetup}
             onclick={() => void handleRetrySetup()}
           >
             Retry
           </button>
           <button
             class="retry-btn danger"
+            disabled={actionsBlocked}
             onclick={(event) =>
               void handleDelete(event.currentTarget)}
           >

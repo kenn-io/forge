@@ -95,13 +95,13 @@ Write the API contract in server request/response types before handlers:
 - repository lookup key:
   `(provider, platform_host, repo_path)`; owner/name route params are display hints derived from the stored display owner/name and must not drive identity, cache keys, or clone paths for nested providers
 - ref semantics:
-  branch/tag `ref_name` resolves fresh per request; branch/tag `ref_sha` is a staleness token returned as metadata on every successful branch/tag response; commit views use `ref_type=commit` plus a full 40-character `ref_sha`
+  branch/tag `ref_name` resolves fresh per request; branch/tag `ref_sha` is a staleness token returned as `ref: { type, name?, resolvedSha, requestedSha?, stale }` on every successful repo-browser response; commit views use `ref_type=commit` plus a full 40-character `ref_sha`
 - error/state contract:
   use existing camelCase problem codes for failures; put repo-browser reasons such as `clone_unavailable`, `unavailable_ref`, and `missing_path` in `details.reason`; model truncation, stale-token, binary, oversized, and unsupported-SVG cases as successful response states
 - caps:
   `RepoBrowserTreeEntryLimit`, `RepoBrowserBlobSizeLimit`, `RepoBrowserLastChangedBatchMax`, `RepoBrowserHistoryLimit`
 - Markdown asset contract:
-  path/ref validation, MIME detection, metadata/preflight for Markdown images, unsupported SVG state with no renderable bytes, blob-size caps, conservative branch/tag cache headers, immutable commit cache headers
+  separate `asset-metadata` JSON preflight and `asset-bytes` byte routes; path/ref validation, MIME detection, unsupported SVG state with no byte URL, byte route rejection for SVG/non-renderable assets, blob-size caps, conservative branch/tag cache headers, immutable commit cache headers
 
 - [ ] **Step 3: Write failing gitclone tests**
 
@@ -115,7 +115,10 @@ func TestRepoBrowserReadBlobWorksWhenTreeIsTruncated(t *testing.T)
 func TestRepoBrowserReadBlobRejectsTraversalAndLargeFiles(t *testing.T)
 func TestRepoBrowserLastChangedBatchCapsPaths(t *testing.T)
 func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T)
+func TestRepoBrowserResponsesIncludeRefMetadata(t *testing.T)
 func TestRepoBrowserMarkdownAssetRejectsUnsafeAndOversizedPaths(t *testing.T)
+func TestRepoBrowserMarkdownAssetMetadataRejectsSVG(t *testing.T)
+func TestRepoBrowserMarkdownAssetBytesNeverServesSVG(t *testing.T)
 ```
 
 Each test should create a real temporary Git repository with `t.TempDir()` and run Git commands through the existing test helper pattern used in `internal/gitclone/*_test.go`.
@@ -293,11 +296,11 @@ In `frontend/src/lib/stores/router.test.ts`, add tests for parsing and building 
 
 - [ ] **Step 3: Add failing store tests**
 
-In `packages/ui/src/stores/repo-browser.svelte.test.ts`, test initial load, README auto-selection, ref switch preserving path, missing path state, stale-ref metadata handling, tree-truncation state, generated-client route usage, and stale request protection.
+In `packages/ui/src/stores/repo-browser.svelte.test.ts`, test initial load, README auto-selection, ref switch preserving path, conversion of `notFound`/`details.reason = "missing_path"` problem envelopes into an inline missing-path UI state, reusable ref metadata handling on tree/blob/history/commit/asset responses, tree-truncation state, generated-client route usage, and stale request protection.
 
 - [ ] **Step 4: Add failing shared UI tests**
 
-In `packages/ui/src/components/diff/PierreFileTree.test.ts`, test rendering repository tree entries without diff status. In `packages/ui/src/components/repo-browser/RepoSourceViewer.test.ts`, test text blobs and typed binary/large/missing states. Category filtering is path-only in v1; the Generated category should reuse existing path heuristics from `diff-categories.ts` without adding a new `is_generated` tree-entry requirement.
+In `packages/ui/src/components/diff/PierreFileTree.test.ts`, test rendering repository tree entries without diff status. In `packages/ui/src/components/repo-browser/RepoSourceViewer.test.ts`, test text blobs plus successful binary/large states, and problem-envelope missing states. Category filtering is path-only in v1; the Generated category should reuse existing path heuristics from `diff-categories.ts` without adding a new `is_generated` tree-entry requirement.
 
 - [ ] **Step 5: Run route/store/UI tests red**
 
@@ -308,7 +311,7 @@ cd frontend && ../node_modules/.bin/vp test run --project unit src/lib/stores/ro
 - [ ] **Step 6: Implement route, store, and shared UI boundary**
 
 Add a repo browser route variant in `router.svelte.ts`. Add `createRepoBrowserStore` in `packages/ui/src/stores/repo-browser.svelte.ts` using generated client routes from Task 1.
-Extend `PierreFileTree.svelte` with a narrow prop for repository entries while preserving existing diff behavior. Add a read-only source viewer component that displays text blobs and typed binary/large/missing states.
+Extend `PierreFileTree.svelte` with a narrow prop for repository entries while preserving existing diff behavior. Add a read-only source viewer component that displays text blobs, successful binary/large states, and inline problem-envelope states for missing paths.
 
 - [ ] **Step 7: Run route/store/UI tests green and commit**
 
@@ -342,7 +345,7 @@ kata claim 5v83
 
 - [ ] **Step 2: Add failing component tests**
 
-Test sidebar path filter/category counts/last-changed metadata, browser header/ref switch/breadcrumbs/README/source-preview/error states, Markdown asset URL generation through the backend asset endpoint, truncated-tree affordances, and history rail commit selection/detail behavior.
+Test sidebar path filter/category counts/last-changed metadata, browser header/ref switch/breadcrumbs/README/source-preview/error states, Markdown asset metadata preflight before URL emission, SVG preflight suppression with a broken-asset affordance, truncated-tree affordances, and history rail commit selection/detail behavior.
 
 - [ ] **Step 3: Run UI tests red**
 
@@ -352,7 +355,7 @@ cd frontend && ../node_modules/.bin/vp test run --project unit ../packages/ui/sr
 
 - [ ] **Step 4: Implement sidebar, main view, Markdown preview, and history rail**
 
-Use the store and shared file UI from Task 2. Keep this branch as the first branch where the browser can render the complete source-browsing workspace without app-level entry points. Markdown preview must route relative images through the generated asset endpoint and must not inline SVG text into the DOM.
+Use the store and shared file UI from Task 2. Keep this branch as the first branch where the browser can render the complete source-browsing workspace without app-level entry points. Markdown preview must call generated `asset-metadata` before emitting image URLs, only use `asset-bytes` URLs for renderable metadata states, and must not inline or directly request SVG bytes.
 
 - [ ] **Step 5: Run UI tests green and commit**
 

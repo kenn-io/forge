@@ -123,8 +123,10 @@ The API surface should cover:
 - blob: selected file metadata and content at a selected ref/path
 - file history: recent commits touching the selected file
 - commit detail: metadata-only detail for a selected history commit
-- Markdown asset/blob read: repo/ref/path-aware content for relative links and
-  images rendered by Markdown preview
+- Markdown asset metadata: repo/ref/path-aware JSON preflight for images rendered
+  by Markdown preview
+- Markdown asset bytes: repo/ref/path-aware byte reads for assets whose metadata
+  says they are safe and renderable
 
 All file reads are bounded. Large text files return metadata and a clear
 too-large state. Binary files return metadata and a binary-file state. The first
@@ -170,6 +172,13 @@ branch/tag response shape (refs/open metadata, tree, blob, history, commit
 detail, and asset) must include `stale: true`, the supplied SHA, and the current
 resolved SHA when they differ. Immutable views use `ref_type=commit` with a full
 40-character `ref_sha` and no `ref_name`.
+
+Every successful repo browser response includes a reusable ref object:
+`ref: { type, name?, resolvedSha, requestedSha?, stale }`. Branch/tag responses
+set `name`, `resolvedSha`, and `stale`; they set `requestedSha` when the request
+included a `ref_sha` token. Non-stale responses use `stale: false` and still
+include `resolvedSha` so the store never has to infer which SHA backed the read.
+Commit responses use `type: "commit"`, `resolvedSha`, and `stale: false`.
 
 A path is always an encoded repository-relative path, never a filesystem path.
 The server rejects NUL bytes, absolute paths, empty path segments that normalize
@@ -275,19 +284,30 @@ link/image resolver from Docs mode:
 - unsupported or unsafe asset paths fail closed with an inline broken-asset
   affordance rather than reaching outside the selected Git tree
 
-The asset endpoint must set MIME type from detected content, enforce the same
-size and binary caps as blob reads, reject path traversal, and use the same
-stateless ref validation as blob reads. SVG assets are not rendered as preview
-images in v1, even when requested through Markdown, because opening same-origin
-repository SVG directly would make untrusted repository content an app-origin
-script surface. SVG requests return a successful non-renderable asset response
-with `state: "unsupportedAsset"`, `reason: "svg"`, the resolved ref metadata, and
-no renderable bytes. Markdown preview must request asset metadata before emitting
-an `<img>` URL or use an equivalent custom renderer, so unsupported assets can be
-replaced with the inline broken-asset affordance instead of relying on a direct
-image request to carry JSON state. Cache headers are immutable for
-`ref_type=commit` reads and conservative (`no-store` or revalidate-on-use) for
-branch/tag display refs that can move between requests.
+Markdown image rendering uses two explicit backend operations:
+
+- `asset-metadata` returns JSON with `state`, detected `mediaType`, `size`,
+  normalized path, and the reusable ref metadata object. Renderable raster image
+  states include the corresponding `asset-bytes` URL. Non-renderable states do
+  not include a byte URL.
+- `asset-bytes` returns bytes only for metadata-approved renderable assets. It
+  sets the detected image MIME type, `X-Content-Type-Options: nosniff`, and the
+  same cache policy as the metadata response. If called directly for an
+  unsupported, oversized, unsafe, missing, or SVG asset, it returns the
+  appropriate problem envelope and never returns renderable bytes.
+
+Both operations enforce the same size and binary caps as blob reads, reject path
+traversal, and use the same stateless ref validation as blob reads. SVG assets
+are not rendered as preview images in v1, even when requested through Markdown,
+because opening same-origin repository SVG directly would make untrusted
+repository content an app-origin script surface. SVG metadata requests return
+`state: "unsupportedAsset"`, `reason: "svg"`, the resolved ref metadata, and no
+byte URL; `asset-bytes` for SVG returns a non-renderable problem envelope with no
+SVG bytes. Markdown preview must call `asset-metadata` before emitting an `<img>`
+URL so unsupported assets can be replaced with the inline broken-asset affordance
+instead of relying on a direct image request to carry JSON state. Cache headers
+are immutable for `ref_type=commit` reads and conservative (`no-store` or
+revalidate-on-use) for branch/tag display refs that can move between requests.
 
 Other file-type previews are deferred. The renderer boundary should still make
 future image or other preview renderers possible without reshaping the page.

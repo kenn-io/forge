@@ -420,6 +420,7 @@ git-spice upstack restack --no-prompt
 - Create or modify Markdown resolver helper near existing Markdown utilities.
 - Create: `packages/ui/src/components/repo-browser/RepoBrowserHistoryRail.svelte`
 - Create: `packages/ui/src/components/repo-browser/RepoBrowserHistoryRail.test.ts`
+- Modify: `packages/ui/src/index.ts` to export `RepoBrowserView` through the existing `@middleman/ui` root alias.
 
 - [ ] **Step 1: Create branch and claim tasks**
 
@@ -443,13 +444,16 @@ cd frontend && ../node_modules/.bin/vp test run --project unit ../packages/ui/sr
 - [ ] **Step 4: Implement sidebar, main view, Markdown preview, and history rail**
 
 Use the store and shared file UI from Task 2. Keep this branch as the first branch where the browser can render the complete source-browsing workspace without app-level entry points. Markdown preview must call generated `asset-metadata` before emitting image URLs, only use `asset-bytes` URLs for renderable metadata states, and must not inline or directly request SVG bytes.
+Export `RepoBrowserView` from `packages/ui/src/index.ts`; the frontend Vite
+config already aliases `@middleman/ui` to that source entry point, so no new
+alias is needed unless the import path changes.
 
 - [ ] **Step 5: Run UI tests green and commit**
 
 ```bash
 cd frontend && ../node_modules/.bin/vp test run --project unit ../packages/ui/src/components/repo-browser/RepoBrowserSidebar.test.ts ../packages/ui/src/components/repo-browser/RepoBrowserView.test.ts ../packages/ui/src/components/repo-browser/RepoBrowserHistoryRail.test.ts
 git diff --check
-git add packages/ui/src/components/repo-browser
+git add packages/ui/src/components/repo-browser packages/ui/src/index.ts
 git commit -m "feat: add repo browser interface"
 git-spice upstack restack --no-prompt
 ```
@@ -481,7 +485,7 @@ Test repo card `View repo` navigation. Test command palette visibility for selec
 - [ ] **Step 3: Run entry point tests red**
 
 ```bash
-cd frontend && ../node_modules/.bin/vp test run --project unit src/App.test.ts src/lib/components/repositories/RepoSummaryPage.test.ts src/lib/components/keyboard/Palette.test.ts
+cd frontend && ../node_modules/.bin/vp test run --project unit src/App.test.ts src/lib/components/repositories/RepoSummaryPage.test.ts src/lib/components/keyboard/Palette.svelte.test.ts
 ```
 
 - [ ] **Step 4: Implement app route and entry point actions**
@@ -491,7 +495,7 @@ Wire the route to `RepoBrowserView`, add `View repo` to repository summary cards
 - [ ] **Step 5: Run entry point tests green**
 
 ```bash
-cd frontend && ../node_modules/.bin/vp test run --project unit src/App.test.ts src/lib/components/repositories/RepoSummaryPage.test.ts src/lib/components/keyboard/Palette.test.ts
+cd frontend && ../node_modules/.bin/vp test run --project unit src/App.test.ts src/lib/components/repositories/RepoSummaryPage.test.ts src/lib/components/keyboard/Palette.svelte.test.ts
 ```
 
 - [ ] Run backend affected tests:

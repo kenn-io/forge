@@ -126,7 +126,9 @@ Each test should create a real temporary Git repository with `t.TempDir()` and r
 commit detail, and asset metadata JSON responses. The asset-bytes
 non-renderable test must cover SVG, oversized assets, unsafe traversal, missing
 paths, and unknown/non-renderable media types with exact problem code and
-`details.reason` assertions.
+`details.reason` assertions. It must also cover branch/tag `asset-bytes`
+requests and assert `400 validationError`, `details.reason =
+"mutable_ref_not_allowed"`, and `Cache-Control: no-store`.
 
 - [ ] **Step 4: Run gitclone tests red**
 

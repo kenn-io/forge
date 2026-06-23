@@ -93,6 +93,19 @@ test.describe("repository source browser", () => {
       await directGuideBlobLoaded;
       await expectHeadingScrolledIntoView(viewer.locator("#api-reference"));
 
+      await page.evaluate(() => {
+        window.__middleman_navigate_to_route?.(
+          "/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=docs%2Fguide.md&mode=preview",
+        );
+      });
+      await expect(page).toHaveURL(/path=docs%2Fguide\.md&mode=preview$/);
+      await viewer.locator(".repo-browser__markdown").evaluate((node) => {
+        node.scrollTop = 0;
+      });
+      await page.goBack();
+      await expect(page).toHaveURL(/path=docs%2Fguide\.md&mode=preview#api-reference$/);
+      await expectHeadingScrolledIntoView(viewer.locator("#api-reference"));
+
       const history = browser.getByRole("complementary", { name: "File history" });
       await expect(history).toContainText("Initial commit");
       await history.getByRole("button", { name: /Initial commit/ }).click();

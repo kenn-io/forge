@@ -37,6 +37,7 @@
     refSHA?: string | undefined;
     path?: string | undefined;
     mode?: RepoBrowserViewMode | undefined;
+    anchor?: string | undefined;
   };
 
   interface Props {
@@ -56,6 +57,8 @@
 
   let repoLoadKey = "";
   let routeLoadGeneration = 0;
+  let pathSelectionGeneration = 0;
+  let routeAnchorKey = "";
   let pathFilter = $state("");
   let selectedPathRevealKey = $state(0);
   let pendingMarkdownAnchor = $state(initialMarkdownAnchor());
@@ -81,6 +84,7 @@
 
   $effect(() => {
     const nextRepoLoadKey = routeKey(route);
+    applyRouteAnchor(route);
     if (nextRepoLoadKey !== repoLoadKey) {
       repoLoadKey = nextRepoLoadKey;
       void loadRoute(route);
@@ -110,6 +114,7 @@
 
   async function loadRoute(value: RepoBrowserFeatureRoute): Promise<void> {
     const generation = routeLoadGeneration + 1;
+    const selectionGeneration = nextPathSelectionGeneration();
     routeLoadGeneration = generation;
     store.setViewMode(routeViewMode(value));
     const requestedRef = routeRef(value);
@@ -117,16 +122,16 @@
       ...(requestedRef ? { ref: requestedRef } : {}),
       path: value.path ?? null,
     });
-    if (generation !== routeLoadGeneration) return;
+    if (generation !== routeLoadGeneration || selectionGeneration !== pathSelectionGeneration) return;
     if (!value.path) {
       const initialPath = chooseRepoBrowserInitialPath(store.getTree());
       if (initialPath && initialPath !== store.getSelectedPath()) {
         await store.selectPath(initialPath);
-        if (generation !== routeLoadGeneration) return;
+        if (generation !== routeLoadGeneration || !pathSelectionStillCurrent(selectionGeneration, initialPath)) return;
       }
       if (initialPath) pushRoute({ path: initialPath }, { replace: true });
     }
-    if (generation !== routeLoadGeneration) return;
+    if (generation !== routeLoadGeneration || selectionGeneration !== pathSelectionGeneration) return;
     selectedPathRevealKey += 1;
   }
 
@@ -183,15 +188,27 @@
   }
 
   async function selectPath(path: string, options?: { replace?: boolean }): Promise<void> {
+    const generation = nextPathSelectionGeneration();
     await store.selectPath(path);
+    if (!pathSelectionStillCurrent(generation, path)) return;
     selectedPathRevealKey += 1;
     pushRoute({ path }, options);
   }
 
   async function syncRoutePath(path: string, generation: number): Promise<void> {
+    const selectionGeneration = nextPathSelectionGeneration();
     await store.selectPath(path);
-    if (generation !== routeLoadGeneration) return;
+    if (generation !== routeLoadGeneration || !pathSelectionStillCurrent(selectionGeneration, path)) return;
     selectedPathRevealKey += 1;
+  }
+
+  function nextPathSelectionGeneration(): number {
+    pathSelectionGeneration += 1;
+    return pathSelectionGeneration;
+  }
+
+  function pathSelectionStillCurrent(generation: number, path: string): boolean {
+    return generation === pathSelectionGeneration && store.getSelectedPath() === path;
   }
 
   async function selectRefByKey(key: string): Promise<void> {
@@ -283,7 +300,8 @@
           } : {}),
           path: relPath,
           viewMode: "preview",
-        }) + (anchor ? `#${encodeURIComponent(anchor)}` : ""),
+          ...(anchor ? { anchor } : {}),
+        }),
       buildBlobURL: (_folderID: string, relPath: string) => assetURL(relPath),
       allowExternalImages: false,
     };
@@ -293,9 +311,8 @@
     const params = new URLSearchParams();
     params.set("repo_path", route.repoPath);
     params.set("path", path);
-    if (selectedRef) {
-      params.set("ref_type", selectedRef.type);
-      params.set("ref_name", selectedRef.name);
+    if (selectedRef?.sha) {
+      params.set("ref_type", "commit");
       params.set("ref_sha", selectedRef.sha);
     }
     const hostPath = route.platformHost
@@ -324,10 +341,14 @@
 
   function openMarkdownDoc(path: string, anchor?: string): void {
     void (async () => {
+      const generation = nextPathSelectionGeneration();
       if (path !== store.getSelectedPath()) {
         await store.selectPath(path);
+        if (!pathSelectionStillCurrent(generation, path)) return;
         selectedPathRevealKey += 1;
       }
+      if (!pathSelectionStillCurrent(generation, path)) return;
+      routeAnchorKey = routeAnchorStateKey(path, anchor ?? null);
       pendingMarkdownAnchor = anchor ?? null;
       store.setViewMode("preview");
       pushRoute({ path, mode: "preview", anchor: anchor ?? null });
@@ -353,6 +374,17 @@
       return `https://${host}/${encodedRepo}/src/${refKind}/${encodedRef}/${encodedPath}`;
     }
     return `https://${host}/${encodedRepo}/blob/${encodedRef}/${encodedPath}`;
+  }
+
+  function applyRouteAnchor(value: RepoBrowserFeatureRoute): void {
+    const key = routeAnchorStateKey(value.path ?? null, value.anchor ?? null);
+    if (key === routeAnchorKey) return;
+    routeAnchorKey = key;
+    pendingMarkdownAnchor = value.anchor ?? null;
+  }
+
+  function routeAnchorStateKey(path: string | null, anchor: string | null): string {
+    return `${path ?? ""}\0${anchor ?? ""}`;
   }
 </script>
 

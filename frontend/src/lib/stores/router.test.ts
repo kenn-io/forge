@@ -262,6 +262,7 @@ describe("router basic routes", () => {
       name: "widgets",
       path: "docs/guide.md",
       mode: "preview",
+      anchor: "api-reference",
     });
   });
 

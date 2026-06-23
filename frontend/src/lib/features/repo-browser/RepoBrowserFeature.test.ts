@@ -66,7 +66,49 @@ describe("RepoBrowserFeature", () => {
       );
     });
   });
+
+  it("applies route anchor changes for the selected markdown file", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const client = testClient();
+    const onRouteChange = vi.fn();
+    const { rerender } = render(RepoBrowserFeature, {
+      props: {
+        client,
+        route: {
+          ...route,
+          path: "docs/guide.md",
+          anchor: "install",
+        },
+        onRouteChange,
+      },
+    });
+
+    await screen.findByRole("heading", { name: "Install" });
+    await waitFor(() => expect(scrolledHeadingIDs(scrollIntoView)).toContain("install"));
+
+    scrollIntoView.mockClear();
+    await rerender({
+      client,
+      route: {
+        ...route,
+        path: "docs/guide.md",
+        anchor: "usage",
+      },
+      onRouteChange,
+    });
+
+    await screen.findByRole("heading", { name: "Usage" });
+    await waitFor(() => expect(scrolledHeadingIDs(scrollIntoView)).toContain("usage"));
+  });
 });
+
+function scrolledHeadingIDs(scrollIntoView: ReturnType<typeof vi.fn>): string[] {
+  return scrollIntoView.mock.contexts.flatMap((context) => {
+    if (context instanceof HTMLElement && context.id) return [context.id];
+    return [];
+  });
+}
 
 function testClient(): MiddlemanClient {
   return {
@@ -128,7 +170,7 @@ function testClient(): MiddlemanClient {
         url ===
         "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=docs%2Fguide.md"
       ) {
-        return blobResponse("docs/guide.md", "# Install\n");
+        return blobResponse("docs/guide.md", "# Install\n\n## Usage\n");
       }
       if (
         url ===

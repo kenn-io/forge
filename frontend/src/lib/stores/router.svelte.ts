@@ -39,6 +39,7 @@ export type Route =
       refSHA?: string | undefined;
       path?: string | undefined;
       mode?: "source" | "preview" | undefined;
+      anchor?: string | undefined;
     }
   | { page: "workspaces" }
   | {
@@ -122,7 +123,7 @@ function stripBase(path: string): string {
 }
 
 function currentLocationPath(): string {
-  return window.location.pathname + window.location.search;
+  return window.location.pathname + window.location.search + window.location.hash;
 }
 
 const defaultPlatformHosts: Record<string, string> = {
@@ -143,6 +144,15 @@ function decodeRouteSegment(segment: string): string | undefined {
     return decodeURIComponent(segment);
   } catch {
     return undefined;
+  }
+}
+
+function decodeRouteHash(hash: string): string | undefined {
+  if (!hash) return undefined;
+  try {
+    return decodeURIComponent(hash);
+  } catch {
+    return hash;
   }
 }
 
@@ -208,6 +218,7 @@ function splitRepoPath(repoPath: string): { owner: string; name: string } | unde
 function parseRoute(fullPath: string): Route {
   const hashIdx = fullPath.indexOf("#");
   const routePath = hashIdx >= 0 ? fullPath.slice(0, hashIdx) : fullPath;
+  const anchor = hashIdx >= 0 ? decodeRouteHash(fullPath.slice(hashIdx + 1)) : undefined;
   const qIdx = routePath.indexOf("?");
   const pathname = qIdx >= 0 ? routePath.slice(0, qIdx) : routePath;
   const search = qIdx >= 0 ? routePath.slice(qIdx + 1) : "";
@@ -304,6 +315,7 @@ function parseRoute(fullPath: string): Route {
       ...(refSHA ? { refSHA } : {}),
       ...(selectedPath ? { path: selectedPath } : {}),
       ...(mode ? { mode } : {}),
+      ...(anchor ? { anchor } : {}),
     };
   }
   if (path === "/kata") {

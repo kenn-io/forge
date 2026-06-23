@@ -77,6 +77,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
   let error = $state<string | null>(null);
   let treeRequestGeneration = 0;
   let pathRequestGeneration = 0;
+  let commitRequestGeneration = 0;
 
   const fileEntries = $derived(buildSourceBrowserFileEntries(tree, lastChanged));
   const visibleFileEntries = $derived(filterSourceBrowserFileEntriesByCategory(fileEntries, fileCategoryFilter));
@@ -227,6 +228,9 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     selectedPath = path;
     blobLoading = true;
     error = null;
+    blob = null;
+    fileHistory = [];
+    selectedCommit = null;
     try {
       const [{ data: blobData, error: blobError, response: blobResponse }, historyResponse] = await Promise.all([
         client.GET(providerRepoPath(ref, "/browser/blob"), {
@@ -272,25 +276,34 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     const ref = repo;
     const requestedRef = selectedRef;
     const path = selectedPath;
-    const generation = pathRequestGeneration;
     if (!ref || !requestedRef || !path) return;
-    const {
-      data,
-      error: apiError,
-      response,
-    } = await client.GET(providerRepoPath(ref, "/browser/commit"), {
-      params: {
-        path: providerRouteParams(ref),
-        query: {
-          ...queryFor(ref, requestedRef),
-          path,
-          sha,
+    const generation = nextCommitRequestGeneration();
+    selectedCommit = null;
+    error = null;
+    try {
+      const {
+        data,
+        error: apiError,
+        response,
+      } = await client.GET(providerRepoPath(ref, "/browser/commit"), {
+        params: {
+          path: providerRouteParams(ref),
+          query: {
+            ...queryFor(ref, requestedRef),
+            path,
+            sha,
+          },
         },
-      },
-    });
-    if (!isCurrentPathRequest(generation)) return;
-    if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
-    selectedCommit = (data as RepoBrowserCommitResponse).commit;
+      });
+      if (!isCurrentCommitRequest(generation)) return;
+      if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
+      selectedCommit = (data as RepoBrowserCommitResponse).commit;
+    } catch (err) {
+      if (isCurrentCommitRequest(generation)) {
+        error = err instanceof Error ? err.message : String(err);
+        selectedCommit = null;
+      }
+    }
   }
 
   function clearRepoData(): void {
@@ -314,12 +327,19 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
   function nextTreeRequestGeneration(): number {
     treeRequestGeneration += 1;
     pathRequestGeneration += 1;
+    commitRequestGeneration += 1;
     return treeRequestGeneration;
   }
 
   function nextPathRequestGeneration(): number {
     pathRequestGeneration += 1;
+    commitRequestGeneration += 1;
     return pathRequestGeneration;
+  }
+
+  function nextCommitRequestGeneration(): number {
+    commitRequestGeneration += 1;
+    return commitRequestGeneration;
   }
 
   function isCurrentTreeRequest(generation: number): boolean {
@@ -328,6 +348,10 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
 
   function isCurrentPathRequest(generation: number): boolean {
     return generation === pathRequestGeneration;
+  }
+
+  function isCurrentCommitRequest(generation: number): boolean {
+    return generation === commitRequestGeneration;
   }
 
   function setFileCategoryFilter(filter: DiffFileCategoryFilter): void {

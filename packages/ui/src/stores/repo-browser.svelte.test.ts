@@ -223,6 +223,102 @@ describe("createRepoBrowserStore", () => {
     expect(store.isBlobLoading()).toBe(false);
   });
 
+  it("clears path-dependent data while a new path is loading", async () => {
+    const base = testClient();
+    const srcBlob = deferredResponse();
+    const srcHistory = deferredResponse();
+    let deferSrc = false;
+    const client = {
+      GET: vi.fn(
+        (path: string, options?: { params?: { path?: Record<string, string>; query?: Record<string, unknown> } }) => {
+          const url = testURL(path, options);
+          if (
+            deferSrc &&
+            url ===
+              "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+          ) {
+            return srcBlob.promise;
+          }
+          if (
+            deferSrc &&
+            url ===
+              "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+          ) {
+            return srcHistory.promise;
+          }
+          return base.GET(path, options);
+        },
+      ),
+    } as unknown as TestClient;
+    const store = createRepoBrowserStore({ client });
+    await store.loadRepo(repo);
+
+    deferSrc = true;
+    const pending = store.selectPath("src/app.ts");
+
+    expect(store.getSelectedPath()).toBe("src/app.ts");
+    expect(store.getBlob()).toBeNull();
+    expect(store.getFileHistory()).toEqual([]);
+    expect(store.getSelectedCommit()).toBeNull();
+    expect(store.isBlobLoading()).toBe(true);
+
+    srcBlob.resolve(blobResponse("src/app.ts", "export const app = true;\n"));
+    srcHistory.resolve(historyResponse("src/app.ts", "app changed"));
+    await pending;
+
+    expect(store.getBlob()?.path).toBe("src/app.ts");
+    expect(store.getFileHistory().map((item) => item.subject)).toEqual(["app changed"]);
+    expect(store.isBlobLoading()).toBe(false);
+  });
+
+  it("ignores stale commit-detail responses and reports current commit errors", async () => {
+    const base = testClient();
+    const slowCommit = deferredResponse();
+    const client = {
+      GET: vi.fn(
+        (path: string, options?: { params?: { path?: Record<string, string>; query?: Record<string, unknown> } }) => {
+          const url = testURL(path, options);
+          if (
+            url ===
+            "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=slow-sha"
+          ) {
+            return slowCommit.promise;
+          }
+          if (
+            url ===
+            "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=fast-sha"
+          ) {
+            return Promise.resolve(commitResponse("fast-sha", "fast commit"));
+          }
+          if (
+            url ===
+            "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=missing-sha"
+          ) {
+            return Promise.resolve({
+              error: { detail: "commit failed" },
+              response: new Response(null, { status: 404 }),
+            });
+          }
+          return base.GET(path, options);
+        },
+      ),
+    } as unknown as TestClient;
+    const store = createRepoBrowserStore({ client });
+    await store.loadRepo(repo);
+
+    const stale = store.selectCommit("slow-sha");
+    expect(store.getSelectedCommit()).toBeNull();
+    await store.selectCommit("fast-sha");
+    expect(store.getSelectedCommit()?.sha).toBe("fast-sha");
+    slowCommit.resolve(commitResponse("slow-sha", "slow commit"));
+    await stale;
+    expect(store.getSelectedCommit()?.sha).toBe("fast-sha");
+
+    await store.selectCommit("missing-sha");
+    expect(store.getSelectedCommit()).toBeNull();
+    expect(store.getError()).toBe("commit failed");
+  });
+
   it("clears dependent state and reports errors when ref switching fails", async () => {
     const base = testClient();
     const client = {
@@ -315,6 +411,21 @@ function historyResponse(path: string, subject: string) {
       ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
       path,
       commits: [commit(subject)],
+    },
+    response: new Response(null, { status: 200 }),
+  };
+}
+
+function commitResponse(sha: string, subject: string) {
+  return {
+    data: {
+      repo,
+      ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+      path: "README.md",
+      commit: {
+        ...commit(subject),
+        sha,
+      },
     },
     response: new Response(null, { status: 200 }),
   };

@@ -147,19 +147,13 @@ func run(ctx context.Context, args []string) error {
 
 	releaseLock, err := lockEphemeralWorkDir(resolvedWorkDir)
 	if err != nil {
-		if errors.Is(err, errEphemeralWorkDirLocked) {
-			existingStatusPath := statusPathForWorkDir(resolvedWorkDir)
-			existingStatus, running, statusErr := readLiveEphemeralStatus(existingStatusPath)
-			if statusErr != nil {
-				return errors.Join(err, statusErr)
-			}
-			if running {
-				fmt.Printf("ephemeral dev stack already running\n")
-				printStatus(existingStatus, existingStatusPath)
-				return nil
-			}
+		if !errors.Is(err, errEphemeralWorkDirLocked) {
+			return err
 		}
-		return err
+		releaseLock, err = waitForEphemeralWorkDirLock(ctx, resolvedWorkDir)
+		if err != nil {
+			return err
+		}
 	}
 	locked := true
 	defer func() {
@@ -391,9 +385,33 @@ func writeStatusFile(path string, status ephemeralStatus) error {
 		return fmt.Errorf("encode status: %w", err)
 	}
 	content = append(content, '\n')
-	if err := os.WriteFile(path, content, 0o644); err != nil {
+
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".dev-ephemeral-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary status file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(content); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temporary status file: %w", err)
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temporary status file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary status file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("write status file: %w", err)
 	}
+	removeTmp = false
 	return nil
 }
 
@@ -439,6 +457,30 @@ func lockEphemeralWorkDir(workDir string) (func() error, error) {
 		closeErr := file.Close()
 		return errors.Join(unlockErr, closeErr)
 	}, nil
+}
+
+func waitForEphemeralWorkDirLock(ctx context.Context, workDir string) (func() error, error) {
+	for {
+		release, err := lockEphemeralWorkDir(workDir)
+		if err == nil {
+			return release, nil
+		}
+		if !errors.Is(err, errEphemeralWorkDirLocked) {
+			return nil, err
+		}
+		timer := time.NewTimer(stopPollInterval)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func stopEphemeralStack(statusPath string) error {

@@ -389,7 +389,7 @@ func TestLockEphemeralWorkDirRejectsConcurrentLock(t *testing.T) {
 	require.NoError(release())
 }
 
-func TestRunReusesLiveStatusWhenStartupLockIsStillHeld(t *testing.T) {
+func TestRunWaitsForWorkDirLockBeforeReusingLiveStatus(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	statusPath := filepath.Join(dir, "dev-ephemeral.json")
@@ -405,7 +405,12 @@ func TestRunReusesLiveStatusWhenStartupLockIsStillHeld(t *testing.T) {
 	require.NoError(err)
 	release, err := lockEphemeralWorkDir(dir)
 	require.NoError(err)
-	t.Cleanup(func() { require.NoError(release()) })
+	lockReleased := false
+	t.Cleanup(func() {
+		if !lockReleased {
+			require.NoError(release())
+		}
+	})
 	require.NoError(writeStatusFile(statusPath, ephemeralStatus{
 		PID:               os.Getpid(),
 		PIDStartedAt:      launcherStartedAt,
@@ -417,8 +422,123 @@ func TestRunReusesLiveStatusWhenStartupLockIsStillHeld(t *testing.T) {
 		FrontendURL:       "http://127.0.0.1:39412",
 	}))
 
-	err = run(context.Background(), []string{"-work-dir", dir})
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(context.Background(), []string{"-work-dir", dir})
+	}()
+	select {
+	case err := <-errCh:
+		require.Failf("run returned while the workdir lock was held", "err: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	require.NoError(release())
+	lockReleased = true
+	select {
+	case err := <-errCh:
+		require.NoError(err)
+	case <-time.After(5 * time.Second):
+		require.Fail("timed out waiting for run to reuse live status after lock release")
+	}
+}
+
+func TestRunWaitsForStopLockBeforeStartingReplacementStack(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.toml")
+	sourceDataDir := filepath.Join(dir, "source-data")
+	workDir := filepath.Join(dir, "run")
+	statusPath := filepath.Join(workDir, "dev-ephemeral.json")
+
+	source := config.Config{
+		SyncInterval:        "5m",
+		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		DefaultPlatformHost: "github.com",
+		Host:                "127.0.0.1",
+		Port:                8091,
+		DataDir:             sourceDataDir,
+		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
+	}
+	require.NoError(os.MkdirAll(sourceDataDir, 0o700))
+	require.NoError(source.Save(sourcePath))
+
+	commandDir := filepath.Join(dir, "commands")
+	writeBlockingScript(t, filepath.Join(commandDir, "scripts", "dev-stack-backend.sh"))
+	writeBlockingScript(t, filepath.Join(commandDir, "scripts", "frontend-dev.sh"))
+
+	oldScriptPath := filepath.Join(dir, "old-stack.sh")
+	writeBlockingScript(t, oldScriptPath)
+	oldLauncher, _ := startTestCommand(t, commandSpec{name: oldScriptPath})
+	oldBackend, _ := startTestCommand(t, commandSpec{name: oldScriptPath})
+	oldFrontend, _ := startTestCommand(t, commandSpec{name: oldScriptPath})
+	oldLauncherStartedAt, err := processStartTime(oldLauncher.Process.Pid)
 	require.NoError(err)
+	oldBackendStartedAt, err := processStartTime(oldBackend.Process.Pid)
+	require.NoError(err)
+	oldFrontendStartedAt, err := processStartTime(oldFrontend.Process.Pid)
+	require.NoError(err)
+	require.NoError(writeStatusFile(statusPath, ephemeralStatus{
+		PID:               oldLauncher.Process.Pid,
+		PIDStartedAt:      oldLauncherStartedAt,
+		BackendPID:        oldBackend.Process.Pid,
+		BackendStartedAt:  oldBackendStartedAt,
+		FrontendPID:       oldFrontend.Process.Pid,
+		FrontendStartedAt: oldFrontendStartedAt,
+		BackendURL:        "http://127.0.0.1:39411",
+		FrontendURL:       "http://127.0.0.1:39412",
+	}))
+
+	release, err := lockEphemeralWorkDir(workDir)
+	require.NoError(err)
+	lockReleased := false
+	t.Cleanup(func() {
+		if !lockReleased {
+			require.NoError(release())
+		}
+	})
+
+	oldDir, err := os.Getwd()
+	require.NoError(err)
+	require.NoError(os.Chdir(commandDir))
+	t.Cleanup(func() {
+		require.NoError(os.Chdir(oldDir))
+	})
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(context.Background(), []string{
+			"-config", sourcePath,
+			"-work-dir", workDir,
+			"-backend-port", "39511",
+			"-frontend-port", "39512",
+		})
+	}()
+	select {
+	case err := <-errCh:
+		require.Failf("run returned while stop held the workdir lock", "err: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	require.NoError(stopEphemeralStack(statusPath))
+	require.NoError(release())
+	lockReleased = true
+
+	status := waitForStatusFile(t, statusPath)
+	assert.NotEqual(oldBackend.Process.Pid, status.BackendPID)
+	assert.NotEqual(oldFrontend.Process.Pid, status.FrontendPID)
+	assert.Equal("http://127.0.0.1:39511", status.BackendURL)
+	assert.Equal("http://127.0.0.1:39512", status.FrontendURL)
+
+	status.PID = 0
+	require.NoError(writeStatusFile(statusPath, status))
+	require.NoError(stopEphemeralStack(statusPath))
+	select {
+	case err := <-errCh:
+		require.NoError(err)
+	case <-time.After(5 * time.Second):
+		require.Fail("timed out waiting for replacement dev-ephemeral run to stop")
+	}
 }
 
 func TestReadRunningEphemeralStatusReturnsLiveStatus(t *testing.T) {

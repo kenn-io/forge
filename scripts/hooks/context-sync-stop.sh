@@ -3,11 +3,11 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'USAGE'
-usage: context-sync-stop.sh stop|mark|status
+usage: context-sync-stop.sh stop|mark <context-decision>|status
 
-stop    Enforce that the context-sync Stop-hook preflight has checked the current worktree state.
-mark    Record the current worktree state after the preflight or a full context-sync run.
-status  Print whether the current worktree state is marked.
+stop    Enforce that the context-sync Stop-hook gate has checked the current worktree state.
+mark    Record the current worktree state after a preflight and explicit context decision.
+status  Print whether the current worktree state is marked, with the recorded decision.
 USAGE
 }
 
@@ -45,13 +45,14 @@ fingerprint() {
 
 mark_current() {
   local root="$1"
+  local decision="$2"
   local file
   local fp
 
   file="$(state_file "$root")" || return 1
   fp="$(fingerprint "$root")" || return 1
   mkdir -p "$(dirname "$file")"
-  printf '%s\n' "$fp" >"$file"
+  printf '%s\n%s\n' "$fp" "$decision" >"$file"
 }
 
 current_is_marked() {
@@ -62,7 +63,7 @@ current_is_marked() {
   file="$(state_file "$root")" || return 1
   [ -f "$file" ] || return 1
   fp="$(fingerprint "$root")" || return 1
-  [ "$(cat "$file")" = "$fp" ]
+  [ "$(sed -n '1p' "$file")" = "$fp" ]
 }
 
 require_marked() {
@@ -73,15 +74,21 @@ require_marked() {
   fi
 
   cat >&2 <<'MESSAGE'
-middleman context-sync Stop-hook preflight is required before this turn can complete.
+middleman context-sync Stop-hook gate is required before this turn can complete.
 
 Run:
   scripts/context-sync --check
-  scripts/hooks/context-sync-stop.sh mark
+
+Then inspect the turn's diff and conversation for durable context changes:
+  - update or propose context docs for new behavior, design decisions, invariants, or gotchas
+  - if no update belongs in context, be ready to state the concrete reason
+
+Finally mark with that decision, for example:
+  scripts/hooks/context-sync-stop.sh mark "updated context/testing.md for the new API-test rule"
+  scripts/hooks/context-sync-stop.sh mark "no context update: changed only local wording in a hook prompt"
 
 If context-sync reports drift, address it or report the findings before marking.
-For user-requested context documentation updates, run the full context-sync skill
-workflow; this preflight only checks hook-critical routing.
+Do not mark solely because the preflight passed.
 MESSAGE
   exit 2
 }
@@ -100,10 +107,21 @@ main() {
 
   case "$command" in
     stop) require_marked "$root" ;;
-    mark) mark_current "$root" ;;
+    mark)
+      shift
+      if [ "$#" -eq 0 ] || [ -z "${*//[[:space:]]/}" ]; then
+        printf 'context-sync-stop: mark requires a context decision reason\n' >&2
+        usage
+        exit 64
+      fi
+      mark_current "$root" "$*" ;;
     status)
       if current_is_marked "$root"; then
         echo "context-sync-stop: current worktree state is marked"
+        state="$(state_file "$root")" || exit 1
+        if [ "$(wc -l <"$state")" -gt 1 ]; then
+          printf 'context-sync-stop: context decision: %s\n' "$(sed -n '2,$p' "$state")"
+        fi
       else
         echo "context-sync-stop: current worktree state is not marked"
         exit 1

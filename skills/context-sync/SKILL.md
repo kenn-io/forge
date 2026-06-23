@@ -39,21 +39,33 @@ context-sync workflow.
 
 ## Stop Hook Completion
 
-This repo installs Claude Code and Codex `Stop` hooks that require a cheap context-sync
-preflight before a turn completes. When a Stop hook asks for context sync, run
-`scripts/context-sync --check` first. If it reports drift, address the drift or report
-the findings before marking the state as checked.
+This repo installs Claude Code and Codex `Stop` hooks to make agents remember context
+updates even when the maintainer did not ask for them. Treat the hook as a context
+decision gate, not as a script-only check.
 
-After any successful Stop-hook preflight or full context-sync run, mark the current
-worktree state:
+When the Stop hook asks for context sync:
+
+1. Run `scripts/context-sync --check`. If it reports drift, address the drift or report
+   the findings before marking.
+2. Inspect the current turn's diff and conversation. If code changed in an Area Map path,
+   a maintainer explained a design decision, an agent hit a gotcha, or an invariant/
+   workflow changed, open the matching context doc and decide whether the grep test says
+   to update it.
+3. Apply the context update when the right doc edit is clear, additive, and supported by
+   the diff/conversation. If the update would delete context, reinterpret a design
+   decision, or make a claim the code cannot verify, propose a concrete diff or
+   confidence-tagged suggestion in the final response instead.
+4. Only then mark the current worktree state with the decision:
 
 ```bash
-scripts/hooks/context-sync-stop.sh mark
+scripts/hooks/context-sync-stop.sh mark "updated context/testing.md for the new API-test rule"
+scripts/hooks/context-sync-stop.sh mark "no context update: changed only a greppable helper name"
 ```
 
-Do not mark first. The marker is only a loop guard proving the current git worktree
-fingerprint has already been checked. The marker does not mean the docs were audited,
-updated, or improved.
+Do not mark first, and do not mark solely because `scripts/context-sync --check` passed.
+"No context update" is valid only after checking the diff/conversation against
+`context-guide.md`'s update rules. The marker is a loop guard proving this worktree
+fingerprint already passed the context decision gate.
 
 ## Step 1: Load the Guide
 
@@ -149,11 +161,17 @@ invariant is documented but unguarded, flag it as a gap and propose the smallest
 
 When a guard and a doc disagree, that is a high-priority finding for Step 7.
 
-## Step 7: Present Diffs
+## Step 7: Present Or Apply Diffs
 
-Show all proposed changes. Flag DELETIONS and MODIFICATIONS separately from additions —
-deletions are higher risk (removing context that was actually needed is harder to
-recover from than adding noise). Wait for maintainer approval before applying anything.
+For explicit full-sync/audit requests, show all proposed changes. Flag DELETIONS and
+MODIFICATIONS separately from additions — deletions are higher risk (removing context
+that was actually needed is harder to recover from than adding noise). Wait for
+maintainer approval before applying those broad audit changes.
+
+For Stop-hook self-maintenance, do not wait for the maintainer to ask for context work:
+apply clear, scoped additions or factual corrections that follow directly from the
+current turn. Propose instead of applying when the change would remove context,
+reinterpret a durable decision, or needs maintainer-only domain knowledge.
 
 ## Step 8: Apply, Route, Commit
 

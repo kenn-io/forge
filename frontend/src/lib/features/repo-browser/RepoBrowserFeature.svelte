@@ -134,7 +134,7 @@
     return {
       type,
       name: value.refName ?? value.refSHA ?? "",
-      sha: value.refSHA ?? value.refName ?? "",
+      sha: value.refSHA ?? (type === "commit" ? (value.refName ?? "") : ""),
       stale: false,
     };
   }

@@ -97,8 +97,8 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       ...(selected && {
         ref_type: selected.type,
         ...(selected.name ? { ref_name: selected.name } : {}),
-        ...(selected.sha ? { ref_sha: selected.sha } : {}),
       }),
+      ...(selected?.sha ? { ref_sha: selected.sha } : {}),
     };
   }
 
@@ -161,7 +161,15 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
   }
 
   function chooseSelectedRef(requestedRef?: RepoBrowserRef | undefined): RepoBrowserRef | null {
-    if (requestedRef) return requestedRef;
+    if (requestedRef) {
+      if (!requestedRef.sha && requestedRef.type !== "commit") {
+        const resolved = refs.find(
+          (candidate) => candidate.type === requestedRef.type && candidate.name === requestedRef.name,
+        );
+        if (resolved) return resolved;
+      }
+      return requestedRef;
+    }
     return defaultRef ?? refs[0] ?? null;
   }
 

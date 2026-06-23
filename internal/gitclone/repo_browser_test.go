@@ -78,6 +78,16 @@ func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T) {
 	require.NoError(err)
 	assert.False(truncated)
 	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
+
+	commitTestRun(t, work, "git", "tag", "v1.0.1", mainSHA)
+	commitTestRun(t, work, "git", "push", "origin", "refs/tags/v1.0.1")
+	require.NoError(mgr.EnsureClone(t.Context(), repo.Host, repo.Owner, repo.Name, repo.RemoteURL))
+
+	refs, _, truncated, err = mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
+	require.NoError(err)
+	assert.False(truncated)
+	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
+	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.1", SHA: mainSHA})
 }
 
 func TestRepoBrowserListTreeReaderStopsAtEntryLimit(t *testing.T) {
@@ -161,6 +171,28 @@ func TestRepoBrowserLastChangedBatchCapsPaths(t *testing.T) {
 	assert.ErrorIs(err, ErrTooManyPaths)
 }
 
+func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+	readmeSHA := gitSHA(t, work, "HEAD")
+
+	for i := range RepoBrowserLastChangedLogLimit + 1 {
+		require.NoError(os.WriteFile(filepath.Join(work, "churn.txt"), fmt.Appendf(nil, "%d\n", i), 0o644))
+		commitTestRun(t, work, "git", "add", ".")
+		commitTestRun(t, work, "git", "commit", "-m", fmt.Sprintf("churn %03d", i))
+	}
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	require.NoError(mgr.EnsureClone(t.Context(), repo.Host, repo.Owner, repo.Name, repo.RemoteURL))
+	ref := repoBrowserMainRef(t, mgr, repo)
+
+	changed, err := mgr.RepoBrowserLastChanged(t.Context(), repo, ref, []string{"README.md", "churn.txt"})
+
+	require.NoError(err)
+	assert.Equal(readmeSHA, changed["README.md"].SHA)
+	assert.Equal(gitSHA(t, work, "HEAD"), changed["churn.txt"].SHA)
+}
+
 func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -231,6 +263,14 @@ func TestRepoBrowserHistoryTreatsPathspecMagicAsLiteral(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "origin", "main")
 	require.NoError(mgr.EnsureClone(t.Context(), repo.Host, repo.Owner, repo.Name, repo.RemoteURL))
 	ref := repoBrowserMainRef(t, mgr, repo)
+
+	blob, err := mgr.ReadRepoBrowserBlob(t.Context(), repo, ref, magicPath)
+	require.NoError(err)
+	assert.Equal("literal\n", blob.Content)
+
+	changed, err := mgr.RepoBrowserLastChanged(t.Context(), repo, ref, []string{magicPath})
+	require.NoError(err)
+	assert.Equal(literalSHA, changed[magicPath].SHA)
 
 	history, err := mgr.RepoBrowserFileHistory(t.Context(), repo, ref, magicPath)
 	require.NoError(err)

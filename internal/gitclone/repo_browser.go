@@ -99,6 +99,8 @@ func (m *Manager) ListRepoBrowserRefs(
 	out, err := m.git(ctx, dir,
 		"for-each-ref",
 		"--count="+strconv.Itoa(RepoBrowserRefLimit+1),
+		"--exclude=refs/remotes/origin/HEAD",
+		"--sort=refname",
 		"--format=%(refname)%00%(objectname)%00%(*objectname)",
 		"refs/remotes/origin",
 		"refs/tags",
@@ -431,7 +433,23 @@ func (m *Manager) RepoBrowserLastChanged(
 	if err != nil {
 		return nil, fmt.Errorf("repo browser last changed: %w", err)
 	}
-	return parseRepoBrowserLastChanged(out, seen)
+	changed, err := parseRepoBrowserLastChanged(out, seen)
+	if err != nil {
+		return nil, err
+	}
+	for _, cleanPath := range cleanPaths {
+		if _, ok := changed[cleanPath]; ok {
+			continue
+		}
+		commit, ok, err := m.repoBrowserLastChangedForPath(ctx, dir, sha, cleanPath)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			changed[cleanPath] = commit
+		}
+	}
+	return changed, nil
 }
 
 func parseRepoBrowserLastChanged(out []byte, wanted map[string]bool) (map[string]RepoBrowserCommit, error) {
@@ -462,6 +480,34 @@ func parseRepoBrowserLastChanged(out []byte, wanted map[string]bool) (map[string
 		}
 	}
 	return changed, scanner.Err()
+}
+
+func (m *Manager) repoBrowserLastChangedForPath(
+	ctx context.Context,
+	dir string,
+	sha string,
+	pathName string,
+) (RepoBrowserCommit, bool, error) {
+	out, err := m.git(ctx, dir,
+		"log",
+		"--max-count=1",
+		"--format="+repoBrowserCommitFormat,
+		"--end-of-options",
+		sha,
+		"--",
+		literalRepoBrowserPathspec(pathName),
+	)
+	if err != nil {
+		return RepoBrowserCommit{}, false, fmt.Errorf("repo browser last changed %s: %w", pathName, err)
+	}
+	commits, err := parseRepoBrowserCommitLines(out)
+	if err != nil {
+		return RepoBrowserCommit{}, false, err
+	}
+	if len(commits) == 0 {
+		return RepoBrowserCommit{}, false, nil
+	}
+	return commits[0], true, nil
 }
 
 func (m *Manager) RepoBrowserFileHistory(

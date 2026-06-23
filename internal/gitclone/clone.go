@@ -325,7 +325,7 @@ func (m *Manager) fetch(
 	// GitHub's smart-HTTP endpoint sporadically returns 5xx on /info/refs.
 	// Retry inline so a transient blip does not drop the entire sync cycle.
 	_, err := retryTransient(ctx, "git fetch", func() ([]byte, error) {
-		return m.gitNetworked(ctx, host, clonePath, nil, "fetch", "--prune", "origin")
+		return m.gitNetworked(ctx, host, clonePath, nil, "fetch", "--prune", "--tags", "origin")
 	})
 	if err != nil {
 		return fmt.Errorf("git fetch: %w", err)

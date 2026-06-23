@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -53,6 +54,29 @@ func TestRepoBrowserRefsUsesProviderRouteWhenRepoPathMissing(t *testing.T) {
 	assert.Equal("github.com", body.Repo.PlatformHost)
 	assert.Equal("acme/widgets", body.Repo.RepoPath)
 	assert.Equal("main", body.DefaultRef.Name)
+}
+
+func TestRepoBrowserRefsReportsTruncationForLargeRefSets(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+	remote := filepath.Join(filepath.Dir(work), "remote.git")
+	mainSHA := testGitSHA(t, work, "main")
+	for i := range gitclone.RepoBrowserRefLimit + 1 {
+		serverRepoBrowserGit(t, remote, "update-ref", fmt.Sprintf("refs/heads/branch-%04d", i), mainSHA)
+	}
+
+	rr := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/refs",
+	)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var body repoBrowserRefsResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.True(body.Truncated)
+	assert.Len(body.Refs, gitclone.RepoBrowserRefLimit)
+	assert.Equal("main", body.DefaultRef.Name)
+	assert.Equal(mainSHA, body.DefaultRef.SHA)
 }
 
 func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T) {

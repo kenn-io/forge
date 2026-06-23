@@ -109,7 +109,11 @@ Write the API contract in server request/response types before handlers:
 - error/state contract:
   use existing camelCase problem codes for failures; put repo-browser reasons such as `clone_unavailable`, `unavailable_ref`, and `missing_path` in `details.reason`; model truncation, stale-token, binary, oversized, and unsupported-SVG cases as successful response states
 - caps:
-  `RepoBrowserTreeEntryLimit`, `RepoBrowserBlobSizeLimit`, `RepoBrowserLastChangedBatchMax`, `RepoBrowserHistoryLimit`
+  `RepoBrowserRefLimit`, `RepoBrowserTreeEntryLimit`, `RepoBrowserBlobSizeLimit`, `RepoBrowserLastChangedBatchMax`, `RepoBrowserLastChangedLogLimit`, `RepoBrowserHistoryLimit`
+- truncation semantics:
+  ref lists are sorted by refname before applying `RepoBrowserRefLimit`; `refs/remotes/origin/HEAD` is not displayable and must not consume the cap; `default_ref` is returned separately and may be absent from a truncated `refs` array; tree truncation is bounded by Git traversal order before UI sorting and the UI must present it as a partial tree
+- pathspec safety:
+  every caller-controlled repo path passed to Git must use a shared literal pathspec helper after `--`; `--` alone is not sufficient because filenames can begin with Git pathspec magic such as `:(glob)`
 - Markdown asset contract:
   separate `asset-metadata` JSON preflight and `asset-bytes` byte routes; metadata emits commit-pinned byte URLs only for renderable assets; path/ref validation, MIME detection, unsupported SVG state with no byte URL, byte route problem envelopes for SVG/non-renderable assets, blob-size caps, conservative branch/tag metadata cache headers, immutable byte cache headers
 - fetch behavior:
@@ -143,9 +147,10 @@ envelopes, status codes, and response headers belong in `internal/server`
 tests.
 `TestRepoBrowserFetchDoesNotPruneTagsOnHotPath` must prove repo-browser
 ensure/fetch and manual refresh behavior does not pass tag-pruning options and
-does not remove an existing local tag when the remote tag has disappeared.
-Deleted remote tags are allowed to remain visible until a separate maintenance
-path handles cache cleanup.
+does not remove an existing local tag when the remote tag has disappeared. It
+must also prove new remote tags pointing at already-present objects are fetched
+without pruning tags. Deleted remote tags are allowed to remain visible until a
+separate maintenance path handles cache cleanup.
 `TestRepoBrowserCloneIdentitySeparatesProvidersAndNestedPaths` must cover two
 repositories with the same `platform_host` and `repo_path` but different
 providers, plus slash-containing nested `repo_path` values. It must prove clone
@@ -271,17 +276,20 @@ RepoBrowserFileHistory(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBro
 RepoBrowserCommitDetail(ctx context.Context, repo RepoBrowserRepoRef, root RepoBrowserRef, path string, sha string) (RepoBrowserCommitDetail, error)
 ```
 
-All methods must validate repo-relative paths, use `--` before paths, resolve
-refs statelessly through typed ref inputs, and return typed errors for missing
-refs/paths. Every successful read operation after `ListRepoBrowserRefs` must
-return `RepoBrowserResolvedRef` so the server can emit `resolvedSha`,
-`requestedSha`, and `stale` without separately re-resolving the branch or tag.
-Clone/cache identity must use `(Provider, PlatformHost, RepoPath)` from
-`RepoBrowserRepoRef`; owner/name are display hints only and must not participate
-in clone paths or cache keys. The shared identity helper must be the only place
-that encodes provider, canonical platform host, and slash-containing repo path
-for clone paths and fetch singleflight keys. Last-changed batches must use a
-single bounded Git history walk per batch, not one process per path.
+All methods must validate repo-relative paths, pass caller-controlled paths only
+through the shared literal pathspec helper after `--`, resolve refs statelessly
+through typed ref inputs, and return typed errors for missing refs/paths. Every
+successful read operation after `ListRepoBrowserRefs` must return
+`RepoBrowserResolvedRef` so the server can emit `resolvedSha`, `requestedSha`,
+and `stale` without separately re-resolving the branch or tag. Clone/cache
+identity must use `(Provider, PlatformHost, RepoPath)` from `RepoBrowserRepoRef`;
+owner/name are display hints only and must not participate in clone paths or
+cache keys. The shared identity helper must be the only place that encodes
+provider, canonical platform host, and slash-containing repo path for clone
+paths and fetch singleflight keys. Last-changed batches should use one bounded
+Git history walk for the batch, then a bounded `--max-count=1` per-path fallback
+only for requested paths not found in that capped batch so old paths do not look
+historyless.
 
 - [ ] **Step 6: Run gitclone tests green**
 

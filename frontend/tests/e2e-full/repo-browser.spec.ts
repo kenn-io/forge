@@ -225,6 +225,36 @@ test.describe("repository source browser", () => {
     }
   });
 
+  test("opens the focused route repo from the command palette when a stale PR selection exists", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/pulls/github/acme/tools/1`);
+      await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+
+      await page.goto(`${server.info.base_url}/focus/pulls/github/acme/widgets/1`);
+      await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+
+      const readmeLoaded = blobResponse(page, "README.md");
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+      const palette = page.getByRole("dialog", { name: "Command palette" });
+      await expect(palette).toBeVisible();
+      await palette.locator(".palette-input").fill("repo.browser.open");
+      await palette.getByRole("button", { name: /View repository source/ }).click();
+      await readmeLoaded;
+
+      const route = new URL(page.url());
+      expect(route.pathname).toBe("/repo/browser");
+      expect(route.searchParams.get("repo_path")).toBe("acme/widgets");
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      await expect(browser.locator(".repo-browser__repo")).toHaveText("acme/widgets");
+      await expect(browser.getByRole("main", { name: "Selected file" }).locator(".repo-browser__source")).toContainText(
+        "# Widget Service",
+      );
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("opens a seeded repository through the real browser API", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {

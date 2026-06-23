@@ -39,6 +39,13 @@ const selected = {
   number: 1,
 };
 
+const staleSelected = {
+  ...selected,
+  owner: "stale",
+  name: "selection",
+  repoPath: "stale/selection",
+};
+
 function command(id: string) {
   const action = defaultActions.find((a) => a.id === id);
   expect(action).toBeDefined();
@@ -310,14 +317,20 @@ describe("defaultActions", () => {
   it("opens the repo browser from selected issue and activity contexts", () => {
     const action = command("repo.browser.open");
 
-    expect(action.when(ctx("issues", { selectedIssue: selected }))).toBe(true);
+    const issueContext = ctx("issues", {
+      selectedPR: staleSelected,
+      selectedIssue: selected,
+    });
+    expect(action.when(issueContext)).toBe(true);
+    action.handler(issueContext);
+    expect(locationPath()).toBe("/repo/browser?provider=github&platform_host=github.com&repo_path=octo%2Frepo");
 
     window.history.replaceState(
       null,
       "",
       "/?selected=issue:8&provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fproject",
     );
-    const context = ctx("activity");
+    const context = ctx("activity", { selectedPR: staleSelected });
     expect(action.when(context)).toBe(true);
     action.handler(context);
 
@@ -359,7 +372,7 @@ describe("defaultActions", () => {
         repoPath: "acme/widgets",
       }),
     ]);
-    const context = ctx("workspaces");
+    const context = ctx("workspaces", { selectedPR: staleSelected });
 
     expect(action.when(context)).toBe(true);
     action.handler(context);

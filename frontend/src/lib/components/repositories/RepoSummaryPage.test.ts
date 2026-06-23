@@ -410,7 +410,11 @@ describe("RepoSummaryPage", () => {
     render(RepoSummaryPage);
 
     await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
-    await fireEvent.click(screen.getByRole("button", { name: "View repo" }));
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "View repository source for acme widgets on github.com",
+      }),
+    );
 
     expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
     expect(mockNavigate).toHaveBeenCalledWith(

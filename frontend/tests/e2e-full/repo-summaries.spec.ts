@@ -1,5 +1,17 @@
-import { expect, test } from "@playwright/test";
-import { startIsolatedE2EServerWithOptions } from "./support/e2eServer";
+import { expect, test, type Page } from "@playwright/test";
+import { startIsolatedE2EServer, startIsolatedE2EServerWithOptions } from "./support/e2eServer";
+
+function repoBrowserBlobLoaded(page: Page, path: string) {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      url.pathname === "/api/v1/repo/github/acme/widgets/browser/blob" &&
+      url.searchParams.get("path") === path &&
+      response.ok()
+    );
+  });
+}
 
 test.describe("repository summaries", () => {
   test("hides a configured non-github default host in repo labels", async ({ page }) => {
@@ -29,6 +41,36 @@ test.describe("repository summaries", () => {
         .first();
       await expect(githubCard).toBeVisible();
       await expect(githubCard.getByText("github.com")).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("opens the source browser from a repository card through the real backend", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const readmeLoaded = repoBrowserBlobLoaded(page, "README.md");
+      await page.goto(`${server.info.base_url}/repos`);
+
+      const widgetsCard = page
+        .locator(".repo-card")
+        .filter({
+          has: page.getByRole("button", {
+            name: /acme\s*\/\s*widgets/,
+          }),
+        })
+        .first();
+      await widgetsCard.waitFor({ state: "visible", timeout: 10_000 });
+      await widgetsCard.getByRole("button", { name: "View repository source for acme widgets on github.com" }).click();
+      await readmeLoaded;
+
+      await expect(page).toHaveURL(/\/repo\/browser\?provider=github/);
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      await expect(browser).toBeVisible();
+      await expect(browser.locator(".repo-browser__repo")).toHaveText("acme/widgets");
+      const viewer = browser.getByRole("main", { name: "Selected file" });
+      await expect(viewer.locator(".repo-browser__path")).toContainText("README.md");
+      await expect(viewer.locator(".repo-browser__source")).toContainText("# Widget Service");
     } finally {
       await server.stop();
     }

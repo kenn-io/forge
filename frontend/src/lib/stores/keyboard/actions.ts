@@ -219,17 +219,39 @@ function workspacePageRepoRef(ctx: Context): RepositoryRouteRef | null {
   }
 }
 
+function pageSelectedPRRef(ctx: Context): RepositoryRouteRef | null {
+  if (
+    ctx.page === "pulls" ||
+    ctx.page === "mobile-pulls" ||
+    (ctx.route.page === "focus" && ctx.route.itemType === "pr")
+  ) {
+    return itemRepoRef(ctx.selectedPR);
+  }
+  return null;
+}
+
+function pageSelectedIssueRef(ctx: Context): RepositoryRouteRef | null {
+  if (
+    ctx.page === "issues" ||
+    ctx.page === "mobile-issues" ||
+    (ctx.route.page === "focus" && ctx.route.itemType === "issue")
+  ) {
+    return itemRepoRef(ctx.selectedIssue);
+  }
+  return null;
+}
+
 function repoBrowserCommandRef(ctx: Context): RepositoryRouteRef | null {
   const routeRef = routeRepoRef(ctx);
   if (routeRef) return routeRef;
-  const selectedPRRef = itemRepoRef(ctx.selectedPR);
-  if (selectedPRRef) return selectedPRRef;
-  const selectedIssueRef = itemRepoRef(ctx.selectedIssue);
-  if (selectedIssueRef) return selectedIssueRef;
   if (ctx.page === "activity") {
     return itemRepoRef(parseActivitySelection(window.location.search));
   }
-  return workspacePageRepoRef(ctx);
+  const workspaceRef = workspacePageRepoRef(ctx);
+  if (workspaceRef) return workspaceRef;
+  const selectedPRRef = pageSelectedPRRef(ctx);
+  if (selectedPRRef) return selectedPRRef;
+  return pageSelectedIssueRef(ctx);
 }
 
 function repoBrowserSubtitle(ref: RepositoryRouteRef | null): string | undefined {

@@ -229,6 +229,7 @@
         size="sm"
         tone="neutral"
         surface="outline"
+        ariaLabel={`View repository source for ${summary.owner} ${summary.name} on ${summary.platform_host}`}
         onclick={onviewrepo}
       >
         <FolderTreeIcon size="14" strokeWidth="2" aria-hidden="true" />

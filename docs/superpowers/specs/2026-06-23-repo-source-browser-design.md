@@ -105,6 +105,20 @@ inputs. GitHub-only URL assembly does not belong in the repo browser. Nested rep
 paths, self-hosted platform hosts, and provider default hosts must follow the
 existing platform metadata and route-helper rules.
 
+Default-host routes must canonicalize the omitted `platform_host` to the
+provider default before repository lookup, clone/fetch orchestration, response
+metadata, and gitclone identity construction. The host-prefixed route for that
+same default host must produce the same canonical repository identity.
+
+`internal/gitclone` must expose one shared clone identity helper used by clone
+path construction, fetch singleflight keys, fetch operations, and repo-browser
+read operations. That helper takes `(provider, canonical_platform_host,
+repo_path)`, rejects empty or unsafe components, and encodes slash-containing
+`repo_path` as a single repository identity component rather than deriving
+owner/name from it. Clone remote URLs and token/auth lookup come only from the
+repository record returned by provider-aware lookup; they must not be inferred
+from route owner/name placeholders or from the encoded clone path.
+
 ## Backend Data Flow
 
 Opening the repo browser ensures/fetches the bare clone and returns repo-code

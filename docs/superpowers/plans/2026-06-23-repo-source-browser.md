@@ -45,6 +45,8 @@ Do not use `git rebase` directly on this stack.
 
 - `internal/gitclone/repo_browser.go`: read-only Git operations for refs, tree, blobs, last-changed batches, file history, commit detail, and Markdown asset reads.
 - `internal/gitclone/repo_browser_test.go`: temporary Git repository tests for those operations.
+- `internal/gitclone/clone.go`: shared provider-aware clone identity helper used by clone path construction, fetch singleflight keys, fetch operations, and repo-browser reads.
+- `internal/gitclone/clone_test.go`: provider-aware clone identity, path encoding, and singleflight key coverage.
 - `internal/server/repo_browser.go`: Huma handlers, `repo_path`-first provider-aware repository lookup, stable error mapping, and clone/fetch orchestration.
 - `internal/server/repo_browser_test.go` or `internal/server/e2etest/repo_browser_test.go`: full-stack API plus SQLite coverage.
 - `internal/server/api_types.go`: repo browser response/request wire types.
@@ -64,6 +66,8 @@ Do not use `git rebase` directly on this stack.
 **Files:**
 - Create: `internal/gitclone/repo_browser.go`
 - Create: `internal/gitclone/repo_browser_test.go`
+- Modify: `internal/gitclone/clone.go`
+- Modify: `internal/gitclone/clone_test.go`
 - Create: `internal/server/repo_browser.go`
 - Create: `internal/server/repo_browser_test.go`
 - Modify: `internal/server/api_types.go`
@@ -94,6 +98,12 @@ Write the API contract in server request/response types before handlers:
   `/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/{operation}?repo_path={repo_path}`
 - repository lookup key:
   `(provider, platform_host, repo_path)`; owner/name route params are display hints derived from the stored display owner/name and must not drive identity, cache keys, or clone paths for nested providers
+- platform host canonicalization:
+  default-host routes must canonicalize omitted `platform_host` to the provider default before DB lookup, clone/fetch orchestration, response metadata, and gitclone identity construction; the host-prefixed route for that same default host must use the same canonical identity
+- clone identity:
+  add one shared gitclone identity helper for clone path construction, fetch singleflight keys, fetch operations, and repo-browser read operations; it takes `(provider, canonical_platform_host, repo_path)`, rejects empty or unsafe components, and encodes slash-containing `repo_path` as a single repository identity component
+- auth/remote boundary:
+  clone remote URLs and token lookup must come from the repository record returned by provider-aware lookup, not from route owner/name placeholders or the encoded clone path
 - ref semantics:
   branch/tag `ref_name` resolves fresh per request; branch/tag `ref_sha` is a staleness token returned as `ref: { type, name?, resolvedSha, requestedSha?, stale }` on every successful JSON repo-browser response; commit-pinned `asset-bytes` successes are raw bytes and rely on the SHA in the generated URL
 - error/state contract:
@@ -116,6 +126,7 @@ func TestRepoBrowserReadBlobRejectsTraversalAndReportsLargeState(t *testing.T)
 func TestRepoBrowserLastChangedBatchCapsPaths(t *testing.T)
 func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T)
 func TestRepoBrowserResponsesIncludeRefMetadata(t *testing.T)
+func TestRepoBrowserCloneIdentitySeparatesProvidersAndNestedPaths(t *testing.T)
 func TestRepoBrowserMarkdownAssetRejectsUnsafeAndOversizedPaths(t *testing.T)
 func TestRepoBrowserMarkdownAssetMetadataRejectsSVG(t *testing.T)
 func TestRepoBrowserMarkdownAssetBytesRejectsNonRenderableStates(t *testing.T)
@@ -128,6 +139,12 @@ return the successful typed `tooLarge` state and metadata. Gitclone tests should
 assert typed Git-layer results, ref metadata, and errors only; HTTP problem
 envelopes, status codes, and response headers belong in `internal/server`
 tests.
+`TestRepoBrowserCloneIdentitySeparatesProvidersAndNestedPaths` must cover two
+repositories with the same `platform_host` and `repo_path` but different
+providers, plus slash-containing nested `repo_path` values. It must prove clone
+paths and fetch singleflight keys use distinct `(provider, platform_host,
+repo_path)` identities and that repo-browser reads consume the same identity as
+clone/fetch orchestration.
 
 - [ ] **Step 4: Run gitclone tests red**
 
@@ -254,8 +271,10 @@ return `RepoBrowserResolvedRef` so the server can emit `resolvedSha`,
 `requestedSha`, and `stale` without separately re-resolving the branch or tag.
 Clone/cache identity must use `(Provider, PlatformHost, RepoPath)` from
 `RepoBrowserRepoRef`; owner/name are display hints only and must not participate
-in clone paths or cache keys. Last-changed batches must use a single bounded Git
-history walk per batch, not one process per path.
+in clone paths or cache keys. The shared identity helper must be the only place
+that encodes provider, canonical platform host, and slash-containing repo path
+for clone paths and fetch singleflight keys. Last-changed batches must use a
+single bounded Git history walk per batch, not one process per path.
 
 - [ ] **Step 6: Run gitclone tests green**
 
@@ -272,6 +291,8 @@ Add `internal/server/repo_browser_test.go` tests that seed SQLite with tracked r
 ```go
 func TestRepoBrowserRefsUsesProviderAwareRepoLookup(t *testing.T)
 func TestRepoBrowserHostRouteReadsNestedRepoPath(t *testing.T)
+func TestRepoBrowserDefaultAndHostRoutesUseCanonicalCloneIdentity(t *testing.T)
+func TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath(t *testing.T)
 func TestRepoBrowserRoutesRequireRepoPathForNestedRepos(t *testing.T)
 func TestRepoBrowserBranchSHAReportsStaleRef(t *testing.T)
 func TestRepoBrowserTreeTruncationKeepsDirectBlobReadable(t *testing.T)
@@ -288,6 +309,13 @@ types, and branch/tag byte requests through `srv.ServeHTTP`, asserting the exact
 HTTP status, camelCase problem code, `details.reason`, and `Cache-Control:
 no-store` headers. `TestRepoBrowserMarkdownAssetReturnsSafeMimeAndCacheHeaders`
 keeps the successful renderable-byte MIME and immutable-cache assertions.
+`TestRepoBrowserDefaultAndHostRoutesUseCanonicalCloneIdentity` must request the
+same default-host repository through both route shapes and assert both paths use
+the same canonical platform host, stored repository record, clone identity, and
+ref metadata. `TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath`
+must seed two repositories that differ only by provider with the same
+`platform_host` and `repo_path`, then assert each route reads provider-specific
+content from a distinct clone/cache identity.
 
 - [ ] **Step 8: Run server tests red**
 

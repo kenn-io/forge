@@ -1150,6 +1150,12 @@ describe("WorkspaceTerminalView", () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
     const deleteRequest = deferred<Response>();
+    const otherWorkspaceResponse = {
+      ...workspaceResponse,
+      id: "ws-2",
+      item_number: 8,
+      worktree_path: "/tmp/worktree-2",
+    };
     const fetchMock = vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       const method = init?.method ?? (input instanceof Request ? input.method : "GET");
@@ -1160,13 +1166,16 @@ describe("WorkspaceTerminalView", () => {
       if (pathname.endsWith("/workspaces/ws-1")) {
         return Promise.resolve(Response.json(workspaceResponse));
       }
-      if (pathname.endsWith("/api/v1/workspaces")) {
-        return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+      if (pathname.endsWith("/workspaces/ws-2")) {
+        return Promise.resolve(Response.json(otherWorkspaceResponse));
       }
-      if (pathname.endsWith("/workspaces/ws-1/files")) {
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse, otherWorkspaceResponse] }));
+      }
+      if (pathname.endsWith("/workspaces/ws-1/files") || pathname.endsWith("/workspaces/ws-2/files")) {
         return Promise.resolve(Response.json({ stale: false, whitespace_only_count: 0, files: [] }));
       }
-      if (pathname.endsWith("/workspaces/ws-1/diff")) {
+      if (pathname.endsWith("/workspaces/ws-1/diff") || pathname.endsWith("/workspaces/ws-2/diff")) {
         return Promise.resolve(Response.json({ stale: false, whitespace_only_count: 0, files: [] }));
       }
       return Promise.resolve(Response.json({}));
@@ -1178,7 +1187,7 @@ describe("WorkspaceTerminalView", () => {
     );
     window.history.pushState({}, "", "/terminal/ws-1");
 
-    render(WorkspaceTerminalView, {
+    const view = render(WorkspaceTerminalView, {
       props: {
         workspaceId: "ws-1",
       },
@@ -1219,6 +1228,28 @@ describe("WorkspaceTerminalView", () => {
     expect(
       screen.getAllByRole("button", { name: "Shell" }).every((button) => button.getAttribute("draggable") === "false"),
     ).toBe(true);
+
+    window.history.pushState({}, "", "/terminal/ws-2");
+    await view.rerender({ workspaceId: "ws-2" });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) => {
+          if (!(input instanceof Request)) return false;
+          const { pathname } = new URL(input.url);
+          return pathname === "/api/v1/workspaces/ws-2";
+        }),
+      ).toBe(true);
+    });
+
+    window.history.pushState({}, "", "/terminal/ws-1");
+    await view.rerender({ workspaceId: "ws-1" });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Focus Shell" }).hasAttribute("disabled")).toBe(true);
+    });
+    expect(screen.getByRole("button", { name: "Focus Shell" }).getAttribute("draggable")).toBe("false");
+    expect(screen.getByRole("button", { name: "Rename Shell" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Move Shell to workflow" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Close Shell" }).hasAttribute("disabled")).toBe(true);
 
     deleteRequest.resolve(new Response(null, { status: 204 }));
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));

@@ -302,7 +302,7 @@
   {:else if activeTab === "pr"}
     {#if hasPR}
       {#key `pr:${provider}:${platformHost ?? ""}:${repoPath}:${associatedPRNumber ?? 0}:${refreshToken}`}
-        <div class="pr-scroll">
+        <div class="pr-scroll" inert={disabled}>
           <PullDetail
             {provider}
             {platformHost}
@@ -321,7 +321,7 @@
   {:else if activeTab === "issue"}
     {#if hasIssue}
       {#key `issue:${provider}:${platformHost ?? ""}:${repoPath}:${ownerItemNumber}:${refreshToken}`}
-        <div class="pr-scroll">
+        <div class="pr-scroll" inert={disabled}>
           <IssueDetail
             {provider}
             {platformHost}
@@ -354,9 +354,9 @@
       </div>
     {:else}
       <SidebarStoreScope stores={sidebarStores}>
-        <div class="sidebar-reviews">
+        <div class="sidebar-reviews" inert={disabled}>
           <div class="sidebar-reviews-header">
-            <FilterBar disabled={!parentStores.roborevDaemon?.isAvailable()} />
+            <FilterBar disabled={disabled || !parentStores.roborevDaemon?.isAvailable()} />
             <DaemonStatus />
           </div>
           <div class="sidebar-reviews-body">

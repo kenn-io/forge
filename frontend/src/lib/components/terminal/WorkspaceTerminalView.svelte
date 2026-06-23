@@ -170,7 +170,10 @@
   let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);
-  let deletingWorkspace = $state(false);
+  let deletingWorkspaceTarget = $state<{
+    id: string;
+    hostKey: string | undefined;
+  } | null>(null);
   let sidebarRefreshToken = $state(0);
   let forcePromptMessage = $state<string | null>(null);
   let forcePromptForId = $state<string | null>(null);
@@ -184,11 +187,10 @@
   let renameInputValue = $state("");
   let renameSaving = $state(false);
   let renameInputEl = $state<HTMLInputElement | null>(null);
-  // Bumps on every workspace route change. Async delete callbacks
-  // capture this at request time and bail out if it has moved on,
-  // covering the case where the user leaves and returns to the same
-  // workspace before an in-flight response settles — an id check
-  // alone would let a stale 409 reopen the prompt.
+  // Bumps on every workspace route change so non-delete async
+  // callbacks can detect stale responses for the previous route.
+  // Delete requests track their own target separately because the
+  // same workspace must stay blocked across A -> B -> A navigation.
   let workspaceGen = 0;
   let runtimeError = $state<string | null>(null);
   let pollTimer = $state<ReturnType<
@@ -444,7 +446,12 @@
       (workspace.id !== workspaceId ||
         workspaceHostKey !== selectedWorkspaceHostKey(workspace)),
   );
-  const actionsBlocked = $derived(transitioning || deletingWorkspace || forceDeleting);
+  const deletingSelectedWorkspace = $derived(
+    deletingWorkspaceTarget !== null &&
+      deletingWorkspaceTarget.id === workspaceId &&
+      deletingWorkspaceTarget.hostKey === workspaceHostKey,
+  );
+  const actionsBlocked = $derived(transitioning || deletingSelectedWorkspace || forceDeleting);
   const modalOpen = $derived(
     forcePromptMessage !== null ||
       stopPromptSession !== null ||
@@ -2144,7 +2151,6 @@
     actionError = null;
     const targetId = workspaceId;
     const targetHostKey = workspaceHostKey;
-    const targetGen = workspaceGen;
     // Capture the trigger synchronously: the click handler runs
     // before `inert` is applied to .terminal-view, so this is the
     // last point we can read the originating focused element. By
@@ -2154,7 +2160,7 @@
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    deletingWorkspace = true;
+    deletingWorkspaceTarget = { id: targetId, hostKey: targetHostKey };
     try {
       const { error, response } = targetHostKey
         ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
@@ -2167,11 +2173,6 @@
       // about this response applies.
       if (!isCurrentWorkspace(targetId, targetHostKey)) return;
       if (response.status === 409) {
-        // A 409 that lands after the user briefly left and returned
-        // to the same workspace would feel like an unrequested
-        // prompt; suppress it on a generation mismatch and let the
-        // user retry if they want.
-        if (targetGen !== workspaceGen) return;
         previouslyFocusedEl = triggerEl;
         forcePromptForId = targetId;
         forcePromptMessage = apiErrorMessage(
@@ -2181,7 +2182,6 @@
         return;
       }
       if (!response.ok && response.status !== 204) {
-        if (targetGen !== workspaceGen) return;
         actionError = apiErrorMessage(
           error,
           `Delete failed (${response.status})`,
@@ -2195,8 +2195,11 @@
       if (!isCurrentTerminalRoute(targetId)) return;
       navigate("/workspaces");
     } finally {
-      if (isCurrentWorkspace(targetId, targetHostKey)) {
-        deletingWorkspace = false;
+      if (
+        deletingWorkspaceTarget?.id === targetId &&
+        deletingWorkspaceTarget.hostKey === targetHostKey
+      ) {
+        deletingWorkspaceTarget = null;
       }
     }
   }
@@ -2331,7 +2334,6 @@
     // leave these flags stuck true on the next workspace.
     retryingSetup = false;
     refreshingWorkspace = false;
-    deletingWorkspace = false;
 
     // Errors/transient flags from the prior workspace should not
     // bleed across — clear them but don't touch workspace/runtime.

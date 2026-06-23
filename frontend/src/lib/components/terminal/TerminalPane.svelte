@@ -9,6 +9,7 @@
     websocketPath?: string;
     reconnectOnExit?: boolean;
     active?: boolean;
+    disabled?: boolean;
     onExit?: (code: number) => void;
     // When the session is already exited at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404

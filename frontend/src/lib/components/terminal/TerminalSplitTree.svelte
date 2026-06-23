@@ -348,6 +348,7 @@
             )}
             reconnectOnExit={false}
             active={activeSessionKey === session.key}
+            {disabled}
             onExit={() => onExit?.(session)}
             initialStatus={session.status}
           />

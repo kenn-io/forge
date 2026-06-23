@@ -40,10 +40,25 @@ export function setGlobalRepo(repo: string | undefined): void {
   }
 }
 
-export function applyConfigRepo(repo: { owner: string; name: string } | undefined, hideSelector: boolean): void {
+export function applyConfigRepo(
+  repo:
+    | {
+        provider?: string;
+        host?: string;
+        platform_host?: string;
+        repo_path?: string;
+        owner: string;
+        name: string;
+      }
+    | undefined,
+  hideSelector: boolean,
+): void {
   if (hideSelector) {
-    if (repo) {
-      filterRepo = `${repo.owner}/${repo.name}`;
+    const provider = repo?.provider?.trim();
+    const host = (repo?.platform_host ?? repo?.host)?.trim();
+    const repoPath = (repo?.repo_path ?? (repo ? `${repo.owner}/${repo.name}` : "")).trim();
+    if (provider && host && repoPath) {
+      filterRepo = `${provider}|${host}/${repoPath}`;
     } else {
       filterRepo = undefined;
     }

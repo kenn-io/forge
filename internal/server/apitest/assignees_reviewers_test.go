@@ -86,7 +86,7 @@ func TestAPISetPullAssigneesUpdatesProviderAndPersists(t *testing.T) {
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Equal([]string{"alice", "bob"}, body.Assignees)
 
-	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	pr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
@@ -127,7 +127,7 @@ func TestAPISetPullAssigneesClearsAssignees(t *testing.T) {
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Empty(body.Assignees)
 
-	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	pr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
 	require.NoError(err)
@@ -151,7 +151,7 @@ func TestAPISetIssueAssigneesUpdatesProviderAndPersists(t *testing.T) {
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Equal([]string{"dana"}, body.Assignees)
 
-	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repo.ID, 7)
 	require.NoError(err)

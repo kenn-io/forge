@@ -43,8 +43,13 @@
   function handleStarClick(e: MouseEvent): void {
     e.stopPropagation();
     void pulls.togglePRStar(
-      pr.repo_owner ?? "",
-      pr.repo_name ?? "",
+      {
+        provider: pr.repo.provider,
+        platformHost: pr.repo.platform_host,
+        owner: pr.repo.owner,
+        name: pr.repo.name,
+        repoPath: pr.repo.repo_path,
+      },
       pr.Number,
       pr.Starred,
     );

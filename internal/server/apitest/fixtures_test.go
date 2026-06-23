@@ -247,7 +247,7 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 	t.Helper()
 	ctx := t.Context()
 	issueID := seedIssue(t, database, owner, name, number, state)
-	repo, err := database.GetRepoByOwnerName(ctx, owner, name)
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 	require.NoError(t, database.ReplaceIssueLabels(ctx, repo.ID, issueID, labels))
 	return issueID

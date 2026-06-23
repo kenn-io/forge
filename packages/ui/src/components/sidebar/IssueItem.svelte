@@ -33,8 +33,13 @@
   function handleStarClick(e: MouseEvent): void {
     e.stopPropagation();
     void issues.toggleIssueStar(
-      issue.repo_owner ?? "",
-      issue.repo_name ?? "",
+      {
+        provider: issue.repo.provider,
+        platformHost: issue.repo.platform_host,
+        owner: issue.repo.owner,
+        name: issue.repo.name,
+        repoPath: issue.repo.repo_path,
+      },
       issue.Number,
       issue.Starred,
     );

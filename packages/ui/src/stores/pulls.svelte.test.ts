@@ -4,19 +4,25 @@ import type { MiddlemanClient } from "../types.js";
 import { createPullsStore } from "./pulls.svelte.js";
 
 function pull(id: number, repoName: string, lastActivityAt: string, overrides: Partial<PullRequest> = {}): PullRequest {
+  const provider = overrides.repo?.provider ?? "github";
+  const platformHost = overrides.repo?.platform_host ?? "github.com";
+  const owner = overrides.repo?.owner ?? overrides.repo_owner ?? "acme";
+  const name = overrides.repo?.name ?? overrides.repo_name ?? repoName;
+  const repoPath = overrides.repo?.repo_path ?? `${owner}/${name}`;
   return {
     ID: id,
     Number: id,
     Title: `PR ${id}`,
     LastActivityAt: lastActivityAt,
-    repo_owner: "acme",
-    repo_name: repoName,
+    repo_owner: owner,
+    repo_name: name,
+    platform_host: platformHost,
     repo: {
-      provider: "github",
-      platform_host: "github.com",
-      owner: "acme",
-      name: repoName,
-      repo_path: `acme/${repoName}`,
+      provider,
+      platform_host: platformHost,
+      owner,
+      name,
+      repo_path: repoPath,
     },
     State: "open",
     IsDraft: false,

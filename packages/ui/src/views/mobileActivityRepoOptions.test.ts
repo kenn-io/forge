@@ -12,7 +12,7 @@ const baseRepo = {
 };
 
 describe("buildMobileActivityRepoOptions", () => {
-  it("uses host-qualified trigger labels when duplicate repo paths exist", () => {
+  it("uses provider-qualified values when duplicate repo paths exist", () => {
     const options = buildMobileActivityRepoOptions([
       { ...baseRepo, platform_host: "github.com" },
       { ...baseRepo, platform_host: "ghe.example.com" },
@@ -20,14 +20,14 @@ describe("buildMobileActivityRepoOptions", () => {
 
     expect(options).toEqual([
       {
-        value: "ghe.example.com/acme/widgets",
-        label: "ghe.example.com/acme/widgets",
-        triggerLabel: "ghe.example.com/acme/widgets",
+        value: "github|ghe.example.com/acme/widgets",
+        label: "github/ghe.example.com/acme/widgets",
+        triggerLabel: "github/ghe.example.com/acme/widgets",
       },
       {
-        value: "github.com/acme/widgets",
-        label: "github.com/acme/widgets",
-        triggerLabel: "github.com/acme/widgets",
+        value: "github|github.com/acme/widgets",
+        label: "github/github.com/acme/widgets",
+        triggerLabel: "github/github.com/acme/widgets",
       },
     ]);
   });
@@ -68,13 +68,13 @@ describe("buildMobileActivityRepoOptions", () => {
 
     expect(options).toEqual([
       {
-        value: "ghe.example.com/acme/api",
-        label: "ghe.example.com/acme/api",
+        value: "github|ghe.example.com/acme/api",
+        label: "github/ghe.example.com/acme/api",
         triggerLabel: "acme/api",
       },
       {
-        value: "github.com/acme/widgets",
-        label: "github.com/acme/widgets",
+        value: "github|github.com/acme/widgets",
+        label: "github/github.com/acme/widgets",
         triggerLabel: "acme/widgets",
       },
     ]);
@@ -100,9 +100,9 @@ describe("buildMobileActivityRepoOptions", () => {
     ]);
 
     expect(options.map((option) => option.label)).toEqual([
-      "ghe.example.com/acme/api",
-      "github.com/acme/widgets",
-      "github.com/zeta/widgets",
+      "github/ghe.example.com/acme/api",
+      "github/github.com/acme/widgets",
+      "github/github.com/zeta/widgets",
     ]);
   });
 
@@ -123,8 +123,8 @@ describe("buildMobileActivityRepoOptions", () => {
 
     expect(options).toEqual([
       {
-        value: "ghe.example.com/acme/widgets",
-        label: "ghe.example.com/acme/widgets",
+        value: "github|ghe.example.com/acme/widgets",
+        label: "github/ghe.example.com/acme/widgets",
         triggerLabel: "acme/widgets",
       },
     ]);

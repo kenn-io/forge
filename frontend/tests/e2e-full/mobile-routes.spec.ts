@@ -318,11 +318,11 @@ test.describe("phone routes", () => {
 
     const activityForRepo = page.waitForResponse((response) => {
       const url = response.url();
-      return url.includes("/api/v1/activity") && url.includes("repo=github.com%2Facme%2Fwidgets");
+      return url.includes("/api/v1/activity") && url.includes("repo=github%7Cgithub.com%2Facme%2Fwidgets");
     });
     await page.getByRole("combobox", { name: /Repository/ }).click();
-    await page.getByRole("option", { name: "github.com/acme/widgets" }).click();
-    await expect(page.getByRole("combobox", { name: "Repository: acme/widgets" })).toBeVisible();
+    await page.getByRole("option", { name: "github/github.com/acme/widgets" }).click();
+    await expect(page.getByRole("combobox", { name: "Repository: github/github.com/acme/widgets" })).toBeVisible();
     await activityForRepo;
   });
 

@@ -208,7 +208,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 	assert.Equal("acme", repos[0].Owner)
 
 	// github.com MR should remain.
-	ghMR, err := d.GetMergeRequest(ctx, "acme", "widget", 1)
+	ghMR, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(ghMR)
 
@@ -902,7 +902,7 @@ func TestProviderCanonicalReadPathsUseLookupKeys(t *testing.T) {
 	mrID := insertTestMRWithOptions(t, d, testMR(repoID, 7, withMRTitle("GitLab PR")))
 	issueID := insertTestIssueWithOptions(t, d, testIssue(repoID, 8, withIssueTitle("GitLab issue")))
 
-	gotMR, err := d.GetMergeRequest(ctx, "group/subgroup", "projectname", 7)
+	gotMR, err := d.GetMergeRequest(ctx, "gitlab", "gitlab.example.com", "group/subgroup", "projectname", 7)
 	require.NoError(err)
 	require.NotNil(gotMR)
 	assert.Equal(mrID, gotMR.ID)
@@ -916,17 +916,13 @@ func TestProviderCanonicalReadPathsUseLookupKeys(t *testing.T) {
 	require.Len(listedMRs, 1)
 	assert.Equal(mrID, listedMRs[0].ID)
 
-	gotMRID, err := d.GetMRIDByRepoAndNumber(ctx, "GROUP/SubGroup", "PROJECTName", 7)
-	require.NoError(err)
-	assert.Equal(mrID, gotMRID)
-
 	require.NoError(d.UpdateDiffSHAs(ctx, repoID, 7, "head", "base", "merge"))
-	shas, err := d.GetDiffSHAs(ctx, "group/subgroup", "projectname", 7)
+	shas, err := d.GetDiffSHAs(ctx, "gitlab", "gitlab.example.com", "group/subgroup", "projectname", 7)
 	require.NoError(err)
 	require.NotNil(shas)
 	assert.Equal("head", shas.DiffHeadSHA)
 
-	gotIssue, err := d.GetIssue(ctx, "group/subgroup", "projectname", 8)
+	gotIssue, err := d.GetIssue(ctx, "gitlab", "gitlab.example.com", "group/subgroup", "projectname", 8)
 	require.NoError(err)
 	require.NotNil(gotIssue)
 	assert.Equal(issueID, gotIssue.ID)
@@ -940,18 +936,14 @@ func TestProviderCanonicalReadPathsUseLookupKeys(t *testing.T) {
 	require.Len(listedIssues, 1)
 	assert.Equal(issueID, listedIssues[0].ID)
 
-	gotIssueID, err := d.GetIssueIDByRepoAndNumber(ctx, "GROUP/SubGroup", "PROJECTName", 8)
-	require.NoError(err)
-	assert.Equal(issueID, gotIssueID)
-
-	require.NoError(d.UpdateMRDetailFetched(ctx, "gitlab.example.com", "group/subgroup", "projectname", 7, true))
+	require.NoError(d.UpdateMRDetailFetched(ctx, "gitlab", "gitlab.example.com", "group/subgroup", "projectname", 7, true))
 	refreshedMR, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(refreshedMR)
 	require.NotNil(refreshedMR.DetailFetchedAt)
 	assert.True(refreshedMR.CIHadPending)
 
-	require.NoError(d.UpdateIssueDetailFetched(ctx, "gitlab.example.com", "group/subgroup", "projectname", 8))
+	require.NoError(d.UpdateIssueDetailFetched(ctx, "gitlab", "gitlab.example.com", "group/subgroup", "projectname", 8))
 	refreshedIssue, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 8)
 	require.NoError(err)
 	require.NotNil(refreshedIssue)
@@ -991,7 +983,7 @@ func TestProviderCanonicalReadPathsUseLookupKeys(t *testing.T) {
 	require.Len(members[stackID], 1)
 	assert.Equal(mrID, members[stackID][0].MergeRequestID)
 
-	stack, stackMembers, err := d.GetStackForPR(ctx, "group/subgroup", "projectname", 7)
+	stack, stackMembers, err := d.GetStackForPR(ctx, "gitlab", "gitlab.example.com", "group/subgroup", "projectname", 7)
 	require.NoError(err)
 	require.NotNil(stack)
 	assert.Equal(stackID, stack.ID)
@@ -2069,56 +2061,6 @@ func TestUpsertRepoCasefoldsOwnerAndName(t *testing.T) {
 	assert.Equal("foo", repos[0].Name)
 }
 
-func TestGetRepoByOwnerName(t *testing.T) {
-	assert := Assert.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	id := insertTestRepo(t, d, "owner", "repo")
-
-	r, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
-	require.NoError(t, err)
-	require.NotNil(t, r)
-	assert.Equal(id, r.ID)
-
-	missing, err := d.GetRepoByOwnerName(ctx, "no", "such")
-	require.NoError(t, err)
-	assert.Nil(missing)
-}
-
-func TestGetRepoByOwnerNameUsesLookupKeysForNonGitHubRows(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	firstID, err := d.UpsertRepo(ctx, RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab-a.example.com",
-		Owner:        "Group/SubGroup",
-		Name:         "ProjectName",
-		RepoPath:     "Group/SubGroup/ProjectName",
-	})
-	require.NoError(err)
-	secondID, err := d.UpsertRepo(ctx, RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab-b.example.com",
-		Owner:        "GROUP/SubGroup",
-		Name:         "PROJECTName",
-		RepoPath:     "GROUP/SubGroup/PROJECTName",
-	})
-	require.NoError(err)
-	assert.NotEqual(firstID, secondID)
-
-	repo, err := d.GetRepoByOwnerName(ctx, "group/subgroup", "projectname")
-	require.NoError(err)
-	require.NotNil(repo)
-	assert.Equal(firstID, repo.ID)
-	assert.Equal("gitlab-a.example.com", repo.PlatformHost)
-	assert.Equal("Group/SubGroup", repo.Owner)
-	assert.Equal("ProjectName", repo.Name)
-}
-
 func TestUpdateRepoSync(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -2132,7 +2074,7 @@ func TestUpdateRepoSync(t *testing.T) {
 	later := now.Add(time.Minute)
 	require.NoError(d.UpdateRepoSyncCompleted(ctx, id, later, ""))
 
-	r, err := d.GetRepoByOwnerName(ctx, "o", "r")
+	r, err := d.GetRepoByIdentity(ctx, GitHubRepoIdentity("github.com", "o", "r"))
 	require.NoError(err)
 	require.NotNil(r)
 	require.NotNil(r.LastSyncStartedAt)
@@ -2143,7 +2085,7 @@ func TestUpdateRepoSync(t *testing.T) {
 
 	// Record a sync error.
 	require.NoError(d.UpdateRepoSyncCompleted(ctx, id, later, "rate limited"))
-	r2, _ := d.GetRepoByOwnerName(ctx, "o", "r")
+	r2, _ := d.GetRepoByIdentity(ctx, GitHubRepoIdentity("github.com", "o", "r"))
 	require.NotNil(r2)
 	assert.Equal("rate limited", r2.LastSyncError)
 }
@@ -2184,7 +2126,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	require.NoError(err)
 	assert.NotZero(id)
 
-	got, err := d.GetMergeRequest(ctx, "owner", "repo", 7)
+	got, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 7)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal(id, got.ID)
@@ -2204,7 +2146,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(id, id2)
 
-	got2, _ := d.GetMergeRequest(ctx, "owner", "repo", 7)
+	got2, _ := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 7)
 	require.NotNil(got2)
 	assert.Equal("fix: something updated", got2.Title)
 	assert.Equal(20, got2.Additions)
@@ -2213,7 +2155,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert.True(got2.CreatedAt.Equal(now))
 
 	// Missing PR returns nil.
-	missing, err := d.GetMergeRequest(ctx, "owner", "repo", 999)
+	missing, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 999)
 	require.NoError(err)
 	assert.Nil(missing)
 }
@@ -2423,7 +2365,7 @@ func TestPullRequestRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	prID := insertTestMR(t, d, repoID, 7, "mixed case path", baseTime())
 	require.NoError(d.UpdateDiffSHAs(ctx, repoID, 7, "head", "base", "merge"))
 
-	got, err := d.GetMergeRequest(ctx, "Owner", "Repo", 7)
+	got, err := d.GetMergeRequest(ctx, "github", "github.com", "Owner", "Repo", 7)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal(prID, got.ID)
@@ -2436,11 +2378,7 @@ func TestPullRequestRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	require.Len(filtered, 1)
 	assert.Equal(prID, filtered[0].ID)
 
-	gotID, err := d.GetMRIDByRepoAndNumber(ctx, "Owner", "Repo", 7)
-	require.NoError(err)
-	assert.Equal(prID, gotID)
-
-	shas, err := d.GetDiffSHAs(ctx, "Owner", "Repo", 7)
+	shas, err := d.GetDiffSHAs(ctx, "github", "github.com", "Owner", "Repo", 7)
 	require.NoError(err)
 	require.NotNil(shas)
 	assert.Equal("head", shas.DiffHeadSHA)
@@ -2627,7 +2565,7 @@ func TestListMergeRequests_AttachesLabels(t *testing.T) {
 	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	_, err = d.UpsertMergeRequest(ctx, &MergeRequest{
+	mrID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
 		RepoID:         repoID,
 		PlatformID:     101,
 		Number:         7,
@@ -2641,8 +2579,6 @@ func TestListMergeRequests_AttachesLabels(t *testing.T) {
 	})
 	require.NoError(err)
 
-	mrID, err := d.GetMRIDByRepoAndNumber(ctx, "acme", "widget", 7)
-	require.NoError(err)
 	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, mrID, []Label{{
 		PlatformID:  5001,
 		Name:        "needs-review",
@@ -2670,7 +2606,7 @@ func TestGetMergeRequest_AttachesLabels(t *testing.T) {
 	now := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
-	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+	mrID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
 		RepoID:         repoID,
 		PlatformID:     102,
 		Number:         8,
@@ -2684,8 +2620,6 @@ func TestGetMergeRequest_AttachesLabels(t *testing.T) {
 	})
 	require.NoError(err)
 
-	mrID, err := d.GetMRIDByRepoAndNumber(ctx, "acme", "widget", 8)
-	require.NoError(err)
 	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, mrID, []Label{{
 		PlatformID:  5002,
 		Name:        "backend",
@@ -2695,7 +2629,7 @@ func TestGetMergeRequest_AttachesLabels(t *testing.T) {
 		UpdatedAt:   now,
 	}}))
 
-	mr, err := d.GetMergeRequest(ctx, "acme", "widget", 8)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 8)
 	require.NoError(err)
 	require.NotNil(mr)
 	require.Len(mr.Labels, 1)
@@ -2725,7 +2659,7 @@ func TestReplaceMergeRequestLabels_RejectsWrongRepoID(t *testing.T) {
 	}})
 	require.Error(err)
 
-	mr, err := d.GetMergeRequest(ctx, "acme", "widget", 9)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 9)
 	require.NoError(err)
 	require.NotNil(mr)
 	require.Empty(mr.Labels)
@@ -2885,14 +2819,14 @@ func TestUpsertLabels_MergesStaleNameOnlyRowIntoPlatformRow(t *testing.T) {
 	require.Equal("333333", color)
 	require.True(isDefault)
 
-	mr, err := d.GetMergeRequest(ctx, "acme", "widget", 17)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 17)
 	require.NoError(err)
 	require.NotNil(mr)
 	require.Len(mr.Labels, 1)
 	require.Equal(labelID, mr.Labels[0].ID)
 	require.Equal("new-name", mr.Labels[0].Name)
 
-	issue, err := d.GetIssue(ctx, "acme", "widget", 23)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "acme", "widget", 23)
 	require.NoError(err)
 	require.NotNil(issue)
 	require.Len(issue.Labels, 1)
@@ -3143,21 +3077,6 @@ func TestListMREventsHandlesNonUTCTimes(t *testing.T) {
 	}
 }
 
-func TestGetPRIDByRepoAndNumber(t *testing.T) {
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	repoID := insertTestRepo(t, d, "o", "r")
-	insertTestMR(t, d, repoID, 5, "pr five", baseTime())
-
-	id, err := d.GetMRIDByRepoAndNumber(ctx, "o", "r", 5)
-	require.NoError(t, err)
-	Assert.NotZero(t, id)
-
-	_, err = d.GetMRIDByRepoAndNumber(ctx, "o", "r", 999)
-	require.Error(t, err)
-}
-
 func TestGetDiffSHAsByRepoIDScopesDuplicateProviderRepos(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -3303,7 +3222,7 @@ func TestUpsertPullRequestMergeableState(t *testing.T) {
 	_, err := d.UpsertMergeRequest(ctx, pr)
 	require.NoError(err)
 
-	got, err := d.GetMergeRequest(ctx, "acme", "widget", 42)
+	got, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("dirty", got.MergeableState)
@@ -3312,7 +3231,7 @@ func TestUpsertPullRequestMergeableState(t *testing.T) {
 	_, err = d.UpsertMergeRequest(ctx, pr)
 	require.NoError(err)
 
-	got, err = d.GetMergeRequest(ctx, "acme", "widget", 42)
+	got, err = d.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 	assert.Equal("clean", got.MergeableState)
 }
@@ -3430,7 +3349,7 @@ func TestUpdatePRState(t *testing.T) {
 	mergedAt := baseTime().Add(time.Hour)
 	require.NoError(d.UpdateMRState(ctx, repoID, 1, "merged", &mergedAt, nil))
 
-	pr, err := d.GetMergeRequest(ctx, "o", "r", 1)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "o", "r", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal(MergeRequestStateMerged, pr.State)
@@ -3455,7 +3374,7 @@ func TestUpdateMRDraftStateAdvancesTimestampToRejectStaleSync(t *testing.T) {
 	_, err := d.UpsertMergeRequest(ctx, staleSync)
 	require.NoError(err)
 
-	pr, err := d.GetMergeRequest(ctx, "o", "r", 1)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "o", "r", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.True(pr.IsDraft)
@@ -3545,7 +3464,7 @@ func TestGetIssue_AttachesLabels(t *testing.T) {
 		UpdatedAt:   now,
 	}}))
 
-	issue, err := d.GetIssue(ctx, "acme", "widget", 4)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "acme", "widget", 4)
 	require.NoError(err)
 	require.NotNil(issue)
 	require.Len(issue.Labels, 1)
@@ -3565,7 +3484,7 @@ func TestIssueRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	issueID := insertTestIssue(t, d, repoID, 7, "mixed case issue", baseTime())
 
-	got, err := d.GetIssue(ctx, "Owner", "Repo", 7)
+	got, err := d.GetIssue(ctx, "github", "github.com", "Owner", "Repo", 7)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal(issueID, got.ID)
@@ -3578,9 +3497,6 @@ func TestIssueRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	require.Len(filtered, 1)
 	assert.Equal(issueID, filtered[0].ID)
 
-	gotID, err := d.GetIssueIDByRepoAndNumber(ctx, "Owner", "Repo", 7)
-	require.NoError(err)
-	assert.Equal(issueID, gotID)
 }
 
 func TestListIssuesFilterByHostedRepoPath(t *testing.T) {
@@ -3774,7 +3690,7 @@ func TestReplaceIssueLabels_RejectsWrongRepoID(t *testing.T) {
 	}})
 	require.Error(err)
 
-	issue, err := d.GetIssue(ctx, "acme", "widget", 6)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "acme", "widget", 6)
 	require.NoError(err)
 	require.NotNil(issue)
 	require.Empty(issue.Labels)
@@ -4132,107 +4048,6 @@ func TestWorktreeAndPurgeRespectCanceledContext(t *testing.T) {
 
 	_, err = d.GetAllWorktreeLinks(canceled)
 	require.ErrorIs(err, context.Canceled)
-}
-
-func TestGetRepoByHostOwnerName(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	// Insert two repos with same owner/name but different hosts.
-	ghID := insertTestRepoWithHost(t, d, "acme", "widget", "github.com")
-	gheID := insertTestRepoWithHost(
-		t, d, "acme", "widget", "ghes.corp.com",
-	)
-
-	// Each found by its host.
-	gh, err := d.GetRepoByHostOwnerName(
-		ctx, "github.com", "acme", "widget",
-	)
-	require.NoError(err)
-	require.NotNil(gh)
-	assert.Equal(ghID, gh.ID)
-	assert.Equal("github.com", gh.PlatformHost)
-
-	ghe, err := d.GetRepoByHostOwnerName(
-		ctx, "ghes.corp.com", "acme", "widget",
-	)
-	require.NoError(err)
-	require.NotNil(ghe)
-	assert.Equal(gheID, ghe.ID)
-	assert.Equal("ghes.corp.com", ghe.PlatformHost)
-
-	// Missing host returns nil.
-	missing, err := d.GetRepoByHostOwnerName(
-		ctx, "gitlab.com", "acme", "widget",
-	)
-	require.NoError(err)
-	assert.Nil(missing)
-}
-
-func TestGetRepoByHostOwnerNameUsesLookupKeysForNonGitHubRows(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	id, err := d.UpsertRepo(ctx, RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		Owner:        "Group/SubGroup",
-		Name:         "ProjectName",
-		RepoPath:     "Group/SubGroup/ProjectName",
-	})
-	require.NoError(err)
-
-	repo, err := d.GetRepoByHostOwnerName(
-		ctx, "gitlab.example.com", "group/subgroup", "projectname",
-	)
-	require.NoError(err)
-	require.NotNil(repo)
-	assert.Equal(id, repo.ID)
-	assert.Equal("gitlab", repo.Platform)
-	assert.Equal("gitlab.example.com", repo.PlatformHost)
-	assert.Equal("Group/SubGroup", repo.Owner)
-	assert.Equal("ProjectName", repo.Name)
-	assert.Equal("Group/SubGroup/ProjectName", repo.RepoPath)
-	assert.Equal("group/subgroup", repo.OwnerKey)
-	assert.Equal("projectname", repo.NameKey)
-}
-
-func TestCountReposByHostOwnerNameCountsProviders(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	_, err := d.UpsertRepo(ctx, RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "forge.example.com",
-		Owner:        "acme",
-		Name:         "widget",
-	})
-	require.NoError(err)
-	_, err = d.UpsertRepo(ctx, RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "forge.example.com",
-		Owner:        "acme",
-		Name:         "widget",
-	})
-	require.NoError(err)
-
-	count, err := d.CountReposByHostOwnerName(
-		ctx, "forge.example.com", "acme", "widget",
-	)
-	require.NoError(err)
-	assert.Equal(2, count)
-
-	miss, err := d.CountReposByHostOwnerName(
-		ctx, "forge.example.com", "acme", "missing",
-	)
-	require.NoError(err)
-	assert.Equal(0, miss)
 }
 
 func TestRepoIdentifierCasefoldTriggers(t *testing.T) {

@@ -50,13 +50,13 @@ export function concreteRepoFilterValue(repo: RepoFilterIdentity): string | null
 export function providerQualifiedRepoFilterValue(repo: RepoFilterIdentity): string | null {
   const provider = normalizeProvider(repo.provider);
   const concreteValue = concreteRepoFilterValue(repo);
-  return provider && concreteValue ? `${provider}|${concreteValue}` : concreteValue;
+  return provider && concreteValue ? `${provider}|${concreteValue}` : null;
 }
 
 export function providerQualifiedRepoFilterLabel(repo: RepoFilterIdentity): string | null {
   const provider = normalizeProvider(repo.provider);
   const concreteValue = concreteRepoFilterValue(repo);
-  return provider && concreteValue ? `${provider}/${concreteValue}` : concreteValue;
+  return provider && concreteValue ? `${provider}/${concreteValue}` : null;
 }
 
 export function repoFilterValueNeedsProvider(repo: RepoFilterIdentity, repos: readonly RepoFilterIdentity[]): boolean {
@@ -67,12 +67,9 @@ export function repoFilterValueNeedsProvider(repo: RepoFilterIdentity, repos: re
 
 export function canonicalRepoFilterValue(
   repo: RepoFilterIdentity,
-  repos: readonly RepoFilterIdentity[],
+  _repos: readonly RepoFilterIdentity[],
 ): string | null {
-  if (repoFilterValueNeedsProvider(repo, repos)) {
-    return providerQualifiedRepoFilterValue(repo);
-  }
-  return concreteRepoFilterValue(repo);
+  return providerQualifiedRepoFilterValue(repo);
 }
 
 export function displayRepoFilterValue(value: string): string {
@@ -97,22 +94,15 @@ export function normalizeRepoFilterValue(selected: string, repos: readonly RepoF
   if (currentCanonicalValues(repos).has(value)) return value;
 
   const pipeSeparator = value.indexOf("|");
-  if (pipeSeparator !== -1) {
-    const provider = normalizeProvider(value.slice(0, pipeSeparator));
-    const concreteValue = value.slice(pipeSeparator + 1);
-    for (const identity of concreteIdentities(repos)) {
-      if (identity.provider !== provider || identity.concreteValue !== concreteValue) continue;
-      return canonicalRepoFilterValue(identity.repo, repos) ?? value;
-    }
-    return value;
+  if (pipeSeparator === -1) {
+    return "";
   }
 
+  const provider = normalizeProvider(value.slice(0, pipeSeparator));
+  const concreteValue = value.slice(pipeSeparator + 1);
   for (const identity of concreteIdentities(repos)) {
-    if (!identity.provider) continue;
-    const legacyValue = `${identity.provider}/${identity.concreteValue}`;
-    if (legacyValue === value) {
-      return canonicalRepoFilterValue(identity.repo, repos) ?? value;
-    }
+    if (identity.provider !== provider || identity.concreteValue !== concreteValue) continue;
+    return canonicalRepoFilterValue(identity.repo, repos) ?? value;
   }
   return value;
 }

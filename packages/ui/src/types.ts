@@ -36,7 +36,7 @@ export interface NavigateEvent {
     number?: number;
     jobId?: number;
   };
-  repo?: { host?: string; owner: string; name: string };
+  repo?: { provider?: string; host?: string; platform_host?: string; repo_path?: string; owner: string; name: string };
 }
 
 export type NavigateCallback = (event: string | NavigateEvent) => void;

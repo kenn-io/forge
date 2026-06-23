@@ -16,9 +16,7 @@ func TestParseRepoFiltersAcceptsProviderQualifiedRepoPath(t *testing.T) {
 	}}, parseRepoFilters("Gitea|github.com/acme/widgets"))
 }
 
-func TestParseRepoFiltersKeepsProviderNamedHostsHostQualified(t *testing.T) {
-	assert.Equal(t, []db.RepoFilter{{
-		PlatformHost: "gitea",
-		RepoPath:     "acme/team/widgets",
-	}}, parseRepoFilters("gitea/acme/team/widgets"))
+func TestParseRepoFiltersRejectsUnqualifiedRepoPath(t *testing.T) {
+	assert.Empty(t, parseRepoFilters("gitea/acme/team/widgets"))
+	assert.Empty(t, parseRepoFilters("acme/widgets"))
 }

@@ -13,7 +13,7 @@ import {
 function opt(platformHost: string, repoPath: string, provider = "github"): RepoTreeOption {
   const segments = repoPath.split("/");
   return {
-    value: `${platformHost}/${repoPath}`,
+    value: `${provider}|${platformHost}/${repoPath}`,
     owner: segments.slice(0, -1).join("/"),
     name: segments[segments.length - 1] ?? repoPath,
     provider,
@@ -40,8 +40,8 @@ describe("buildRepoTree", () => {
     const acme = host.children[0]!;
     expect(acme.id).toBe("github.com/acme");
     expect(acme.children.map((r) => r.label)).toEqual(["api", "web"]);
-    expect(acme.children[0]!.value).toBe("github.com/acme/api");
-    expect(acme.children[0]!.id).toBe("github.com/acme/api");
+    expect(acme.children[0]!.value).toBe("github|github.com/acme/api");
+    expect(acme.children[0]!.id).toBe("github|github.com/acme/api");
   });
 
   it("keeps GitLab nested groups as one slashed owner node", () => {
@@ -53,7 +53,7 @@ describe("buildRepoTree", () => {
     expect(owner.label).toBe("platform/frontend");
     expect(owner.id).toBe("gitlab.com/platform/frontend");
     expect(owner.children[0]!.label).toBe("web-ui");
-    expect(owner.children[0]!.value).toBe("gitlab.com/platform/frontend/web-ui");
+    expect(owner.children[0]!.value).toBe("gitlab|gitlab.com/platform/frontend/web-ui");
   });
 
   it("separates hosts and sorts them by label", () => {
@@ -237,18 +237,18 @@ describe("visibleRows", () => {
     const acme = rows.find((r) => r.node.label === "acme")!;
     // selection logic sees all three repos, not just the matching "api"
     expect(collectLeafValues(acme.node).sort()).toEqual([
-      "github.com/acme/api",
-      "github.com/acme/infra",
-      "github.com/acme/web",
+      "github|github.com/acme/api",
+      "github|github.com/acme/infra",
+      "github|github.com/acme/web",
     ]);
     // with only "api" selected, the owner is partial (not "checked"), proving
     // tri-state reflects hidden siblings too
-    expect(nodeSelectionState(acme.node, new Set(["github.com/acme/api"]))).toBe("partial");
+    expect(nodeSelectionState(acme.node, new Set(["github|github.com/acme/api"]))).toBe("partial");
     // toggling the owner cascades to the entire subtree, including hidden repos
-    expect(toggleSubtree(acme.node, ["github.com/acme/api"]).sort()).toEqual([
-      "github.com/acme/api",
-      "github.com/acme/infra",
-      "github.com/acme/web",
+    expect(toggleSubtree(acme.node, ["github|github.com/acme/api"]).sort()).toEqual([
+      "github|github.com/acme/api",
+      "github|github.com/acme/infra",
+      "github|github.com/acme/web",
     ]);
   });
 
@@ -264,7 +264,7 @@ describe("visibleRows", () => {
     // node identity is still the leaf (value/id unchanged for selection)
     const teamA = rows.find((r) => r.displayLabel === "team-a/api")!;
     expect(teamA.node.kind).toBe("repo");
-    expect((teamA.node as { value: string }).value).toBe("github.com/team-a/api");
+    expect((teamA.node as { value: string }).value).toBe("github|github.com/team-a/api");
   });
 
   it("still flattens a genuinely single-repo owner under a filter", () => {
@@ -334,38 +334,41 @@ describe("selection helpers", () => {
 
   it("collects all descendant leaf values", () => {
     expect(collectLeafValues(acme).sort()).toEqual([
-      "github.com/acme/api",
-      "github.com/acme/infra",
-      "github.com/acme/web",
+      "github|github.com/acme/api",
+      "github|github.com/acme/infra",
+      "github|github.com/acme/web",
     ]);
-    expect(collectLeafValues(acme.children[0]!)).toEqual(["github.com/acme/api"]);
+    expect(collectLeafValues(acme.children[0]!)).toEqual(["github|github.com/acme/api"]);
   });
 
   it("computes tri-state from the active set", () => {
     expect(nodeSelectionState(acme, new Set())).toBe("unchecked");
-    expect(nodeSelectionState(acme, new Set(["github.com/acme/api"]))).toBe("partial");
+    expect(nodeSelectionState(acme, new Set(["github|github.com/acme/api"]))).toBe("partial");
     expect(
-      nodeSelectionState(acme, new Set(["github.com/acme/api", "github.com/acme/web", "github.com/acme/infra"])),
+      nodeSelectionState(
+        acme,
+        new Set(["github|github.com/acme/api", "github|github.com/acme/web", "github|github.com/acme/infra"]),
+      ),
     ).toBe("checked");
   });
 
   it("adds all subtree leaves when not fully checked", () => {
-    expect(toggleSubtree(acme, ["github.com/acme/api"]).sort()).toEqual([
-      "github.com/acme/api",
-      "github.com/acme/infra",
-      "github.com/acme/web",
+    expect(toggleSubtree(acme, ["github|github.com/acme/api"]).sort()).toEqual([
+      "github|github.com/acme/api",
+      "github|github.com/acme/infra",
+      "github|github.com/acme/web",
     ]);
   });
 
   it("removes all subtree leaves when fully checked", () => {
-    const all = ["github.com/acme/api", "github.com/acme/web", "github.com/acme/infra"];
+    const all = ["github|github.com/acme/api", "github|github.com/acme/web", "github|github.com/acme/infra"];
     expect(toggleSubtree(acme, all)).toEqual([]);
   });
 
   it("toggles a single leaf without touching siblings", () => {
-    expect(toggleSubtree(acme.children[0]!, ["github.com/acme/web"]).sort()).toEqual([
-      "github.com/acme/api",
-      "github.com/acme/web",
+    expect(toggleSubtree(acme.children[0]!, ["github|github.com/acme/web"]).sort()).toEqual([
+      "github|github.com/acme/api",
+      "github|github.com/acme/web",
     ]);
   });
 });

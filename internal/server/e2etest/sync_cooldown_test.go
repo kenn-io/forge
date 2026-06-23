@@ -170,7 +170,7 @@ name = "third"
 
 	status, body := postJSON(
 		t, client,
-		baseURL+"/api/v1/sync?priority_repo=github.com/acme/third,github.com/acme/second",
+		baseURL+"/api/v1/sync?priority_repo=github|github.com/acme/third,github|github.com/acme/second",
 		nil,
 	)
 	require.Equal(http.StatusAccepted, status, body)
@@ -236,7 +236,7 @@ platform_host = "gitea"
 
 	status, body := postJSON(
 		t, client,
-		baseURL+"/api/v1/sync?priority_repo=gitea/acme/second",
+		baseURL+"/api/v1/sync?priority_repo=github|gitea/acme/second",
 		nil,
 	)
 	require.Equal(http.StatusAccepted, status, body)
@@ -551,8 +551,8 @@ func waitForRepoSynced(
 
 	var repo *db.Repo
 	require.Eventually(func() bool {
-		got, err := database.GetRepoByOwnerName(
-			t.Context(), owner, name,
+		got, err := database.GetRepoByIdentity(
+			t.Context(), db.GitHubRepoIdentity("github.com", owner, name),
 		)
 		if err != nil || got == nil || got.LastSyncCompletedAt == nil {
 			return false

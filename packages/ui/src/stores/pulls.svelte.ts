@@ -1,5 +1,10 @@
 import type { KanbanStatus, PullRequest } from "../api/types.js";
-import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
+import {
+  providerDefaultHost,
+  providerItemPath,
+  providerRouteParams,
+  type ProviderRouteRef,
+} from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 import { bucketCIChecks, parseCIChecks } from "../utils/ci-buckets.js";
 import { normalizeKanbanStatus } from "./workflow.svelte.js";
@@ -17,6 +22,8 @@ export interface PullSelection {
   repoPath: string;
   number: number;
 }
+
+type PullIdentityRef = ProviderRouteRef;
 
 type PullsParams = {
   repo?: string;
@@ -82,11 +89,46 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return selectedPR;
   }
 
-  /** Groups pulls by "owner/name" into a Map. */
+  function pullIdentityKey(ref: Pick<PullIdentityRef, "provider" | "platformHost" | "repoPath">): string {
+    return JSON.stringify([ref.provider, ref.platformHost ?? "", ref.repoPath]);
+  }
+
+  function pullRef(pr: PullRequest): PullIdentityRef {
+    return {
+      provider: pr.repo.provider,
+      platformHost: pr.repo.platform_host,
+      owner: pr.repo.owner,
+      name: pr.repo.name,
+      repoPath: pr.repo.repo_path,
+    };
+  }
+
+  function pullMatchesRef(pr: PullRequest, ref: PullIdentityRef, number: number): boolean {
+    return (
+      pr.Number === number &&
+      pr.repo.provider === ref.provider &&
+      pr.repo.platform_host === ref.platformHost &&
+      pr.repo.repo_path === ref.repoPath &&
+      pr.repo.owner === ref.owner &&
+      pr.repo.name === ref.name
+    );
+  }
+
+  function pullMatchesSelection(pr: PullRequest, sel: PullSelection): boolean {
+    return pullMatchesRef(pr, sel, sel.number);
+  }
+
+  function concretePlatformHost(ref: Pick<PullIdentityRef, "provider" | "platformHost">): string {
+    const host = ref.platformHost ?? providerDefaultHost(ref.provider);
+    if (!host) throw new Error("pull request missing platform host");
+    return host;
+  }
+
+  /** Groups pulls by full provider identity into a Map. */
   function pullsByRepo(): Map<string, PullRequest[]> {
     const map = new Map<string, PullRequest[]>();
     for (const pr of getFilteredPulls()) {
-      const key = `${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`;
+      const key = pullIdentityKey(pullRef(pr));
       const existing = map.get(key);
       if (existing !== undefined) {
         existing.push(pr);
@@ -157,9 +199,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       }
       return;
     }
-    const idx = list.findIndex(
-      (pr) => (pr.repo_owner ?? "") === sel.owner && (pr.repo_name ?? "") === sel.name && pr.Number === sel.number,
-    );
+    const idx = list.findIndex((pr) => pullMatchesSelection(pr, sel));
     const next = list[idx + 1];
     if (next !== undefined) {
       selectPRFromPull(next);
@@ -177,9 +217,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       }
       return;
     }
-    const idx = list.findIndex(
-      (pr) => (pr.repo_owner ?? "") === sel.owner && (pr.repo_name ?? "") === sel.name && pr.Number === sel.number,
-    );
+    const idx = list.findIndex((pr) => pullMatchesSelection(pr, sel));
     if (idx > 0) {
       const prev = list[idx - 1];
       if (prev !== undefined) {
@@ -234,7 +272,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function selectPRFromPull(pr: PullRequest): void {
-    selectPR(pr.repo.owner, pr.repo.name, pr.Number, pr.repo.provider, pr.repo.platform_host, pr.repo.repo_path);
+    const ref = pullRef(pr);
+    selectPR(ref.owner, ref.name, pr.Number, ref.provider, ref.platformHost, ref.repoPath);
   }
 
   function clearSelection(): void {
@@ -242,26 +281,26 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   /** Returns the current kanban status for a PR. */
-  function getPullKanbanStatus(owner: string, name: string, number: number): KanbanStatus | undefined {
-    const pr = pulls.find((p) => p.repo_owner === owner && p.repo_name === name && p.Number === number);
+  function getPullKanbanStatus(ref: PullIdentityRef, number: number): KanbanStatus | undefined {
+    const pr = pulls.find((p) => pullMatchesRef(p, ref, number));
     return pr?.KanbanStatus as KanbanStatus | undefined;
   }
 
   /** Optimistically update a single PR's kanban status. */
-  function optimisticKanbanUpdate(owner: string, name: string, number: number, status: KanbanStatus): void {
-    pulls = pulls.map((pr) =>
-      pr.repo_owner === owner && pr.repo_name === name && pr.Number === number ? { ...pr, KanbanStatus: status } : pr,
-    );
+  function optimisticKanbanUpdate(ref: PullIdentityRef, number: number, status: KanbanStatus): void {
+    pulls = pulls.map((pr) => (pullMatchesRef(pr, ref, number) ? { ...pr, KanbanStatus: status } : pr));
   }
 
-  async function togglePRStar(owner: string, name: string, number: number, currentlyStarred: boolean): Promise<void> {
+  async function togglePRStar(ref: PullIdentityRef, number: number, currentlyStarred: boolean): Promise<void> {
     try {
       if (currentlyStarred) {
         const { error } = await apiClient.DELETE("/starred", {
           body: {
             item_type: "pr",
-            owner,
-            name,
+            provider: ref.provider,
+            platform_host: concretePlatformHost(ref),
+            owner: ref.owner,
+            name: ref.name,
             number,
           },
         });
@@ -272,8 +311,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
         const { error } = await apiClient.PUT("/starred", {
           body: {
             item_type: "pr",
-            owner,
-            name,
+            provider: ref.provider,
+            platform_host: concretePlatformHost(ref),
+            owner: ref.owner,
+            name: ref.name,
             number,
           },
         });

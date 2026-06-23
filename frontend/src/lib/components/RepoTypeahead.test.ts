@@ -152,10 +152,10 @@ describe("RepoTypeahead", () => {
         name: /github.com\/import-lab\/api/i,
       }),
     );
-    expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api");
+    expect(onchange).toHaveBeenLastCalledWith("github|github.com/import-lab/api");
 
     await view.rerender({
-      selected: "github.com/import-lab/api",
+      selected: "github|github.com/import-lab/api",
       onchange,
     });
     await fireEvent.mouseDown(
@@ -163,7 +163,7 @@ describe("RepoTypeahead", () => {
         name: /github.com\/import-lab\/web/i,
       }),
     );
-    expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api,github.com/import-lab/web");
+    expect(onchange).toHaveBeenLastCalledWith("github|github.com/import-lab/api,github|github.com/import-lab/web");
   });
 
   it("selecting an owner row selects all repos beneath it", async () => {
@@ -197,7 +197,7 @@ describe("RepoTypeahead", () => {
       .querySelector("input[type='checkbox']") as HTMLInputElement;
     await fireEvent.mouseDown(ownerCheckbox);
 
-    expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api,github.com/import-lab/web");
+    expect(onchange).toHaveBeenLastCalledWith("github|github.com/import-lab/api,github|github.com/import-lab/web");
   });
 
   it("filters to matching leaves while keeping their owner visible", async () => {
@@ -234,12 +234,12 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(
         screen.getByRole("option", {
-          name: "github.com/import-lab/web",
+          name: "github/github.com/import-lab/web",
         }),
       ).toBeTruthy();
       expect(
         screen.queryByRole("option", {
-          name: "github.com/import-lab/api",
+          name: "github/github.com/import-lab/api",
         }),
       ).toBeNull();
     });
@@ -273,7 +273,7 @@ describe("RepoTypeahead", () => {
     await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
 
     // leaves visible initially
-    expect(screen.getByRole("option", { name: "github.com/import-lab/api" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "github/github.com/import-lab/api" })).toBeTruthy();
     // click the owner row body (its caret button has aria-label "Toggle import-lab";
     // click the row <li> itself, not the caret) -> collapses, hides leaves, selects nothing
     await fireEvent.mouseDown(screen.getByRole("option", { name: "github.com/import-lab" }));
@@ -281,7 +281,7 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(
         screen.queryByRole("option", {
-          name: "github.com/import-lab/api",
+          name: "github/github.com/import-lab/api",
         }),
       ).toBeNull();
     });
@@ -313,11 +313,11 @@ describe("RepoTypeahead", () => {
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
     await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
     const leaf = screen.getByRole("option", {
-      name: "github.com/import-lab/api",
+      name: "github/github.com/import-lab/api",
     });
     const checkbox = leaf.querySelector("input[type='checkbox']") as HTMLInputElement;
     await fireEvent.mouseDown(checkbox);
-    expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api");
+    expect(onchange).toHaveBeenLastCalledWith("github|github.com/import-lab/api");
   });
 
   it("drops removed repos after settings remove matching entries", async () => {
@@ -414,7 +414,7 @@ describe("RepoTypeahead", () => {
     const input = screen.getByPlaceholderText("Filter repos...");
 
     // leaves visible by default
-    expect(screen.getByRole("option", { name: "github.com/import-lab/api" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "github/github.com/import-lab/api" })).toBeTruthy();
 
     // move highlight onto the owner row (index 1) and collapse it
     await fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -423,7 +423,7 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(
         screen.queryByRole("option", {
-          name: "github.com/import-lab/api",
+          name: "github/github.com/import-lab/api",
         }),
       ).toBeNull();
     });
@@ -432,7 +432,7 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(
         screen.getByRole("option", {
-          name: "github.com/import-lab/api",
+          name: "github/github.com/import-lab/api",
         }),
       ).toBeTruthy();
     });
@@ -474,7 +474,7 @@ describe("RepoTypeahead", () => {
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     const leaf = screen.getByRole("option", {
-      name: "github.com/import-lab/api",
+      name: "github/github.com/import-lab/api",
     });
     await waitFor(() => expect(leaf.classList.contains("highlighted")).toBe(true));
 
@@ -485,9 +485,9 @@ describe("RepoTypeahead", () => {
         name: "github.com/import-lab",
       });
       expect(owner.classList.contains("highlighted")).toBe(true);
-      expect(screen.getByRole("option", { name: "github.com/import-lab/api" }).classList.contains("highlighted")).toBe(
-        false,
-      );
+      expect(
+        screen.getByRole("option", { name: "github/github.com/import-lab/api" }).classList.contains("highlighted"),
+      ).toBe(false);
     });
   });
 
@@ -523,7 +523,7 @@ describe("RepoTypeahead", () => {
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     await fireEvent.keyDown(input, { key: " " });
 
-    expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api,github.com/import-lab/web");
+    expect(onchange).toHaveBeenLastCalledWith("github|github.com/import-lab/api,github|github.com/import-lab/web");
   });
 
   it("uses provider-qualified values when configured repos collide by host and path", async () => {
@@ -605,7 +605,7 @@ describe("RepoTypeahead", () => {
     expect(onchange).not.toHaveBeenCalled();
   });
 
-  it("normalizes stale provider slash values before desktop validation removes missing repos", async () => {
+  it("drops stale provider slash values before desktop validation removes missing repos", async () => {
     const onchange = vi.fn();
     settingsStore.setConfiguredRepos([
       {
@@ -621,13 +621,13 @@ describe("RepoTypeahead", () => {
 
     render(RepoTypeahead, {
       props: {
-        selected: "github/github.com/acme/widgets,github.com/acme/missing",
+        selected: "github/github.com/acme/widgets,github|github.com/acme/missing",
         onchange,
       },
     });
 
     await waitFor(() => {
-      expect(onchange).toHaveBeenCalledWith("github.com/acme/widgets,github.com/acme/missing");
+      expect(onchange).toHaveBeenCalledWith("github|github.com/acme/missing");
     });
   });
 });

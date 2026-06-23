@@ -307,7 +307,7 @@ func TestRunDetection(t *testing.T) {
 	err = RunDetection(ctx, d, repoID)
 	require.NoError(err)
 
-	stack, members, err := d.GetStackForPR(ctx, "org", "repo", 101)
+	stack, members, err := d.GetStackForPR(ctx, "github", "github.com", "org", "repo", 101)
 	require.NoError(err)
 	assert.NotNil(stack)
 	assert.Equal("auth", stack.Name)
@@ -360,7 +360,7 @@ func TestRunDetection_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.
 
 	require.NoError(RunDetection(ctx, d, repoID))
 
-	stack, members, err := d.GetStackForPR(ctx, "org", "repo", 101)
+	stack, members, err := d.GetStackForPR(ctx, "github", "github.com", "org", "repo", 101)
 	require.NoError(err)
 	require.NotNil(stack)
 	assert.Equal("auth", stack.Name)
@@ -400,7 +400,7 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 
 	err = RunDetection(ctx, d, repoID)
 	require.NoError(err)
-	stack, _, err := d.GetStackForPR(ctx, "org", "repo", 100)
+	stack, _, err := d.GetStackForPR(ctx, "github", "github.com", "org", "repo", 100)
 	require.NoError(err)
 	assert.NotNil(stack, "stack should exist while PRs are open")
 
@@ -425,7 +425,7 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 	err = RunDetection(ctx, d, repoID)
 	require.NoError(err)
 
-	stack2, _, err := d.GetStackForPR(ctx, "org", "repo", 100)
+	stack2, _, err := d.GetStackForPR(ctx, "github", "github.com", "org", "repo", 100)
 	require.NoError(err)
 	assert.Nil(stack2, "fully merged stack should be deleted")
 }

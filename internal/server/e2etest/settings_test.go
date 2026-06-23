@@ -836,6 +836,7 @@ func TestRepoConfigAPIE2EWorkspaceCreationUsesWorktreeBasePath(t *testing.T) {
 	createResp, err := client.CreateWorkspaceWithResponse(
 		t.Context(),
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: platformHost,
 			Owner:        "acme",
 			Name:         "widget",
@@ -887,6 +888,7 @@ func TestRepoConfigAPIE2EWorkspaceCreationUsesFallbackBranchWhenPreferredChecked
 	createResp, err := client.CreateWorkspaceWithResponse(
 		t.Context(),
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: platformHost,
 			Owner:        "acme",
 			Name:         "widget",
@@ -949,7 +951,7 @@ func TestWorkspaceAPIE2ERejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	resp, err := client.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
-			Provider:     &provider,
+			Provider:     provider,
 			PlatformHost: "forge.example.com",
 			Owner:        "acme",
 			Name:         "widget",

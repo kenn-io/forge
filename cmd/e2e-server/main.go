@@ -305,7 +305,9 @@ func seedLabelEditingFixture(
 	database *db.DB,
 	fc *testutil.FixtureClient,
 ) error {
-	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widgets")
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+	)
 	if err != nil {
 		return fmt.Errorf("get widgets repo: %w", err)
 	}
@@ -387,7 +389,9 @@ func seedAssigneeReviewerFixture(
 	database *db.DB,
 	fc *testutil.FixtureClient,
 ) error {
-	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widgets")
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+	)
 	if err != nil {
 		return fmt.Errorf("get widgets repo: %w", err)
 	}
@@ -615,7 +619,9 @@ func setPR1CIState(
 	label string,
 	opts ciFixtureOptions,
 ) {
-	repo, err := database.GetRepoByOwnerName(r.Context(), "acme", "widgets")
+	repo, err := database.GetRepoByIdentity(
+		r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+	)
 	if err != nil || repo == nil {
 		http.Error(w, "repo not found", http.StatusNotFound)
 		return
@@ -861,7 +867,9 @@ func buildAppState(
 		{"acme", "widgets"},
 		{"acme", "tools"},
 	} {
-		repo, err := database.GetRepoByOwnerName(ctx, rp.owner, rp.name)
+		repo, err := database.GetRepoByIdentity(
+			ctx, db.GitHubRepoIdentity("github.com", rp.owner, rp.name),
+		)
 		if err != nil || repo == nil {
 			continue
 		}
@@ -1035,7 +1043,9 @@ func buildAppState(
 		{owner: "acme", name: "widgets", number: 7},
 		{owner: "acme", name: "tools", number: 1},
 	} {
-		repo, err := database.GetRepoByOwnerName(ctx, target.owner, target.name)
+		repo, err := database.GetRepoByIdentity(
+			ctx, db.GitHubRepoIdentity("github.com", target.owner, target.name),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("get %s/%s repo: %w", target.owner, target.name, err)
 		}
@@ -1305,8 +1315,8 @@ func buildAppState(
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-workflow-approval/required" {
-			repo, err := database.GetRepoByOwnerName(
-				r.Context(), "acme", "widgets",
+			repo, err := database.GetRepoByIdentity(
+				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
 			)
 			if err != nil || repo == nil {
 				http.Error(w, "repo not found", http.StatusNotFound)
@@ -1362,8 +1372,8 @@ func buildAppState(
 		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/repo-settings/viewer-can-merge/deny" {
-			repo, err := database.GetRepoByOwnerName(
-				r.Context(), "acme", "widgets",
+			repo, err := database.GetRepoByIdentity(
+				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
 			)
 			if err != nil || repo == nil {
 				http.Error(w, "repo not found", http.StatusNotFound)
@@ -1627,8 +1637,8 @@ func buildAppState(
 		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-diff-summary/advance-head" {
-			repo, err := database.GetRepoByOwnerName(
-				r.Context(), "acme", "widgets",
+			repo, err := database.GetRepoByIdentity(
+				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
 			)
 			if err != nil || repo == nil {
 				http.Error(w, "repo not found", http.StatusNotFound)
@@ -1662,8 +1672,8 @@ func buildAppState(
 		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-review-thread-regroup/add-reply" {
-			repo, err := database.GetRepoByOwnerName(
-				r.Context(), "acme", "widgets",
+			repo, err := database.GetRepoByIdentity(
+				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
 			)
 			if err != nil || repo == nil {
 				http.Error(w, "repo not found", http.StatusNotFound)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -919,22 +920,33 @@ func (d *DB) MarkClosedLinkedNotificationsDone(ctx context.Context, now time.Tim
 	return nil
 }
 
-func ParseNotificationRepo(repo string) (host string, owner string, name string, ok bool) {
-	parts := strings.Split(repo, "/")
-	switch len(parts) {
-	case 2:
-		if parts[0] == "" || parts[1] == "" {
-			return "", "", "", false
-		}
-		host, owner, name = canonicalRepoIdentifier("", parts[0], parts[1])
-		return host, owner, name, true
-	case 3:
-		if parts[0] == "" || parts[1] == "" || parts[2] == "" {
-			return "", "", "", false
-		}
-		host, owner, name = canonicalRepoIdentifier(parts[0], parts[1], parts[2])
-		return host, owner, name, true
-	default:
-		return "", "", "", false
+func ParseNotificationRepo(repo string) (
+	platform string,
+	host string,
+	owner string,
+	name string,
+	ok bool,
+) {
+	rawPlatform, rawPath, found := strings.Cut(repo, "|")
+	if !found {
+		return "", "", "", "", false
 	}
+	platform, err := canonicalizeRequiredNotificationPlatform(rawPlatform)
+	if err != nil {
+		return "", "", "", "", false
+	}
+	parts := strings.Split(rawPath, "/")
+	if len(parts) < 3 {
+		return "", "", "", "", false
+	}
+	if slices.Contains(parts, "") {
+		return "", "", "", "", false
+	}
+	host, owner, name = canonicalRepoIdentifier(
+		parts[0], strings.Join(parts[1:len(parts)-1], "/"), parts[len(parts)-1],
+	)
+	if host == "" || owner == "" || name == "" {
+		return "", "", "", "", false
+	}
+	return platform, host, owner, name, true
 }

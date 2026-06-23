@@ -138,6 +138,7 @@ function pullSummary(owner: string, name: string, number: number, title: string,
     ClosedAt: null,
     KanbanStatus: "new",
     Starred: false,
+    provider: "github",
     repo_owner: owner,
     repo_name: name,
     platform_host: "github.com",
@@ -169,14 +170,14 @@ function pullDetail(owner: string, name: string, number: number) {
   };
 }
 
-// The pulls store appends `repo=<host/owner/name>` when a global repo is set, so
+// The pulls store appends `repo=<provider|host/owner/name>` when a global repo is set, so
 // the list honors it exactly the way the live backend filters.
 function listOverride(): MockRouteOverride {
   return (req) => {
     if (req.method !== "GET" || req.url.pathname !== "/api/v1/pulls") return null;
     const repo = req.url.searchParams.get("repo");
     const filtered = repo
-      ? allPulls.filter((p) => `${p.platform_host}/${p.repo_owner}/${p.repo_name}` === repo)
+      ? allPulls.filter((p) => `${p.provider}|${p.platform_host}/${p.repo_owner}/${p.repo_name}` === repo)
       : allPulls;
     return jsonResponse(filtered);
   };
@@ -227,21 +228,21 @@ describe("deep-link repo dropdown + sidebar sync", () => {
   });
 
   it("navigating to a PR in a different repo updates the dropdown and the sidebar list", async () => {
-    setGlobalRepo("github.com/acme/widgets");
+    setGlobalRepo("github|github.com/acme/widgets");
     mounted = await mountBrowserApp("/pulls/github/acme/tools/1", { overrides: overrides() });
 
     await vi.waitFor(() => expect(document.querySelector(".pull-detail")).not.toBeNull(), WAIT);
-    await vi.waitFor(() => expect(typeaheadValue()).toBe("github.com/acme/tools"), WAIT);
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/tools"), WAIT);
     await vi.waitFor(() => expect(repoHeaderNames()).toEqual(["acme/tools"]), WAIT);
   });
 
   it("navigating between PRs in different repos updates the dropdown each time", async () => {
-    setGlobalRepo("github.com/acme/widgets");
+    setGlobalRepo("github|github.com/acme/widgets");
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/1", { overrides: overrides() });
-    await vi.waitFor(() => expect(typeaheadValue()).toBe("github.com/acme/widgets"), WAIT);
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/widgets"), WAIT);
 
     firePopstate("/pulls/github/acme/tools/1");
-    await vi.waitFor(() => expect(typeaheadValue()).toBe("github.com/acme/tools"), WAIT);
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/tools"), WAIT);
   });
 
   it("selecting an item from All repos keeps the all-repo filter", async () => {
@@ -256,10 +257,10 @@ describe("deep-link repo dropdown + sidebar sync", () => {
   });
 
   it("opening /pulls without a selection preserves the user's chosen repo", async () => {
-    setGlobalRepo("github.com/acme/widgets");
+    setGlobalRepo("github|github.com/acme/widgets");
     mounted = await mountBrowserApp("/pulls", { overrides: overrides() });
 
     await vi.waitFor(() => expect(document.querySelector(".pull-item")).not.toBeNull(), WAIT);
-    await vi.waitFor(() => expect(typeaheadValue()).toBe("github.com/acme/widgets"), WAIT);
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/widgets"), WAIT);
   });
 });

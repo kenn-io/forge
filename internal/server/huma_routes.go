@@ -32,7 +32,7 @@ import (
 )
 
 type listPullsInput struct {
-	Repo    string `query:"repo" doc:"Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches."`
+	Repo    string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State   string `query:"state"`
 	Kanban  string `query:"kanban"`
 	Starred bool   `query:"starred"`
@@ -173,7 +173,7 @@ type resolveDiffReviewThreadInput struct {
 }
 
 type listIssuesInput struct {
-	Repo     string `query:"repo" doc:"Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches."`
+	Repo     string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State    string `query:"state"`
 	Starred  bool   `query:"starred"`
 	Q        string `query:"q"`
@@ -465,7 +465,7 @@ type getStackForPROutput = bodyOutput[stackContextResponse]
 
 type createWorkspaceInput struct {
 	Body struct {
-		Provider     string `json:"provider,omitempty"`
+		Provider     string `json:"provider"`
 		PlatformHost string `json:"platform_host"`
 		Owner        string `json:"owner"`
 		Name         string `json:"name"`
@@ -600,7 +600,7 @@ type workspaceDiffRequest struct {
 }
 
 type listActivityInput struct {
-	Repo   string   `query:"repo" doc:"Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches."`
+	Repo   string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	Types  []string `query:"types"`
 	Search string   `query:"search"`
 	After  string   `query:"after"`
@@ -608,7 +608,7 @@ type listActivityInput struct {
 }
 
 type triggerSyncInput struct {
-	PriorityRepos []string `query:"priority_repo" doc:"Optional repository filters to sync first. Accepts repeated values or comma-separated values. Each value may be provider-qualified as provider|platform_host/owner/name, host-qualified as platform_host/owner/name, or bare as owner/name; bare values match the first tracked repo with that repo path."`
+	PriorityRepos []string `query:"priority_repo" doc:"Optional repository filters to sync first. Accepts repeated provider|platform_host/repo_path values or comma-separated values."`
 }
 
 type listActivityOutput = bodyOutput[activityResponse]
@@ -1341,6 +1341,9 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 			)
 		}
 	}
+	if hasInvalidRepoFilter(input.Repo) {
+		return nil, problemValidation("query.repo", "repo filter must be provider|platform_host/repo_path")
+	}
 
 	opts := db.ListMergeRequestsOpts{
 		State:       input.State,
@@ -1350,16 +1353,6 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		Limit:       input.Limit,
 		Offset:      input.Offset,
 		RepoFilters: parseRepoFilters(input.Repo),
-	}
-	if len(opts.RepoFilters) == 0 {
-		if _, platformHost, owner, name, repoPath := parseRepoFilter(input.Repo); repoPath != "" {
-			opts.PlatformHost = platformHost
-			opts.RepoPath = repoPath
-		} else if owner != "" {
-			opts.PlatformHost = platformHost
-			opts.RepoOwner = owner
-			opts.RepoName = name
-		}
 	}
 
 	mrs, err := s.db.ListMergeRequests(ctx, opts)
@@ -1834,6 +1827,7 @@ func (s *Server) setKanbanState(ctx context.Context, input *setKanbanStateInput)
 		return nil, providerRouteLookupError(err)
 	}
 	ref := repoNumberPathRef{
+		repoID:       repo.ID,
 		owner:        repo.Owner,
 		name:         repo.Name,
 		number:       input.Number,
@@ -2056,6 +2050,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 	}
 
 	ref := repoNumberPathRef{
+		repoID:       repo.ID,
 		owner:        repo.Owner,
 		name:         repo.Name,
 		number:       input.Number,
@@ -2099,6 +2094,7 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 	}
 
 	ref := repoNumberPathRef{
+		repoID:       repo.ID,
 		owner:        repo.Owner,
 		name:         repo.Name,
 		number:       input.Number,
@@ -2316,6 +2312,9 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 			)
 		}
 	}
+	if hasInvalidRepoFilter(input.Repo) {
+		return nil, problemValidation("query.repo", "repo filter must be provider|platform_host/repo_path")
+	}
 
 	opts := db.ListIssuesOpts{
 		State:       input.State,
@@ -2325,16 +2324,6 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		Limit:       input.Limit,
 		Offset:      input.Offset,
 		RepoFilters: parseRepoFilters(input.Repo),
-	}
-	if len(opts.RepoFilters) == 0 {
-		if _, platformHost, owner, name, repoPath := parseRepoFilter(input.Repo); repoPath != "" {
-			opts.PlatformHost = platformHost
-			opts.RepoPath = repoPath
-		} else if owner != "" {
-			opts.PlatformHost = platformHost
-			opts.RepoOwner = owner
-			opts.RepoName = name
-		}
 	}
 
 	issues, err := s.db.ListIssues(ctx, opts)
@@ -2546,8 +2535,9 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 	}
 
 	ref := repoNumberPathRef{
-		owner:        input.Owner,
-		name:         input.Name,
+		repoID:       repo.ID,
+		owner:        repo.Owner,
+		name:         repo.Name,
 		number:       input.Number,
 		platformHost: repo.PlatformHost,
 	}
@@ -2590,8 +2580,9 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 	}
 
 	ref := repoNumberPathRef{
-		owner:        input.Owner,
-		name:         input.Name,
+		repoID:       repo.ID,
+		owner:        repo.Owner,
+		name:         repo.Name,
 		number:       input.Number,
 		platformHost: repo.PlatformHost,
 	}
@@ -3691,26 +3682,6 @@ func matchPriorityRepo(
 		}
 		return ghclient.RepoRef{}, false
 	}
-
-	for _, repo := range tracked {
-		if strings.EqualFold(repoPathForPriority(repo), filter) {
-			return repo, true
-		}
-	}
-
-	parts := strings.Split(filter, "/")
-	if len(parts) < 3 {
-		return ghclient.RepoRef{}, false
-	}
-
-	host := parts[0]
-	path := strings.Join(parts[1:], "/")
-	for _, repo := range tracked {
-		if strings.EqualFold(repoHostForPriority(repo), host) &&
-			strings.EqualFold(repoPathForPriority(repo), path) {
-			return repo, true
-		}
-	}
 	return ghclient.RepoRef{}, false
 }
 
@@ -4050,6 +4021,10 @@ func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInp
 }
 
 func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*listActivityOutput, error) {
+	if hasInvalidRepoFilter(input.Repo) {
+		return nil, problemValidation("query.repo", "repo filter must be provider|platform_host/repo_path")
+	}
+
 	opts := db.ListActivityOpts{
 		Repo:        input.Repo,
 		RepoFilters: parseRepoFilters(input.Repo),
@@ -4387,26 +4362,21 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 		return 0, problemValidation("body.item_type",
 			"item_type must be 'pr' or 'issue'", "pr", "issue")
 	}
-
-	var (
-		repoID int64
-		err    error
-	)
-	if body.PlatformHost != "" {
-		repoID, err = s.lookupRepoIDOnHost(
-			ctx, body.Owner, body.Name, body.PlatformHost,
-		)
-	} else {
-		repoID, err = s.lookupRepoID(ctx, body.Owner, body.Name)
+	if strings.TrimSpace(body.Provider) == "" {
+		return 0, problemValidation("body.provider", "provider is required")
 	}
+
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, body.Provider, body.PlatformHost, body.Owner, body.Name,
+	)
 	if err != nil {
 		if errors.Is(err, errRepoNotFound) {
 			return 0, problemNotFound(CodeRepoNotFound, err.Error(), nil)
 		}
-		return 0, problemInternal("repo lookup failed")
+		return 0, providerRouteLookupError(err)
 	}
 
-	return repoID, nil
+	return repo.ID, nil
 }
 
 // --- Commits ---
@@ -4945,28 +4915,8 @@ func (s *Server) createWorkspaceProvider(
 		}
 		return provider, nil
 	}
-	count, err := s.db.CountReposByHostOwnerName(
-		ctx, input.Body.PlatformHost, input.Body.Owner, input.Body.Name,
-	)
-	if err != nil {
-		return "", problemInternal("count matching repos: " + err.Error())
-	}
-	if count > 1 {
-		return "", problemValidation(
-			"body.provider",
-			"provider is required when multiple providers share this host and repository",
-		)
-	}
-	repo, err := s.db.GetRepoByHostOwnerName(
-		ctx, input.Body.PlatformHost, input.Body.Owner, input.Body.Name,
-	)
-	if err != nil {
-		return "", problemInternal("lookup workspace repo: " + err.Error())
-	}
-	if repo == nil {
-		return "", nil
-	}
-	return repo.Platform, nil
+	_ = ctx
+	return "", problemValidation("body.provider", "provider is required")
 }
 
 func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
@@ -5925,12 +5875,12 @@ func (s *Server) workspaceMergeTargetBranch(
 		prNumber = *summary.AssociatedPRNumber
 	}
 
-	repo, err := s.db.GetRepoByHostOwnerName(
-		ctx,
-		summary.PlatformHost,
-		summary.RepoOwner,
-		summary.RepoName,
-	)
+	repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     summary.Platform,
+		PlatformHost: summary.PlatformHost,
+		Owner:        summary.RepoOwner,
+		Name:         summary.RepoName,
+	})
 	if err != nil {
 		return "", false, problemInternal("get workspace repo failed")
 	}

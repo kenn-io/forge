@@ -162,7 +162,12 @@ func syncActivityForcePushes(t *testing.T, d *db.DB) []db.ActivityItem {
 
 func requireSyncActivityRepoRow(t *testing.T, d *db.DB) db.Repo {
 	t.Helper()
-	repoRow, err := d.GetRepoByOwnerName(t.Context(), "group", "project")
+	repoRow, err := d.GetRepoByIdentity(t.Context(), db.RepoIdentity{
+		Platform:     string(platform.KindGitLab),
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+	})
 	require.NoError(t, err)
 	require.NotNil(t, repoRow)
 	return *repoRow
@@ -3188,7 +3193,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	syncer.RunOnce(ctx)
 
 	// PR should be in the DB.
-	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal(1, pr.Number)
@@ -3445,7 +3450,7 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
-	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 
@@ -3627,7 +3632,7 @@ func TestSyncStoresPullRequestTimelineEvents(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
-	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 
@@ -3673,7 +3678,7 @@ func TestSyncIgnoresPullRequestTimelineFetchFailures(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
-	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	events, err := d.ListMREvents(ctx, pr.ID)
@@ -3703,7 +3708,7 @@ func TestSyncStoresPRLabels(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	require.Len(stored.Labels, 1)
@@ -3735,7 +3740,7 @@ func TestSyncRefreshesRepoLabelCatalog(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
-	repo, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repo, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	require.NotNil(repo)
 	labels, freshness, err := d.ListRepoLabelCatalog(ctx, repo.ID)
@@ -3770,7 +3775,7 @@ func TestSyncMRReplacesLabelsOnResync(t *testing.T) {
 
 	require.NoError(syncer.SyncMR(ctx, "owner", "repo", 1))
 
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	require.Len(stored.Labels, 1)
@@ -3821,7 +3826,7 @@ func TestSyncIssueReplacesLabelsOnResync(t *testing.T) {
 
 	require.NoError(syncer.SyncIssue(ctx, "owner", "repo", issueNumber))
 
-	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	stored, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(stored)
 	require.Len(stored.Labels, 1)
@@ -3897,7 +3902,7 @@ func TestSyncIssueNilUpdatedAt(t *testing.T) {
 		syncer.SyncIssue(ctx, "owner", "repo", issueNumber),
 	)
 
-	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	stored, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(stored)
 	// last_activity_at should track the comment timestamp
@@ -3955,7 +3960,7 @@ func TestSyncIssueNilUpdatedAtNoComments(t *testing.T) {
 		syncer.SyncIssue(ctx, "owner", "repo", issueNumber),
 	)
 
-	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	stored, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal(created.UTC(), stored.LastActivityAt.UTC(),
@@ -4057,7 +4062,7 @@ func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
-	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 
@@ -4101,7 +4106,7 @@ func TestSyncSingleFlight(t *testing.T) {
 	syncer.running.Store(false)
 
 	// Verify no DB side-effects: repo row should not exist because the RunOnce was skipped.
-	repo, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repo, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(t, err)
 	Assert.Nil(t, repo)
 
@@ -4138,7 +4143,7 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 	// First sync: full fetch occurs, MergeableState is stored.
 	syncer.RunOnce(ctx)
 
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("dirty", stored.MergeableState)
@@ -4161,7 +4166,7 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	stored2, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	stored2, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored2)
 	assert.Equal("dirty", stored2.MergeableState, "MergeableState should be preserved when full fetch is skipped")
@@ -4205,7 +4210,7 @@ func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
 	)
 	require.NoError(err)
 
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("dirty", stored.MergeableState)
@@ -4261,7 +4266,7 @@ func TestIndexUpsertMergeRequestPreservesCachedCIForSameHead(t *testing.T) {
 	)
 	require.NoError(err)
 
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("failure", stored.CIStatus)
@@ -4317,7 +4322,7 @@ func TestIndexUpsertMergeRequestPreservesReviewDecisionWhenOmitted(t *testing.T)
 	)
 	require.NoError(err)
 
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("APPROVED", stored.ReviewDecision)
@@ -4524,7 +4529,7 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	// full PR (returns "unknown" MergeableState).
 	syncer.RunOnce(ctx)
 
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("unknown", stored.MergeableState)
@@ -4560,7 +4565,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.Equal("dirty", stored.MergeableState)
 	require.Equal(10, stored.Additions)
@@ -4577,7 +4582,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	stored2, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	stored2, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	assert.Equal("dirty", stored2.MergeableState, "MergeableState should survive a failed full fetch")
 	assert.Equal(10, stored2.Additions, "Additions should survive a failed full fetch")
@@ -4693,7 +4698,7 @@ func TestRunOnceSyncOpenMRSurvivesNilFullPR(t *testing.T) {
 
 	// The list-derived PR should still be persisted because the
 	// nil full-PR fetch is non-fatal.
-	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 7)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 7)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal(7, pr.Number)
@@ -5004,7 +5009,7 @@ func TestSyncItemByNumber_Issue(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("issue", itemType)
 
-	issue, err := database.GetIssue(ctx, "acme", "widget", number)
+	issue, err := database.GetIssue(ctx, "github", "github.com", "acme", "widget", number)
 	require.NoError(err)
 	assert.NotNil(issue)
 	assert.Equal(title, issue.Title)
@@ -5065,7 +5070,7 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("pr", itemType)
 
-	pr, err := database.GetMergeRequest(ctx, "acme", "widget", number)
+	pr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", number)
 	require.NoError(err)
 	assert.NotNil(pr)
 	assert.Equal(title, pr.Title)
@@ -5511,7 +5516,7 @@ func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {
 
 	require.NoError(syncer.SyncMR(ctx, "acme", "widget", 10))
 
-	mr, err := database.GetMergeRequest(ctx, "acme", "widget", 10)
+	mr, err := database.GetMergeRequest(ctx, "gitlab", "gitlab.com", "acme", "widget", 10)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("gitlab mr", mr.Title)
@@ -6129,7 +6134,7 @@ func TestSyncMRReturnsErrorWhenClientReturnsNilPR(t *testing.T) {
 	require.Error(err)
 	require.ErrorContains(err, "client returned nil pull request")
 
-	stored, getErr := database.GetMergeRequest(ctx, "acme", "widget", 10)
+	stored, getErr := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 10)
 	require.NoError(getErr)
 	require.Nil(stored)
 }
@@ -6152,7 +6157,7 @@ func TestSyncIssueReturnsErrorWhenClientReturnsNilIssue(t *testing.T) {
 	require.Error(err)
 	require.ErrorContains(err, "client returned nil issue")
 
-	stored, getErr := database.GetIssue(ctx, "acme", "widget", 5)
+	stored, getErr := database.GetIssue(ctx, "github", "github.com", "acme", "widget", 5)
 	require.NoError(getErr)
 	require.Nil(stored)
 }
@@ -6262,12 +6267,12 @@ func TestSyncRunUsesProviderReadersForIndexSync(t *testing.T) {
 
 	assert.Equal(int32(1), provider.listMRCalls.Load())
 	assert.Equal(int32(1), provider.listIssueCalls.Load())
-	mr, err := d.GetMergeRequest(t.Context(), "acme", "widget", 7)
+	mr, err := d.GetMergeRequest(t.Context(), "gitlab", "gitlab.com", "acme", "widget", 7)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("Provider MR", mr.Title)
 	assert.Equal("abc123", mr.PlatformHeadSHA)
-	issue, err := d.GetIssue(t.Context(), "acme", "widget", 11)
+	issue, err := d.GetIssue(t.Context(), "gitlab", "gitlab.com", "acme", "widget", 11)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("Provider issue", issue.Title)
@@ -6324,7 +6329,7 @@ func TestSyncRunAllowsMergeRequestOnlyProvider(t *testing.T) {
 	require.Equal("gitlab.com", results[0].PlatformHost)
 	require.Empty(results[0].Error)
 	assert.Equal(int32(1), provider.listMRCalls.Load())
-	mr, err := d.GetMergeRequest(t.Context(), "acme", "widget", 7)
+	mr, err := d.GetMergeRequest(t.Context(), "gitlab", "gitlab.com", "acme", "widget", 7)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("MR-only provider", mr.Title)
@@ -6377,7 +6382,7 @@ func TestSyncRunAllowsIssueOnlyProvider(t *testing.T) {
 	require.Equal("gitlab.com", results[0].PlatformHost)
 	require.Empty(results[0].Error)
 	assert.Equal(int32(1), provider.listIssueCalls.Load())
-	issue, err := d.GetIssue(t.Context(), "acme", "widget", 11)
+	issue, err := d.GetIssue(t.Context(), "gitlab", "gitlab.com", "acme", "widget", 11)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("Issue-only provider", issue.Title)
@@ -6425,7 +6430,7 @@ func TestSyncMRUsesProviderMergeRequestReader(t *testing.T) {
 
 	require.NoError(err)
 	assert.Equal(int32(1), provider.getMRCalls.Load())
-	mr, err := d.GetMergeRequest(t.Context(), "acme", "widget", 7)
+	mr, err := d.GetMergeRequest(t.Context(), "gitlab", "gitlab.com", "acme", "widget", 7)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("Provider MR detail", mr.Title)
@@ -6470,7 +6475,7 @@ func TestSyncIssueUsesProviderIssueReader(t *testing.T) {
 
 	require.NoError(err)
 	assert.Equal(int32(1), provider.getIssueCalls.Load())
-	issue, err := d.GetIssue(t.Context(), "acme", "widget", 11)
+	issue, err := d.GetIssue(t.Context(), "gitlab", "gitlab.com", "acme", "widget", 11)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("Provider issue detail", issue.Title)
@@ -6683,7 +6688,7 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 
 	// Verify the MR was persisted.
-	mr, err := d.GetMergeRequest(ctx, "acme", "app", 7)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "app", 7)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(7, mr.Number)
@@ -6891,7 +6896,7 @@ func TestWatchedMROnGHEHost(t *testing.T) {
 	syncer.syncWatchedMRs(ctx)
 
 	// The MR should have been synced via the GHE client.
-	mr, err := d.GetMergeRequest(ctx, "corp", "internal", 3)
+	mr, err := d.GetMergeRequest(ctx, "github", "ghes.corp.com", "corp", "internal", 3)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(3, mr.Number)
@@ -6899,7 +6904,7 @@ func TestWatchedMROnGHEHost(t *testing.T) {
 	assert.Equal("internal", hookedName)
 
 	// Verify the MR is associated with the GHE repo row, not github.com.
-	repo, err := d.GetRepoByOwnerName(ctx, "corp", "internal")
+	repo, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("ghes.corp.com", "corp", "internal"))
 	require.NoError(err)
 	require.NotNil(repo)
 	assert.Equal("ghes.corp.com", repo.PlatformHost)
@@ -7180,14 +7185,14 @@ func TestRunOnceIndexOnly(t *testing.T) {
 		"index-only sync should not call GetPullRequest")
 
 	// PRs should be in DB with nil detail_fetched_at.
-	pr1, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	pr1, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr1)
 	assert.Equal(1, pr1.Number)
 	assert.Nil(pr1.DetailFetchedAt,
 		"detail_fetched_at should be nil after index-only sync")
 
-	pr2, err := d.GetMergeRequest(ctx, "owner", "repo", 2)
+	pr2, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 2)
 	require.NoError(err)
 	require.NotNil(pr2)
 	assert.Equal(2, pr2.Number)
@@ -7238,13 +7243,13 @@ func TestRunOnceDetailDrain(t *testing.T) {
 		"detail drain should call GetPullRequest for open PRs")
 
 	// Both PRs should have detail_fetched_at set.
-	pr1, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	pr1, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr1)
 	assert.NotNil(pr1.DetailFetchedAt,
 		"detail_fetched_at should be set after detail drain")
 
-	pr2, err := d.GetMergeRequest(ctx, "owner", "repo", 2)
+	pr2, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 2)
 	require.NoError(err)
 	require.NotNil(pr2)
 	assert.NotNil(pr2.DetailFetchedAt,
@@ -7666,7 +7671,7 @@ func TestRunOnceLargeExistingRepoSkipsBulkGraphQLAndFetchesChangedPRDetail(t *te
 		"large existing repo refresh should not bulk-fetch every PR through GraphQL")
 	assert.Equal(int32(1), mc.getPRCalls.Load(),
 		"only the changed PR should be fetched by the detail drain")
-	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.True(pr.UpdatedAt.Equal(changedAt))
@@ -7763,12 +7768,12 @@ func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
 
 	assert.Equal(int32(1), provider.getMRCalls.Load())
 	assert.Equal(int32(1), provider.getIssueCalls.Load())
-	mr, err := d.GetMergeRequest(ctx, "acme", "widget", 7)
+	mr, err := d.GetMergeRequest(ctx, "gitlab", "gitlab.com", "acme", "widget", 7)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("fresh MR detail", mr.Title)
 	assert.NotNil(mr.DetailFetchedAt)
-	issue, err := d.GetIssue(ctx, "acme", "widget", 11)
+	issue, err := d.GetIssue(ctx, "gitlab", "gitlab.com", "acme", "widget", 11)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("fresh issue detail", issue.Title)
@@ -8019,7 +8024,7 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 	// All 5 PRs should be in DB (index scan).
 	for i := 1; i <= 5; i++ {
 		pr, err := d.GetMergeRequest(
-			ctx, "owner", "repo", i,
+			ctx, "github", "github.com", "owner", "repo", i,
 		)
 		require.NoError(err)
 		require.NotNil(pr, "PR #%d should exist", i)
@@ -8030,7 +8035,7 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 	detailCount := 0
 	for i := 1; i <= 5; i++ {
 		pr, _ := d.GetMergeRequest(
-			ctx, "owner", "repo", i,
+			ctx, "github", "github.com", "owner", "repo", i,
 		)
 		if pr != nil && pr.DetailFetchedAt != nil {
 			detailCount++
@@ -8507,7 +8512,7 @@ func TestSyncerPRList304MakesNoAPICalls(t *testing.T) {
 	)
 	seedSyncer.RunOnce(ctx)
 
-	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.Equal("pending", pr.CIStatus)
 
@@ -8535,7 +8540,7 @@ func TestSyncerPRList304MakesNoAPICalls(t *testing.T) {
 		"304 on PR list must not trigger any CI API calls")
 
 	// CI state should be unchanged — still pending from seed.
-	pr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	pr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.Equal("pending", pr.CIStatus,
 		"CI should remain stale until detail drain refreshes it")
@@ -8602,7 +8607,7 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 	)
 	syncer.RunOnce(ctx)
 
-	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(issue, "issue sync must run even when PR list returns 304")
 	assert.Equal(issueNumber, issue.Number)
@@ -8646,7 +8651,7 @@ func TestSyncStoresIssueLabels(t *testing.T) {
 	)
 	syncer.RunOnce(ctx)
 
-	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(issue)
 	require.Len(issue.Labels, 1)
@@ -8675,7 +8680,7 @@ func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
 	require.NoError(err)
 	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
 	require.NoError(err)
-	storedBefore, err := d.GetMergeRequest(ctx, "owner", "repo", 7)
+	storedBefore, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 7)
 	require.NoError(err)
 	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, storedBefore.ID, []db.Label{{
 		PlatformID:  901,
@@ -8693,7 +8698,7 @@ func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
 
 	require.NoError(syncer.fetchAndUpdateClosed(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 7, false))
 
-	storedAfter, err := d.GetMergeRequest(ctx, "owner", "repo", 7)
+	storedAfter, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 7)
 	require.NoError(err)
 	require.Len(storedAfter.Labels, 1)
 	require.Equal("release", storedAfter.Labels[0].Name)
@@ -8803,7 +8808,7 @@ func TestFetchAndUpdateClosedRefreshesIssueLabels(t *testing.T) {
 
 	require.NoError(syncer.fetchAndUpdateClosedIssue(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, issueNumber))
 
-	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	stored, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.Len(stored.Labels, 1)
 	require.Equal("docs", stored.Labels[0].Name)
@@ -8884,7 +8889,7 @@ func TestBackfillRepoPersistsPRLabels(t *testing.T) {
 
 	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
-	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoRow, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	require.NotNil(repoRow)
 	now := time.Date(2024, 6, 7, 12, 0, 0, 0, time.UTC)
@@ -8899,7 +8904,7 @@ func TestBackfillRepoPersistsPRLabels(t *testing.T) {
 
 	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
 
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 21)
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 21)
 	require.NoError(err)
 	require.NotNil(stored)
 	require.Equal(repoID, stored.RepoID)
@@ -8914,7 +8919,7 @@ func TestBackfillRepoPersistsIssueLabels(t *testing.T) {
 
 	_, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
-	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoRow, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	require.NotNil(repoRow)
 	now := time.Date(2024, 6, 8, 12, 0, 0, 0, time.UTC)
@@ -8933,7 +8938,7 @@ func TestBackfillRepoPersistsIssueLabels(t *testing.T) {
 
 	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
 
-	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	stored, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(stored)
 	require.Len(stored.Labels, 1)
@@ -8952,7 +8957,7 @@ func TestBackfillRepoSkipsNonGitHubProviders(t *testing.T) {
 	}
 	_, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
-	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoRow, err := d.GetRepoByIdentity(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	require.NotNil(repoRow)
 
@@ -8971,7 +8976,7 @@ func TestBackfillRepoSkipsNonGitHubProviders(t *testing.T) {
 
 	syncer.backfillRepo(ctx, repo, repoRow, NewSyncBudget(10))
 
-	repoAfter, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoAfter, err := d.GetRepoByIdentity(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	require.NotNil(repoAfter)
 	require.False(repoAfter.BackfillPRComplete)
@@ -9042,7 +9047,7 @@ func TestBackfillRepoStoresCompletionTimestampsInUTC(t *testing.T) {
 
 	_, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
-	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoRow, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	require.NotNil(repoRow)
 	now := time.Date(2024, 6, 8, 12, 0, 0, 0, time.UTC)
@@ -9069,7 +9074,7 @@ func TestBackfillRepoStoresCompletionTimestampsInUTC(t *testing.T) {
 
 	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
 
-	repoAfter, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoAfter, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	require.NotNil(repoAfter)
 	require.True(repoAfter.BackfillPRComplete)
@@ -9087,7 +9092,7 @@ func TestBackfillRepoDoesNotAdvancePRCursorWhenLabelPersistenceFails(t *testing.
 
 	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
-	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoRow, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	require.NotNil(repoRow)
 	now := time.Date(2024, 6, 9, 12, 0, 0, 0, time.UTC)
@@ -9118,14 +9123,14 @@ func TestBackfillRepoDoesNotAdvancePRCursorWhenLabelPersistenceFails(t *testing.
 
 	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
 
-	repoAfter, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoAfter, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	require.NotNil(repoAfter)
 	require.Equal(0, repoAfter.BackfillPRPage)
 	require.False(repoAfter.BackfillPRComplete)
 	require.Nil(repoAfter.BackfillPRCompletedAt)
 
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 31)
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 31)
 	require.NoError(err)
 	require.NotNil(stored)
 	require.Empty(stored.Labels)
@@ -9138,7 +9143,7 @@ func TestBackfillRepoDoesNotAdvanceIssueCursorWhenLabelPersistenceFails(t *testi
 
 	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
-	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoRow, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	require.NotNil(repoRow)
 	now := time.Date(2024, 6, 10, 12, 0, 0, 0, time.UTC)
@@ -9173,14 +9178,14 @@ func TestBackfillRepoDoesNotAdvanceIssueCursorWhenLabelPersistenceFails(t *testi
 
 	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
 
-	repoAfter, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoAfter, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	require.NotNil(repoAfter)
 	require.Equal(0, repoAfter.BackfillIssuePage)
 	require.False(repoAfter.BackfillIssueComplete)
 	require.Nil(repoAfter.BackfillIssueCompletedAt)
 
-	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	stored, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(stored)
 	require.Empty(stored.Labels)
@@ -9339,7 +9344,7 @@ func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 	syncer.RunOnce(ctx)
 
 	// Issue row lands in DB (upsert happened before timeline).
-	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(issue, "issue should be upserted even though timeline failed")
 
@@ -9366,7 +9371,7 @@ func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 		"next cycle should call InvalidateListETagsForRepo")
 
 	// Verify timeline was actually refreshed: the comment should be in DB.
-	issue, err = d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err = d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	events, err = d.ListIssueEvents(ctx, issue.ID)
 	require.NoError(err)
@@ -9423,7 +9428,7 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 	)
 	seedSyncer.RunOnce(ctx)
 
-	seeded, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	seeded, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(seeded, "seed cycle should persist issue #7")
 
@@ -9451,7 +9456,7 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 	assert.True(flagged, "failedRepos must be set after fetchAndUpdateClosedIssue failure")
 
 	// Verify issue is still open in DB (closure update failed).
-	stillOpen, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	stillOpen, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(stillOpen)
 	assert.Equal("open", stillOpen.State, "issue should still be open because closure update failed")
@@ -9486,7 +9491,7 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 	assert.Greater(mc.invalidateCalls.Load(), invalidateBefore,
 		"next cycle should call InvalidateListETagsForRepo")
 
-	updated, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	updated, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(updated)
 	assert.Equal("closed", updated.State, "issue should be closed after successful retry")
@@ -9525,7 +9530,7 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 	// Cycle 1: PR list fails → failMR set, issues unaffected.
 	syncer.RunOnce(ctx)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	assert.Nil(mr, "MR should not be upserted when PR list failed")
 
@@ -9552,7 +9557,7 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 	assert.True(mc.issuesCached,
 		"issue cache should stay warm when only MR path failed")
 
-	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr, "MR should be upserted after successful retry")
 
@@ -9593,7 +9598,7 @@ func TestSyncerMRDetailFailureRetries(t *testing.T) {
 	// refreshTimeline fails at ListReviews → detail_fetched_at stays nil.
 	syncer.RunOnce(ctx)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr, "MR should be upserted by index phase")
 	assert.Nil(mr.DetailFetchedAt,
@@ -9621,7 +9626,7 @@ func TestSyncerMRDetailFailureRetries(t *testing.T) {
 	// → fetchMRDetail succeeds → timeline events land.
 	syncer.RunOnce(ctx)
 
-	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.NotNil(mr.DetailFetchedAt,
@@ -9678,7 +9683,7 @@ func TestSyncerRefreshesEditedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 
@@ -9699,7 +9704,7 @@ func TestSyncerRefreshesEditedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 
@@ -9755,7 +9760,7 @@ func TestSyncerRemovesDeletedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	require.Equal(1, mr.CommentCount)
@@ -9768,7 +9773,7 @@ func TestSyncerRemovesDeletedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(0, mr.CommentCount)
@@ -9831,7 +9836,7 @@ func TestSyncerRemovesDeletedIssueCommentWhenIssueListIsUnchanged(t *testing.T) 
 
 	syncer.RunOnce(ctx)
 
-	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(issue)
 	require.Equal(1, issue.CommentCount)
@@ -9845,7 +9850,7 @@ func TestSyncerRemovesDeletedIssueCommentWhenIssueListIsUnchanged(t *testing.T) 
 
 	syncer.RunOnce(ctx)
 
-	issue, err = d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err = d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal(0, issue.CommentCount)
@@ -9903,7 +9908,7 @@ func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	)
 	require.NoError(err)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	require.Equal(1, mr.CommentCount)
@@ -9921,7 +9926,7 @@ func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	)
 	require.NoError(err)
 
-	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(0, mr.CommentCount)
@@ -9993,7 +9998,7 @@ func TestFetchIssueDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	)
 	require.NoError(err)
 
-	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(issue)
 	require.Equal(1, issue.CommentCount)
@@ -10011,7 +10016,7 @@ func TestFetchIssueDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	)
 	require.NoError(err)
 
-	issue, err = d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err = d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal(0, issue.CommentCount)
@@ -10066,7 +10071,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	}, false)
 	require.NoError(err)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	require.Equal(1, mr.CommentCount)
@@ -10088,7 +10093,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	}, false)
 	require.NoError(err)
 
-	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(0, mr.CommentCount)
@@ -10148,7 +10153,7 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 	}, false)
 	require.NoError(err)
 
-	got, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	got, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(got)
 	require.NotNil(got.WorkflowApprovalCheckedAt,
@@ -10203,7 +10208,7 @@ func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenBudgetExhausted(t *testing.T
 	}, false)
 	require.NoError(err)
 
-	got, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	got, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Nil(got.WorkflowApprovalCheckedAt)
@@ -10258,7 +10263,7 @@ func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenIncomplete(t *testing.T) {
 	}, false)
 	require.NoError(err)
 
-	got, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	got, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Nil(got.WorkflowApprovalCheckedAt,
@@ -10307,7 +10312,7 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 	}, false)
 	require.NoError(err)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(1, mr.CommentCount)
@@ -10327,7 +10332,7 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 	}, false)
 	require.NoError(err)
 
-	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(0, mr.CommentCount)
@@ -10392,7 +10397,7 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 	}, false)
 	require.NoError(err)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	require.NotNil(mr.DetailFetchedAt)
@@ -10475,7 +10480,7 @@ func TestSyncOpenMRFromBulkClearsCIWhenHeadSHAChanges(t *testing.T) {
 	}, false)
 	require.NoError(err)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("newhead", mr.PlatformHeadSHA)
@@ -10535,7 +10540,7 @@ func TestSyncOpenMRFromBulkPreservesCIWhenHeadSHAUnchanged(t *testing.T) {
 	}, false)
 	require.NoError(err)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(sameSHA, mr.PlatformHeadSHA)
@@ -10601,7 +10606,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 	})
 	require.NoError(err)
 
-	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(issue)
 	require.Equal(1, issue.CommentCount)
@@ -10631,7 +10636,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 	})
 	require.NoError(err)
 
-	issue, err = d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err = d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal(0, issue.CommentCount)
@@ -10709,7 +10714,7 @@ func TestSyncOpenIssueFromBulkStoresTimelineEvents(t *testing.T) {
 	})
 	require.NoError(err)
 
-	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.NotNil(issue.DetailFetchedAt)
@@ -10858,7 +10863,7 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 	require.NoError(err)
 
 	// Verify issue in DB.
-	issue, err := d.GetIssue(ctx, "owner", "repo", 10)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", 10)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("Bug report", issue.Title)
@@ -11091,7 +11096,7 @@ func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
 	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
 
 	// Verify the REST comment landed
-	issue, err := d.GetIssue(ctx, "owner", "repo", 20)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", 20)
 	require.NoError(err)
 	require.NotNil(issue)
 
@@ -11165,7 +11170,7 @@ func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 	require.NoError(err)
 
 	// Issue should now be closed
-	issue, err := d.GetIssue(ctx, "owner", "repo", 30)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", 30)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("closed", issue.State)
@@ -11244,7 +11249,7 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 	// DetailFetchedAt is cleared before REST fallback, then re-set
 	// after successful refreshIssueTimeline. CommentCount is updated
 	// by the REST fallback (0 comments returned by the mock).
-	issue, err := d.GetIssue(ctx, "owner", "repo", 40)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", 40)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.NotNil(issue.DetailFetchedAt)
@@ -11324,7 +11329,7 @@ func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T
 	require.Error(err)
 
 	// DetailFetchedAt must be nil so the detail drain re-queues this issue.
-	issue, err := d.GetIssue(ctx, "owner", "repo", 45)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", 45)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Nil(issue.DetailFetchedAt)
@@ -11385,7 +11390,7 @@ func TestSyncRepoGraphQLIssuesFallbackToREST(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	issue, err := d.GetIssue(ctx, "owner", "repo", 50)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", 50)
 	require.NoError(t, err)
 	require.NotNil(t, issue)
 	assert.Equal("REST issue", issue.Title)
@@ -11473,7 +11478,7 @@ func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
 	syncer.RunOnce(ctx)
 
 	// Verify issue persisted with GraphQL data.
-	issue, err := d.GetIssue(ctx, "owner", "repo", 70)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", 70)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("Full flow issue", issue.Title)
@@ -11981,7 +11986,7 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 	syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true})
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 
-	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 2)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 2)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.NotNil(pr.DetailFetchedAt,
@@ -12264,7 +12269,7 @@ func TestDisplayNameCacheSurvivesRunOnce(t *testing.T) {
 		"first RunOnce should have fetched the display name")
 
 	// Verify the display name landed in SQLite.
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", prNumber)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", prNumber)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("Alice Smith", mr.AuthorDisplayName,
@@ -12276,7 +12281,7 @@ func TestDisplayNameCacheSurvivesRunOnce(t *testing.T) {
 		"second RunOnce must not re-fetch cached display names")
 
 	// DB still has the name after the cache-hit sync pass.
-	mr2, err := d.GetMergeRequest(ctx, "owner", "repo", prNumber)
+	mr2, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", prNumber)
 	require.NoError(err)
 	require.NotNil(mr2)
 	assert.Equal("Alice Smith", mr2.AuthorDisplayName,

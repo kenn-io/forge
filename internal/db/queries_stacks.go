@@ -229,12 +229,19 @@ func (d *DB) DeleteStaleStacks(ctx context.Context, repoID int64, activeStackIDs
 }
 
 // GetStackForPR returns the stack and members for a specific PR, or nil if not in a stack.
-func (d *DB) GetStackForPR(ctx context.Context, owner, name string, number int) (*Stack, []StackMemberWithPR, error) {
-	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
+func (d *DB) GetStackForPR(
+	ctx context.Context,
+	platform, platformHost, owner, name string,
+	number int,
+) (*Stack, []StackMemberWithPR, error) {
+	platform = canonicalRepoPlatform(platform)
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	return d.getStackForPRWhere(
 		ctx,
-		`WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
-		owner, name, number,
+		`WHERE r.platform = ? AND r.platform_host = ?
+		    AND r.owner_key = ? AND r.name_key = ?
+		    AND p.number = ?`,
+		platform, platformHost, owner, name, number,
 	)
 }
 

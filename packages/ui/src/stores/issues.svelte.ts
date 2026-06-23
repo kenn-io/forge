@@ -1,5 +1,10 @@
 import type { Issue, IssueDetail, IssuesParams, Label } from "../api/types.js";
-import { providerItemPath, providerRouteParams } from "../api/provider-routes.js";
+import {
+  providerDefaultHost,
+  providerItemPath,
+  providerRouteParams,
+  type ProviderRouteRef,
+} from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 
 export type IssueDetailSyncMode = boolean | "background";
@@ -132,7 +137,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function issuesByRepo(): Map<string, Issue[]> {
     const map = new Map<string, Issue[]>();
     for (const issue of issues) {
-      const key = `${issue.repo_owner ?? ""}/${issue.repo_name ?? ""}`;
+      const key = issueIdentityKey(issueRef(issue));
       const existing = map.get(key);
       if (existing) existing.push(issue);
       else map.set(key, [issue]);
@@ -141,6 +146,37 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
 
   // --- detail reads ---
+
+  function issueIdentityKey(ref: Pick<ProviderRouteRef, "provider" | "platformHost" | "repoPath">): string {
+    return JSON.stringify([ref.provider, ref.platformHost ?? "", ref.repoPath]);
+  }
+
+  function issueRef(issue: Issue): ProviderRouteRef {
+    return {
+      provider: issue.repo.provider,
+      platformHost: issue.repo.platform_host,
+      owner: issue.repo.owner,
+      name: issue.repo.name,
+      repoPath: issue.repo.repo_path,
+    };
+  }
+
+  function issueMatchesSelection(issue: Issue, sel: IssueSelection): boolean {
+    return (
+      issue.Number === sel.number &&
+      issue.repo.provider === sel.provider &&
+      issue.repo.platform_host === sel.platformHost &&
+      issue.repo.repo_path === sel.repoPath &&
+      issue.repo.owner === sel.owner &&
+      issue.repo.name === sel.name
+    );
+  }
+
+  function concretePlatformHost(ref: Pick<ProviderRouteRef, "provider" | "platformHost">): string {
+    const host = ref.platformHost ?? providerDefaultHost(ref.provider);
+    if (!host) throw new Error("issue missing platform host");
+    return host;
+  }
 
   function getIssueDetail(): IssueDetail | null {
     return issueDetail;
@@ -271,26 +307,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function hasUnsavedLocalBody(): boolean {
     return unsavedLocalBody !== null;
-  }
-
-  function currentIssuePlatformHost(owner: string, name: string, number: number): string | undefined {
-    if (
-      issueDetail &&
-      issueDetail.repo_owner === owner &&
-      issueDetail.repo_name === name &&
-      issueDetail.issue.Number === number
-    ) {
-      return issueDetail.platform_host;
-    }
-    if (
-      selectedIssue &&
-      selectedIssue.owner === owner &&
-      selectedIssue.name === name &&
-      selectedIssue.number === number
-    ) {
-      return selectedIssue.platformHost;
-    }
-    return undefined;
   }
 
   function isIssueDetailShowingRef(ref: IssueDetailRequestRef): boolean {
@@ -686,7 +702,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     body: string,
   ): void {
     if (!issueDetail) return;
-    if (issueDetail.repo_owner !== owner || issueDetail.repo_name !== name || issueDetail.issue.Number !== number) {
+    if (
+      issueDetail.repo?.provider !== provider ||
+      issueDetail.repo?.platform_host !== platformHost ||
+      issueDetail.repo_owner !== owner ||
+      issueDetail.repo_name !== name ||
+      issueDetail.issue.Number !== number
+    ) {
       return;
     }
     unsavedLocalBody = { provider, platformHost, owner, name, number };
@@ -826,25 +848,17 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return flight;
   }
 
-  async function toggleIssueStar(
-    owner: string,
-    name: string,
-    number: number,
-    currentlyStarred: boolean,
-  ): Promise<void> {
-    const platformHost = currentIssuePlatformHost(owner, name, number);
-
+  async function toggleIssueStar(ref: ProviderRouteRef, number: number, currentlyStarred: boolean): Promise<void> {
     try {
       if (currentlyStarred) {
         const { error: requestError } = await apiClient.DELETE("/starred", {
           body: {
             item_type: "issue",
-            owner,
-            name,
+            provider: ref.provider,
+            platform_host: concretePlatformHost(ref),
+            owner: ref.owner,
+            name: ref.name,
             number,
-            ...(platformHost && {
-              platform_host: platformHost,
-            }),
           },
         });
         if (requestError) {
@@ -854,12 +868,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         const { error: requestError } = await apiClient.PUT("/starred", {
           body: {
             item_type: "issue",
-            owner,
-            name,
+            provider: ref.provider,
+            platform_host: concretePlatformHost(ref),
+            owner: ref.owner,
+            name: ref.name,
             number,
-            ...(platformHost && {
-              platform_host: platformHost,
-            }),
           },
         });
         if (requestError) {
@@ -871,13 +884,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       return;
     }
     await loadIssues();
-    if (
-      issueDetail &&
-      issueDetail.repo_owner === owner &&
-      issueDetail.repo_name === name &&
-      issueDetail.issue.Number === number
-    ) {
-      await loadIssueDetail(owner, name, number, currentIssueDetailRef(owner, name, number));
+    const detailRef = issueDetailRequestRef(ref.owner, ref.name, number, ref);
+    if (isIssueDetailShowingRef(detailRef)) {
+      await loadIssueDetail(ref.owner, ref.name, number, detailRef);
     }
   }
 
@@ -912,13 +921,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       }
       return;
     }
-    const idx = list.findIndex(
-      (i) =>
-        (i.repo_owner ?? "") === selectedIssue!.owner &&
-        (i.repo_name ?? "") === selectedIssue!.name &&
-        i.Number === selectedIssue!.number &&
-        (!selectedIssue!.platformHost || i.platform_host === selectedIssue!.platformHost),
-    );
+    const idx = list.findIndex((i) => issueMatchesSelection(i, selectedIssue!));
     if (idx < list.length - 1) {
       const next = list[idx + 1];
       if (next !== undefined) {
@@ -951,13 +954,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       }
       return;
     }
-    const idx = list.findIndex(
-      (i) =>
-        (i.repo_owner ?? "") === selectedIssue!.owner &&
-        (i.repo_name ?? "") === selectedIssue!.name &&
-        i.Number === selectedIssue!.number &&
-        (!selectedIssue!.platformHost || i.platform_host === selectedIssue!.platformHost),
-    );
+    const idx = list.findIndex((i) => issueMatchesSelection(i, selectedIssue!));
     if (idx > 0) {
       const prev = list[idx - 1];
       if (prev !== undefined) {

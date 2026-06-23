@@ -333,7 +333,7 @@ func TestNotificationsAPIUsesActiveTrackedRepos(t *testing.T) {
 	assert.Equal(map[string]int{"github.com/acme/widget": 1}, listed.Summary.ByRepo)
 }
 
-func TestNotificationsAPIAcceptsHostQualifiedRepoFilter(t *testing.T) {
+func TestNotificationsAPIAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
@@ -368,7 +368,7 @@ func TestNotificationsAPIAcceptsHostQualifiedRepoFilter(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/notifications?state=all&repo=ghe.example.com/acme/widget")
+	resp, err := http.Get(ts.URL + "/api/v1/notifications?state=all&repo=github|ghe.example.com/acme/widget")
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)

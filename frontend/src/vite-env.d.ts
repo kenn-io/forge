@@ -57,7 +57,14 @@ interface MiddlemanConfig {
     hideRepoSelector?: boolean;
     hideStar?: boolean;
     sidebarCollapsed?: boolean;
-    repo?: { owner: string; name: string };
+    repo?: {
+      provider?: string;
+      host?: string;
+      platform_host?: string;
+      repo_path?: string;
+      owner: string;
+      name: string;
+    };
     host?: string;
     activeWorktreeKey?: string;
   };

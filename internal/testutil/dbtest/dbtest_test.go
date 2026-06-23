@@ -22,7 +22,7 @@ func TestOpenUsesIsolatedCopiesOfCachedMigratedTemplate(t *testing.T) {
 	require.NoError(err)
 	require.NotZero(firstRepoID)
 
-	got, err := second.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	got, err := second.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.Nil(got)
 	require.Equal(1, templateBuildCountForTest())

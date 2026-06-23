@@ -386,11 +386,11 @@ describe("RepoSummaryPage", () => {
     expect(screen.queryByRole("button", { name: "View issues" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: /3\s+Open PRs/ }));
-    expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
+    expect(mockSetGlobalRepo).toHaveBeenCalledWith("github|github.com/acme/widgets");
     expect(mockNavigate).toHaveBeenCalledWith("/pulls");
 
     await fireEvent.click(screen.getByRole("button", { name: /2\s+Open issues/ }));
-    expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
+    expect(mockSetGlobalRepo).toHaveBeenCalledWith("github|github.com/acme/widgets");
     expect(mockNavigate).toHaveBeenCalledWith("/issues");
   });
 
@@ -656,7 +656,7 @@ describe("RepoSummaryPage", () => {
           },
         }),
       );
-      expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
+      expect(mockSetGlobalRepo).toHaveBeenCalledWith("github|github.com/acme/widgets");
       expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");
     });
   });
@@ -829,7 +829,7 @@ describe("RepoSummaryPage", () => {
           }),
         }),
       );
-      expect(mockSetGlobalRepo).toHaveBeenCalledWith("ghe.example.com/acme/widgets");
+      expect(mockSetGlobalRepo).toHaveBeenCalledWith("github|ghe.example.com/acme/widgets");
       expect(mockNavigate).toHaveBeenCalledWith("/host/ghe.example.com/issues/github/acme/widgets/42");
     });
   });

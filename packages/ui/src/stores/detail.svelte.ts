@@ -1,5 +1,10 @@
 import type { KanbanStatus, Label, PullDetail } from "../api/types.js";
-import { providerItemPath, providerRouteParams } from "../api/provider-routes.js";
+import {
+  providerDefaultHost,
+  providerItemPath,
+  providerRouteParams,
+  type ProviderRouteRef,
+} from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 import { showFlash } from "./flash.svelte.js";
 
@@ -27,8 +32,8 @@ export interface DetailStoreOptions {
   getPage?: () => string;
   pulls?: {
     loadPulls: (params?: unknown) => Promise<void>;
-    optimisticKanbanUpdate?: (owner: string, name: string, number: number, status: KanbanStatus) => void;
-    getPullKanbanStatus?: (owner: string, name: string, number: number) => KanbanStatus | undefined;
+    optimisticKanbanUpdate?: (ref: ProviderRouteRef, number: number, status: KanbanStatus) => void;
+    getPullKanbanStatus?: (ref: ProviderRouteRef, number: number) => KanbanStatus | undefined;
   };
   sync?: {
     subscribeSyncComplete: (cb: () => void) => () => void;
@@ -165,15 +170,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     };
   }
 
-  function isDetailShowing(owner: string, name: string, number: number): boolean {
-    return (
-      detail !== null &&
-      detail.repo_owner === owner &&
-      detail.repo_name === name &&
-      detail.merge_request.Number === number
-    );
-  }
-
   // Apply a fresh PullDetail from the server. When the user has an
   // unsynced local body edit on the same PR, keep that body so a
   // polling refresh can't revert a pending optimistic toggle. Match on
@@ -233,6 +229,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
       platformHost: detail.repo.platform_host,
       repoPath: detail.repo.repo_path,
     });
+  }
+
+  function concretePlatformHost(ref: Pick<DetailRequestRef, "provider" | "platformHost">): string {
+    const host = ref.platformHost ?? providerDefaultHost(ref.provider);
+    if (!host) throw new Error("pull detail missing platform host");
+    return host;
   }
 
   async function refreshPullsIfActive(): Promise<void> {
@@ -480,8 +482,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
     number: number,
     identity: DetailRequestOptions,
   ): Promise<void> {
-    if (!isDetailShowing(owner, name, number)) return;
     const ref = detailRequestRef(owner, name, number, identity);
+    if (!isDetailShowingRef(ref)) return;
     const key = prKey(ref);
     if (activeCIRefresh?.key === key) {
       return activeCIRefresh.promise;
@@ -536,10 +538,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const seq = (kanbanSeqByPR.get(key) ?? 0) + 1;
     kanbanSeqByPR.set(key, seq);
 
-    const prevDetailStatus = isDetailShowing(owner, name, number)
-      ? (detail!.merge_request.KanbanStatus as KanbanStatus)
-      : undefined;
-    const prevPullsStatus = pullsDep?.getPullKanbanStatus?.(owner, name, number);
+    const prevDetailStatus = isDetailShowingRef(ref) ? (detail!.merge_request.KanbanStatus as KanbanStatus) : undefined;
+    const prevPullsStatus = pullsDep?.getPullKanbanStatus?.(ref, number);
 
     if (prevDetailStatus !== undefined) {
       detail = {
@@ -550,7 +550,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         },
       };
     }
-    pullsDep?.optimisticKanbanUpdate?.(owner, name, number, status);
+    pullsDep?.optimisticKanbanUpdate?.(ref, number, status);
 
     try {
       const { error: requestError } = await apiClient.PUT(providerItemPath("pulls", ref, "/state"), {
@@ -565,7 +565,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     } catch (err) {
       if (seq === kanbanSeqByPR.get(key)) {
         storeError = err instanceof Error ? err.message : String(err);
-        if (prevDetailStatus !== undefined && isDetailShowing(owner, name, number)) {
+        if (prevDetailStatus !== undefined && isDetailShowingRef(ref)) {
           detail = {
             ...detail!,
             merge_request: {
@@ -575,11 +575,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
           };
         }
         if (prevPullsStatus !== undefined) {
-          pullsDep?.optimisticKanbanUpdate?.(owner, name, number, prevPullsStatus);
+          pullsDep?.optimisticKanbanUpdate?.(ref, number, prevPullsStatus);
         }
         const reloads: Promise<void>[] = [];
         if (pullsDep) reloads.push(pullsDep.loadPulls());
-        if (isDetailShowing(owner, name, number)) {
+        if (isDetailShowingRef(ref)) {
           reloads.push(loadDetail(owner, name, number, ref));
         }
         await Promise.all(reloads);
@@ -592,7 +592,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
     if (seq === kanbanSeqByPR.get(key)) {
       const refreshes: Promise<void>[] = [refreshPullsIfActive()];
-      if (isDetailShowing(owner, name, number)) {
+      if (isDetailShowingRef(ref)) {
         refreshes.push(loadDetail(owner, name, number, ref));
       }
       await Promise.all(refreshes);
@@ -686,8 +686,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
     number: number,
     fields: { title?: string; body?: string },
   ): Promise<void> {
-    if (!detail || !isDetailShowing(owner, name, number)) return;
     const ref = currentDetailRef(owner, name, number);
+    if (!detail || !isDetailShowingRef(ref)) return;
 
     const prevTitle = detail.merge_request.Title;
     const prevBody = detail.merge_request.Body;
@@ -717,7 +717,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         throw new Error(apiErrorMessage(requestError, "failed to update PR"));
       }
       // Apply server-canonical response.
-      if (data && isDetailShowing(owner, name, number)) {
+      if (data && isDetailShowingRef(ref)) {
         detail = data as PullDetail;
         if (
           unsavedLocalBody &&
@@ -733,7 +733,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     } catch (err) {
       storeError = err instanceof Error ? err.message : String(err);
       // Revert optimistic update.
-      if (isDetailShowing(owner, name, number) && detail) {
+      if (isDetailShowingRef(ref) && detail) {
         detail = {
           ...detail,
           merge_request: {
@@ -764,7 +764,16 @@ export function createDetailStore(opts: DetailStoreOptions) {
     number: number,
     body: string,
   ): void {
-    if (!detail || !isDetailShowing(owner, name, number)) return;
+    if (
+      !detail ||
+      detail.repo?.provider !== provider ||
+      detail.repo?.platform_host !== platformHost ||
+      detail.repo_owner !== owner ||
+      detail.repo_name !== name ||
+      detail.merge_request.Number !== number
+    ) {
+      return;
+    }
     unsavedLocalBody = { provider, platformHost, owner, name, number };
     detail = {
       ...detail,
@@ -835,7 +844,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
       succeeded = true;
       localBodyMatchesSent =
         detail !== null &&
-        isDetailShowing(owner, name, number) &&
+        detail.repo_owner === owner &&
+        detail.repo_name === name &&
+        detail.merge_request.Number === number &&
         detail.repo?.provider === routeRef.provider &&
         detail.repo?.platform_host === routeRef.platformHost &&
         detail.merge_request.Body === body;
@@ -945,11 +956,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
     }
     try {
       if (currentlyStarred) {
+        const ref = currentDetailRef(owner, name, number);
         const { error: requestError } = await apiClient.DELETE("/starred", {
           body: {
             item_type: "pr",
-            owner,
-            name,
+            provider: ref.provider,
+            platform_host: concretePlatformHost(ref),
+            owner: ref.owner,
+            name: ref.name,
             number,
           },
         });
@@ -957,11 +971,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
           throw new Error(requestError.detail ?? requestError.title ?? "failed to unstar pull request");
         }
       } else {
+        const ref = currentDetailRef(owner, name, number);
         const { error: requestError } = await apiClient.PUT("/starred", {
           body: {
             item_type: "pr",
-            owner,
-            name,
+            provider: ref.provider,
+            platform_host: concretePlatformHost(ref),
+            owner: ref.owner,
+            name: ref.name,
             number,
           },
         });

@@ -128,6 +128,7 @@
       && sel.owner === ref.owner
       && sel.name === ref.name
       && sel.number === ref.number
+      && sel.provider === ref.provider
       && sel.platformHost === ref.platformHost;
   }
 </script>
@@ -231,6 +232,7 @@
       {#if grouping.getGroupByRepo()}
         {#each [...issues.issuesByRepo().entries()] as [repo, repoIssues] (repo)}
           {@const collapsed = collapsedRepos.isCollapsed("issues", repo)}
+          {@const repoLabel = repoIssues[0]?.repo.repo_path ?? repo}
           <div class="repo-group">
             <button
               type="button"
@@ -246,7 +248,7 @@
               >
                 <polyline points="2,3 5,7 8,3" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              <span class="repo-header__name">{repo}</span>
+              <span class="repo-header__name">{repoLabel}</span>
               <span class="repo-header__count">{repoIssues.length}</span>
             </button>
             {#if !collapsed}

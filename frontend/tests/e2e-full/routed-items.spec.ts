@@ -47,7 +47,7 @@ test.describe("routed item builders through the UI", () => {
   });
 
   test("focus PR list routes selected rows to focus detail", async ({ page }) => {
-    await page.goto("/focus/mrs?repo=acme%2Fwidgets");
+    await page.goto("/focus/mrs?repo=github%7Cgithub.com%2Facme%2Fwidgets");
     await page.locator(".focus-list .pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
 
     const detailLoaded = detailResponse(page, "/api/v1/pulls/github/acme/widgets/1");
@@ -60,7 +60,7 @@ test.describe("routed item builders through the UI", () => {
   });
 
   test("focus issue list routes selected rows with platform_host", async ({ page }) => {
-    await page.goto("/focus/issues?repo=acme%2Fwidgets");
+    await page.goto("/focus/issues?repo=github%7Cgithub.com%2Facme%2Fwidgets");
     await page.locator(".focus-list .issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
 
     const detailLoaded = issueDetailResponse(page, "/api/v1/issues/github/acme/widgets/10");

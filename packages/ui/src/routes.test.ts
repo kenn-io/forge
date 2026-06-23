@@ -92,7 +92,9 @@ describe("route item builders", () => {
     ).toBe("/focus/host/ghe.example.com/issues/github/acme/widgets/7");
     expect(buildFocusListRoute({ itemType: "mrs" })).toBe("/focus/mrs");
     expect(buildFocusListRoute({ itemType: "issues" })).toBe("/focus/issues");
-    expect(buildFocusListRoute({ itemType: "mrs", repo: "acme/widgets" })).toBe("/focus/mrs?repo=acme%2Fwidgets");
+    expect(buildFocusListRoute({ itemType: "mrs", repo: "github|github.com/acme/widgets" })).toBe(
+      "/focus/mrs?repo=github%7Cgithub.com%2Facme%2Fwidgets",
+    );
   });
 
   it("builds routed item routes for normal and focus surfaces", () => {

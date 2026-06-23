@@ -23,22 +23,24 @@ describe("repo filter values", () => {
     expect(canonicalRepoFilterValue(repos[1]!, repos)).toBe("gitea|github.com/acme/widgets");
   });
 
-  it("uses host-qualified canonical values when provider identities no longer collide", () => {
-    expect(canonicalRepoFilterValue(widgets, [widgets])).toBe("github.com/acme/widgets");
+  it("uses provider-qualified canonical values when provider identities do not collide", () => {
+    expect(canonicalRepoFilterValue(widgets, [widgets])).toBe("github|github.com/acme/widgets");
   });
 
-  it("normalizes stale slash-qualified provider values to pipe values while a collision exists", () => {
+  it("drops slash-qualified provider values while a collision exists", () => {
     const repos: RepoFilterIdentity[] = [widgets, { ...widgets, provider: "gitea" }];
 
-    expect(normalizeRepoFilterValue("gitea/github.com/acme/widgets", repos)).toBe("gitea|github.com/acme/widgets");
+    expect(normalizeRepoFilterValue("gitea/github.com/acme/widgets", repos)).toBe("");
   });
 
-  it("normalizes stale slash-qualified provider values back to host-qualified values after a collision is removed", () => {
-    expect(normalizeRepoFilterValue("github/github.com/acme/widgets", [widgets])).toBe("github.com/acme/widgets");
+  it("drops slash-qualified provider values without a collision", () => {
+    expect(normalizeRepoFilterValue("github/github.com/acme/widgets", [widgets])).toBe("");
   });
 
-  it("normalizes stale pipe-qualified provider values back to host-qualified values after a collision is removed", () => {
-    expect(normalizeRepoFilterValue("github|github.com/acme/widgets", [widgets])).toBe("github.com/acme/widgets");
+  it("keeps pipe-qualified provider values after a collision is removed", () => {
+    expect(normalizeRepoFilterValue("github|github.com/acme/widgets", [widgets])).toBe(
+      "github|github.com/acme/widgets",
+    );
   });
 
   it("normalizes each value in a comma-separated filter independently", () => {
@@ -54,13 +56,13 @@ describe("repo filter values", () => {
 
     expect(
       normalizeRepoFilterSelection(
-        "gitea/github.com/acme/widgets,github/github.com/acme/widgets,github.com/acme/api",
+        "gitea|github.com/acme/widgets,github|github.com/acme/widgets,github.com/acme/api",
         repos,
       ),
-    ).toBe("gitea|github.com/acme/widgets,github|github.com/acme/widgets,github.com/acme/api");
+    ).toBe("gitea|github.com/acme/widgets,github|github.com/acme/widgets");
   });
 
-  it("keeps slash-qualified selections when they match a current host-qualified option", () => {
+  it("drops slash-qualified selections when they match a current host-qualified option", () => {
     const repos = [
       {
         provider: "github",
@@ -69,7 +71,7 @@ describe("repo filter values", () => {
       },
     ];
 
-    expect(normalizeRepoFilterValue("gitea/github.com/acme/widgets", repos)).toBe("gitea/github.com/acme/widgets");
+    expect(normalizeRepoFilterValue("gitea/github.com/acme/widgets", repos)).toBe("");
   });
 
   it("displays pipe-qualified values as slash-qualified labels", () => {

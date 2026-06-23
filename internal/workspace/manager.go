@@ -1002,7 +1002,7 @@ func (m *Manager) workspaceRepo(
 ) (*db.Repo, error) {
 	provider = strings.TrimSpace(provider)
 	if provider == "" {
-		return m.db.GetRepoByHostOwnerName(ctx, platformHost, owner, name)
+		return nil, fmt.Errorf("provider is required")
 	}
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {

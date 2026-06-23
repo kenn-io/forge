@@ -413,7 +413,7 @@ func TestMiddlemanctlCommandsUseRealAPIAndSQLite(t *testing.T) {
 	starOut := runMiddleman(
 		t, ts.URL,
 		"api", "PUT", "/starred",
-		"item_type: pr, owner: acme, name: widgets, number: 1",
+		"item_type: pr, provider: github, platform_host: github.com, owner: acme, name: widgets, number: 1",
 	)
 	assert.Empty(starOut)
 	starredOut := runMiddleman(t, ts.URL, "--output", "jsonl", "pulls", "--starred")

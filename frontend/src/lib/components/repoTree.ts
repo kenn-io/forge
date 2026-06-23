@@ -1,5 +1,5 @@
 export interface RepoTreeOption {
-  value: string; // `${platformHost}/${repoPath}` or `${provider}|${platformHost}/${repoPath}`
+  value: string; // `${provider}|${platformHost}/${repoPath}`
   owner: string;
   name: string;
   provider: string; // canonical, lowercase
@@ -41,8 +41,8 @@ function stripHostPrefix(value: string, platformHost: string): string {
   return concreteValue.replace(/^[^/]+\//, "");
 }
 
-function providerQualifiedLeafLabel(option: RepoTreeOption, name: string): string | undefined {
-  return option.value.includes("|") ? `${option.provider}/${name}` : undefined;
+function providerQualifiedLeafLabel(option: RepoTreeOption, name: string, needsProvider: boolean): string | undefined {
+  return needsProvider ? `${option.provider}/${name}` : undefined;
 }
 
 function slashDisplayValue(value: string): string {
@@ -65,6 +65,16 @@ function leafMatches(leaf: RepoLeaf, ownerLabel: string, query: string): boolean
 
 export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
   const hosts = new Map<string, HostNode>();
+  const providersByHost = new Map<string, Set<string>>();
+
+  for (const option of options) {
+    let providers = providersByHost.get(option.platformHost);
+    if (!providers) {
+      providers = new Set<string>();
+      providersByHost.set(option.platformHost, providers);
+    }
+    providers.add(option.provider);
+  }
 
   for (const option of options) {
     const repoPath = stripHostPrefix(option.value, option.platformHost);
@@ -99,7 +109,11 @@ export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
       host.children.push(owner);
     }
 
-    const displayLabel = providerQualifiedLeafLabel(option, name);
+    const displayLabel = providerQualifiedLeafLabel(
+      option,
+      name,
+      (providersByHost.get(option.platformHost)?.size ?? 0) > 1,
+    );
     owner.children.push({
       kind: "repo",
       id: option.value,

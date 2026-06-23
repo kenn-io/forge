@@ -387,8 +387,13 @@
     const detail = issues.getIssueDetail();
     if (!detail) return;
     void issues.toggleIssueStar(
-      owner,
-      name,
+      {
+        provider,
+        platformHost,
+        owner,
+        name,
+        repoPath,
+      },
       number,
       detail.issue.Starred,
     );

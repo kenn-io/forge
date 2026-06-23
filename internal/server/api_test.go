@@ -1520,7 +1520,7 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal(db.MergeRequestStateMerged, pr.State)
 	assertTimePtrEqualsUTC(t, pr.MergedAt, handlerNow)
@@ -1914,7 +1914,7 @@ func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
 	seedIssueOnHost(t, database, "github.com", "acme", "worker", 12, "open", "worker issue")
 	seedIssueOnHost(t, database, "github.com", "acme", "ignored", 13, "open", "ignored issue")
 
-	filter := url.QueryEscape("github.com/acme/widget,github.com/acme/worker")
+	filter := url.QueryEscape("github|github.com/acme/widget,github|github.com/acme/worker")
 
 	rawPulls := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?repo="+filter, nil)
 	require.Equal(http.StatusOK, rawPulls.Code)
@@ -2264,7 +2264,7 @@ func TestAPISyncPRPersistsMergeableState(t *testing.T) {
 	require.NotNil(resp.JSON200)
 	assert.Equal("dirty", resp.JSON200.MergeRequest.MergeableState)
 
-	stored, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	stored, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("dirty", stored.MergeableState)
@@ -2323,7 +2323,7 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 			require.NotNil(resp.JSON200)
 			assert.Equal("dirty", resp.JSON200.MergeRequest.MergeableState)
 
-			stored, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+			stored, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 			require.NoError(err)
 			require.NotNil(stored)
 			assert.Equal("dirty", stored.MergeableState)
@@ -2541,7 +2541,7 @@ func TestAPIApproveWorkflows(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
-	repo, err := database.GetRepoByHostOwnerName(t.Context(), "github.com", "acme", "widget")
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	require.NoError(database.UpdateMRWorkflowApproval(
@@ -2560,7 +2560,7 @@ func TestAPIApproveWorkflows(t *testing.T) {
 	assert.EqualValues(2, *resp.JSON200.ApprovedCount)
 	assert.Equal([]int64{81, 82}, approvedRunIDs)
 
-	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal("abc123", pr.PlatformHeadSHA)
@@ -2612,7 +2612,7 @@ func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
 	require.NotNil(resp.JSON200)
 	assert.Equal("approved_workflows", resp.JSON200.Status)
 
-	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal("abc123", pr.PlatformHeadSHA)
@@ -2683,7 +2683,7 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 	assert.Contains(*resp.ApplicationproblemJSONDefault.Detail, "permission denied")
 	assert.Equal([]int64{91, 92}, approvedRunIDs)
 
-	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal("abc123", pr.PlatformHeadSHA)
@@ -3529,7 +3529,7 @@ func TestAPISetKanbanState(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	require.Equal(db.KanbanStatusReviewing, pr.KanbanStatus)
@@ -5088,7 +5088,7 @@ func TestAPIListRepoSummaries(t *testing.T) {
 
 	_, err := testutil.SeedFixtures(context.Background(), database)
 	require.NoError(err)
-	widgetsRepo, err := database.GetRepoByOwnerName(context.Background(), "acme", "widgets")
+	widgetsRepo, err := database.GetRepoByIdentity(context.Background(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	require.NotNil(widgetsRepo)
 	publishedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
@@ -5549,7 +5549,7 @@ func TestAPICreateIssue(t *testing.T) {
 		IsDefault: false,
 	}}, *resp.JSON201.Labels)
 
-	issue, err := database.GetIssue(context.Background(), "acme", "widgets", 27)
+	issue, err := database.GetIssue(context.Background(), "github", "github.com", "acme", "widgets", 27)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("Ship repo summaries", issue.Title)
@@ -5625,7 +5625,7 @@ func TestAPIEditPRContentRejectsNilProviderPayload(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
 
-	mr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	mr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("Test PR #1", mr.Title)
@@ -5851,7 +5851,7 @@ func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
 
-	mr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	mr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(db.MergeRequestStateOpen, mr.State)
@@ -6593,7 +6593,7 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	}
 }
 
-func TestMatchPriorityRepoSupportsNestedBareRepoPaths(t *testing.T) {
+func TestMatchPriorityRepoRequiresProviderQualifiedRepoPaths(t *testing.T) {
 	assert := Assert.New(t)
 
 	tracked := []ghclient.RepoRef{
@@ -6620,17 +6620,13 @@ func TestMatchPriorityRepoSupportsNestedBareRepoPaths(t *testing.T) {
 		},
 	}
 
-	repo, ok := matchPriorityRepo("group/subgroup/project", tracked)
-	assert.True(ok)
-	assert.Equal(platform.KindGitLab, repo.Platform)
-	assert.Equal("group/subgroup/project", repo.RepoPath)
+	_, ok := matchPriorityRepo("group/subgroup/project", tracked)
+	assert.False(ok)
 
-	repo, ok = matchPriorityRepo("github.com/acme/widget", tracked)
-	assert.True(ok)
-	assert.Equal(platform.KindGitHub, repo.Platform)
-	assert.Equal("acme/widget", repo.RepoPath)
+	_, ok = matchPriorityRepo("github.com/acme/widget", tracked)
+	assert.False(ok)
 
-	repo, ok = matchPriorityRepo("gitea|github.com/acme/widget", tracked)
+	repo, ok := matchPriorityRepo("gitea|github.com/acme/widget", tracked)
 	assert.True(ok)
 	assert.Equal(platform.KindGitea, repo.Platform)
 	assert.Equal("github.com", repo.PlatformHost)
@@ -6714,7 +6710,7 @@ func TestAPIReadyForReview(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 
-	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	require.False(pr.IsDraft)
@@ -6727,10 +6723,12 @@ func TestAPISetStarred(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.SetStarredWithResponse(t.Context(), generated.SetStarredJSONRequestBody{
-		ItemType: "pr",
-		Owner:    "acme",
-		Name:     "widget",
-		Number:   1,
+		ItemType:     "pr",
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		Number:       1,
 	})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -6748,10 +6746,12 @@ func TestAPIUnsetStarred(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.UnsetStarredWithResponse(t.Context(), generated.UnsetStarredJSONRequestBody{
-		ItemType: "pr",
-		Owner:    "acme",
-		Name:     "widget",
-		Number:   1,
+		ItemType:     "pr",
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		Number:       1,
 	})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -6767,10 +6767,12 @@ func TestAPISetStarredRejectsInvalidItemType(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.SetStarredWithResponse(t.Context(), generated.SetStarredJSONRequestBody{
-		ItemType: "repo",
-		Owner:    "acme",
-		Name:     "widget",
-		Number:   1,
+		ItemType:     "repo",
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		Number:       1,
 	})
 	require.NoError(err)
 	require.Equal(http.StatusBadRequest, resp.StatusCode())
@@ -6846,7 +6848,7 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 	t.Helper()
 	ctx := t.Context()
 	issueID := seedIssue(t, database, owner, name, number, state)
-	repo, err := database.GetRepoByOwnerName(ctx, owner, name)
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 	require.NoError(t, database.ReplaceIssueLabels(ctx, repo.ID, issueID, labels))
 	return issueID
@@ -6904,7 +6906,7 @@ func TestAPIClosePR(t *testing.T) {
 	handlerNow := testEDTTime(9, 15)
 	setTestServerNow(t, srv, handlerNow)
 	seedPR(t, database, "acme", "widget", 1)
-	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	updatedAt := handlerNow.Add(-time.Hour)
 	number := 1
@@ -6934,7 +6936,7 @@ func TestAPIClosePR(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	assert.Equal(db.MergeRequestStateClosed, pr.State)
 	assertTimePtrEqualsUTC(t, pr.ClosedAt, handlerNow)
@@ -6952,7 +6954,7 @@ func TestAPIReopenPR(t *testing.T) {
 	ctx := t.Context()
 
 	// Close it first.
-	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now()
 	require.NoError(database.UpdateMRState(ctx, repo.ID, 1, "closed", nil, &now))
@@ -6965,7 +6967,7 @@ func TestAPIReopenPR(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, err := database.GetMergeRequest(ctx, "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal(db.MergeRequestStateOpen, pr.State)
 	require.Nil(pr.ClosedAt, "closed_at should be cleared on reopen")
@@ -6977,7 +6979,7 @@ func TestAPIClosePRRejectsMerged(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	ctx := t.Context()
 
-	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now()
 	require.NoError(database.UpdateMRState(ctx, repo.ID, 1, "merged", &now, &now))
@@ -7020,7 +7022,7 @@ func TestAPICloseIssue(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	issue, err := database.GetIssue(t.Context(), "acme", "widget", 5)
+	issue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
 	require.Equal("closed", issue.State)
 	assertTimePtrEqualsUTC(t, issue.ClosedAt, handlerNow)
@@ -7039,7 +7041,7 @@ func TestAPIReopenIssue(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	issue, err := database.GetIssue(t.Context(), "acme", "widget", 5)
+	issue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
 	require.Equal("open", issue.State)
 	require.Nil(issue.ClosedAt, "closed_at should be cleared on reopen")
@@ -7109,7 +7111,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	closedPR, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	closedPR, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal(db.MergeRequestStateClosed, closedPR.State)
 	require.NotNil(closedPR.ClosedAt)
@@ -7128,7 +7130,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 	}
 	require.True(completed, "timed out waiting for stale PR sync")
 
-	finalPR, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	finalPR, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	assert.Equal(db.MergeRequestStateClosed, finalPR.State)
 	assert.NotNil(finalPR.ClosedAt)
@@ -7189,7 +7191,7 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA("abc123"))
-	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	existingChecksJSON := `[{"name":"tests","status":"completed","conclusion":"success"}]`
@@ -7278,7 +7280,7 @@ func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA("oldhead"))
-	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	existingChecksJSON := `[{"name":"tests","status":"completed","conclusion":"success"}]`
@@ -7291,7 +7293,7 @@ func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
 	// upserts, so without an explicit clear it would survive a
 	// head-SHA change.
 	require.NoError(database.UpdateMRDetailFetched(
-		t.Context(), "github.com", "acme", "widget", 1, true,
+		t.Context(), "github", "github.com", "acme", "widget", 1, true,
 	))
 	client := setupTestClient(t, srv)
 
@@ -7552,7 +7554,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	readyPR, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	readyPR, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.False(readyPR.IsDraft)
 	assert.True(readyPR.UpdatedAt.Equal(readyUpdatedAt))
@@ -7571,7 +7573,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	}
 	require.True(completed, "timed out waiting for stale draft sync")
 
-	finalPR, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	finalPR, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	assert.False(finalPR.IsDraft)
 	assert.Equal("ready for review", finalPR.Title)
@@ -7683,7 +7685,7 @@ func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	draftPR, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	draftPR, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.True(draftPR.IsDraft)
 	assert.True(draftPR.UpdatedAt.After(staleUpdatedAt))
@@ -7702,7 +7704,7 @@ func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
 	}
 	require.True(completed, "timed out waiting for stale draft sync")
 
-	finalPR, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	finalPR, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	assert.True(finalPR.IsDraft)
 	assert.Equal("ready PR", finalPR.Title)
@@ -7767,7 +7769,7 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	closedIssue, err := database.GetIssue(t.Context(), "acme", "widget", 5)
+	closedIssue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
 	require.Equal("closed", closedIssue.State)
 	require.NotNil(closedIssue.ClosedAt)
@@ -7786,7 +7788,7 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 	}
 	require.True(completed, "timed out waiting for stale issue sync")
 
-	finalIssue, err := database.GetIssue(t.Context(), "acme", "widget", 5)
+	finalIssue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
 	assert.Equal("closed", finalIssue.State)
 	assert.NotNil(finalIssue.ClosedAt)
@@ -7867,7 +7869,7 @@ func TestAPIListPullsSearchByNumber(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 290, withSeedPRTitle("another change"))
 	seedPR(t, database, "tools", "worker", 301, withSeedPRTitle("repair bug"))
 	seedPR(t, database, "docs", "reader", 302, withSeedPRTitle("can't reproduce"))
-	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NoError(database.ReplaceMergeRequestLabels(ctx, repo.ID, prID, []db.Label{{
 		PlatformID: 200,
@@ -7932,7 +7934,7 @@ func TestAPIListIssuesSearchByNumber(t *testing.T) {
 	seedIssueOnHost(t, database, "github.com", "acme", "widget", 290, "open", "another change")
 	seedIssueOnHost(t, database, "github.com", "tools", "worker", 301, "open", "triage bug")
 	seedIssueOnHost(t, database, "github.com", "docs", "reader", 302, "open", "O'Reilly reference")
-	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NoError(database.ReplaceIssueLabels(ctx, repo.ID, issueID, []db.Label{{
 		PlatformID: 300,
@@ -8129,7 +8131,7 @@ func TestAPIListPullsCasefoldsRepoNames(t *testing.T) {
 	assert.Equal("foo", (*resp.JSON200)[0].RepoName)
 }
 
-func TestAPIListPullsFiltersHostedNestedRepoPath(t *testing.T) {
+func TestAPIListPullsFiltersProviderQualifiedHostedNestedRepoPath(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
@@ -8141,7 +8143,7 @@ func TestAPIListPullsFiltersHostedNestedRepoPath(t *testing.T) {
 	seedPROnHost(t, database, "ghe.example.com", "other", "repo", 2)
 
 	client := setupTestClient(t, srv)
-	repo := "ghe.example.com/Group/SubGroup/Project.Special"
+	repo := "github|ghe.example.com/Group/SubGroup/Project.Special"
 	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsParams{
 		Repo: &repo,
 	})
@@ -8229,13 +8231,13 @@ func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
 	require.Equal("widget", resp.JSON200.RepoName)
 }
 
-func TestAPIListIssuesAcceptsMixedCaseRepoFilter(t *testing.T) {
+func TestAPIListIssuesAcceptsMixedCaseProviderQualifiedRepoFilter(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
-	repo := "Acme/Widget"
+	repo := "github|github.com/Acme/Widget"
 	resp, err := client.HTTP.ListIssuesWithResponse(
 		t.Context(), &generated.ListIssuesParams{Repo: &repo},
 	)
@@ -8247,7 +8249,7 @@ func TestAPIListIssuesAcceptsMixedCaseRepoFilter(t *testing.T) {
 	require.Equal("widget", (*resp.JSON200)[0].RepoName)
 }
 
-func TestAPIListIssuesAcceptsHostQualifiedRepoFilter(t *testing.T) {
+func TestAPIListIssuesAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -8256,7 +8258,7 @@ func TestAPIListIssuesAcceptsHostQualifiedRepoFilter(t *testing.T) {
 	seedIssueOnHost(t, database, "ghe.example.com", "acme", "widget", 7, "open", "Enterprise issue")
 	client := setupTestClient(t, srv)
 
-	repo := "ghe.example.com/acme/widget"
+	repo := "github|ghe.example.com/acme/widget"
 	resp, err := client.HTTP.ListIssuesWithResponse(
 		t.Context(), &generated.ListIssuesParams{Repo: &repo},
 	)
@@ -8270,7 +8272,7 @@ func TestAPIListIssuesAcceptsHostQualifiedRepoFilter(t *testing.T) {
 	assert.EqualValues(7, (*resp.JSON200)[0].Number)
 }
 
-func TestAPIListIssuesFiltersHostedNestedRepoPath(t *testing.T) {
+func TestAPIListIssuesFiltersProviderQualifiedHostedNestedRepoPath(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -8290,7 +8292,7 @@ func TestAPIListIssuesFiltersHostedNestedRepoPath(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	repo := "ghe.example.com/Group/SubGroup/Project.Special"
+	repo := "github|ghe.example.com/Group/SubGroup/Project.Special"
 	resp, err := client.HTTP.ListIssuesWithResponse(
 		t.Context(), &generated.ListIssuesParams{Repo: &repo},
 	)
@@ -8606,7 +8608,7 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	resp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
-			Provider:     &provider,
+			Provider:     provider,
 			PlatformHost: "forge.example.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -8622,7 +8624,7 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	assert.Equal("body.provider", problem.Details["field"])
 }
 
-func TestAPICreateWorkspaceAllowsOmittedProviderForUnambiguousRepo(t *testing.T) {
+func TestAPICreateWorkspaceRejectsOmittedProviderForUnambiguousRepo(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 
@@ -8662,7 +8664,7 @@ func TestAPICreateWorkspaceAllowsOmittedProviderForUnambiguousRepo(t *testing.T)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	require.Equal(http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
 }
 
 func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
@@ -8776,9 +8778,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	require.NotNil(withOps.Repo.Operations,
 		"issue sync response must include repo.operations")
 
-	githubRepo, err := database.GetRepoByHostOwnerName(
-		ctx, "github.com", "acme", "widget",
-	)
+	githubRepo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(githubRepo)
 	githubIssue, err := database.GetIssueByRepoIDAndNumber(
@@ -8788,9 +8788,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	require.NotNil(githubIssue)
 	assert.Equal("GitHub stale issue", githubIssue.Title)
 
-	ghesRepo, err := database.GetRepoByHostOwnerName(
-		ctx, "ghe.example.com", "acme", "widget",
-	)
+	ghesRepo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(ghesRepo)
 	ghesIssue, err := database.GetIssueByRepoIDAndNumber(
@@ -8895,9 +8893,7 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	githubRepo, err := database.GetRepoByHostOwnerName(
-		ctx, "github.com", "acme", "widget",
-	)
+	githubRepo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(githubRepo)
 	githubIssue, err := database.GetIssueByRepoIDAndNumber(
@@ -8907,9 +8903,7 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	require.NotNil(githubIssue)
 	assert.Equal("open", githubIssue.State)
 
-	ghesRepo, err := database.GetRepoByHostOwnerName(
-		ctx, "ghe.example.com", "acme", "widget",
-	)
+	ghesRepo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(ghesRepo)
 	ghesIssue, err := database.GetIssueByRepoIDAndNumber(
@@ -11497,7 +11491,7 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
-	before, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	before, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(before)
 
@@ -11509,7 +11503,7 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
 
-	after, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	after, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(after)
 	assert.Equal(before.State, after.State)
@@ -11530,7 +11524,7 @@ func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	seedIssue(t, database, "acme", "widget", 5, "open")
-	before, err := database.GetIssue(t.Context(), "acme", "widget", 5)
+	before, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
 	require.NotNil(before)
 
@@ -11542,7 +11536,7 @@ func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
 
-	after, err := database.GetIssue(t.Context(), "acme", "widget", 5)
+	after, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
 	require.NotNil(after)
 	assert.Equal(before.State, after.State)
@@ -11584,7 +11578,7 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, _ := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, _ := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.Equal(db.MergeRequestStateClosed, pr.State)
 }
 
@@ -11627,7 +11621,7 @@ func TestAPIMarkPRDraftPersistsDraftFlag(t *testing.T) {
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
-	before, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	before, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(before)
 	before.CommentCount = 7
@@ -11651,7 +11645,7 @@ func TestAPIMarkPRDraftPersistsDraftFlag(t *testing.T) {
 	assert.Equal("acme", gotOwner)
 	assert.Equal("widget", gotRepo)
 	assert.Equal(1, gotNumber)
-	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal(db.MergeRequestStateOpen, pr.State)
@@ -11752,7 +11746,7 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
 
-	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	pr.IsDraft = true
@@ -11767,7 +11761,7 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, err = database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err = database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	require.False(pr.IsDraft)
@@ -11820,7 +11814,7 @@ func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	require.False(pr.IsDraft)
@@ -12048,7 +12042,7 @@ func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	issue, _ := database.GetIssue(t.Context(), "acme", "widget", 5)
+	issue, _ := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.Equal("closed", issue.State)
 }
 
@@ -13197,7 +13191,7 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 42)
-	mr, err := database.GetMergeRequest(ctx, "acme", "widget", 42)
+	mr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 	require.NotNil(mr)
 	require.NoError(database.UpdateDiffSHAs(ctx, mr.RepoID, 42, "github-head", "base", "merge-base"))
@@ -19263,7 +19257,7 @@ func TestAPIListActivityCanHideDefaultBranchActivity(t *testing.T) {
 	assert.Equal(int64(1), (*resp.JSON200.Items)[0].ItemNumber)
 }
 
-func TestAPIListActivityAcceptsHostQualifiedRepoFilter(t *testing.T) {
+func TestAPIListActivityAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -19273,7 +19267,7 @@ func TestAPIListActivityAcceptsHostQualifiedRepoFilter(t *testing.T) {
 	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 2)
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
-	repo := "ghe.example.com/acme/widget"
+	repo := "github|ghe.example.com/acme/widget"
 	resp, err := client.HTTP.ListActivityWithResponse(
 		t.Context(), &generated.ListActivityParams{Since: &since, Repo: &repo},
 	)
@@ -19331,7 +19325,7 @@ func TestAPIListActivityAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 	}
 }
 
-func TestAPIListActivityKeepsProviderNamedHostsHostQualified(t *testing.T) {
+func TestAPIListActivityKeepsProviderNamedHostsProviderQualified(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -19349,7 +19343,7 @@ func TestAPIListActivityKeepsProviderNamedHostsHostQualified(t *testing.T) {
 	seedPROnHost(t, database, "github.com", "acme", "widget", 2)
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
-	repo := "gitea/acme/team/widget"
+	repo := "github|gitea/acme/team/widget"
 	resp, err := client.HTTP.ListActivityWithResponse(
 		ctx, &generated.ListActivityParams{Since: &since, Repo: &repo},
 	)
@@ -19458,7 +19452,7 @@ func seedStackedPRState(
 func runStackDetection(t *testing.T, database *db.DB, owner, name string) {
 	t.Helper()
 	ctx := t.Context()
-	repo, err := database.GetRepoByOwnerName(ctx, owner, name)
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 	require.NotNil(t, repo)
 	require.NoError(t, stacks.RunDetection(ctx, database, repo.ID))
@@ -19600,7 +19594,7 @@ func TestAPIStackBaseConflictMarksDownstreamPRsDirty(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", db.MergeRequestStateOpen, "success", "APPROVED")
 	runStackDetection(t, database, "acme", "widget")
 
-	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	assert.Empty(requireMR(t, database, repo.ID, 11).MergeableState)
@@ -20713,9 +20707,7 @@ func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
 	client, database, _, _ := setupTestServerWithWorkspaces(t)
 	ctx := t.Context()
 
-	repo, err := database.GetRepoByHostOwnerName(
-		ctx, "github.com", "acme", "widget",
-	)
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 
@@ -25337,6 +25329,7 @@ func createReadyWorkspace(
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -25695,6 +25688,7 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -25771,6 +25765,7 @@ func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -25813,6 +25808,7 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -25867,6 +25863,7 @@ func TestWorkspaceReadyStatusImpliesReadySetupEventE2E(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -25908,6 +25905,7 @@ func TestWorkspaceCreateNotFound(t *testing.T) {
 	resp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "nope",
 			Name:         "missing",
@@ -25921,6 +25919,7 @@ func TestWorkspaceCreateNotFound(t *testing.T) {
 	resp2, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -25944,6 +25943,7 @@ func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -25987,6 +25987,7 @@ func TestWorkspaceCreateDuplicate(t *testing.T) {
 	ctx := t.Context()
 
 	body := generated.CreateWorkspaceInputBody{
+		Provider:     "github",
 		PlatformHost: "github.com",
 		Owner:        "acme",
 		Name:         "widget",
@@ -26030,6 +26031,7 @@ func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -26276,6 +26278,7 @@ func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
 	prResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -26410,9 +26413,7 @@ func prepareIssueWorkspaceAssociationFixture(
 	ctx := context.Background()
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
-	repo, err := fixture.database.GetRepoByHostOwnerName(
-		ctx, "github.com", "acme", "widget",
-	)
+	repo, err := fixture.database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 
@@ -26692,9 +26693,7 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	require.NotNil(stored.AssociatedPRNumber)
 	assert.Equal(42, *stored.AssociatedPRNumber)
 
-	repo, err := fixture.database.GetRepoByHostOwnerName(
-		ctx, "github.com", "acme", "widget",
-	)
+	repo, err := fixture.database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	pr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 42)
@@ -26810,6 +26809,7 @@ func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
 	createResp1, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -26844,6 +26844,7 @@ func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
 	createResp2, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -26904,6 +26905,7 @@ func TestWorkspaceCreateWithLocalBaseUsesPullRefWhenHeadBranchDeleted(
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: platformHost,
 			Owner:        "acme",
 			Name:         "widget",
@@ -26979,7 +26981,7 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
-			Provider:     &provider,
+			Provider:     provider,
 			PlatformHost: platformHost,
 			Owner:        "acme",
 			Name:         "widget",
@@ -27038,6 +27040,7 @@ func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: platformHost,
 			Owner:        "acme",
 			Name:         "widget",
@@ -27098,6 +27101,7 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: platformHost,
 			Owner:        "acme",
 			Name:         "widget",
@@ -27209,6 +27213,7 @@ func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -27268,6 +27273,7 @@ func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "ghe.example.com:8443",
 			Owner:        "acme",
 			Name:         "widget",
@@ -27302,9 +27308,7 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 	client, database, _, remotePath := setupTestServerWithWorkspaces(t)
 	ctx := t.Context()
 
-	repo, err := database.GetRepoByHostOwnerName(
-		ctx, "github.com", "acme", "widget",
-	)
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 
@@ -27335,6 +27339,7 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 	create1, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -27362,6 +27367,7 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 	create2, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -27395,6 +27401,7 @@ func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -27567,6 +27574,7 @@ func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -27624,6 +27632,7 @@ func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -27661,6 +27670,7 @@ func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
 	recreateResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -27810,6 +27820,7 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -27859,6 +27870,7 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	create2, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -27909,7 +27921,7 @@ func TestAPIEditPRTitleAndBody(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
-		t.Context(), "acme", "widget", 1,
+		t.Context(), "github", "github.com", "acme", "widget", 1,
 	)
 	require.NoError(err)
 	require.Equal("updated title", mr.Title)
@@ -27927,7 +27939,7 @@ func TestAPIEditPRTitleOnly(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
-		t.Context(), "acme", "widget", 1,
+		t.Context(), "github", "github.com", "acme", "widget", 1,
 	)
 	require.NoError(err)
 	require.Equal("new title", mr.Title)
@@ -27945,7 +27957,7 @@ func TestAPIEditPRBodyOnly(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
-		t.Context(), "acme", "widget", 1,
+		t.Context(), "github", "github.com", "acme", "widget", 1,
 	)
 	require.NoError(err)
 	require.Equal("Test PR #1", mr.Title)
@@ -27963,7 +27975,7 @@ func TestAPIEditPRClearBody(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
-		t.Context(), "acme", "widget", 1,
+		t.Context(), "github", "github.com", "acme", "widget", 1,
 	)
 	require.NoError(err)
 	require.Equal("Test PR #1", mr.Title)
@@ -28000,7 +28012,7 @@ func TestAPIEditPRPreservesDerivedFields(t *testing.T) {
 	ctx := t.Context()
 
 	// Seed non-default derived fields so we can detect clobbering.
-	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	require.NoError(database.UpdateMRDerivedFields(ctx, repo.ID, 1, db.MRDerivedFields{
@@ -28015,7 +28027,7 @@ func TestAPIEditPRPreservesDerivedFields(t *testing.T) {
 		map[string]string{"title": "changed title"})
 	require.Equal(http.StatusOK, rr.Code)
 
-	after, err := database.GetMergeRequest(ctx, "acme", "widget", 1)
+	after, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal("changed title", after.Title)
 	require.Equal(7, after.CommentCount)
@@ -28036,7 +28048,7 @@ func TestAPIEditIssueBodyOnly(t *testing.T) {
 		map[string]string{"body": "- [x] task done"})
 	require.Equal(http.StatusOK, rr.Code)
 
-	issue, err := database.GetIssue(t.Context(), "acme", "widget", 5)
+	issue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
 	require.NotNil(issue)
 	require.Equal("Test Issue", issue.Title)
@@ -28053,7 +28065,7 @@ func TestAPIEditIssueTitleAndBody(t *testing.T) {
 		map[string]string{"title": "new title", "body": "new body"})
 	require.Equal(http.StatusOK, rr.Code)
 
-	issue, err := database.GetIssue(t.Context(), "acme", "widget", 5)
+	issue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
 	require.NotNil(issue)
 	require.Equal("new title", issue.Title)

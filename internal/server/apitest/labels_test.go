@@ -111,7 +111,7 @@ func seedRepoLabelCatalog(
 ) int64 {
 	t.Helper()
 	ctx := t.Context()
-	repo, err := database.GetRepoByOwnerName(ctx, owner, name)
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 	require.NotNil(t, repo)
 	now := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
@@ -126,7 +126,7 @@ func TestAPIListRepoLabelsRefreshesStaleCatalogFromProvider(t *testing.T) {
 	require := require.New(t)
 	srv, database, _, _ := setupLabelTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
-	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 

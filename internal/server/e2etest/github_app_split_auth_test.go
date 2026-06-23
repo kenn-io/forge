@@ -312,7 +312,7 @@ repository_selection = "all"
 
 	// The repo settings refresh resolved with the PAT, so the stored
 	// merge permission must reflect the user, not the read-only app.
-	dbRepo, err := database.GetRepoByOwnerName(t.Context(), "kenn-io", "middleman")
+	dbRepo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "kenn-io", "middleman"))
 	require.NoError(err)
 	assert.True(dbRepo.ViewerCanMerge,
 		"viewer_can_merge must come from the PAT-visible permissions, not the app's")

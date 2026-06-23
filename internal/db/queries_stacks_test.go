@@ -234,14 +234,14 @@ func TestGetStackForPR(t *testing.T) {
 	require.NoError(err)
 
 	// Found
-	stack, members, err := d.GetStackForPR(ctx, "org", "repo", 10)
+	stack, members, err := d.GetStackForPR(ctx, "github", "github.com", "org", "repo", 10)
 	require.NoError(err)
 	require.NotNil(stack)
 	assert.Equal("feature", stack.Name)
 	assert.Len(members, 2)
 
 	// Not found
-	stack2, _, err := d.GetStackForPR(ctx, "org", "repo", 999)
+	stack2, _, err := d.GetStackForPR(ctx, "github", "github.com", "org", "repo", 999)
 	require.NoError(err)
 	assert.Nil(stack2)
 }

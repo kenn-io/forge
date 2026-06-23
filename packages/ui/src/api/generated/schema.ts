@@ -4177,7 +4177,7 @@ export interface components {
             name: string;
             owner: string;
             platform_host: string;
-            provider?: string;
+            provider: string;
         };
         CreateWorktreeFromMergeRequestInputBody: {
             /**
@@ -6483,7 +6483,8 @@ export interface components {
             /** Format: int64 */
             number: number;
             owner: string;
-            platform_host?: string;
+            platform_host: string;
+            provider: string;
         };
         SyncStatus: {
             /**
@@ -6784,7 +6785,7 @@ export interface operations {
     "list-activity": {
         parameters: {
             query?: {
-                /** @description Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches. */
+                /** @description Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
                 repo?: string;
                 types?: string[] | null;
                 search?: string;
@@ -10627,7 +10628,7 @@ export interface operations {
     "list-issues": {
         parameters: {
             query?: {
-                /** @description Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches. */
+                /** @description Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
                 repo?: string;
                 state?: string;
                 starred?: boolean;
@@ -12360,7 +12361,7 @@ export interface operations {
     "list-pulls": {
         parameters: {
             query?: {
-                /** @description Repository filter. Accepts owner/name, platform_host/repo_path, comma-separated values, or provider|platform_host/repo_path for provider-qualified matches. */
+                /** @description Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
                 repo?: string;
                 state?: string;
                 kanban?: string;
@@ -14579,7 +14580,7 @@ export interface operations {
     "trigger-sync": {
         parameters: {
             query?: {
-                /** @description Optional repository filters to sync first. Accepts repeated values or comma-separated values. Each value may be provider-qualified as provider|platform_host/owner/name, host-qualified as platform_host/owner/name, or bare as owner/name; bare values match the first tracked repo with that repo path. */
+                /** @description Optional repository filters to sync first. Accepts repeated provider|platform_host/repo_path values or comma-separated values. */
                 priority_repo?: string[] | null;
             };
             header?: never;

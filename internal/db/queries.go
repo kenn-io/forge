@@ -1969,57 +1969,6 @@ func (d *DB) UpdateRepoProviderMetadata(
 	return nil
 }
 
-// GetRepoByOwnerName returns the repo for the given owner/name, or nil if not found.
-// Config validation rejects duplicate owner/name across hosts, so this should
-// always be unambiguous. The ORDER BY provides deterministic results as a
-// safety net if stale data from a previous config exists in the database.
-func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo, error) {
-	_, owner, name = canonicalRepoIdentifier("", owner, name)
-	var r Repo
-	err := d.ro.QueryRowContext(ctx,
-		`SELECT id, platform, platform_host, platform_repo_id,
-		        owner, name, repo_path,
-		        owner_key, name_key, repo_path_key,
-		        web_url, clone_url, default_branch,
-		        last_sync_started_at, last_sync_completed_at,
-		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge, viewer_can_merge,
-		        backfill_pr_page, backfill_pr_complete,
-		        backfill_pr_completed_at,
-		        backfill_issue_page, backfill_issue_complete,
-		        backfill_issue_completed_at,
-		        label_catalog_synced_at, label_catalog_checked_at,
-		        label_catalog_sync_error,
-		        created_at
-		 FROM middleman_repos WHERE owner_key = ? AND name_key = ?
-		 ORDER BY platform_host ASC LIMIT 1`, owner, name,
-	).Scan(
-		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
-		&r.Owner, &r.Name, &r.RepoPath,
-		&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
-		&r.WebURL, &r.CloneURL, &r.DefaultBranch,
-		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
-		&r.LastSyncError,
-		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
-		&r.ViewerCanMerge,
-		&r.BackfillPRPage, &r.BackfillPRComplete,
-		&r.BackfillPRCompletedAt,
-		&r.BackfillIssuePage, &r.BackfillIssueComplete,
-		&r.BackfillIssueCompletedAt,
-		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
-		&r.LabelCatalogSyncError,
-		&r.CreatedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get repo by owner/name: %w", err)
-	}
-	normalizeRepoTimestamps(&r)
-	return &r, nil
-}
-
 // GetRepoByIdentity returns the repo for the provider-qualified identity,
 // or nil if not found.
 func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Repo, error) {
@@ -2335,9 +2284,14 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 	return id, nil
 }
 
-// GetMergeRequest returns a merge request by repo owner/name and MR number, or nil if not found.
-func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int) (*MergeRequest, error) {
-	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
+// GetMergeRequest returns a merge request by repository identity and MR number, or nil if not found.
+func (d *DB) GetMergeRequest(
+	ctx context.Context,
+	platform, platformHost, owner, name string,
+	number int,
+) (*MergeRequest, error) {
+	platform = canonicalRepoPlatform(platform)
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var mr MergeRequest
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT p.id, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
@@ -2361,8 +2315,10 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 		LEFT JOIN middleman_kanban_state k ON k.merge_request_id = p.id
 		LEFT JOIN middleman_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
-		WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
-		owner, name, number,
+		WHERE r.platform = ? AND r.platform_host = ?
+		  AND r.owner_key = ? AND r.name_key = ?
+		  AND p.number = ?`,
+		platform, platformHost, owner, name, number,
 	).Scan(
 		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
 		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft, &mr.IsLocked,
@@ -2813,27 +2769,6 @@ func (d *DB) GetKanbanState(ctx context.Context, mrID int64) (*KanbanState, erro
 	return &k, nil
 }
 
-// --- Helpers ---
-
-// GetMRIDByRepoAndNumber returns the internal MR ID for a given repo+number.
-func (d *DB) GetMRIDByRepoAndNumber(ctx context.Context, owner, name string, number int) (int64, error) {
-	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
-	var id int64
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT p.id FROM middleman_merge_requests p
-		JOIN middleman_repos r ON r.id = p.repo_id
-		WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
-		owner, name, number,
-	).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("MR %s/%s#%d not found", owner, name, number)
-	}
-	if err != nil {
-		return 0, fmt.Errorf("get mr id by repo and number: %w", err)
-	}
-	return id, nil
-}
-
 // GetPreviouslyOpenMRNumbers returns MR numbers that are open in the DB but
 // not in the stillOpen set — i.e. MRs that were closed/merged since the last sync.
 func (d *DB) GetPreviouslyOpenMRNumbers(
@@ -3124,13 +3059,20 @@ func (s *DiffSHAs) Stale() bool {
 }
 
 // GetDiffSHAs returns the diff-related SHAs for a merge request.
-func (d *DB) GetDiffSHAs(ctx context.Context, owner, name string, number int) (*DiffSHAs, error) {
-	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
+func (d *DB) GetDiffSHAs(
+	ctx context.Context,
+	platform, platformHost, owner, name string,
+	number int,
+) (*DiffSHAs, error) {
+	platform = canonicalRepoPlatform(platform)
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	return d.getDiffSHAs(
 		ctx,
 		`JOIN middleman_repos r ON r.id = p.repo_id
-		 WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
-		owner, name, number,
+		 WHERE r.platform = ? AND r.platform_host = ?
+		   AND r.owner_key = ? AND r.name_key = ?
+		   AND p.number = ?`,
+		platform, platformHost, owner, name, number,
 	)
 }
 
@@ -3281,11 +3223,14 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 	return id, nil
 }
 
-// GetIssue returns an issue by repo owner/name and issue number, or nil if not found.
+// GetIssue returns an issue by repository identity and issue number, or nil if not found.
 func (d *DB) GetIssue(
-	ctx context.Context, owner, name string, number int,
+	ctx context.Context,
+	platform, platformHost, owner, name string,
+	number int,
 ) (*Issue, error) {
-	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
+	platform = canonicalRepoPlatform(platform)
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var issue Issue
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
@@ -3297,8 +3242,10 @@ func (d *DB) GetIssue(
 		JOIN middleman_repos r ON r.id = i.repo_id
 		LEFT JOIN middleman_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
-		WHERE r.owner_key = ? AND r.name_key = ? AND i.number = ?`,
-		owner, name, number,
+		WHERE r.platform = ? AND r.platform_host = ?
+		  AND r.owner_key = ? AND r.name_key = ?
+		  AND i.number = ?`,
+		platform, platformHost, owner, name, number,
 	).Scan(
 		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
 		&issue.URL, &issue.Title, &issue.Author, &issue.State,
@@ -3489,27 +3436,6 @@ func (d *DB) ListIssues(
 	return issues, nil
 }
 
-// GetIssueIDByRepoAndNumber returns the internal issue ID for a given repo+number.
-func (d *DB) GetIssueIDByRepoAndNumber(
-	ctx context.Context, owner, name string, number int,
-) (int64, error) {
-	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
-	var id int64
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT i.id FROM middleman_issues i
-		JOIN middleman_repos r ON r.id = i.repo_id
-		WHERE r.owner_key = ? AND r.name_key = ? AND i.number = ?`,
-		owner, name, number,
-	).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("issue %s/%s#%d not found", owner, name, number)
-	}
-	if err != nil {
-		return 0, fmt.Errorf("get issue id by repo and number: %w", err)
-	}
-	return id, nil
-}
-
 // ResolveItemNumber checks whether the given number in a repo is a MR
 // or issue. Returns the item type ("pr" or "issue") and whether it was
 // found. MRs take precedence if both somehow exist.
@@ -3692,9 +3618,10 @@ func (d *DB) UpsertHTTPEtag(
 // detail fetched and records whether CI had pending checks.
 func (d *DB) UpdateMRDetailFetched(
 	ctx context.Context,
-	platformHost, repoOwner, repoName string,
+	platform, platformHost, repoOwner, repoName string,
 	number int, ciHadPending bool,
 ) error {
+	platform = canonicalRepoPlatform(platform)
 	platformHost, repoOwner, repoName = canonicalRepoLookupIdentifier(
 		platformHost, repoOwner, repoName,
 	)
@@ -3704,9 +3631,9 @@ func (d *DB) UpdateMRDetailFetched(
 		    ci_had_pending = ?
 		WHERE repo_id = (
 		    SELECT id FROM middleman_repos
-		    WHERE platform_host = ? AND owner_key = ? AND name_key = ?
+		    WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
 		) AND number = ?`,
-		ciHadPending, platformHost, repoOwner, repoName, number,
+		ciHadPending, platform, platformHost, repoOwner, repoName, number,
 	)
 	if err != nil {
 		return fmt.Errorf("update mr detail fetched: %w", err)
@@ -3787,8 +3714,9 @@ func (d *DB) UpdateMRWorkflowApproval(
 // detail fetched.
 func (d *DB) UpdateIssueDetailFetched(
 	ctx context.Context,
-	platformHost, repoOwner, repoName string, number int,
+	platform, platformHost, repoOwner, repoName string, number int,
 ) error {
+	platform = canonicalRepoPlatform(platform)
 	platformHost, repoOwner, repoName = canonicalRepoLookupIdentifier(
 		platformHost, repoOwner, repoName,
 	)
@@ -3797,9 +3725,9 @@ func (d *DB) UpdateIssueDetailFetched(
 		SET detail_fetched_at = datetime('now')
 		WHERE repo_id = (
 		    SELECT id FROM middleman_repos
-		    WHERE platform_host = ? AND owner_key = ? AND name_key = ?
+		    WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
 		) AND number = ?`,
-		platformHost, repoOwner, repoName, number,
+		platform, platformHost, repoOwner, repoName, number,
 	)
 	if err != nil {
 		return fmt.Errorf("update issue detail fetched: %w", err)
@@ -4395,82 +4323,6 @@ func (d *DB) GetAllWorktreeLinks(
 	}
 	defer rows.Close()
 	return scanWorktreeLinks(rows)
-}
-
-// GetRepoByHostOwnerName returns the repo for the given
-// host/owner/name triple, or nil if not found.
-func (d *DB) GetRepoByHostOwnerName(
-	ctx context.Context,
-	host, owner, name string,
-) (*Repo, error) {
-	host, owner, name = canonicalRepoIdentifier(host, owner, name)
-	var r Repo
-	err := d.ro.QueryRowContext(ctx,
-		`SELECT id, platform, platform_host, platform_repo_id,
-		        owner, name, repo_path,
-		        owner_key, name_key, repo_path_key,
-		        web_url, clone_url, default_branch,
-		        last_sync_started_at, last_sync_completed_at,
-		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge, viewer_can_merge,
-		        backfill_pr_page, backfill_pr_complete,
-		        backfill_pr_completed_at,
-		        backfill_issue_page, backfill_issue_complete,
-		        backfill_issue_completed_at,
-		        label_catalog_synced_at, label_catalog_checked_at,
-		        label_catalog_sync_error,
-		        created_at
-		 FROM middleman_repos
-		 WHERE platform_host = ? AND owner_key = ? AND name_key = ?
-		 ORDER BY platform ASC LIMIT 1`,
-		host, owner, name,
-	).Scan(
-		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
-		&r.Owner, &r.Name, &r.RepoPath,
-		&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
-		&r.WebURL, &r.CloneURL, &r.DefaultBranch,
-		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
-		&r.LastSyncError,
-		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
-		&r.ViewerCanMerge,
-		&r.BackfillPRPage, &r.BackfillPRComplete,
-		&r.BackfillPRCompletedAt,
-		&r.BackfillIssuePage, &r.BackfillIssueComplete,
-		&r.BackfillIssueCompletedAt,
-		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
-		&r.LabelCatalogSyncError,
-		&r.CreatedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf(
-			"get repo by host/owner/name: %w", err,
-		)
-	}
-	normalizeRepoTimestamps(&r)
-	return &r, nil
-}
-
-// CountReposByHostOwnerName returns how many provider identities share a
-// host/owner/name lookup key.
-func (d *DB) CountReposByHostOwnerName(
-	ctx context.Context,
-	host, owner, name string,
-) (int, error) {
-	host, owner, name = canonicalRepoIdentifier(host, owner, name)
-	var count int
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM middleman_repos
-		WHERE platform_host = ? AND owner_key = ? AND name_key = ?`,
-		host, owner, name,
-	).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("count repos by host/owner/name: %w", err)
-	}
-	return count, nil
 }
 
 // --- Workspaces ---

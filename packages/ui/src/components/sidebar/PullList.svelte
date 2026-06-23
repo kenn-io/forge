@@ -214,7 +214,7 @@
       return [...pulls.pullsByRepo().entries()].map(([repo, prs]) => ({
         key: `repo:${repo}`,
         collapseKey: repo,
-        label: repo,
+        label: prs[0]?.repo.repo_path ?? repo,
         showRepo: false,
         items: prs,
       }));
@@ -264,7 +264,17 @@
       && sel.owner === ref.owner
       && sel.name === ref.name
       && sel.number === ref.number
+      && sel.provider === ref.provider
       && sel.platformHost === ref.platformHost;
+  }
+
+  function pullMatchesSelection(pr: PullRequest, sel: NonNullable<ReturnType<typeof pulls.getSelectedPR>>): boolean {
+    return pr.Number === sel.number
+      && pr.repo.provider === sel.provider
+      && pr.repo.platform_host === sel.platformHost
+      && pr.repo.repo_path === sel.repoPath
+      && pr.repo.owner === sel.owner
+      && pr.repo.name === sel.name;
   }
 
   const selectedPRGroup = $derived.by(() => {
@@ -272,12 +282,7 @@
     const groups = groupedPulls;
     if (sel === null || groups === null) return null;
     return groups.find((group) =>
-      group.items.some((p) =>
-        (p.repo_owner ?? "") === sel.owner
-        && (p.repo_name ?? "") === sel.name
-        && p.Number === sel.number
-        && (!sel.platformHost || p.platform_host === sel.platformHost),
-      ),
+      group.items.some((p) => pullMatchesSelection(p, sel)),
     ) ?? null;
   });
 
@@ -290,12 +295,7 @@
   const selectedVisiblePR = $derived.by(() => {
     const sel = pulls.getSelectedPR();
     if (sel === null) return null;
-    const pr = visiblePulls.find(
-      (p) => (p.repo_owner ?? "") === sel.owner
-        && (p.repo_name ?? "") === sel.name
-        && p.Number === sel.number
-        && (!sel.platformHost || p.platform_host === sel.platformHost),
-    );
+    const pr = visiblePulls.find((p) => pullMatchesSelection(p, sel));
     if (!pr) return null;
     // Collapsed grouped modes hide the selected PR row, so the files tab
     // renders the fallback file list instead of losing the diff sidebar.

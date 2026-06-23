@@ -73,8 +73,10 @@ export function repoKey(summary: {
   return `${summary.owner}/${summary.name}`;
 }
 
-export function repoStateKey(summary: { platform_host: string; owner: string; name: string }): string {
-  return `${summary.platform_host}/${summary.owner}/${summary.name}`;
+export function repoStateKey(summary: {
+  repo: { provider: string; platform_host: string; repo_path: string };
+}): string {
+  return `${summary.repo.provider}|${summary.repo.platform_host}/${summary.repo.repo_path}`;
 }
 
 export function shouldShowPlatformHost(summary: {

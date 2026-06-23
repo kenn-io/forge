@@ -337,7 +337,7 @@ func TestCreateIssueDefaultBranchSluggified(t *testing.T) {
 
 			ws, err := mgr.CreateIssue(
 				ctx, "github.com", "acme", "widget", 7,
-				CreateIssueOptions{},
+				CreateIssueOptions{Provider: "github"},
 			)
 			require.NoError(err)
 			require.NotNil(ws)
@@ -361,7 +361,7 @@ func TestCreateIssueExplicitGitHeadRefBypassesSlug(t *testing.T) {
 
 	ws, err := mgr.CreateIssue(
 		ctx, "github.com", "acme", "widget", 7,
-		CreateIssueOptions{GitHeadRef: "custom/branch"},
+		CreateIssueOptions{Provider: "github", GitHeadRef: "custom/branch"},
 	)
 	require.NoError(err)
 	require.NotNil(ws)
@@ -390,7 +390,7 @@ func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) 
 
 	ws, err := mgr.CreateIssue(
 		ctx, "github.com", "acme", "widget", 7,
-		CreateIssueOptions{ReuseExistingBranch: true},
+		CreateIssueOptions{Provider: "github", ReuseExistingBranch: true},
 	)
 
 	require.Nil(ws)
@@ -1396,7 +1396,7 @@ func TestSetupRefreshesConfiguredWorktreeBaseOriginHead(t *testing.T) {
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.CreateIssue(
-		t.Context(), platformHost, "acme", "widget", 7, CreateIssueOptions{},
+		t.Context(), platformHost, "acme", "widget", 7, CreateIssueOptions{Provider: "github"},
 	)
 	require.NoError(err)
 	require.NoError(mgr.Setup(t.Context(), ws))

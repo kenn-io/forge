@@ -13,6 +13,7 @@ import (
 )
 
 type repoNumberPathRef struct {
+	repoID       int64
 	owner        string
 	name         string
 	number       int
@@ -21,10 +22,11 @@ type repoNumberPathRef struct {
 
 type starredRequest struct {
 	ItemType     string `json:"item_type"`
+	Provider     string `json:"provider"`
 	Owner        string `json:"owner"`
 	Name         string `json:"name"`
 	Number       int    `json:"number"`
-	PlatformHost string `json:"platform_host,omitempty"`
+	PlatformHost string `json:"platform_host"`
 }
 
 var errRepoNotFound = errors.New("repo not found")
@@ -151,31 +153,6 @@ func (s *Server) filterConfiguredRepos(repos []db.Repo) []db.Repo {
 	return filtered
 }
 
-// lookupRepo resolves a repository from owner/name and optional host inputs.
-func (s *Server) lookupRepo(
-	ctx context.Context,
-	owner, name, platformHost string,
-) (*db.Repo, error) {
-	var (
-		repo *db.Repo
-		err  error
-	)
-	if platformHost != "" {
-		repo, err = s.db.GetRepoByHostOwnerName(
-			ctx, platformHost, owner, name,
-		)
-	} else {
-		repo, err = s.db.GetRepoByOwnerName(ctx, owner, name)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get repo: %w", err)
-	}
-	if repo == nil {
-		return nil, errRepoNotFound
-	}
-	return repo, nil
-}
-
 func (s *Server) filterConfiguredRepoSummaries(
 	summaries []db.RepoSummary,
 ) []db.RepoSummary {
@@ -214,87 +191,43 @@ func (s *Server) isConfiguredRepoTracked(repo db.Repo) bool {
 	return ok
 }
 
-// lookupRepoID resolves a repository from owner/name inputs and returns a
-// stable not-found error for handlers that need repo identity only.
-func (s *Server) lookupRepoID(ctx context.Context, owner, name string) (int64, error) {
-	repo, err := s.lookupRepo(ctx, owner, name, "")
-	if err != nil {
-		return 0, err
-	}
-	return repo.ID, nil
-}
-
-func (s *Server) lookupRepoIDOnHost(
-	ctx context.Context,
-	owner, name, platformHost string,
-) (int64, error) {
-	repo, err := s.lookupRepo(ctx, owner, name, platformHost)
-	if err != nil {
-		return 0, err
-	}
-	return repo.ID, nil
-}
-
 // lookupMRID resolves the internal MR id from the common route tuple.
 func (s *Server) lookupMRID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
-	if ref.platformHost != "" {
-		repoID, err := s.lookupRepoIDOnHost(
-			ctx, ref.owner, ref.name, ref.platformHost,
-		)
-		if err != nil {
-			return 0, err
-		}
-		mr, err := s.db.GetMergeRequestByRepoIDAndNumber(
-			ctx, repoID, ref.number,
-		)
-		if err != nil {
-			return 0, err
-		}
-		if mr == nil {
-			return 0, fmt.Errorf(
-				"pull request %s/%s#%d not found",
-				ref.owner, ref.name, ref.number,
-			)
-		}
-		return mr.ID, nil
-	}
-	return s.db.GetMRIDByRepoAndNumber(ctx, ref.owner, ref.name, ref.number)
-}
-
-// lookupIssueID resolves the internal issue id from the common route tuple.
-func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
-	if ref.platformHost == "" {
-		return s.db.GetIssueIDByRepoAndNumber(
-			ctx, ref.owner, ref.name, ref.number,
-		)
-	}
-	repoID, err := s.lookupRepoIDOnHost(
-		ctx, ref.owner, ref.name, ref.platformHost,
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(
+		ctx, ref.repoID, ref.number,
 	)
 	if err != nil {
 		return 0, err
 	}
+	if mr == nil {
+		return 0, fmt.Errorf(
+			"pull request %s/%s#%d on %s not found",
+			ref.owner, ref.name, ref.number, ref.platformHost,
+		)
+	}
+	return mr.ID, nil
+}
+
+// lookupIssueID resolves the internal issue id from the common route tuple.
+func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
 	issue, err := s.db.GetIssueByRepoIDAndNumber(
-		ctx, repoID, ref.number,
+		ctx, ref.repoID, ref.number,
 	)
 	if err != nil {
 		return 0, err
 	}
 	if issue == nil {
 		return 0, fmt.Errorf(
-			"issue %s/%s#%d not found", ref.owner, ref.name, ref.number,
+			"issue %s/%s#%d on %s not found", ref.owner, ref.name, ref.number, ref.platformHost,
 		)
 	}
 	return issue.ID, nil
 }
 
 // parseRepoFilter splits the shared repo query parameter used by pull, issue,
-// and activity list endpoints. The accepted wire forms are owner/name,
-// platform_host/repo_path, and provider|platform_host/repo_path. Slash-qualified
-// provider labels such as provider/platform_host/repo_path are display-only and
-// intentionally parse as host-qualified values to keep nested repo paths
-// unambiguous. Repo paths can contain slashes, so hosted filters keep everything
-// after the host together as repoPath.
+// and activity list endpoints. Repository filters must be provider-qualified as
+// provider|platform_host/repo_path. Repo paths can contain slashes, so hosted
+// filters keep everything after the host together as repoPath.
 func parseRepoFilter(repo string) (provider, platformHost, owner, name, repoPath string) {
 	repo = strings.Trim(repo, "/ ")
 	if providerPart, hostedPath, ok := strings.Cut(repo, "|"); ok {
@@ -308,17 +241,7 @@ func parseRepoFilter(repo string) (provider, platformHost, owner, name, repoPath
 		}
 		return provider, parts[0], "", "", strings.Join(parts[1:], "/")
 	}
-
-	parts := strings.Split(repo, "/")
-	switch len(parts) {
-	case 2:
-		return "", "", parts[0], parts[1], ""
-	default:
-		if len(parts) >= 3 {
-			return "", parts[0], "", "", strings.Join(parts[1:], "/")
-		}
-		return "", "", "", "", ""
-	}
+	return "", "", "", "", ""
 }
 
 func parseRepoFilters(repo string) []db.RepoFilter {
@@ -342,6 +265,20 @@ func parseRepoFilters(repo string) []db.RepoFilter {
 		}
 	}
 	return filters
+}
+
+func hasInvalidRepoFilter(repo string) bool {
+	for part := range strings.SplitSeq(repo, ",") {
+		part = strings.Trim(part, "/ ")
+		if part == "" {
+			continue
+		}
+		_, _, owner, _, repoPath := parseRepoFilter(part)
+		if owner == "" && repoPath == "" {
+			return true
+		}
+	}
+	return false
 }
 
 func validateStarredRequest(body starredRequest) bool {

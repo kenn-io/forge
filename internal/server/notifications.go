@@ -34,10 +34,11 @@ func (s *Server) listNotifications(ctx context.Context, input *listNotifications
 	}
 	opts.Repos = trackedRepos
 	if input.Repo != "" {
-		host, owner, name, ok := db.ParseNotificationRepo(input.Repo)
+		platform, host, owner, name, ok := db.ParseNotificationRepo(input.Repo)
 		if !ok {
-			return nil, huma.Error400BadRequest("repo must be owner/name or platform_host/owner/name")
+			return nil, huma.Error400BadRequest("repo must be provider|platform_host/owner/name")
 		}
+		opts.Platform = platform
 		opts.PlatformHost = host
 		opts.RepoOwner = owner
 		opts.RepoName = name

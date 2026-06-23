@@ -42,12 +42,12 @@ export function buildMobileActivityRepoOptions(repos: ConfigRepo[]): MobileActiv
     const identity = repoFilterIdentity(repo);
     const concreteValue = concreteRepoFilterValue(identity);
     if (!concreteValue) continue;
-    const providerCollision = repoFilterValueNeedsProvider(identity, identities);
     const value = canonicalRepoFilterValue(identity, identities);
     if (!value || seen.has(value)) continue;
     seen.add(value);
     const repoPath = repo.repo_path.trim();
-    const label = providerCollision ? providerQualifiedRepoFilterLabel(identity) : value;
+    const providerCollision = repoFilterValueNeedsProvider(identity, identities);
+    const label = providerQualifiedRepoFilterLabel(identity);
     if (!label) continue;
     const triggerLabel = providerCollision || (valuesByRepoPath.get(repoPath)?.size ?? 0) > 1 ? label : repoPath;
     options.push({ value, label, triggerLabel });

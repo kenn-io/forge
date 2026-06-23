@@ -17,6 +17,7 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/web"
 )
@@ -198,8 +199,8 @@ func TestBuildAppStateSeedsReviewedHeadsForUTCMergeTargets(t *testing.T) {
 			require := require.New(t)
 			assert := Assert.New(t)
 
-			repo, err := state.database.GetRepoByOwnerName(
-				t.Context(), target.owner, target.repo,
+			repo, err := state.database.GetRepoByIdentity(
+				t.Context(), db.GitHubRepoIdentity("github.com", target.owner, target.repo),
 			)
 			require.NoError(err)
 			require.NotNil(repo)

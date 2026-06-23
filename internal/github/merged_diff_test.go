@@ -68,7 +68,7 @@ func setupSyncer(t *testing.T, ctx context.Context, mgr *gitclone.Manager) (*Syn
 	mc := &mockClient{}
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx) // creates repo row
-	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	repoRow, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(t, err)
 	require.NotNil(t, repoRow)
 	return syncer, repoRow.ID
@@ -124,7 +124,7 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 
 	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, false))
 
-	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
+	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(shas)
 	assert.Equal(prHead, shas.DiffHeadSHA, "diff_head_sha should be the PR head")
@@ -165,13 +165,13 @@ func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
 
 	// Without force, the existing (incorrect) SHAs are preserved.
 	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, false))
-	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
+	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	assert.Equal("bad-head", shas.DiffHeadSHA, "force=false should not overwrite existing SHAs")
 
 	// With force, the incorrect SHAs are replaced with correct values.
 	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, true))
-	shas, err = syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
+	shas, err = syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(shas)
 	assert.Equal(prHead, shas.DiffHeadSHA, "force=true should overwrite with correct PR head")
@@ -210,7 +210,7 @@ func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 
 	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 2, squashCommit, false))
 
-	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 2)
+	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 2)
 	require.NoError(err)
 	require.NotNil(shas)
 	assert.Equal(prHead, shas.DiffHeadSHA)
@@ -262,7 +262,7 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 
 	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 3, rebaseLastCommit, false))
 
-	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 3)
+	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 3)
 	require.NoError(err)
 	require.NotNil(shas)
 	assert.Equal(prHead, shas.DiffHeadSHA)
@@ -342,13 +342,13 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
-	pr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal(db.MergeRequestStateOpen, pr.State)
 
 	// Verify diff SHAs were computed during open-state sync.
-	shasBeforeMerge, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
+	shasBeforeMerge, err := d.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(shasBeforeMerge)
 	assert.Equal(prHead, shasBeforeMerge.DiffHeadSHA, "open-state diff_head_sha")
@@ -395,7 +395,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	syncer.RunOnce(ctx)
 
 	// Verify PR transitioned to merged state.
-	shas, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
+	shas, err := d.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(shas)
 	assert.Equal("merged", shas.State, "PR state should be merged")
@@ -461,7 +461,7 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
 	syncer.RunOnce(ctx)
 
-	shasEmpty, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
+	shasEmpty, err := d.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(shasEmpty)
 	assert.Empty(shasEmpty.DiffHeadSHA, "diff SHAs should be empty without clone manager")
@@ -500,7 +500,7 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 	syncer2 := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
 	syncer2.RunOnce(ctx)
 
-	shas, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
+	shas, err := d.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(shas)
 	assert.Equal("merged", shas.State)
@@ -603,13 +603,13 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	assert.NotContains(userMsg, "rev-parse", "user message should not leak git command stderr")
 
 	// PR row was still upserted despite the diff failure.
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(db.MergeRequestStateMerged, mr.State, "PR state should be persisted")
 
 	// Diff SHAs are absent because rev-parse never found the merge commit.
-	shas, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
+	shas, err := d.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(shas)
 	assert.Empty(shas.DiffHeadSHA, "diff SHAs should remain unset when computation failed")
@@ -701,7 +701,7 @@ func TestSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	assert.Equal("pr", itemType, "type should be reported even when diff sync failed")
 
 	// PR row was still upserted, so the resolve endpoint can route the user.
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(db.MergeRequestStateMerged, mr.State)

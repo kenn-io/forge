@@ -18,6 +18,7 @@
 
   interface Props {
     projectId: string;
+    hostKey?: string | null | undefined;
   }
 
   interface PlatformIdentity {
@@ -42,7 +43,7 @@
     path: string;
   }
 
-  let { projectId }: Props = $props();
+  let { projectId, hostKey = null }: Props = $props();
 
   let project = $state<Project | null>(null);
   let worktrees = $state<Worktree[]>([]);
@@ -50,17 +51,22 @@
   let loading = $state<boolean>(true);
   let inFlight = $state<boolean>(false);
   let actionError = $state<string | null>(null);
+  const scopedHostKey = $derived(hostKey?.trim() || undefined);
 
   async function load(): Promise<void> {
     loading = true;
     loadError = null;
     try {
-      const {
-        data: projectData,
-        error: projectError,
-      } = await client.GET("/projects/{project_id}", {
-        params: { path: { project_id: projectId } },
-      });
+      const projectResult = scopedHostKey
+        ? await client.GET("/fleet/hosts/{host_key}/projects/{project_id}", {
+            params: {
+              path: { host_key: scopedHostKey, project_id: projectId },
+            },
+          })
+        : await client.GET("/projects/{project_id}", {
+            params: { path: { project_id: projectId } },
+          });
+      const { data: projectData, error: projectError } = projectResult;
       if (!projectData) {
         loadError = apiErrorMessage(
           projectError,
@@ -70,12 +76,16 @@
       }
       project = projectData as Project;
 
-      const {
-        data: worktreesData,
-        error: worktreesError,
-      } = await client.GET("/projects/{project_id}/worktrees", {
-        params: { path: { project_id: projectId } },
-      });
+      const worktreesResult = scopedHostKey
+        ? await client.GET("/fleet/hosts/{host_key}/projects/{project_id}/worktrees", {
+            params: {
+              path: { host_key: scopedHostKey, project_id: projectId },
+            },
+          })
+        : await client.GET("/projects/{project_id}/worktrees", {
+            params: { path: { project_id: projectId } },
+          });
+      const { data: worktreesData, error: worktreesError } = worktreesResult;
       if (!worktreesData) {
         loadError = apiErrorMessage(
           worktreesError,
@@ -110,6 +120,7 @@
       const result = await invokeProjectAction(action, {
         surface: "project-card",
         projectId,
+        ...(scopedHostKey ? { hostKey: scopedHostKey } : {}),
       });
       if (!result.ok) {
         actionError = result.message ?? "Couldn't start a new worktree.";

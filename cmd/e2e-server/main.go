@@ -59,6 +59,10 @@ func main() {
 		"default-platform-host", "github.com",
 		"default platform host for seeded config",
 	)
+	fleetKey := flag.String(
+		"fleet-key", "",
+		"fleet self key for seeded config",
+	)
 	visibleImportedModes := flag.Bool(
 		"visible-imported-modes", false,
 		"show imported app modes in the seeded config",
@@ -87,6 +91,7 @@ func main() {
 		*roborev,
 		*serverInfoFile,
 		*defaultPlatformHost,
+		*fleetKey,
 		*visibleImportedModes,
 		*providerCollision,
 	); err != nil {
@@ -671,6 +676,7 @@ func setPR1CIState(
 type appOptions struct {
 	roborevEndpoint      string
 	defaultPlatformHost  string
+	fleetKey             string
 	visibleImportedModes bool
 	providerCollision    bool
 }
@@ -925,6 +931,7 @@ func buildAppState(
 		// tests run unserialized.
 		Tmux: config.Tmux{Command: instanceTmuxCommand()},
 	}
+	cfg.Fleet.Key = strings.TrimSpace(opts.fleetKey)
 	if opts.visibleImportedModes {
 		modes := config.DefaultModeVisibility()
 		*modes.Kata = true
@@ -1759,7 +1766,7 @@ func buildAppState(
 func run(
 	ctx context.Context,
 	port int,
-	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
+	roborevEndpoint, serverInfoFile, defaultPlatformHost, fleetKey string,
 	visibleImportedModes bool,
 	providerCollision bool,
 ) error {
@@ -1771,6 +1778,7 @@ func run(
 	baseOpts := appOptions{
 		roborevEndpoint:      roborevEndpoint,
 		defaultPlatformHost:  defaultPlatformHost,
+		fleetKey:             fleetKey,
 		visibleImportedModes: visibleImportedModes,
 		providerCollision:    providerCollision,
 	}
@@ -1829,9 +1837,10 @@ func run(
 
 			opts := baseOpts
 			var req struct {
-				DefaultPlatformHost  string `json:"default_platform_host"`
-				VisibleImportedModes *bool  `json:"visible_imported_modes"`
-				ProviderCollision    *bool  `json:"provider_collision"`
+				DefaultPlatformHost  string  `json:"default_platform_host"`
+				FleetKey             *string `json:"fleet_key"`
+				VisibleImportedModes *bool   `json:"visible_imported_modes"`
+				ProviderCollision    *bool   `json:"provider_collision"`
 			}
 			// An empty body resets to the startup options; a
 			// non-empty body must be valid JSON so option typos
@@ -1853,6 +1862,9 @@ func run(
 			}
 			if strings.TrimSpace(req.DefaultPlatformHost) != "" {
 				opts.defaultPlatformHost = req.DefaultPlatformHost
+			}
+			if req.FleetKey != nil {
+				opts.fleetKey = strings.TrimSpace(*req.FleetKey)
 			}
 			if req.VisibleImportedModes != nil {
 				opts.visibleImportedModes = *req.VisibleImportedModes

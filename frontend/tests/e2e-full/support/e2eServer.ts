@@ -23,6 +23,7 @@ export type IsolatedE2EServer = {
 
 export type IsolatedE2EServerOptions = {
   defaultPlatformHost?: string;
+  fleetKey?: string;
   visibleImportedModes?: boolean;
   providerCollision?: boolean;
   // Spawn a dedicated server process and kill it on stop() instead of
@@ -293,6 +294,9 @@ async function spawnServer(
   if (options.defaultPlatformHost) {
     args.push("-default-platform-host", options.defaultPlatformHost);
   }
+  if (options.fleetKey) {
+    args.push("-fleet-key", options.fleetKey);
+  }
   if (options.visibleImportedModes) {
     args.push("-visible-imported-modes");
   }
@@ -386,6 +390,7 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
       // with all imported app modes visible.
       const server = await spawnPooledServer({
         host: defaultPlatformHost,
+        fleetKey: "",
         visibleImportedModes: true,
         providerCollision: false,
       });
@@ -457,6 +462,7 @@ export async function stopE2EServer(): Promise<void> {
 
 type PooledServerOptions = {
   host: string;
+  fleetKey: string;
   visibleImportedModes: boolean;
   providerCollision: boolean;
 };
@@ -473,6 +479,7 @@ type PooledServer = {
 
 const defaultPooledOptions: PooledServerOptions = {
   host: defaultPlatformHost,
+  fleetKey: "",
   visibleImportedModes: false,
   providerCollision: false,
 };
@@ -503,6 +510,7 @@ function assertPooledLeaseEnvUnchanged(): void {
 function normalizedPooledOptions(options: IsolatedE2EServerOptions): PooledServerOptions {
   return {
     host: options.defaultPlatformHost ?? defaultPlatformHost,
+    fleetKey: options.fleetKey ?? "",
     visibleImportedModes: options.visibleImportedModes ?? false,
     providerCollision: options.providerCollision ?? false,
   };
@@ -511,6 +519,7 @@ function normalizedPooledOptions(options: IsolatedE2EServerOptions): PooledServe
 function samePooledOptions(a: PooledServerOptions, b: PooledServerOptions): boolean {
   return (
     a.host === b.host &&
+    a.fleetKey === b.fleetKey &&
     a.visibleImportedModes === b.visibleImportedModes &&
     a.providerCollision === b.providerCollision
   );
@@ -577,6 +586,7 @@ async function postReset(baseURL: string, options: PooledServerOptions): Promise
     request.end(
       JSON.stringify({
         default_platform_host: options.host,
+        fleet_key: options.fleetKey,
         visible_imported_modes: options.visibleImportedModes,
         provider_collision: options.providerCollision,
       }),
@@ -616,6 +626,7 @@ async function spawnPooledServer(options: PooledServerOptions): Promise<PooledSe
   const infoFile = path.join(infoDir, "server-info.json");
   const started = await spawnServer(infoFile, {
     ...(options.host === defaultPlatformHost ? {} : { defaultPlatformHost: options.host }),
+    ...(options.fleetKey ? { fleetKey: options.fleetKey } : {}),
     ...(options.visibleImportedModes ? { visibleImportedModes: true } : {}),
     ...(options.providerCollision ? { providerCollision: true } : {}),
   });

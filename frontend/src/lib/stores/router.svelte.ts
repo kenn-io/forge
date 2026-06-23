@@ -45,6 +45,7 @@ export type Route =
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
   | { page: "reviews"; jobId?: number }
+  | { page: "project-intake"; hostKey?: string }
   | { page: "terminal"; workspaceId: string; hostKey?: string }
   // Embed-targetable workspace surfaces. Hosts mount these
   // routes to render a single component of the workspaces UX
@@ -67,7 +68,11 @@ export type Route =
     }
   | { page: "embed-workspace-empty"; reason: EmbedEmptyReason }
   | { page: "embed-workspace-first-run" }
-  | { page: "embed-workspace-project"; projectId: string };
+  | {
+      page: "embed-workspace-project";
+      projectId: string;
+      hostKey?: string;
+    };
 
 export type Page = Route["page"];
 
@@ -332,6 +337,14 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "reviews" };
   }
+  if (path === "/project-intake") {
+    const sp = new URLSearchParams(search);
+    const hostKey = emptyToNull(sp.get("host"));
+    return {
+      page: "project-intake",
+      ...(hostKey ? { hostKey } : {}),
+    };
+  }
   const fleetTerminalMatch = path.match(/^\/terminal\/fleet\/([^/]+)\/([^/]+)$/);
   if (fleetTerminalMatch) {
     return {
@@ -448,9 +461,12 @@ function parseRoute(fullPath: string): Route {
   }
   const embedProjectMatch = path.match(/^\/workspaces\/embed\/project\/([A-Za-z0-9_-]+)$/);
   if (embedProjectMatch) {
+    const sp = new URLSearchParams(search);
+    const hostKey = emptyToNull(sp.get("host"));
     return {
       page: "embed-workspace-project",
       projectId: embedProjectMatch[1]!,
+      ...(hostKey ? { hostKey } : {}),
     };
   }
   if (path === "/workspaces" || path.startsWith("/workspaces/")) {
@@ -533,7 +549,7 @@ export function navigate(path: string, state?: Record<string, unknown>): void {
 
 function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
   const focus = r.page === "focus";
-  let navType: MiddlemanNavigateEvent["type"];
+  let navType: MiddlemanNavigateType;
   if (r.page === "focus") {
     if (r.itemType === "mrs") {
       navType = "pull";
@@ -562,7 +578,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "messages";
   } else if (r.page === "reviews") {
     navType = "reviews";
-  } else if (isWorkspacePage(r.page)) {
+  } else if (r.page === "project-intake" || isWorkspacePage(r.page)) {
     navType = "workspaces";
   } else if (r.page === "design-system") {
     navType = "activity";
@@ -570,7 +586,17 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "activity";
   }
 
+  let page: MiddlemanNavigatePage;
+  if (navType === "pull") {
+    page = "pulls";
+  } else if (navType === "issue") {
+    page = "issues";
+  } else {
+    page = navType;
+  }
+
   const event: MiddlemanNavigateEvent = {
+    page,
     type: navType,
     focus,
     view: stripBase(window.location.pathname) + window.location.search,

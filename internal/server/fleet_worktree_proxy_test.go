@@ -60,6 +60,20 @@ func TestFleetWorktreeLifecycleProxiesToPeer(t *testing.T) {
 		wantPath   string
 	}{
 		{
+			name:       "get project",
+			method:     http.MethodGet,
+			path:       "/fleet/hosts/member/projects/prj_1",
+			wantMethod: http.MethodGet,
+			wantPath:   "/api/v1/projects/prj_1",
+		},
+		{
+			name:       "list worktrees",
+			method:     http.MethodGet,
+			path:       "/fleet/hosts/member/projects/prj_1/worktrees",
+			wantMethod: http.MethodGet,
+			wantPath:   "/api/v1/projects/prj_1/worktrees",
+		},
+		{
 			name:       "create worktree",
 			method:     http.MethodPost,
 			path:       "/fleet/hosts/member/projects/prj_1/worktrees",

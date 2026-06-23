@@ -22,6 +22,7 @@ export interface ActionContext {
 export interface ProjectActionContext {
   surface: string;
   projectId?: string;
+  hostKey?: string;
   meta?: Record<string, unknown>;
 }
 

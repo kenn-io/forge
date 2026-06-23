@@ -95,17 +95,17 @@ interface ActionHookDef {
   }) => void | Promise<void>;
 }
 
-// ProjectActionDef is the registry shape for project-scoped actions
-// (add-existing, clone, connect-github, new-worktree). The handler MUST
-// return a CommandResult so the firing surface can render success/failure
-// instead of a fire-and-forget click. The action ID is the identifier the
-// surface uses to look up the handler.
+// ProjectActionDef is the registry shape for project-scoped actions such
+// as new-worktree. The handler MUST return a CommandResult so the firing
+// surface can render success/failure instead of a fire-and-forget click.
+// The action ID is the identifier the surface uses to look up the handler.
 interface ProjectActionDef {
   id: string;
   label: string;
   handler: (context: {
     surface: string;
     projectId?: string;
+    hostKey?: string;
     meta?: Record<string, unknown>;
   }) => CommandResult | Promise<CommandResult>;
 }
@@ -219,8 +219,33 @@ interface WorkspaceDetailContext {
   host: WorkspaceHost | null;
 }
 
+type MiddlemanNavigatePage =
+  | "pulls"
+  | "issues"
+  | "activity"
+  | "repos"
+  | "kata"
+  | "docs"
+  | "messages"
+  | "board"
+  | "reviews"
+  | "workspaces";
+
+type MiddlemanNavigateType =
+  | "pull"
+  | "issue"
+  | "activity"
+  | "repos"
+  | "kata"
+  | "docs"
+  | "messages"
+  | "board"
+  | "reviews"
+  | "workspaces";
+
 interface MiddlemanNavigateEvent {
-  type: "pull" | "issue" | "activity" | "repos" | "kata" | "docs" | "messages" | "board" | "reviews" | "workspaces";
+  page: MiddlemanNavigatePage;
+  type: MiddlemanNavigateType;
   owner?: string;
   name?: string;
   number?: number;

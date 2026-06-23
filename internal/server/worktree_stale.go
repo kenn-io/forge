@@ -34,10 +34,10 @@ type removeStaleWorktreeOutput struct {
 //
 // The worktree must be stale and its path must still be absent: a reappeared
 // checkout is refused so a live worktree is never removed by a racing caller.
-// Removing the registry row cascades the worktree's stored runtime tmux
-// sessions. When removeBranch is set, the worktree's branch is deleted from the
-// owning checkout on a best-effort basis (a missing branch never blocks the
-// removal), mirroring the host behavior this route replaces.
+// Live runtime sessions and stored tmux sessions are stopped before removing
+// the registry row. When removeBranch is set, the worktree's branch is deleted
+// from the owning checkout on a best-effort basis (a missing branch never
+// blocks the removal), mirroring the host behavior this route replaces.
 func (s *Server) removeStaleWorktree(
 	ctx context.Context, input *removeStaleWorktreeInput,
 ) (*removeStaleWorktreeOutput, error) {
@@ -67,6 +67,14 @@ func (s *Server) removeStaleWorktree(
 		// refusing keeps a possibly-live worktree (and its branch) intact.
 		return nil, problemInternal(
 			"stat worktree path: " + statErr.Error(),
+		)
+	}
+
+	release, err := s.stopWorktreeRuntimeState(ctx, worktree.ID)
+	defer release()
+	if err != nil {
+		return nil, problemInternal(
+			"stop worktree runtime sessions: " + err.Error(),
 		)
 	}
 

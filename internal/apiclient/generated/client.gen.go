@@ -2903,6 +2903,7 @@ type WorktreeFromMergeRequestResponse struct {
 
 // WorktreeLinkResponse defines model for WorktreeLinkResponse.
 type WorktreeLinkResponse struct {
+	HostKey        *string `json:"host_key,omitempty"`
 	WorktreeBranch *string `json:"worktree_branch,omitempty"`
 	WorktreeKey    string  `json:"worktree_key"`
 	WorktreePath   *string `json:"worktree_path,omitempty"`
@@ -3899,8 +3900,14 @@ type ClientInterface interface {
 	// DeleteFleetProject request
 	DeleteFleetProject(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetFleetProject request
+	GetFleetProject(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListFleetProjectBranches request
 	ListFleetProjectBranches(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListFleetProjectWorktrees request
+	ListFleetProjectWorktrees(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateFleetProjectWorktreeWithBody request with any body
 	CreateFleetProjectWorktreeWithBody(ctx context.Context, hostKey string, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -5215,8 +5222,32 @@ func (c *Client) DeleteFleetProject(ctx context.Context, hostKey string, project
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetFleetProject(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFleetProjectRequest(c.Server, hostKey, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListFleetProjectBranches(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListFleetProjectBranchesRequest(c.Server, hostKey, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListFleetProjectWorktrees(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListFleetProjectWorktreesRequest(c.Server, hostKey, projectId)
 	if err != nil {
 		return nil, err
 	}
@@ -10510,6 +10541,47 @@ func NewDeleteFleetProjectRequest(server string, hostKey string, projectId strin
 	return req, nil
 }
 
+// NewGetFleetProjectRequest generates requests for GetFleetProject
+func NewGetFleetProjectRequest(server string, hostKey string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListFleetProjectBranchesRequest generates requests for ListFleetProjectBranches
 func NewListFleetProjectBranchesRequest(server string, hostKey string, projectId string) (*http.Request, error) {
 	var err error
@@ -10534,6 +10606,47 @@ func NewListFleetProjectBranchesRequest(server string, hostKey string, projectId
 	}
 
 	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/branches", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListFleetProjectWorktreesRequest generates requests for ListFleetProjectWorktrees
+func NewListFleetProjectWorktreesRequest(server string, hostKey string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/projects/%s/worktrees", pathParam0, pathParam1)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -23918,8 +24031,14 @@ type ClientWithResponsesInterface interface {
 	// DeleteFleetProjectWithResponse request
 	DeleteFleetProjectWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*DeleteFleetProjectResponse, error)
 
+	// GetFleetProjectWithResponse request
+	GetFleetProjectWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*GetFleetProjectResponse, error)
+
 	// ListFleetProjectBranchesWithResponse request
 	ListFleetProjectBranchesWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*ListFleetProjectBranchesResponse, error)
+
+	// ListFleetProjectWorktreesWithResponse request
+	ListFleetProjectWorktreesWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*ListFleetProjectWorktreesResponse, error)
 
 	// CreateFleetProjectWorktreeWithBodyWithResponse request with any body
 	CreateFleetProjectWorktreeWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetProjectWorktreeResponse, error)
@@ -25396,6 +25515,29 @@ func (r DeleteFleetProjectResponse) StatusCode() int {
 	return 0
 }
 
+type GetFleetProjectResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFleetProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFleetProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListFleetProjectBranchesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -25413,6 +25555,29 @@ func (r ListFleetProjectBranchesResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListFleetProjectBranchesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListFleetProjectWorktreesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListFleetProjectWorktreesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListFleetProjectWorktreesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -30907,6 +31072,15 @@ func (c *ClientWithResponses) DeleteFleetProjectWithResponse(ctx context.Context
 	return ParseDeleteFleetProjectResponse(rsp)
 }
 
+// GetFleetProjectWithResponse request returning *GetFleetProjectResponse
+func (c *ClientWithResponses) GetFleetProjectWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*GetFleetProjectResponse, error) {
+	rsp, err := c.GetFleetProject(ctx, hostKey, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFleetProjectResponse(rsp)
+}
+
 // ListFleetProjectBranchesWithResponse request returning *ListFleetProjectBranchesResponse
 func (c *ClientWithResponses) ListFleetProjectBranchesWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*ListFleetProjectBranchesResponse, error) {
 	rsp, err := c.ListFleetProjectBranches(ctx, hostKey, projectId, reqEditors...)
@@ -30914,6 +31088,15 @@ func (c *ClientWithResponses) ListFleetProjectBranchesWithResponse(ctx context.C
 		return nil, err
 	}
 	return ParseListFleetProjectBranchesResponse(rsp)
+}
+
+// ListFleetProjectWorktreesWithResponse request returning *ListFleetProjectWorktreesResponse
+func (c *ClientWithResponses) ListFleetProjectWorktreesWithResponse(ctx context.Context, hostKey string, projectId string, reqEditors ...RequestEditorFn) (*ListFleetProjectWorktreesResponse, error) {
+	rsp, err := c.ListFleetProjectWorktrees(ctx, hostKey, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListFleetProjectWorktreesResponse(rsp)
 }
 
 // CreateFleetProjectWorktreeWithBodyWithResponse request with arbitrary body returning *CreateFleetProjectWorktreeResponse
@@ -34532,6 +34715,39 @@ func ParseDeleteFleetProjectResponse(rsp *http.Response) (*DeleteFleetProjectRes
 	return response, nil
 }
 
+// ParseGetFleetProjectResponse parses an HTTP response from a GetFleetProjectWithResponse call
+func ParseGetFleetProjectResponse(rsp *http.Response) (*GetFleetProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFleetProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListFleetProjectBranchesResponse parses an HTTP response from a ListFleetProjectBranchesWithResponse call
 func ParseListFleetProjectBranchesResponse(rsp *http.Response) (*ListFleetProjectBranchesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -34541,6 +34757,39 @@ func ParseListFleetProjectBranchesResponse(rsp *http.Response) (*ListFleetProjec
 	}
 
 	response := &ListFleetProjectBranchesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListFleetProjectWorktreesResponse parses an HTTP response from a ListFleetProjectWorktreesWithResponse call
+func ParseListFleetProjectWorktreesResponse(rsp *http.Response) (*ListFleetProjectWorktreesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListFleetProjectWorktreesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

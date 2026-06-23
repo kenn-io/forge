@@ -137,10 +137,12 @@ function renderPullDetail(
       data: {},
     })),
   },
-  options = {
-    hideWorkspaceAction: true,
-  },
+  options: {
+    hideWorkspaceAction?: boolean;
+    actions?: { pull: unknown[] };
+  } = {},
 ) {
+  const actions = options.actions ?? { pull: [] };
   const detailStore = {
     loadDetail: vi.fn(async () => undefined),
     startDetailPolling: vi.fn(),
@@ -166,7 +168,7 @@ function renderPullDetail(
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
-      hideWorkspaceAction: options.hideWorkspaceAction,
+      hideWorkspaceAction: options.hideWorkspaceAction ?? true,
     },
     context: new Map<symbol, unknown>([
       [API_CLIENT_KEY, apiClient],
@@ -179,7 +181,7 @@ function renderPullDetail(
           detailActivityView: createDetailActivityViewStore(),
         },
       ],
-      [ACTIONS_KEY, { pull: [] }],
+      [ACTIONS_KEY, actions],
       [UI_CONFIG_KEY, { hideStar: true }],
       [NAVIGATE_KEY, vi.fn()],
     ]),
@@ -235,6 +237,48 @@ describe("PullDetail approvals", () => {
       expect(descriptionId).toBeTruthy();
       expect(document.getElementById(descriptionId ?? "")?.textContent).toContain(button.getAttribute("title"));
     }
+  });
+
+  it("forwards worktree link host key to navigate actions", async () => {
+    const detail = pullDetail();
+    detail.worktree_links = [
+      {
+        host_key: "hub",
+        worktree_key: "worktree:/srv/widget-feature",
+        worktree_path: "/srv/widget-feature",
+        worktree_branch: "feature",
+      },
+    ];
+    const navigate = vi.fn();
+
+    renderPullDetail(detail, undefined, undefined, {
+      actions: {
+        pull: [
+          {
+            id: "navigate-worktree",
+            label: "Open Worktree",
+            handler: navigate,
+          },
+        ],
+      },
+    });
+
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "Open Worktree: worktree:/srv/widget-feature",
+      }),
+    );
+
+    expect(navigate).toHaveBeenCalledWith({
+      surface: "pull-detail",
+      owner: "acme",
+      name: "widget",
+      number: 1,
+      meta: {
+        host_key: "hub",
+        worktree_key: "worktree:/srv/widget-feature",
+      },
+    });
   });
 
   it("normalizes backend review decision casing before enabling approver popup", async () => {

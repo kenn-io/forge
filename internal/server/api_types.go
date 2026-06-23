@@ -9,6 +9,7 @@ import (
 )
 
 type worktreeLinkResponse struct {
+	HostKey        string `json:"host_key,omitempty"`
 	WorktreeKey    string `json:"worktree_key"`
 	WorktreePath   string `json:"worktree_path,omitempty"`
 	WorktreeBranch string `json:"worktree_branch,omitempty"`

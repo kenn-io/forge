@@ -12176,6 +12176,7 @@ func TestMRListIncludesWorktreeLinks(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code)
 	body := rr.Body.String()
 	require.Contains(body, `"worktree_links"`)
+	require.Contains(body, `"host_key":"`+srv.fleetSelfKey("")+`"`)
 	require.Contains(body, `"worktree_key":"wt-abc"`)
 	require.Contains(body, `"worktree_path":"/tmp/wt"`)
 	require.Contains(body, `"worktree_branch":"feature"`)
@@ -12206,6 +12207,7 @@ func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code)
 	body := rr.Body.String()
 	require.Contains(body, `"worktree_links"`)
+	require.Contains(body, `"host_key":"`+srv.fleetSelfKey("")+`"`)
 	require.Contains(body, `"worktree_key":"wt-detail"`)
 }
 

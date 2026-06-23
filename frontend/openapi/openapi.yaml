@@ -6362,6 +6362,8 @@ components:
     WorktreeLinkResponse:
       additionalProperties: false
       properties:
+        host_key:
+          type: string
         worktree_branch:
           type: string
         worktree_key:
@@ -7367,6 +7369,33 @@ paths:
       summary: Delete project on fleet host
       tags:
         - Fleet
+    get:
+      operationId: get-fleet-project
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Get project on fleet host
+      tags:
+        - Fleet
   /fleet/hosts/{host_key}/projects/{project_id}/branches:
     get:
       operationId: list-fleet-project-branches
@@ -7396,6 +7425,33 @@ paths:
       tags:
         - Fleet
   /fleet/hosts/{host_key}/projects/{project_id}/worktrees:
+    get:
+      operationId: list-fleet-project-worktrees
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: List project worktrees on fleet host
+      tags:
+        - Fleet
     post:
       operationId: create-fleet-project-worktree
       parameters:

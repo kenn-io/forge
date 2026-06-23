@@ -1384,7 +1384,10 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 	if err != nil {
 		return nil, problemInternal("load worktree links failed")
 	}
-	linksByMR := indexWorktreeLinksByMR(links)
+	linksByMR := indexWorktreeLinksByMR(
+		links,
+		s.fleetSelfKey(""),
+	)
 	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
 	if err != nil {
 		return nil, problemInternal("load workspace refs failed")
@@ -1577,7 +1580,7 @@ func (s *Server) buildPullDetailResponse(
 		ReviewedHeadSHA:  verifiedReviewedHeadSHA(mr),
 		DiffHeadSHA:      mr.DiffHeadSHA,
 		MergeBaseSHA:     mr.MergeBaseSHA,
-		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
+		WorktreeLinks:    toWorktreeLinkResponses(dbLinks, s.fleetSelfKey("")),
 		WorkflowApproval: s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
 		Warnings:         s.diffWarnings(mr),
 		DetailLoaded:     mr.DetailFetchedAt != nil,

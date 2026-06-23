@@ -451,10 +451,12 @@ func (s *Server) toRepoSummaryResponse(
 // Returns an empty non-nil slice when input is nil.
 func toWorktreeLinkResponses(
 	links []db.WorktreeLink,
+	hostKey string,
 ) []worktreeLinkResponse {
 	out := make([]worktreeLinkResponse, len(links))
 	for i, l := range links {
 		out[i] = worktreeLinkResponse{
+			HostKey:        hostKey,
 			WorktreeKey:    l.WorktreeKey,
 			WorktreePath:   l.WorktreePath,
 			WorktreeBranch: l.WorktreeBranch,
@@ -467,12 +469,14 @@ func toWorktreeLinkResponses(
 // merge request ID.
 func indexWorktreeLinksByMR(
 	links []db.WorktreeLink,
+	hostKey string,
 ) map[int64][]worktreeLinkResponse {
 	m := make(map[int64][]worktreeLinkResponse)
 	for _, l := range links {
 		m[l.MergeRequestID] = append(
 			m[l.MergeRequestID],
 			worktreeLinkResponse{
+				HostKey:        hostKey,
 				WorktreeKey:    l.WorktreeKey,
 				WorktreePath:   l.WorktreePath,
 				WorktreeBranch: l.WorktreeBranch,

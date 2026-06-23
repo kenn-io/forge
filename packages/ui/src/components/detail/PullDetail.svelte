@@ -2104,7 +2104,10 @@
                 if (stalePR) return;
                 navigateAction.handler({
                   surface: "pull-detail", owner, name, number,
-                  meta: { worktree_key: link.worktree_key },
+                  meta: {
+                    worktree_key: link.worktree_key,
+                    host_key: link.host_key,
+                  },
                 });
               }}
               disabled={stalePR}

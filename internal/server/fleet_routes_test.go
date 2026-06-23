@@ -75,8 +75,10 @@ func TestSnapshotRoutesRegistered(t *testing.T) {
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}/attach-spec"].Get, "GET fleet project worktree session attach spec not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}"].Delete, "DELETE fleet workspace not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects"].Post, "POST fleet project register not registered")
+	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}"].Get, "GET fleet project not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}"].Delete, "DELETE fleet project not registered")
 
+	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees"].Get, "GET fleet worktree list not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees"].Post, "POST fleet worktree create not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/from-merge-request"].Post, "POST fleet worktree from-merge-request not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/delete"].Post, "POST fleet worktree remove not registered")

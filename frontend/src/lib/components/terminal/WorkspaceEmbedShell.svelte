@@ -133,7 +133,10 @@
     {:else if r.page === "embed-workspace-first-run"}
       <WorkspaceFirstRunPanel />
     {:else if r.page === "embed-workspace-project"}
-      <WorkspaceProjectCard projectId={r.projectId} />
+      <WorkspaceProjectCard
+        projectId={r.projectId}
+        hostKey={r.hostKey}
+      />
     {/if}
   </main>
 </Provider>

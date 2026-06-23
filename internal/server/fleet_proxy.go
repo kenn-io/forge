@@ -335,6 +335,27 @@ func (s *Server) registerFleetOperationRoutes(api huma.API) {
 			},
 		},
 		{
+			operationID: "get-fleet-project",
+			method:      http.MethodGet,
+			path:        "/fleet/hosts/{host_key}/projects/{project_id}",
+			summary:     "Get project on fleet host",
+			pathParams:  []string{"host_key", "project_id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/projects/" + escapePath(r.PathValue("project_id"))
+			},
+		},
+		{
+			operationID: "list-fleet-project-worktrees",
+			method:      http.MethodGet,
+			path:        "/fleet/hosts/{host_key}/projects/{project_id}/worktrees",
+			summary:     "List project worktrees on fleet host",
+			pathParams:  []string{"host_key", "project_id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/projects/" + escapePath(r.PathValue("project_id")) +
+					"/worktrees"
+			},
+		},
+		{
 			operationID: "inspect-fleet-project-worktree",
 			method:      http.MethodGet,
 			path:        "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/inspect",

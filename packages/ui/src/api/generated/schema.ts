@@ -390,7 +390,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get project on fleet host */
+        get: operations["get-fleet-project"];
         put?: never;
         post?: never;
         /** Delete project on fleet host */
@@ -424,7 +425,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List project worktrees on fleet host */
+        get: operations["list-fleet-project-worktrees"];
         put?: never;
         /** Create project worktree on fleet host */
         post: operations["create-fleet-project-worktree"];
@@ -6716,6 +6718,7 @@ export interface components {
             updated_at: string;
         };
         WorktreeLinkResponse: {
+            host_key?: string;
             worktree_branch?: string;
             worktree_key: string;
             worktree_path?: string;
@@ -7661,6 +7664,32 @@ export interface operations {
             };
         };
     };
+    "get-fleet-project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "delete-fleet-project": {
         parameters: {
             query?: never;
@@ -7688,6 +7717,32 @@ export interface operations {
         };
     };
     "list-fleet-project-branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-fleet-project-worktrees": {
         parameters: {
             query?: never;
             header?: never;

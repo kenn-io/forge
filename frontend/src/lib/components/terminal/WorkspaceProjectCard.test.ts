@@ -16,7 +16,13 @@ vi.mock("../../api/runtime.ts", () => ({
       if (path === "/projects/{project_id}") {
         return projectGet(options);
       }
+      if (path === "/fleet/hosts/{host_key}/projects/{project_id}") {
+        return projectGet(options);
+      }
       if (path === "/projects/{project_id}/worktrees") {
+        return worktreesGet(options);
+      }
+      if (path === "/fleet/hosts/{host_key}/projects/{project_id}/worktrees") {
         return worktreesGet(options);
       }
       throw new Error(`unexpected GET path ${path}`);
@@ -169,6 +175,27 @@ describe("WorkspaceProjectCard", () => {
     expect(screen.getByRole("button", { name: /Create another worktree/i })).toBeTruthy();
   });
 
+  it("loads project data through fleet routes when host scoped", async () => {
+    setProjectResponse({
+      id: "prj_1",
+      display_name: "myrepo",
+      local_path: "/srv/myrepo",
+    });
+    setWorktreesResponse([]);
+
+    render(WorkspaceProjectCard, {
+      props: { projectId: "prj_1", hostKey: " epyc " },
+    });
+
+    expect(await screen.findByText("myrepo")).toBeTruthy();
+    expect(projectGet).toHaveBeenCalledWith({
+      params: { path: { host_key: "epyc", project_id: "prj_1" } },
+    });
+    expect(worktreesGet).toHaveBeenCalledWith({
+      params: { path: { host_key: "epyc", project_id: "prj_1" } },
+    });
+  });
+
   it("renders an error and a retry button when the project fetch fails", async () => {
     setProjectResponse({ error: "project not found" });
     render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
@@ -209,6 +236,45 @@ describe("WorkspaceProjectCard", () => {
     expect(newWorktreeHandler).toHaveBeenCalledWith({
       surface: "project-card",
       projectId: "prj_1",
+    });
+  });
+
+  it("includes the host key in new-worktree action context", async () => {
+    const newWorktreeHandler = vi.fn().mockResolvedValue({ ok: true });
+    win.__middleman_config = {
+      actions: {
+        project: [
+          {
+            id: "new-worktree",
+            label: "New Worktree",
+            handler: newWorktreeHandler,
+          },
+        ],
+      },
+    };
+    win.__middleman_notify_config_changed?.();
+
+    setProjectResponse({
+      id: "prj_1",
+      display_name: "myrepo",
+      local_path: "/tmp/myrepo",
+    });
+    setWorktreesResponse([]);
+
+    render(WorkspaceProjectCard, {
+      props: { projectId: "prj_1", hostKey: " epyc " },
+    });
+    await screen.findByText("myrepo");
+
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: /Create your first worktree/i,
+      }),
+    );
+    expect(newWorktreeHandler).toHaveBeenCalledWith({
+      surface: "project-card",
+      projectId: "prj_1",
+      hostKey: "epyc",
     });
   });
 

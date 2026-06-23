@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   mockLoadAddon: vi.fn(),
   mockOnData: vi.fn(),
   mockOpen: vi.fn(),
+  mockTerminalInstances: [] as Array<{ options: Record<string, unknown> }>,
   renameWorkspaceSession: vi.fn(),
   stopWorkspaceSession: vi.fn(),
   terminalWrite: vi.fn(),
@@ -29,13 +30,13 @@ class MockWebSocket {
     sockets.push(this);
   }
 
-  send(): void {}
-  close(): void {}
+  send = vi.fn();
+  close = vi.fn();
 }
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation(function (options) {
-    return {
+    const terminal = {
       cols: 80,
       rows: 24,
       clearTextureAtlas: vi.fn(),
@@ -48,6 +49,8 @@ vi.mock("@xterm/xterm", () => ({
       write: mocks.terminalWrite,
       options: { ...options },
     };
+    mocks.mockTerminalInstances.push(terminal);
+    return terminal;
   }),
 }));
 
@@ -78,7 +81,7 @@ vi.mock("ghostty-web", () => ({
     };
   }),
   Terminal: vi.fn().mockImplementation(function (options) {
-    return {
+    const terminal = {
       cols: 80,
       rows: 24,
       open: mocks.mockOpen,
@@ -88,6 +91,8 @@ vi.mock("ghostty-web", () => ({
       write: mocks.terminalWrite,
       options: { ...options },
     };
+    mocks.mockTerminalInstances.push(terminal);
+    return terminal;
   }),
 }));
 
@@ -325,6 +330,7 @@ describe("WorkspaceTerminalView", () => {
     );
     mocks.stopWorkspaceSession.mockReset();
     mocks.terminalWrite.mockReset();
+    mocks.mockTerminalInstances.length = 0;
 
     vi.stubGlobal(
       "fetch",
@@ -1250,6 +1256,63 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByRole("button", { name: "Rename Shell" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Move Shell to workflow" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Close Shell" }).hasAttribute("disabled")).toBe(true);
+
+    deleteRequest.resolve(new Response(null, { status: 204 }));
+    await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));
+  });
+
+  it("disables active workflow terminal input while the selected workspace is deleting", async () => {
+    const deleteRequest = deferred<Response>();
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      const { pathname } = new URL(url, "http://localhost");
+      if (method === "DELETE" && pathname.endsWith("/workspaces/ws-1")) {
+        return deleteRequest.promise;
+      }
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(Response.json(workspaceResponse));
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    window.history.pushState({}, "", "/terminal/ws-1");
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("tab", { name: /Helper/ });
+    await waitFor(() => expect(mocks.mockTerminalInstances.length).toBeGreaterThanOrEqual(1));
+    expect(mocks.mockTerminalInstances.some((terminal) => terminal.options.disableStdin === true)).toBe(false);
+    const terminalDataHandler = mocks.mockOnData.mock.calls.at(-1)?.[0] as ((data: string) => void) | undefined;
+    expect(terminalDataHandler).toBeTypeOf("function");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) => {
+          if (!(input instanceof Request)) return false;
+          const { pathname } = new URL(input.url);
+          return input.method === "DELETE" && pathname === "/api/v1/workspaces/ws-1";
+        }),
+      ).toBe(true);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(true);
+    });
+    sockets.forEach((socket) => socket.send.mockClear());
+    terminalDataHandler?.("echo blocked");
+    expect(sockets.every((socket) => socket.send.mock.calls.length === 0)).toBe(true);
 
     deleteRequest.resolve(new Response(null, { status: 204 }));
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));

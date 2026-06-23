@@ -2814,6 +2814,7 @@
                                   workspaceHostKey,
                                 )}
                                 reconnectOnExit={false}
+                                disabled={actionsBlocked}
                                 {active}
                                 onExit={() => handleSessionExit(session)}
                                 initialStatus={session.status}

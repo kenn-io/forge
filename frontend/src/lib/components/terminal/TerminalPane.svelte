@@ -5,19 +5,27 @@
   import XtermTerminalPane from "./XtermTerminalPane.svelte";
 
   interface TerminalPaneProps {
-    workspaceId?: string;
-    websocketPath?: string;
-    reconnectOnExit?: boolean;
-    active?: boolean;
+    workspaceId?: string | undefined;
+    websocketPath?: string | undefined;
+    reconnectOnExit?: boolean | undefined;
+    active?: boolean | undefined;
     disabled?: boolean;
-    onExit?: (code: number) => void;
+    onExit?: ((code: number) => void) | undefined;
     // When the session is already exited at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404
     // for non-running sessions, which would loop scheduleReconnect.
-    initialStatus?: string;
+    initialStatus?: string | undefined;
   }
 
-  const props: TerminalPaneProps = $props();
+  let {
+    workspaceId = undefined,
+    websocketPath = undefined,
+    reconnectOnExit = undefined,
+    active = undefined,
+    disabled = false,
+    onExit = undefined,
+    initialStatus = undefined,
+  }: TerminalPaneProps = $props();
   const { settings: settingsStore } = getStores();
 
   function normalizeRenderer(renderer: string | null | undefined): TerminalRenderer {
@@ -30,7 +38,23 @@
 </script>
 
 {#if terminalRenderer === "ghostty-web"}
-  <GhosttyTerminalPane {...props} />
+  <GhosttyTerminalPane
+    {workspaceId}
+    {websocketPath}
+    {reconnectOnExit}
+    {active}
+    {disabled}
+    {onExit}
+    {initialStatus}
+  />
 {:else}
-  <XtermTerminalPane {...props} />
+  <XtermTerminalPane
+    {workspaceId}
+    {websocketPath}
+    {reconnectOnExit}
+    {active}
+    {disabled}
+    {onExit}
+    {initialStatus}
+  />
 {/if}

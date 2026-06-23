@@ -15,19 +15,19 @@
   import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
   interface TerminalPaneProps {
-    workspaceId?: string;
-    websocketPath?: string;
-    reconnectOnExit?: boolean;
-    active?: boolean;
+    workspaceId?: string | undefined;
+    websocketPath?: string | undefined;
+    reconnectOnExit?: boolean | undefined;
+    active?: boolean | undefined;
     disabled?: boolean;
-    onExit?: (code: number) => void;
+    onExit?: ((code: number) => void) | undefined;
     // When the session is not attachable at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404
     // for non-running sessions, which would loop scheduleReconnect.
-    initialStatus?: string;
+    initialStatus?: string | undefined;
   }
 
-  const {
+  let {
     workspaceId,
     websocketPath,
     reconnectOnExit = true,

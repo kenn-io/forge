@@ -309,7 +309,7 @@ are not rendered as preview images in v1, even when requested through Markdown,
 because opening same-origin repository SVG directly would make untrusted
 repository content an app-origin script surface. SVG metadata requests return
 `state: "unsupportedAsset"`, `reason: "svg"`, the resolved ref metadata, and no
-byte URL. SVG byte requests return `415 validationError` with
+byte URL. SVG byte requests return `415 badRequest` with
 `details.reason = "svg"` and no SVG bytes. Markdown preview must call
 `asset-metadata` before emitting an `<img>` URL so unsupported assets can be
 replaced with the inline broken-asset affordance instead of relying on a direct
@@ -325,9 +325,9 @@ Direct `asset-bytes` failures use these problem envelopes:
 - mutable branch/tag ref: `400 validationError`,
   `details.reason = "mutable_ref_not_allowed"`
 - oversized asset: `400 validationError`, `details.reason = "oversized_asset"`
-- unsupported non-SVG media type: `415 validationError`,
+- unsupported non-SVG media type: `415 badRequest`,
   `details.reason = "unsupported_asset"`
-- SVG asset: `415 validationError`, `details.reason = "svg"`
+- SVG asset: `415 badRequest`, `details.reason = "svg"`
 
 These direct byte failure responses use `Cache-Control: no-store` because they
 are recovery/error states, not immutable asset bytes.

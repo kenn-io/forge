@@ -112,7 +112,7 @@ func TestRepoBrowserListRefsDisambiguatesBranchAndTag(t *testing.T)
 func TestRepoBrowserFetchPrunesDeletedTags(t *testing.T)
 func TestRepoBrowserListTreeCapsAndIncludesTrackedDotfiles(t *testing.T)
 func TestRepoBrowserReadBlobWorksWhenTreeIsTruncated(t *testing.T)
-func TestRepoBrowserReadBlobRejectsTraversalAndLargeFiles(t *testing.T)
+func TestRepoBrowserReadBlobRejectsTraversalAndReportsLargeState(t *testing.T)
 func TestRepoBrowserLastChangedBatchCapsPaths(t *testing.T)
 func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T)
 func TestRepoBrowserResponsesIncludeRefMetadata(t *testing.T)
@@ -122,13 +122,12 @@ func TestRepoBrowserMarkdownAssetBytesRejectsNonRenderableStates(t *testing.T)
 ```
 
 Each test should create a real temporary Git repository with `t.TempDir()` and run Git commands through the existing test helper pattern used in `internal/gitclone/*_test.go`.
-`TestRepoBrowserResponsesIncludeRefMetadata` must exercise tree, blob, history,
-commit detail, and asset metadata JSON responses. The asset-bytes
-non-renderable test must cover SVG, oversized assets, unsafe traversal, missing
-paths, and unknown/non-renderable media types with exact problem code and
-`details.reason` assertions. It must also cover branch/tag `asset-bytes`
-requests and assert `400 validationError`, `details.reason =
-"mutable_ref_not_allowed"`, and `Cache-Control: no-store`.
+`TestRepoBrowserReadBlobRejectsTraversalAndReportsLargeState` must assert that
+unsafe paths fail at the Git operation boundary while oversized readable blobs
+return the successful typed `tooLarge` state and metadata. Gitclone tests should
+assert typed Git-layer results, ref metadata, and errors only; HTTP problem
+envelopes, status codes, and response headers belong in `internal/server`
+tests.
 
 - [ ] **Step 4: Run gitclone tests red**
 
@@ -233,9 +232,17 @@ func TestRepoBrowserBranchSHAReportsStaleRef(t *testing.T)
 func TestRepoBrowserTreeTruncationKeepsDirectBlobReadable(t *testing.T)
 func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T)
 func TestRepoBrowserMarkdownAssetReturnsSafeMimeAndCacheHeaders(t *testing.T)
+func TestRepoBrowserAssetBytesRejectsNonRenderableStates(t *testing.T)
 func TestRepoBrowserRejectsUnknownRefAndUnsafePath(t *testing.T)
 func TestRepoBrowserContextualHeadFallsBackForForkPullRequests(t *testing.T)
 ```
+
+`TestRepoBrowserAssetBytesRejectsNonRenderableStates` must cover SVG,
+oversized assets, unsafe traversal, missing paths, unknown/non-renderable media
+types, and branch/tag byte requests through `srv.ServeHTTP`, asserting the exact
+HTTP status, camelCase problem code, `details.reason`, and `Cache-Control:
+no-store` headers. `TestRepoBrowserMarkdownAssetReturnsSafeMimeAndCacheHeaders`
+keeps the successful renderable-byte MIME and immutable-cache assertions.
 
 - [ ] **Step 8: Run server tests red**
 

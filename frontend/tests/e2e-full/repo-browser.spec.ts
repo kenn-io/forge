@@ -1,6 +1,28 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Response } from "@playwright/test";
 
 import { startIsolatedE2EServer } from "./support/e2eServer";
+
+function blobResponse(page: Page, path: string): Promise<Response> {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      url.pathname === "/api/v1/repo/github/acme/widgets/browser/blob" &&
+      url.searchParams.get("path") === path &&
+      response.ok()
+    );
+  });
+}
+
+async function expectHeadingScrolledIntoView(heading: Locator): Promise<void> {
+  await expect(heading).toBeVisible();
+  const scrollTop = await heading.evaluate((node) => {
+    const markdown = node.closest(".repo-browser__markdown");
+    if (!markdown) throw new Error("missing markdown scroller");
+    return markdown.scrollTop;
+  });
+  expect(scrollTop).toBeGreaterThan(100);
+}
 
 test.describe("repository source browser", () => {
   test("opens a seeded repository through the real browser API", async ({ page }) => {
@@ -10,15 +32,7 @@ test.describe("repository source browser", () => {
         localStorage.setItem("repo-browser-view-mode", "preview");
       });
 
-      const blobLoaded = page.waitForResponse((response) => {
-        const url = new URL(response.url());
-        return (
-          response.request().method() === "GET" &&
-          url.pathname === "/api/v1/repo/github/acme/widgets/browser/blob" &&
-          url.searchParams.get("path") === "README.md" &&
-          response.ok()
-        );
-      });
+      const blobLoaded = blobResponse(page, "README.md");
 
       await page.goto(`${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=README.md`);
       await blobLoaded;
@@ -39,6 +53,19 @@ test.describe("repository source browser", () => {
       await expect(viewer.locator(".repo-browser__markdown h1")).toHaveText("Widget Service");
       await expect(viewer.locator(".repo-browser__source")).toHaveCount(0);
       await expect(page).toHaveURL(/mode=preview/);
+
+      const guideBlobLoaded = blobResponse(page, "docs/guide.md");
+      await viewer.getByRole("link", { name: "API reference" }).click();
+      await guideBlobLoaded;
+      await expect(viewer.locator(".repo-browser__path")).toContainText("docs/guide.md");
+      await expectHeadingScrolledIntoView(viewer.locator("#api-reference"));
+
+      const directGuideBlobLoaded = blobResponse(page, "docs/guide.md");
+      await page.goto(
+        `${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=docs%2Fguide.md&mode=preview#api-reference`,
+      );
+      await directGuideBlobLoaded;
+      await expectHeadingScrolledIntoView(viewer.locator("#api-reference"));
 
       const history = browser.getByRole("complementary", { name: "File history" });
       await expect(history).toContainText("Initial commit");

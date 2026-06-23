@@ -53,7 +53,7 @@
   let repoLoadKey = "";
   let pathFilter = $state("");
   let selectedPathRevealKey = $state(0);
-  let pendingMarkdownAnchor = $state<string | null>(null);
+  let pendingMarkdownAnchor = $state(initialMarkdownAnchor());
 
   const selectedPath = $derived(store.getSelectedPath());
   const selectedRef = $derived(store.getSelectedRef());
@@ -291,12 +291,23 @@
     return value.endsWith("/") ? value : `${value}/`;
   }
 
+  function initialMarkdownAnchor(): string | null {
+    if (typeof window === "undefined") return null;
+    const raw = window.location.hash.replace(/^#/, "");
+    if (!raw) return null;
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+
   function openMarkdownDoc(path: string, anchor?: string): void {
-    pendingMarkdownAnchor = anchor ?? null;
     void (async () => {
       if (path !== store.getSelectedPath()) {
         await selectPath(path, { replace: false });
       }
+      pendingMarkdownAnchor = anchor ?? null;
       setViewMode("preview");
     })();
   }

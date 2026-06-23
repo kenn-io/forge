@@ -301,7 +301,7 @@ In `frontend/src/lib/stores/router.test.ts`, add tests for parsing and building 
 
 - [ ] **Step 3: Add failing store tests**
 
-In `packages/ui/src/stores/repo-browser.svelte.test.ts`, test initial load, README auto-selection, ref switch preserving path, conversion of `notFound`/`details.reason = "missing_path"` problem envelopes into an inline missing-path UI state, reusable ref metadata handling on tree/blob/history/commit/asset responses, tree-truncation state, generated-client route usage, and stale request protection.
+In `packages/ui/src/stores/repo-browser.svelte.test.ts`, test initial load, README auto-selection, ref switch preserving path, conversion of `notFound`/`details.reason = "missing_path"` problem envelopes into an inline missing-path UI state, reusable ref metadata handling on tree/blob/history/commit/asset metadata responses, tree-truncation state, generated-client route usage, and stale request protection.
 
 - [ ] **Step 4: Add failing shared UI tests**
 

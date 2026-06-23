@@ -34,7 +34,9 @@ This paragraph is the single place CLAUDE.md enumerates supported providers. Do 
 New features must work across every supported provider to the extent each provider's API allows. Concrete rules:
 
 - Provider-specific capability differences go behind the capability model in `internal/platform`. Declare capabilities in `Capabilities()`, check them before mutations, and return typed `unsupported_capability` errors when a provider can't satisfy an operation. Do not silently fall back to GitHub-only behavior for other providers.
-- Identity is `(platform, platform_host, owner, name)` everywhere; never owner/name/number alone. Repo-scoped routes use provider-aware paths like `/pulls/{provider}/{owner}/{name}/{number}`, with `/host/{platform_host}/...` for non-default or self-hosted instances.
+- Repository identity is always the quad `(provider, platform_host, owner, repo)`. In code and schema this same quad is always represented as `(platform, platform_host, owner, name)`. There is no repository identity without both provider and host. The host may be omitted from a user-facing route only when the route helper is intentionally using the provider's default host; the logical identity still includes the normalized host.
+- Never identify, route, cache, dedupe, query, persist, or compare repositories, pull requests, merge requests, issues, comments, checks, releases, workspaces, activity, or events by owner/repo/number alone. Every repo-scoped path and data structure must carry provider and host as well as owner and repo.
+- Repo-scoped routes use provider-aware paths like `/pulls/{provider}/{owner}/{name}/{number}`, with `/host/{platform_host}/...` for non-default or self-hosted instances.
 - GitHub-only optimizations (GraphQL bulk fetch, ETag recovery, detailed diff behavior) stay in `internal/github/` and remain optional around the neutral persistence path.
 - Frontend stores and components must thread the full provider ref (`provider`, `platformHost`, `owner`, `name`, `repoPath`) through the shared route helpers in `packages/ui/src/api/provider-routes.ts`. Do not hand-build `/api/v1` URLs or assume GitHub defaults inside components.
 

@@ -135,21 +135,21 @@ func (s *Server) listRepoBrowserRefs(
 	ctx context.Context,
 	input *repoBrowserInput,
 ) (*bodyOutput[repoBrowserRefsResponse], error) {
-	return s.listRepoBrowserRefsFor(ctx, input.Provider, input.PlatformHost, input.RepoPath)
+	return s.listRepoBrowserRefsFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath)
 }
 
 func (s *Server) listRepoBrowserRefsOnHost(
 	ctx context.Context,
 	input *repoBrowserHostInput,
 ) (*bodyOutput[repoBrowserRefsResponse], error) {
-	return s.listRepoBrowserRefsFor(ctx, input.Provider, input.PlatformHost, input.RepoPath)
+	return s.listRepoBrowserRefsFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath)
 }
 
 func (s *Server) listRepoBrowserRefsFor(
 	ctx context.Context,
-	provider, platformHost, repoPath string,
+	provider, platformHost, owner, name, repoPath string,
 ) (*bodyOutput[repoBrowserRefsResponse], error) {
-	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, repoPath)
+	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
@@ -168,32 +168,36 @@ func (s *Server) listRepoBrowserTree(
 	ctx context.Context,
 	input *repoBrowserRefInput,
 ) (*bodyOutput[repoBrowserTreeResponse], error) {
-	return s.listRepoBrowserTreeFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA))
+	return s.listRepoBrowserTreeFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA))
 }
 
 func (s *Server) listRepoBrowserTreeOnHost(
 	ctx context.Context,
 	input *repoBrowserHostRefInput,
 ) (*bodyOutput[repoBrowserTreeResponse], error) {
-	return s.listRepoBrowserTreeFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA))
+	return s.listRepoBrowserTreeFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA))
 }
 
 func (s *Server) listRepoBrowserTreeFor(
 	ctx context.Context,
-	provider, platformHost, repoPath string,
+	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 ) (*bodyOutput[repoBrowserTreeResponse], error) {
-	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, repoPath)
+	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	entries, truncated, err := s.clones.ListRepoBrowserTree(ctx, repoRef, ref)
+	resolvedRef, err := s.resolveRepoBrowserReadRef(ctx, repoRef, ref)
+	if err != nil {
+		return nil, repoBrowserProblem(err)
+	}
+	entries, truncated, err := s.clones.ListRepoBrowserTree(ctx, repoRef, repoBrowserPinnedRef(resolvedRef))
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
 	return &bodyOutput[repoBrowserTreeResponse]{Body: repoBrowserTreeResponse{
 		Repo:      s.repoRefFromRepo(*repo),
-		Ref:       ref,
+		Ref:       resolvedRef,
 		Entries:   entries,
 		Truncated: truncated,
 	}}, nil
@@ -203,33 +207,37 @@ func (s *Server) getRepoBrowserBlob(
 	ctx context.Context,
 	input *repoBrowserPathInput,
 ) (*bodyOutput[repoBrowserBlobResponse], error) {
-	return s.getRepoBrowserBlobFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
+	return s.getRepoBrowserBlobFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
 }
 
 func (s *Server) getRepoBrowserBlobOnHost(
 	ctx context.Context,
 	input *repoBrowserHostPathInput,
 ) (*bodyOutput[repoBrowserBlobResponse], error) {
-	return s.getRepoBrowserBlobFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
+	return s.getRepoBrowserBlobFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
 }
 
 func (s *Server) getRepoBrowserBlobFor(
 	ctx context.Context,
-	provider, platformHost, repoPath string,
+	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 	path string,
 ) (*bodyOutput[repoBrowserBlobResponse], error) {
-	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, repoPath)
+	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	blob, err := s.clones.ReadRepoBrowserBlob(ctx, repoRef, ref, path)
+	resolvedRef, err := s.resolveRepoBrowserReadRef(ctx, repoRef, ref)
+	if err != nil {
+		return nil, repoBrowserProblem(err)
+	}
+	blob, err := s.clones.ReadRepoBrowserBlob(ctx, repoRef, repoBrowserPinnedRef(resolvedRef), path)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
 	return &bodyOutput[repoBrowserBlobResponse]{Body: repoBrowserBlobResponse{
 		Repo: s.repoRefFromRepo(*repo),
-		Ref:  ref,
+		Ref:  resolvedRef,
 		Blob: blob,
 	}}, nil
 }
@@ -238,27 +246,31 @@ func (s *Server) getRepoBrowserAsset(
 	ctx context.Context,
 	input *repoBrowserPathInput,
 ) (*repoBrowserAssetOutput, error) {
-	return s.getRepoBrowserAssetFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
+	return s.getRepoBrowserAssetFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
 }
 
 func (s *Server) getRepoBrowserAssetOnHost(
 	ctx context.Context,
 	input *repoBrowserHostPathInput,
 ) (*repoBrowserAssetOutput, error) {
-	return s.getRepoBrowserAssetFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
+	return s.getRepoBrowserAssetFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
 }
 
 func (s *Server) getRepoBrowserAssetFor(
 	ctx context.Context,
-	provider, platformHost, repoPath string,
+	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 	path string,
 ) (*repoBrowserAssetOutput, error) {
-	_, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, repoPath)
+	_, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	blob, err := s.clones.ReadRepoBrowserAsset(ctx, repoRef, ref, path)
+	resolvedRef, err := s.resolveRepoBrowserReadRef(ctx, repoRef, ref)
+	if err != nil {
+		return nil, repoBrowserProblem(err)
+	}
+	blob, err := s.clones.ReadRepoBrowserAsset(ctx, repoRef, repoBrowserPinnedRef(resolvedRef), path)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
@@ -275,33 +287,37 @@ func (s *Server) getRepoBrowserLastChanged(
 	ctx context.Context,
 	input *repoBrowserLastChangedInput,
 ) (*bodyOutput[repoBrowserLastChangedResponse], error) {
-	return s.getRepoBrowserLastChangedFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Paths)
+	return s.getRepoBrowserLastChangedFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Paths)
 }
 
 func (s *Server) getRepoBrowserLastChangedOnHost(
 	ctx context.Context,
 	input *repoBrowserHostLastChangedInput,
 ) (*bodyOutput[repoBrowserLastChangedResponse], error) {
-	return s.getRepoBrowserLastChangedFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Paths)
+	return s.getRepoBrowserLastChangedFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Paths)
 }
 
 func (s *Server) getRepoBrowserLastChangedFor(
 	ctx context.Context,
-	provider, platformHost, repoPath string,
+	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 	paths []string,
 ) (*bodyOutput[repoBrowserLastChangedResponse], error) {
-	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, repoPath)
+	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	commits, err := s.clones.RepoBrowserLastChanged(ctx, repoRef, ref, paths)
+	resolvedRef, err := s.resolveRepoBrowserReadRef(ctx, repoRef, ref)
+	if err != nil {
+		return nil, repoBrowserProblem(err)
+	}
+	commits, err := s.clones.RepoBrowserLastChanged(ctx, repoRef, repoBrowserPinnedRef(resolvedRef), paths)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
 	return &bodyOutput[repoBrowserLastChangedResponse]{Body: repoBrowserLastChangedResponse{
 		Repo:    s.repoRefFromRepo(*repo),
-		Ref:     ref,
+		Ref:     resolvedRef,
 		Commits: commits,
 	}}, nil
 }
@@ -310,33 +326,37 @@ func (s *Server) getRepoBrowserHistory(
 	ctx context.Context,
 	input *repoBrowserPathInput,
 ) (*bodyOutput[repoBrowserHistoryResponse], error) {
-	return s.getRepoBrowserHistoryFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
+	return s.getRepoBrowserHistoryFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
 }
 
 func (s *Server) getRepoBrowserHistoryOnHost(
 	ctx context.Context,
 	input *repoBrowserHostPathInput,
 ) (*bodyOutput[repoBrowserHistoryResponse], error) {
-	return s.getRepoBrowserHistoryFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
+	return s.getRepoBrowserHistoryFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
 }
 
 func (s *Server) getRepoBrowserHistoryFor(
 	ctx context.Context,
-	provider, platformHost, repoPath string,
+	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 	path string,
 ) (*bodyOutput[repoBrowserHistoryResponse], error) {
-	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, repoPath)
+	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	commits, err := s.clones.RepoBrowserFileHistory(ctx, repoRef, ref, path)
+	resolvedRef, err := s.resolveRepoBrowserReadRef(ctx, repoRef, ref)
+	if err != nil {
+		return nil, repoBrowserProblem(err)
+	}
+	commits, err := s.clones.RepoBrowserFileHistory(ctx, repoRef, repoBrowserPinnedRef(resolvedRef), path)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
 	return &bodyOutput[repoBrowserHistoryResponse]{Body: repoBrowserHistoryResponse{
 		Repo:    s.repoRefFromRepo(*repo),
-		Ref:     ref,
+		Ref:     resolvedRef,
 		Path:    path,
 		Commits: commits,
 	}}, nil
@@ -346,33 +366,37 @@ func (s *Server) getRepoBrowserCommit(
 	ctx context.Context,
 	input *repoBrowserCommitInput,
 ) (*bodyOutput[repoBrowserCommitResponse], error) {
-	return s.getRepoBrowserCommitFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path, input.SHA)
+	return s.getRepoBrowserCommitFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path, input.SHA)
 }
 
 func (s *Server) getRepoBrowserCommitOnHost(
 	ctx context.Context,
 	input *repoBrowserHostCommitInput,
 ) (*bodyOutput[repoBrowserCommitResponse], error) {
-	return s.getRepoBrowserCommitFor(ctx, input.Provider, input.PlatformHost, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path, input.SHA)
+	return s.getRepoBrowserCommitFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path, input.SHA)
 }
 
 func (s *Server) getRepoBrowserCommitFor(
 	ctx context.Context,
-	provider, platformHost, repoPath string,
+	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 	path, sha string,
 ) (*bodyOutput[repoBrowserCommitResponse], error) {
-	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, repoPath)
+	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	commit, err := s.clones.RepoBrowserCommitDetail(ctx, repoRef, ref, path, sha)
+	resolvedRef, err := s.resolveRepoBrowserReadRef(ctx, repoRef, ref)
+	if err != nil {
+		return nil, repoBrowserProblem(err)
+	}
+	commit, err := s.clones.RepoBrowserCommitDetail(ctx, repoRef, repoBrowserPinnedRef(resolvedRef), path, sha)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
 	return &bodyOutput[repoBrowserCommitResponse]{Body: repoBrowserCommitResponse{
 		Repo:   s.repoRefFromRepo(*repo),
-		Ref:    ref,
+		Ref:    resolvedRef,
 		Path:   path,
 		Commit: commit,
 	}}, nil
@@ -380,11 +404,12 @@ func (s *Server) getRepoBrowserCommitFor(
 
 func (s *Server) ensureRepoBrowserClone(
 	ctx context.Context,
-	provider, platformHost, repoPath string,
+	provider, platformHost, owner, name, repoPath string,
 ) (*db.Repo, gitclone.RepoBrowserRepoRef, error) {
 	if s.clones == nil {
 		return nil, gitclone.RepoBrowserRepoRef{}, errRepoBrowserCloneUnavailable
 	}
+	repoPath = canonicalRepoBrowserRepoPath(owner, name, repoPath)
 	repo, err := s.lookupRepoByRefInput(ctx, repoRefInput{
 		Provider:     provider,
 		PlatformHost: platformHost,
@@ -407,6 +432,34 @@ func (s *Server) ensureRepoBrowserClone(
 		return nil, gitclone.RepoBrowserRepoRef{}, err
 	}
 	return repo, repoRef, nil
+}
+
+func (s *Server) resolveRepoBrowserReadRef(
+	ctx context.Context,
+	repo gitclone.RepoBrowserRepoRef,
+	ref gitclone.RepoBrowserRef,
+) (gitclone.RepoBrowserRef, error) {
+	return s.clones.ResolveRepoBrowserRef(ctx, repo, ref)
+}
+
+func repoBrowserPinnedRef(ref gitclone.RepoBrowserRef) gitclone.RepoBrowserRef {
+	return gitclone.RepoBrowserRef{
+		Type: gitclone.RepoBrowserRefCommit,
+		SHA:  ref.SHA,
+	}
+}
+
+func canonicalRepoBrowserRepoPath(owner, name, repoPath string) string {
+	repoPath = strings.Trim(repoPath, "/ ")
+	if repoPath != "" {
+		return repoPath
+	}
+	owner = strings.Trim(owner, "/ ")
+	name = strings.Trim(name, "/ ")
+	if owner == "" || name == "" {
+		return ""
+	}
+	return owner + "/" + name
 }
 
 var errRepoBrowserCloneUnavailable = errors.New("repo browser clone unavailable")
@@ -444,6 +497,9 @@ func repoBrowserProblem(err error) error {
 	}
 	if errors.Is(err, gitclone.ErrTooLarge) || errors.Is(err, gitclone.ErrTooLargeAsset) {
 		return newProblem(http.StatusRequestEntityTooLarge, CodeBadRequest, err.Error(), map[string]any{"reason": "too_large"})
+	}
+	if errors.Is(err, gitclone.ErrUnsupportedAsset) {
+		return newProblem(http.StatusUnsupportedMediaType, CodeBadRequest, err.Error(), map[string]any{"reason": "unsupported_asset"})
 	}
 	if errors.Is(err, gitclone.ErrNotFound) {
 		return problemNotFound(CodeNotFound, err.Error(), map[string]any{"reason": "not_found"})

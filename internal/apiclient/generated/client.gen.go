@@ -2348,9 +2348,11 @@ type RepoBrowserLastChangedResponse struct {
 
 // RepoBrowserRef defines model for RepoBrowserRef.
 type RepoBrowserRef struct {
-	Name string `json:"name"`
-	Sha  string `json:"sha"`
-	Type string `json:"type"`
+	Name         string  `json:"name"`
+	RequestedSha *string `json:"requested_sha,omitempty"`
+	Sha          string  `json:"sha"`
+	Stale        bool    `json:"stale"`
+	Type         string  `json:"type"`
 }
 
 // RepoBrowserRefsResponse defines model for RepoBrowserRefsResponse.

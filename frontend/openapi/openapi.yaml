@@ -4941,14 +4941,19 @@ components:
       properties:
         name:
           type: string
+        requested_sha:
+          type: string
         sha:
           type: string
+        stale:
+          type: boolean
         type:
           type: string
       required:
         - type
         - name
         - sha
+        - stale
       type: object
     RepoBrowserRefsResponse:
       additionalProperties: false

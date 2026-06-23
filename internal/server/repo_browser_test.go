@@ -37,6 +37,24 @@ func TestRepoBrowserRefsUsesRepoPathIdentity(t *testing.T) {
 	assert.Equal(gitclone.RepoBrowserRefBranch, body.DefaultRef.Type)
 }
 
+func TestRepoBrowserRefsUsesProviderRouteWhenRepoPathMissing(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _ := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+
+	rr := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/refs",
+	)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var body repoBrowserRefsResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal("github", body.Repo.Provider)
+	assert.Equal("github.com", body.Repo.PlatformHost)
+	assert.Equal("acme/widgets", body.Repo.RepoPath)
+	assert.Equal("main", body.DefaultRef.Name)
+}
+
 func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -66,6 +84,31 @@ func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T) {
 	assert.True(binaryBody.Blob.Binary)
 	assert.False(binaryBody.Blob.TooLarge)
 	assert.Empty(binaryBody.Blob.Content)
+}
+
+func TestRepoBrowserBranchRefReportsStaleRequestedSHA(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+	oldSHA := testGitSHA(t, work, "main")
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Test\n\nUpdated\n"), 0o644))
+	serverRepoBrowserGit(t, work, "add", ".")
+	serverRepoBrowserGit(t, work, "commit", "-m", "move main")
+	currentSHA := testGitSHA(t, work, "main")
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+
+	tree := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/tree?ref_type=branch&ref_name=main&ref_sha="+url.QueryEscape(oldSHA),
+	)
+
+	require.Equal(http.StatusOK, tree.Code)
+	var body repoBrowserTreeResponse
+	require.NoError(json.Unmarshal(tree.Body.Bytes(), &body))
+	assert.Equal(gitclone.RepoBrowserRefBranch, body.Ref.Type)
+	assert.Equal("main", body.Ref.Name)
+	assert.Equal(currentSHA, body.Ref.SHA)
+	assert.Equal(oldSHA, body.Ref.RequestedSHA)
+	assert.True(body.Ref.Stale)
 }
 
 func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
@@ -114,6 +157,26 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	require.NoError(json.Unmarshal(history.Body.Bytes(), &historyBody))
 	require.NotEmpty(historyBody.Commits)
 	assert.Equal("docs asset", historyBody.Commits[0].Subject)
+}
+
+func TestRepoBrowserAssetRejectsActiveContentTypes(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+	require.NoError(os.WriteFile(filepath.Join(work, "image.svg"), []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "page.html"), []byte(`<script>alert(1)</script>`), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "script.js"), []byte(`alert(1)`), 0o644))
+	serverRepoBrowserGit(t, work, "add", ".")
+	serverRepoBrowserGit(t, work, "commit", "-m", "active assets")
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+
+	for _, path := range []string{"image.svg", "page.html", "script.js"} {
+		rr := repoBrowserRequest(t, srv, http.MethodGet,
+			"/api/v1/repo/github/acme/widgets/browser/asset?ref_type=branch&ref_name=main&path="+url.QueryEscape(path),
+		)
+		assert.Equal(http.StatusUnsupportedMediaType, rr.Code, path)
+		assert.Contains(rr.Body.String(), "unsupported_asset")
+	}
 }
 
 func TestRepoBrowserRejectsUnsafePath(t *testing.T) {

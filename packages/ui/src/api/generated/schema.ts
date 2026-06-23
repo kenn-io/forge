@@ -6327,7 +6327,9 @@ export interface components {
         };
         RepoBrowserRef: {
             name: string;
+            requested_sha?: string;
             sha: string;
+            stale: boolean;
             type: string;
         };
         RepoBrowserRefsResponse: {

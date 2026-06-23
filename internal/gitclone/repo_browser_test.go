@@ -156,6 +156,9 @@ func TestRepoBrowserMarkdownAssetRejectsUnsafeAndOversizedPaths(t *testing.T) {
 	mgr, repo, work := setupRepoBrowserTestRepo(t)
 
 	require.NoError(os.WriteFile(filepath.Join(work, "image.svg"), []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "page.html"), []byte(`<script>alert(1)</script>`), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "script.js"), []byte(`alert(1)`), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "image.png"), []byte{0x89, 0x50, 0x4e, 0x47}, 0o644))
 	require.NoError(os.WriteFile(filepath.Join(work, "huge.png"), []byte(string(make([]byte, RepoBrowserBlobSizeLimit+1))), 0o644))
 	commitTestRun(t, work, "git", "add", ".")
 	commitTestRun(t, work, "git", "commit", "-m", "assets")
@@ -166,10 +169,14 @@ func TestRepoBrowserMarkdownAssetRejectsUnsafeAndOversizedPaths(t *testing.T) {
 	_, err := mgr.ReadRepoBrowserAsset(t.Context(), repo, ref, "/etc/passwd")
 	require.ErrorIs(err, ErrUnsafePath)
 
-	asset, err := mgr.ReadRepoBrowserAsset(t.Context(), repo, ref, "image.svg")
+	for _, path := range []string{"image.svg", "page.html", "script.js"} {
+		_, err = mgr.ReadRepoBrowserAsset(t.Context(), repo, ref, path)
+		require.ErrorIs(err, ErrUnsupportedAsset, path)
+	}
+
+	asset, err := mgr.ReadRepoBrowserAsset(t.Context(), repo, ref, "image.png")
 	require.NoError(err)
-	assert.Equal("image/svg+xml", asset.MediaType)
-	assert.False(asset.Binary)
+	assert.Equal("image/png", asset.MediaType)
 
 	_, err = mgr.ReadRepoBrowserAsset(t.Context(), repo, ref, "huge.png")
 	assert.True(errors.Is(err, ErrTooLarge) || errors.Is(err, ErrTooLargeAsset))

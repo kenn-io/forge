@@ -25,9 +25,10 @@ const (
 )
 
 var (
-	ErrUnsafePath    = errors.New("unsafe repo browser path")
-	ErrTooManyPaths  = errors.New("too many repo browser paths")
-	ErrTooLargeAsset = errors.New("repo browser asset too large")
+	ErrUnsafePath       = errors.New("unsafe repo browser path")
+	ErrTooManyPaths     = errors.New("too many repo browser paths")
+	ErrTooLargeAsset    = errors.New("repo browser asset too large")
+	ErrUnsupportedAsset = errors.New("unsupported repo browser asset type")
 )
 
 type RepoBrowserRefType string
@@ -47,9 +48,11 @@ type RepoBrowserRepoRef struct {
 }
 
 type RepoBrowserRef struct {
-	Type RepoBrowserRefType `json:"type"`
-	Name string             `json:"name"`
-	SHA  string             `json:"sha"`
+	Type         RepoBrowserRefType `json:"type"`
+	Name         string             `json:"name"`
+	SHA          string             `json:"sha"`
+	RequestedSHA string             `json:"requested_sha,omitempty"`
+	Stale        bool               `json:"stale"`
 }
 
 type RepoBrowserTreeEntry struct {
@@ -221,6 +224,9 @@ func (m *Manager) ReadRepoBrowserAsset(
 	}
 	if blob.TooLarge {
 		return RepoBrowserBlob{}, fmt.Errorf("%w: %w", ErrTooLargeAsset, ErrTooLarge)
+	}
+	if !repoBrowserAssetMediaTypeAllowed(blob.MediaType) {
+		return RepoBrowserBlob{}, fmt.Errorf("%w: %s", ErrUnsupportedAsset, blob.MediaType)
 	}
 	return blob, nil
 }
@@ -453,6 +459,24 @@ func (m *Manager) RepoBrowserCommitDetail(
 	return commits[0], nil
 }
 
+func (m *Manager) ResolveRepoBrowserRef(
+	ctx context.Context,
+	repo RepoBrowserRepoRef,
+	ref RepoBrowserRef,
+) (RepoBrowserRef, error) {
+	_, sha, stale, err := m.resolveRepoBrowserRef(ctx, repo, ref)
+	if err != nil {
+		return RepoBrowserRef{}, err
+	}
+	resolved := ref
+	resolved.SHA = sha
+	resolved.Stale = stale
+	if stale {
+		resolved.RequestedSHA = strings.TrimSpace(ref.SHA)
+	}
+	return resolved, nil
+}
+
 const (
 	repoBrowserCommitMarker = "commit:"
 	repoBrowserCommitFormat = "%H%x1f%an%x1f%ae%x1f%aI%x1f%s"
@@ -552,6 +576,19 @@ func mediaTypeForRepoBrowserPath(pathName string) string {
 		return typ
 	}
 	return ""
+}
+
+func repoBrowserAssetMediaTypeAllowed(mediaType string) bool {
+	typ, _, err := mime.ParseMediaType(mediaType)
+	if err != nil {
+		typ = mediaType
+	}
+	switch strings.ToLower(strings.TrimSpace(typ)) {
+	case "image/avif", "image/bmp", "image/gif", "image/jpeg", "image/png", "image/webp":
+		return true
+	default:
+		return false
+	}
 }
 
 func isFullHexSHA(sha string) bool {

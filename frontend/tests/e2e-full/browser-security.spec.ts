@@ -182,6 +182,44 @@ test("SPA shell cannot be framed by another origin", async ({ page, baseURL }) =
   }
 });
 
+test("workspace embed routes remain frameable", async ({ page, baseURL }) => {
+  expect(baseURL).toBeTruthy();
+  const target = apiURL(baseURL!, "/workspaces/embed/list");
+  const response = await page.request.get(target);
+  const headers = response.headers();
+  expect(headers["content-security-policy"]).toBeUndefined();
+  expect(headers["x-frame-options"]).toBeUndefined();
+
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
+
+  const escapedTarget = target.replaceAll('"', "&quot;");
+  const externalOrigin = await startExternalOrigin(
+    `<!doctype html><title>embed host</title><iframe id="middleman-frame" src="${escapedTarget}"></iframe>`,
+  );
+
+  try {
+    await page.goto(externalOrigin.url);
+    const frameHandle = await page.locator("#middleman-frame").elementHandle();
+    expect(frameHandle).not.toBeNull();
+    const frame = await frameHandle!.contentFrame();
+    expect(frame).not.toBeNull();
+    await expect(frame!.locator("body")).toHaveCount(1);
+    expect(
+      consoleErrors.some(
+        (text) =>
+          text.includes("frame-ancestors") || text.includes("X-Frame-Options") || text.includes("Refused to frame"),
+      ),
+    ).toBe(false);
+  } finally {
+    await externalOrigin.close();
+  }
+});
+
 test("same-origin browser non-JSON mutations return a JSON 415 error", async ({ page, baseURL }) => {
   expect(baseURL).toBeTruthy();
   await page.goto(baseURL!);

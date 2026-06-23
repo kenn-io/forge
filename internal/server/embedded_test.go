@@ -165,6 +165,7 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 	}{
 		{name: "index", path: "/"},
 		{name: "spa fallback", path: "/workspaces"},
+		{name: "terminal route", path: "/terminal/ws-123"},
 	}
 
 	for _, tc := range cases {
@@ -181,6 +182,16 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 
 	t.Run("asset", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/assets/index-DEADBEEF.js", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		assert := Assert.New(t)
+		assert.Equal(http.StatusOK, rr.Code)
+		assert.Empty(rr.Header().Get("Content-Security-Policy"))
+		assert.Empty(rr.Header().Get("X-Frame-Options"))
+	})
+
+	t.Run("workspace embed route remains frameable", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/workspaces/embed/list", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 		assert := Assert.New(t)

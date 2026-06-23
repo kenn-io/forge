@@ -27,7 +27,7 @@ func newSPAAssetHandler(
 		indexTemplate = strings.ReplaceAll(indexTemplate, `href="/assets/`, `href="`+prefix+`/assets/`)
 	}
 
-	serveIndex := func(w http.ResponseWriter) {
+	serveIndex := func(w http.ResponseWriter, r *http.Request) {
 		script := ""
 		if bootstrapScript != nil {
 			script = bootstrapScript()
@@ -35,8 +35,10 @@ func newSPAAssetHandler(
 		idx := strings.Replace(indexTemplate, "<head>",
 			`<head><script>`+script+`</script>`, 1)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Content-Security-Policy", spaFrameAncestorsPolicy)
-		w.Header().Set("X-Frame-Options", spaXFrameOptions)
+		if !isWorkspaceEmbedRoute(r.URL.Path) {
+			w.Header().Set("Content-Security-Policy", spaFrameAncestorsPolicy)
+			w.Header().Set("X-Frame-Options", spaXFrameOptions)
+		}
 		// index.html references content-hashed bundles. Browsers
 		// must always re-fetch it so a rebuild is picked up; the
 		// hashed assets it references can still be cached forever.
@@ -56,7 +58,7 @@ func newSPAAssetHandler(
 		}
 		name := strings.TrimPrefix(r.URL.Path, "/")
 		if name == "" || name == "index.html" {
-			serveIndex(w)
+			serveIndex(w, r)
 			return
 		}
 		f, err := frontend.Open(name)
@@ -77,6 +79,10 @@ func newSPAAssetHandler(
 			http.NotFound(w, r)
 			return
 		}
-		serveIndex(w)
+		serveIndex(w, r)
 	})
+}
+
+func isWorkspaceEmbedRoute(path string) bool {
+	return path == "/workspaces/embed" || strings.HasPrefix(path, "/workspaces/embed/")
 }

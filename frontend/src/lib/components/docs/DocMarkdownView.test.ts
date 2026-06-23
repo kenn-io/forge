@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import DocMarkdownView from "./DocMarkdownView.svelte";
 import { buildFolderIndex } from "../../api/docs/folderLinks";
 import type { DocsMarkdownOptions } from "../../api/docs/markdown";
+import type { TreeNode } from "../../api/docs/types";
 
 afterEach(() => {
   cleanup();
@@ -15,6 +16,33 @@ function options(): DocsMarkdownOptions {
     index: buildFolderIndex(null),
     buildDocURL: (_folderID, relPath) => `/docs?doc=${encodeURIComponent(relPath)}`,
     buildBlobURL: (_folderID, relPath) => `/api/v1/docs/folders/notes/blob?path=${encodeURIComponent(relPath)}`,
+  };
+}
+
+const tree: TreeNode = {
+  name: "Notes",
+  rel_path: "",
+  is_dir: true,
+  children: [
+    {
+      name: "Projects",
+      rel_path: "Projects",
+      is_dir: true,
+      children: [{ name: "alpha.md", rel_path: "Projects/alpha.md", is_dir: false, size: 1 }],
+    },
+    {
+      name: "Daily",
+      rel_path: "Daily",
+      is_dir: true,
+      children: [{ name: "alpha.md", rel_path: "Daily/alpha.md", is_dir: false, size: 1 }],
+    },
+  ],
+};
+
+function indexedOptions(): DocsMarkdownOptions {
+  return {
+    ...options(),
+    index: buildFolderIndex(tree),
   };
 }
 
@@ -106,5 +134,20 @@ describe("DocMarkdownView", () => {
 
     expect(onSelectKataShortId).toHaveBeenCalledWith("budget", undefined);
     expect(onSelectIssue).not.toHaveBeenCalled();
+  });
+
+  test("ambiguous note picker keeps a visible close button", async () => {
+    render(DocMarkdownView, {
+      props: {
+        source: "See [[alpha]].",
+        options: indexedOptions(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("link", { name: "alpha" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Pick a note" });
+    expect(dialog).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
   });
 });

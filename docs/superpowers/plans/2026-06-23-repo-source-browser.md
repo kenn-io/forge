@@ -163,11 +163,20 @@ type RepoBrowserRef struct {
 	SHA  string
 }
 
+type RepoBrowserResolvedRef struct {
+	Type         RepoBrowserRefType
+	Name         string
+	ResolvedSHA  string
+	RequestedSHA string
+	Stale        bool
+}
+
 type RepoBrowserRepoRef struct {
-	Host     string
-	Owner    string
-	Name     string
-	RepoPath string
+	Provider     string
+	PlatformHost string
+	Owner        string
+	Name         string
+	RepoPath     string
 }
 
 type RepoBrowserTreeEntry struct {
@@ -176,8 +185,15 @@ type RepoBrowserTreeEntry struct {
 	Size int64
 }
 
+type RepoBrowserTree struct {
+	Ref       RepoBrowserResolvedRef
+	Entries   []RepoBrowserTreeEntry
+	Truncated bool
+}
+
 type RepoBrowserBlob struct {
 	Path       string
+	Ref        RepoBrowserResolvedRef
 	SHA        string
 	Size       int64
 	MediaType  string
@@ -185,6 +201,12 @@ type RepoBrowserBlob struct {
 	Content    string
 	Binary     bool
 	TooLarge   bool
+}
+
+type RepoBrowserREADMEProbe struct {
+	Ref   RepoBrowserResolvedRef
+	Path  string
+	Found bool
 }
 
 type RepoBrowserCommit struct {
@@ -195,22 +217,45 @@ type RepoBrowserCommit struct {
 	AuthorEmail string
 	AuthoredAt time.Time
 }
+
+type RepoBrowserLastChanged struct {
+	Ref     RepoBrowserResolvedRef
+	Commits map[string]RepoBrowserCommit
+}
+
+type RepoBrowserFileHistory struct {
+	Ref     RepoBrowserResolvedRef
+	Commits []RepoBrowserCommit
+}
+
+type RepoBrowserCommitDetail struct {
+	Ref    RepoBrowserResolvedRef
+	Commit RepoBrowserCommit
+}
 ```
 
 Add methods on `*Manager`:
 
 ```go
 ListRepoBrowserRefs(ctx context.Context, repo RepoBrowserRepoRef, defaultBranch string) ([]RepoBrowserRef, RepoBrowserRef, error)
-ListRepoBrowserTree(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef) ([]RepoBrowserTreeEntry, bool, error)
-ProbeRepoBrowserREADME(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef) (string, bool, error)
+ListRepoBrowserTree(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef) (RepoBrowserTree, error)
+ProbeRepoBrowserREADME(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef) (RepoBrowserREADMEProbe, error)
 ReadRepoBrowserBlob(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef, path string) (RepoBrowserBlob, error)
 ReadRepoBrowserAsset(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef, path string) (RepoBrowserBlob, error)
-RepoBrowserLastChanged(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef, paths []string) (map[string]RepoBrowserCommit, error)
-RepoBrowserFileHistory(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef, path string) ([]RepoBrowserCommit, error)
-RepoBrowserCommitDetail(ctx context.Context, repo RepoBrowserRepoRef, root RepoBrowserRef, path string, sha string) (RepoBrowserCommit, error)
+RepoBrowserLastChanged(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef, paths []string) (RepoBrowserLastChanged, error)
+RepoBrowserFileHistory(ctx context.Context, repo RepoBrowserRepoRef, ref RepoBrowserRef, path string) (RepoBrowserFileHistory, error)
+RepoBrowserCommitDetail(ctx context.Context, repo RepoBrowserRepoRef, root RepoBrowserRef, path string, sha string) (RepoBrowserCommitDetail, error)
 ```
 
-All methods must validate repo-relative paths, use `--` before paths, resolve refs statelessly through typed ref inputs, and return typed errors for missing refs/paths. Last-changed batches must use a single bounded Git history walk per batch, not one process per path.
+All methods must validate repo-relative paths, use `--` before paths, resolve
+refs statelessly through typed ref inputs, and return typed errors for missing
+refs/paths. Every successful read operation after `ListRepoBrowserRefs` must
+return `RepoBrowserResolvedRef` so the server can emit `resolvedSha`,
+`requestedSha`, and `stale` without separately re-resolving the branch or tag.
+Clone/cache identity must use `(Provider, PlatformHost, RepoPath)` from
+`RepoBrowserRepoRef`; owner/name are display hints only and must not participate
+in clone paths or cache keys. Last-changed batches must use a single bounded Git
+history walk per batch, not one process per path.
 
 - [ ] **Step 6: Run gitclone tests green**
 

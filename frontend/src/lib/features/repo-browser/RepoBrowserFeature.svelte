@@ -53,6 +53,7 @@
   let repoLoadKey = "";
   let pathFilter = $state("");
   let selectedPathRevealKey = $state(0);
+  let pendingMarkdownAnchor = $state<string | null>(null);
 
   const selectedPath = $derived(store.getSelectedPath());
   const selectedRef = $derived(store.getSelectedRef());
@@ -290,8 +291,14 @@
     return value.endsWith("/") ? value : `${value}/`;
   }
 
-  function openMarkdownDoc(path: string): void {
-    void selectPath(path, { replace: false }).then(() => setViewMode("preview"));
+  function openMarkdownDoc(path: string, anchor?: string): void {
+    pendingMarkdownAnchor = anchor ?? null;
+    void (async () => {
+      if (path !== store.getSelectedPath()) {
+        await selectPath(path, { replace: false });
+      }
+      setViewMode("preview");
+    })();
   }
 
   function buildForgeHref(
@@ -428,7 +435,9 @@
           <DocMarkdownView
             source={selectedBlob.content}
             options={markdownOptions(selectedBlob.path)}
-            onSelectDoc={(path) => openMarkdownDoc(path)}
+            onSelectDoc={(path, anchor) => openMarkdownDoc(path, anchor)}
+            scrollToAnchor={pendingMarkdownAnchor}
+            onAnchorConsumed={() => (pendingMarkdownAnchor = null)}
           />
         </article>
       {:else}

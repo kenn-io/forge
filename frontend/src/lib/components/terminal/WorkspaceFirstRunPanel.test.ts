@@ -195,6 +195,22 @@ describe("WorkspaceFirstRunPanel", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("/workspaces");
   });
 
+  it("disables GitHub repository picking on scoped hosts", () => {
+    setupConfig({ ghAuthed: true });
+    render(WorkspaceFirstRunPanel, {
+      props: { firstRun: false, hostKey: "epyc" },
+    });
+
+    const button = screen.getByRole("button", {
+      name: /Connect a GitHub repository/i,
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(
+      screen.getByText("Pick from GitHub is only available for the local host. Use Clone a repository for this host."),
+    ).toBeTruthy();
+    expect(mocks.listUserRepositories).not.toHaveBeenCalled();
+  });
+
   it("falls back to injected workspace host metadata", async () => {
     mocks.loadSnapshotHosts.mockRejectedValue(new Error("snapshot down"));
     setupConfig({ ghAuthed: true });

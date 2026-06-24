@@ -156,6 +156,7 @@
 
   function isDisabled(definition: ActionDefinition): boolean {
     if (inFlight) return true;
+    if (definition.id === "connect-github" && scopedHostKey) return true;
     if (definition.requiresGh && !ghAuthed) return true;
     return false;
   }
@@ -163,6 +164,9 @@
   function disabledReason(
     definition: ActionDefinition,
   ): string | undefined {
+    if (definition.id === "connect-github" && scopedHostKey) {
+      return "Pick from GitHub is only available for the local host. Use Clone a repository for this host.";
+    }
     if (definition.requiresGh && !ghAuthed) {
       if (!tooling?.gh?.available) {
         return "Install gh to use this option.";

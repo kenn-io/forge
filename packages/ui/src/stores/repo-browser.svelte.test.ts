@@ -79,7 +79,7 @@ function testClient(): TestClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&path=src%2Fapp.ts"
+        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md&path=src%2Fapp.ts"
       ) {
         return {
           data: {
@@ -95,7 +95,7 @@ function testClient(): TestClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=src%2Fapp.ts&path=docs%2Fguide.md"
+        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=tag-sha&path=src%2Fapp.ts&path=docs%2Fguide.md"
       ) {
         return {
           data: {
@@ -111,7 +111,7 @@ function testClient(): TestClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
       ) {
         return {
           data: {
@@ -133,7 +133,7 @@ function testClient(): TestClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
       ) {
         return {
           data: {
@@ -147,7 +147,7 @@ function testClient(): TestClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=src%2Fapp.ts"
       ) {
         return {
           data: {
@@ -169,7 +169,7 @@ function testClient(): TestClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=src%2Fapp.ts"
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=tag-sha&path=src%2Fapp.ts"
       ) {
         return {
           data: {
@@ -191,7 +191,7 @@ function testClient(): TestClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=src%2Fapp.ts"
       ) {
         return {
           data: {
@@ -205,7 +205,7 @@ function testClient(): TestClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=src%2Fapp.ts"
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=tag-sha&path=src%2Fapp.ts"
       ) {
         return {
           data: {
@@ -266,14 +266,14 @@ describe("createRepoBrowserStore", () => {
         if (
           deferReadme &&
           url ===
-            "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+            "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
         ) {
           return readmeBlob.promise;
         }
         if (
           deferReadme &&
           url ===
-            "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+            "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
         ) {
           return readmeHistory.promise;
         }
@@ -305,7 +305,7 @@ describe("createRepoBrowserStore", () => {
         const url = testURL(path, options);
         if (
           url ===
-          "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&path=src%2Fapp.ts"
+          "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md&path=src%2Fapp.ts"
         ) {
           return lastChanged.promise;
         }
@@ -349,14 +349,14 @@ describe("createRepoBrowserStore", () => {
         if (
           deferSrc &&
           url ===
-            "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+            "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=src%2Fapp.ts"
         ) {
           return srcBlob.promise;
         }
         if (
           deferSrc &&
           url ===
-            "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
+            "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=src%2Fapp.ts"
         ) {
           return srcHistory.promise;
         }
@@ -392,19 +392,19 @@ describe("createRepoBrowserStore", () => {
         const url = testURL(path, options);
         if (
           url ===
-          "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=slow-sha"
+          "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md&sha=slow-sha"
         ) {
           return slowCommit.promise;
         }
         if (
           url ===
-          "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=fast-sha"
+          "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md&sha=fast-sha"
         ) {
           return Promise.resolve(commitResponse("fast-sha", "fast commit"));
         }
         if (
           url ===
-          "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&sha=missing-sha"
+          "/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md&sha=missing-sha"
         ) {
           return Promise.resolve({
             error: { detail: "commit failed" },

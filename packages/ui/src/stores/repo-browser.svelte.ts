@@ -96,9 +96,20 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       repo_path: ref.repoPath,
       ...(selected && {
         ref_type: selected.type,
-        ref_name: selected.name,
-        ref_sha: selected.sha,
+        ...(selected.name ? { ref_name: selected.name } : {}),
+        ...(selected.sha ? { ref_sha: selected.sha } : {}),
       }),
+    };
+  }
+
+  function treeContentQueryRef(): RepoBrowserRef | null {
+    if (!selectedRef) return null;
+    if (!selectedRef.sha) return selectedRef;
+    return {
+      type: "commit",
+      name: "",
+      sha: selectedRef.sha,
+      stale: false,
     };
   }
 
@@ -200,7 +211,8 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
 
   async function loadLastChanged(generation = treeRequestGeneration): Promise<void> {
     const ref = repo;
-    if (!ref || !selectedRef) return;
+    const requestedRef = treeContentQueryRef();
+    if (!ref || !requestedRef) return;
     const paths = tree.slice(0, 250).map((entry) => entry.path);
     if (paths.length === 0) {
       lastChanged = {};
@@ -215,7 +227,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       params: {
         path: providerRouteParams(ref),
         query: {
-          ...queryFor(ref),
+          ...queryFor(ref, requestedRef),
           path: paths,
         },
       },
@@ -246,7 +258,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
 
   async function selectPath(path: string): Promise<void> {
     const ref = repo;
-    const requestedRef = selectedRef;
+    const requestedRef = treeContentQueryRef();
     if (!ref || !requestedRef) return;
     const generation = nextPathRequestGeneration();
     selectedPath = path;
@@ -298,7 +310,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
 
   async function selectCommit(sha: string): Promise<void> {
     const ref = repo;
-    const requestedRef = selectedRef;
+    const requestedRef = treeContentQueryRef();
     const path = selectedPath;
     if (!ref || !requestedRef || !path) return;
     const generation = nextCommitRequestGeneration();

@@ -133,7 +133,10 @@
         await store.selectPath(initialPath);
         if (generation !== routeLoadGeneration || !pathSelectionStillCurrent(selectionGeneration, initialPath)) return;
       }
-      if (initialPath) pushRoute({ path: initialPath }, { replace: true });
+      if (initialPath) {
+        repoLoadKey = routeKeyWithSelectedRef(value);
+        pushRoute({ path: initialPath }, { replace: true });
+      }
     }
     if (generation !== routeLoadGeneration || selectionGeneration !== pathSelectionGeneration) return;
     selectedPathRevealKey += 1;
@@ -162,6 +165,18 @@
 
   function routeViewMode(value: RepoBrowserFeatureRoute): RepoBrowserViewMode {
     return value.mode ?? "source";
+  }
+
+  function routeKeyWithSelectedRef(value: RepoBrowserFeatureRoute): string {
+    const ref = store.getSelectedRef();
+    return routeKey({
+      ...value,
+      ...(ref ? {
+        refType: ref.type,
+        refName: ref.name,
+        refSHA: ref.sha,
+      } : {}),
+    });
   }
 
   function pushRoute(
@@ -220,12 +235,7 @@
     if (!ref) return;
     await store.selectRef(ref);
     selectedPathRevealKey += 1;
-    repoLoadKey = routeKey({
-      ...route,
-      refType: ref.type,
-      refName: ref.name,
-      refSHA: ref.sha,
-    });
+    repoLoadKey = routeKeyWithSelectedRef(route);
     pushRoute({ path: store.getSelectedPath() ?? undefined });
   }
 

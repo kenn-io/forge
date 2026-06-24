@@ -149,6 +149,49 @@ describe("RepoBrowserFeature", () => {
     expect(client.GET).toHaveBeenCalledTimes(5);
   });
 
+  it("does not reload the repo when a no-ref route is self-replaced with the default ref", async () => {
+    const client = testClient();
+    const onRouteChange = vi.fn();
+    const { rerender } = render(RepoBrowserFeature, {
+      props: {
+        client,
+        route: {
+          ...route,
+          path: undefined,
+        },
+        onRouteChange,
+      },
+    });
+
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
+    await waitFor(() => {
+      expect(onRouteChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          refType: "branch",
+          refName: "main",
+          refSHA: "main-sha",
+          path: "README.md",
+        }),
+        { replace: true },
+      );
+    });
+
+    await rerender({
+      client,
+      route: {
+        ...route,
+        refType: "branch",
+        refName: "main",
+        refSHA: "main-sha",
+        path: "README.md",
+      },
+      onRouteChange,
+    });
+
+    await tick();
+    expect(client.GET).toHaveBeenCalledTimes(5);
+  });
+
   it("does not reload the repo again after a user ref change updates the route", async () => {
     const client = testClient();
     const onRouteChange = vi.fn();

@@ -2,6 +2,8 @@ import { expect, test, type Locator, type Page, type Response } from "@playwrigh
 
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
+type RepoBrowserEndpoint = "refs" | "tree" | "blob";
+
 function blobResponse(page: Page, path: string): Promise<Response> {
   return page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -14,17 +16,23 @@ function blobResponse(page: Page, path: string): Promise<Response> {
   });
 }
 
-function repoBrowserResponseMatches(response: Response, endpoint: "refs" | "tree", refName?: string): boolean {
+function repoBrowserResponseMatches(
+  response: Response,
+  endpoint: RepoBrowserEndpoint,
+  refName?: string,
+  path?: string,
+): boolean {
   const url = new URL(response.url());
   return (
     response.request().method() === "GET" &&
     url.pathname === `/api/v1/repo/github/acme/widgets/browser/${endpoint}` &&
     (refName === undefined || url.searchParams.get("ref_name") === refName) &&
+    (path === undefined || url.searchParams.get("path") === path) &&
     response.ok()
   );
 }
 
-function repoBrowserResponse(page: Page, endpoint: "refs" | "tree", refName?: string): Promise<Response> {
+function repoBrowserResponse(page: Page, endpoint: RepoBrowserEndpoint, refName?: string): Promise<Response> {
   return page.waitForResponse((response) => repoBrowserResponseMatches(response, endpoint, refName));
 }
 
@@ -32,10 +40,15 @@ function treeResponse(page: Page, refName: string): Promise<Response> {
   return repoBrowserResponse(page, "tree", refName);
 }
 
-function collectRepoBrowserResponseURLs(page: Page, endpoint: "refs" | "tree", refName?: string): string[] {
+function collectRepoBrowserResponseURLs(
+  page: Page,
+  endpoint: RepoBrowserEndpoint,
+  refName?: string,
+  path?: string,
+): string[] {
   const urls: string[] = [];
   page.on("response", (response) => {
-    if (repoBrowserResponseMatches(response, endpoint, refName)) {
+    if (repoBrowserResponseMatches(response, endpoint, refName, path)) {
       urls.push(response.url());
     }
   });
@@ -44,7 +57,7 @@ function collectRepoBrowserResponseURLs(page: Page, endpoint: "refs" | "tree", r
 
 async function expectNoMoreRepoBrowserResponses(
   page: Page,
-  endpoint: "refs" | "tree",
+  endpoint: RepoBrowserEndpoint,
   refName?: string,
 ): Promise<void> {
   await expect(
@@ -85,6 +98,29 @@ async function expectHeadingScrolledIntoView(heading: Locator): Promise<void> {
 }
 
 test.describe("repository source browser", () => {
+  test("does not reload repository data when the no-ref route is replaced with the default ref", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const refsURLs = collectRepoBrowserResponseURLs(page, "refs");
+      const treeURLs = collectRepoBrowserResponseURLs(page, "tree", "main");
+      const refsLoaded = repoBrowserResponse(page, "refs");
+      const treeLoaded = treeResponse(page, "main");
+
+      await page.goto(`${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets`);
+      await refsLoaded;
+      await treeLoaded;
+
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      const viewer = browser.getByRole("main", { name: "Selected file" });
+      await expect(viewer.locator(".repo-browser__path")).toContainText("README.md");
+      await expectResolvedBranchURL(page);
+
+      await expectSingleRepoLoad(page, refsURLs, treeURLs);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("does not reload repository data when the resolved branch SHA is added to the route", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
@@ -105,6 +141,85 @@ test.describe("repository source browser", () => {
       await expectResolvedBranchURL(page);
 
       await expectSingleRepoLoad(page, refsURLs, treeURLs);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("does not reload repository data after a user ref change updates the route", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const refsURLs = collectRepoBrowserResponseURLs(page, "refs");
+      const mainTreeURLs = collectRepoBrowserResponseURLs(page, "tree", "main");
+      const featureTreeURLs = collectRepoBrowserResponseURLs(page, "tree", "feature/caching");
+      const refsLoaded = repoBrowserResponse(page, "refs");
+      const mainTreeLoaded = treeResponse(page, "main");
+
+      await page.goto(
+        `${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md`,
+      );
+      await refsLoaded;
+      await mainTreeLoaded;
+
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      const refSelect = browser.getByLabel("Select repository ref");
+      const featureOption = await refSelect
+        .locator("option")
+        .filter({ hasText: "branch: feature/caching" })
+        .getAttribute("value");
+      expect(featureOption).toBeTruthy();
+
+      const featureTreeLoaded = treeResponse(page, "feature/caching");
+      await refSelect.selectOption(featureOption!);
+      await featureTreeLoaded;
+      await expect(page).toHaveURL(/ref_name=feature%2Fcaching/);
+
+      expect(refsURLs).toHaveLength(1);
+      expect(mainTreeURLs).toHaveLength(1);
+      expect(featureTreeURLs).toHaveLength(1);
+      await expectNoMoreRepoBrowserResponses(page, "refs");
+      await expectNoMoreRepoBrowserResponses(page, "tree", "feature/caching");
+      expect(refsURLs).toHaveLength(1);
+      expect(mainTreeURLs).toHaveLength(1);
+      expect(featureTreeURLs).toHaveLength(1);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("reloads repository data when a mounted route moves the same branch to a different SHA", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const staleSHA = "0".repeat(40);
+      const treeURLs = collectRepoBrowserResponseURLs(page, "tree", "main");
+      const blobURLs = collectRepoBrowserResponseURLs(page, "blob", undefined, "README.md");
+      const initialTreeLoaded = treeResponse(page, "main");
+      const initialBlobLoaded = blobResponse(page, "README.md");
+
+      await page.goto(
+        `${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md`,
+      );
+      const initialTree = await initialTreeLoaded;
+      const initialTreeBody = (await initialTree.json()) as { ref: { sha: string } };
+      await initialBlobLoaded;
+
+      const movedTreeLoaded = treeResponse(page, "main");
+      const movedBlobLoaded = blobResponse(page, "README.md");
+      await page.evaluate((route) => {
+        window.__middleman_navigate_to_route?.(route);
+      }, `/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=${staleSHA}&path=README.md`);
+      const movedTree = await movedTreeLoaded;
+      const movedTreeBody = (await movedTree.json()) as {
+        ref: { sha: string; requested_sha?: string; stale: boolean };
+      };
+      await movedBlobLoaded;
+
+      expect(treeURLs).toHaveLength(2);
+      expect(blobURLs).toHaveLength(2);
+      expect(new URL(treeURLs[1]!).searchParams.get("ref_sha")).toBe(staleSHA);
+      expect(movedTreeBody.ref.sha).toBe(initialTreeBody.ref.sha);
+      expect(movedTreeBody.ref.requested_sha).toBe(staleSHA);
+      expect(movedTreeBody.ref.stale).toBe(true);
     } finally {
       await server.stop();
     }

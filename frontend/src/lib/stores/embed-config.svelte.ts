@@ -37,12 +37,14 @@ export interface ProjectActionHook {
 // up ambient globals declared in vite-env.d.ts.
 export type ToolingStatusValue = ToolingStatus;
 
+type UIRepoConfig = NonNullable<NonNullable<MiddlemanConfig["ui"]>["repo"]>;
+
 interface UIDefaults {
   hideSync: boolean;
   hideRepoSelector: boolean;
   hideStar: boolean;
   sidebarCollapsed: boolean | undefined;
-  repo: { owner: string; name: string } | undefined;
+  repo: UIRepoConfig | undefined;
 }
 
 const UI_DEFAULTS: UIDefaults = {

@@ -142,6 +142,8 @@ type RepoSelectionRef = {
   repoPath?: string | undefined;
 };
 
+type WorkspaceConfigRepo = NonNullable<ReturnType<typeof getUIConfig>["repo"]>;
+
 function itemRepoRef(ref: RepoSelectionRef | null): RepositoryRouteRef | null {
   if (!ref) return null;
   const repoPath = cleanRepoPath(ref.repoPath);
@@ -151,6 +153,20 @@ function itemRepoRef(ref: RepoSelectionRef | null): RepositoryRouteRef | null {
     platformHost: ref.platformHost,
     owner: ref.owner,
     name: ref.name,
+    repoPath,
+  };
+}
+
+function workspaceConfigRepoRef(repo: WorkspaceConfigRepo): RepositoryRouteRef | null {
+  const provider = repo.provider?.trim();
+  const platformHost = (repo.platform_host ?? repo.host)?.trim();
+  const repoPath = cleanRepoPath(repo.repo_path);
+  if (!provider || !platformHost || !repo.owner || !repo.name || !repoPath) return null;
+  return {
+    provider,
+    platformHost,
+    owner: repo.owner,
+    name: repo.name,
     repoPath,
   };
 }
@@ -170,15 +186,29 @@ function configuredRepoRef(repo: ConfigRepo): RepositoryRouteRef | null {
   };
 }
 
+function configuredRepoMatchesWorkspace(repo: ConfigRepo, selectedRepo: WorkspaceConfigRepo): boolean {
+  if (repo.owner !== selectedRepo.owner || repo.name !== selectedRepo.name) return false;
+  if (selectedRepo.provider && repo.provider !== selectedRepo.provider) return false;
+  const selectedHost = selectedRepo.platform_host ?? selectedRepo.host;
+  if (selectedHost && repo.platform_host !== selectedHost) return false;
+  const selectedRepoPath = cleanRepoPath(selectedRepo.repo_path);
+  if (selectedRepoPath && cleanRepoPath(repo.repo_path || `${repo.owner}/${repo.name}`) !== selectedRepoPath) {
+    return false;
+  }
+  return true;
+}
+
 function workspaceRepoRef(): RepositoryRouteRef | null {
   const selectedRepo = getUIConfig().repo;
   if (!selectedRepo) return null;
+  const directRef = workspaceConfigRepoRef(selectedRepo);
+  if (directRef) return directRef;
   if (!storesGetter) return null;
 
   const matches = stores()
     .settings.getConfiguredRepos()
     .filter((repo) => !repo.is_glob)
-    .filter((repo) => repo.owner === selectedRepo.owner && repo.name === selectedRepo.name)
+    .filter((repo) => configuredRepoMatchesWorkspace(repo, selectedRepo))
     .map(configuredRepoRef)
     .filter((repo): repo is RepositoryRouteRef => repo !== null);
   return matches.length === 1 ? (matches[0] ?? null) : null;

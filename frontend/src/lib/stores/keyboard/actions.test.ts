@@ -339,6 +339,22 @@ describe("defaultActions", () => {
     );
   });
 
+  it("opens the repo browser from the route-selected issue before stale issue store state", () => {
+    const action = command("repo.browser.open");
+    const context = ctx("issues", {
+      selectedIssue: staleSelected,
+      route: {
+        page: "issues",
+        selected,
+      },
+    });
+
+    expect(action.when(context)).toBe(true);
+    action.handler(context);
+
+    expect(locationPath()).toBe("/repo/browser?provider=github&platform_host=github.com&repo_path=octo%2Frepo");
+  });
+
   it("opens the repo browser for the current repo-browser route", () => {
     const action = command("repo.browser.open");
     const context = ctx("repo-browser", {

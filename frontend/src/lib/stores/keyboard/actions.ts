@@ -240,6 +240,9 @@ function pageSelectedPRRef(ctx: Context): RepositoryRouteRef | null {
 }
 
 function pageSelectedIssueRef(ctx: Context): RepositoryRouteRef | null {
+  if (ctx.route.page === "issues" && ctx.route.selected) {
+    return itemRepoRef(ctx.route.selected);
+  }
   if (
     ctx.page === "issues" ||
     ctx.page === "mobile-issues" ||

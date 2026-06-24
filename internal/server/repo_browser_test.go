@@ -229,7 +229,11 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(work, "docs", "image.png"), image, 0o644))
 	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Test\n\nUpdated\n"), 0o644))
 	serverRepoBrowserGit(t, work, "add", ".")
-	serverRepoBrowserGit(t, work, "commit", "--date=2026-06-01T12:34:56-07:00", "-m", "docs asset")
+	serverRepoBrowserGit(t, work, "commit",
+		"--date=2026-06-01T12:34:56-07:00",
+		"-m", "docs asset",
+		"-m", "Document asset changes.\n\nKeep preview useful.",
+	)
 	currentSHA := testGitSHA(t, work, "HEAD")
 	serverRepoBrowserGit(t, work, "push", "origin", "main")
 	expectedAuthoredAt := time.Date(2026, 6, 1, 19, 34, 56, 0, time.UTC)
@@ -278,6 +282,7 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	var commitBody repoBrowserCommitResponse
 	require.NoError(json.Unmarshal(commitDetail.Body.Bytes(), &commitBody))
 	assert.Equal(historyBody.Commits[0].SHA, commitBody.Commit.SHA)
+	assert.Equal("Document asset changes.\n\nKeep preview useful.", commitBody.Commit.Body)
 
 	mutableAsset := repoBrowserRequest(t, srv, http.MethodGet,
 		"/api/v1/repo/github/acme/widgets/browser/asset?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=docs%2Fimage.png",
@@ -370,7 +375,10 @@ func TestRepoBrowserCommitRejectsSHAOutsideSelectedFileHistory(t *testing.T) {
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
 	require.NoError(os.WriteFile(filepath.Join(work, "other.txt"), []byte("other\n"), 0o644))
 	serverRepoBrowserGit(t, work, "add", ".")
-	serverRepoBrowserGit(t, work, "commit", "-m", "other file")
+	serverRepoBrowserGit(t, work, "commit",
+		"-m", "other file",
+		"-m", "Explain the file change.\n\nKeep the body visible.",
+	)
 	otherSHA := testGitSHA(t, work, "HEAD")
 	serverRepoBrowserGit(t, work, "push", "origin", "main")
 
@@ -389,6 +397,35 @@ func TestRepoBrowserCommitRejectsSHAOutsideSelectedFileHistory(t *testing.T) {
 	require.NoError(json.Unmarshal(ok.Body.Bytes(), &body))
 	assert.Equal(otherSHA, body.Commit.SHA)
 	assert.Equal("other file", body.Commit.Subject)
+	assert.Equal("Explain the file change.\n\nKeep the body visible.", body.Commit.Body)
+}
+
+func TestRepoBrowserCommitAcceptsMergeCommitTouchingPathThroughHTTP(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+
+	serverRepoBrowserGit(t, work, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Widgets\n\nFeature\n"), 0o644))
+	serverRepoBrowserGit(t, work, "add", ".")
+	serverRepoBrowserGit(t, work, "commit", "-m", "feature readme")
+	serverRepoBrowserGit(t, work, "checkout", "main")
+	require.NoError(os.WriteFile(filepath.Join(work, "main.txt"), []byte("main\n"), 0o644))
+	serverRepoBrowserGit(t, work, "add", ".")
+	serverRepoBrowserGit(t, work, "commit", "-m", "main work")
+	serverRepoBrowserGit(t, work, "merge", "--no-ff", "feature", "-m", "merge feature")
+	mergeSHA := testGitSHA(t, work, "HEAD")
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+
+	rr := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/commit?ref_type=branch&ref_name=main&path=README.md&sha="+url.QueryEscape(mergeSHA),
+	)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var body repoBrowserCommitResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal(mergeSHA, body.Commit.SHA)
+	assert.Equal("merge feature", body.Commit.Subject)
 }
 
 func TestRepoBrowserCommitRejectsUnknownFullSHA(t *testing.T) {
@@ -542,17 +579,21 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 	t.Cleanup(func() { gracefulShutdown(t, disabledServer) })
 
 	require.Never(func() bool {
-		rr := repoBrowserRequest(t, disabledServer, http.MethodGet,
-			"/api/v1/repo/github/acme/widgets/browser/refs",
-		)
-		if rr.Code != http.StatusOK {
+		resolved, err := disabledClones.ResolveRepoBrowserRef(t.Context(), gitclone.RepoBrowserRepoRef{
+			Provider:  "github",
+			Host:      "github.com",
+			Owner:     "acme",
+			Name:      "widgets",
+			RepoPath:  "acme/widgets",
+			RemoteURL: remote,
+		}, gitclone.RepoBrowserRef{
+			Type: gitclone.RepoBrowserRefBranch,
+			Name: "main",
+		})
+		if err != nil {
 			return false
 		}
-		var body repoBrowserRefsResponse
-		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
-			return false
-		}
-		return body.DefaultRef.SHA == updatedSHA
+		return resolved.SHA == updatedSHA
 	}, 250*time.Millisecond, 25*time.Millisecond)
 }
 

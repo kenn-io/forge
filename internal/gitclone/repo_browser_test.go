@@ -115,20 +115,40 @@ func TestRefreshRepoBrowserClonesUsesSeededExistingClones(t *testing.T) {
 	assert.Equal(updatedSHA, resolved.SHA)
 }
 
+func TestEnsureRepoBrowserCloneDoesNotRefreshExistingClone(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+	initial := repoBrowserMainRef(t, mgr, repo)
+
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "update readme")
+	updatedSHA := gitSHA(t, work, "main")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+
+	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	stale := repoBrowserMainRef(t, mgr, repo)
+	assert.Equal(initial.SHA, stale.SHA)
+
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
+	refreshed := repoBrowserMainRef(t, mgr, repo)
+	assert.Equal(updatedSHA, refreshed.SHA)
+}
+
 func TestRepoBrowserScheduledRefreshContextStaysCancelable(t *testing.T) {
 	require := require.New(t)
+	assert := assert.New(t)
+	_, repo, _ := setupRepoBrowserTestRepo(t)
+	mgr := New(filepath.Join(t.TempDir(), "clones-canceled"), nil)
 
-	parent, cancel := context.WithCancel(t.Context())
-	opCtx, opCancel := repoBrowserRefreshOperationContext(parent, false)
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	defer opCancel()
-	require.ErrorIs(opCtx.Err(), context.Canceled)
 
-	detachedParent, detachedCancel := context.WithCancel(t.Context())
-	detachedCtx, detachedOpCancel := repoBrowserRefreshOperationContext(detachedParent, true)
-	detachedCancel()
-	defer detachedOpCancel()
-	require.NoError(detachedCtx.Err())
+	err := mgr.RefreshRepoBrowserClone(ctx, repo)
+	require.ErrorIs(err, context.Canceled)
+	repos := mgr.repoBrowserReposSnapshot()
+	assert.Empty(repos)
 }
 
 func TestRepoBrowserRefreshFetchesTagsWithoutPruning(t *testing.T) {

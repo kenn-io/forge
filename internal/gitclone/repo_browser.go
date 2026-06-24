@@ -766,10 +766,10 @@ func (m *Manager) EnsureRepoBrowserClone(ctx context.Context, repo RepoBrowserRe
 }
 
 func (m *Manager) RefreshRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
-	return m.refreshRepoBrowserClone(ctx, repo, true)
+	return m.refreshRepoBrowserClone(ctx, repo)
 }
 
-func (m *Manager) refreshRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef, detach bool) error {
+func (m *Manager) refreshRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -782,9 +782,9 @@ func (m *Manager) refreshRepoBrowserClone(ctx context.Context, repo RepoBrowserR
 	}
 	key := ensureCloneKey(namespace, repo.Host, repo.Owner, repo.Name)
 	ch := m.repoBrowserRefreshSF.DoChan(key, func() (any, error) {
-		opCtx, cancel := repoBrowserRefreshOperationContext(ctx, detach)
+		opCtx, cancel := context.WithTimeout(ctx, ensureCloneTimeout)
 		defer cancel()
-		if err := m.EnsureCloneInNamespace(
+		if err := m.ensureCloneNowInNamespace(
 			opCtx,
 			namespace,
 			repo.Host,
@@ -812,19 +812,12 @@ func (m *Manager) refreshRepoBrowserClone(ctx context.Context, repo RepoBrowserR
 	return nil
 }
 
-func repoBrowserRefreshOperationContext(ctx context.Context, detach bool) (context.Context, context.CancelFunc) {
-	if detach {
-		ctx = context.WithoutCancel(ctx)
-	}
-	return context.WithTimeout(ctx, ensureCloneTimeout)
-}
-
 func (m *Manager) RefreshRepoBrowserClones(ctx context.Context) {
 	for _, repo := range m.repoBrowserReposSnapshot() {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		if err := m.refreshRepoBrowserClone(ctx, repo, false); err != nil {
+		if err := m.refreshRepoBrowserClone(ctx, repo); err != nil {
 			slog.Warn("repo browser clone refresh failed",
 				"provider", repo.Provider,
 				"host", repo.Host,
@@ -873,7 +866,7 @@ func (m *Manager) ensureRepoBrowserCloneLocal(ctx context.Context, repo RepoBrow
 		return err
 	}
 	if _, err := os.Stat(filepath.Join(dir, "HEAD")); os.IsNotExist(err) {
-		return m.EnsureCloneInNamespace(ctx, namespace, repo.Host, repo.Owner, repo.Name, repo.RemoteURL)
+		return m.refreshRepoBrowserClone(ctx, repo)
 	} else if err != nil {
 		return err
 	}

@@ -56,6 +56,7 @@ describe("RepoBrowserFeature", () => {
 
     await fireEvent.click(await screen.findByRole("link", { name: "Guide" }));
 
+    await screen.findByRole("heading", { name: "Install" });
     await waitFor(() => {
       expect(onRouteChange).toHaveBeenLastCalledWith(
         expect.objectContaining({

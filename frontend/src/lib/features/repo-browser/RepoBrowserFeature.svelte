@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
     buildRepoBrowserRoute,
@@ -90,13 +91,15 @@
       void loadRoute(route);
       return;
     }
-    if (route.path && route.path !== store.getSelectedPath()) {
+    const currentPath = untrack(() => store.getSelectedPath());
+    if (route.path && route.path !== currentPath) {
       const generation = routeLoadGeneration + 1;
       routeLoadGeneration = generation;
       void syncRoutePath(route.path, generation);
     }
     const nextMode = routeViewMode(route);
-    if (nextMode !== store.getViewMode()) {
+    const currentMode = untrack(() => store.getViewMode());
+    if (nextMode !== currentMode) {
       store.setViewMode(nextMode);
     }
   });

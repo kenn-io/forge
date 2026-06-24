@@ -297,6 +297,47 @@ describe("createRepoBrowserStore", () => {
     expect(store.isBlobLoading()).toBe(false);
   });
 
+  it("does not auto-select over a user path selection while last-changed metadata loads", async () => {
+    const base = testClient();
+    const lastChanged = deferredResponse();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&path=src%2Fapp.ts"
+        ) {
+          return lastChanged.promise;
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createRepoBrowserStore({ client });
+
+    const load = store.loadRepo(repo);
+    await vi.waitFor(() => {
+      expect(store.getTree().map((entry) => entry.path)).toEqual(["README.md", "src/app.ts"]);
+    });
+    const selectedPath = store.selectPath("src/app.ts");
+    lastChanged.resolve({
+      data: {
+        repo,
+        ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+        commits: {
+          "README.md": commit("readme changed"),
+          "src/app.ts": commit("app changed"),
+        },
+      },
+      response: new Response(null, { status: 200 }),
+    });
+
+    await Promise.all([load, selectedPath]);
+
+    expect(store.getSelectedPath()).toBe("src/app.ts");
+    expect(store.getBlob()?.path).toBe("src/app.ts");
+    expect(store.getFileHistory().map((item) => item.subject)).toEqual(["app changed"]);
+  });
+
   it("clears path-dependent data while a new path is loading", async () => {
     const base = testClient();
     const srcBlob = deferredResponse();

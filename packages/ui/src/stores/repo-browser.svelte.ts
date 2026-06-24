@@ -171,8 +171,10 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     selectedRef = payload.ref ?? requestedRef;
     tree = payload.entries ?? [];
     treeTruncated = payload.truncated;
+    const autoSelectPathGeneration = pathRequestGeneration;
     await loadLastChanged(generation);
     if (!isCurrentTreeRequest(generation)) return;
+    if (pathRequestGeneration !== autoSelectPathGeneration) return;
     const requestedPathExists = requestedPath && tree.some((entry) => entry.path === requestedPath);
     const firstPath =
       requestedPathExists || !requestedPath || missingPathBehavior === "fallback"

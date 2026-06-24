@@ -1,6 +1,7 @@
 package gitclone
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -112,6 +113,22 @@ func TestRefreshRepoBrowserClonesUsesSeededExistingClones(t *testing.T) {
 	})
 	require.NoError(err)
 	assert.Equal(updatedSHA, resolved.SHA)
+}
+
+func TestRepoBrowserScheduledRefreshContextStaysCancelable(t *testing.T) {
+	require := require.New(t)
+
+	parent, cancel := context.WithCancel(t.Context())
+	opCtx, opCancel := repoBrowserRefreshOperationContext(parent, false)
+	cancel()
+	defer opCancel()
+	require.ErrorIs(opCtx.Err(), context.Canceled)
+
+	detachedParent, detachedCancel := context.WithCancel(t.Context())
+	detachedCtx, detachedOpCancel := repoBrowserRefreshOperationContext(detachedParent, true)
+	detachedCancel()
+	defer detachedOpCancel()
+	require.NoError(detachedCtx.Err())
 }
 
 func TestRepoBrowserRefreshFetchesTagsWithoutPruning(t *testing.T) {

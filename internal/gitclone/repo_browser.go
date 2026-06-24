@@ -738,6 +738,10 @@ func (m *Manager) EnsureRepoBrowserClone(ctx context.Context, repo RepoBrowserRe
 }
 
 func (m *Manager) RefreshRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
+	return m.refreshRepoBrowserClone(ctx, repo, true)
+}
+
+func (m *Manager) refreshRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef, detach bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -750,7 +754,7 @@ func (m *Manager) RefreshRepoBrowserClone(ctx context.Context, repo RepoBrowserR
 	}
 	key := ensureCloneKey(namespace, repo.Host, repo.Owner, repo.Name)
 	ch := m.repoBrowserRefreshSF.DoChan(key, func() (any, error) {
-		opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ensureCloneTimeout)
+		opCtx, cancel := repoBrowserRefreshOperationContext(ctx, detach)
 		defer cancel()
 		if err := m.EnsureCloneInNamespace(
 			opCtx,
@@ -780,12 +784,19 @@ func (m *Manager) RefreshRepoBrowserClone(ctx context.Context, repo RepoBrowserR
 	return nil
 }
 
+func repoBrowserRefreshOperationContext(ctx context.Context, detach bool) (context.Context, context.CancelFunc) {
+	if detach {
+		ctx = context.WithoutCancel(ctx)
+	}
+	return context.WithTimeout(ctx, ensureCloneTimeout)
+}
+
 func (m *Manager) RefreshRepoBrowserClones(ctx context.Context) {
 	for _, repo := range m.repoBrowserReposSnapshot() {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		if err := m.RefreshRepoBrowserClone(ctx, repo); err != nil {
+		if err := m.refreshRepoBrowserClone(ctx, repo, false); err != nil {
 			slog.Warn("repo browser clone refresh failed",
 				"provider", repo.Provider,
 				"host", repo.Host,

@@ -231,7 +231,9 @@ test.describe("repository source browser", () => {
       await page.goto(`${server.info.base_url}/pulls/github/acme/tools/1`);
       await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
-      await page.goto(`${server.info.base_url}/focus/pulls/github/acme/widgets/1`);
+      await page.evaluate((route) => {
+        window.__middleman_navigate_to_route?.(route);
+      }, "/focus/pulls/github/acme/widgets/1");
       await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
       const readmeLoaded = blobResponse(page, "README.md");

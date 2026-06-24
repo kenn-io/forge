@@ -585,19 +585,19 @@ func (m *Manager) RepoBrowserCommitDetail(
 		return RepoBrowserCommit{}, fmt.Errorf("%w: %s", ErrCommitOutOfScope, sha)
 	}
 	out, err := m.git(ctx, dir,
-		"show", "-s", "--format="+repoBrowserCommitFormat, "--end-of-options", commitSHA,
+		"show", "-s", "--format="+repoBrowserCommitDetailFormat, "--end-of-options", commitSHA,
 	)
 	if err != nil {
 		return RepoBrowserCommit{}, fmt.Errorf("repo browser commit detail %s: %w", sha, err)
 	}
-	commits, err := parseRepoBrowserCommitLines(out)
+	commit, err := parseRepoBrowserCommitDetail(out)
 	if err != nil {
 		return RepoBrowserCommit{}, err
 	}
-	if len(commits) == 0 {
+	if commit.SHA == "" {
 		return RepoBrowserCommit{}, fmt.Errorf("%w: %s", ErrNotFound, sha)
 	}
-	return commits[0], nil
+	return commit, nil
 }
 
 func (m *Manager) repoBrowserCommitTouchesPath(
@@ -656,6 +656,7 @@ func (m *Manager) ResolveRepoBrowserRef(
 
 const (
 	repoBrowserCommitFormat            = "%H%x1f%an%x1f%ae%x1f%aI%x1f%s"
+	repoBrowserCommitDetailFormat      = "%H%x00%an%x00%ae%x00%aI%x00%s%x00%b"
 	repoBrowserLastChangedCommitFormat = "%x00" + repoBrowserCommitFormat
 )
 
@@ -692,6 +693,29 @@ func parseRepoBrowserCommitLine(line string) (RepoBrowserCommit, error) {
 		AuthorEmail: truncateCommitText(parts[2], commitIdentityMaxBytes),
 		AuthoredAt:  authoredAt.UTC(),
 		Subject:     truncateCommitText(parts[4], commitMessageMaxBytes),
+	}, nil
+}
+
+func parseRepoBrowserCommitDetail(out []byte) (RepoBrowserCommit, error) {
+	raw := strings.TrimSuffix(string(out), "\n")
+	if raw == "" {
+		return RepoBrowserCommit{}, nil
+	}
+	parts := strings.SplitN(raw, "\x00", 6)
+	if len(parts) != 6 {
+		return RepoBrowserCommit{}, fmt.Errorf("unexpected repo browser commit detail: %q", raw)
+	}
+	authoredAt, err := time.Parse(time.RFC3339, parts[3])
+	if err != nil {
+		return RepoBrowserCommit{}, fmt.Errorf("parse repo browser commit time %q: %w", parts[3], err)
+	}
+	return RepoBrowserCommit{
+		SHA:         parts[0],
+		AuthorName:  truncateCommitText(parts[1], commitIdentityMaxBytes),
+		AuthorEmail: truncateCommitText(parts[2], commitIdentityMaxBytes),
+		AuthoredAt:  authoredAt.UTC(),
+		Subject:     truncateCommitText(parts[4], commitMessageMaxBytes),
+		Body:        truncateCommitText(strings.TrimSuffix(parts[5], "\n"), commitMessageMaxBytes),
 	}, nil
 }
 

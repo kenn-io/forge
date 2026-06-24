@@ -416,7 +416,7 @@ func TestRepoBrowserCommitDetailRequiresSelectedFileHistory(t *testing.T) {
 
 	require.NoError(os.WriteFile(filepath.Join(work, "other.txt"), []byte("other\n"), 0o644))
 	commitTestRun(t, work, "git", "add", ".")
-	commitTestRun(t, work, "git", "commit", "-m", "other file")
+	commitTestRun(t, work, "git", "commit", "-m", "other file", "-m", "Explain the file change.\n\nKeep the body visible.")
 	otherSHA := gitSHA(t, work, "HEAD")
 	commitTestRun(t, work, "git", "push", "origin", "main")
 	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
@@ -429,6 +429,7 @@ func TestRepoBrowserCommitDetailRequiresSelectedFileHistory(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(otherSHA, commit.SHA)
 	assert.Equal("other file", commit.Subject)
+	assert.Equal("Explain the file change.\n\nKeep the body visible.", commit.Body)
 }
 
 func TestRepoBrowserCommitDetailRejectsUnknownFullSHA(t *testing.T) {

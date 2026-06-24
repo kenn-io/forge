@@ -48,7 +48,7 @@ function renderItemRefToken(token: Tokens.Generic): string {
   return `<a ${itemReferenceAnchorAttributes(token)}>${token.text}</a>`;
 }
 
-function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
+export function providerItemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
   const supportsBangMR = canonicalProvider(repo?.provider ?? "") === "gitlab";
   return {
     name: "itemRef",
@@ -267,7 +267,7 @@ function getMarked(repo?: RepoContext): Marked {
   let instance = markedCache.get(key);
   if (!instance) {
     instance = new Marked({ breaks: true, gfm: true });
-    instance.use({ extensions: [itemRefExtension(repo)] });
+    instance.use({ extensions: [providerItemRefExtension(repo)] });
     instance.use({
       renderer: taskListRenderer,
     });

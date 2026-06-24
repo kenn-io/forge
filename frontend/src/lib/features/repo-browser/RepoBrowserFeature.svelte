@@ -324,6 +324,7 @@
         }),
       buildBlobURL: (_folderID: string, relPath: string) => assetURL(relPath),
       allowExternalImages: false,
+      repoContext: repoRef(route),
     };
   }
 

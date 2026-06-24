@@ -69,6 +69,24 @@ describe("RepoBrowserFeature", () => {
     });
   });
 
+  it("renders markdown issue references as provider item links", async () => {
+    render(RepoBrowserFeature, {
+      props: {
+        client: testClient(),
+        route,
+        onRouteChange: vi.fn(),
+      },
+    });
+
+    const issueLink = await screen.findByRole("link", { name: "#12" });
+
+    expect(issueLink.classList.contains("item-ref")).toBe(true);
+    expect(issueLink.getAttribute("href")).toBe("/issues/github/acme/widgets/12");
+    expect(issueLink.getAttribute("data-provider")).toBe("github");
+    expect(issueLink.getAttribute("data-repo-path")).toBe("acme/widgets");
+    expect(issueLink.getAttribute("data-external-url")).toBe("https://github.com/acme/widgets/issues/12");
+  });
+
   it("applies route anchor changes for the selected markdown file", async () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
@@ -393,7 +411,7 @@ function testClient(): MiddlemanClient {
         url ===
         "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
       ) {
-        return blobResponse("README.md", "[Guide](docs/guide.md#install)\n");
+        return blobResponse("README.md", "[Guide](docs/guide.md#install)\n\nSee #12.\n");
       }
       if (
         url ===
@@ -405,7 +423,7 @@ function testClient(): MiddlemanClient {
         url ===
         "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=tag-sha&path=README.md"
       ) {
-        return blobResponse("README.md", "[Guide](docs/guide.md#install)\n");
+        return blobResponse("README.md", "[Guide](docs/guide.md#install)\n\nSee #12.\n");
       }
       if (
         url ===

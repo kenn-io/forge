@@ -1,5 +1,6 @@
 import DOMPurify, { type UponSanitizeElementHook, type UponSanitizeElementHookEvent } from "dompurify";
 import { Marked, type MarkedExtension, type Tokens } from "marked";
+import { providerItemRefExtension, type RepoContext } from "@middleman/ui/utils/markdown";
 import {
   joinFolderPath,
   parseWikilink,
@@ -29,6 +30,9 @@ export interface DocsMarkdownOptions {
   // Repository previews disable this so contributor-controlled Markdown
   // cannot make the maintainer's browser fetch arbitrary network URLs.
   allowExternalImages?: boolean;
+  // Repository previews provide this so #123-style references render like
+  // issue/PR comments instead of Docs/Kata short-id links.
+  repoContext?: RepoContext | undefined;
 }
 
 export interface FrontmatterSplit {
@@ -90,12 +94,20 @@ const ALLOWED_ATTR = [
   "data-doc-link",
   "data-doc-image-token",
   "data-doc-path",
+  "data-external-url",
   "data-kata-link",
   "data-kata-mention",
   "data-kata-project",
   "data-kata-short-id",
   "data-kata-uid",
   "data-folder",
+  "data-item-type",
+  "data-name",
+  "data-number",
+  "data-owner",
+  "data-platform-host",
+  "data-provider",
+  "data-repo-path",
   "data-wikilink",
   "decoding",
   "href",
@@ -114,7 +126,12 @@ export function renderDocsMarkdown(source: string, options: DocsMarkdownOptions)
   const md = new Marked();
   md.use({ gfm: true, breaks: false, async: false } satisfies MarkedExtension);
   md.use({
-    extensions: [wikilinkExtension(options, imageToken), kataLinkExtension(), mentionExtension()],
+    extensions: [
+      wikilinkExtension(options, imageToken),
+      ...(options.repoContext ? [providerItemRefExtension(options.repoContext)] : []),
+      ...(options.repoContext ? [] : [kataLinkExtension()]),
+      mentionExtension(),
+    ],
   });
   md.use({ renderer: docsRenderer(options, imageToken) });
   const rawHtml = md.parse(body) as string;

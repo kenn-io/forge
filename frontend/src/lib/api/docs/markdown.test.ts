@@ -135,6 +135,26 @@ describe("renderDocsMarkdown", () => {
     expect(html).toMatch(/see #abc/);
   });
 
+  test("renders numeric repo references as provider item links when repo context is present", () => {
+    const html = renderDocsMarkdown("See #12 and group/project!13.", {
+      ...baseOptions,
+      repoContext: {
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        owner: "group",
+        name: "project",
+        repoPath: "group/project",
+      },
+    });
+
+    expect(html).toContain('class="item-ref" href="/host/gitlab.example.com/issues/gitlab/group/project/12"');
+    expect(html).toContain('data-number="12" data-item-type="issue"');
+    expect(html).toContain('data-external-url="https://gitlab.example.com/group/project/-/issues/12"');
+    expect(html).toContain('href="/host/gitlab.example.com/pulls/gitlab/group/project/13"');
+    expect(html).toContain('data-number="13" data-item-type="pr"');
+    expect(html).not.toContain('data-kata-short-id="12"');
+  });
+
   test("mention regex stops on trailing sentence punctuation", () => {
     const html = renderDocsMarkdown("Hello @wes.", baseOptions);
     expect(html).toMatch(/data-kata-mention="wes"/);

@@ -175,6 +175,24 @@ describe("MergeModal head pinning", () => {
     expect(onclose).toHaveBeenCalledTimes(1);
   });
 
+  it("offers an immediate merge override while CI is still pending", async () => {
+    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
+    const onmerged = vi.fn();
+    renderModal(post, {
+      deferUntilChecksPass: true,
+      onmerged,
+    });
+
+    expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Merge Anyway" }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    const [path, init] = post.mock.calls[0];
+    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge");
+    expect(init.body.method).toBe("squash");
+    expect(onmerged).toHaveBeenCalledTimes(1);
+  });
+
   it("disables the deferred merge action while scheduling the merge", async () => {
     const scheduled = deferred<{ data: Record<string, never>; error: undefined; response: Response }>();
     const post = vi.fn().mockReturnValue(scheduled.promise);

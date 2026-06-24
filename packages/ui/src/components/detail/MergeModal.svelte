@@ -110,8 +110,9 @@
   let commitTitle = $state(initialCommitTitle());
   let commitMessage = $state(initialCommitMessage());
 
-  let merging = $state(false);
+  let activeMergeSubmission = $state<"deferred" | "immediate" | null>(null);
   let error = $state<string | null>(null);
+  const merging = $derived(activeMergeSubmission !== null);
 
   function mergeParams(): MergeParams {
     return {
@@ -135,7 +136,7 @@
 
   async function submitMerge(deferred: boolean): Promise<void> {
     if (headPinMissing) return;
-    merging = true;
+    activeMergeSubmission = deferred ? "deferred" : "immediate";
     error = null;
     try {
       // Pin the merge to the head the user reviewed; the server rejects
@@ -160,7 +161,7 @@
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
-      merging = false;
+      activeMergeSubmission = null;
     }
   }
 
@@ -169,6 +170,10 @@
       void submitMerge(true);
       return;
     }
+    void submitMerge(false);
+  }
+
+  function handleMergeAnyway(): void {
     void submitMerge(false);
   }
 
@@ -188,8 +193,13 @@
   }
 
   function primaryButtonLabel(): string {
-    if (merging) return deferUntilChecksPass ? "Merge scheduled..." : "Merging...";
+    if (activeMergeSubmission === "deferred") return "Merge scheduled...";
+    if (activeMergeSubmission === "immediate" && !deferUntilChecksPass) return "Merging...";
     return deferUntilChecksPass ? "Merge after CI is complete" : methodLabel();
+  }
+
+  function mergeAnywayButtonLabel(): string {
+    return activeMergeSubmission === "immediate" ? "Merging..." : "Merge Anyway";
   }
 </script>
 
@@ -303,6 +313,17 @@
       >
         {primaryButtonLabel()}
       </ActionButton>
+      {#if deferUntilChecksPass}
+        <ActionButton
+          class="btn btn--merge-anyway"
+          onclick={handleMergeAnyway}
+          disabled={merging || headPinMissing}
+          tone="success"
+          surface="soft"
+        >
+          {mergeAnywayButtonLabel()}
+        </ActionButton>
+      {/if}
     </div>
   </div>
 </div>

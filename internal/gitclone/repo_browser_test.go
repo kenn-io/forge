@@ -89,6 +89,31 @@ func TestRefreshRepoBrowserClonesRefreshesRegisteredRepos(t *testing.T) {
 	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
 }
 
+func TestRefreshRepoBrowserClonesUsesSeededExistingClones(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+	restarted := New(mgr.baseDir, nil)
+
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "update readme")
+	updatedSHA := gitSHA(t, work, "main")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+
+	registered, err := restarted.RegisterExistingRepoBrowserClone(t.Context(), repo)
+	require.NoError(err)
+	require.True(registered)
+	restarted.RefreshRepoBrowserClones(t.Context())
+
+	resolved, err := restarted.ResolveRepoBrowserRef(t.Context(), repo, RepoBrowserRef{
+		Type: RepoBrowserRefBranch,
+		Name: "main",
+	})
+	require.NoError(err)
+	assert.Equal(updatedSHA, resolved.SHA)
+}
+
 func TestRepoBrowserRefreshFetchesTagsWithoutPruning(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

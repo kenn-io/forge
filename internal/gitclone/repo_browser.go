@@ -787,6 +787,32 @@ func (m *Manager) RefreshRepoBrowserClones(ctx context.Context) {
 	}
 }
 
+func (m *Manager) RegisterExistingRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, repo.RemoteURL); err != nil {
+		return false, err
+	}
+	dir, err := m.repoBrowserClonePath(repo)
+	if err != nil {
+		return false, err
+	}
+	if _, err := os.Stat(filepath.Join(dir, "HEAD")); os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	if out, err := m.git(ctx, dir, "config", "--get", "remote.origin.url"); err == nil {
+		if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, strings.TrimSpace(string(out))); err != nil {
+			return false, err
+		}
+	}
+	m.ensureRefspecs(ctx, dir)
+	m.registerRepoBrowserRepo(repo)
+	return true, nil
+}
+
 func (m *Manager) ensureRepoBrowserCloneLocal(ctx context.Context, repo RepoBrowserRepoRef) error {
 	if err := ctx.Err(); err != nil {
 		return err

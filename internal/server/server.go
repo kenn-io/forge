@@ -148,6 +148,7 @@ type Server struct {
 	cfg                         *config.Config
 	cfgPath                     string
 	tokenSources                *tokenauth.SourceSet
+	repoBrowserRefreshEvery     time.Duration
 	cfgMu                       sync.Mutex
 	configReloadMu              sync.Mutex
 	// bootCfgSnapshot freezes the subset of config fields that are
@@ -675,25 +676,26 @@ func newServer(
 	}
 
 	s := &Server{
-		db:                     database,
-		basePath:               basePath,
-		syncer:                 syncer,
-		clones:                 clones,
-		telemetry:              options.Telemetry,
-		cfg:                    cfg,
-		cfgPath:                cfgPath,
-		tokenSources:           options.TokenSources,
-		bootCfgSnapshot:        snapshotStartupConfig(cfg),
-		runtimeStripEnvVars:    initialRuntimeStripEnvNames(cfg),
-		options:                options,
-		apiAuthToken:           options.APIAuthToken,
-		now:                    time.Now,
-		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
-		tmuxActivity:           newTmuxActivityTracker(nil),
-		labelCatalogRefreshIDs: make(map[int64]struct{}),
-		deferredMergeMaxWait:   deferredMergeMaxWait,
-		docsPublishLocks:       newDocsPublishLockSet(),
-		msgvault:               newMsgvaultHandler(cfg, basePath, options.msgvaultRemoteImageDeps),
+		db:                      database,
+		basePath:                basePath,
+		syncer:                  syncer,
+		clones:                  clones,
+		telemetry:               options.Telemetry,
+		cfg:                     cfg,
+		cfgPath:                 cfgPath,
+		tokenSources:            options.TokenSources,
+		repoBrowserRefreshEvery: repoBrowserRefreshIntervalForConfig(cfg),
+		bootCfgSnapshot:         snapshotStartupConfig(cfg),
+		runtimeStripEnvVars:     initialRuntimeStripEnvNames(cfg),
+		options:                 options,
+		apiAuthToken:            options.APIAuthToken,
+		now:                     time.Now,
+		hub:                     NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
+		tmuxActivity:            newTmuxActivityTracker(nil),
+		labelCatalogRefreshIDs:  make(map[int64]struct{}),
+		deferredMergeMaxWait:    deferredMergeMaxWait,
+		docsPublishLocks:        newDocsPublishLockSet(),
+		msgvault:                newMsgvaultHandler(cfg, basePath, options.msgvaultRemoteImageDeps),
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
 			deadline: bgDeadline,
@@ -836,6 +838,7 @@ func newServer(
 		s.runBackground(s.fleetPlatformAuthMonitor.run)
 	}
 	if clones != nil && !options.DisableWorkspaceBackgroundMonitors {
+		s.seedRepoBrowserRefreshRepos(context.Background())
 		s.runBackground(s.runRepoBrowserRefreshLoop)
 	}
 

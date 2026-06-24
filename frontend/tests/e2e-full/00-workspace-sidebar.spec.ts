@@ -338,6 +338,7 @@ test.describe("workspace sidebar full-stack", () => {
       // data rather than a route mock.
       const createResponse = await api.post("/api/v1/workspaces", {
         data: {
+          provider: "github",
           platform_host: "github.com",
           owner: "acme",
           name: "widgets",

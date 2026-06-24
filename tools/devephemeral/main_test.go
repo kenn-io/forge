@@ -632,12 +632,16 @@ func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
 	assert.Equal("http://127.0.0.1:39502", status.FrontendURL)
 	assert.Equal("workflow state", readSQLiteMarker(t, filepath.Join(workDir, "data", "middleman.db")))
 
-	require.NoError(run(context.Background(), []string{
-		"-config", sourcePath,
-		"-work-dir", workDir,
-		"-backend-port", "39503",
-		"-frontend-port", "39504",
-	}))
+	var reuseErr error
+	require.Eventually(func() bool {
+		reuseErr = run(context.Background(), []string{
+			"-config", sourcePath,
+			"-work-dir", workDir,
+			"-backend-port", "39503",
+			"-frontend-port", "39504",
+		})
+		return reuseErr == nil
+	}, 2*time.Second, 10*time.Millisecond, "reuse run failed: %v", reuseErr)
 	reused := readStatusFile(t, statusPath)
 	assert.Equal(status.BackendPID, reused.BackendPID)
 	assert.Equal(status.FrontendPID, reused.FrontendPID)

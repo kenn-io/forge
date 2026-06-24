@@ -151,6 +151,19 @@ func TestRepoBrowserScheduledRefreshContextStaysCancelable(t *testing.T) {
 	assert.Empty(repos)
 }
 
+func TestRepoBrowserRequestRefreshWorkDetachesCallerCancellation(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	requestWork := repoBrowserRefreshWorkParent(ctx, repoBrowserRefreshDetachCaller)
+	scheduledWork := repoBrowserRefreshWorkParent(ctx, repoBrowserRefreshRespectCaller)
+
+	cancel()
+
+	require.NoError(requestWork.Err())
+	assert.ErrorIs(scheduledWork.Err(), context.Canceled)
+}
+
 func TestRepoBrowserRefreshFetchesTagsWithoutPruning(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

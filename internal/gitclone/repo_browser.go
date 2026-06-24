@@ -766,10 +766,28 @@ func (m *Manager) EnsureRepoBrowserClone(ctx context.Context, repo RepoBrowserRe
 }
 
 func (m *Manager) RefreshRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
-	return m.refreshRepoBrowserClone(ctx, repo)
+	return m.refreshRepoBrowserClone(ctx, repo, repoBrowserRefreshRespectCaller)
 }
 
-func (m *Manager) refreshRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
+type repoBrowserRefreshWorkMode uint8
+
+const (
+	repoBrowserRefreshRespectCaller repoBrowserRefreshWorkMode = iota
+	repoBrowserRefreshDetachCaller
+)
+
+func repoBrowserRefreshWorkParent(ctx context.Context, mode repoBrowserRefreshWorkMode) context.Context {
+	if mode == repoBrowserRefreshDetachCaller {
+		return context.WithoutCancel(ctx)
+	}
+	return ctx
+}
+
+func (m *Manager) refreshRepoBrowserClone(
+	ctx context.Context,
+	repo RepoBrowserRepoRef,
+	mode repoBrowserRefreshWorkMode,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -782,7 +800,10 @@ func (m *Manager) refreshRepoBrowserClone(ctx context.Context, repo RepoBrowserR
 	}
 	key := ensureCloneKey(namespace, repo.Host, repo.Owner, repo.Name)
 	ch := m.repoBrowserRefreshSF.DoChan(key, func() (any, error) {
-		opCtx, cancel := context.WithTimeout(ctx, ensureCloneTimeout)
+		opCtx, cancel := context.WithTimeout(
+			repoBrowserRefreshWorkParent(ctx, mode),
+			ensureCloneTimeout,
+		)
 		defer cancel()
 		if err := m.ensureCloneNowInNamespace(
 			opCtx,
@@ -817,7 +838,7 @@ func (m *Manager) RefreshRepoBrowserClones(ctx context.Context) {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		if err := m.refreshRepoBrowserClone(ctx, repo); err != nil {
+		if err := m.refreshRepoBrowserClone(ctx, repo, repoBrowserRefreshRespectCaller); err != nil {
 			slog.Warn("repo browser clone refresh failed",
 				"provider", repo.Provider,
 				"host", repo.Host,
@@ -866,7 +887,7 @@ func (m *Manager) ensureRepoBrowserCloneLocal(ctx context.Context, repo RepoBrow
 		return err
 	}
 	if _, err := os.Stat(filepath.Join(dir, "HEAD")); os.IsNotExist(err) {
-		return m.refreshRepoBrowserClone(ctx, repo)
+		return m.refreshRepoBrowserClone(ctx, repo, repoBrowserRefreshDetachCaller)
 	} else if err != nil {
 		return err
 	}

@@ -322,7 +322,7 @@ test.describe("phone routes", () => {
     });
     await page.getByRole("combobox", { name: /Repository/ }).click();
     await page.getByRole("option", { name: "github/github.com/acme/widgets" }).click();
-    await expect(page.getByRole("combobox", { name: "Repository: github/github.com/acme/widgets" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Repository: acme/widgets" })).toHaveText("acme/widgets");
     await activityForRepo;
   });
 

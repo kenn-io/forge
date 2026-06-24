@@ -258,6 +258,7 @@ func createReadyWorkspace(
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",

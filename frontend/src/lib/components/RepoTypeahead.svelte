@@ -216,7 +216,7 @@
       return;
     }
     const validValues = new Set(options.map((option) => option.value));
-    const next = selectedValues.filter((value) => validValues.has(value));
+    const next = selectedValues.filter((value) => validValues.has(value) || value.includes("|"));
     if (next.length === selectedValues.length) return;
     onchange(serializeRepoFilterValue(next));
   });

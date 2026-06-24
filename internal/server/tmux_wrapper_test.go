@@ -322,6 +322,7 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		t.Context(),
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -382,6 +383,7 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -479,6 +481,7 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -594,6 +597,7 @@ func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
 	createResp1, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -608,6 +612,7 @@ func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
 	createResp2, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1100,6 +1105,7 @@ func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1180,6 +1186,7 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1294,6 +1301,7 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1385,6 +1393,7 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1489,6 +1498,7 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		t.Context(),
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1594,6 +1604,7 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1716,6 +1727,7 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1765,6 +1777,7 @@ func TestWorkspaceListWaitsForSubprocessCapacityThenCompletesViaAPI(t *testing.T
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1843,6 +1856,7 @@ func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1911,6 +1925,7 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -1987,6 +2002,7 @@ func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -2060,6 +2076,7 @@ func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		t.Context(),
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -2130,6 +2147,7 @@ func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -2209,6 +2227,7 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
 			PlatformHost: "github.com",
 			Owner:        "acme",
 			Name:         "widget",

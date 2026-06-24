@@ -174,6 +174,46 @@ func TestCommitTimelineSinceTag(t *testing.T) {
 	assert.False(points[0].CommittedAt.IsZero())
 }
 
+func TestCommitTimelineSinceTagFetchesMovedTag(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", remote)
+
+	work := filepath.Join(dir, "work")
+	commitTestRun(t, dir, "git", "clone", remote, work)
+	commitTestRun(t, work, "git", "config", "user.email", "alice@test.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Alice")
+
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "release commit")
+	commitTestRun(t, work, "git", "tag", "v1.0.0")
+	require.NoError(os.WriteFile(filepath.Join(work, "next.txt"), []byte("next\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "next")
+	commitTestRun(t, work, "git", "push", "--tags", "origin", "main")
+
+	mgr := New(filepath.Join(dir, "clones"), nil)
+	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	count, _, err := mgr.CommitTimelineSinceTag(
+		t.Context(), "github.com", "acme", "widgets", "v1.0.0", 2,
+	)
+	require.NoError(err)
+	assert.Equal(1, count)
+
+	commitTestRun(t, work, "git", "tag", "-f", "v1.0.0", "HEAD")
+	commitTestRun(t, work, "git", "push", "--force", "origin", "refs/tags/v1.0.0")
+	count, points, err := mgr.CommitTimelineSinceTag(
+		t.Context(), "github.com", "acme", "widgets", "v1.0.0", 2,
+	)
+	require.NoError(err)
+	assert.Equal(0, count)
+	assert.Empty(points)
+}
+
 func TestCommitTimelineSinceTagWithoutOriginHEAD(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

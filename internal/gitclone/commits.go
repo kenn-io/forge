@@ -134,6 +134,9 @@ func (m *Manager) CommitTimelineSinceTag(
 	if err != nil {
 		return 0, nil, err
 	}
+	if err := m.fetchTimelineTag(ctx, host, dir, tagName); err != nil {
+		return 0, nil, err
+	}
 	defaultRef := m.defaultTimelineRef(ctx, dir)
 	rangeSpec := tagName + ".." + defaultRef
 	countOut, err := m.git(ctx, dir,
@@ -184,6 +187,24 @@ func (m *Manager) CommitTimelineSinceTag(
 		return 0, nil, err
 	}
 	return count, points, nil
+}
+
+func (m *Manager) fetchTimelineTag(ctx context.Context, host, dir, tagName string) error {
+	tagName = strings.TrimSpace(tagName)
+	if tagName == "" {
+		return nil
+	}
+	ref := "refs/tags/" + tagName
+	if _, err := m.git(ctx, dir, "check-ref-format", ref); err != nil {
+		return fmt.Errorf("validate release tag %q: %w", tagName, err)
+	}
+	_, err := retryTransient(ctx, "git fetch release tag", func() ([]byte, error) {
+		return m.gitNetworked(ctx, host, dir, nil, "fetch", "origin", "+"+ref+":"+ref)
+	})
+	if err != nil {
+		return fmt.Errorf("fetch release tag %s: %w", tagName, err)
+	}
+	return nil
 }
 
 func (m *Manager) defaultTimelineRef(

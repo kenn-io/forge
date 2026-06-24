@@ -414,6 +414,31 @@ func TestRepoBrowserCommitDetailRequiresSelectedFileHistory(t *testing.T) {
 	assert.Equal("other file", commit.Subject)
 }
 
+func TestRepoBrowserCommitDetailAcceptsOlderFileHistory(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+	readmeSHA := gitSHA(t, work, "HEAD")
+
+	for i := range RepoBrowserHistoryLimit + 1 {
+		require.NoError(os.WriteFile(
+			filepath.Join(work, fmt.Sprintf("later-%02d.txt", i)),
+			[]byte("later\n"),
+			0o644,
+		))
+		commitTestRun(t, work, "git", "add", ".")
+		commitTestRun(t, work, "git", "commit", "-m", fmt.Sprintf("later %02d", i))
+	}
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
+	ref := repoBrowserMainRef(t, mgr, repo)
+
+	commit, err := mgr.RepoBrowserCommitDetail(t.Context(), repo, ref, "README.md", readmeSHA)
+	require.NoError(err)
+	assert.Equal(readmeSHA, commit.SHA)
+	assert.Equal("initial", commit.Subject)
+}
+
 func TestRepoBrowserHistoryTreatsPathspecMagicAsLiteral(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -603,25 +603,32 @@ func (m *Manager) repoBrowserCommitTouchesPath(
 	pathName string,
 	sha string,
 ) (bool, error) {
+	if _, err := m.git(ctx, dir, "merge-base", "--is-ancestor", sha, rootSHA); err != nil {
+		if code, ok := gitExitCode(err); ok && code == 1 {
+			return false, nil
+		}
+		return false, fmt.Errorf("repo browser commit ancestry %s: %w", sha, err)
+	}
 	out, err := m.git(ctx, dir,
-		"log",
-		"--max-count="+strconv.Itoa(RepoBrowserHistoryLimit),
-		"--format=%H",
-		"--end-of-options",
-		rootSHA,
+		"diff-tree",
+		"--no-commit-id",
+		"--name-only",
+		"-r",
+		"-z",
+		"--root",
+		sha,
 		"--",
 		literalRepoBrowserPathspec(pathName),
 	)
 	if err != nil {
 		return false, fmt.Errorf("repo browser commit scope %s: %w", pathName, err)
 	}
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	for scanner.Scan() {
-		if scanner.Text() == sha {
+	for entry := range bytes.SplitSeq(out, []byte{0}) {
+		if string(entry) == pathName {
 			return true, nil
 		}
 	}
-	return false, scanner.Err()
+	return false, nil
 }
 
 func (m *Manager) ResolveRepoBrowserRef(

@@ -296,7 +296,7 @@ function testClient(): MiddlemanClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&path=docs%2Fguide.md"
+        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md&path=docs%2Fguide.md"
       ) {
         return {
           data: {
@@ -309,7 +309,7 @@ function testClient(): MiddlemanClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=README.md&path=docs%2Fguide.md"
+        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=tag-sha&path=README.md&path=docs%2Fguide.md"
       ) {
         return {
           data: {
@@ -322,37 +322,37 @@ function testClient(): MiddlemanClient {
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
       ) {
         return blobResponse("README.md", "[Guide](docs/guide.md#install)\n");
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=README.md"
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=tag-sha&path=README.md"
       ) {
         return blobResponse("README.md", "[Guide](docs/guide.md#install)\n");
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
       ) {
         return historyResponse("README.md");
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=README.md"
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=tag-sha&path=README.md"
       ) {
         return historyResponse("README.md");
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=docs%2Fguide.md"
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=docs%2Fguide.md"
       ) {
         return blobResponse("docs/guide.md", "# Install\n\n## Usage\n");
       }
       if (
         url ===
-        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=docs%2Fguide.md"
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=docs%2Fguide.md"
       ) {
         return historyResponse("docs/guide.md");
       }

@@ -71,9 +71,10 @@ func TestFleetProjectIntakeSelfRoutePersistsProject(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
-	srv.cfg = &config.Config{}
-	srv.cfg.Fleet.Enabled = true
-	srv.cfg.Fleet.Key = "hub"
+	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
+		cfg.Fleet.Key = "hub"
+	})
 
 	ts := httptest.NewServer(srv)
 	defer ts.Close()

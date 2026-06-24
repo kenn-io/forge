@@ -730,22 +730,46 @@ func (m *Manager) EnsureRepoBrowserClone(ctx context.Context, repo RepoBrowserRe
 }
 
 func (m *Manager) RefreshRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
-	if err := m.EnsureCloneInNamespace(
-		ctx,
-		repoBrowserCloneNamespace(repo),
-		repo.Host,
-		repo.Owner,
-		repo.Name,
-		repo.RemoteURL,
-	); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	dir, err := m.repoBrowserClonePath(repo)
-	if err != nil {
+	namespace := repoBrowserCloneNamespace(repo)
+	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, repo.RemoteURL); err != nil {
 		return err
+	}
+	if _, err := m.ClonePathInNamespace(namespace, repo.Host, repo.Owner, repo.Name); err != nil {
+		return err
+	}
+	key := ensureCloneKey(namespace, repo.Host, repo.Owner, repo.Name)
+	ch := m.repoBrowserRefreshSF.DoChan(key, func() (any, error) {
+		opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ensureCloneTimeout)
+		defer cancel()
+		if err := m.EnsureCloneInNamespace(
+			opCtx,
+			namespace,
+			repo.Host,
+			repo.Owner,
+			repo.Name,
+			repo.RemoteURL,
+		); err != nil {
+			return nil, err
+		}
+		dir, err := m.repoBrowserClonePath(repo)
+		if err != nil {
+			return nil, err
+		}
+		return nil, m.fetchRepoBrowserTags(opCtx, repo.Host, dir)
+	})
+	select {
+	case res := <-ch:
+		if res.Err != nil {
+			return res.Err
+		}
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	m.registerRepoBrowserRepo(repo)
-	return m.fetchRepoBrowserTags(ctx, repo.Host, dir)
+	return nil
 }
 
 func (m *Manager) RefreshRepoBrowserClones(ctx context.Context) {

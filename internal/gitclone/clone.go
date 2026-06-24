@@ -45,8 +45,9 @@ type Manager struct {
 	// which GitHub's smart-HTTP edge throttles with sporadic 5xx.
 	ensureSF singleflight.Group
 
-	repoBrowserMu    sync.Mutex
-	repoBrowserRepos map[string]RepoBrowserRepoRef
+	repoBrowserRefreshSF singleflight.Group
+	repoBrowserMu        sync.Mutex
+	repoBrowserRepos     map[string]RepoBrowserRepoRef
 }
 
 // New creates a Manager that stores bare clones under baseDir.

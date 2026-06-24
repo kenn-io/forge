@@ -670,7 +670,12 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
 
   // Populate repo from focus list route or global config.
   if (r.page === "focus" && "repo" in r && r.repo) {
-    event.repo = r.repo;
+    const repoIdentity = parseFocusListRepoIdentity(r.repo);
+    if (repoIdentity) {
+      applyRouteRepoIdentity(event, repoIdentity);
+    } else {
+      event.repo = r.repo;
+    }
   } else if (!event.repo_path) {
     const cfgRepo = getEmbedUIConfig().repo;
     if (cfgRepo) {
@@ -694,6 +699,31 @@ function applyRouteRepoIdentity(event: MiddlemanNavigateEvent, ref: RepoRef): vo
   event.repo = ref.repoPath;
   event.owner = ref.owner;
   event.name = ref.name;
+}
+
+function parseFocusListRepoIdentity(repo: string): RepoRef | undefined {
+  const raw = repo.trim();
+  if (!raw || raw.includes(",")) return undefined;
+  const pipeIndex = raw.indexOf("|");
+  if (pipeIndex <= 0) return undefined;
+  const provider = raw.slice(0, pipeIndex).trim();
+  const hostAndPath = raw.slice(pipeIndex + 1);
+  const slashIndex = hostAndPath.indexOf("/");
+  if (!provider || slashIndex <= 0) return undefined;
+  const platformHost = hostAndPath.slice(0, slashIndex).trim();
+  const repoPath = hostAndPath
+    .slice(slashIndex + 1)
+    .trim()
+    .replace(/^\/+|\/+$/g, "");
+  const repoParts = repoPath ? splitRepoPath(repoPath) : undefined;
+  if (!platformHost || !repoPath || !repoParts) return undefined;
+  return {
+    provider,
+    platformHost,
+    repoPath,
+    owner: repoParts.owner,
+    name: repoParts.name,
+  };
 }
 
 function embedConfigRepoName(repo: NonNullable<ReturnType<typeof getEmbedUIConfig>["repo"]>): string | undefined {

@@ -617,6 +617,40 @@ describe("router navigation events", () => {
     expect(payload.number).toBe(42);
   });
 
+  it("fires provider-aware repo payloads for focus list repo filters", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/focus/mrs?repo=gitlab%7Cgitlab.example.com%2Fgroup%2Fsubgroup%2Fproject");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.page).toBe("pulls");
+    expect(payload.type).toBe("pull");
+    expect(payload.focus).toBe(true);
+    expect(payload.provider).toBe("gitlab");
+    expect(payload.platform_host).toBe("gitlab.example.com");
+    expect(payload.repo_path).toBe("group/subgroup/project");
+    expect(payload.owner).toBe("group/subgroup");
+    expect(payload.name).toBe("project");
+    expect(payload.repo).toBe("group/subgroup/project");
+  });
+
+  it("keeps legacy focus list repo filters opaque in navigation events", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/focus/issues?repo=acme%2Fwidgets");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.page).toBe("issues");
+    expect(payload.type).toBe("issue");
+    expect(payload.focus).toBe(true);
+    expect(payload.repo).toBe("acme/widgets");
+    expect(payload.provider).toBeUndefined();
+    expect(payload.platform_host).toBeUndefined();
+    expect(payload.repo_path).toBeUndefined();
+  });
+
   it("fires onNavigate without owner/name/number for /pulls list", () => {
     const spy = vi.fn();
     installOnNavigate(spy);

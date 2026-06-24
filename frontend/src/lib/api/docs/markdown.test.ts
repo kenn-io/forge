@@ -234,6 +234,15 @@ describe("hardened rendering", () => {
     expect(html).toMatch(/<a[^>]+href="https:\/\/example.com\/logo.png"[^>]*>Logo<\/a>/);
   });
 
+  test("renders obfuscated external images as links when image loading is disabled", () => {
+    const html = renderDocsMarkdown("![Logo](<h\tttps://example.com/logo.png>)", {
+      ...baseOptions,
+      allowExternalImages: false,
+    });
+    expect(html).not.toContain("<img");
+    expect(html).toContain(">Logo</a>");
+  });
+
   test("drops protocol-relative markdown link and image", () => {
     const linkHtml = renderDocsMarkdown("[click](//evil.com/x)", baseOptions);
     expect(linkHtml).not.toContain("evil.com");

@@ -396,7 +396,8 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
       }
       if (isUnsafeUri(href)) return `<span>${inner}</span>`;
       if (isExternal(href)) {
-        return `<a href="${escapeAttr(href)}" target="_blank" rel="noreferrer"${title}>${inner}</a>`;
+        const externalHref = cleanURIForScheme(href);
+        return `<a href="${escapeAttr(externalHref)}" target="_blank" rel="noreferrer"${title}>${inner}</a>`;
       }
       if (href.startsWith("#")) {
         // In-page anchor — pass through. The viewer wires up scroll behavior.
@@ -440,11 +441,12 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
       }
       const imgAttrs = `loading="lazy" decoding="async"`;
       if (isExternal(href)) {
+        const externalHref = cleanURIForScheme(href);
         if (options.allowExternalImages === false) {
           const label = token.text ? escapeHtml(token.text) : escapeHtml(href);
-          return `<a href="${escapeAttr(href)}" target="_blank" rel="noreferrer"${title}>${label}</a>`;
+          return `<a href="${escapeAttr(externalHref)}" target="_blank" rel="noreferrer"${title}>${label}</a>`;
         }
-        return `<img ${trustedImageAttr(imageToken)} src="${escapeAttr(href)}" alt="${alt}" ${imgAttrs}${title}>`;
+        return `<img ${trustedImageAttr(imageToken)} src="${escapeAttr(externalHref)}" alt="${alt}" ${imgAttrs}${title}>`;
       }
       if (!isAssetRef(href)) {
         return `<img ${trustedImageAttr(imageToken)} src="${escapeAttr(href)}" alt="${alt}" ${imgAttrs}${title}>`;
@@ -467,7 +469,7 @@ function isMermaidFence(lang: string | undefined): boolean {
 }
 
 function isExternal(href: string): boolean {
-  return /^(https?:|mailto:)/i.test(href);
+  return /^(https?:|mailto:)/i.test(normalizeURIForScheme(href));
 }
 
 // URI schemes we refuse to render. javascript:/vbscript: are always
@@ -479,10 +481,7 @@ function isUnsafeUri(href: string): boolean {
   // as forward slashes, so normalize before classifying — otherwise
   // `/<tab>/evil.com` or `/\evil.com` smuggles a protocol-relative
   // navigation past the leading-slash checks below.
-  const trimmed = href
-    .replace(/[\t\n\r]/g, "")
-    .trim()
-    .toLowerCase();
+  const trimmed = normalizeURIForScheme(href);
   // Protocol-relative references (//host, \\host, and mixed-slash variants)
   // navigate same-tab to an arbitrary host with no explicit scheme, bypassing
   // the external-link handling that adds target/rel. A single leading slash is
@@ -496,6 +495,14 @@ function isUnsafeUri(href: string): boolean {
     return !/^(https?:|mailto:)/i.test(trimmed);
   }
   return false;
+}
+
+function normalizeURIForScheme(href: string): string {
+  return cleanURIForScheme(href).toLowerCase();
+}
+
+function cleanURIForScheme(href: string): string {
+  return href.replace(/[\t\n\r]/g, "").trim();
 }
 
 // Only treat hrefs that clearly point at folder-bundled assets as blobs.

@@ -149,6 +149,45 @@ describe("RepoBrowserFeature", () => {
     expect(client.GET).toHaveBeenCalledTimes(5);
   });
 
+  it("reloads the repo when the same branch route moves to a different resolved SHA", async () => {
+    const client = testClient();
+    const onRouteChange = vi.fn();
+    const { rerender } = render(RepoBrowserFeature, {
+      props: {
+        client,
+        route: {
+          ...route,
+          refType: "branch",
+          refName: "main",
+          refSHA: "main-sha",
+          path: "README.md",
+        },
+        onRouteChange,
+      },
+    });
+
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
+    await rerender({
+      client,
+      route: {
+        ...route,
+        refType: "branch",
+        refName: "main",
+        refSHA: "main-next-sha",
+        path: "README.md",
+      },
+      onRouteChange,
+    });
+
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(10));
+    const calls = (client.GET as unknown as { mock: { calls: Array<[string, TestGetOptions | undefined]> } }).mock
+      .calls;
+    const urls = calls.map(([path, options]) => testURL(path, options));
+    expect(urls).toContain(
+      "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-next-sha",
+    );
+  });
+
   it("does not reload the repo when a no-ref route is self-replaced with the default ref", async () => {
     const client = testClient();
     const onRouteChange = vi.fn();
@@ -279,6 +318,23 @@ function testClient(): MiddlemanClient {
       }
       if (
         url ===
+        "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-next-sha"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "branch", name: "main", sha: "main-next-sha", stale: false },
+            entries: [
+              { path: "README.md", type: "blob", size: 13 },
+              { path: "docs/guide.md", type: "blob", size: 18 },
+            ],
+            truncated: false,
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
         "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha"
       ) {
         return {
@@ -309,6 +365,19 @@ function testClient(): MiddlemanClient {
       }
       if (
         url ===
+        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-next-sha&path=README.md&path=docs%2Fguide.md"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "branch", name: "main", sha: "main-next-sha", stale: false },
+            commits: {},
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
         "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=tag-sha&path=README.md&path=docs%2Fguide.md"
       ) {
         return {
@@ -328,6 +397,12 @@ function testClient(): MiddlemanClient {
       }
       if (
         url ===
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-next-sha&path=README.md"
+      ) {
+        return blobResponse("README.md", "Updated README\n");
+      }
+      if (
+        url ===
         "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=tag-sha&path=README.md"
       ) {
         return blobResponse("README.md", "[Guide](docs/guide.md#install)\n");
@@ -335,6 +410,12 @@ function testClient(): MiddlemanClient {
       if (
         url ===
         "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md"
+      ) {
+        return historyResponse("README.md");
+      }
+      if (
+        url ===
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-next-sha&path=README.md"
       ) {
         return historyResponse("README.md");
       }

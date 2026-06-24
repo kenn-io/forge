@@ -720,14 +720,34 @@ func (m *Manager) repoBrowserClonePath(repo RepoBrowserRepoRef) (string, error) 
 }
 
 func (m *Manager) EnsureRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
-	return m.EnsureCloneInNamespace(
+	if err := m.EnsureCloneInNamespace(
 		ctx,
 		repoBrowserCloneNamespace(repo),
 		repo.Host,
 		repo.Owner,
 		repo.Name,
 		repo.RemoteURL,
-	)
+	); err != nil {
+		return err
+	}
+	dir, err := m.repoBrowserClonePath(repo)
+	if err != nil {
+		return err
+	}
+	return m.fetchRepoBrowserTags(ctx, repo.Host, dir)
+}
+
+func (m *Manager) fetchRepoBrowserTags(ctx context.Context, host, clonePath string) error {
+	// Repo browser refs need current tag targets, but general clone refreshes
+	// deliberately fetch with --no-tags so sync/diff hot paths are not coupled
+	// to tag namespace size or moved-tag failures.
+	_, err := retryTransient(ctx, "git fetch repo browser tags", func() ([]byte, error) {
+		return m.gitNetworked(ctx, host, clonePath, nil, "fetch", "origin", "+refs/tags/*:refs/tags/*")
+	})
+	if err != nil {
+		return fmt.Errorf("git fetch repo browser tags: %w", err)
+	}
+	return nil
 }
 
 func repoBrowserCloneNamespace(repo RepoBrowserRepoRef) string {

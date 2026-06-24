@@ -199,7 +199,7 @@ func TestEnsureCloneFetchesNewBranchCommits(t *testing.T) {
 	assert.Equal(newSHA, got)
 }
 
-func TestEnsureCloneToleratesMovedRemoteTags(t *testing.T) {
+func TestEnsureCloneDoesNotRefreshMovedRemoteTags(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -223,7 +223,9 @@ func TestEnsureCloneToleratesMovedRemoteTags(t *testing.T) {
 
 	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", "refs/tags/v1.0.0")
 	require.NoError(err)
-	assert.Equal(movedSHA, got)
+	assert.Equal(initialSHA, got)
+	_, err = mgr.RevParse(ctx, "github.com", "testowner", "testrepo", movedSHA)
+	require.NoError(err)
 }
 
 func TestEnsureCloneDoesNotFetchGitLabMergeRequestHeadsByDefault(t *testing.T) {

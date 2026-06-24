@@ -89,6 +89,21 @@ func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T) {
 	assert.False(truncated)
 	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
 	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.1", SHA: mainSHA})
+
+	require.NoError(os.WriteFile(filepath.Join(work, "retag.txt"), []byte("retag\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "retag target")
+	movedSHA := gitSHA(t, work, "HEAD")
+	commitTestRun(t, work, "git", "tag", "-f", "v1.0.1", movedSHA)
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	commitTestRun(t, work, "git", "push", "--force", "origin", "refs/tags/v1.0.1")
+	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+
+	refs, _, truncated, err = mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
+	require.NoError(err)
+	assert.False(truncated)
+	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
+	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.1", SHA: movedSHA})
 }
 
 func TestRepoBrowserRefNamesResolveAsExactRefs(t *testing.T) {

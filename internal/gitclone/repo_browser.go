@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -720,6 +722,14 @@ func (m *Manager) repoBrowserClonePath(repo RepoBrowserRepoRef) (string, error) 
 }
 
 func (m *Manager) EnsureRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
+	if err := m.ensureRepoBrowserCloneLocal(ctx, repo); err != nil {
+		return err
+	}
+	m.registerRepoBrowserRepo(repo)
+	return nil
+}
+
+func (m *Manager) RefreshRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
 	if err := m.EnsureCloneInNamespace(
 		ctx,
 		repoBrowserCloneNamespace(repo),
@@ -734,7 +744,65 @@ func (m *Manager) EnsureRepoBrowserClone(ctx context.Context, repo RepoBrowserRe
 	if err != nil {
 		return err
 	}
+	m.registerRepoBrowserRepo(repo)
 	return m.fetchRepoBrowserTags(ctx, repo.Host, dir)
+}
+
+func (m *Manager) RefreshRepoBrowserClones(ctx context.Context) {
+	for _, repo := range m.repoBrowserReposSnapshot() {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		if err := m.RefreshRepoBrowserClone(ctx, repo); err != nil {
+			slog.Warn("repo browser clone refresh failed",
+				"provider", repo.Provider,
+				"host", repo.Host,
+				"repo", repo.RepoPath,
+				"err", err)
+		}
+	}
+}
+
+func (m *Manager) ensureRepoBrowserCloneLocal(ctx context.Context, repo RepoBrowserRepoRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	namespace := repoBrowserCloneNamespace(repo)
+	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, repo.RemoteURL); err != nil {
+		return err
+	}
+	dir, err := m.ClonePathInNamespace(namespace, repo.Host, repo.Owner, repo.Name)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(dir, "HEAD")); os.IsNotExist(err) {
+		return m.EnsureCloneInNamespace(ctx, namespace, repo.Host, repo.Owner, repo.Name, repo.RemoteURL)
+	} else if err != nil {
+		return err
+	}
+	if out, err := m.git(ctx, dir, "config", "--get", "remote.origin.url"); err == nil {
+		if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, strings.TrimSpace(string(out))); err != nil {
+			return err
+		}
+	}
+	m.ensureRefspecs(ctx, dir)
+	return nil
+}
+
+func (m *Manager) registerRepoBrowserRepo(repo RepoBrowserRepoRef) {
+	m.repoBrowserMu.Lock()
+	defer m.repoBrowserMu.Unlock()
+	m.repoBrowserRepos[repoBrowserCloneNamespace(repo)] = repo
+}
+
+func (m *Manager) repoBrowserReposSnapshot() []RepoBrowserRepoRef {
+	m.repoBrowserMu.Lock()
+	defer m.repoBrowserMu.Unlock()
+	repos := make([]RepoBrowserRepoRef, 0, len(m.repoBrowserRepos))
+	for _, repo := range m.repoBrowserRepos {
+		repos = append(repos, repo)
+	}
+	return repos
 }
 
 func (m *Manager) fetchRepoBrowserTags(ctx context.Context, host, clonePath string) error {

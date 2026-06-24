@@ -28,7 +28,7 @@ func TestRepoBrowserListRefsDisambiguatesBranchAndTag(t *testing.T) {
 	commitTestRun(t, work, "git", "checkout", "main")
 	commitTestRun(t, work, "git", "tag", "release", mainSHA)
 	commitTestRun(t, work, "git", "push", "origin", "refs/tags/release")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 
 	refs, defaultRef, truncated, err := mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
 	require.NoError(err)
@@ -57,7 +57,7 @@ func TestRepoBrowserListRefsCapsLargeRefSets(t *testing.T) {
 	assert.Equal(fmt.Sprintf("branch-%04d", RepoBrowserRefLimit-1), capped[len(capped)-1].Name)
 }
 
-func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T) {
+func TestEnsureRepoBrowserCloneDoesNotFetchTagsForExistingClone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	mgr, repo, work := setupRepoBrowserTestRepo(t)
@@ -66,6 +66,38 @@ func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T) {
 	commitTestRun(t, work, "git", "tag", "v1.0.0", mainSHA)
 	commitTestRun(t, work, "git", "push", "origin", "refs/tags/v1.0.0")
 	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+
+	refs, _, truncated, err := mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
+	require.NoError(err)
+	assert.False(truncated)
+	assert.NotContains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
+}
+
+func TestRefreshRepoBrowserClonesRefreshesRegisteredRepos(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+	mainSHA := gitSHA(t, work, "main")
+
+	commitTestRun(t, work, "git", "tag", "v1.0.0", mainSHA)
+	commitTestRun(t, work, "git", "push", "origin", "refs/tags/v1.0.0")
+	mgr.RefreshRepoBrowserClones(t.Context())
+
+	refs, _, truncated, err := mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
+	require.NoError(err)
+	assert.False(truncated)
+	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
+}
+
+func TestRepoBrowserRefreshFetchesTagsWithoutPruning(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+	mainSHA := gitSHA(t, work, "main")
+
+	commitTestRun(t, work, "git", "tag", "v1.0.0", mainSHA)
+	commitTestRun(t, work, "git", "push", "origin", "refs/tags/v1.0.0")
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	refs, _, truncated, err := mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
 	require.NoError(err)
 	assert.False(truncated)
@@ -73,7 +105,7 @@ func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T) {
 
 	commitTestRun(t, work, "git", "tag", "-d", "v1.0.0")
 	commitTestRun(t, work, "git", "push", "origin", ":refs/tags/v1.0.0")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 
 	refs, _, truncated, err = mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
 	require.NoError(err)
@@ -82,7 +114,7 @@ func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T) {
 
 	commitTestRun(t, work, "git", "tag", "v1.0.1", mainSHA)
 	commitTestRun(t, work, "git", "push", "origin", "refs/tags/v1.0.1")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 
 	refs, _, truncated, err = mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
 	require.NoError(err)
@@ -97,7 +129,7 @@ func TestRepoBrowserFetchDoesNotPruneTagsOnHotPath(t *testing.T) {
 	commitTestRun(t, work, "git", "tag", "-f", "v1.0.1", movedSHA)
 	commitTestRun(t, work, "git", "push", "origin", "main")
 	commitTestRun(t, work, "git", "push", "--force", "origin", "refs/tags/v1.0.1")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 
 	refs, _, truncated, err = mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
 	require.NoError(err)
@@ -118,7 +150,7 @@ func TestRepoBrowserRefNamesResolveAsExactRefs(t *testing.T) {
 	mainSHA := gitSHA(t, work, "HEAD")
 	commitTestRun(t, work, "git", "tag", "release", mainSHA)
 	commitTestRun(t, work, "git", "push", "origin", "main", "refs/tags/release")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 
 	ref, err := mgr.ResolveRepoBrowserRef(t.Context(), repo, RepoBrowserRef{Type: RepoBrowserRefBranch, Name: "main"})
 	require.NoError(err)
@@ -186,7 +218,7 @@ func TestRepoBrowserReadBlobRejectsTraversalAndLargeFiles(t *testing.T) {
 	commitTestRun(t, work, "git", "add", ".")
 	commitTestRun(t, work, "git", "commit", "-m", "large file")
 	commitTestRun(t, work, "git", "push", "origin", "main")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	ref := repoBrowserMainRef(t, mgr, repo)
 
 	_, err := mgr.ReadRepoBrowserBlob(t.Context(), repo, ref, "../secret.txt")
@@ -227,7 +259,7 @@ func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
 		commitTestRun(t, work, "git", "commit", "-m", fmt.Sprintf("churn %03d", i))
 	}
 	commitTestRun(t, work, "git", "push", "origin", "main")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	ref := repoBrowserMainRef(t, mgr, repo)
 
 	changed, err := mgr.RepoBrowserLastChanged(t.Context(), repo, ref, []string{"README.md", "churn.txt"})
@@ -247,7 +279,7 @@ func TestRepoBrowserLastChangedHandlesCommitPrefixedPathsAndUTCTimes(t *testing.
 	commitTestRun(t, work, "git", "add", ".")
 	commitTestRun(t, work, "git", "commit", "--date=2026-06-01T12:34:56-07:00", "-m", "commit-prefixed path")
 	commitTestRun(t, work, "git", "push", "origin", "main")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	ref := repoBrowserMainRef(t, mgr, repo)
 
 	changed, err := mgr.RepoBrowserLastChanged(t.Context(), repo, ref, []string{pathName})
@@ -276,7 +308,7 @@ func TestRepoBrowserLastChangedTreatsCommitFormatShapedPathAsPath(t *testing.T) 
 	commitTestRun(t, work, "git", "add", ".")
 	commitTestRun(t, work, "git", "commit", "-m", "commit-shaped path")
 	commitTestRun(t, work, "git", "push", "origin", "main")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	ref := repoBrowserMainRef(t, mgr, repo)
 	wantSHA := gitSHA(t, work, "HEAD")
 
@@ -303,7 +335,7 @@ func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T) {
 	commitTestRun(t, work, "git", "add", ".")
 	commitTestRun(t, work, "git", "commit", "-m", "readme three")
 	commitTestRun(t, work, "git", "push", "origin", "main")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 
 	history, err := mgr.RepoBrowserFileHistory(
 		t.Context(),
@@ -328,7 +360,7 @@ func TestRepoBrowserFileHistoryRequiresSelectedTreePath(t *testing.T) {
 	commitTestRun(t, work, "git", "add", ".")
 	commitTestRun(t, work, "git", "commit", "-m", "later file")
 	commitTestRun(t, work, "git", "push", "origin", "main")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	ref := RepoBrowserRef{Type: RepoBrowserRefCommit, SHA: gitSHA(t, work, "HEAD~1")}
 
 	_, err := mgr.RepoBrowserFileHistory(t.Context(), repo, ref, "later.md")
@@ -345,7 +377,7 @@ func TestRepoBrowserCommitDetailRequiresSelectedFileHistory(t *testing.T) {
 	commitTestRun(t, work, "git", "commit", "-m", "other file")
 	otherSHA := gitSHA(t, work, "HEAD")
 	commitTestRun(t, work, "git", "push", "origin", "main")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	ref := repoBrowserMainRef(t, mgr, repo)
 
 	_, err := mgr.RepoBrowserCommitDetail(t.Context(), repo, ref, "README.md", otherSHA)
@@ -373,7 +405,7 @@ func TestRepoBrowserHistoryTreatsPathspecMagicAsLiteral(t *testing.T) {
 	commitTestRun(t, work, "git", "commit", "-m", "readme update")
 	readmeSHA := gitSHA(t, work, "HEAD")
 	commitTestRun(t, work, "git", "push", "origin", "main")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	ref := repoBrowserMainRef(t, mgr, repo)
 
 	blob, err := mgr.ReadRepoBrowserBlob(t.Context(), repo, ref, magicPath)
@@ -409,7 +441,7 @@ func TestRepoBrowserMarkdownAssetRejectsUnsafeAndOversizedPaths(t *testing.T) {
 	commitTestRun(t, work, "git", "add", ".")
 	commitTestRun(t, work, "git", "commit", "-m", "assets")
 	commitTestRun(t, work, "git", "push", "origin", "main")
-	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 	ref := repoBrowserMainRef(t, mgr, repo)
 
 	_, err := mgr.ReadRepoBrowserAsset(t.Context(), repo, ref, "/etc/passwd")

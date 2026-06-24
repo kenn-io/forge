@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	gitcmd "go.kenn.io/kit/git/cmd"
@@ -43,13 +44,20 @@ type Manager struct {
 	// same bare clone and trigger a stampede of identical git fetches,
 	// which GitHub's smart-HTTP edge throttles with sporadic 5xx.
 	ensureSF singleflight.Group
+
+	repoBrowserMu    sync.Mutex
+	repoBrowserRepos map[string]RepoBrowserRepoRef
 }
 
 // New creates a Manager that stores bare clones under baseDir.
 // tokenSources maps each host (e.g., "github.com") to its auth token source.
 // A nil or empty map means all operations proceed without auth.
 func New(baseDir string, tokenSources map[string]tokenauth.Source) *Manager {
-	return &Manager{baseDir: baseDir, tokenSources: tokenSources}
+	return &Manager{
+		baseDir:          baseDir,
+		tokenSources:     tokenSources,
+		repoBrowserRepos: make(map[string]RepoBrowserRepoRef),
+	}
 }
 
 // ClonePath returns the filesystem path for a repo's bare clone.

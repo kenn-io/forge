@@ -835,6 +835,9 @@ func newServer(
 	if s.fleetPlatformAuthMonitor != nil && !options.DisableWorkspaceBackgroundMonitors {
 		s.runBackground(s.fleetPlatformAuthMonitor.run)
 	}
+	if clones != nil {
+		s.runBackground(s.runRepoBrowserRefreshLoop)
+	}
 
 	// Watch the config file so an external edit (vim, dotfiles deploy,
 	// sd -i, etc.) is picked up without a restart. Watcher init failures

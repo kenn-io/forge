@@ -439,6 +439,31 @@ func TestRepoBrowserCommitDetailAcceptsOlderFileHistory(t *testing.T) {
 	assert.Equal("initial", commit.Subject)
 }
 
+func TestRepoBrowserCommitDetailAcceptsMergeCommitTouchingPath(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+
+	commitTestRun(t, work, "git", "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Widgets\n\nFeature\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "feature readme")
+	commitTestRun(t, work, "git", "checkout", "main")
+	require.NoError(os.WriteFile(filepath.Join(work, "main.txt"), []byte("main\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "main work")
+	commitTestRun(t, work, "git", "merge", "--no-ff", "feature", "-m", "merge feature")
+	mergeSHA := gitSHA(t, work, "HEAD")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
+	ref := repoBrowserMainRef(t, mgr, repo)
+
+	commit, err := mgr.RepoBrowserCommitDetail(t.Context(), repo, ref, "README.md", mergeSHA)
+	require.NoError(err)
+	assert.Equal(mergeSHA, commit.SHA)
+	assert.Equal("merge feature", commit.Subject)
+}
+
 func TestRepoBrowserHistoryTreatsPathspecMagicAsLiteral(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

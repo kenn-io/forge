@@ -614,6 +614,7 @@ func (m *Manager) repoBrowserCommitTouchesPath(
 		"--no-commit-id",
 		"--name-only",
 		"-r",
+		"-m",
 		"-z",
 		"--root",
 		sha,

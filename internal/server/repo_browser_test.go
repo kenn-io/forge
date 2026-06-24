@@ -390,6 +390,158 @@ func TestRepoBrowserCommitRejectsSHAOutsideSelectedFileHistory(t *testing.T) {
 	assert.Equal("other file", body.Commit.Subject)
 }
 
+func TestRepoBrowserCommitAcceptsOlderFileHistoryThroughHTTP(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+	readmeSHA := testGitSHA(t, work, "HEAD")
+
+	for i := range gitclone.RepoBrowserHistoryLimit + 1 {
+		require.NoError(os.WriteFile(
+			filepath.Join(work, fmt.Sprintf("later-%02d.txt", i)),
+			[]byte("later\n"),
+			0o644,
+		))
+		serverRepoBrowserGit(t, work, "add", ".")
+		serverRepoBrowserGit(t, work, "commit", "-m", fmt.Sprintf("later %02d", i))
+	}
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+
+	rr := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/commit?ref_type=branch&ref_name=main&path=README.md&sha="+url.QueryEscape(readmeSHA),
+	)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var body repoBrowserCommitResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal(readmeSHA, body.Commit.SHA)
+	assert.Equal("initial", body.Commit.Subject)
+}
+
+func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	remote, work := setupServerRepoBrowserGitRepo(t)
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(
+		t.Context(),
+		repoID,
+		db.RepoProviderMetadata{
+			WebURL:        "https://github.com/acme/widgets",
+			CloneURL:      remote,
+			DefaultBranch: "main",
+		},
+	))
+	cloneBase := filepath.Join(t.TempDir(), "clones")
+	initialClones := gitclone.New(cloneBase, nil)
+	initialSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(initialSyncer.Stop)
+	initialServer := New(database, initialSyncer, nil, "/", nil, ServerOptions{
+		Clones:                             initialClones,
+		DisableWorkspaceBackgroundMonitors: true,
+	})
+	initialRefs := repoBrowserRequest(t, initialServer, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/refs",
+	)
+	require.Equal(http.StatusOK, initialRefs.Code)
+	gracefulShutdown(t, initialServer)
+
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
+	serverRepoBrowserGit(t, work, "add", ".")
+	serverRepoBrowserGit(t, work, "commit", "-m", "update readme")
+	updatedSHA := testGitSHA(t, work, "main")
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+
+	restartedClones := gitclone.New(cloneBase, nil)
+	restartedSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(restartedSyncer.Stop)
+	restartedServer := New(database, restartedSyncer, nil, "/", nil, ServerOptions{Clones: restartedClones})
+	t.Cleanup(func() { gracefulShutdown(t, restartedServer) })
+
+	require.Eventually(func() bool {
+		rr := repoBrowserRequest(t, restartedServer, http.MethodGet,
+			"/api/v1/repo/github/acme/widgets/browser/refs",
+		)
+		if rr.Code != http.StatusOK {
+			return false
+		}
+		var body repoBrowserRefsResponse
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			return false
+		}
+		return body.DefaultRef.SHA == updatedSHA
+	}, 2*time.Second, 25*time.Millisecond)
+
+	rr := repoBrowserRequest(t, restartedServer, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/blob?ref_type=branch&ref_name=main&path=README.md",
+	)
+	require.Equal(http.StatusOK, rr.Code)
+	var body repoBrowserBlobResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal("# Updated\n", body.Blob.Content)
+}
+
+func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	remote, work := setupServerRepoBrowserGitRepo(t)
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(
+		t.Context(),
+		repoID,
+		db.RepoProviderMetadata{
+			WebURL:        "https://github.com/acme/widgets",
+			CloneURL:      remote,
+			DefaultBranch: "main",
+		},
+	))
+	cloneBase := filepath.Join(t.TempDir(), "clones")
+	initialClones := gitclone.New(cloneBase, nil)
+	initialSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(initialSyncer.Stop)
+	initialServer := New(database, initialSyncer, nil, "/", nil, ServerOptions{
+		Clones:                             initialClones,
+		DisableWorkspaceBackgroundMonitors: true,
+	})
+	initialRefs := repoBrowserRequest(t, initialServer, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/refs",
+	)
+	require.Equal(http.StatusOK, initialRefs.Code)
+	gracefulShutdown(t, initialServer)
+
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
+	serverRepoBrowserGit(t, work, "add", ".")
+	serverRepoBrowserGit(t, work, "commit", "-m", "update readme")
+	updatedSHA := testGitSHA(t, work, "main")
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+
+	disabledClones := gitclone.New(cloneBase, nil)
+	disabledSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(disabledSyncer.Stop)
+	disabledServer := New(database, disabledSyncer, nil, "/", nil, ServerOptions{
+		Clones:                             disabledClones,
+		DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, disabledServer) })
+
+	require.Never(func() bool {
+		rr := repoBrowserRequest(t, disabledServer, http.MethodGet,
+			"/api/v1/repo/github/acme/widgets/browser/refs",
+		)
+		if rr.Code != http.StatusOK {
+			return false
+		}
+		var body repoBrowserRefsResponse
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			return false
+		}
+		return body.DefaultRef.SHA == updatedSHA
+	}, 250*time.Millisecond, 25*time.Millisecond)
+}
+
 func TestRepoBrowserRejectsUnsafePath(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

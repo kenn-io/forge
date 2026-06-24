@@ -5318,6 +5318,26 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	assert.Equal("post latest 2", (*widgets.CommitTimeline)[0].Message)
 	assert.Equal("post latest 1", (*widgets.CommitTimeline)[1].Message)
 	assert.Len((*widgets.CommitTimeline)[0].Sha, 40)
+
+	runGit(t, work, "tag", "-f", "v3.0.0", "HEAD")
+	runGit(t, work, "tag", "-f", "v1.0.0", "HEAD")
+	runGit(t, work, "push", "--force", "origin", "refs/tags/v3.0.0")
+	runGit(t, work, "push", "--force", "origin", "refs/tags/v1.0.0")
+	syncer.RunOnce(ctx)
+
+	resp, err = client.HTTP.ListRepoSummariesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+
+	widgets = (*resp.JSON200)[0]
+	require.NotNil(widgets.LatestRelease)
+	require.NotNil(widgets.CommitsSinceRelease)
+	require.NotNil(widgets.CommitTimeline)
+	assert.Equal("v3.0.0", widgets.LatestRelease.TagName)
+	assert.Equal(int64(0), *widgets.CommitsSinceRelease)
+	assert.Empty(*widgets.CommitTimeline)
 }
 
 func TestAPIListRepoSummariesUsesTagsWhenNoReleases(t *testing.T) {

@@ -703,6 +703,19 @@ describe("router navigation events", () => {
     expect(payload.view).toBe("/messages?q=from%3Aops");
   });
 
+  it("maps repo browser routes to repos navigation events and preserves URL fragments", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=README.md&mode=preview#install");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("repos");
+    expect(payload.view).toBe(
+      "/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=README.md&mode=preview#install",
+    );
+  });
+
   it("maps every embed-workspace route to a workspaces navigation event", () => {
     const spy = vi.fn();
     installOnNavigate(spy);

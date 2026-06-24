@@ -220,6 +220,12 @@
     if (!ref) return;
     await store.selectRef(ref);
     selectedPathRevealKey += 1;
+    repoLoadKey = routeKey({
+      ...route,
+      refType: ref.type,
+      refName: ref.name,
+      refSHA: ref.sha,
+    });
     pushRoute({ path: store.getSelectedPath() ?? undefined });
   }
 

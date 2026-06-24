@@ -148,6 +148,49 @@ describe("RepoBrowserFeature", () => {
     await tick();
     expect(client.GET).toHaveBeenCalledTimes(5);
   });
+
+  it("does not reload the repo again after a user ref change updates the route", async () => {
+    const client = testClient();
+    const onRouteChange = vi.fn();
+    const { rerender } = render(RepoBrowserFeature, {
+      props: {
+        client,
+        route,
+        onRouteChange,
+      },
+    });
+
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
+    await fireEvent.change(await screen.findByRole("combobox", { name: "Select repository ref" }), {
+      target: { value: "tag\0v1.0.0\0tag-sha" },
+    });
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(9));
+    await waitFor(() => {
+      expect(onRouteChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          refType: "tag",
+          refName: "v1.0.0",
+          refSHA: "tag-sha",
+          path: "README.md",
+        }),
+        undefined,
+      );
+    });
+
+    await rerender({
+      client,
+      route: {
+        ...route,
+        refType: "tag",
+        refName: "v1.0.0",
+        refSHA: "tag-sha",
+      },
+      onRouteChange,
+    });
+
+    await tick();
+    expect(client.GET).toHaveBeenCalledTimes(9);
+  });
 });
 
 function scrolledHeadingIDs(scrollIntoView: ReturnType<typeof vi.fn>): string[] {
@@ -165,7 +208,10 @@ function testClient(): MiddlemanClient {
         return {
           data: {
             repo,
-            refs: [{ type: "branch", name: "main", sha: "main-sha", stale: false }],
+            refs: [
+              { type: "branch", name: "main", sha: "main-sha", stale: false },
+              { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
+            ],
             default_ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
           },
           response: new Response(null, { status: 200 }),
@@ -190,6 +236,23 @@ function testClient(): MiddlemanClient {
       }
       if (
         url ===
+        "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
+            entries: [
+              { path: "README.md", type: "blob", size: 31 },
+              { path: "docs/guide.md", type: "blob", size: 18 },
+            ],
+            truncated: false,
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
         "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&path=docs%2Fguide.md"
       ) {
         return {
@@ -203,13 +266,38 @@ function testClient(): MiddlemanClient {
       }
       if (
         url ===
+        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=README.md&path=docs%2Fguide.md"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
+            commits: {},
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
         "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
       ) {
         return blobResponse("README.md", "[Guide](docs/guide.md#install)\n");
       }
       if (
         url ===
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=README.md"
+      ) {
+        return blobResponse("README.md", "[Guide](docs/guide.md#install)\n");
+      }
+      if (
+        url ===
         "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md"
+      ) {
+        return historyResponse("README.md");
+      }
+      if (
+        url ===
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=README.md"
       ) {
         return historyResponse("README.md");
       }

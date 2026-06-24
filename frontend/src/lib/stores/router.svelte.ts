@@ -621,7 +621,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = r.view === "board" ? "board" : "pull";
   } else if (r.page === "issues") {
     navType = "issue";
-  } else if (r.page === "repos") {
+  } else if (r.page === "repos" || r.page === "repo-browser") {
     navType = "repos";
   } else if (r.page === "kata") {
     navType = "kata";
@@ -652,7 +652,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     page,
     type: navType,
     focus,
-    view: stripBase(window.location.pathname) + window.location.search,
+    view: stripBase(currentLocationPath()),
   };
 
   if (r.page === "focus" && "owner" in r) {

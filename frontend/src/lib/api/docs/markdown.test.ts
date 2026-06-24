@@ -155,6 +155,23 @@ describe("renderDocsMarkdown", () => {
     expect(html).not.toContain('data-kata-short-id="12"');
   });
 
+  test("does not turn repo references inside raw code into provider item links", () => {
+    const html = renderDocsMarkdown("<code>#12</code>", {
+      ...baseOptions,
+      repoContext: {
+        provider: "github",
+        platformHost: "",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+      },
+    });
+
+    expect(html).toContain("<code>#12</code>");
+    expect(html).not.toContain("item-ref");
+    expect(html).not.toContain('data-number="12"');
+  });
+
   test("mention regex stops on trailing sentence punctuation", () => {
     const html = renderDocsMarkdown("Hello @wes.", baseOptions);
     expect(html).toMatch(/data-kata-mention="wes"/);

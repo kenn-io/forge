@@ -473,6 +473,28 @@ describe("defaultActions", () => {
     expect(locationPath()).toBe("/repo/browser?provider=gitea&platform_host=code.example.com&repo_path=team%2Fwidgets");
   });
 
+  it("opens the repo browser from canonical workspace repo identity", () => {
+    const action = command("repo.browser.open");
+    window.__middleman_config = {
+      ui: {
+        repo: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com",
+          repo_path: "group/subgroup/widgets",
+        },
+      },
+    };
+    setConfiguredRepos([]);
+    const context = ctx("workspaces", { selectedPR: staleSelected });
+
+    expect(action.when(context)).toBe(true);
+    action.handler(context);
+
+    expect(locationPath()).toBe(
+      "/repo/browser?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fsubgroup%2Fwidgets",
+    );
+  });
+
   it("uses workspace provider and host hints when matching configured repos", () => {
     const action = command("repo.browser.open");
     window.__middleman_config = {

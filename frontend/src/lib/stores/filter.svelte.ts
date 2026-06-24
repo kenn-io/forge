@@ -47,8 +47,8 @@ export function applyConfigRepo(
         host?: string;
         platform_host?: string;
         repo_path?: string;
-        owner: string;
-        name: string;
+        owner?: string;
+        name?: string;
       }
     | undefined,
   hideSelector: boolean,
@@ -56,7 +56,7 @@ export function applyConfigRepo(
   if (hideSelector) {
     const provider = repo?.provider?.trim();
     const host = (repo?.platform_host ?? repo?.host)?.trim();
-    const repoPath = (repo?.repo_path ?? (repo ? `${repo.owner}/${repo.name}` : "")).trim();
+    const repoPath = (repo?.repo_path ?? (repo?.owner && repo.name ? `${repo.owner}/${repo.name}` : "")).trim();
     if (provider && host && repoPath) {
       filterRepo = `${provider}|${host}/${repoPath}`;
     } else {

@@ -134,6 +134,15 @@ function cleanRepoPath(repoPath: string | undefined): string {
   return (repoPath ?? "").replace(/^\/+|\/+$/g, "");
 }
 
+function repoIdentityFromPath(repoPath: string): { owner: string; name: string } | null {
+  const separator = repoPath.lastIndexOf("/");
+  if (separator <= 0 || separator === repoPath.length - 1) return null;
+  return {
+    owner: repoPath.slice(0, separator),
+    name: repoPath.slice(separator + 1),
+  };
+}
+
 type RepoSelectionRef = {
   provider?: string | undefined;
   platformHost?: string | undefined;
@@ -161,12 +170,14 @@ function workspaceConfigRepoRef(repo: WorkspaceConfigRepo): RepositoryRouteRef |
   const provider = repo.provider?.trim();
   const platformHost = (repo.platform_host ?? repo.host)?.trim();
   const repoPath = cleanRepoPath(repo.repo_path);
-  if (!provider || !platformHost || !repo.owner || !repo.name || !repoPath) return null;
+  if (!provider || !platformHost || !repoPath) return null;
+  const identity = repo.owner && repo.name ? { owner: repo.owner, name: repo.name } : repoIdentityFromPath(repoPath);
+  if (!identity) return null;
   return {
     provider,
     platformHost,
-    owner: repo.owner,
-    name: repo.name,
+    owner: identity.owner,
+    name: identity.name,
     repoPath,
   };
 }

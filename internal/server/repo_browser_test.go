@@ -203,6 +203,116 @@ func TestRepoBrowserBranchRefReportsStaleRequestedSHA(t *testing.T) {
 	assert.True(body.Ref.Stale)
 }
 
+func TestRepoBrowserReadsStayPinnedAfterBranchAdvances(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Selected\n"), 0o644))
+	serverRepoBrowserGit(t, work, "add", ".")
+	serverRepoBrowserGit(t, work, "commit",
+		"--date=2026-06-01T12:00:00Z",
+		"-m", "selected readme",
+		"-m", "Selected body.",
+	)
+	selectedSHA := testGitSHA(t, work, "HEAD")
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+
+	tree := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main",
+	)
+	require.Equal(http.StatusOK, tree.Code)
+	var treeBody repoBrowserTreeResponse
+	require.NoError(json.Unmarshal(tree.Body.Bytes(), &treeBody))
+	require.Equal(selectedSHA, treeBody.Ref.SHA)
+
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Advanced\n"), 0o644))
+	serverRepoBrowserGit(t, work, "add", ".")
+	serverRepoBrowserGit(t, work, "commit",
+		"--date=2026-06-02T12:00:00Z",
+		"-m", "advanced readme",
+	)
+	advancedSHA := testGitSHA(t, work, "HEAD")
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+	srv.clones.RefreshRepoBrowserClones(t.Context())
+
+	branchBlob := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md",
+	)
+	require.Equal(http.StatusOK, branchBlob.Code)
+	var branchBlobBody repoBrowserBlobResponse
+	require.NoError(json.Unmarshal(branchBlob.Body.Bytes(), &branchBlobBody))
+	assert.Equal(advancedSHA, branchBlobBody.Ref.SHA)
+	assert.Equal("# Advanced\n", branchBlobBody.Blob.Content)
+
+	pinnedBlob := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(selectedSHA)+"&path=README.md",
+	)
+	require.Equal(http.StatusOK, pinnedBlob.Code)
+	var pinnedBlobBody repoBrowserBlobResponse
+	require.NoError(json.Unmarshal(pinnedBlob.Body.Bytes(), &pinnedBlobBody))
+	assert.Equal(selectedSHA, pinnedBlobBody.Ref.SHA)
+	assert.Equal("# Selected\n", pinnedBlobBody.Blob.Content)
+
+	lastChanged := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(selectedSHA)+"&path=README.md",
+	)
+	require.Equal(http.StatusOK, lastChanged.Code)
+	var lastChangedBody repoBrowserLastChangedResponse
+	require.NoError(json.Unmarshal(lastChanged.Body.Bytes(), &lastChangedBody))
+	assert.Equal(selectedSHA, lastChangedBody.Commits["README.md"].SHA)
+	assert.Equal("selected readme", lastChangedBody.Commits["README.md"].Subject)
+
+	history := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(selectedSHA)+"&path=README.md",
+	)
+	require.Equal(http.StatusOK, history.Code)
+	var historyBody repoBrowserHistoryResponse
+	require.NoError(json.Unmarshal(history.Body.Bytes(), &historyBody))
+	require.NotEmpty(historyBody.Commits)
+	assert.Equal(selectedSHA, historyBody.Commits[0].SHA)
+	assert.Equal("selected readme", historyBody.Commits[0].Subject)
+
+	commitDetail := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(selectedSHA)+"&path=README.md&sha="+url.QueryEscape(selectedSHA),
+	)
+	require.Equal(http.StatusOK, commitDetail.Code)
+	var commitBody repoBrowserCommitResponse
+	require.NoError(json.Unmarshal(commitDetail.Body.Bytes(), &commitBody))
+	assert.Equal(selectedSHA, commitBody.Commit.SHA)
+	assert.Equal("Selected body.", commitBody.Commit.Body)
+}
+
+func TestRepoBrowserStaleInitialRefCanRecoverThroughValidRef(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+	mainSHA := testGitSHA(t, work, "main")
+
+	refs := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/refs?repo_path=acme%2Fwidgets",
+	)
+	require.Equal(http.StatusOK, refs.Code)
+	var refsBody repoBrowserRefsResponse
+	require.NoError(json.Unmarshal(refs.Body.Bytes(), &refsBody))
+	assert.Equal("main", refsBody.DefaultRef.Name)
+	assert.Equal(mainSHA, refsBody.DefaultRef.SHA)
+
+	stale := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=deleted&ref_sha="+url.QueryEscape(mainSHA),
+	)
+	require.Equal(http.StatusNotFound, stale.Code)
+	assert.Contains(stale.Body.String(), "not_found")
+
+	recovered := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha="+url.QueryEscape(mainSHA),
+	)
+	require.Equal(http.StatusOK, recovered.Code)
+	var recoveredBody repoBrowserTreeResponse
+	require.NoError(json.Unmarshal(recovered.Body.Bytes(), &recoveredBody))
+	assert.Equal(mainSHA, recoveredBody.Ref.SHA)
+	assert.Contains(repoBrowserEntryPaths(recoveredBody.Entries), "README.md")
+}
+
 func TestRepoBrowserRejectsRevisionExpressionRefs(t *testing.T) {
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")

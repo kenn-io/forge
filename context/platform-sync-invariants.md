@@ -156,6 +156,11 @@ Repository import requests and route/query shapes should carry
   characters exactly once, via shared provider route helpers.
 - New provider-aware routes should not require ad hoc URL construction in
   stores/components.
+- Embedded navigation events for repo-bound routes must publish identity from
+  parsed route state, not from global embed config. When a route carries repo
+  identity, event payloads should include `provider`, `platform_host`, and
+  `repo_path` and may keep `repo` as the display/canonical path. Global
+  `ui.repo` config is only a fallback for non-repo-bound pages.
 
 ## Testing
 

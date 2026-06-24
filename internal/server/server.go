@@ -835,7 +835,7 @@ func newServer(
 	if s.fleetPlatformAuthMonitor != nil && !options.DisableWorkspaceBackgroundMonitors {
 		s.runBackground(s.fleetPlatformAuthMonitor.run)
 	}
-	if clones != nil {
+	if clones != nil && !options.DisableWorkspaceBackgroundMonitors {
 		s.runBackground(s.runRepoBrowserRefreshLoop)
 	}
 

@@ -50,7 +50,6 @@ export {
   buildIssueRoute,
   buildPullRequestFilesRoute,
   buildPullRequestRoute,
-  buildRepoBrowserRoute,
   buildRoutedItemRoute,
 } from "./routes.js";
 export { supportsLocked } from "./api/provider-capabilities.js";

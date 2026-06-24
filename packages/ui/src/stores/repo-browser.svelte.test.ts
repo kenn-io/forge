@@ -62,6 +62,23 @@ function testClient(): TestClient {
       }
       if (
         url ===
+        "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
+            entries: [
+              { path: "src/app.ts", type: "blob", size: 30 },
+              { path: "docs/guide.md", type: "blob", size: 20 },
+            ],
+            truncated: false,
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
         "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=README.md&path=src%2Fapp.ts"
       ) {
         return {
@@ -71,6 +88,22 @@ function testClient(): TestClient {
             commits: {
               "README.md": commit("readme changed"),
               "src/app.ts": commit("app changed"),
+            },
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
+        "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=src%2Fapp.ts&path=docs%2Fguide.md"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
+            commits: {
+              "src/app.ts": commit("tag app changed"),
+              "docs/guide.md": commit("guide changed"),
             },
           },
           response: new Response(null, { status: 200 }),
@@ -136,6 +169,28 @@ function testClient(): TestClient {
       }
       if (
         url ===
+        "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=src%2Fapp.ts"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
+            blob: {
+              path: "src/app.ts",
+              sha: "tag-app-blob-sha",
+              size: 26,
+              media_type: "text/typescript; charset=utf-8",
+              encoding: "utf-8",
+              content: "export const tag = true;\n",
+              binary: false,
+              too_large: false,
+            },
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
         "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha&path=src%2Fapp.ts"
       ) {
         return {
@@ -144,6 +199,20 @@ function testClient(): TestClient {
             ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
             path: "src/app.ts",
             commits: [commit("app changed")],
+          },
+          response: new Response(null, { status: 200 }),
+        };
+      }
+      if (
+        url ===
+        "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha&path=src%2Fapp.ts"
+      ) {
+        return {
+          data: {
+            repo,
+            ref: { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
+            path: "src/app.ts",
+            commits: [commit("tag app changed")],
           },
           response: new Response(null, { status: 200 }),
         };
@@ -349,6 +418,31 @@ describe("createRepoBrowserStore", () => {
     expect(store.getFileHistory()).toEqual([]);
     expect(store.getError()).toBe("tree failed");
     expect(store.isLoading()).toBe(false);
+  });
+
+  it("preserves the selected path when switching refs if that path still exists", async () => {
+    const store = createRepoBrowserStore({ client: testClient() });
+    await store.loadRepo(repo);
+    await store.selectPath("src/app.ts");
+
+    await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false });
+
+    expect(store.getSelectedRef()?.name).toBe("v1.0.0");
+    expect(store.getSelectedPath()).toBe("src/app.ts");
+    expect(store.getBlob()?.content).toBe("export const tag = true;\n");
+    expect(store.getFileHistory().map((item) => item.subject)).toEqual(["tag app changed"]);
+  });
+
+  it("retains an explicit missing initial path instead of selecting an unrelated file", async () => {
+    const store = createRepoBrowserStore({ client: testClient() });
+
+    await store.loadRepo(repo, { path: "missing.md" });
+
+    expect(store.getSelectedPath()).toBe("missing.md");
+    expect(store.getBlob()).toBeNull();
+    expect(store.getFileHistory()).toEqual([]);
+    expect(store.getSelectedCommit()).toBeNull();
+    expect(store.getError()).toBe("Path not found: missing.md");
   });
 });
 

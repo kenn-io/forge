@@ -24,6 +24,7 @@ type RepoBrowserBlobResponse = components["schemas"]["RepoBrowserBlobResponse"];
 type RepoBrowserHistoryResponse = components["schemas"]["RepoBrowserHistoryResponse"];
 type RepoBrowserLastChangedResponse = components["schemas"]["RepoBrowserLastChangedResponse"];
 type RepoBrowserCommitResponse = components["schemas"]["RepoBrowserCommitResponse"];
+type MissingRequestedPathBehavior = "fallback" | "retain";
 
 const viewModeStorageKey = "repo-browser-view-mode";
 const validViewModes: RepoBrowserViewMode[] = ["source", "preview"];
@@ -124,7 +125,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       if (!isCurrentTreeRequest(generation)) return;
       if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
       applyRefs(data as RepoBrowserRefsResponse, initial?.ref);
-      await loadTree(initial?.path ?? null, generation);
+      await loadTree(initial?.path ?? null, generation, initial?.path ? "retain" : "fallback");
     } catch (err) {
       if (isCurrentTreeRequest(generation)) {
         error = err instanceof Error ? err.message : String(err);
@@ -149,6 +150,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
   async function loadTree(
     requestedPath: string | null = null,
     generation = nextTreeRequestGeneration(),
+    missingPathBehavior: MissingRequestedPathBehavior = "fallback",
   ): Promise<void> {
     const ref = repo;
     const requestedRef = selectedRef;
@@ -171,10 +173,21 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     treeTruncated = payload.truncated;
     await loadLastChanged(generation);
     if (!isCurrentTreeRequest(generation)) return;
+    const requestedPathExists = requestedPath && tree.some((entry) => entry.path === requestedPath);
     const firstPath =
-      requestedPath && tree.some((entry) => entry.path === requestedPath) ? requestedPath : (tree[0]?.path ?? null);
+      requestedPathExists || !requestedPath || missingPathBehavior === "fallback"
+        ? requestedPathExists
+          ? requestedPath
+          : (tree[0]?.path ?? null)
+        : null;
     if (firstPath) {
       await selectPath(firstPath);
+    } else if (requestedPath && missingPathBehavior === "retain") {
+      selectedPath = requestedPath;
+      blob = null;
+      fileHistory = [];
+      selectedCommit = null;
+      error = `Path not found: ${requestedPath}`;
     } else {
       selectedPath = null;
       blob = null;
@@ -212,12 +225,13 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
 
   async function selectRef(ref: RepoBrowserRef): Promise<void> {
     const generation = nextTreeRequestGeneration();
+    const previousPath = selectedPath;
     selectedRef = ref;
     loading = true;
     error = null;
     clearTreeData();
     try {
-      await loadTree(null, generation);
+      await loadTree(previousPath, generation);
     } catch (err) {
       if (isCurrentTreeRequest(generation)) {
         error = err instanceof Error ? err.message : String(err);

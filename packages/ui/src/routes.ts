@@ -80,19 +80,6 @@ export function buildFocusListRoute(ref: FocusListRouteRef): string {
   return ref.repo ? `${route}?repo=${encodeURIComponent(ref.repo)}` : route;
 }
 
-export function buildRepoBrowserRoute(ref: RepoBrowserRouteRef): string {
-  const params = new URLSearchParams();
-  params.set("provider", requireRouteText(ref.provider, "provider"));
-  if (ref.platformHost) params.set("platform_host", ref.platformHost);
-  params.set("repo_path", requireRouteText(ref.repoPath, "repoPath").replace(/^\/+|\/+$/g, ""));
-  if (ref.refType) params.set("ref_type", ref.refType);
-  if (ref.refName) params.set("ref_name", ref.refName);
-  if (ref.refSHA) params.set("ref_sha", ref.refSHA);
-  if (ref.path) params.set("path", ref.path);
-  if (ref.viewMode && ref.viewMode !== "source") params.set("mode", ref.viewMode);
-  return `/repo/browser?${params.toString()}`;
-}
-
 export function buildRoutedItemRoute(ref: RoutedItemRef, options: { focus?: boolean } = {}): string {
   if (ref.itemType === "pr") {
     return options.focus ? buildFocusPullRequestRoute(ref) : buildPullRequestRoute(ref);

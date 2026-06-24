@@ -253,6 +253,9 @@ type MiddlemanNavigateType =
 interface MiddlemanNavigateEvent {
   page: MiddlemanNavigatePage;
   type: MiddlemanNavigateType;
+  provider?: string;
+  platform_host?: string;
+  repo_path?: string;
   owner?: string;
   name?: string;
   number?: number;

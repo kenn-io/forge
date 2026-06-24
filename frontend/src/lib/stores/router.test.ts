@@ -580,6 +580,10 @@ describe("router navigation events", () => {
     expect(payload.owner).toBe("acme");
     expect(payload.name).toBe("widgets");
     expect(payload.number).toBe(42);
+    expect(payload.provider).toBe("github");
+    expect(payload.platform_host).toBe("github.com");
+    expect(payload.repo_path).toBe("acme/widgets");
+    expect(payload.repo).toBe("acme/widgets");
   });
 
   it("fires onNavigate with pull payload for conversation route", () => {
@@ -704,27 +708,35 @@ describe("router navigation events", () => {
     expect(payload.view).toBe("/messages?q=from%3Aops");
   });
 
-  it("maps repo browser routes to repos navigation events and preserves URL fragments", () => {
+  it("maps repo browser routes to provider-aware repos navigation events and preserves URL fragments", () => {
     const spy = vi.fn();
     installOnNavigate(spy);
 
-    navigate("/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=README.md&mode=preview#install");
+    navigate(
+      "/repo/browser?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fsubgroup%2Fproject&path=README.md&mode=preview#install",
+    );
 
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
     expect(payload.type).toBe("repos");
+    expect(payload.provider).toBe("gitlab");
+    expect(payload.platform_host).toBe("gitlab.example.com");
+    expect(payload.repo_path).toBe("group/subgroup/project");
+    expect(payload.owner).toBe("group/subgroup");
+    expect(payload.name).toBe("project");
+    expect(payload.repo).toBe("group/subgroup/project");
     expect(payload.view).toBe(
-      "/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=README.md&mode=preview#install",
+      "/repo/browser?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fsubgroup%2Fproject&path=README.md&mode=preview#install",
     );
   });
 
-  it("uses embed repo_path for navigation event repo names", () => {
+  it("prefers route repo identity over embed repo config for repo browser navigation events", () => {
     const spy = vi.fn();
     installOnNavigate(spy, {
       ui: {
         repo: {
           provider: "gitlab",
           platform_host: "gitlab.example.com",
-          repo_path: "group/subgroup/project",
+          repo_path: "other/group/project",
         },
       },
     });
@@ -734,6 +746,9 @@ describe("router navigation events", () => {
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
     expect(payload.type).toBe("repos");
     expect(payload.repo).toBe("group/subgroup/project");
+    expect(payload.provider).toBe("gitlab");
+    expect(payload.platform_host).toBe("gitlab.example.com");
+    expect(payload.repo_path).toBe("group/subgroup/project");
   });
 
   it("falls back to embed owner and name for navigation event repo names", () => {

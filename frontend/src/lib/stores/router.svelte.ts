@@ -655,24 +655,23 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     view: stripBase(currentLocationPath()),
   };
 
-  if (r.page === "focus" && "owner" in r) {
-    event.owner = r.owner;
-    event.name = r.name;
+  if (r.page === "focus" && "repoPath" in r) {
+    applyRouteRepoIdentity(event, r);
     event.number = r.number;
   } else if (r.page === "pulls" && "selected" in r && r.selected) {
-    event.owner = r.selected.owner;
-    event.name = r.selected.name;
+    applyRouteRepoIdentity(event, r.selected);
     event.number = r.selected.number;
   } else if (r.page === "issues" && "selected" in r && r.selected) {
-    event.owner = r.selected.owner;
-    event.name = r.selected.name;
+    applyRouteRepoIdentity(event, r.selected);
     event.number = r.selected.number;
+  } else if ("repoPath" in r) {
+    applyRouteRepoIdentity(event, r);
   }
 
   // Populate repo from focus list route or global config.
   if (r.page === "focus" && "repo" in r && r.repo) {
     event.repo = r.repo;
-  } else {
+  } else if (!event.repo_path) {
     const cfgRepo = getEmbedUIConfig().repo;
     if (cfgRepo) {
       const repo = embedConfigRepoName(cfgRepo);
@@ -686,6 +685,15 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
   }
 
   return event;
+}
+
+function applyRouteRepoIdentity(event: MiddlemanNavigateEvent, ref: RepoRef): void {
+  event.provider = ref.provider;
+  if (ref.platformHost) event.platform_host = ref.platformHost;
+  event.repo_path = ref.repoPath;
+  event.repo = ref.repoPath;
+  event.owner = ref.owner;
+  event.name = ref.name;
 }
 
 function embedConfigRepoName(repo: NonNullable<ReturnType<typeof getEmbedUIConfig>["repo"]>): string | undefined {

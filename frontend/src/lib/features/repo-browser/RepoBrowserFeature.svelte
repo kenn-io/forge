@@ -102,13 +102,14 @@
   });
 
   function routeKey(value: RepoBrowserFeatureRoute): string {
+    const refSHA = value.refType === "commit" ? (value.refSHA ?? value.refName ?? "") : "";
     return [
       value.provider,
       value.platformHost ?? "",
       value.repoPath,
       value.refType ?? "",
       value.refName ?? "",
-      value.refSHA ?? "",
+      refSHA,
     ].join("\0");
   }
 

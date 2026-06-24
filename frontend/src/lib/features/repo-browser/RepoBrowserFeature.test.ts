@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { createQuerySerializer, type QuerySerializerOptions } from "openapi-fetch";
+import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { MiddlemanClient } from "@middleman/ui";
 import RepoBrowserFeature from "./RepoBrowserFeature.svelte";
@@ -100,6 +101,51 @@ describe("RepoBrowserFeature", () => {
 
     await screen.findByRole("heading", { name: "Usage" });
     await waitFor(() => expect(scrolledHeadingIDs(scrollIntoView)).toContain("usage"));
+  });
+
+  it("does not reload the repo when the resolved branch SHA is added to the route", async () => {
+    const client = testClient();
+    const onRouteChange = vi.fn();
+    const { rerender } = render(RepoBrowserFeature, {
+      props: {
+        client,
+        route: {
+          ...route,
+          refType: "branch",
+          refName: "main",
+          path: undefined,
+        },
+        onRouteChange,
+      },
+    });
+
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
+    await waitFor(() => {
+      expect(onRouteChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          refType: "branch",
+          refName: "main",
+          refSHA: "main-sha",
+          path: "README.md",
+        }),
+        { replace: true },
+      );
+    });
+
+    await rerender({
+      client,
+      route: {
+        ...route,
+        refType: "branch",
+        refName: "main",
+        refSHA: "main-sha",
+        path: "README.md",
+      },
+      onRouteChange,
+    });
+
+    await tick();
+    expect(client.GET).toHaveBeenCalledTimes(5);
   });
 });
 

@@ -455,6 +455,44 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("pending CI merge override sends the immediate merge request", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+      const mergeRequestPaths: string[] = [];
+
+      page.on("request", (request) => {
+        if (request.method() !== "POST") return;
+        const url = new URL(request.url());
+        if (url.pathname.includes("/api/v1/pulls/github/acme/widgets/1/merge")) {
+          mergeRequestPaths.push(url.pathname);
+        }
+      });
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      await page.locator(".btn--merge").first().click();
+      const modal = page.locator(".modal", { hasText: "Merge Pull Request" });
+      await expect(modal).toBeVisible();
+      await expect(modal.getByRole("button", { name: "Merge after CI is complete" })).toBeVisible();
+
+      const mergeResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
+      });
+      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      expect((await mergeResponse).status()).toBe(200);
+
+      expect(mergeRequestPaths).toEqual(["/api/v1/pulls/github/acme/widgets/1/merge"]);
+      await expect(modal).toHaveCount(0);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("aggregate pending CI merge action enqueues deferred merge when check rows are empty", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

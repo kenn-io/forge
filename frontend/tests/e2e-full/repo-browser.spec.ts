@@ -14,16 +14,64 @@ function blobResponse(page: Page, path: string): Promise<Response> {
   });
 }
 
+function repoBrowserResponseMatches(response: Response, endpoint: "refs" | "tree", refName?: string): boolean {
+  const url = new URL(response.url());
+  return (
+    response.request().method() === "GET" &&
+    url.pathname === `/api/v1/repo/github/acme/widgets/browser/${endpoint}` &&
+    (refName === undefined || url.searchParams.get("ref_name") === refName) &&
+    response.ok()
+  );
+}
+
+function repoBrowserResponse(page: Page, endpoint: "refs" | "tree", refName?: string): Promise<Response> {
+  return page.waitForResponse((response) => repoBrowserResponseMatches(response, endpoint, refName));
+}
+
 function treeResponse(page: Page, refName: string): Promise<Response> {
-  return page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return (
-      response.request().method() === "GET" &&
-      url.pathname === "/api/v1/repo/github/acme/widgets/browser/tree" &&
-      url.searchParams.get("ref_name") === refName &&
-      response.ok()
-    );
+  return repoBrowserResponse(page, "tree", refName);
+}
+
+function collectRepoBrowserResponseURLs(page: Page, endpoint: "refs" | "tree", refName?: string): string[] {
+  const urls: string[] = [];
+  page.on("response", (response) => {
+    if (repoBrowserResponseMatches(response, endpoint, refName)) {
+      urls.push(response.url());
+    }
   });
+  return urls;
+}
+
+async function expectNoMoreRepoBrowserResponses(
+  page: Page,
+  endpoint: "refs" | "tree",
+  refName?: string,
+): Promise<void> {
+  await expect(
+    page.waitForResponse((response) => repoBrowserResponseMatches(response, endpoint, refName), { timeout: 500 }),
+  ).rejects.toThrow();
+}
+
+async function expectSingleRepoLoad(page: Page, refsURLs: string[], treeURLs: string[]): Promise<void> {
+  expect(refsURLs).toHaveLength(1);
+  expect(treeURLs).toHaveLength(1);
+  await expectNoMoreRepoBrowserResponses(page, "refs");
+  await expectNoMoreRepoBrowserResponses(page, "tree", "main");
+  expect(refsURLs).toHaveLength(1);
+  expect(treeURLs).toHaveLength(1);
+}
+
+async function expectResolvedBranchURL(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/repo\/browser\?.*ref_sha=[0-9a-f]{40}/);
+  const url = new URL(page.url());
+  expect(url.pathname).toBe("/repo/browser");
+  expect(url.searchParams.get("provider")).toBe("github");
+  expect(url.searchParams.get("platform_host")).toBe("github.com");
+  expect(url.searchParams.get("repo_path")).toBe("acme/widgets");
+  expect(url.searchParams.get("ref_type")).toBe("branch");
+  expect(url.searchParams.get("ref_name")).toBe("main");
+  expect(url.searchParams.get("path")).toBe("README.md");
+  expect(url.searchParams.get("ref_sha")).toMatch(/^[0-9a-f]{40}$/);
 }
 
 async function expectHeadingScrolledIntoView(heading: Locator): Promise<void> {
@@ -37,6 +85,31 @@ async function expectHeadingScrolledIntoView(heading: Locator): Promise<void> {
 }
 
 test.describe("repository source browser", () => {
+  test("does not reload repository data when the resolved branch SHA is added to the route", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const refsURLs = collectRepoBrowserResponseURLs(page, "refs");
+      const treeURLs = collectRepoBrowserResponseURLs(page, "tree", "main");
+      const refsLoaded = repoBrowserResponse(page, "refs");
+      const treeLoaded = treeResponse(page, "main");
+
+      await page.goto(
+        `${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main`,
+      );
+      await refsLoaded;
+      await treeLoaded;
+
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      const viewer = browser.getByRole("main", { name: "Selected file" });
+      await expect(viewer.locator(".repo-browser__path")).toContainText("README.md");
+      await expectResolvedBranchURL(page);
+
+      await expectSingleRepoLoad(page, refsURLs, treeURLs);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("opens a seeded repository through the real browser API", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {

@@ -1641,7 +1641,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get repository browser asset */
+        /**
+         * Get repository browser asset
+         * @description Returns raw image bytes for a repository file. Asset reads require ref_type=commit with ref_sha set to a full 40-character commit SHA; branch and tag refs are rejected with mutable_ref_not_allowed.
+         */
         get: operations["get-repo-browser-asset-on-host"];
         put?: never;
         post?: never;
@@ -3214,7 +3217,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get repository browser asset */
+        /**
+         * Get repository browser asset
+         * @description Returns raw image bytes for a repository file. Asset reads require ref_type=commit with ref_sha set to a full 40-character commit SHA; branch and tag refs are rejected with mutable_ref_not_allowed.
+         */
         get: operations["get-repo-browser-asset"];
         put?: never;
         post?: never;

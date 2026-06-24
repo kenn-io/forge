@@ -202,6 +202,23 @@ func TestRepoBrowserBranchRefReportsStaleRequestedSHA(t *testing.T) {
 	assert.True(body.Ref.Stale)
 }
 
+func TestRepoBrowserRejectsRevisionExpressionRefs(t *testing.T) {
+	assert := assert.New(t)
+	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+	mainSHA := testGitSHA(t, work, "main")
+	serverRepoBrowserGit(t, work, "tag", "release", mainSHA)
+	serverRepoBrowserGit(t, work, "push", "origin", "refs/tags/release")
+
+	for _, path := range []string{
+		"/api/v1/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main~1&path=README.md",
+		"/api/v1/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=release%5E%7B%7D&path=README.md",
+	} {
+		rr := repoBrowserRequest(t, srv, http.MethodGet, path)
+		assert.Equal(http.StatusNotFound, rr.Code, path)
+		assert.Contains(rr.Body.String(), "not_found", path)
+	}
+}
+
 func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -211,9 +228,10 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(work, "docs", "image.png"), image, 0o644))
 	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Test\n\nUpdated\n"), 0o644))
 	serverRepoBrowserGit(t, work, "add", ".")
-	serverRepoBrowserGit(t, work, "commit", "-m", "docs asset")
+	serverRepoBrowserGit(t, work, "commit", "--date=2026-06-01T12:34:56-07:00", "-m", "docs asset")
 	currentSHA := testGitSHA(t, work, "HEAD")
 	serverRepoBrowserGit(t, work, "push", "origin", "main")
+	expectedAuthoredAt := time.Date(2026, 6, 1, 19, 34, 56, 0, time.UTC)
 
 	tree := repoBrowserRequest(t, srv, http.MethodGet,
 		"/api/v1/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main",
@@ -240,6 +258,8 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	require.NoError(json.Unmarshal(lastChanged.Body.Bytes(), &lastChangedBody))
 	assert.Equal("docs asset", lastChangedBody.Commits["README.md"].Subject)
 	assert.Equal("docs asset", lastChangedBody.Commits["docs/image.png"].Subject)
+	assert.Equal(expectedAuthoredAt, lastChangedBody.Commits["README.md"].AuthoredAt)
+	assert.Equal(expectedAuthoredAt, lastChangedBody.Commits["docs/image.png"].AuthoredAt)
 
 	history := repoBrowserRequest(t, srv, http.MethodGet,
 		"/api/v1/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md",
@@ -328,6 +348,8 @@ func TestRepoBrowserAssetOpenAPIResponseIsBinary(t *testing.T) {
 		item := doc.Paths[path]
 		require.NotNil(item, path)
 		require.NotNil(item.Get, path)
+		assert.Contains(item.Get.Description, "ref_type=commit", path)
+		assert.Contains(item.Get.Description, "mutable_ref_not_allowed", path)
 		resp := item.Get.Responses["200"]
 		require.NotNil(resp, path)
 

@@ -330,6 +330,9 @@ func (m *Manager) fetch(
 	if err != nil {
 		return fmt.Errorf("git fetch: %w", err)
 	}
+	// Force-update moved tags for repo-browser refs, but do not prune deleted
+	// remote tags on this hot path. Stale tag cleanup belongs in explicit cache
+	// maintenance so normal sync/diff/refresh work is not coupled to tag pruning.
 	_, err = retryTransient(ctx, "git fetch tags", func() ([]byte, error) {
 		return m.gitNetworked(ctx, host, clonePath, nil, "fetch", "origin", "+refs/tags/*:refs/tags/*")
 	})

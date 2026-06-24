@@ -424,7 +424,7 @@ func (m *Manager) RepoBrowserLastChanged(
 		"log",
 		"-z",
 		"--max-count=" + strconv.Itoa(RepoBrowserLastChangedLogLimit),
-		"--format=" + repoBrowserCommitFormat,
+		"--format=" + repoBrowserLastChangedCommitFormat,
 		"--name-only",
 		"--end-of-options",
 		sha,
@@ -460,14 +460,21 @@ func parseRepoBrowserLastChanged(out []byte, wanted map[string]bool) (map[string
 	changed := make(map[string]RepoBrowserCommit, len(wanted))
 	var current RepoBrowserCommit
 	var haveCurrent bool
+	var nextTokenIsCommit bool
 	for part := range bytes.SplitSeq(out, []byte{0}) {
 		token := strings.TrimPrefix(string(part), "\n")
 		if token == "" {
+			nextTokenIsCommit = true
 			continue
 		}
-		if commit, err := parseRepoBrowserCommitLine(token); err == nil {
+		if nextTokenIsCommit {
+			commit, err := parseRepoBrowserCommitLine(token)
+			if err != nil {
+				return nil, err
+			}
 			current = commit
 			haveCurrent = true
+			nextTokenIsCommit = false
 			continue
 		}
 		if wanted[token] && haveCurrent {
@@ -634,7 +641,8 @@ func (m *Manager) ResolveRepoBrowserRef(
 }
 
 const (
-	repoBrowserCommitFormat = "%H%x1f%an%x1f%ae%x1f%aI%x1f%s"
+	repoBrowserCommitFormat            = "%H%x1f%an%x1f%ae%x1f%aI%x1f%s"
+	repoBrowserLastChangedCommitFormat = "%x00" + repoBrowserCommitFormat
 )
 
 func parseRepoBrowserCommitLines(out []byte) ([]RepoBrowserCommit, error) {
@@ -780,13 +788,33 @@ func (m *Manager) resolveExactRefInDir(
 		"show-ref", "--verify", "--hash", ref,
 	)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrNotFound, err)
+		if isShowRefMissingError(err) {
+			return "", fmt.Errorf("%w: %w", ErrNotFound, err)
+		}
+		return "", err
 	}
 	objectID := strings.TrimSpace(string(out))
 	if objectID == "" {
 		return "", fmt.Errorf("%w: %s", ErrNotFound, ref)
 	}
 	return m.resolveRefInDir(ctx, dir, objectID)
+}
+
+func isShowRefMissingError(err error) bool {
+	if errors.Is(err, ErrNotFound) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "not a valid ref") {
+		return true
+	}
+	var exitErr interface {
+		ExitCode() (int, bool)
+	}
+	if errors.As(err, &exitErr) {
+		code, ok := exitErr.ExitCode()
+		return ok && code == 1
+	}
+	return false
 }
 
 func cleanRepoBrowserPath(pathName string) (string, error) {

@@ -243,6 +243,38 @@ func TestRepoBrowserLastChangedHandlesCommitPrefixedPathsAndUTCTimes(t *testing.
 	assert.Equal(time.Date(2026, 6, 1, 19, 34, 56, 0, time.UTC), changed[pathName].AuthoredAt)
 }
 
+func TestRepoBrowserLastChangedTreatsCommitFormatShapedPathAsPath(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, work := setupRepoBrowserTestRepo(t)
+
+	commitShapedPath := strings.Join([]string{
+		strings.Repeat("a", 40),
+		"Fake Author",
+		"fake@example.com",
+		"2026-06-01T12:34:56Z",
+		"fake subject",
+	}, "\x1f")
+	secondPath := "zz-after.md"
+	require.NoError(os.WriteFile(filepath.Join(work, commitShapedPath), []byte("literal\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, secondPath), []byte("after\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "commit-shaped path")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	ref := repoBrowserMainRef(t, mgr, repo)
+	wantSHA := gitSHA(t, work, "HEAD")
+
+	changed, err := mgr.RepoBrowserLastChanged(t.Context(), repo, ref, []string{commitShapedPath, secondPath})
+	require.NoError(err)
+
+	require.Contains(changed, commitShapedPath)
+	require.Contains(changed, secondPath)
+	assert.Equal(wantSHA, changed[commitShapedPath].SHA)
+	assert.Equal(wantSHA, changed[secondPath].SHA)
+	assert.Equal("commit-shaped path", changed[secondPath].Subject)
+}
+
 func TestRepoBrowserFileHistoryIsBoundedAtSelectedSHA(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

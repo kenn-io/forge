@@ -11161,6 +11161,7 @@ paths:
         - Repositories
   /host/{platform_host}/repo/{provider}/{owner}/{name}/browser/asset:
     get:
+      description: Returns raw image bytes for a repository file. Asset reads require ref_type=commit with ref_sha set to a full 40-character commit SHA; branch and tag refs are rejected with mutable_ref_not_allowed.
       operationId: get-repo-browser-asset-on-host
       parameters:
         - in: path
@@ -15401,6 +15402,7 @@ paths:
         - Repositories
   /repo/{provider}/{owner}/{name}/browser/asset:
     get:
+      description: Returns raw image bytes for a repository file. Asset reads require ref_type=commit with ref_sha set to a full 40-character commit SHA; branch and tag refs are rejected with mutable_ref_not_allowed.
       operationId: get-repo-browser-asset
       parameters:
         - in: path

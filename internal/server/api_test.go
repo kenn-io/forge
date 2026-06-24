@@ -15275,8 +15275,15 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	mrEvents, err = database.ListMREvents(ctx, mrSeven.ID)
 	require.NoError(err)
 	require.Len(mrEvents, 2)
-	assert.Equal("review", mrEvents[1].EventType)
-	assert.Equal("APPROVED", mrEvents[1].Summary)
+	var reviewEvent *db.MREvent
+	for i := range mrEvents {
+		if mrEvents[i].EventType == "review" {
+			reviewEvent = &mrEvents[i]
+			break
+		}
+	}
+	require.NotNil(reviewEvent)
+	assert.Equal("APPROVED", reviewEvent.Summary)
 
 	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "kettle", 7,

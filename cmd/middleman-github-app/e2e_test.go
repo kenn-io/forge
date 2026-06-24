@@ -104,26 +104,21 @@ func scriptBrowserWithInstall(
 ) func(string) error {
 	t.Helper()
 	return func(target string) error {
-		go func() {
-			if m := installSlugRe.FindStringSubmatch(target); m != nil {
-				app, ok := fake.AppBySlug(m[1])
-				if !assert.True(t, ok, "install URL for unknown app slug %q", m[1]) {
-					return
-				}
-				assert.NoError(t, install(app.ID))
-				return
+		if m := installSlugRe.FindStringSubmatch(target); m != nil {
+			app, ok := fake.AppBySlug(m[1])
+			if !ok {
+				return fmt.Errorf("install URL for unknown app slug %q", m[1])
 			}
-			if m := settingsSlugRe.FindStringSubmatch(target); m != nil {
-				app, ok := fake.AppBySlug(m[1])
-				if !assert.True(t, ok, "settings URL for unknown app slug %q", m[1]) {
-					return
-				}
-				assert.NoError(t, fake.DeleteApp(app.ID))
-				return
+			return install(app.ID)
+		}
+		if m := settingsSlugRe.FindStringSubmatch(target); m != nil {
+			app, ok := fake.AppBySlug(m[1])
+			if !ok {
+				return fmt.Errorf("settings URL for unknown app slug %q", m[1])
 			}
-			assert.NoError(t, submitManifestForm(target))
-		}()
-		return nil
+			return fake.DeleteApp(app.ID)
+		}
+		return submitManifestForm(target)
 	}
 }
 

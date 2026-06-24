@@ -338,6 +338,42 @@ describe("createRepoBrowserStore", () => {
     expect(store.getFileHistory().map((item) => item.subject)).toEqual(["app changed"]);
   });
 
+  it("keeps a user path selection when last-changed metadata fails after tree load", async () => {
+    const base = testClient();
+    const lastChanged = deferredResponse();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=README.md&path=src%2Fapp.ts"
+        ) {
+          return lastChanged.promise;
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createRepoBrowserStore({ client });
+
+    const load = store.loadRepo(repo);
+    await vi.waitFor(() => {
+      expect(store.getTree().map((entry) => entry.path)).toEqual(["README.md", "src/app.ts"]);
+    });
+    const selectedPath = store.selectPath("src/app.ts");
+    lastChanged.resolve({
+      error: { detail: "last changed failed" },
+      response: new Response(null, { status: 500 }),
+    });
+
+    await Promise.all([load, selectedPath]);
+
+    expect(store.getTree().map((entry) => entry.path)).toEqual(["README.md", "src/app.ts"]);
+    expect(store.getSelectedPath()).toBe("src/app.ts");
+    expect(store.getBlob()?.path).toBe("src/app.ts");
+    expect(store.getFileHistory().map((item) => item.subject)).toEqual(["app changed"]);
+    expect(store.getError()).toBeNull();
+  });
+
   it("clears path-dependent data while a new path is loading", async () => {
     const base = testClient();
     const srcBlob = deferredResponse();

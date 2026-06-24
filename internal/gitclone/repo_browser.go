@@ -573,7 +573,11 @@ func (m *Manager) RepoBrowserCommitDetail(
 	if err != nil {
 		return RepoBrowserCommit{}, err
 	}
-	inScope, err := m.repoBrowserCommitTouchesPath(ctx, dir, rootSHA, cleanPath, sha)
+	commitSHA, err := m.resolveRefInDir(ctx, dir, sha)
+	if err != nil {
+		return RepoBrowserCommit{}, err
+	}
+	inScope, err := m.repoBrowserCommitTouchesPath(ctx, dir, rootSHA, cleanPath, commitSHA)
 	if err != nil {
 		return RepoBrowserCommit{}, err
 	}
@@ -581,7 +585,7 @@ func (m *Manager) RepoBrowserCommitDetail(
 		return RepoBrowserCommit{}, fmt.Errorf("%w: %s", ErrCommitOutOfScope, sha)
 	}
 	out, err := m.git(ctx, dir,
-		"show", "-s", "--format="+repoBrowserCommitFormat, "--end-of-options", sha,
+		"show", "-s", "--format="+repoBrowserCommitFormat, "--end-of-options", commitSHA,
 	)
 	if err != nil {
 		return RepoBrowserCommit{}, fmt.Errorf("repo browser commit detail %s: %w", sha, err)

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -388,6 +389,19 @@ func TestRepoBrowserCommitRejectsSHAOutsideSelectedFileHistory(t *testing.T) {
 	require.NoError(json.Unmarshal(ok.Body.Bytes(), &body))
 	assert.Equal(otherSHA, body.Commit.SHA)
 	assert.Equal("other file", body.Commit.Subject)
+}
+
+func TestRepoBrowserCommitRejectsUnknownFullSHA(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _ := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+
+	rr := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/commit?ref_type=branch&ref_name=main&path=README.md&sha="+strings.Repeat("a", 40),
+	)
+
+	require.Equal(http.StatusNotFound, rr.Code)
+	assert.Contains(rr.Body.String(), "not_found")
 }
 
 func TestRepoBrowserCommitAcceptsOlderFileHistoryThroughHTTP(t *testing.T) {

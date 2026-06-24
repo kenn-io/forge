@@ -431,6 +431,16 @@ func TestRepoBrowserCommitDetailRequiresSelectedFileHistory(t *testing.T) {
 	assert.Equal("other file", commit.Subject)
 }
 
+func TestRepoBrowserCommitDetailRejectsUnknownFullSHA(t *testing.T) {
+	require := require.New(t)
+	mgr, repo, _ := setupRepoBrowserTestRepo(t)
+	ref := repoBrowserMainRef(t, mgr, repo)
+
+	_, err := mgr.RepoBrowserCommitDetail(t.Context(), repo, ref, "README.md", strings.Repeat("a", 40))
+
+	require.ErrorIs(err, ErrNotFound)
+}
+
 func TestRepoBrowserCommitDetailAcceptsOlderFileHistory(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

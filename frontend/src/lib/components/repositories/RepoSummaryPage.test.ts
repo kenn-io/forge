@@ -416,7 +416,7 @@ describe("RepoSummaryPage", () => {
       }),
     );
 
-    expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
+    expect(mockSetGlobalRepo).toHaveBeenCalledWith("github|github.com/acme/widgets");
     expect(mockNavigate).toHaveBeenCalledWith(
       "/repo/browser?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
     );

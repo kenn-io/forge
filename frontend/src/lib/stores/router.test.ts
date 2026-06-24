@@ -554,8 +554,9 @@ describe("router navigation events", () => {
     ).__middleman_notify_config_changed?.();
   });
 
-  function installOnNavigate(spy: ReturnType<typeof vi.fn>): void {
+  function installOnNavigate(spy: ReturnType<typeof vi.fn>, config: Record<string, unknown> = {}): void {
     (window as unknown as { __middleman_config?: unknown }).__middleman_config = {
+      ...config,
       onNavigate: spy,
     };
     (
@@ -714,6 +715,45 @@ describe("router navigation events", () => {
     expect(payload.view).toBe(
       "/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=README.md&mode=preview#install",
     );
+  });
+
+  it("uses embed repo_path for navigation event repo names", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy, {
+      ui: {
+        repo: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com",
+          repo_path: "group/subgroup/project",
+        },
+      },
+    });
+
+    navigate("/repo/browser?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fsubgroup%2Fproject");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("repos");
+    expect(payload.repo).toBe("group/subgroup/project");
+  });
+
+  it("falls back to embed owner and name for navigation event repo names", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy, {
+      ui: {
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "widgets",
+        },
+      },
+    });
+
+    navigate("/repos");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("repos");
+    expect(payload.repo).toBe("acme/widgets");
   });
 
   it("maps every embed-workspace route to a workspaces navigation event", () => {

@@ -675,7 +675,8 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
   } else {
     const cfgRepo = getEmbedUIConfig().repo;
     if (cfgRepo) {
-      event.repo = `${cfgRepo.owner}/${cfgRepo.name}`;
+      const repo = embedConfigRepoName(cfgRepo);
+      if (repo) event.repo = repo;
     }
   }
 
@@ -685,6 +686,14 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
   }
 
   return event;
+}
+
+function embedConfigRepoName(repo: NonNullable<ReturnType<typeof getEmbedUIConfig>["repo"]>): string | undefined {
+  const repoPath = repo.repo_path?.trim().replace(/^\/+|\/+$/g, "");
+  if (repoPath) return repoPath;
+  const owner = repo.owner?.trim().replace(/^\/+|\/+$/g, "");
+  const name = repo.name?.trim().replace(/^\/+|\/+$/g, "");
+  return owner && name ? `${owner}/${name}` : undefined;
 }
 
 function emptyToNull(value: string | null): string | null {

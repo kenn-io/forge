@@ -136,7 +136,14 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       if (!isCurrentTreeRequest(generation)) return;
       if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
       applyRefs(data as RepoBrowserRefsResponse, initial?.ref);
-      await loadTree(initial?.path ?? null, generation, initial?.path ? "retain" : "fallback");
+      try {
+        await loadTree(initial?.path ?? null, generation, initial?.path ? "retain" : "fallback");
+      } catch (err) {
+        if (isCurrentTreeRequest(generation)) {
+          error = err instanceof Error ? err.message : String(err);
+          clearTreeData();
+        }
+      }
     } catch (err) {
       if (isCurrentTreeRequest(generation)) {
         error = err instanceof Error ? err.message : String(err);

@@ -497,6 +497,39 @@ describe("createRepoBrowserStore", () => {
     expect(store.isLoading()).toBe(false);
   });
 
+  it("preserves refs when an initial requested ref tree fails", async () => {
+    const base = testClient();
+    const initialRef = { type: "branch" as const, name: "deleted", sha: "deleted-sha", stale: false };
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=deleted&ref_sha=deleted-sha"
+        ) {
+          return Promise.resolve({
+            error: { detail: "tree failed" },
+            response: new Response(null, { status: 404 }),
+          });
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createRepoBrowserStore({ client });
+
+    await store.loadRepo(repo, { ref: initialRef, path: "README.md" });
+
+    expect(store.getRefs().map((ref) => ref.name)).toEqual(["main", "v1.0.0"]);
+    expect(store.getDefaultRef()?.name).toBe("main");
+    expect(store.getSelectedRef()).toEqual(initialRef);
+    expect(store.getTree()).toEqual([]);
+    expect(store.getSelectedPath()).toBeNull();
+    expect(store.getBlob()).toBeNull();
+    expect(store.getFileHistory()).toEqual([]);
+    expect(store.getError()).toBe("tree failed");
+    expect(store.isLoading()).toBe(false);
+  });
+
   it("preserves the selected path when switching refs if that path still exists", async () => {
     const store = createRepoBrowserStore({ client: testClient() });
     await store.loadRepo(repo);

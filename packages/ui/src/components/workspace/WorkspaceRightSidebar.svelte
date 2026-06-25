@@ -263,6 +263,11 @@
     hasRepo
   );
   const hasKataTask = $derived(ownerItemType === "kata_task");
+  const hasMergeTarget = $derived(
+    ownerItemType === "pull_request"
+      ? ownerItemNumber > 0 && hasRepo
+      : hasPR
+  );
 
   // Connect/disconnect SSE based on daemon availability
   let sseConnected = $state(false);
@@ -300,6 +305,7 @@
         active={activeTab === "diff"}
         {refreshToken}
         {disabled}
+        showMergeTarget={hasMergeTarget}
       />
     {/key}
   {:else if activeTab === "pr"}

@@ -5934,11 +5934,14 @@ func (s *Server) workspaceMergeTargetBranch(
 	summary *db.WorkspaceSummary,
 ) (string, bool, error) {
 	prNumber := summary.ItemNumber
-	if summary.ItemType == db.WorkspaceItemTypeIssue {
+	if summary.ItemType != db.WorkspaceItemTypePullRequest {
 		if summary.AssociatedPRNumber == nil {
 			return "", false, nil
 		}
 		prNumber = *summary.AssociatedPRNumber
+	}
+	if prNumber <= 0 {
+		return "", false, nil
 	}
 
 	repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{

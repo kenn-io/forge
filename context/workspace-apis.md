@@ -66,9 +66,23 @@ that is unavailable, it may fall back to a case-insensitive `project.name` match
 against the selected task's project name. Ambiguous or missing matches mean the
 Create/Open workspace button must not render.
 
+Persisted workspace `worktree_path` values should be absolute. Workspace setup
+runs `git worktree add` from the managed clone or configured base checkout, so
+relative paths would be interpreted relative to that Git directory while later
+API reads interpret them relative to the middleman server process.
+
 All workspace API timestamps are emitted as UTC RFC3339 strings. Keep timestamp
 normalization in the DB/server boundary; the Svelte UI can present local time
 where needed.
+
+## Diff Scopes
+
+Workspace diffs compare against local `HEAD`, the pushed branch, or a merge
+target. The merge-target scope only exists when the workspace has a PR identity:
+PR-backed workspaces use their own `item_number`, while issue-backed and
+Kata-backed workspaces use `associated_pr_number`. If no associated PR is known,
+the API returns "workspace merge target branch not available" and the workspace
+sidebar must not render the Target scope control.
 
 ## Sidebar Ordering
 

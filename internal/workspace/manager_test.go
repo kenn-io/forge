@@ -408,6 +408,40 @@ func TestCreateKataTaskDoesNotRequireProviderIssue(t *testing.T) {
 	assert.Equal("Fix widget", got.KataMetadata.Title)
 }
 
+func TestCreateKataTaskNormalizesRelativeWorktreeDir(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cwd := filepath.Join(t.TempDir(), "cwd")
+	require.NoError(os.MkdirAll(cwd, 0o755))
+	t.Chdir(cwd)
+
+	d := openTestDB(t)
+	ctx := t.Context()
+	seedRepo(t, d, "github.com", "acme", "widget")
+
+	mgr := NewManager(d, "relative-worktrees")
+	metadata := db.WorkspaceKataMetadata{
+		DaemonID:   "desktop",
+		ProjectUID: "project-kata",
+		IssueUID:   "issue-kata-1",
+		ShortID:    "task-123",
+		Title:      "Fix widget",
+	}
+	ws, err := mgr.CreateKataTask(ctx, "github", "github.com", "acme", "widget", metadata)
+	require.NoError(err)
+	require.NotNil(ws)
+
+	assert.True(filepath.IsAbs(ws.WorktreePath))
+	assert.Equal(
+		filepath.Join(
+			cwd, "relative-worktrees", "github", "github.com",
+			"acme", "widget", "kata-task-123",
+		),
+		ws.WorktreePath,
+	)
+}
+
 func TestCreateKataTaskScopesItemKeyByDaemonAndProject(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

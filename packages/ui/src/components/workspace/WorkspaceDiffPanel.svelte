@@ -17,6 +17,7 @@
     active?: boolean;
     refreshToken?: number;
     disabled?: boolean;
+    showMergeTarget?: boolean;
   }
 
   const {
@@ -31,10 +32,14 @@
     active = false,
     refreshToken = 0,
     disabled = false,
+    showMergeTarget = true,
   }: Props = $props();
   const { diff } = getStores();
 
-  let base = $state<WorkspaceDiffBase>("head");
+  let selectedBase = $state<WorkspaceDiffBase>("head");
+  const base = $derived(
+    !showMergeTarget && selectedBase === "merge-target" ? "head" : selectedBase
+  );
   let loadedKey = "";
 
   $effect(() => {
@@ -50,14 +55,19 @@
 
   function selectBase(nextBase: WorkspaceDiffBase): void {
     if (disabled) return;
-    base = nextBase;
+    selectedBase = nextBase;
   }
 </script>
 
 <section class="workspace-diff" aria-label="Workspace Diff">
   <div class="workspace-diff-scope">
     <span class="scope-label">Compare</span>
-    <div class="scope-toggle" role="group" aria-label="Workspace diff base">
+    <div
+      class="scope-toggle"
+      class:scope-toggle--two={!showMergeTarget}
+      role="group"
+      aria-label="Workspace diff base"
+    >
       <button
         class="scope-btn"
         class:scope-btn--active={base === "head"}
@@ -80,17 +90,19 @@
       >
         Branch
       </button>
-      <button
-        class="scope-btn scope-btn--wide"
-        class:scope-btn--active={base === "merge-target"}
-        aria-pressed={base === "merge-target"}
-        aria-label="Compare with merge target"
-        title="Merge target"
-        disabled={disabled}
-        onclick={() => selectBase("merge-target")}
-      >
-        Target
-      </button>
+      {#if showMergeTarget}
+        <button
+          class="scope-btn scope-btn--wide"
+          class:scope-btn--active={base === "merge-target"}
+          aria-pressed={base === "merge-target"}
+          aria-label="Compare with merge target"
+          title="Merge target"
+          disabled={disabled}
+          onclick={() => selectBase("merge-target")}
+        >
+          Target
+        </button>
+      {/if}
     </div>
     <DiffScopePicker compact {disabled} />
   </div>
@@ -167,6 +179,13 @@
     border: 1px solid var(--border-muted);
     border-radius: 4px;
     background: var(--bg-inset);
+  }
+
+  .scope-toggle--two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 128px;
+    flex-basis: 128px;
+    min-width: 116px;
   }
 
   .scope-btn {

@@ -121,6 +121,11 @@ type TerminalPaneSnapshot struct {
 func NewManager(
 	database *db.DB, worktreeDir string,
 ) *Manager {
+	if worktreeDir != "" {
+		if abs, err := filepath.Abs(worktreeDir); err == nil {
+			worktreeDir = abs
+		}
+	}
 	return &Manager{
 		db:                     database,
 		worktreeDir:            worktreeDir,

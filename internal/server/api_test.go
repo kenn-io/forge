@@ -23824,6 +23824,69 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 	assert.NotContains(diffPaths, "target-only.txt")
 }
 
+func TestWorkspaceDiffEndpointReportsMergeTargetForAssociatedKataWorkspaceE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, database, _, remote, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	targetWork := filepath.Join(t.TempDir(), "target")
+	runGit(t, filepath.Dir(targetWork), "clone", remote, targetWork)
+	runGit(t, targetWork, "config", "user.email", "test@test.com")
+	runGit(t, targetWork, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(
+		filepath.Join(targetWork, "target-only.txt"),
+		[]byte("target\n"), 0o644,
+	))
+	runGit(t, targetWork, "add", ".")
+	runGit(t, targetWork, "commit", "-m", "advance main")
+	runGit(t, targetWork, "push", "origin", "main")
+	runGit(t, ws.WorktreePath, "fetch", "origin", "main")
+
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "kata-local.go"),
+		[]byte("package kata\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "kata workspace commit")
+
+	associatedPRNumber := 1
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:                 "ws-kata-merge-target",
+		Platform:           "github",
+		PlatformHost:       "github.com",
+		RepoOwner:          "acme",
+		RepoName:           "widget",
+		ItemType:           db.WorkspaceItemTypeKataTask,
+		ItemKey:            "kata:desktop:project-kata:issue-kata-1",
+		AssociatedPRNumber: &associatedPRNumber,
+		GitHeadRef:         ws.GitHeadRef,
+		WorkspaceBranch:    ws.GitHeadRef,
+		WorktreePath:       ws.WorktreePath,
+		TmuxSession:        "middleman-ws-kata-merge-target",
+		Status:             "ready",
+		KataMetadata: &db.WorkspaceKataMetadata{
+			DaemonID:   "desktop",
+			ProjectUID: "project-kata",
+			IssueUID:   "issue-kata-1",
+			ShortID:    "task-123",
+			Title:      "Fix widget",
+		},
+	}))
+
+	mergeTargetFiles := requestWorkspaceFiles(t, srv, "ws-kata-merge-target", "merge-target")
+	require.NotNil(mergeTargetFiles.Files)
+	filePaths := workspaceDiffPaths(*mergeTargetFiles.Files)
+	assert.Contains(filePaths, "kata-local.go")
+	assert.NotContains(filePaths, "target-only.txt")
+}
+
 func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
 	t.Parallel()
 

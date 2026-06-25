@@ -7712,14 +7712,52 @@ func (s *Syncer) syncMRForRepo(
 		return fmt.Errorf("upsert repo %s/%s: %w", owner, name, err)
 	}
 
+	// Preserve derived fields that provider detail doesn't populate. CI is
+	// refreshed later in this sync path; keeping the previous values here
+	// prevents detail reads from briefly seeing "no CI" during refresh.
+	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
+		ctx, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("get existing MR #%d: %w", number, err)
+	}
+
 	var ghPR *gh.PullRequest
-	var platformMR platform.MergeRequest
+	var normalized *db.MergeRequest
+	var newETag string
 	if rawReader, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); ok {
-		ghPR, platformMR, err = rawReader.GetGitHubPullRequest(ctx, platformRepoRef(repo), number)
+		if client, ok := s.optionalGitHubClientFor(repo); ok {
+			var notModified bool
+			ghPR, newETag, notModified, err = s.getPullRequestForDetail(
+				ctx, client, repo, number,
+			)
+			if err == nil && ghPR == nil {
+				if notModified && existing != nil {
+					_, err := s.markUnchangedMRDetailFetched(
+						ctx, repo, repoID, number, existing, 1,
+					)
+					return err
+				}
+				err = fmt.Errorf("client returned nil pull request")
+			}
+			if err == nil {
+				normalized, err = NormalizePR(repoID, ghPR)
+			}
+		} else {
+			var platformMR platform.MergeRequest
+			ghPR, platformMR, err = rawReader.GetGitHubPullRequest(ctx, platformRepoRef(repo), number)
+			if err == nil {
+				normalized = platform.DBMergeRequest(repoID, platformMR)
+			}
+		}
 	} else {
+		var platformMR platform.MergeRequest
 		platformMR, err = mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
+		if err == nil {
+			normalized = platform.DBMergeRequest(repoID, platformMR)
+		}
 	}
 	if err != nil {
 		if errors.Is(err, ErrNilPullRequest) {
@@ -7729,17 +7767,6 @@ func (s *Syncer) syncMRForRepo(
 			)
 		}
 		return fmt.Errorf("get MR %s/%s#%d: %w", owner, name, number, err)
-	}
-	normalized := platform.DBMergeRequest(repoID, platformMR)
-
-	// Preserve derived fields that provider detail doesn't populate. CI is
-	// refreshed later in this sync path; keeping the previous values here
-	// prevents detail reads from briefly seeing "no CI" during refresh.
-	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
-		ctx, repoID, number,
-	)
-	if err != nil {
-		return fmt.Errorf("get existing MR #%d: %w", number, err)
 	}
 	headChanged := existing != nil &&
 		existing.PlatformHeadSHA != normalized.PlatformHeadSHA
@@ -7873,6 +7900,18 @@ func (s *Syncer) syncMRForRepo(
 	}
 	if diffErr != nil {
 		return diffErr
+	}
+	if newETag != "" {
+		if err := s.db.UpsertHTTPEtag(
+			ctx, string(repoPlatform(repo)), repoHost(repo),
+			repo.Owner, repo.Name, "pull_request", number, newETag,
+		); err != nil {
+			slog.Warn("persist pull request ETag failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		}
 	}
 	return nil
 }

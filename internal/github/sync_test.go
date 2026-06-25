@@ -7471,6 +7471,60 @@ func TestFetchMRDetailUsesPersistedPullRequestETag(t *testing.T) {
 		"304 should skip timeline/comment refresh")
 }
 
+func TestSyncMRUsesPersistedPullRequestETag(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	detailFetchedAt := time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1000,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "test PR",
+		Author:          "alice",
+		State:           "open",
+		HeadBranch:      "feature-branch",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "abc123def456",
+		CreatedAt:       updatedAt,
+		UpdatedAt:       updatedAt,
+		LastActivityAt:  updatedAt,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"pull_request", 1, `"etag-v1"`,
+	))
+
+	mc := &conditionalPRTrackingClient{notModified: true}
+	mc.singlePR = buildOpenPR(1, updatedAt)
+	mc.comments = []*gh.IssueComment{{ID: new(int64)}}
+	mc.reviews = []*gh.PullRequestReview{{ID: new(int64)}}
+	mc.commits = []*gh.RepositoryCommit{{SHA: new(string)}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	require.NoError(syncer.SyncMR(ctx, "owner", "repo", 1))
+
+	assert.Equal(int32(1), mc.conditionalCalls.Load())
+	assert.Equal(`"etag-v1"`, mc.receivedETag)
+	assert.Zero(int(mc.getPRCalls.Load()),
+		"304 should skip the unconditional PR detail fetch")
+	assert.Zero(int(mc.listIssueCommentsCalled.Load()),
+		"304 should skip timeline/comment refresh")
+}
+
 func TestFetchMRDetailPersistsPullRequestETag(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

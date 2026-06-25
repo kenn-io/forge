@@ -68,11 +68,15 @@ For pull requests, that means:
   a slower cadence so the Activity view stays fresh without spending the same
   request rate on hours-old rows. A missing `detail_fetched_at` remains due
   immediately (`internal/github/sync.go::activeMRDueForFastSync`).
-- GitHub detail ETags reduce the work for unchanged PRs, but a `304 Not
-  Modified` still consumes a provider request. Do not use the ETag path as the
-  only rate-limit mitigation for broad background refresh loops
-  (`internal/github/sync.go::getPullRequestForDetail`,
-  `internal/github/sync.go::markUnchangedMRDetailFetched`).
+- GitHub detail ETags reduce both payload work and middleman's eager-refresh
+  budget spend for unchanged PRs; the sync budget transport does not count
+  `304 Not Modified` responses (`internal/github/budget_transport.go::budgetTransport`).
+  Active watched-PR sync must use the same persisted pull-request ETag path as
+  detail drain (`internal/github/sync.go::syncMRForRepo`,
+  `internal/github/sync.go::getPullRequestForDetail`,
+  `internal/github/sync.go::markUnchangedMRDetailFetched`). Cadence control is
+  still required because changed PRs correctly fall through to comments,
+  reviews, commits, CI, and workflow approval refreshes.
 
 ## Timeline Event Rules
 

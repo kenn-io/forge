@@ -179,6 +179,11 @@ to the workspace row. The workspace lifecycle remains middleman-owned; the Kata
 daemon remains the source of truth for task details, comments, status, labels,
 and project data.
 
+Workspace API responses must include this Kata owner metadata for
+`item_type = "kata_task"` workspaces. The metadata is not enough to render the
+full task pane; it exists so the workspace list, header, and unavailable-daemon
+fallback can name the task without treating it as a provider issue.
+
 ## API Shape
 
 Add a middleman API for resolving the selected task's workspace target:
@@ -243,6 +248,29 @@ detail, not as a permanent task property. The button should avoid stale actions:
 while a selected-task resolver request is in flight, the previous task's
 workspace target is cleared.
 
+Workspace sidebar behavior is item-type specific:
+
+- Provider issue workspaces keep the existing provider issue sidebar pane.
+- Provider pull request workspaces keep the existing PR and review sidebar panes.
+- Kata task workspaces do not render the provider issue pane. They render a
+  `Kata task` sidebar tab whose body is the same
+  `KataIssueDetail.svelte` component used by the regular Kata task browser.
+
+The Kata workspace sidebar should use a thin loader/adapter around
+`KataIssueDetail.svelte`, not a second task-detail implementation. The adapter
+reads the workspace's stored Kata daemon/project/task identity, switches or
+scopes Kata API calls to that daemon, fetches the live task detail/events through
+the existing Kata task API path, then passes the resulting data and mutation
+callbacks to `KataIssueDetail.svelte` exactly as the regular Kata workspace
+does. If the daemon is unavailable, the task cannot be found, or the live fetch
+fails, the sidebar shows an unavailable state using the stored Kata metadata
+instead of falling back to the provider issue UI.
+
+The sidebar tab selector must therefore branch on `item_type = "kata_task"`
+before checking numeric issue state. A Kata workspace has a repository backing
+its worktree, but that repository identity must not cause the right sidebar to
+look up or render a provider issue with the same number or title.
+
 ## Error Handling
 
 The resolver intentionally uses absence for non-actionable states:
@@ -288,6 +316,12 @@ Frontend coverage:
   response.
 - Settings can add, edit, and remove Kata project mappings using configured
   watched repos.
+- A `kata_task` workspace renders the `Kata task` sidebar tab and mounts
+  `KataIssueDetail.svelte` with live Kata task contents.
+- A `kata_task` workspace never renders the provider issue sidebar pane, even
+  when its backing repository has a provider issue with a similar identifier.
+- Unavailable Kata daemon or missing live task data renders a Kata-specific
+  unavailable state using stored workspace metadata.
 
 ## Rollout
 

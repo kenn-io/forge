@@ -6800,6 +6800,108 @@ func TestSetWatchedMRsReplacesList(t *testing.T) {
 		"PR #1 should stop being synced after watch list replacement")
 }
 
+func TestWatchedMRsIncludeRecentlyActiveOpenPRs(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
+
+	githubRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "app",
+	})
+	require.NoError(err)
+	gheRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "ghe.example.com",
+		Owner:        "acme",
+		Name:         "app",
+	})
+	require.NoError(err)
+
+	seedMR := func(repoID int64, number int, state db.MergeRequestState, lastActivity time.Time) {
+		_, upsertErr := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number,
+			Title: "PR", Author: "octo", State: state,
+			HeadBranch: "feature", BaseBranch: "main",
+			CreatedAt: now.Add(-24 * time.Hour),
+			UpdatedAt: lastActivity, LastActivityAt: lastActivity,
+		})
+		require.NoError(upsertErr)
+	}
+	seedMR(githubRepoID, 1, db.MergeRequestStateOpen, now.Add(-30*time.Minute))
+	seedMR(githubRepoID, 2, db.MergeRequestStateOpen, now.Add(-5*time.Hour))
+	seedMR(githubRepoID, 3, db.MergeRequestStateClosed, now.Add(-10*time.Minute))
+	seedMR(gheRepoID, 4, db.MergeRequestStateOpen, now.Add(-3*time.Hour))
+
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil,
+		[]RepoRef{
+			{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "app"},
+			{Platform: platform.KindGitHub, PlatformHost: "ghe.example.com", Owner: "acme", Name: "app"},
+		},
+		time.Hour, nil, nil,
+	)
+	syncer.SetActiveMRWindow(4 * time.Hour)
+	syncer.SetWatchedMRs([]WatchedMR{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "app", Number: 99,
+	}})
+
+	got := syncer.watchedMRsForFastSync(ctx, now)
+	assert.ElementsMatch([]WatchedMR{
+		{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app", Number: 1,
+		},
+		{
+			Platform: platform.KindGitHub, PlatformHost: "ghe.example.com",
+			Owner: "acme", Name: "app", Number: 4,
+		},
+		{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app", Number: 99,
+		},
+	}, got)
+}
+
+func TestWatchedMRsNotifyOnceAfterFastSync(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		singlePR: buildOpenPR(5, now),
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "acme", Name: "app", PlatformHost: "github.com",
+		}},
+		time.Hour, nil, nil,
+	)
+	syncer.SetWatchedMRs([]WatchedMR{{
+		Owner: "acme", Name: "app", Number: 5, PlatformHost: "github.com",
+	}})
+
+	calls := 0
+	syncer.SetOnWatchedMRSyncCompleted(func() {
+		calls++
+	})
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Equal(1, calls)
+}
+
 func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)

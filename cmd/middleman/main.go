@@ -551,6 +551,8 @@ func run(opts serve.Options) error {
 		cfg.BranchActivityRetention(),
 		cfg.Activity.DefaultBranchMaxCommits,
 	)
+	syncer.SetWatchInterval(cfg.ActivePRRefreshDuration())
+	syncer.SetActiveMRWindow(cfg.ActivePRWindowDuration())
 	syncer.SetFetchers(startup.fetchers)
 	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
 	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
@@ -608,6 +610,12 @@ func run(opts serve.Options) error {
 	// than the activity feed's top cursor, so broadcast the same
 	// data-change signal the normal sync uses to nudge a full reload.
 	syncer.SetOnNotificationSyncComplete(func() {
+		srv.Hub().Broadcast(server.Event{
+			Type: "data_changed",
+			Data: struct{}{},
+		})
+	})
+	syncer.SetOnWatchedMRSyncCompleted(func() {
 		srv.Hub().Broadcast(server.Event{
 			Type: "data_changed",
 			Data: struct{}{},

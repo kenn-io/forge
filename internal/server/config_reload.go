@@ -393,6 +393,8 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 			newCfg.BranchActivityRetention(),
 			newCfg.Activity.DefaultBranchMaxCommits,
 		)
+		s.syncer.SetWatchInterval(newCfg.ActivePRRefreshDuration())
+		s.syncer.SetActiveMRWindow(newCfg.ActivePRWindowDuration())
 	}
 
 	s.refreshRuntimeTargetsLocked()

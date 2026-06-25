@@ -155,6 +155,48 @@ propagation_interval = "-1s"
 	}
 }
 
+func TestLoadAppliesActivePRRefreshDefaults(t *testing.T) {
+	cfg, err := Load(writeConfig(t, ``))
+	require.NoError(t, err)
+
+	assert := Assert.New(t)
+	assert.Equal(defaultActivePRRefreshInterval, cfg.ActivePRRefreshInterval)
+	assert.Equal(defaultActivePRWindow, cfg.ActivePRWindow)
+	assert.Equal(2*time.Minute, cfg.ActivePRRefreshDuration())
+	assert.Equal(4*time.Hour, cfg.ActivePRWindowDuration())
+}
+
+func TestLoadRejectsNonPositiveActivePRRefreshDurations(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{
+			name: "refresh interval zero",
+			content: `
+active_pr_refresh_interval = "0s"
+`,
+			wantErr: "active_pr_refresh_interval must be positive",
+		},
+		{
+			name: "window negative",
+			content: `
+active_pr_window = "-1s"
+`,
+			wantErr: "active_pr_window must be positive",
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tt.content))
+			require.Error(t, err)
+			Assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
 func TestSaveAppliesNotificationDefaultsForInMemoryConfig(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

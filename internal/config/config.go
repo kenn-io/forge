@@ -28,6 +28,8 @@ const (
 	defaultForgejoTokenEnv                 = "MIDDLEMAN_FORGEJO_TOKEN"
 	defaultGiteaTokenEnv                   = "MIDDLEMAN_GITEA_TOKEN"
 	defaultSyncInterval                    = "5m"
+	defaultActivePRRefreshInterval         = "2m"
+	defaultActivePRWindow                  = "4h"
 	defaultNotificationSyncInterval        = "2m"
 	defaultNotificationPropagationInterval = "1m"
 	defaultHost                            = "127.0.0.1"
@@ -743,6 +745,8 @@ type Shell struct {
 
 type Config struct {
 	SyncInterval              string `toml:"sync_interval"`
+	ActivePRRefreshInterval   string `toml:"active_pr_refresh_interval"`
+	ActivePRWindow            string `toml:"active_pr_window"`
 	GitHubTokenEnv            string `toml:"github_token_env"`
 	DefaultPlatformHost       string `toml:"default_platform_host"`
 	Host                      string `toml:"host"`
@@ -1129,11 +1133,13 @@ func Load(path string) (*Config, error) {
 // LoadForGitHubAppRepair pick the validation strictness.
 func load(path string) (*Config, error) {
 	cfg := &Config{
-		SyncInterval:        defaultSyncInterval,
-		GitHubTokenEnv:      defaultGitHubTokenEnv,
-		DefaultPlatformHost: defaultPlatformHost,
-		Host:                defaultHost,
-		Port:                defaultPort,
+		SyncInterval:            defaultSyncInterval,
+		ActivePRRefreshInterval: defaultActivePRRefreshInterval,
+		ActivePRWindow:          defaultActivePRWindow,
+		GitHubTokenEnv:          defaultGitHubTokenEnv,
+		DefaultPlatformHost:     defaultPlatformHost,
+		Host:                    defaultHost,
+		Port:                    defaultPort,
 		Activity: Activity{
 			CollapseThreads: true,
 		},
@@ -1340,6 +1346,22 @@ func (c *Config) validate(skipAppCoverage bool) error {
 
 	if _, err := time.ParseDuration(c.SyncInterval); err != nil {
 		return fmt.Errorf("config: invalid sync_interval %q: %w", c.SyncInterval, err)
+	}
+	if c.ActivePRRefreshInterval == "" {
+		c.ActivePRRefreshInterval = defaultActivePRRefreshInterval
+	}
+	if c.ActivePRWindow == "" {
+		c.ActivePRWindow = defaultActivePRWindow
+	}
+	if d, err := time.ParseDuration(c.ActivePRRefreshInterval); err != nil {
+		return fmt.Errorf("config: invalid active_pr_refresh_interval %q: %w", c.ActivePRRefreshInterval, err)
+	} else if d <= 0 {
+		return fmt.Errorf("config: active_pr_refresh_interval must be positive, got %q", c.ActivePRRefreshInterval)
+	}
+	if d, err := time.ParseDuration(c.ActivePRWindow); err != nil {
+		return fmt.Errorf("config: invalid active_pr_window %q: %w", c.ActivePRWindow, err)
+	} else if d <= 0 {
+		return fmt.Errorf("config: active_pr_window must be positive, got %q", c.ActivePRWindow)
 	}
 	if c.Notifications.SyncInterval == "" {
 		c.Notifications.SyncInterval = defaultNotificationSyncInterval
@@ -1924,6 +1946,24 @@ func (c *Config) SyncDuration() time.Duration {
 	return d
 }
 
+func (c *Config) ActivePRRefreshDuration() time.Duration {
+	if c == nil || c.ActivePRRefreshInterval == "" {
+		d, _ := time.ParseDuration(defaultActivePRRefreshInterval)
+		return d
+	}
+	d, _ := time.ParseDuration(c.ActivePRRefreshInterval)
+	return d
+}
+
+func (c *Config) ActivePRWindowDuration() time.Duration {
+	if c == nil || c.ActivePRWindow == "" {
+		d, _ := time.ParseDuration(defaultActivePRWindow)
+		return d
+	}
+	d, _ := time.ParseDuration(c.ActivePRWindow)
+	return d
+}
+
 func (c *Config) BranchActivityRetention() time.Duration {
 	if c == nil || c.Activity.DefaultBranchRetentionDays <= 0 {
 		return time.Duration(defaultBranchActivityRetentionDays) * 24 * time.Hour
@@ -2455,6 +2495,8 @@ func reposForSave(repos []Repo) []Repo {
 // configFile is the subset of Config written to disk.
 type configFile struct {
 	SyncInterval              string            `toml:"sync_interval"`
+	ActivePRRefreshInterval   string            `toml:"active_pr_refresh_interval"`
+	ActivePRWindow            string            `toml:"active_pr_window"`
 	GitHubTokenEnv            string            `toml:"github_token_env"`
 	DefaultPlatformHost       string            `toml:"default_platform_host,omitempty"`
 	Host                      string            `toml:"host"`
@@ -2490,28 +2532,30 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("validating config: %w", err)
 	}
 	f := configFile{
-		SyncInterval:        cfg.SyncInterval,
-		GitHubTokenEnv:      cfg.GitHubTokenEnv,
-		DefaultPlatformHost: cfg.DefaultPlatformHost,
-		Host:                cfg.Host,
-		Port:                cfg.Port,
-		AllowedHosts:        slices.Clone(cfg.AllowedHosts),
-		TrustReverseProxy:   cfg.TrustReverseProxy,
-		Repos:               reposForSave(cfg.Repos),
-		Platforms:           cfg.Platforms,
-		GitHubApps:          cfg.GitHubApps,
-		Activity:            cfg.Activity,
-		Notifications:       cfg.Notifications,
-		Terminal:            cfg.Terminal,
-		Modes:               cfg.Modes,
-		Agents:              cfg.Agents,
-		DocFolders:          cfg.DocFolders,
-		Roborev:             cfg.Roborev,
-		Msgvault:            cfg.Msgvault,
-		Tmux:                cfg.Tmux,
-		Shell:               cfg.Shell,
-		Fleet:               cfg.Fleet,
-		API:                 cfg.API,
+		SyncInterval:            cfg.SyncInterval,
+		ActivePRRefreshInterval: cfg.ActivePRRefreshInterval,
+		ActivePRWindow:          cfg.ActivePRWindow,
+		GitHubTokenEnv:          cfg.GitHubTokenEnv,
+		DefaultPlatformHost:     cfg.DefaultPlatformHost,
+		Host:                    cfg.Host,
+		Port:                    cfg.Port,
+		AllowedHosts:            slices.Clone(cfg.AllowedHosts),
+		TrustReverseProxy:       cfg.TrustReverseProxy,
+		Repos:                   reposForSave(cfg.Repos),
+		Platforms:               cfg.Platforms,
+		GitHubApps:              cfg.GitHubApps,
+		Activity:                cfg.Activity,
+		Notifications:           cfg.Notifications,
+		Terminal:                cfg.Terminal,
+		Modes:                   cfg.Modes,
+		Agents:                  cfg.Agents,
+		DocFolders:              cfg.DocFolders,
+		Roborev:                 cfg.Roborev,
+		Msgvault:                cfg.Msgvault,
+		Tmux:                    cfg.Tmux,
+		Shell:                   cfg.Shell,
+		Fleet:                   cfg.Fleet,
+		API:                     cfg.API,
 	}
 	if cfg.DefaultPlatformHost == defaultPlatformHost {
 		f.DefaultPlatformHost = ""
@@ -2591,6 +2635,12 @@ func (c *Config) copyForSave() Config {
 	cfg.Agents = slices.Clone(c.Agents)
 	if cfg.SyncInterval == "" {
 		cfg.SyncInterval = defaultSyncInterval
+	}
+	if cfg.ActivePRRefreshInterval == "" {
+		cfg.ActivePRRefreshInterval = defaultActivePRRefreshInterval
+	}
+	if cfg.ActivePRWindow == "" {
+		cfg.ActivePRWindow = defaultActivePRWindow
 	}
 	if cfg.DefaultPlatformHost == "" {
 		cfg.DefaultPlatformHost = defaultPlatformHost

@@ -1660,6 +1660,8 @@ func TestRestartRequiredForNotificationIntervals(t *testing.T) {
 	base := func() *config.Config {
 		cfg := &config.Config{}
 		cfg.SyncInterval = "5m"
+		cfg.ActivePRRefreshInterval = "2m"
+		cfg.ActivePRWindow = "4h"
 		cfg.Notifications.SyncInterval = "30s"
 		cfg.Notifications.PropagationInterval = "1m"
 		cfg.Notifications.BatchSize = 25
@@ -1684,6 +1686,16 @@ func TestRestartRequiredForNotificationIntervals(t *testing.T) {
 	batchSizeChanged.Notifications.BatchSize = 50
 	require.True(snap.restartRequiredFor(batchSizeChanged),
 		"notification batch_size is snapped by the loop")
+
+	activeRefreshChanged := base()
+	activeRefreshChanged.ActivePRRefreshInterval = "30s"
+	require.False(snap.restartRequiredFor(activeRefreshChanged),
+		"active PR refresh interval is hot-reloadable by the syncer")
+
+	activeWindowChanged := base()
+	activeWindowChanged.ActivePRWindow = "8h"
+	require.False(snap.restartRequiredFor(activeWindowChanged),
+		"active PR window is hot-reloadable by the syncer")
 }
 
 const validReloadConfigAuthGate = `

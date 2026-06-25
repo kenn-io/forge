@@ -422,6 +422,7 @@ type Syncer struct {
 	interval                 time.Duration
 	watchInterval            time.Duration
 	watchedMRs               []WatchedMR
+	activeMRWindow           time.Duration
 	watchMu                  sync.Mutex
 	branchActivityMu         sync.RWMutex
 	branchActivityRetention  time.Duration
@@ -448,7 +449,10 @@ type Syncer struct {
 	displayNameGroup singleflight.Group // dedups concurrent GetUser calls
 	onMRSynced       func(owner, name string, mr *db.MergeRequest)
 	onSyncCompleted  func(results []RepoSyncResult)
-	onStatusChange   func(status *SyncStatus)
+	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
+	// pass refreshes at least one MR.
+	onWatchedMRSyncCompleted func()
+	onStatusChange           func(status *SyncStatus)
 	// onNotificationSyncComplete fires after each notification sync run
 	// (periodic, manual, or sidecar) so the server can broadcast the same
 	// data-change signal the normal sync uses. Notification sync can insert
@@ -1781,9 +1785,24 @@ func (p gitHubClientProvider) EditIssueContent(
 }
 
 // SetWatchInterval sets the fast-sync interval for watched MRs.
-// Must be called before Start.
 func (s *Syncer) SetWatchInterval(d time.Duration) {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
 	s.watchInterval = d
+}
+
+// SetActiveMRWindow sets the recency window used to add open, recently
+// active MRs to the fast-sync watch list.
+func (s *Syncer) SetActiveMRWindow(d time.Duration) {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
+	s.activeMRWindow = d
+}
+
+func (s *Syncer) watchSettings() (time.Duration, time.Duration) {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
+	return s.watchSettingsLocked()
 }
 
 // HasDiffSync reports whether the syncer has a clone manager configured
@@ -1833,6 +1852,12 @@ func (s *Syncer) SetOnSyncCompleted(
 	fn func(results []RepoSyncResult),
 ) {
 	s.onSyncCompleted = fn
+}
+
+// SetOnWatchedMRSyncCompleted registers a callback invoked once after a
+// watched-MR fast-sync pass refreshes at least one MR.
+func (s *Syncer) SetOnWatchedMRSyncCompleted(fn func()) {
+	s.onWatchedMRSyncCompleted = fn
 }
 
 // SetParallelism sets the maximum number of repos synced
@@ -2390,10 +2415,6 @@ func (s *Syncer) Start(ctx context.Context) {
 	startMerged, startCancel := s.mergeWithRunCtx(ctx)
 	s.wg.Add(1)
 
-	watchInt := s.watchInterval
-	if watchInt <= 0 {
-		watchInt = 30 * time.Second
-	}
 	watchMerged, watchCancel := s.mergeWithRunCtx(ctx)
 	s.wg.Add(1)
 	s.lifecycleMu.Unlock()
@@ -2419,15 +2440,17 @@ func (s *Syncer) Start(ctx context.Context) {
 	go func() {
 		defer s.wg.Done()
 		defer watchCancel()
-		ticker := time.NewTicker(watchInt)
-		defer ticker.Stop()
 		for {
+			watchInt, _ := s.watchSettings()
+			timer := time.NewTimer(watchInt)
 			select {
-			case <-ticker.C:
+			case <-timer.C:
 				s.syncWatchedMRs(watchMerged)
 			case <-s.stopCh:
+				timer.Stop()
 				return
 			case <-watchMerged.Done():
+				timer.Stop()
 				return
 			}
 		}
@@ -2493,18 +2516,12 @@ func (s *Syncer) advanceNextSync(
 func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	ctx = WithSyncBudget(ctx)
 
-	s.watchMu.Lock()
-	mrs := slices.Clone(s.watchedMRs)
-	s.watchMu.Unlock()
-
+	mrs := s.watchedMRsForFastSync(ctx, time.Now().UTC())
 	if len(mrs) == 0 {
 		return
 	}
 
-	watchInt := s.watchInterval
-	if watchInt <= 0 {
-		watchInt = 30 * time.Second
-	}
+	watchInt, _ := s.watchSettings()
 	watchBuckets := make([]string, len(mrs))
 	for i, mr := range mrs {
 		watchBuckets[i] = watchedMRRateBucketKey(mr)
@@ -2529,6 +2546,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		blockedBuckets[bucket] = false
 	}
 
+	syncedAny := false
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
 		bucket := watchedMRRateBucketKey(mr)
@@ -2557,12 +2575,92 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 				"number", mr.Number,
 				"err", err,
 			)
+			var diffErr *DiffSyncError
+			if errors.As(err, &diffErr) {
+				syncedAny = true
+			}
+			continue
 		}
+		syncedAny = true
 	}
 
 	s.advanceNextSync(
 		eligibleBuckets, s.nextWatchSyncAfter, watchInt,
 	)
+	if syncedAny && s.onWatchedMRSyncCompleted != nil {
+		s.onWatchedMRSyncCompleted()
+	}
+}
+
+func (s *Syncer) watchedMRsForFastSync(ctx context.Context, now time.Time) []WatchedMR {
+	s.watchMu.Lock()
+	mrs := slices.Clone(s.watchedMRs)
+	_, activeWindow := s.watchSettingsLocked()
+	s.watchMu.Unlock()
+
+	watched := newWatchedMRSet(mrs)
+	if activeWindow > 0 {
+		for _, mr := range s.recentlyActiveOpenMRs(ctx, now, activeWindow) {
+			watched.add(mr)
+		}
+	}
+	return watched.slice()
+}
+
+func (s *Syncer) watchSettingsLocked() (time.Duration, time.Duration) {
+	watchInt := s.watchInterval
+	if watchInt <= 0 {
+		watchInt = 30 * time.Second
+	}
+	return watchInt, s.activeMRWindow
+}
+
+func (s *Syncer) recentlyActiveOpenMRs(
+	ctx context.Context,
+	now time.Time,
+	window time.Duration,
+) []WatchedMR {
+	prs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "open"})
+	if err != nil {
+		slog.Warn("fast-sync active MR selection failed", "err", err)
+		return nil
+	}
+	cutoff := now.Add(-window)
+	repoByID := make(map[int64]*db.Repo)
+	var watched []WatchedMR
+	for _, pr := range prs {
+		if pr.LastActivityAt.Before(cutoff) {
+			continue
+		}
+		repo, ok := repoByID[pr.RepoID]
+		if !ok {
+			var repoErr error
+			repo, repoErr = s.db.GetRepoByID(ctx, pr.RepoID)
+			if repoErr != nil || repo == nil {
+				if repoErr != nil {
+					slog.Warn("fast-sync active MR repo lookup failed",
+						"repo_id", pr.RepoID,
+						"err", repoErr,
+					)
+				}
+				continue
+			}
+			repoByID[pr.RepoID] = repo
+		}
+		if _, ok := s.trackedRepoByIdentity(
+			platform.Kind(repo.Platform), repo.Owner, repo.Name, repo.PlatformHost,
+		); !ok {
+			continue
+		}
+		watched = append(watched, WatchedMR{
+			Platform:     platform.Kind(repo.Platform),
+			PlatformHost: repo.PlatformHost,
+			Owner:        repo.Owner,
+			Name:         repo.Name,
+			Number:       pr.Number,
+		})
+	}
+	return watched
 }
 
 func watchedMRPlatform(mr WatchedMR) platform.Kind {
@@ -2583,6 +2681,32 @@ func watchedMRKey(mr WatchedMR) string {
 	return detailRepoKey(
 		watchedMRPlatform(mr), watchedMRHost(mr), mr.Owner, mr.Name,
 	) + fmt.Sprintf("#%d", mr.Number)
+}
+
+type watchedMRSet struct {
+	seen  map[string]struct{}
+	items []WatchedMR
+}
+
+func newWatchedMRSet(initial []WatchedMR) *watchedMRSet {
+	w := &watchedMRSet{seen: make(map[string]struct{}, len(initial))}
+	for _, mr := range initial {
+		w.add(mr)
+	}
+	return w
+}
+
+func (w *watchedMRSet) add(mr WatchedMR) {
+	key := watchedMRKey(mr)
+	if _, ok := w.seen[key]; ok {
+		return
+	}
+	w.seen[key] = struct{}{}
+	w.items = append(w.items, mr)
+}
+
+func (w *watchedMRSet) slice() []WatchedMR {
+	return slices.Clone(w.items)
 }
 
 // stopGracePeriod bounds how long Stop will wait for in-flight work

@@ -199,14 +199,19 @@ const DRAG_HANDLE_SVG =
   `<circle cx="9" cy="13" r="1.2"/>` +
   `</svg>`;
 
-const SHIKI_THEME = "github-dark-default";
+const SHIKI_LIGHT_THEME = "github-light-default";
+const SHIKI_DARK_THEME = "github-dark-default";
+const SHIKI_THEMES = {
+  light: SHIKI_LIGHT_THEME,
+  dark: SHIKI_DARK_THEME,
+} as const;
 const SHIKI_PLAINTEXT_LANG = "text";
 let shikiHighlighter: Highlighter | undefined;
 let shikiHighlighterPromise: Promise<Highlighter> | undefined;
 
 function getShikiHighlighter(): Promise<Highlighter> {
   shikiHighlighterPromise ??= getSingletonHighlighter({
-    themes: [SHIKI_THEME],
+    themes: [SHIKI_LIGHT_THEME, SHIKI_DARK_THEME],
     langs: [],
   }).then((highlighter) => {
     shikiHighlighter = highlighter;
@@ -231,9 +236,13 @@ function renderHighlightedCode(token: Tokens.Code): string {
   if (!shikiHighlighter) return plainCodeBlock(token.text);
   const lang = codeFenceLanguage(token.lang);
   try {
-    return shikiHighlighter.codeToHtml(token.text, { lang, theme: SHIKI_THEME });
+    return shikiHighlighter.codeToHtml(token.text, { lang, themes: SHIKI_THEMES, defaultColor: false });
   } catch {
-    return shikiHighlighter.codeToHtml(token.text, { lang: SHIKI_PLAINTEXT_LANG, theme: SHIKI_THEME });
+    return shikiHighlighter.codeToHtml(token.text, {
+      lang: SHIKI_PLAINTEXT_LANG,
+      themes: SHIKI_THEMES,
+      defaultColor: false,
+    });
   }
 }
 

@@ -216,8 +216,9 @@ describe("renderMarkdown code highlighting", () => {
   it("highlights fenced code blocks with Shiki", async () => {
     const html = await renderMarkdown('```ts\nconst value: string = "ok";\n```');
 
-    expect(html).toContain('<pre class="shiki');
-    expect(html).toContain('<span style="');
+    expect(html).toContain('<pre class="shiki shiki-themes github-light-default github-dark-default"');
+    expect(html).toContain("--shiki-light:");
+    expect(html).toContain("--shiki-dark:");
     expect(html).toContain("const");
     expect(html).not.toContain("language-ts");
   });
@@ -225,16 +226,18 @@ describe("renderMarkdown code highlighting", () => {
   it("uses Shiki bundled languages beyond the app's common-language fixtures", async () => {
     const html = await renderMarkdown("```zig\nconst value: u8 = 1;\n```");
 
-    expect(html).toContain('<pre class="shiki');
-    expect(html).toContain('<span style="');
+    expect(html).toContain('<pre class="shiki shiki-themes github-light-default github-dark-default"');
+    expect(html).toContain("--shiki-light:");
+    expect(html).toContain("--shiki-dark:");
     expect(html).toContain("value");
   });
 
   it("passes the fenced TOML language through to Shiki", async () => {
     const html = await renderMarkdown('```toml\nmodel_provider = "my-custom"\n```');
 
-    expect(html).toContain('<pre class="shiki');
-    expect(html).toContain('<span style="');
+    expect(html).toContain('<pre class="shiki shiki-themes github-light-default github-dark-default"');
+    expect(html).toContain("--shiki-light:");
+    expect(html).toContain("--shiki-dark:");
     expect(html).toContain("model_provider");
     expect(html).not.toContain("language-toml");
   });
@@ -242,7 +245,7 @@ describe("renderMarkdown code highlighting", () => {
   it("falls back to escaped plain text for unknown fence languages", async () => {
     const html = await renderMarkdown("```not-a-real-language\n<script>alert(1)</script>\n```");
 
-    expect(html).toContain('<pre class="shiki');
+    expect(html).toContain('<pre class="shiki shiki-themes github-light-default github-dark-default"');
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
   });
 });
@@ -272,7 +275,7 @@ describe("renderMarkdown details blocks", () => {
     expect(html).toContain("<summary>Tips for collapsed sections</summary>");
     expect(html).toContain("<h3>You can add a header</h3>");
     expect(html).toContain("<p>You can add text within a collapsed section.</p>");
-    expect(html).toContain('<pre class="shiki github-dark-default"');
+    expect(html).toContain('<pre class="shiki shiki-themes github-light-default github-dark-default"');
     expect(html).toContain("puts");
     expect(html).toContain('"Hello World"');
     expect(html).toContain("</details>");

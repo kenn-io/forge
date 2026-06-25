@@ -309,6 +309,20 @@ a:hover {
   overflow-x: auto;
   margin: 6px 0;
 }
+.markdown-body pre.shiki[style] {
+  background: var(--shiki-light-bg, var(--bg-inset));
+  color: var(--shiki-light, var(--text-primary));
+}
+.markdown-body pre.shiki span[style] {
+  color: var(--shiki-light, inherit);
+}
+:root.dark .markdown-body pre.shiki[style] {
+  background: var(--shiki-dark-bg, var(--bg-inset));
+  color: var(--shiki-dark, var(--text-primary));
+}
+:root.dark .markdown-body pre.shiki span[style] {
+  color: var(--shiki-dark, inherit);
+}
 .markdown-body pre code {
   background: none;
   padding: 0;

@@ -103,6 +103,26 @@ test.describe("PR description task list", () => {
     }
   });
 
+  test("renders code fences past the highlight budget as plain code through PR detail", async ({ page }) => {
+    const server = await openPullDetail(page);
+    try {
+      const markdown = Array.from(
+        { length: 21 },
+        (_, index) => `\`\`\`ts\nconst value${index} = ${index};\n\`\`\``,
+      ).join("\n\n");
+
+      await page.locator(".edit-body-btn").click();
+      await page.locator(".body-edit-textarea").fill(markdown);
+      await page.locator(".body-edit .title-edit-save").click();
+
+      const body = page.locator(".body-section .markdown-body");
+      await expect(body.locator("pre.shiki")).toHaveCount(20);
+      await expect(body.locator("pre:not(.shiki)").filter({ hasText: "const value20 = 20;" })).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("checkbox clicks toggle locally and persist on reload", async ({ page }) => {
     const server = await openPullDetail(page);
     try {

@@ -220,7 +220,6 @@ const SHIKI_MAX_DISTINCT_LANGUAGES = 8;
 const SHIKI_MAX_HIGHLIGHTED_BYTES = 100_000;
 let shikiHighlighter: Highlighter | undefined;
 let shikiHighlighterPromise: Promise<Highlighter> | undefined;
-let shikiNonceFallbackCounter = 0;
 
 function getShikiHighlighter(): Promise<Highlighter> {
   shikiHighlighterPromise ??= getSingletonHighlighter({
@@ -362,12 +361,13 @@ function resetRenderState(
   highlightCode = true,
   highlightedCodeTokens?: WeakSet<Tokens.Code>,
 ): void {
+  const nonce = shikiNonce();
   renderState = {
     taskIndex: 0,
     interactiveTasks: !!opts.interactiveTasks,
-    highlightCode,
-    highlightedCodeTokens,
-    shikiNonce: shikiNonce(),
+    highlightCode: highlightCode && nonce !== undefined,
+    highlightedCodeTokens: nonce === undefined ? undefined : highlightedCodeTokens,
+    shikiNonce: nonce ?? "",
     itemStack: [],
     blockquoteDepth: 0,
   };
@@ -385,7 +385,7 @@ function sanitizeMarkdownHtml(html: string): string {
   }
 }
 
-function shikiNonce(): string {
+function shikiNonce(): string | undefined {
   const crypto = globalThis.crypto;
   if (crypto?.randomUUID) return crypto.randomUUID();
   if (crypto?.getRandomValues) {
@@ -393,7 +393,7 @@ function shikiNonce(): string {
     crypto.getRandomValues(bytes);
     return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
   }
-  return `${Date.now()}-${shikiNonceFallbackCounter++}`;
+  return undefined;
 }
 
 const SHIKI_STYLE_PROPERTY = /^--shiki-(?:light|dark)(?:-bg)?$/;
@@ -495,16 +495,25 @@ function codeHighlightPlan(marked: Marked, tokens: Tokens.Generic[]): CodeHighli
   const languages = new Set<string>();
   let highlightedFences = 0;
   let highlightedBytes = 0;
+  let budgetExceeded = false;
 
   marked.walkTokens(tokens, (token) => {
     if (!isCodeToken(token) || isMermaidFence(token.lang)) return;
-    if (highlightedFences >= SHIKI_MAX_HIGHLIGHTED_FENCES) return;
+    if (budgetExceeded) return;
+    if (highlightedFences >= SHIKI_MAX_HIGHLIGHTED_FENCES) {
+      budgetExceeded = true;
+      return;
+    }
 
     const textBytes = utf8ByteLength(token.text);
-    if (highlightedBytes + textBytes > SHIKI_MAX_HIGHLIGHTED_BYTES) return;
+    if (highlightedBytes + textBytes > SHIKI_MAX_HIGHLIGHTED_BYTES) {
+      budgetExceeded = true;
+      return;
+    }
 
     const lang = codeFenceLanguage(token.lang);
     if (lang !== SHIKI_PLAINTEXT_LANG && !languages.has(lang) && languages.size >= SHIKI_MAX_DISTINCT_LANGUAGES) {
+      budgetExceeded = true;
       return;
     }
 

@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { buildCanonicalProviderItemURL } from "./item-reference.js";
 import { renderMarkdown, renderMarkdownBlocks } from "./markdown.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("renderMarkdown task lists", () => {
   it("renders item references with the shared internal route and data attributes", async () => {
@@ -315,6 +319,17 @@ describe("renderMarkdown code highlighting", () => {
     expect(html.match(/<pre class="shiki/g)).toHaveLength(8);
     expect(html.match(/<pre><code>/g)).toHaveLength(1);
     expect(html).toContain("value_8");
+  });
+
+  it("falls back to plain code blocks when crypto-backed Shiki markers are unavailable", async () => {
+    vi.stubGlobal("crypto", undefined);
+
+    const html = await renderMarkdown("```ts\nconst noCryptoMarker = 1;\n```");
+
+    expect(html).toContain("<pre><code>");
+    expect(html).toContain("const noCryptoMarker = 1;");
+    expect(html).not.toContain("shiki");
+    expect(html).not.toContain("data-middleman-shiki");
   });
 });
 

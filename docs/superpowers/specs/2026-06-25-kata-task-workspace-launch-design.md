@@ -266,6 +266,14 @@ does. If the daemon is unavailable, the task cannot be found, or the live fetch
 fails, the sidebar shows an unavailable state using the stored Kata metadata
 instead of falling back to the provider issue UI.
 
+If `KataIssueDetail.svelte` is too tightly coupled to the full Kata browser
+layout or store wiring, refactor that existing component boundary before adding
+the workspace sidebar. Acceptable refactors include extracting a shared
+presentational task-detail component, moving Kata-browser-specific loading into
+its current parent, or making layout-sensitive props explicit. The outcome must
+still be one shared task-detail implementation used by both the regular Kata
+browser and the workspace sidebar, not a forked sidebar-specific copy.
+
 The sidebar tab selector must therefore branch on `item_type = "kata_task"`
 before checking numeric issue state. A Kata workspace has a repository backing
 its worktree, but that repository identity must not cause the right sidebar to
@@ -318,6 +326,9 @@ Frontend coverage:
   watched repos.
 - A `kata_task` workspace renders the `Kata task` sidebar tab and mounts
   `KataIssueDetail.svelte` with live Kata task contents.
+- If the Kata task detail component is refactored for embedding, the regular
+  Kata browser and the workspace sidebar both cover the shared detail component
+  so behavior does not split.
 - A `kata_task` workspace never renders the provider issue sidebar pane, even
   when its backing repository has a provider issue with a similar identifier.
 - Unavailable Kata daemon or missing live task data renders a Kata-specific

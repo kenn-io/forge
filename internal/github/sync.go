@@ -7636,7 +7636,7 @@ func (s *Syncer) SyncMROnProvider(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncMRForRepo(ctx, repo, number)
+	return s.syncMRForRepo(ctx, repo, number, false)
 }
 
 // syncMRWithHost is the internal implementation of SyncMR.
@@ -7674,7 +7674,7 @@ func (s *Syncer) syncMRWithHost(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncMRForRepo(ctx, repo, number)
+	return s.syncMRForRepo(ctx, repo, number, false)
 }
 
 func (s *Syncer) syncMRWithWatchedRef(
@@ -7692,13 +7692,14 @@ func (s *Syncer) syncMRWithWatchedRef(
 			mr.Owner, mr.Name, kind, host,
 		)
 	}
-	return s.syncMRForRepo(ctx, repo, mr.Number)
+	return s.syncMRForRepo(ctx, repo, mr.Number, true)
 }
 
 func (s *Syncer) syncMRForRepo(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
+	useConditionalPRDetail bool,
 ) error {
 	owner := repo.Owner
 	name := repo.Name
@@ -7728,7 +7729,7 @@ func (s *Syncer) syncMRForRepo(
 	if rawReader, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); ok {
-		if client, ok := s.optionalGitHubClientFor(repo); ok {
+		if client, ok := s.optionalGitHubClientFor(repo); ok && useConditionalPRDetail {
 			var notModified bool
 			ghPR, newETag, notModified, err = s.getPullRequestForDetail(
 				ctx, client, repo, number,

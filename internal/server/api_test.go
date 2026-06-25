@@ -7260,6 +7260,86 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 	}
 }
 
+func TestAPISyncPRBypassesPullRequestETagForCIRefresh(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	headSHA := "abc123"
+	success := "success"
+	getPRCalls := 0
+	conditionalCalls := 0
+	ciCalls := 0
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
+			getPRCalls++
+			state := "open"
+			title := "manual sync"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "alice"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+		getPullRequestIfChangedFn: func(_ context.Context, _ string, _ string, _ int, etag string) (*gh.PullRequest, string, bool, error) {
+			conditionalCalls++
+			require.Equal(`"etag-v1"`, etag)
+			return nil, etag, true, nil
+		},
+		listCheckRunsForRefFn: func(_ context.Context, _, _ string, ref string) ([]*gh.CheckRun, error) {
+			ciCalls++
+			require.Equal(headSHA, ref)
+			name := "tests"
+			status := "completed"
+			conclusion := "success"
+			return []*gh.CheckRun{{
+				Name:       &name,
+				Status:     &status,
+				Conclusion: &conclusion,
+			}}, nil
+		},
+		getCombinedStatusFn: func(_ context.Context, _, _, ref string) (*gh.CombinedStatus, error) {
+			require.Equal(headSHA, ref)
+			return &gh.CombinedStatus{State: &success}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRHeadSHA(headSHA),
+		withSeedPRCI("failure", `[{"name":"tests","status":"completed","conclusion":"failure"}]`),
+	)
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpsertHTTPEtag(
+		t.Context(), "github", "github.com", "acme", "widget",
+		"pull_request", 1, `"etag-v1"`,
+	))
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/1/sync", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("success", stored.CIStatus)
+	assert.Equal(1, getPRCalls)
+	assert.Zero(conditionalCalls)
+	assert.Equal(1, ciCalls)
+}
+
 // When the head SHA changes, previously-recorded CI is tied to the old
 // commit and must not be carried forward. If the in-flight CI refresh
 // then fails, the detail must show "no CI" rather than stale checks

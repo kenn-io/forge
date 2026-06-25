@@ -74,9 +74,13 @@ For pull requests, that means:
   Active watched-PR sync must use the same persisted pull-request ETag path as
   detail drain (`internal/github/sync.go::syncMRForRepo`,
   `internal/github/sync.go::getPullRequestForDetail`,
-  `internal/github/sync.go::markUnchangedMRDetailFetched`). Cadence control is
-  still required because changed PRs correctly fall through to comments,
-  reviews, commits, CI, and workflow approval refreshes.
+  `internal/github/sync.go::markUnchangedMRDetailFetched`). Manual/API PR
+  refreshes must bypass that PR ETag gate so rerun checks, workflow approval,
+  comments, reviews, and commits can refresh even when GitHub's PR resource is
+  unchanged (`internal/github/sync.go::SyncMR`,
+  `internal/server/huma_routes.go::syncPR`). Cadence control is still required
+  because changed PRs correctly fall through to comments, reviews, commits, CI,
+  and workflow approval refreshes.
 
 ## Timeline Event Rules
 

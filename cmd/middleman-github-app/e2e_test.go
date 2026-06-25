@@ -863,6 +863,41 @@ func TestInstallSkipsPreexistingUncoveringInstallation(t *testing.T) {
 	require.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
 }
 
+func TestInstallAdoptsSoleExistingInstallationWhenNoNewAppears(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-readopt")
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+
+	// The installation exists on GitHub but was never recorded -- the
+	// shape left behind by a coverage failure or a restored config. The
+	// coverage error tells the user to edit repo access and re-run
+	// "install"; that reconfigures the existing installation without
+	// minting a new id, so the browser poll never sees a new one.
+	app, ok := fake.AppBySlug("middleman-readopt")
+	require.True(ok)
+	_, err := fake.Install(app.ID, "kenn-io")
+	require.NoError(err)
+
+	env, out := newTestEnv(t, fake, configPath)
+	// The browser opens but no new installation is created.
+	env.openBrowser = func(string) error { return nil }
+	require.NoError(runCLI([]string{"install", "--timeout", "200ms"}, env))
+	require.Contains(out.String(), "No new installation appeared")
+
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	assert := assert.New(t)
+	assert.NotZero(cfg.GitHubApps[0].InstallationID)
+	assert.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
+}
+
 func TestInstallRecordsOrgInstallationWithoutCoveringOtherOwners(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

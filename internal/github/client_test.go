@@ -471,6 +471,62 @@ func TestListRepositoriesByOwnerUsesInstallationReposWithAppToken(t *testing.T) 
 	}, paths)
 }
 
+// A host can carry an app installation for one owner while other owners
+// on the same host stay on the PAT/gh chain. Listing repos for such an
+// owner must not route to the installation-token-only endpoint: an app
+// candidate scoped to a different account is skipped during token
+// resolution, so /installation/repositories would 403 on the PAT.
+func TestListRepositoriesByOwnerSkipsInstallationReposForUnmatchedOwner(t *testing.T) {
+	require := require.New(t)
+	var installationEndpointUsed bool
+	var orgEndpointUsed bool
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/installation/repositories", func(w http.ResponseWriter, _ *http.Request) {
+		installationEndpointUsed = true
+		http.Error(w, "installation token cannot serve another owner", http.StatusForbidden)
+	})
+	mux.HandleFunc("/api/v3/user", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"login":"mariusvniekerk"}`))
+	})
+	mux.HandleFunc("/api/v3/orgs/acme/repos", func(w http.ResponseWriter, _ *http.Request) {
+		orgEndpointUsed = true
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"name":  "infra",
+			"owner": map[string]string{"login": "acme"},
+		}})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	c := &liveClient{
+		gh: ghClient,
+		source: tokenauth.NewManagedSource(tokenauth.Descriptor{
+			Candidates: []tokenauth.Candidate{{
+				Kind:                tokenauth.SourceKindGitHubApp,
+				Host:                "github.com",
+				AppID:               123,
+				InstallationID:      456,
+				InstallationAccount: "kenn-io",
+			}},
+		}, tokenauth.Options{}),
+	}
+
+	repos, err := c.ListRepositoriesByOwner(t.Context(), "acme")
+	require.NoError(err)
+	require.Len(repos, 1)
+	require.Equal("infra", repos[0].GetName())
+	require.True(orgEndpointUsed)
+	require.False(installationEndpointUsed,
+		"a PAT-backed owner must not be routed to the installation-token-only endpoint")
+}
+
 func TestListRepositoriesByOwnerUsesPublicUserEndpointForOtherUsers(t *testing.T) {
 	require := require.New(t)
 	var paths []string

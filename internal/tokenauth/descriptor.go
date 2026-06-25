@@ -105,6 +105,30 @@ func (d Descriptor) HasActiveGitHubApp() bool {
 	return false
 }
 
+// HasActiveGitHubAppForOwner reports whether reads for owner resolve
+// through a GitHub App installation token. It mirrors the owner scoping
+// in app-token resolution (see githubAppToken): an installed app
+// candidate applies when it is unscoped (no installation account, so it
+// serves every owner) or its installation account matches owner. Gate
+// installation-token-only endpoints on this rather than
+// HasActiveGitHubApp so a PAT-backed owner sharing a host with another
+// owner's app is not routed to an endpoint its credential cannot use.
+func (d Descriptor) HasActiveGitHubAppForOwner(owner string) bool {
+	owner = strings.TrimSpace(owner)
+	for _, candidate := range d.Candidates {
+		if candidate.Kind != SourceKindGitHubApp || candidate.InstallationID == 0 {
+			continue
+		}
+		if candidate.InstallationAccount == "" {
+			return true
+		}
+		if owner != "" && strings.EqualFold(owner, candidate.InstallationAccount) {
+			return true
+		}
+	}
+	return false
+}
+
 // CanonicalSourceString returns a stable identifier for the descriptor's
 // resolution chain with duplicate and field-redundant candidates removed.
 // Two descriptors that resolve from the same ordered sources produce the same

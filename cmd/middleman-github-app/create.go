@@ -468,7 +468,26 @@ func (env *appEnv) runInstallFlow(
 			return false, nil
 		})
 		if err != nil {
-			return err
+			// Editing an installation's repository access or re-running
+			// after a coverage failure reconfigures the existing
+			// installation instead of minting a new ID, so no new
+			// installation ever appears and the poll times out -- the
+			// dead-end the coverage error's own "re-run install" guidance
+			// would otherwise hit. When exactly one installation exists
+			// for this app the intent is unambiguous, so adopt it.
+			// ctx.Err() separates the poll timeout from a user interrupt,
+			// which must not be swallowed.
+			adopted, adoptErr := env.adoptSoleInstallation(ctx, app, &picked)
+			if adoptErr != nil {
+				return adoptErr
+			}
+			if !adopted {
+				return err
+			}
+			fmt.Fprintf(env.stdout,
+				"No new installation appeared; recording the existing installation %d on %s.\n",
+				picked.ID, picked.Account.Login,
+			)
 		}
 	}
 
@@ -497,6 +516,38 @@ func (env *appEnv) runInstallFlow(
 		picked.Account.Login, picked.ID, picked.Account.Login, app.Host,
 	)
 	return nil
+}
+
+// adoptSoleInstallation recovers the install flow when the poll timed
+// out without a new installation appearing. Re-running "install" after a
+// coverage failure or a restored config reconfigures the existing
+// installation rather than minting a new ID, so the wait never
+// completes; when the app has exactly one GitHub-side installation the
+// target is unambiguous, so adopt it into picked and report true.
+// Multiple installations stay ambiguous and keep the timeout. A user
+// interrupt (ctx canceled) is never treated as an adoptable timeout, and
+// a non-zero picked means the poll already found a new installation.
+func (env *appEnv) adoptSoleInstallation(
+	ctx context.Context,
+	app config.GitHubAppConfig,
+	picked *githubapp.Installation,
+) (bool, error) {
+	if picked.ID != 0 || ctx.Err() != nil {
+		return false, nil
+	}
+	jwt, err := appJWT(app, env.now())
+	if err != nil {
+		return false, err
+	}
+	installs, err := env.apiClient(app.Host).ListInstallations(ctx, jwt)
+	if err != nil {
+		return false, err
+	}
+	if len(installs) != 1 {
+		return false, nil
+	}
+	*picked = installs[0]
+	return true, nil
 }
 
 func (env *appEnv) refreshAppMetadata(

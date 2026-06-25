@@ -468,6 +468,20 @@ func (c *liveClient) splitAuthActive() bool {
 	return c.source.Descriptor().HasActiveGitHubApp()
 }
 
+// splitAuthActiveForOwner is splitAuthActive scoped to a single owner:
+// it reports whether reads for owner actually resolve through an app
+// installation token. A host descriptor may carry app candidates for
+// several owners, but a candidate scoped to one installation account is
+// skipped for any other owner during token resolution. Gate
+// installation-token-only endpoints on this so a PAT-backed owner on a
+// host that also hosts another owner's app is not routed there.
+func (c *liveClient) splitAuthActiveForOwner(owner string) bool {
+	if c.source == nil {
+		return false
+	}
+	return c.source.Descriptor().HasActiveGitHubAppForOwner(owner)
+}
+
 func (c *liveClient) bypassNotificationReadRateReserve() bool {
 	return c.splitAuthActive()
 }
@@ -1372,7 +1386,7 @@ func (c *liveClient) ListOpenIssues(
 func (c *liveClient) ListRepositoriesByOwner(
 	ctx context.Context, owner string,
 ) ([]*gh.Repository, error) {
-	if c.splitAuthActive() {
+	if c.splitAuthActiveForOwner(owner) {
 		ctx = tokenauth.WithGitHubOwner(ctx, owner)
 		repos, err := collectPages(
 			ctx,

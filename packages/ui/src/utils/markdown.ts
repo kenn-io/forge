@@ -1,6 +1,27 @@
 import { Marked } from "marked";
 import type { RendererObject, TokenizerAndRendererExtension, Tokens } from "marked";
 import DOMPurify from "dompurify";
+import bash from "@shikijs/langs/bash";
+import css from "@shikijs/langs/css";
+import diff from "@shikijs/langs/diff";
+import go from "@shikijs/langs/go";
+import html from "@shikijs/langs/html";
+import javascript from "@shikijs/langs/javascript";
+import json from "@shikijs/langs/json";
+import markdown from "@shikijs/langs/markdown";
+import python from "@shikijs/langs/python";
+import rust from "@shikijs/langs/rust";
+import ruby from "@shikijs/langs/ruby";
+import shellscript from "@shikijs/langs/shellscript";
+import sql from "@shikijs/langs/sql";
+import svelte from "@shikijs/langs/svelte";
+import toml from "@shikijs/langs/toml";
+import tsx from "@shikijs/langs/tsx";
+import typescript from "@shikijs/langs/typescript";
+import yaml from "@shikijs/langs/yaml";
+import githubDarkDefault from "@shikijs/themes/github-dark-default";
+import { createHighlighterCoreSync } from "shiki/core";
+import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import { canonicalProvider } from "../api/provider-routes.js";
 import { itemReferenceAnchorAttributes } from "./item-reference.js";
 import type { ItemReferenceType } from "./item-reference.js";
@@ -172,6 +193,7 @@ let renderState: {
 const htmlCache = new Map<string, string>();
 const markedCache = new Map<string, Marked>();
 const MARKDOWN_ALLOWED_ATTRS = [
+  "style",
   "target",
   "data-provider",
   "data-platform-host",
@@ -197,8 +219,48 @@ const DRAG_HANDLE_SVG =
   `<circle cx="9" cy="13" r="1.2"/>` +
   `</svg>`;
 
+const SHIKI_THEME = "github-dark-default";
+const SHIKI_PLAINTEXT_LANG = "text";
+const shikiHighlighter = createHighlighterCoreSync({
+  themes: [githubDarkDefault],
+  langs: [
+    bash,
+    css,
+    diff,
+    go,
+    html,
+    javascript,
+    json,
+    markdown,
+    python,
+    rust,
+    ruby,
+    shellscript,
+    sql,
+    svelte,
+    toml,
+    tsx,
+    typescript,
+    yaml,
+  ],
+  engine: createJavaScriptRegexEngine(),
+});
+
 function isMermaidFence(lang: string | undefined): boolean {
   return (lang ?? "").trim().split(/\s+/, 1)[0]?.toLowerCase() === "mermaid";
+}
+
+function codeFenceLanguage(lang: string | undefined): string {
+  return (lang ?? "").trim().split(/\s+/, 1)[0]?.toLowerCase() || SHIKI_PLAINTEXT_LANG;
+}
+
+function renderHighlightedCode(token: Tokens.Code): string {
+  const lang = codeFenceLanguage(token.lang);
+  try {
+    return shikiHighlighter.codeToHtml(token.text, { lang, theme: SHIKI_THEME });
+  } catch {
+    return shikiHighlighter.codeToHtml(token.text, { lang: SHIKI_PLAINTEXT_LANG, theme: SHIKI_THEME });
+  }
 }
 
 function escapeHtml(value: string): string {
@@ -213,8 +275,10 @@ const taskListRenderer: RendererObject = {
     return `<blockquote>\n${inner}</blockquote>\n`;
   },
   code(token: Tokens.Code): string | false {
-    if (!isMermaidFence(token.lang)) return false;
-    return `<pre class="mermaid">${escapeHtml(token.text)}</pre>`;
+    if (isMermaidFence(token.lang)) {
+      return `<pre class="mermaid">${escapeHtml(token.text)}</pre>`;
+    }
+    return renderHighlightedCode(token);
   },
   // The checkbox renderer is called during the recursive parse
   // of a listitem's inner tokens. It allocates the next task

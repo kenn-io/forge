@@ -212,6 +212,24 @@ describe("renderMarkdown mermaid diagrams", () => {
   });
 });
 
+describe("renderMarkdown code highlighting", () => {
+  it("highlights fenced code blocks with Shiki", () => {
+    const html = renderMarkdown('```ts\nconst value: string = "ok";\n```');
+
+    expect(html).toContain('<pre class="shiki');
+    expect(html).toContain('<span style="');
+    expect(html).toContain("const");
+    expect(html).not.toContain("language-ts");
+  });
+
+  it("falls back to escaped plain text for unknown fence languages", () => {
+    const html = renderMarkdown("```not-a-real-language\n<script>alert(1)</script>\n```");
+
+    expect(html).toContain('<pre class="shiki');
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+});
+
 describe("renderMarkdown details blocks", () => {
   const source = [
     "<details open>",
@@ -237,7 +255,9 @@ describe("renderMarkdown details blocks", () => {
     expect(html).toContain("<summary>Tips for collapsed sections</summary>");
     expect(html).toContain("<h3>You can add a header</h3>");
     expect(html).toContain("<p>You can add text within a collapsed section.</p>");
-    expect(html).toContain('<code class="language-ruby">puts "Hello World"');
+    expect(html).toContain('<pre class="shiki github-dark-default"');
+    expect(html).toContain("puts");
+    expect(html).toContain('"Hello World"');
     expect(html).toContain("</details>");
   });
 
@@ -274,7 +294,9 @@ describe("renderMarkdown details blocks", () => {
 
     expect(blocks).toHaveLength(2);
     expect(blocks[0]?.html).toContain("<details>");
-    expect(blocks[0]?.html).toContain("&lt;/details&gt;");
+    expect(blocks[0]?.html).toContain("&lt;/");
+    expect(blocks[0]?.html).toContain("details");
+    expect(blocks[0]?.html).toContain("&gt;");
     expect(blocks[0]?.html).toContain("<p>Still inside the collapsed section.</p>");
     expect(blocks[0]?.html).toContain("</details>");
     expect(blocks[0]?.html).not.toContain("Afterwards.");

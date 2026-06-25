@@ -120,14 +120,23 @@ GitHub App installation tokens are account-scoped, not host-scoped. An app
 installation for one owner must not authenticate reads for another owner just
 because both repos share the same host. Repo-scoped GitHub reads must resolve app
 tokens with the repository owner in context, and ownerless contexts such as
-clone auth must fall through to PAT/`gh` credentials.
+clone auth must fall through to PAT/`gh` credentials. This owner scoping governs
+endpoint selection, not just token resolution: choose an installation-token-only
+read endpoint (such as installation-repositories listing) only when the requested
+owner actually resolves to an app installation. Gating it on whether the host has
+any active app sends a PAT-backed owner that shares the host with another owner's
+app to an endpoint its credential cannot use, which fails even though the token
+chain "correctly" falls back to the PAT.
 Config may carry multiple `[[github_apps]]` rows for one host, but those rows
 represent distinct app credentials. Management commands must target one row by
 app owner/installation account or app id, and duplicate installation accounts on
 the same host are invalid. Selected-repository coverage applies only to repos
 owned by that row's `installation_account`, and the install CLI must not warn
 that an installation on one account "cannot reach" repos owned by another
-account.
+account. Re-running `install` after a coverage failure (or against a restored
+config) reconfigures the existing installation instead of minting a new
+installation id, so the install flow must be able to adopt an already-present
+installation rather than waiting only for a newly created one.
 
 ## Testing Expectations
 

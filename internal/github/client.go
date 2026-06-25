@@ -1637,6 +1637,7 @@ func (c *liveClient) ListPullRequestReviewThreads(
 	repo string,
 	number int,
 ) ([]PullRequestReviewThread, error) {
+	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	type graphQLResponse struct {
 		Errors []graphQLError `json:"errors"`
 		Data   struct {

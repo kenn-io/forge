@@ -180,6 +180,17 @@ func createTestApp(t *testing.T, fake *githubapptest.Fake, configPath, name stri
 	}, env))
 }
 
+func createOrgTestApp(
+	t *testing.T, fake *githubapptest.Fake, configPath, name, org string,
+) {
+	t.Helper()
+	env, _ := newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowser(t, fake, org)
+	require.NoError(t, runCLI([]string{
+		"create", "--name", name, "--org", org, "--timeout", "10s",
+	}, env))
+}
+
 func TestCreateFlowEndToEnd(t *testing.T) {
 	t.Parallel()
 	fake := githubapptest.NewFake()
@@ -259,6 +270,26 @@ func TestCreateRefusesSecondAppForSameHost(t *testing.T) {
 	assert.ErrorContains(t, err, "already exists")
 }
 
+func TestCreateAllowsOrgOwnedAppForSameHost(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-user")
+	createOrgTestApp(t, fake, configPath, "middleman-org", "acme")
+
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 2)
+	assert := assert.New(t)
+	assert.Equal("fake-owner", cfg.GitHubApps[0].Owner)
+	assert.Equal("User", cfg.GitHubApps[0].OwnerType)
+	assert.Equal("acme", cfg.GitHubApps[1].Owner)
+	assert.Equal("Organization", cfg.GitHubApps[1].OwnerType)
+	assert.Equal("acme", cfg.GitHubApps[1].InstallationAccount)
+}
+
 func TestListReportsInstallationAndRateBudget(t *testing.T) {
 	t.Parallel()
 	fake := githubapptest.NewFake()
@@ -275,12 +306,106 @@ func TestListReportsInstallationAndRateBudget(t *testing.T) {
 	require.Len(t, statuses, 1)
 	assert := assert.New(t)
 	assert.Equal("middleman-list", statuses[0].Slug)
+	assert.Equal("fake-owner", statuses[0].Owner)
+	assert.Equal("User", statuses[0].OwnerType)
 	assert.Equal("kenn-io", statuses[0].InstallationAccount)
 	assert.Equal(5000, statuses[0].RateLimit)
 	assert.Empty(statuses[0].Error)
 	// Rate numbers come from a freshly minted installation token; the
 	// fake mints with zero usage unless configured otherwise.
 	assert.Equal(5000, statuses[0].RateRemaining)
+}
+
+func TestManageSameHostAppsByOwnerOrAppID(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-user")
+	createOrgTestApp(t, fake, configPath, "middleman-org", "acme")
+
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 2)
+	userApp := cfg.GitHubApps[0]
+	orgApp := cfg.GitHubApps[1]
+
+	env, _ := newTestEnv(t, fake, configPath)
+	err = runCLI([]string{"open"}, env)
+	require.Error(err)
+	require.ErrorContains(err, "--owner or --app-id")
+
+	var opened string
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = func(target string) error {
+		opened = target
+		return nil
+	}
+	require.NoError(runCLI([]string{"open", "--host", "https://github.com/", "--owner", "acme"}, env))
+	assert.Contains(opened, "/organizations/acme/settings/apps/middleman-org")
+
+	env, _ = newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--owner", "acme", "--yes"}, env))
+	cfg, err = config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 2)
+	assert.NotZero(cfg.GitHubApps[0].InstallationID)
+	assert.Equal(userApp.AppID, cfg.GitHubApps[0].AppID)
+	assert.Zero(cfg.GitHubApps[1].InstallationID)
+	assert.Equal(orgApp.AppID, cfg.GitHubApps[1].AppID)
+
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowser(t, fake, "acme")
+	require.NoError(runCLI([]string{
+		"install", "--app-id", fmt.Sprint(orgApp.AppID), "--timeout", "10s",
+	}, env))
+	cfg, err = config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 2)
+	assert.NotZero(cfg.GitHubApps[1].InstallationID)
+	assert.Equal("acme", cfg.GitHubApps[1].InstallationAccount)
+
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowser(t, fake, "acme")
+	require.NoError(runCLI([]string{"delete", "--owner", "acme", "--yes", "--timeout", "10s"}, env))
+	cfg, err = config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	assert.Equal(userApp.AppID, cfg.GitHubApps[0].AppID)
+}
+
+func TestInstallRejectsDuplicateInstallationAccountAcrossApps(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-user")
+	createOrgTestApp(t, fake, configPath, "middleman-org", "acme")
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--owner", "acme", "--yes"}, env))
+
+	cfg, err := config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 2)
+	orgAppID := cfg.GitHubApps[1].AppID
+
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
+	err = runCLI([]string{
+		"install", "--app-id", fmt.Sprint(orgAppID), "--timeout", "10s",
+	}, env)
+	require.Error(err)
+	require.ErrorContains(err, "duplicate github app installation")
+
+	cfg, err = config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 2)
+	assert.Zero(t, cfg.GitHubApps[1].InstallationID)
+	assert.Empty(t, cfg.GitHubApps[1].InstallationAccount)
 }
 
 func TestUninstallClearsInstallationButKeepsApp(t *testing.T) {

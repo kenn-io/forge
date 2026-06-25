@@ -36,6 +36,11 @@ type App struct {
 	Deleted       bool
 }
 
+type appOwner struct {
+	Login string
+	Type  string
+}
+
 type Installation struct {
 	ID      int64
 	Account string
@@ -58,23 +63,25 @@ type mintedToken struct {
 // Fake is an in-process GitHub stand-in. URL() serves both the web
 // surface (manifest form POST target) and the REST API.
 type Fake struct {
-	mu           sync.Mutex
-	srv          *httptest.Server
-	apps         map[int64]*App
-	pendingCodes map[string]string // conversion code -> manifest JSON
-	tokens       map[string]*mintedToken
-	nextID       int64
-	rateLimit    int
-	manifests    []string // every manifest JSON received, in order
+	mu            sync.Mutex
+	srv           *httptest.Server
+	apps          map[int64]*App
+	pendingCodes  map[string]string // conversion code -> manifest JSON
+	pendingOwners map[string]appOwner
+	tokens        map[string]*mintedToken
+	nextID        int64
+	rateLimit     int
+	manifests     []string // every manifest JSON received, in order
 }
 
 func NewFake() *Fake {
 	f := &Fake{
-		apps:         make(map[int64]*App),
-		pendingCodes: make(map[string]string),
-		tokens:       make(map[string]*mintedToken),
-		nextID:       100,
-		rateLimit:    5000,
+		apps:          make(map[int64]*App),
+		pendingCodes:  make(map[string]string),
+		pendingOwners: make(map[string]appOwner),
+		tokens:        make(map[string]*mintedToken),
+		nextID:        100,
+		rateLimit:     5000,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /settings/apps/new", f.handleManifestSubmit)
@@ -234,9 +241,16 @@ func (f *Fake) handleManifestSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "manifest missing hook_attributes.url", http.StatusBadRequest)
 		return
 	}
+	owner := "fake-owner"
+	ownerType := "User"
+	if org := r.PathValue("org"); org != "" {
+		owner = org
+		ownerType = "Organization"
+	}
 	code := randomHex(16)
 	f.mu.Lock()
 	f.pendingCodes[code] = manifest
+	f.pendingOwners[code] = appOwner{Login: owner, Type: ownerType}
 	f.manifests = append(f.manifests, manifest)
 	f.mu.Unlock()
 	redirect, err := url.Parse(parsed.RedirectURL)
@@ -257,13 +271,18 @@ func (f *Fake) handleConversion(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	f.mu.Lock()
 	manifest, ok := f.pendingCodes[code]
+	owner := f.pendingOwners[code]
 	if ok {
 		delete(f.pendingCodes, code)
+		delete(f.pendingOwners, code)
 	}
 	f.mu.Unlock()
 	if !ok {
 		writeJSONError(w, http.StatusNotFound, "unknown or used conversion code")
 		return
+	}
+	if owner.Login == "" {
+		owner = appOwner{Login: "fake-owner", Type: "User"}
 	}
 	var parsed struct {
 		Name string `json:"name"`
@@ -288,8 +307,8 @@ func (f *Fake) handleConversion(w http.ResponseWriter, r *http.Request) {
 		Name:      parsed.Name,
 		Key:       key,
 		PEM:       string(pemBytes),
-		Owner:     "fake-owner",
-		OwnerType: "User",
+		Owner:     owner.Login,
+		OwnerType: owner.Type,
 	}
 	f.apps[app.ID] = app
 	f.mu.Unlock()

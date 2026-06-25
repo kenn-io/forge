@@ -16,6 +16,8 @@ type appStatus struct {
 	Host                string `json:"host"`
 	AppID               int64  `json:"app_id"`
 	Slug                string `json:"slug"`
+	Owner               string `json:"owner,omitempty"`
+	OwnerType           string `json:"owner_type,omitempty"`
 	InstallationID      int64  `json:"installation_id,omitempty"`
 	InstallationAccount string `json:"installation_account,omitempty"`
 	RateLimit           int    `json:"rate_limit,omitempty"`
@@ -51,6 +53,8 @@ func runList(args []string, env *appEnv) error {
 			Host:                app.Host,
 			AppID:               app.AppID,
 			Slug:                app.Slug,
+			Owner:               app.Owner,
+			OwnerType:           app.OwnerType,
 			InstallationID:      app.InstallationID,
 			InstallationAccount: app.InstallationAccount,
 		}
@@ -66,9 +70,12 @@ func runList(args []string, env *appEnv) error {
 		return enc.Encode(statuses)
 	}
 	w := tabwriter.NewWriter(env.stdout, 2, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "HOST\tAPP ID\tSLUG\tINSTALLATION\tACCOUNT\tRATE (CORE)\tSTATUS")
+	fmt.Fprintln(w, "HOST\tAPP ID\tSLUG\tOWNER\tINSTALLATION\tACCOUNT\tRATE (CORE)\tSTATUS")
 	for _, s := range statuses {
-		rate, install, account := "-", "-", "-"
+		rate, owner, install, account := "-", "-", "-", "-"
+		if s.Owner != "" {
+			owner = s.Owner
+		}
 		if s.InstallationID != 0 {
 			install = fmt.Sprintf("%d", s.InstallationID)
 		}
@@ -84,8 +91,8 @@ func runList(args []string, env *appEnv) error {
 		} else if s.InstallationID == 0 {
 			status = "not installed"
 		}
-		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
-			s.Host, s.AppID, s.Slug, install, account, rate, status)
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			s.Host, s.AppID, s.Slug, owner, install, account, rate, status)
 	}
 	return w.Flush()
 }

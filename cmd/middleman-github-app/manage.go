@@ -21,6 +21,7 @@ func runInstall(args []string, env *appEnv) error {
 	configPath := fs.String("config", env.configPath, "middleman config path")
 	host := fs.String("host", "", "GitHub host of the app to install")
 	owner := fs.String("owner", "", "GitHub account that owns the app or installation")
+	appID := fs.Int64("app-id", 0, "GitHub App ID to select when host or owner is ambiguous")
 	noBrowser := fs.Bool("no-browser", false, "print URLs instead of opening a browser")
 	timeout := fs.Duration("timeout", 10*time.Minute, "how long to wait for the installation")
 	registerTestFlags(fs, env)
@@ -32,7 +33,7 @@ func runInstall(args []string, env *appEnv) error {
 	if err != nil {
 		return err
 	}
-	app, err := selectApp(cfg, *host, *owner)
+	app, err := selectApp(cfg, *host, *owner, *appID)
 	if err != nil {
 		return err
 	}
@@ -47,6 +48,7 @@ func runUninstall(args []string, env *appEnv) error {
 	configPath := fs.String("config", env.configPath, "middleman config path")
 	host := fs.String("host", "", "GitHub host of the app to uninstall")
 	owner := fs.String("owner", "", "GitHub account that owns the app or installation")
+	appID := fs.Int64("app-id", 0, "GitHub App ID to select when host or owner is ambiguous")
 	yes := fs.Bool("yes", false, "confirm uninstalling without prompting")
 	registerTestFlags(fs, env)
 	if err := fs.Parse(args); err != nil {
@@ -57,7 +59,7 @@ func runUninstall(args []string, env *appEnv) error {
 	if err != nil {
 		return err
 	}
-	app, err := selectApp(cfg, *host, *owner)
+	app, err := selectApp(cfg, *host, *owner, *appID)
 	if err != nil {
 		return err
 	}
@@ -97,6 +99,7 @@ func runDelete(args []string, env *appEnv) error {
 	configPath := fs.String("config", env.configPath, "middleman config path")
 	host := fs.String("host", "", "GitHub host of the app to delete")
 	owner := fs.String("owner", "", "GitHub account that owns the app or installation")
+	appID := fs.Int64("app-id", 0, "GitHub App ID to select when host or owner is ambiguous")
 	yes := fs.Bool("yes", false, "confirm deletion without prompting")
 	localOnly := fs.Bool("local-only", false,
 		"only remove the local config entry and key (app already deleted on GitHub)")
@@ -111,7 +114,7 @@ func runDelete(args []string, env *appEnv) error {
 	if err != nil {
 		return err
 	}
-	app, err := selectApp(cfg, *host, *owner)
+	app, err := selectApp(cfg, *host, *owner, *appID)
 	if err != nil {
 		return err
 	}
@@ -232,6 +235,7 @@ func runOpen(args []string, env *appEnv) error {
 	configPath := fs.String("config", env.configPath, "middleman config path")
 	host := fs.String("host", "", "GitHub host of the app to open")
 	owner := fs.String("owner", "", "GitHub account that owns the app or installation")
+	appID := fs.Int64("app-id", 0, "GitHub App ID to select when host or owner is ambiguous")
 	registerTestFlags(fs, env)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -241,7 +245,7 @@ func runOpen(args []string, env *appEnv) error {
 	if err != nil {
 		return err
 	}
-	app, err := selectApp(cfg, *host, *owner)
+	app, err := selectApp(cfg, *host, *owner, *appID)
 	if err != nil {
 		return err
 	}

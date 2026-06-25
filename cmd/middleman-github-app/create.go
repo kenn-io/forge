@@ -40,7 +40,10 @@ func runCreate(args []string, env *appEnv) error {
 		return err
 	}
 	env.configPath = *configPath
-	h := normalizeHostFlag(*host)
+	h, err := normalizeHostFlag(*host)
+	if err != nil {
+		return err
+	}
 
 	if err := config.EnsureDefault(env.configPath); err != nil {
 		return fmt.Errorf("ensuring middleman config exists: %w", err)

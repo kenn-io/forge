@@ -533,8 +533,15 @@ func (s *Server) validateReloadProviderTokenSources(
 		if _, ok := s.tokenSources.Get(desc.Key); !ok {
 			continue
 		}
-		if _, err := s.tokenSources.ProbeToken(ctx, desc); err != nil {
+		tokenCtx := ctx
+		if plan.GitHubOwner != "" {
+			tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
+		}
+		if _, err := s.tokenSources.ProbeToken(tokenCtx, desc); err != nil {
 			label := fmt.Sprintf("%s host %s", desc.Key.Platform, desc.Key.Host)
+			if plan.GitHubOwner != "" {
+				label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
+			}
 			return fmt.Errorf(
 				"no token for %s via %s: %w", label, desc.SafeString(), err,
 			)

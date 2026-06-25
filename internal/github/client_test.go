@@ -679,6 +679,62 @@ func TestListPullRequestReviewThreads(t *testing.T) {
 	assert.Equal([]string{"application/json", "application/json", "application/json"}, contentTypes)
 }
 
+func TestListPullRequestReviewThreadsScopesPaginatedCommentAuthByOwner(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var calls int
+	var minted int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		assert.Equal("Bearer app-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"PRRT_1","isResolved":false,"isOutdated":false,"path":"src/main.go","line":12,"originalLine":12,"diffSide":"RIGHT","comments":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"comment-cursor-1"}}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"node":{"comments":{"nodes":[{"id":"PRRC_1","databaseId":101,"fullDatabaseId":101,"body":"reply","path":"src/main.go","line":12,"originalLine":12,"subjectType":"LINE","diffHunk":"@@","url":"https://github.example/pr#discussion_r101","author":{"login":"reviewer"},"createdAt":"2026-05-27T16:01:31Z","updatedAt":"2026-05-27T16:02:31Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	src := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: "github", Host: "github.com"},
+		Candidates: []tokenauth.Candidate{{
+			Kind:                tokenauth.SourceKindGitHubApp,
+			Host:                "github.com",
+			AppID:               42,
+			InstallationID:      7,
+			InstallationAccount: "owner",
+		}},
+	}, tokenauth.Options{
+		GitHubApp: func(_ context.Context, c tokenauth.Candidate) (string, time.Time, error) {
+			minted++
+			assert.Equal("owner", c.InstallationAccount)
+			return "app-token", time.Now().Add(time.Hour), nil
+		},
+	})
+	auth := tokenauth.AuthTransport{
+		Source:        src,
+		Base:          http.DefaultTransport,
+		SetHeader:     tokenauth.BearerAuthHeader,
+		AllowedOrigin: srv.URL,
+		GitHubOwner:   githubOwnerFromRequest,
+	}
+	c := &liveClient{
+		httpClient:      &http.Client{Transport: auth},
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	threads, err := c.ListPullRequestReviewThreads(t.Context(), "owner", "repo", 42)
+	require.NoError(err)
+	require.Len(threads, 1)
+	require.Len(threads[0].Comments, 1)
+	assert.Equal("reply", threads[0].Comments[0].Body)
+	assert.Equal(2, calls)
+	assert.Equal(1, minted)
+}
+
 func TestListPullRequestTimelineEventsReturnsGraphQLErrors(t *testing.T) {
 	require := require.New(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

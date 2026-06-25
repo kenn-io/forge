@@ -122,9 +122,11 @@ because both repos share the same host. Repo-scoped GitHub reads must resolve ap
 tokens with the repository owner in context, and ownerless contexts such as
 clone auth must fall through to PAT/`gh` credentials.
 Config may carry multiple `[[github_apps]]` rows for one host, but those rows
-represent distinct app credentials. Selected-repository coverage applies only to
-repos owned by that row's `installation_account`, and the install CLI must not
-warn that an installation on one account "cannot reach" repos owned by another
+represent distinct app credentials. Management commands must target one row by
+app owner/installation account or app id, and duplicate installation accounts on
+the same host are invalid. Selected-repository coverage applies only to repos
+owned by that row's `installation_account`, and the install CLI must not warn
+that an installation on one account "cannot reach" repos owned by another
 account.
 
 ## Testing Expectations

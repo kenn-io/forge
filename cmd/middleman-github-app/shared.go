@@ -8,7 +8,6 @@ import (
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/githubapp"
-	"go.kenn.io/middleman/internal/platform"
 )
 
 // loadConfig loads with GitHub App coverage validation relaxed: every
@@ -39,18 +38,31 @@ func (env *appEnv) webBaseFor(host string) string {
 }
 
 // selectApp picks a configured app credential. Same-host configs can carry
-// multiple private apps, so management commands must disambiguate by owner when
-// a host alone is not unique.
-func selectApp(cfg *config.Config, host, owner string) (config.GitHubAppConfig, error) {
+// multiple private apps, so management commands must disambiguate by owner or
+// app id when a host alone is not unique.
+func selectApp(
+	cfg *config.Config, host, owner string, appID int64,
+) (config.GitHubAppConfig, error) {
 	if cfg == nil || len(cfg.GitHubApps) == 0 {
 		return config.GitHubAppConfig{}, fmt.Errorf(
 			"no github apps configured; run \"middleman-github-app create\" first",
 		)
 	}
+	normalizedHost := ""
+	if strings.TrimSpace(host) != "" {
+		var err error
+		normalizedHost, err = normalizeHostFlag(host)
+		if err != nil {
+			return config.GitHubAppConfig{}, err
+		}
+	}
 	owner = strings.TrimSpace(owner)
 	var matches []config.GitHubAppConfig
 	for _, app := range cfg.GitHubApps {
-		if host != "" && app.Host != normalizeHostFlag(host) {
+		if normalizedHost != "" && app.Host != normalizedHost {
+			continue
+		}
+		if appID != 0 && app.AppID != appID {
 			continue
 		}
 		if owner != "" &&
@@ -61,19 +73,27 @@ func selectApp(cfg *config.Config, host, owner string) (config.GitHubAppConfig, 
 		matches = append(matches, app)
 	}
 	if len(matches) == 0 {
-		if host != "" && owner != "" {
+		if normalizedHost != "" && owner != "" {
 			return config.GitHubAppConfig{}, fmt.Errorf(
-				"no github app configured for host %q and owner %q", normalizeHostFlag(host), owner,
+				"no github app configured for host %q and owner %q", normalizedHost, owner,
 			)
 		}
-		if host != "" {
-			return config.GitHubAppConfig{}, fmt.Errorf("no github app configured for host %q", normalizeHostFlag(host))
+		if normalizedHost != "" && appID != 0 {
+			return config.GitHubAppConfig{}, fmt.Errorf(
+				"no github app configured for host %q and app id %d", normalizedHost, appID,
+			)
+		}
+		if normalizedHost != "" {
+			return config.GitHubAppConfig{}, fmt.Errorf("no github app configured for host %q", normalizedHost)
+		}
+		if appID != 0 {
+			return config.GitHubAppConfig{}, fmt.Errorf("no github app configured for app id %d", appID)
 		}
 		return config.GitHubAppConfig{}, fmt.Errorf("no github app configured for owner %q", owner)
 	}
 	if len(matches) > 1 {
 		return config.GitHubAppConfig{}, fmt.Errorf(
-			"multiple github apps match; pass --owner to select one",
+			"multiple github apps match; pass --owner or --app-id to select one",
 		)
 	}
 	return matches[0], nil
@@ -112,13 +132,7 @@ func updateAppInConfig(
 		if existing.Host != app.Host {
 			continue
 		}
-		sameAppID := existing.AppID == app.AppID
-		sameOwner := existing.Owner != "" && app.Owner != "" &&
-			strings.EqualFold(existing.Owner, app.Owner)
-		sameInstallation := existing.InstallationAccount != "" &&
-			app.InstallationAccount != "" &&
-			strings.EqualFold(existing.InstallationAccount, app.InstallationAccount)
-		if sameAppID || sameOwner || sameInstallation {
+		if existing.AppID == app.AppID {
 			cfg.GitHubApps[i] = app
 			return cfg.Save(configPath)
 		}
@@ -222,10 +236,11 @@ func (env *appEnv) pollUntil(
 	}
 }
 
-func normalizeHostFlag(host string) string {
+func normalizeHostFlag(host string) (string, error) {
 	host = strings.TrimSpace(host)
-	if host == "" {
-		return platform.DefaultGitHubHost
+	normalized, err := config.NormalizePlatformHost("github", host)
+	if err != nil {
+		return "", err
 	}
-	return host
+	return normalized, nil
 }

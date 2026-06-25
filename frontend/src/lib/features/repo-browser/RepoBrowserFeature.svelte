@@ -6,12 +6,14 @@
     createRepoBrowserStore,
     diffFileCategoryOptions,
     PierreFileTree,
+    SplitResizeHandle,
     type DiffFileCategoryFilter,
     type FileTreeEntry,
     type MiddlemanClient,
     type RepoBrowserRouteRef,
     type RepoBrowserViewMode,
     type SourceBrowserFileEntry,
+    type SplitResizeEvent,
   } from "@middleman/ui";
   import type { RepoBrowserCommit, RepoBrowserRef } from "@middleman/ui/api/types";
   import { providerDefaultHost } from "@middleman/ui/api/provider-routes";
@@ -54,6 +56,11 @@
   };
   type RefPickerType = "branch" | "tag";
 
+  const DEFAULT_HISTORY_WIDTH = 320;
+  const MIN_HISTORY_WIDTH = 260;
+  const MIN_VIEWER_WIDTH = 360;
+  const HISTORY_RESIZE_HANDLE_WIDTH = 4;
+
   let { client, route, onRouteChange }: Props = $props();
 
   // svelte-ignore state_referenced_locally
@@ -75,6 +82,12 @@
   let refPickerSelectionInFlight = false;
   const refPickerListID = `repo-browser-ref-${Math.random().toString(36).slice(2)}`;
   const refPickerRenderLimit = 100;
+  let contentEl = $state<HTMLElement | null>(null);
+  let sidebarEl = $state<HTMLElement | null>(null);
+  let contentWidth = $state(0);
+  let sidebarWidth = $state(0);
+  let historyWidth = $state(DEFAULT_HISTORY_WIDTH);
+  let historyResizeStartWidth = DEFAULT_HISTORY_WIDTH;
 
   const selectedPath = $derived(store.getSelectedPath());
   const selectedRef = $derived(store.getSelectedRef());
@@ -101,6 +114,28 @@
   const tagRefs = $derived(store.getRefs().filter((ref) => refPickerRefType(ref) === "tag"));
   const filteredRefs = $derived.by(() => filterRefs(refPickerType === "branch" ? branchRefs : tagRefs, refPickerQuery));
   const visibleFilteredRefs = $derived(filteredRefs.slice(0, refPickerRenderLimit));
+
+  $effect(() => {
+    if (!contentEl || !sidebarEl) return;
+
+    updateSplitMeasurements();
+
+    const observers: ResizeObserver[] = [];
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(updateSplitMeasurements);
+      observer.observe(contentEl);
+      observer.observe(sidebarEl);
+      observers.push(observer);
+    }
+
+    window.addEventListener("resize", updateSplitMeasurements);
+    return () => {
+      window.removeEventListener("resize", updateSplitMeasurements);
+      for (const observer of observers) {
+        observer.disconnect();
+      }
+    };
+  });
 
   $effect(() => {
     const nextRepoLoadKey = routeKey(route);
@@ -349,6 +384,41 @@
 
   function selectHistoryCommit(commit: RepoBrowserCommit): void {
     void store.selectCommit(commit.sha);
+  }
+
+  function updateSplitMeasurements(): void {
+    const nextContentWidth = contentEl?.clientWidth ?? 0;
+    const nextSidebarWidth = sidebarEl?.getBoundingClientRect().width ?? 0;
+    contentWidth = nextContentWidth;
+    sidebarWidth = nextSidebarWidth;
+    if (nextContentWidth <= 0) return;
+    const nextHistoryWidth = clampHistoryWidth(historyWidth, nextContentWidth, nextSidebarWidth);
+    if (nextHistoryWidth !== historyWidth) {
+      historyWidth = nextHistoryWidth;
+    }
+  }
+
+  function maxHistoryWidth(nextContentWidth = contentWidth, nextSidebarWidth = sidebarWidth): number {
+    if (nextContentWidth <= 0) return Math.max(DEFAULT_HISTORY_WIDTH, MIN_HISTORY_WIDTH);
+    const availableForViewerAndHistory = nextContentWidth - nextSidebarWidth - HISTORY_RESIZE_HANDLE_WIDTH;
+    if (availableForViewerAndHistory <= 0) return MIN_HISTORY_WIDTH;
+    return Math.max(MIN_HISTORY_WIDTH, availableForViewerAndHistory - MIN_VIEWER_WIDTH);
+  }
+
+  function clampHistoryWidth(width: number, nextContentWidth = contentWidth, nextSidebarWidth = sidebarWidth): number {
+    const maxWidth = maxHistoryWidth(nextContentWidth, nextSidebarWidth);
+    const minWidth = Math.min(MIN_HISTORY_WIDTH, maxWidth);
+    return Math.max(minWidth, Math.min(maxWidth, width));
+  }
+
+  function startHistoryResize(): void {
+    updateSplitMeasurements();
+    historyWidth = clampHistoryWidth(historyWidth);
+    historyResizeStartWidth = historyWidth;
+  }
+
+  function resizeHistory(event: SplitResizeEvent): void {
+    historyWidth = clampHistoryWidth(historyResizeStartWidth - event.deltaX);
   }
 
   function toTreeEntry(file: SourceBrowserFileEntry): FileTreeEntry {
@@ -623,8 +693,8 @@
     </div>
   </header>
 
-  <div class="repo-browser__content">
-    <aside class="repo-browser__sidebar" aria-label="Files">
+  <div class="repo-browser__content" bind:this={contentEl}>
+    <aside class="repo-browser__sidebar" aria-label="Files" bind:this={sidebarEl}>
       <div class="repo-browser__filter">
         <input
           type="search"
@@ -719,7 +789,14 @@
       {/if}
     </main>
 
-    <aside class="repo-browser__history" aria-label="File history">
+    <SplitResizeHandle
+      class="repo-browser__history-resize"
+      ariaLabel="Resize file history"
+      onResizeStart={startHistoryResize}
+      onResize={resizeHistory}
+    />
+
+    <aside class="repo-browser__history" aria-label="File history" style:width={`${Math.round(historyWidth)}px`}>
       <header class="repo-browser__history-header">
         <span>History</span>
         <span>{store.getFileHistory().length}</span>
@@ -993,8 +1070,7 @@
   .repo-browser__content {
     flex: 1 1 auto;
     min-height: 0;
-    display: grid;
-    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) minmax(250px, 320px);
+    display: flex;
     overflow: hidden;
   }
 
@@ -1009,11 +1085,17 @@
   }
 
   .repo-browser__sidebar {
+    flex: 0 0 clamp(260px, 28vw, 340px);
     border-right: thin solid var(--border-default);
   }
 
   .repo-browser__history {
+    flex: 0 0 auto;
     border-left: thin solid var(--border-default);
+  }
+
+  :global(.repo-browser__history-resize) {
+    background: var(--border-default);
   }
 
   .repo-browser__filter {
@@ -1253,20 +1335,17 @@
   }
 
   @media (max-width: 980px) {
-    .repo-browser__content {
-      grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
-    }
-
+    :global(.repo-browser__history-resize),
     .repo-browser__history {
       display: none;
+    }
+
+    .repo-browser__sidebar {
+      flex-basis: clamp(220px, 32vw, 300px);
     }
   }
 
   @media (max-width: 720px) {
-    .repo-browser__content {
-      grid-template-columns: 1fr;
-    }
-
     .repo-browser__sidebar {
       display: none;
     }

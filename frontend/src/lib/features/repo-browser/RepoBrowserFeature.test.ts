@@ -400,12 +400,59 @@ describe("RepoBrowserFeature", () => {
     expect(viewer.getAttribute("data-path")).toBe(sourceFile.path);
     expect(viewer.textContent).toContain("package main");
   });
+
+  it("resizes the history rail within usable viewer constraints across view modes", async () => {
+    render(RepoBrowserFeature, {
+      props: {
+        client: testClient(),
+        route,
+        onRouteChange: vi.fn(),
+      },
+    });
+
+    const history = await screen.findByLabelText("File history");
+    const content = document.querySelector(".repo-browser__content") as HTMLElement | null;
+    const sidebar = document.querySelector(".repo-browser__sidebar") as HTMLElement | null;
+    expect(content).not.toBeNull();
+    expect(sidebar).not.toBeNull();
+    setReadonlyNumber(content!, "clientWidth", 1200);
+    sidebar!.getBoundingClientRect = () => ({ width: 340 }) as DOMRect;
+
+    const handle = screen.getByRole("button", { name: "Resize file history" });
+    expect(history.getAttribute("style")).toContain("width: 320px");
+
+    await fireEvent.mouseDown(handle, { clientX: 800 });
+    await fireEvent.mouseMove(window, { clientX: 700 });
+    expect(history.getAttribute("style")).toContain("width: 420px");
+
+    await fireEvent.mouseMove(window, { clientX: 350 });
+    expect(history.getAttribute("style")).toContain("width: 496px");
+
+    await fireEvent.mouseMove(window, { clientX: 1200 });
+    expect(history.getAttribute("style")).toContain("width: 260px");
+    await fireEvent.mouseUp(window, { clientX: 1200 });
+
+    await fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    expect(history.getAttribute("style")).toContain("width: 284px");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    expect(history.getAttribute("style")).toContain("width: 284px");
+    await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(history.getAttribute("style")).toContain("width: 284px");
+  });
 });
 
 function scrolledHeadingIDs(scrollIntoView: ReturnType<typeof vi.fn>): string[] {
   return scrollIntoView.mock.contexts.flatMap((context) => {
     if (context instanceof HTMLElement && context.id) return [context.id];
     return [];
+  });
+}
+
+function setReadonlyNumber(element: HTMLElement, property: "clientWidth", value: number): void {
+  Object.defineProperty(element, property, {
+    configurable: true,
+    get: () => value,
   });
 }
 

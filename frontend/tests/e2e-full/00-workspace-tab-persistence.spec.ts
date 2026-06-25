@@ -262,10 +262,15 @@ test.describe("workspace tab persistence", () => {
       );
       await page.locator(".seg-control .seg-btn", { hasText: "Diff" }).click();
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
-      await expect(page.locator(".right-sidebar .workspace-diff-scope .diff-scope-picker__label")).toBeHidden();
-      const workspaceScopePicker = page.locator(".right-sidebar .workspace-diff-scope .diff-scope-picker");
-      await expect(workspaceScopePicker.locator(".scope-pill")).toHaveCount(0);
-      await expect(workspaceScopePicker.locator(".diff-scope-label")).toHaveText("HEAD");
+      const workspaceScope = page.locator(".right-sidebar .workspace-diff-scope");
+      await expect(workspaceScope.locator(".diff-scope-picker")).toHaveCount(0);
+      await expect(workspaceScope.getByRole("button", { name: "Compare with HEAD" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(workspaceScope.getByRole("button", { name: "Compare with pushed branch" })).toBeVisible();
+      await expect(workspaceScope.getByRole("button", { name: "Compare with merge target" })).toHaveCount(0);
+      await expect(workspaceScope.getByRole("button", { name: "Select commit range" })).toHaveCount(0);
       const scopeToggleMetrics = await page
         .locator(".right-sidebar .workspace-diff-scope .scope-toggle")
         .evaluate((toggle) => {
@@ -284,24 +289,6 @@ test.describe("workspace tab persistence", () => {
       expect(scopeToggleMetrics.height).toBeLessThanOrEqual(28);
       expect(scopeToggleMetrics.maxButtonTopDelta).toBeLessThanOrEqual(1);
       expect(scopeToggleMetrics.scrollWidth).toBeLessThanOrEqual(scopeToggleMetrics.clientWidth);
-      await page
-        .locator(".right-sidebar .workspace-diff-scope")
-        .getByRole("button", { name: "Select commit range" })
-        .click();
-      const commitMenu = page.locator(".right-sidebar .diff-scope-picker__menu");
-      await expect(commitMenu).toBeVisible();
-      const commitMenuTopElement = await commitMenu.evaluate((menu) => {
-        const rect = menu.getBoundingClientRect();
-        const topElement = document.elementFromPoint(rect.left + rect.width / 2, rect.top + 12);
-        return {
-          className:
-            typeof topElement?.className === "string" ? topElement.className : String(topElement?.className ?? ""),
-          insideCommitMenu: Boolean(topElement?.closest(".diff-scope-picker__menu")),
-        };
-      });
-      expect(commitMenuTopElement.insideCommitMenu).toBe(true);
-      await page.keyboard.press("Escape");
-      await expect(commitMenu).toBeHidden();
       expect((await diffResponse).ok()).toBe(true);
       const alphaDiffFile = page.locator('.right-sidebar .diff-file[data-file-path="alpha.ts"]');
       const betaDiffFile = page.locator('.right-sidebar .diff-file[data-file-path="beta_test.go"]');

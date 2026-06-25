@@ -509,7 +509,6 @@ func TestGitLabUpgradeKeepsLegacyLabelAssignmentThroughCatalogRefresh(t *testing
 	// artifacts so the replay applies cleanly.
 	_, err = seeded.WriteDB().ExecContext(ctx, `
 		DROP INDEX idx_workspaces_provider_item_key;
-		DROP TRIGGER middleman_workspaces_item_key_fill_insert;
 		DELETE FROM middleman_workspaces
 		WHERE rowid NOT IN (
 		    SELECT MIN(rowid)

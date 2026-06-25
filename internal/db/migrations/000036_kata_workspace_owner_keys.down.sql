@@ -1,5 +1,4 @@
 DROP INDEX IF EXISTS idx_workspaces_provider_item_key;
-DROP TRIGGER IF EXISTS middleman_workspaces_item_key_fill_insert;
 
 DELETE FROM middleman_workspaces
 WHERE rowid NOT IN (

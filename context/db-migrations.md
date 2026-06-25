@@ -22,6 +22,9 @@ The pre-commit hook `go run ./tools/migrationhistorycheck` enforces this by reje
   migration would hit a duplicate column, the database is already claiming an
   impossible version/schema combination and should fail instead of being
   papered over.
+- Do not add migration triggers, defaults, or repair hooks merely to compensate
+  for application or test insert paths that omit newly required columns. Update
+  every current-schema insert to write the new column explicitly.
 - Tests that rewind a latest test database by editing `schema_migrations` must
   first remove every schema artifact introduced after the target version. Do
   not compensate for impossible rewind fixtures in production migration code.

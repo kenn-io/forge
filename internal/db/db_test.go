@@ -1726,7 +1726,6 @@ func removeEventDirectURLColumnsForTest(raw *sql.DB) error {
 func removeKataWorkspaceOwnerColumnsForTest(raw *sql.DB) error {
 	_, err := raw.Exec(`
 		DROP INDEX idx_workspaces_provider_item_key;
-		DROP TRIGGER middleman_workspaces_item_key_fill_insert;
 
 		DELETE FROM middleman_workspaces
 		WHERE rowid NOT IN (

@@ -4133,13 +4133,13 @@ func TestWorkspaceCRUD(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     item_type, item_number, git_head_ref,
+		     item_type, item_number, item_key, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		        datetime('now', '+1 minute'))`,
 		"ws-def-456", "github.com", "acme", "gadget",
-		WorkspaceItemTypePullRequest, 7, "fix/bug",
+		WorkspaceItemTypePullRequest, 7, "7", "fix/bug",
 		"/tmp/ws-def-456", "ws-def-456", "ready",
 	)
 	require.NoError(err)
@@ -4508,8 +4508,8 @@ func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
 	_, err := d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     item_type, item_number, git_head_ref, worktree_path, tmux_session)
-		VALUES ('mixed', 'github.com', 'Acme', 'widget', 'pull_request', 1, 'feature',
+		     item_type, item_number, item_key, git_head_ref, worktree_path, tmux_session)
+		VALUES ('mixed', 'github.com', 'Acme', 'widget', 'pull_request', 1, '1', 'feature',
 		        '/tmp/mixed', 'mixed')`)
 	require.Error(err)
 	require.Contains(err.Error(), "workspace repo identifiers must be provider-canonical")
@@ -4807,12 +4807,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     item_type, item_number, git_head_ref,
+		     item_type, item_number, item_key, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"ws-with-mr", "github.com", "acme", "widget",
-		WorkspaceItemTypePullRequest, 42, "feat/workspace",
+		WorkspaceItemTypePullRequest, 42, "42", "feat/workspace",
 		"/tmp/ws-with-mr", "ws-with-mr", "ready",
 		base,
 	)
@@ -4822,12 +4822,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     item_type, item_number, associated_pr_number, git_head_ref,
+		     item_type, item_number, item_key, associated_pr_number, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"ws-issue-with-pr", "github.com", "acme", "widget",
-		WorkspaceItemTypeIssue, 7, 42, "feature/from-issue",
+		WorkspaceItemTypeIssue, 7, "7", 42, "feature/from-issue",
 		"/tmp/ws-issue-with-pr", "ws-issue-with-pr", "ready",
 		base.Add(30*time.Minute),
 	)
@@ -4837,12 +4837,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     item_type, item_number, git_head_ref,
+		     item_type, item_number, item_key, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"ws-no-mr", "github.com", "acme", "gadget",
-		WorkspaceItemTypePullRequest, 99, "fix/thing",
+		WorkspaceItemTypePullRequest, 99, "99", "fix/thing",
 		"/tmp/ws-no-mr", "ws-no-mr", "creating",
 		base.Add(time.Hour),
 	)
@@ -4933,11 +4933,11 @@ func TestSetWorkspaceAssociatedPRNumberIfNull(t *testing.T) {
 	_, err := d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     item_type, item_number, git_head_ref,
+		     item_type, item_number, item_key, git_head_ref,
 		     worktree_path, tmux_session, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"ws-issue", "github.com", "acme", "widget",
-		WorkspaceItemTypeIssue, 7, "feature/issue-7",
+		WorkspaceItemTypeIssue, 7, "7", "feature/issue-7",
 		"/tmp/ws-issue", "ws-issue", "ready",
 	)
 	require.NoError(err)

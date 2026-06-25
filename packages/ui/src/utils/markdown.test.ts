@@ -293,6 +293,29 @@ describe("renderMarkdown code highlighting", () => {
     expect(html).toContain('<pre class="shiki shiki-themes github-light-default github-dark-default"');
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
   });
+
+  it("falls back to plain code blocks after the per-render highlighted fence budget", async () => {
+    const source = Array.from({ length: 21 }, (_, index) => `\`\`\`ts\nconst value${index} = ${index};\n\`\`\``).join(
+      "\n\n",
+    );
+
+    const html = await renderMarkdown(source);
+
+    expect(html.match(/<pre class="shiki/g)).toHaveLength(20);
+    expect(html.match(/<pre><code>/g)).toHaveLength(1);
+    expect(html).toContain("const value20 = 20;");
+  });
+
+  it("falls back to plain code blocks after the per-render language budget", async () => {
+    const languages = ["bash", "css", "diff", "go", "html", "json", "python", "rust", "ruby"];
+    const source = languages.map((lang, index) => `\`\`\`${lang}\nvalue_${index}\n\`\`\``).join("\n\n");
+
+    const html = await renderMarkdown(source);
+
+    expect(html.match(/<pre class="shiki/g)).toHaveLength(8);
+    expect(html.match(/<pre><code>/g)).toHaveLength(1);
+    expect(html).toContain("value_8");
+  });
 });
 
 describe("renderMarkdown details blocks", () => {

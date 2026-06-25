@@ -26,6 +26,12 @@ describe("vite config", () => {
     expect(repoLabelAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/utils/repo-label.ts"));
   });
 
+  it("prebundles browser-test dependencies reached through @middleman/ui", () => {
+    const includes = config.optimizeDeps?.include ?? [];
+
+    expect(includes).toContain("@middleman/ui > shiki");
+  });
+
   it("pins the dev server host to IPv4 loopback", () => {
     expect(config.server?.host).toBe("127.0.0.1");
     expect(config.server?.port).toBe(5174);

@@ -358,6 +358,26 @@ describe("RepoBrowserFeature", () => {
     expect(screen.queryByRole("option", { name: "branch: release/v1 release-" })).toBeNull();
   });
 
+  it("does not reload when the active ref is selected again", async () => {
+    const client = testClient();
+    const onRouteChange = vi.fn();
+    render(RepoBrowserFeature, {
+      props: {
+        client,
+        route,
+        onRouteChange,
+      },
+    });
+
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
+    await fireEvent.click(await screen.findByRole("button", { name: "Select repository ref: branch: main main-sha" }));
+    await fireEvent.click(screen.getByRole("option", { name: "branch: main main-sha" }));
+    await tick();
+
+    expect(client.GET).toHaveBeenCalledTimes(5);
+    expect(onRouteChange).not.toHaveBeenCalled();
+  });
+
   it("renders source files through Pierre file contents", async () => {
     const sourceFile = {
       path: "internal/main.go",

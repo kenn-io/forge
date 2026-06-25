@@ -274,6 +274,10 @@
   }
 
   async function selectRefFromPicker(ref: RepoBrowserRef): Promise<void> {
+    if (selectedRef !== null && refKey(selectedRef) === refKey(ref)) {
+      closeRefPicker();
+      return;
+    }
     if (refPickerSelectionInFlight) return;
     refPickerSelectionInFlight = true;
     closeRefPicker();

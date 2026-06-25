@@ -61,6 +61,18 @@ For pull requests, that means:
   persisted activity, not just one subset of the detail payload.
 - Background sync cooldowns are allowed, but user-initiated refreshes must still
   be able to promote a stronger sync intent over an in-flight background fetch.
+- Recently active open PRs in the fast-sync lane are cadence-gated by activity
+  age, not just by membership in `active_pr_window`
+  (`internal/github/sync.go::activeMRRefreshInterval`). Hot PRs use
+  `active_pr_refresh_interval`; older PRs still inside the window fall back to
+  a slower cadence so the Activity view stays fresh without spending the same
+  request rate on hours-old rows. A missing `detail_fetched_at` remains due
+  immediately (`internal/github/sync.go::activeMRDueForFastSync`).
+- GitHub detail ETags reduce the work for unchanged PRs, but a `304 Not
+  Modified` still consumes a provider request. Do not use the ETag path as the
+  only rate-limit mitigation for broad background refresh loops
+  (`internal/github/sync.go::getPullRequestForDetail`,
+  `internal/github/sync.go::markUnchangedMRDetailFetched`).
 
 ## Timeline Event Rules
 

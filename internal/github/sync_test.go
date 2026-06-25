@@ -6868,6 +6868,65 @@ func TestWatchedMRsIncludeRecentlyActiveOpenPRs(t *testing.T) {
 	}, got)
 }
 
+func TestWatchedMRsThrottleRecentlyActiveOpenPRsByActivityAge(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
+
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "app",
+	})
+	require.NoError(err)
+
+	seedMR := func(number int, lastActivity time.Time, detailFetchedAt *time.Time) {
+		_, upsertErr := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number,
+			Title: "PR", Author: "octo", State: db.MergeRequestStateOpen,
+			HeadBranch: "feature", BaseBranch: "main",
+			CreatedAt: now.Add(-24 * time.Hour),
+			UpdatedAt: lastActivity, LastActivityAt: lastActivity,
+			DetailFetchedAt: detailFetchedAt,
+		})
+		require.NoError(upsertErr)
+	}
+	hotNotDue := now.Add(-1 * time.Minute)
+	hotDue := now.Add(-2 * time.Minute)
+	warmNotDue := now.Add(-4 * time.Minute)
+	warmDue := now.Add(-5 * time.Minute)
+	seedMR(1, now.Add(-10*time.Minute), &hotNotDue)
+	seedMR(2, now.Add(-10*time.Minute), &hotDue)
+	seedMR(3, now.Add(-45*time.Minute), &warmNotDue)
+	seedMR(4, now.Add(-45*time.Minute), &warmDue)
+
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app",
+		}},
+		time.Hour, nil, nil,
+	)
+	syncer.SetWatchInterval(2 * time.Minute)
+	syncer.SetActiveMRWindow(4 * time.Hour)
+
+	got := syncer.watchedMRsForFastSync(ctx, now)
+	assert.ElementsMatch([]WatchedMR{
+		{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app", Number: 2,
+		},
+		{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app", Number: 4,
+		},
+	}, got)
+}
+
 func TestWatchedMRsNotifyOnceAfterFastSync(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)

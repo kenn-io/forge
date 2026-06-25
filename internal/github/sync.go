@@ -262,6 +262,8 @@ type WatchedMR struct {
 // per-host GitHub rate limit / abuse-detection thresholds.
 const defaultParallelism = 4
 const rateLimitSnapshotRefreshInterval = time.Minute
+const activeMRHotActivityWindow = 30 * time.Minute
+const activeMRWarmRefreshInterval = 5 * time.Minute
 
 // Display-name cache parameters. Display names rarely change,
 // so the success TTL is long enough to skip lookups across many
@@ -2595,12 +2597,12 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 func (s *Syncer) watchedMRsForFastSync(ctx context.Context, now time.Time) []WatchedMR {
 	s.watchMu.Lock()
 	mrs := slices.Clone(s.watchedMRs)
-	_, activeWindow := s.watchSettingsLocked()
+	watchInt, activeWindow := s.watchSettingsLocked()
 	s.watchMu.Unlock()
 
 	watched := newWatchedMRSet(mrs)
 	if activeWindow > 0 {
-		for _, mr := range s.recentlyActiveOpenMRs(ctx, now, activeWindow) {
+		for _, mr := range s.recentlyActiveOpenMRs(ctx, now, activeWindow, watchInt) {
 			watched.add(mr)
 		}
 	}
@@ -2619,6 +2621,7 @@ func (s *Syncer) recentlyActiveOpenMRs(
 	ctx context.Context,
 	now time.Time,
 	window time.Duration,
+	hotInterval time.Duration,
 ) []WatchedMR {
 	prs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "open"})
 	if err != nil {
@@ -2630,6 +2633,9 @@ func (s *Syncer) recentlyActiveOpenMRs(
 	var watched []WatchedMR
 	for _, pr := range prs {
 		if pr.LastActivityAt.Before(cutoff) {
+			continue
+		}
+		if !activeMRDueForFastSync(pr, now, hotInterval) {
 			continue
 		}
 		repo, ok := repoByID[pr.RepoID]
@@ -2661,6 +2667,27 @@ func (s *Syncer) recentlyActiveOpenMRs(
 		})
 	}
 	return watched
+}
+
+func activeMRDueForFastSync(pr db.MergeRequest, now time.Time, hotInterval time.Duration) bool {
+	if pr.DetailFetchedAt == nil {
+		return true
+	}
+	interval := activeMRRefreshInterval(pr.LastActivityAt, now, hotInterval)
+	return !pr.DetailFetchedAt.Add(interval).After(now)
+}
+
+func activeMRRefreshInterval(lastActivity, now time.Time, hotInterval time.Duration) time.Duration {
+	if hotInterval <= 0 {
+		hotInterval = 30 * time.Second
+	}
+	if now.Sub(lastActivity) <= activeMRHotActivityWindow {
+		return hotInterval
+	}
+	if hotInterval > activeMRWarmRefreshInterval {
+		return hotInterval
+	}
+	return activeMRWarmRefreshInterval
 }
 
 func watchedMRPlatform(mr WatchedMR) platform.Kind {

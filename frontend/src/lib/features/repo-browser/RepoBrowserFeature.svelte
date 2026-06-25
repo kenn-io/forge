@@ -82,6 +82,9 @@
   });
   const treeEntries = $derived(shownFiles.map(toTreeEntry));
   const categoryCounts = $derived(store.getFileCategoryCounts());
+  const visibleCategoryOptions = $derived(
+    diffFileCategoryOptions.filter((option) => option.value === "all" || categoryCounts[option.value] > 0),
+  );
   const markdownIndex = $derived(buildMarkdownIndex(store.getFileEntries()));
   const forgeHref = $derived(buildForgeHref(route, selectedRef, selectedPath));
 
@@ -451,7 +454,7 @@
         />
       </div>
       <div class="repo-browser__categories" aria-label="File category filters">
-        {#each diffFileCategoryOptions as option (option.value)}
+        {#each visibleCategoryOptions as option (option.value)}
           <button
             type="button"
             aria-pressed={store.getFileCategoryFilter() === option.value}

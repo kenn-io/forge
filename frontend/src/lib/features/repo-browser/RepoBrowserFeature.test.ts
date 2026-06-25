@@ -99,6 +99,23 @@ describe("RepoBrowserFeature", () => {
     expect(issueLink.getAttribute("data-external-url")).toBe("https://github.com/acme/widgets/issues/12");
   });
 
+  it("hides zero-count file category filters", async () => {
+    render(RepoBrowserFeature, {
+      props: {
+        client: testClient(),
+        route,
+        onRouteChange: vi.fn(),
+      },
+    });
+
+    expect(await screen.findByRole("button", { name: "Plans/docs 2" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "All 2" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Code 0" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Tests 0" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Other 0" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Generated 0" })).toBeNull();
+  });
+
   it("applies route anchor changes for the selected markdown file", async () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;

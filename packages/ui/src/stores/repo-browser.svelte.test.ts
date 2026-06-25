@@ -704,6 +704,47 @@ describe("createRepoBrowserStore", () => {
       "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=src",
     );
   });
+
+  it("keeps unknown path selections loading while probing blob and history", async () => {
+    const base = testClient();
+    const missingBlob = deferredResponse();
+    const missingHistory = deferredResponse();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=missing.md"
+        ) {
+          return missingBlob.promise;
+        }
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=missing.md"
+        ) {
+          return missingHistory.promise;
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createRepoBrowserStore({ client });
+    await store.loadRepo(repo);
+
+    const pending = store.selectPath("missing.md");
+
+    expect(store.getSelectedPath()).toBe("missing.md");
+    expect(store.isBlobLoading()).toBe(true);
+
+    missingBlob.resolve({
+      error: { detail: "git object not found" },
+      response: new Response(null, { status: 404 }),
+    });
+    missingHistory.resolve(historyResponse("missing.md", "unreachable"));
+    await pending;
+
+    expect(store.isBlobLoading()).toBe(false);
+    expect(store.getError()).toBe("git object not found");
+  });
 });
 
 function testURL(path: string, options?: TestGetOptions): string {

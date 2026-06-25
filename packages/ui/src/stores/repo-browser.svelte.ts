@@ -302,7 +302,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     const generation = nextPathRequestGeneration();
     selectedPath = path;
     const pathKind = repoBrowserPathKind(path);
-    blobLoading = pathKind === "file";
+    blobLoading = pathKind !== "directory";
     error = null;
     blob = null;
     fileHistory = [];

@@ -1,8 +1,8 @@
-import { expect, test, type Locator, type Page, type Response } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Request, type Response } from "@playwright/test";
 
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
-type RepoBrowserEndpoint = "refs" | "tree" | "blob";
+type RepoBrowserEndpoint = "refs" | "tree" | "blob" | "history";
 
 function blobResponse(page: Page, path: string): Promise<Response> {
   return page.waitForResponse((response) => {
@@ -32,6 +32,21 @@ function repoBrowserResponseMatches(
   );
 }
 
+function repoBrowserRequestMatches(
+  request: Request,
+  endpoint: RepoBrowserEndpoint,
+  refName?: string,
+  path?: string,
+): boolean {
+  const url = new URL(request.url());
+  return (
+    request.method() === "GET" &&
+    url.pathname === `/api/v1/repo/github/acme/widgets/browser/${endpoint}` &&
+    (refName === undefined || url.searchParams.get("ref_name") === refName) &&
+    (path === undefined || url.searchParams.get("path") === path)
+  );
+}
+
 function repoBrowserResponse(page: Page, endpoint: RepoBrowserEndpoint, refName?: string): Promise<Response> {
   return page.waitForResponse((response) => repoBrowserResponseMatches(response, endpoint, refName));
 }
@@ -50,6 +65,21 @@ function collectRepoBrowserResponseURLs(
   page.on("response", (response) => {
     if (repoBrowserResponseMatches(response, endpoint, refName, path)) {
       urls.push(response.url());
+    }
+  });
+  return urls;
+}
+
+function collectRepoBrowserRequestURLs(
+  page: Page,
+  endpoint: RepoBrowserEndpoint,
+  refName?: string,
+  path?: string,
+): string[] {
+  const urls: string[] = [];
+  page.on("request", (request) => {
+    if (repoBrowserRequestMatches(request, endpoint, refName, path)) {
+      urls.push(request.url());
     }
   });
   return urls;
@@ -138,6 +168,33 @@ test.describe("repository source browser", () => {
       await expectResolvedBranchURL(page);
 
       await expectSingleRepoLoad(page, refsURLs, treeURLs);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("opens a direct directory route without reading it as a blob", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const blobURLs = collectRepoBrowserRequestURLs(page, "blob", undefined, "docs");
+      const historyURLs = collectRepoBrowserRequestURLs(page, "history", undefined, "docs");
+      const treeLoaded = treeResponse(page, "main");
+
+      await page.goto(
+        `${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=docs`,
+      );
+      await treeLoaded;
+
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      const viewer = browser.getByRole("main", { name: "Selected file" });
+      await expect(viewer.locator(".repo-browser__path")).toContainText("docs");
+      await expect(viewer.locator(".repo-browser__state")).toHaveText("Select a file");
+      await expect(viewer.locator(".repo-browser__source")).toHaveCount(0);
+      await expect(viewer.locator(".repo-browser__state--error")).toHaveCount(0);
+      await page.waitForTimeout(500);
+
+      expect(blobURLs).toEqual([]);
+      expect(historyURLs).toEqual([]);
     } finally {
       await server.stop();
     }

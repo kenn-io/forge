@@ -262,7 +262,7 @@ The repo browser deep link carries:
 - provider and platform host when needed
 - `repo_path` as the canonical repository identity
 - selected ref type, display ref name, and resolved SHA when known
-- selected file path
+- selected path, which may be a file or directory
 - source/preview mode
 
 The app route is query-based to avoid collisions between slash-containing repo
@@ -284,6 +284,14 @@ must include a nested repo path where owner/name alone is insufficient.
 
 When no path is present, the browser auto-selects a README variant if present.
 If no README exists, it shows the tree with no selected file.
+
+Directory paths are valid selection state for navigation and deep links. A
+directory may be an explicit tree entry or an implicit parent synthesized from
+tracked file paths; selecting it keeps the tree row selected and shows an empty
+main pane rather than requesting blob/history data. Missing-path errors apply
+only when the selected path is neither a file nor a directory in the loaded tree
+(`packages/ui/src/stores/repo-browser.svelte::repoBrowserPathKind`,
+`packages/ui/src/stores/repo-browser.svelte.test.ts`).
 
 When switching refs, the browser preserves the selected path if that path exists
 on the new ref. If it does not exist, the route keeps the path and the main pane

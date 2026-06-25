@@ -7247,7 +7247,7 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 
 func TestAPISyncPRBypassesPullRequestETagForCIRefresh(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	headSHA := "abc123"
 	success := "success"

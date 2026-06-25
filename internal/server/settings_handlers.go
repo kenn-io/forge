@@ -843,12 +843,18 @@ func (s *Server) deleteConfiguredRepo(
 			owner+"/"+name+" is not configured", nil)
 	}
 
-	prev := slices.Clone(s.cfg.Repos)
+	prevRepos := slices.Clone(s.cfg.Repos)
+	prevKataProjects := slices.Clone(s.cfg.KataProjects)
 	s.cfg.Repos = append(
 		s.cfg.Repos[:idx], s.cfg.Repos[idx+1:]...,
 	)
+	s.cfg.KataProjects = filterKataProjectMappingsForDeletedRepo(
+		s.cfg.KataProjects,
+		targetRef,
+	)
 	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.Repos = prev
+		s.cfg.Repos = prevRepos
+		s.cfg.KataProjects = prevKataProjects
 		s.cfgMu.Unlock()
 		return nil, problemInternal("save config: " + err.Error())
 	}
@@ -856,6 +862,35 @@ func (s *Server) deleteConfiguredRepo(
 	s.cfgMu.Unlock()
 
 	return nil, nil
+}
+
+func filterKataProjectMappingsForDeletedRepo(
+	mappings []config.KataProjectRepoMapping,
+	repo config.Repo,
+) []config.KataProjectRepoMapping {
+	filtered := make([]config.KataProjectRepoMapping, 0, len(mappings))
+	for _, mapping := range mappings {
+		if kataProjectMappingTargetsRepo(mapping, repo) {
+			continue
+		}
+		filtered = append(filtered, mapping)
+	}
+	return filtered
+}
+
+func kataProjectMappingTargetsRepo(
+	mapping config.KataProjectRepoMapping,
+	repo config.Repo,
+) bool {
+	return strings.EqualFold(
+		strings.TrimSpace(mapping.Provider),
+		repo.PlatformOrDefault(),
+	) &&
+		samePlatformHost(mapping.PlatformHost, repo.PlatformHostOrDefault()) &&
+		strings.EqualFold(
+			strings.Trim(strings.TrimSpace(mapping.RepoPath), "/"),
+			strings.Trim(configRepoPath(repo), "/"),
+		)
 }
 
 func normalizeRouteProvider(raw string) (string, error) {

@@ -803,6 +803,59 @@ func TestHandleDeleteRepo(t *testing.T) {
 	assert.Equal(t, "other-org", cfg2.Repos[0].Owner)
 }
 
+func TestHandleDeleteRepoRemovesKataProjectMappings(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+
+	addBody := map[string]string{
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "other-org",
+		"name":     "other-repo",
+	}
+	addRR := doJSON(
+		t, srv, http.MethodPost, "/api/v1/repos", addBody,
+	)
+	require.Equal(http.StatusCreated, addRR.Code, addRR.Body.String())
+
+	mappings := []config.KataProjectRepoMapping{
+		{
+			DaemonID:     "desktop",
+			ProjectUID:   "project-widget",
+			Provider:     "github",
+			PlatformHost: "github.com",
+			RepoPath:     "acme/widget",
+		},
+		{
+			DaemonID:     "desktop",
+			ProjectUID:   "project-other",
+			Provider:     "github",
+			PlatformHost: "github.com",
+			RepoPath:     "other-org/other-repo",
+		},
+	}
+	updateRR := doJSON(
+		t, srv, http.MethodPut, "/api/v1/settings",
+		updateSettingsRequest{KataProjects: &mappings},
+	)
+	require.Equal(http.StatusOK, updateRR.Code, updateRR.Body.String())
+
+	deleteRR := doJSON(
+		t, srv, http.MethodDelete,
+		"/api/v1/repo/gh/acme/widget", nil,
+	)
+	require.Equal(http.StatusNoContent, deleteRR.Code, deleteRR.Body.String())
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfg2.Repos, 1)
+	assert.Equal("other-org", cfg2.Repos[0].Owner)
+	require.Len(cfg2.KataProjects, 1)
+	assert.Equal("project-other", cfg2.KataProjects[0].ProjectUID)
+	assert.Equal("other-org/other-repo", cfg2.KataProjects[0].RepoPath)
+}
+
 func TestGetSettingsWithoutPersistence(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

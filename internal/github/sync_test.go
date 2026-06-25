@@ -6869,7 +6869,7 @@ func TestWatchedMRsIncludeRecentlyActiveOpenPRs(t *testing.T) {
 }
 
 func TestWatchedMRsThrottleRecentlyActiveOpenPRsByActivityAge(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -7472,7 +7472,7 @@ func TestFetchMRDetailUsesPersistedPullRequestETag(t *testing.T) {
 }
 
 func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -7528,7 +7528,7 @@ func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
 }
 
 func TestSyncMRBypassesPersistedPullRequestETag(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)

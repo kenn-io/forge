@@ -2254,7 +2254,7 @@
               ondragend={onBodyDragEnd}
             >
               {#await renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
-                {@html renderMarkdownSync(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
+                {@html renderMarkdownSync(pr.Body, { provider, platformHost, owner, name, repoPath })}
               {:then html}
                 {@html html}
               {/await}

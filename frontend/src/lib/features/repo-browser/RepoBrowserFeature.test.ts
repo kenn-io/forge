@@ -40,6 +40,7 @@ type TestClientOptions = {
     path: string;
     content: string;
   };
+  refs?: Array<{ type: "branch" | "tag"; name: string; sha: string; stale: boolean }>;
 };
 
 const runtimeQuerySerializerOptions: QuerySerializerOptions = {
@@ -290,9 +291,12 @@ describe("RepoBrowserFeature", () => {
     });
 
     await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
-    await fireEvent.change(await screen.findByRole("combobox", { name: "Select repository ref" }), {
-      target: { value: "tag\0v1.0.0\0tag-sha" },
+    await fireEvent.click(await screen.findByRole("button", { name: "Select repository ref: branch: main main-sha" }));
+    await fireEvent.input(screen.getByRole("combobox", { name: "Search repository refs" }), {
+      target: { value: "v1" },
     });
+    await fireEvent.click(screen.getByRole("tab", { name: "Tags 1" }));
+    await fireEvent.click(screen.getByRole("option", { name: "tag: v1.0.0 tag-sha" }));
     await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(9));
     await waitFor(() => {
       expect(onRouteChange).toHaveBeenLastCalledWith(
@@ -319,6 +323,39 @@ describe("RepoBrowserFeature", () => {
 
     await tick();
     expect(client.GET).toHaveBeenCalledTimes(9);
+  });
+
+  it("filters branch and tag refs in separate typeahead tabs", async () => {
+    const client = testClient({
+      refs: [
+        { type: "branch", name: "main", sha: "main-sha", stale: false },
+        { type: "branch", name: "feature/caching", sha: "feature-sha", stale: false },
+        { type: "branch", name: "release/v1", sha: "release-sha", stale: false },
+        { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
+        { type: "tag", name: "feature-preview", sha: "preview-sha", stale: false },
+      ],
+    });
+    render(RepoBrowserFeature, {
+      props: {
+        client,
+        route,
+        onRouteChange: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Select repository ref: branch: main main-sha" }));
+    const input = screen.getByRole("combobox", { name: "Search repository refs" });
+    await fireEvent.input(input, { target: { value: "v1" } });
+
+    expect(screen.getByRole("tab", { name: "Branches 3" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("option", { name: "branch: release/v1 release-" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "tag: v1.0.0 tag-sha" })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Tags 2" }));
+
+    expect(screen.getByRole("tab", { name: "Tags 2" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("option", { name: "tag: v1.0.0 tag-sha" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "branch: release/v1 release-" })).toBeNull();
   });
 
   it("renders source files through Pierre file contents", async () => {
@@ -353,6 +390,10 @@ function scrolledHeadingIDs(scrollIntoView: ReturnType<typeof vi.fn>): string[] 
 }
 
 function testClient(clientOptions: TestClientOptions = {}): MiddlemanClient {
+  const refs = clientOptions.refs ?? [
+    { type: "branch" as const, name: "main", sha: "main-sha", stale: false },
+    { type: "tag" as const, name: "v1.0.0", sha: "tag-sha", stale: false },
+  ];
   return {
     GET: vi.fn(async (path: string, options?: TestGetOptions) => {
       const url = testURL(path, options);
@@ -361,10 +402,7 @@ function testClient(clientOptions: TestClientOptions = {}): MiddlemanClient {
         return {
           data: {
             repo,
-            refs: [
-              { type: "branch", name: "main", sha: "main-sha", stale: false },
-              { type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false },
-            ],
+            refs,
             default_ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
           },
           response: new Response(null, { status: 200 }),

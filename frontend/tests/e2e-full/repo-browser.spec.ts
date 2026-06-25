@@ -162,15 +162,14 @@ test.describe("repository source browser", () => {
       await mainTreeLoaded;
 
       const browser = page.getByRole("region", { name: "Repository source browser" });
-      const refSelect = browser.getByLabel("Select repository ref");
-      const featureOption = await refSelect
-        .locator("option")
-        .filter({ hasText: "branch: feature/caching" })
-        .getAttribute("value");
-      expect(featureOption).toBeTruthy();
+      await browser.getByRole("button", { name: /Select repository ref: branch: main/ }).click();
+      await browser.getByRole("combobox", { name: "Search repository refs" }).fill("feature");
+      await expect(browser.getByRole("tab", { name: /Branches/ })).toHaveAttribute("aria-selected", "true");
+      await expect(browser.getByRole("option", { name: /branch: feature\/caching/ })).toBeVisible();
+      await expect(browser.getByRole("option", { name: /tag:/ })).toHaveCount(0);
 
       const featureTreeLoaded = treeResponse(page, "feature/caching");
-      await refSelect.selectOption(featureOption!);
+      await browser.getByRole("option", { name: /branch: feature\/caching/ }).click();
       await featureTreeLoaded;
       await expect(page).toHaveURL(/ref_name=feature%2Fcaching/);
 

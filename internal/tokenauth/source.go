@@ -33,11 +33,13 @@ type Source interface {
 }
 
 type ManagedSource struct {
-	mu        sync.Mutex
-	desc      Descriptor
-	options   Options
-	ghToken   string
-	ghCached  bool
+	mu       sync.Mutex
+	desc     Descriptor
+	options  Options
+	ghToken  string
+	ghCached bool
+	// App tokens are scoped to one installation candidate; a host source may
+	// carry several app candidates for different owners on the same GitHub host.
 	appTokens map[Candidate]githubAppTokenCache
 }
 

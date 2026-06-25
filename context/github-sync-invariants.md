@@ -116,27 +116,16 @@ GitHub's live manifest validator can report the missing hook URL as a generic
 `cmd/middleman-github-app/e2e_test.go::TestCreateFlowEndToEnd` asserting the
 serialized manifest shape so the fake cannot accept a payload GitHub rejects.
 
-GitHub App installation tokens are account-scoped, not host-scoped. A
-`github.com` app installation for `kenn-io` must not authenticate
-`mariusvniekerk/*` reads just because both repos share the same host. Keep
-`internal/tokenauth/source.go::WithGitHubOwner`,
-`internal/tokenauth/source.go::ManagedSource.githubAppToken`,
-`internal/github/client.go::githubOwnerFromRequest`, and
-`internal/github/graphql.go::GraphQLFetcher.fetchRepoPRsWithPageSize` aligned:
-repo-scoped REST and GraphQL reads must put the GitHub owner into token
-resolution, token caches must be keyed per installation candidate, and
-ownerless contexts such as clone auth must fall through to PAT/`gh` credentials.
-Ownerless GitHub REST endpoints that are still logically scoped by an owner
-argument, such as installation repository discovery in
-`internal/github/client.go::liveClient.ListRepositoriesByOwner`, must set that
-owner explicitly before resolving the token.
+GitHub App installation tokens are account-scoped, not host-scoped. An app
+installation for one owner must not authenticate reads for another owner just
+because both repos share the same host. Repo-scoped GitHub reads must resolve app
+tokens with the repository owner in context, and ownerless contexts such as
+clone auth must fall through to PAT/`gh` credentials.
 Config may carry multiple `[[github_apps]]` rows for one host when the same app
-is installed on multiple accounts; validation in
-`internal/config/config.go::validateGitHubAppCoverage` applies selected-repo
-coverage only to repos owned by that row's `installation_account`. The install
-CLI must not warn that an installation on one account "cannot reach" repos owned
-by another account; those repos are outside that installation's owner scope and
-fall through to the next credential source.
+is installed on multiple accounts. Selected-repository coverage applies only to
+repos owned by that row's `installation_account`, and the install CLI must not
+warn that an installation on one account "cannot reach" repos owned by another
+account.
 
 ## Testing Expectations
 

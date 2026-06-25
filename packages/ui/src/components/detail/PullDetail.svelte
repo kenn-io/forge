@@ -17,7 +17,7 @@
     getStores, getClient, getActions,
     getUIConfig, getNavigate,
   } from "../../context.js";
-  import { renderMarkdown } from "../../utils/markdown.js";
+  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { buildPullRequestFilesRoute } from "../../routes.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
@@ -2252,7 +2252,13 @@
               ondragleave={onBodyDragLeave}
               ondrop={onBodyDrop}
               ondragend={onBodyDragEnd}
-            >{@html renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}</div>
+            >
+              {#await renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
+                {@html renderMarkdownSync(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
+              {:then html}
+                {@html html}
+              {/await}
+            </div>
           </div>
         {:else if capabilities.state_mutation && !stalePR}
           <button

@@ -1,6 +1,6 @@
 <script lang="ts">
   import PencilIcon from "@lucide/svelte/icons/pencil";
-  import { renderMarkdown } from "@middleman/ui/utils/markdown";
+  import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
 
   import type {
     KataProjectSummary,
@@ -287,7 +287,11 @@
       </div>
     {:else if issue.issue.body}
       <div class="body-display markdown-body">
-        {@html renderMarkdown(issue.issue.body)}
+        {#await renderMarkdown(issue.issue.body)}
+          {@html renderMarkdownSync(issue.issue.body)}
+        {:then html}
+          {@html html}
+        {/await}
       </div>
     {:else}
       <p class="detail-body-empty">No description.</p>

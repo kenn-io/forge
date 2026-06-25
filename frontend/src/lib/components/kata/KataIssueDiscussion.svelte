@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ActionButton } from "@middleman/ui";
-  import { renderMarkdown } from "@middleman/ui/utils/markdown";
+  import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
 
   import type {
     KataTaskAPI,
@@ -231,7 +231,11 @@
         <article class="comment">
           <div class="comment-meta">{comment.author}</div>
           <div class="comment-body markdown-body">
-            {@html renderMarkdown(comment.body)}
+            {#await renderMarkdown(comment.body)}
+              {@html renderMarkdownSync(comment.body)}
+            {:then html}
+              {@html html}
+            {/await}
           </div>
         </article>
       {/each}

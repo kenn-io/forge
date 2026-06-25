@@ -12,7 +12,7 @@
   import type { IssueEvent, PREvent } from "../../api/types.js";
   import type { DetailActivityViewMode } from "../../stores/detail-activity-view.svelte.js";
   import type { StoreInstances } from "../../types.js";
-  import { renderMarkdown } from "../../utils/markdown.js";
+  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
   import { getStores } from "../../context.js";
@@ -1042,8 +1042,18 @@
     return template.innerHTML;
   }
 
-  function renderedBodyHtml(event: PREvent | IssueEvent, inlineReplyEntry?: TimelineEntry): string {
-    const html = renderMarkdown(
+  async function renderedBodyHtml(event: PREvent | IssueEvent, inlineReplyEntry?: TimelineEntry): Promise<string> {
+    const html = await renderMarkdown(
+      event.Body,
+      provider && repoOwner && repoName && repoPath
+        ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath }
+        : undefined,
+    );
+    return inlineReplyEntry ? withInlineReplyButton(html, inlineReplyEntry) : html;
+  }
+
+  function renderedBodyHtmlSync(event: PREvent | IssueEvent, inlineReplyEntry?: TimelineEntry): string {
+    const html = renderMarkdownSync(
       event.Body,
       provider && repoOwner && repoName && repoPath
         ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath }
@@ -1236,7 +1246,11 @@
             </div>
           {/if}
           {#if shouldRenderMarkdown(event.EventType)}
-            {@html renderedBodyHtml(event, inlineReplyEntry)}
+            {#await renderedBodyHtml(event, inlineReplyEntry)}
+              {@html renderedBodyHtmlSync(event, inlineReplyEntry)}
+            {:then html}
+              {@html html}
+            {/await}
           {:else}
             {event.Body}
           {/if}

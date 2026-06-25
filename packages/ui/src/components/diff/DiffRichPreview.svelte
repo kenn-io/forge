@@ -2,7 +2,7 @@
   import type { DiffFile, FilePreview } from "../../api/types.js";
   import { getStores } from "../../context.js";
   import type { DiffViewMode } from "../../stores/diff.svelte.js";
-  import { renderMarkdown } from "../../utils/markdown.js";
+  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import {
     buildMarkdownRichPreview,
     type MarkdownRichPreviewBlock,
@@ -622,7 +622,11 @@
     {:else if preview}
       {#if kind === "markdown"}
         <div class="diff-rich-preview markdown-body">
-          {@html renderMarkdown(text, { provider, platformHost, owner, name, repoPath })}
+          {#await renderMarkdown(text, { provider, platformHost, owner, name, repoPath })}
+            {@html renderMarkdownSync(text, { provider, platformHost, owner, name, repoPath })}
+          {:then html}
+            {@html html}
+          {/await}
         </div>
       {:else if kind === "image"}
         <div class="diff-image-preview">

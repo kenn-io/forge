@@ -1,27 +1,7 @@
 import { Marked } from "marked";
 import type { RendererObject, TokenizerAndRendererExtension, Tokens } from "marked";
 import DOMPurify from "dompurify";
-import bash from "@shikijs/langs/bash";
-import css from "@shikijs/langs/css";
-import diff from "@shikijs/langs/diff";
-import go from "@shikijs/langs/go";
-import html from "@shikijs/langs/html";
-import javascript from "@shikijs/langs/javascript";
-import json from "@shikijs/langs/json";
-import markdown from "@shikijs/langs/markdown";
-import python from "@shikijs/langs/python";
-import rust from "@shikijs/langs/rust";
-import ruby from "@shikijs/langs/ruby";
-import shellscript from "@shikijs/langs/shellscript";
-import sql from "@shikijs/langs/sql";
-import svelte from "@shikijs/langs/svelte";
-import toml from "@shikijs/langs/toml";
-import tsx from "@shikijs/langs/tsx";
-import typescript from "@shikijs/langs/typescript";
-import yaml from "@shikijs/langs/yaml";
-import githubDarkDefault from "@shikijs/themes/github-dark-default";
-import { createHighlighterCoreSync } from "shiki/core";
-import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
+import { getSingletonHighlighter, type BundledLanguage, type Highlighter } from "shiki";
 import { canonicalProvider } from "../api/provider-routes.js";
 import { itemReferenceAnchorAttributes } from "./item-reference.js";
 import type { ItemReferenceType } from "./item-reference.js";
@@ -190,7 +170,7 @@ let renderState: {
   blockquoteDepth: 0,
 };
 
-const htmlCache = new Map<string, string>();
+const htmlCache = new Map<string, Promise<string>>();
 const markedCache = new Map<string, Marked>();
 const MARKDOWN_ALLOWED_ATTRS = [
   "style",
@@ -221,30 +201,19 @@ const DRAG_HANDLE_SVG =
 
 const SHIKI_THEME = "github-dark-default";
 const SHIKI_PLAINTEXT_LANG = "text";
-const shikiHighlighter = createHighlighterCoreSync({
-  themes: [githubDarkDefault],
-  langs: [
-    bash,
-    css,
-    diff,
-    go,
-    html,
-    javascript,
-    json,
-    markdown,
-    python,
-    rust,
-    ruby,
-    shellscript,
-    sql,
-    svelte,
-    toml,
-    tsx,
-    typescript,
-    yaml,
-  ],
-  engine: createJavaScriptRegexEngine(),
-});
+let shikiHighlighter: Highlighter | undefined;
+let shikiHighlighterPromise: Promise<Highlighter> | undefined;
+
+function getShikiHighlighter(): Promise<Highlighter> {
+  shikiHighlighterPromise ??= getSingletonHighlighter({
+    themes: [SHIKI_THEME],
+    langs: [],
+  }).then((highlighter) => {
+    shikiHighlighter = highlighter;
+    return highlighter;
+  });
+  return shikiHighlighterPromise;
+}
 
 function isMermaidFence(lang: string | undefined): boolean {
   return (lang ?? "").trim().split(/\s+/, 1)[0]?.toLowerCase() === "mermaid";
@@ -254,7 +223,12 @@ function codeFenceLanguage(lang: string | undefined): string {
   return (lang ?? "").trim().split(/\s+/, 1)[0]?.toLowerCase() || SHIKI_PLAINTEXT_LANG;
 }
 
+function plainCodeBlock(text: string): string {
+  return `<pre><code>${escapeHtml(text)}</code></pre>`;
+}
+
 function renderHighlightedCode(token: Tokens.Code): string {
+  if (!shikiHighlighter) return plainCodeBlock(token.text);
   const lang = codeFenceLanguage(token.lang);
   try {
     return shikiHighlighter.codeToHtml(token.text, { lang, theme: SHIKI_THEME });
@@ -398,6 +372,32 @@ function tokenRaw(tokens: Tokens.Generic[]): string {
   return tokens.map((token) => token.raw).join("");
 }
 
+function isCodeToken(token: Tokens.Generic): token is Tokens.Code {
+  return token.type === "code" && typeof token.text === "string";
+}
+
+async function loadCodeFenceLanguage(token: Tokens.Generic): Promise<void> {
+  if (!isCodeToken(token) || isMermaidFence(token.lang)) return;
+  const lang = codeFenceLanguage(token.lang);
+  if (lang === SHIKI_PLAINTEXT_LANG) return;
+  const highlighter = shikiHighlighter ?? (await getShikiHighlighter());
+  try {
+    const resolvedLang = highlighter.resolveLangAlias(lang);
+    if (highlighter.getLoadedLanguages().includes(resolvedLang)) return;
+    await highlighter.loadLanguage(lang as BundledLanguage);
+  } catch {
+    // Unknown fence info strings render as escaped plain text.
+  }
+}
+
+async function loadCodeFenceLanguages(marked: Marked, tokens: Tokens.Generic[]): Promise<void> {
+  const loaders: Promise<void>[] = [];
+  marked.walkTokens(tokens, (token) => {
+    loaders.push(loadCodeFenceLanguage(token));
+  });
+  await Promise.all(loaders);
+}
+
 export function renderMarkdownBlocks(
   raw: string,
   repo?: RepoContext,
@@ -460,17 +460,42 @@ export function extractMarkdownDefinitionLines(raw: string, repo?: RepoContext):
   return lines;
 }
 
-export function renderMarkdown(raw: string, repo?: RepoContext, opts: RenderMarkdownOpts = {}): string {
-  if (!raw) return "";
+export function renderMarkdown(raw: string, repo?: RepoContext, opts: RenderMarkdownOpts = {}): Promise<string> {
+  if (!raw) return Promise.resolve("");
   const interactiveTasks = !!opts.interactiveTasks;
   const repoKey = repo ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}` : "";
   const key = `${repoKey}\0${interactiveTasks ? 1 : 0}\0${raw}`;
   const cached = htmlCache.get(key);
   if (cached !== undefined) return cached;
 
-  resetRenderState(opts);
-  const html = sanitizeMarkdownHtml(getMarked(repo).parse(raw) as string);
+  const html = renderMarkdownUncached(raw, repo, opts);
   if (htmlCache.size > 500) htmlCache.clear();
   htmlCache.set(key, html);
+  html.catch(() => {
+    htmlCache.delete(key);
+  });
   return html;
+}
+
+async function renderMarkdownUncached(
+  raw: string,
+  repo: RepoContext | undefined,
+  opts: RenderMarkdownOpts,
+): Promise<string> {
+  const marked = getMarked(repo);
+  const tokens = marked.lexer(raw) as Tokens.Generic[];
+  await loadCodeFenceLanguages(marked, tokens);
+  return renderMarkdownTokens(marked, tokens, opts);
+}
+
+export function renderMarkdownSync(raw: string, repo?: RepoContext, opts: RenderMarkdownOpts = {}): string {
+  if (!raw) return "";
+  const marked = getMarked(repo);
+  const tokens = marked.lexer(raw) as Tokens.Generic[];
+  return renderMarkdownTokens(marked, tokens, opts);
+}
+
+function renderMarkdownTokens(marked: Marked, tokens: Tokens.Generic[], opts: RenderMarkdownOpts): string {
+  resetRenderState(opts);
+  return sanitizeMarkdownHtml(marked.parser(tokens) as string);
 }

@@ -8,7 +8,7 @@
   } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
-  import { renderMarkdown } from "../../utils/markdown.js";
+  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
   import { timeAgo } from "../../utils/time.js";
@@ -1026,7 +1026,13 @@
               ondragleave={onBodyDragLeave}
               ondrop={onBodyDrop}
               ondragend={onBodyDragEnd}
-            >{@html renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}</div>
+            >
+              {#await renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
+                {@html renderMarkdownSync(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
+              {:then html}
+                {@html html}
+              {/await}
+            </div>
           </div>
         </div>
       {/if}

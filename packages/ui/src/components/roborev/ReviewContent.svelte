@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
-  import { renderMarkdown } from "../../utils/markdown.js";
+  import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   const stores = getStores();
 </script>
 
@@ -12,7 +12,11 @@
   </div>
 {:else if stores.roborevReview?.getOutput()}
   <div class="review-content markdown-body">
-    {@html renderMarkdown(stores.roborevReview.getOutput())}
+    {#await renderMarkdown(stores.roborevReview.getOutput())}
+      {@html renderMarkdownSync(stores.roborevReview.getOutput())}
+    {:then html}
+      {@html html}
+    {/await}
   </div>
 {:else}
   <div class="review-empty">

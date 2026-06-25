@@ -29,6 +29,7 @@ function normalizeUpdateRequest(settings: {
   modes?: Settings["modes"];
   terminal?: Settings["terminal"];
   agents?: Settings["agents"];
+  kata_projects?: Settings["kata_projects"];
 }): UpdateSettingsRequest {
   const request: UpdateSettingsRequest = {};
   if (settings.activity) {
@@ -42,6 +43,9 @@ function normalizeUpdateRequest(settings: {
   }
   if (settings.agents) {
     request.agents = settings.agents;
+  }
+  if (settings.kata_projects) {
+    request.kata_projects = settings.kata_projects;
   }
   return request;
 }
@@ -59,6 +63,7 @@ export async function updateSettings(settings: {
   modes?: Settings["modes"];
   terminal?: Settings["terminal"];
   agents?: Settings["agents"];
+  kata_projects?: Settings["kata_projects"];
 }): Promise<Settings> {
   const { data, error, response } = await client.PUT("/settings", {
     body: normalizeUpdateRequest(settings),

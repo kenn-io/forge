@@ -401,6 +401,37 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	assert.True(*cfg2.Modes.Reviews)
 }
 
+func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+
+	mappings := []config.KataProjectRepoMapping{
+		{
+			DaemonID:     "desktop",
+			ProjectUID:   "project-kata",
+			Provider:     "github",
+			PlatformHost: "github.com",
+			RepoPath:     "acme/widget",
+		},
+	}
+	rr := doJSON(
+		t, srv, http.MethodPut, "/api/v1/settings",
+		updateSettingsRequest{KataProjects: &mappings},
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.KataProjects, 1)
+	assert.Equal(mappings[0], resp.KataProjects[0])
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfg2.KataProjects, 1)
+	assert.Equal(mappings[0], cfg2.KataProjects[0])
+}
+
 func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 	t.Helper()
 	assert := Assert.New(t)

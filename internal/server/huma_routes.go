@@ -5321,6 +5321,9 @@ func (s *Server) refreshWorkspace(
 	case db.WorkspaceItemTypePullRequest:
 		// The PR detail sync runs after the repo index refresh below so the
 		// workspace response reflects the latest indexed PR row and diff.
+	case db.WorkspaceItemTypeKataTask:
+		// Kata tasks are not provider issues. The live task pane refreshes
+		// through the Kata daemon; this route only refreshes the mapped repo.
 	default:
 		return nil, problemInternal("workspace has unsupported item type")
 	}

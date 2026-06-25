@@ -2486,6 +2486,81 @@ name = "b"
 	assert.NotContains(string(data), "issue_workspace_branch_style")
 }
 
+func TestKataProjectMappingsRoundTrip(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cfg, cfg2 := roundTripConfigString(t, `
+[[repos]]
+owner = "Acme"
+name = "Widget"
+
+[[kata_projects]]
+daemon_id = "desktop"
+project_uid = "project-kata"
+provider = "github"
+platform_host = "github.com"
+repo_path = "Acme/Widget"
+
+[[kata_projects]]
+project_uid = "project-global"
+provider = "github"
+platform_host = "github.com"
+repo_path = "Acme/Widget"
+`)
+
+	require.Len(cfg.KataProjects, 2)
+	assert.Equal("desktop", cfg.KataProjects[0].DaemonID)
+	assert.Equal("project-kata", cfg.KataProjects[0].ProjectUID)
+	assert.Equal("github", cfg.KataProjects[0].Provider)
+	assert.Equal("github.com", cfg.KataProjects[0].PlatformHost)
+	assert.Equal("acme/widget", cfg.KataProjects[0].RepoPath)
+	assert.Empty(cfg.KataProjects[1].DaemonID)
+
+	require.Len(cfg2.KataProjects, 2)
+	assert.Equal(cfg.KataProjects, cfg2.KataProjects)
+}
+
+func TestKataProjectMappingsRejectDuplicates(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[kata_projects]]
+daemon_id = "desktop"
+project_uid = "project-kata"
+provider = "github"
+platform_host = "github.com"
+repo_path = "acme/widget"
+
+[[kata_projects]]
+daemon_id = "desktop"
+project_uid = "project-kata"
+provider = "github"
+platform_host = "github.com"
+repo_path = "acme/widget"
+`))
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "duplicate kata project mapping")
+}
+
+func TestKataProjectMappingsRejectUnconfiguredRepos(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[kata_projects]]
+project_uid = "project-kata"
+provider = "github"
+platform_host = "github.com"
+repo_path = "acme/other"
+`))
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "does not match a configured exact repo")
+}
+
 func TestTerminalRendererRejectsInvalidValue(t *testing.T) {
 	path := writeConfig(t, `
 [[repos]]

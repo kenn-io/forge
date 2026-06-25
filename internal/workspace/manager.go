@@ -106,6 +106,11 @@ var (
 	ErrWorkspaceInvalidState = errors.New("workspace invalid state")
 )
 
+func workspaceUsesOriginHead(ws *Workspace) bool {
+	return ws.ItemType == db.WorkspaceItemTypeIssue ||
+		ws.ItemType == db.WorkspaceItemTypeKataTask
+}
+
 type TerminalPaneSnapshot struct {
 	Title  string
 	Output string
@@ -395,6 +400,102 @@ func (m *Manager) CreateIssue(
 	return ws, nil
 }
 
+func (m *Manager) CreateKataTask(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+	metadata db.WorkspaceKataMetadata,
+) (*Workspace, error) {
+	metadata.DaemonID = strings.TrimSpace(metadata.DaemonID)
+	metadata.ProjectUID = strings.TrimSpace(metadata.ProjectUID)
+	metadata.ProjectName = strings.TrimSpace(metadata.ProjectName)
+	metadata.IssueUID = strings.TrimSpace(metadata.IssueUID)
+	metadata.ShortID = strings.TrimSpace(metadata.ShortID)
+	metadata.QualifiedID = strings.TrimSpace(metadata.QualifiedID)
+	metadata.Title = strings.TrimSpace(metadata.Title)
+	if metadata.ProjectUID == "" {
+		return nil, errors.New("kata project_uid is required")
+	}
+	if metadata.IssueUID == "" {
+		return nil, errors.New("kata issue_uid is required")
+	}
+
+	repo, err := m.workspaceRepo(ctx, provider, platformHost, owner, name)
+	if err != nil {
+		return nil, fmt.Errorf("look up repo: %w", err)
+	}
+	if repo == nil {
+		return nil, fmt.Errorf("repository not tracked")
+	}
+
+	branchID := kataTaskBranchID(metadata)
+	gitHeadRef := kataWorkspaceBranch(branchID, metadata.Title)
+	if err := validateLocalBranchName(ctx, "", gitHeadRef); err != nil {
+		return nil, err
+	}
+
+	id, err := newWorkspaceID()
+	if err != nil {
+		return nil, err
+	}
+
+	ws := &Workspace{
+		ID:              id,
+		Platform:        repo.Platform,
+		PlatformHost:    platformHost,
+		RepoOwner:       owner,
+		RepoName:        name,
+		ItemType:        db.WorkspaceItemTypeKataTask,
+		ItemKey:         metadata.IssueUID,
+		GitHeadRef:      gitHeadRef,
+		WorkspaceBranch: gitHeadRef,
+		WorktreePath: filepath.Join(
+			m.worktreeDir, repo.Platform, platformHost, owner, name,
+			"kata-"+branchID,
+		),
+		TmuxSession:     "middleman-" + id,
+		TerminalBackend: m.PreferredTerminalBackend(),
+		Status:          "creating",
+		KataMetadata:    &metadata,
+	}
+
+	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
+		if isUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
+		}
+		return nil, fmt.Errorf("insert workspace: %w", err)
+	}
+	return ws, nil
+}
+
+func kataTaskBranchID(metadata db.WorkspaceKataMetadata) string {
+	for _, candidate := range []string{metadata.ShortID, metadata.QualifiedID, metadata.IssueUID} {
+		if slug := slugifyIssueTitle(candidate); slug != "" {
+			return truncateSlug(slug, 48)
+		}
+	}
+	sum := sha256.Sum256([]byte(metadata.ProjectUID + "\x00" + metadata.IssueUID))
+	return "task-" + hex.EncodeToString(sum[:])[:8]
+}
+
+func kataWorkspaceBranch(branchID, title string) string {
+	bare := "middleman/kata/" + branchID
+	slug := slugifyIssueTitle(title)
+	if slug == "" {
+		return bare
+	}
+	budget := issueBranchMaxLen - issueBranchSlugBudget - len(bare) - len("-")
+	if budget <= 0 {
+		return bare
+	}
+	if len(slug) > budget {
+		slug = truncateSlug(slug, budget)
+		if slug == "" {
+			return bare
+		}
+	}
+	return bare + "-" + slug
+}
+
 func newWorkspaceID() (string, error) {
 	idBytes := make([]byte, 8)
 	if _, err := rand.Read(idBytes); err != nil {
@@ -541,7 +642,7 @@ func (m *Manager) Setup(
 		}
 	}
 	persistedBranch := branch
-	if ws.ItemType == db.WorkspaceItemTypeIssue && ws.WorkspaceBranch == "" {
+	if workspaceUsesOriginHead(ws) && ws.WorkspaceBranch == "" {
 		persistedBranch = ""
 	}
 	ws.WorkspaceBranch = persistedBranch
@@ -1254,7 +1355,7 @@ func (m *Manager) addWorktree(
 		if refreshBeforeAdd {
 			if err := m.fetchWorkspaceBase(
 				ctx, cloneDir, ws.PlatformHost,
-				ws.ItemType == db.WorkspaceItemTypeIssue,
+				workspaceUsesOriginHead(ws),
 			); err != nil {
 				return err
 			}
@@ -1271,7 +1372,7 @@ func (m *Manager) addWorktree(
 func (m *Manager) addWorktreeLocked(
 	ctx context.Context, cloneDir string, localBase bool, ws *Workspace,
 ) (string, error) {
-	if ws.ItemType == db.WorkspaceItemTypeIssue {
+	if workspaceUsesOriginHead(ws) {
 		return m.addIssueWorktree(ctx, cloneDir, ws)
 	}
 	mergeRequestHeadRefFetched := false
@@ -1454,7 +1555,7 @@ func (m *Manager) addPreferredWorktree(
 }
 
 func workspaceStartRef(ws *Workspace) string {
-	if ws.ItemType == db.WorkspaceItemTypeIssue {
+	if workspaceUsesOriginHead(ws) {
 		return "origin/HEAD"
 	}
 	if ws.MRHeadRepo != nil {
@@ -1725,7 +1826,7 @@ func (m *Manager) prepareWorkspaceRetry(
 }
 
 func retryWorkspaceBranch(ws *Workspace) string {
-	if ws.ItemType == db.WorkspaceItemTypeIssue && ws.WorkspaceBranch == "" {
+	if workspaceUsesOriginHead(ws) && ws.WorkspaceBranch == "" {
 		return ""
 	}
 	return workspaceBranchUnknown
@@ -2078,6 +2179,19 @@ func (m *Manager) GetByIssueForProvider(
 	}
 	return m.db.GetWorkspaceByIssueForProvider(
 		ctx, string(kind), platformHost, owner, name, issueNumber,
+	)
+}
+
+func (m *Manager) GetByItemKeyForProvider(
+	ctx context.Context,
+	provider, platformHost, owner, name, itemType, itemKey string,
+) (*Workspace, error) {
+	kind, err := platform.NormalizeKind(provider)
+	if err != nil {
+		return nil, err
+	}
+	return m.db.GetWorkspaceByItemKeyForProvider(
+		ctx, string(kind), platformHost, owner, name, itemType, itemKey,
 	)
 }
 
@@ -3384,7 +3498,7 @@ func workspaceBranchCandidates(
 	ws *Workspace, managedBranch string,
 ) []string {
 	if managedBranch == workspaceBranchUnknown {
-		if ws.ItemType == db.WorkspaceItemTypeIssue {
+		if workspaceUsesOriginHead(ws) {
 			// Trust the persisted branch. The bare-form fallback
 			// only applies when GitHeadRef is empty (pre-feature
 			// workspaces); a slug-style workspace's bare-form
@@ -3393,6 +3507,9 @@ func workspaceBranchCandidates(
 			// it as a candidate.
 			if ws.GitHeadRef != "" {
 				return []string{ws.GitHeadRef}
+			}
+			if ws.ItemType == db.WorkspaceItemTypeKataTask {
+				return nil
 			}
 			return []string{issueWorkspaceBranch(ws.ItemNumber)}
 		}

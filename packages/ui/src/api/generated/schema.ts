@@ -2063,6 +2063,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kata/workspace-target": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve Kata workspace target */
+        post: operations["resolve-kata-workspace-target"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kata/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Kata workspace */
+        post: operations["create-kata-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages/saved-searches": {
         parameters: {
             query?: never;
@@ -5197,6 +5231,41 @@ export interface components {
             daemons: components["schemas"]["KataDaemonResponse"][] | null;
             source?: string;
         };
+        KataProjectRepoMapping: {
+            daemon_id?: string;
+            platform_host: string;
+            project_uid: string;
+            provider: string;
+            repo_path: string;
+        };
+        KataWorkspaceTargetResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataWorkspaceTargetResponse.json
+             */
+            readonly $schema?: string;
+            available: boolean;
+            existing_workspace?: components["schemas"]["WorkspaceRef"];
+            item_key?: string;
+            item_type?: string;
+            repo?: components["schemas"]["RepoRefResponse"];
+        };
+        KataWorkspaceTaskRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataWorkspaceTaskRequest.json
+             */
+            readonly $schema?: string;
+            daemon_id?: string;
+            issue_uid: string;
+            project_name?: string;
+            project_uid: string;
+            qualified_id?: string;
+            short_id?: string;
+            title?: string;
+        };
         Label: {
             color: string;
             description?: string;
@@ -6753,6 +6822,7 @@ export interface components {
             activity: components["schemas"]["Activity"];
             agents: components["schemas"]["Agent"][];
             fleet: components["schemas"]["FleetSettingsResponse"];
+            kata_projects: components["schemas"]["KataProjectRepoMapping"][];
             launch_targets?: components["schemas"]["LaunchTarget"][] | null;
             modes?: components["schemas"]["ModeVisibility"];
             notifications: components["schemas"]["NotificationsSettingsResponse"];
@@ -6972,6 +7042,7 @@ export interface components {
             readonly $schema?: string;
             activity?: components["schemas"]["Activity"];
             agents?: components["schemas"]["Agent"][];
+            kata_projects?: components["schemas"]["KataProjectRepoMapping"][];
             modes?: components["schemas"]["ModeVisibility"];
             terminal?: components["schemas"]["Terminal"];
         };
@@ -6995,6 +7066,15 @@ export interface components {
             count: number;
             required: boolean;
         };
+        WorkspaceKataMetadata: {
+            daemon_id: string;
+            issue_uid: string;
+            project_name: string;
+            project_uid: string;
+            qualified_id?: string;
+            short_id?: string;
+            title: string;
+        };
         WorkspaceRef: {
             id: string;
             status: string;
@@ -7016,10 +7096,12 @@ export interface components {
             error_message?: string;
             git_head_ref: string;
             id: string;
+            item_key: string;
             item_last_activity_at?: string;
             /** Format: int64 */
             item_number: number;
             item_type: string;
+            kata?: components["schemas"]["WorkspaceKataMetadata"];
             /** Format: int64 */
             mr_additions?: number;
             mr_ci_status?: string;
@@ -11777,6 +11859,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KataDaemonRosterResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "resolve-kata-workspace-target": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KataWorkspaceTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataWorkspaceTargetResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-kata-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KataWorkspaceTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
                 };
             };
             /** @description Error */

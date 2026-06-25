@@ -4260,6 +4260,92 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert.Nil(noSuch)
 }
 
+func TestWorkspaceItemKeyDefaultsFromItemNumber(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:              "ws-provider-issue",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypeIssue,
+		ItemNumber:      42,
+		GitHeadRef:      "middleman/issue-42",
+		WorkspaceBranch: "middleman/issue-42",
+		WorktreePath:    "/tmp/ws-provider-issue",
+		TmuxSession:     "ws-provider-issue",
+		Status:          "ready",
+	}))
+
+	got, err := d.GetWorkspace(ctx, "ws-provider-issue")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(WorkspaceItemTypeIssue, got.ItemType)
+	assert.Equal(42, got.ItemNumber)
+	assert.Equal("42", got.ItemKey)
+
+	byIssue, err := d.GetWorkspaceByIssue(ctx, "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	require.NotNil(byIssue)
+	assert.Equal("42", byIssue.ItemKey)
+}
+
+func TestKataWorkspaceMetadata(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:              "ws-kata-task",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypeKataTask,
+		ItemKey:         "kata-uid-1",
+		GitHeadRef:      "middleman/kata/task-123-fix-widget",
+		WorkspaceBranch: "middleman/kata/task-123-fix-widget",
+		WorktreePath:    "/tmp/ws-kata-task",
+		TmuxSession:     "ws-kata-task",
+		Status:          "ready",
+		KataMetadata: &WorkspaceKataMetadata{
+			DaemonID:    "main",
+			ProjectUID:  "project-kata",
+			ProjectName: "Kata",
+			IssueUID:    "kata-uid-1",
+			ShortID:     "task-123",
+			QualifiedID: "Kata#task-123",
+			Title:       "Fix widget",
+		},
+	}))
+
+	got, err := d.GetWorkspace(ctx, "ws-kata-task")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(WorkspaceItemTypeKataTask, got.ItemType)
+	assert.Equal(0, got.ItemNumber)
+	assert.Equal("kata-uid-1", got.ItemKey)
+	require.NotNil(got.KataMetadata)
+	assert.Equal("main", got.KataMetadata.DaemonID)
+	assert.Equal("project-kata", got.KataMetadata.ProjectUID)
+	assert.Equal("Kata", got.KataMetadata.ProjectName)
+	assert.Equal("kata-uid-1", got.KataMetadata.IssueUID)
+	assert.Equal("task-123", got.KataMetadata.ShortID)
+	assert.Equal("Kata#task-123", got.KataMetadata.QualifiedID)
+	assert.Equal("Fix widget", got.KataMetadata.Title)
+
+	summary, err := d.GetWorkspaceSummary(ctx, "ws-kata-task")
+	require.NoError(err)
+	require.NotNil(summary)
+	assert.Equal("kata-uid-1", summary.ItemKey)
+	require.NotNil(summary.KataMetadata)
+	require.NotNil(summary.MRTitle)
+	assert.Equal("Fix widget", *summary.MRTitle)
+}
+
 func TestGetWorkspaceByIssueForProviderDisambiguatesProvider(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

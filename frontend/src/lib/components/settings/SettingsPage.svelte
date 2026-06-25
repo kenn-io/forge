@@ -13,6 +13,7 @@
   import ModeVisibilitySettings from "./ModeVisibilitySettings.svelte";
   import AgentSettings from "./AgentSettings.svelte";
   import FleetSettings from "./FleetSettings.svelte";
+  import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
 
   interface SettingsNavItem {
     id: string;
@@ -45,6 +46,13 @@
       group: "Workspace",
       summary: "Workspace terminal rendering and behavior",
       keywords: "workspace terminal font renderer cursor scrollback ligatures",
+    },
+    {
+      id: "settings-kata-projects",
+      title: "Kata mappings",
+      group: "Workspace",
+      summary: "Kata project repository identity overrides",
+      keywords: "kata projects repositories mappings workspaces daemon project uid",
     },
     {
       id: "settings-modes",
@@ -222,6 +230,16 @@
             onUpdate={(terminal) => {
               settings = { ...settings!, terminal };
               settingsStore.setTerminalSettings(terminal);
+            }}
+          />
+        </SettingsSection>
+
+        <SettingsSection title="Kata project mappings" sectionId="settings-kata-projects">
+          <KataProjectMappingsSettings
+            mappings={settings.kata_projects}
+            repos={settings.repos}
+            onUpdate={(kata_projects) => {
+              settings = { ...settings!, kata_projects };
             }}
           />
         </SettingsSection>

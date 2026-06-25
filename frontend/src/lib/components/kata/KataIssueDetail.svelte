@@ -21,6 +21,13 @@
   import KataIssueOverflowMenu from "./KataIssueOverflowMenu.svelte";
   import KataIssueProperties from "./KataIssueProperties.svelte";
 
+  interface WorkspaceAction {
+    label: string;
+    busy?: boolean | undefined;
+    disabled?: boolean | undefined;
+    onClick: () => void | Promise<void>;
+  }
+
   interface Props {
     issue: KataTaskDetail;
     events: KataTaskEvent[];
@@ -56,6 +63,7 @@
     onReopenIssue: () => void | Promise<void>;
     onDeleteIssue: () => boolean | Promise<boolean>;
     onSelectIssue: (uid: string) => void | Promise<void>;
+    workspaceAction?: WorkspaceAction | undefined;
   }
 
   let {
@@ -90,6 +98,7 @@
     onReopenIssue,
     onDeleteIssue,
     onSelectIssue,
+    workspaceAction = undefined,
   }: Props = $props();
 
   let editingTitle = $state(false);
@@ -247,6 +256,18 @@
       {/if}
     </div>
     <div class="detail-actions">
+      {#if workspaceAction}
+        <button
+          type="button"
+          class="workspace-action"
+          disabled={workspaceAction.disabled || workspaceAction.busy}
+          onclick={() => {
+            void workspaceAction?.onClick();
+          }}
+        >
+          {workspaceAction.busy ? "Working..." : workspaceAction.label}
+        </button>
+      {/if}
       <KataIssueOverflowMenu
         {issue}
         hasChecklist={checklistItems().length > 0 || checklistRevealed}
@@ -449,6 +470,29 @@
     align-items: flex-start;
     gap: 6px;
     padding-top: 2px;
+  }
+
+  .workspace-action {
+    min-height: 30px;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    color: var(--accent-blue);
+    padding: 0 10px;
+    font-size: var(--font-size-xs);
+    font-weight: 650;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .workspace-action:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--accent-blue) 40%, transparent);
+    background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  }
+
+  .workspace-action:disabled {
+    cursor: default;
+    opacity: 0.65;
   }
 
   .title-button {

@@ -22,9 +22,32 @@ import {
   resetKataWorkspaceTestState,
 } from "./KataWorkspaceTestSupport.js";
 
+const { mockCreateKataWorkspaceForTask, mockNavigate, mockResolveKataWorkspaceTarget } = vi.hoisted(() => ({
+  mockCreateKataWorkspaceForTask: vi.fn(),
+  mockNavigate: vi.fn(),
+  mockResolveKataWorkspaceTarget: vi.fn(),
+}));
+
+vi.mock("../../api/kata/workspaces.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/kata/workspaces.js")>();
+  return {
+    ...actual,
+    createKataWorkspaceForTask: mockCreateKataWorkspaceForTask,
+    resolveKataWorkspaceTarget: mockResolveKataWorkspaceTarget,
+  };
+});
+
+vi.mock("../../stores/router.svelte.js", () => ({
+  navigate: mockNavigate,
+}));
+
 describe("KataWorkspace", () => {
   beforeEach(() => {
     resetKataWorkspaceTestState();
+    mockCreateKataWorkspaceForTask.mockReset();
+    mockNavigate.mockReset();
+    mockResolveKataWorkspaceTarget.mockReset();
+    mockResolveKataWorkspaceTarget.mockResolvedValue({ available: false });
   });
 
   afterEach(() => {
@@ -377,6 +400,98 @@ describe("KataWorkspace", () => {
     expect(search).toHaveBeenCalledWith(
       expect.objectContaining({ scope: { kind: "project", project_uid: "project-kata" } }),
     );
+  });
+
+  it("creates a workspace from the selected Kata task when a repository target resolves", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    mockResolveKataWorkspaceTarget.mockResolvedValue({
+      available: true,
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "middleman",
+        repo_path: "acme/middleman",
+      },
+      item_type: "kata_task",
+      item_key: "issue-pay-rent",
+    });
+    mockCreateKataWorkspaceForTask.mockResolvedValue({
+      id: "workspace-kata",
+      item_type: "kata_task",
+      item_key: "issue-pay-rent",
+      git_head_ref: "middleman/kata/pay-rent",
+      status: "creating",
+    });
+    const { api } = createWorkspaceAPI();
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    await waitFor(() => {
+      expect(mockCreateKataWorkspaceForTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          daemon_id: "home",
+          project_uid: "project-finances",
+          issue_uid: "issue-pay-rent",
+        }),
+      );
+      expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-kata");
+    });
+  });
+
+  it("opens an existing workspace for the selected Kata task", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    mockResolveKataWorkspaceTarget.mockResolvedValue({
+      available: true,
+      existing_workspace: {
+        id: "workspace-existing",
+        status: "ready",
+      },
+      item_type: "kata_task",
+      item_key: "issue-pay-rent",
+    });
+    const { api } = createWorkspaceAPI();
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Open workspace" })).toBeTruthy();
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Open workspace" }));
+
+    expect(mockCreateKataWorkspaceForTask).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-existing");
   });
 
   it("applies visible search and filter controls through the task search API", async () => {

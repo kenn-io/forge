@@ -5,6 +5,12 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
 
   import { fetchKataDaemons, type KataDaemonInfo } from "../../api/kata/daemons.js";
+  import {
+    createKataWorkspaceForTask,
+    kataWorkspaceIdentityFromIssue,
+    resolveKataWorkspaceTarget,
+    type KataWorkspaceTarget,
+  } from "../../api/kata/workspaces.js";
   import type {
     KataCreateRecurrenceInput,
     KataPatchRecurrenceInput,
@@ -30,6 +36,7 @@
     setActiveKataDaemon,
     setKataDaemonRoster,
   } from "../../stores/active-kata-daemon.svelte.js";
+  import { navigate } from "../../stores/router.svelte.js";
   import { createKataWorkspaceStore } from "../../stores/kata-workspace.svelte.js";
   import KataDaemonSwitcher from "./KataDaemonSwitcher.svelte";
   import KataRecurrenceDialogs from "./KataRecurrenceDialogs.svelte";
@@ -88,6 +95,10 @@
   let listResetGeneration = $state(0);
   let checklistRevealed = $state(false);
   let recurrenceDialogs = $state<KataRecurrenceDialogController | null>(null);
+  let workspaceTarget = $state.raw<KataWorkspaceTarget | null>(null);
+  let workspaceTargetLoading = $state(false);
+  let workspaceActionBusy = $state(false);
+  let workspaceTargetRequestID = 0;
   const store = createKataWorkspaceStore({ api: untrack(() => api) });
   const actor = "middleman";
   let syncedRouteIssueUID = $state<string | null>(null);
@@ -135,6 +146,34 @@
         message,
       };
     },
+  });
+
+  $effect(() => {
+    const selected = store.selectedIssue?.issue;
+    const daemonID = activeKataDaemonId ?? null;
+    const requestID = ++workspaceTargetRequestID;
+    workspaceTarget = null;
+    workspaceTargetLoading = false;
+    requestError = null;
+    if (!selected) return;
+
+    workspaceTargetLoading = true;
+    const identity = kataWorkspaceIdentityFromIssue(selected, daemonID);
+    void resolveKataWorkspaceTarget(identity)
+      .then((target) => {
+        if (requestID !== workspaceTargetRequestID) return;
+        workspaceTarget = target.available ? target : null;
+      })
+      .catch((err) => {
+        if (requestID !== workspaceTargetRequestID) return;
+        requestError = kataRequestErrorMessage(err);
+        workspaceTarget = null;
+      })
+      .finally(() => {
+        if (requestID === workspaceTargetRequestID) {
+          workspaceTargetLoading = false;
+        }
+      });
   });
 
   const systemViews = [
@@ -680,6 +719,44 @@
     return store.selectedIssue ? readMessageLinks(store.selectedIssue.issue.metadata) : [];
   }
 
+  function openWorkspace(id: string): void {
+    navigate(`/terminal/${encodeURIComponent(id)}`);
+  }
+
+  async function createWorkspaceForSelectedIssue(): Promise<void> {
+    const selected = store.selectedIssue?.issue;
+    if (!selected || workspaceActionBusy) return;
+    workspaceActionBusy = true;
+    requestError = null;
+    try {
+      const created = await createKataWorkspaceForTask(kataWorkspaceIdentityFromIssue(selected, activeKataDaemonId ?? null));
+      openWorkspace(created.id);
+    } catch (err) {
+      requestError = kataRequestErrorMessage(err);
+    } finally {
+      workspaceActionBusy = false;
+    }
+  }
+
+  function selectedWorkspaceAction():
+    | { label: string; busy?: boolean; disabled?: boolean; onClick: () => void | Promise<void> }
+    | undefined {
+    if (workspaceTargetLoading || !workspaceTarget?.available) return undefined;
+    if (workspaceTarget.existing_workspace) {
+      const id = workspaceTarget.existing_workspace.id;
+      return {
+        label: "Open workspace",
+        onClick: () => openWorkspace(id),
+      };
+    }
+    return {
+      label: "Create workspace",
+      busy: workspaceActionBusy,
+      disabled: workspaceActionBusy,
+      onClick: createWorkspaceForSelectedIssue,
+    };
+  }
+
   function revealChecklist(): void {
     checklistRevealed = true;
   }
@@ -894,6 +971,7 @@
       onSelectIssue={(uid) => {
         void selectIssue(uid);
       }}
+      workspaceAction={selectedWorkspaceAction()}
     />
   {:else}
     <section class="kata-detail-empty" aria-label="Task detail">

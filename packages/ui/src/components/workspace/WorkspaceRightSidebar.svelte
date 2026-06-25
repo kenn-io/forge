@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, type Snippet } from "svelte";
   import { getStores } from "../../context.js";
   import {
     createRoborevClient,
@@ -38,7 +38,7 @@
     components["schemas"]["RepoWithCount"];
 
   interface Props {
-    activeTab: "diff" | "pr" | "issue" | "reviews";
+    activeTab: "diff" | "pr" | "issue" | "reviews" | "kata_task";
     workspaceID: string;
     workspaceHostKey?: string | undefined;
     provider: string;
@@ -46,13 +46,14 @@
     repoOwner: string;
     repoName: string;
     repoPath: string;
-    ownerItemType: "pull_request" | "issue";
+    ownerItemType: "pull_request" | "issue" | "kata_task";
     ownerItemNumber: number;
     associatedPRNumber: number | null;
     branch: string;
     roborevBaseUrl: string;
     refreshToken?: number;
     disabled?: boolean;
+    kataTaskPanel?: Snippet | undefined;
   }
 
   let {
@@ -71,6 +72,7 @@
     roborevBaseUrl,
     refreshToken = 0,
     disabled = false,
+    kataTaskPanel = undefined,
   }: Props = $props();
 
   const parentStores = getStores();
@@ -260,6 +262,7 @@
     ownerItemNumber > 0 &&
     hasRepo
   );
+  const hasKataTask = $derived(ownerItemType === "kata_task");
 
   // Connect/disconnect SSE based on daemon availability
   let sseConnected = $state(false);
@@ -334,6 +337,12 @@
       {/key}
     {:else}
       <div class="empty-state">No linked issue</div>
+    {/if}
+  {:else if activeTab === "kata_task"}
+    {#if hasKataTask && kataTaskPanel}
+      {@render kataTaskPanel()}
+    {:else}
+      <div class="empty-state">No linked Kata task</div>
     {/if}
   {:else if activeTab === "reviews"}
     {#if !hasRepo}

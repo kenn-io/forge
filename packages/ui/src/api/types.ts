@@ -93,6 +93,8 @@ export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {
 
 export type AgentSettings = components["schemas"]["Agent"];
 export type ConfigRepo = components["schemas"]["ConfiguredRepoStatus"];
+export type KataProjectRepoMapping = components["schemas"]["KataProjectRepoMapping"];
+export type WorkspaceKataMetadata = components["schemas"]["WorkspaceKataMetadata"];
 type SettingsResponse = components["schemas"]["SettingsResponse"];
 export type Settings = Omit<SettingsResponse, "notifications"> & {
   notifications?: SettingsResponse["notifications"];

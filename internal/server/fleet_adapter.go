@@ -276,7 +276,9 @@ func (s *Server) syncedRepoDefaultBranch(ctx context.Context, sum db.WorkspaceSu
 // joined title and state are the issue's, not a pull request's. Surfacing
 // them as PR fields would mislabel issue data as prTitle/prState and drop the
 // actual issue link, so issue workspaces expose LinkedIssueNumbers (plus any
-// associated PR number) and PR display fields stay strictly PR-only.
+// associated PR number) and PR display fields stay strictly PR-only. Kata task
+// workspaces have no provider issue/PR number, so they expose only their
+// worktree/session shell until the fleet contract grows Kata-specific fields.
 func worktreeFromWorkspace(sum db.WorkspaceSummary, wtKey, projKey string) fleet.RawWorktree {
 	wt := fleet.RawWorktree{
 		ScopedKey:      wtKey,
@@ -292,6 +294,9 @@ func worktreeFromWorkspace(sum db.WorkspaceSummary, wtKey, projKey string) fleet
 		// summary does not carry that PR's title/state/checks, so only the
 		// number is surfaced, never PR display fields built from issue data.
 		wt.LinkedPRNumber = sum.AssociatedPRNumber
+		return wt
+	}
+	if sum.ItemType == db.WorkspaceItemTypeKataTask {
 		return wt
 	}
 	// Pull-request workspaces: the PR number is the item itself, and the

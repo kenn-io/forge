@@ -51,6 +51,7 @@ type kataDaemonInflightProbe struct {
 func (s *Server) registerKataAPI(api huma.API) {
 	huma.Get(api, "/kata/daemons", s.listKataDaemons,
 		documentOperation("list-kata-daemons", "List Kata daemons", "Kata"))
+	registerKataWorkspaceAPI(api, s)
 	s.registerKataProxyAPI(api)
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -1240,7 +1241,7 @@ func mergeWorkspaceRowsForIdentityChangeTx(
 		   ON target.platform_host = ?
 		  AND target.repo_path_key = ?
 		  AND target.item_type = source.item_type
-		  AND target.item_number = source.item_number
+		  AND target.item_key = source.item_key
 		 WHERE source.platform_host = ?
 		   AND source.repo_path_key = ?
 		   AND source.id <> target.id`,
@@ -4362,6 +4363,55 @@ func (d *DB) canonicalizeWorkspaceRepo(
 	return matchedProvider, host, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey, nil
 }
 
+func workspaceItemKeyForInsert(ws *Workspace) (string, error) {
+	itemKey := strings.TrimSpace(ws.ItemKey)
+	if itemKey != "" {
+		return itemKey, nil
+	}
+	if ws.ItemType == WorkspaceItemTypeKataTask {
+		return "", errors.New("kata task workspace item_key is required")
+	}
+	return strconv.Itoa(ws.ItemNumber), nil
+}
+
+func workspaceKataMetadataJSON(ws *Workspace) (string, error) {
+	if ws.KataMetadata == nil {
+		return "", nil
+	}
+	data, err := json.Marshal(ws.KataMetadata)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func scanWorkspace(scanner interface{ Scan(...any) error }) (*Workspace, error) {
+	var ws Workspace
+	var kataMetadataJSON string
+	err := scanner.Scan(
+		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&ws.ItemType, &ws.ItemNumber, &ws.ItemKey, &ws.AssociatedPRNumber,
+		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
+		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
+		&ws.ErrorMessage, &ws.CreatedAt, &kataMetadataJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if ws.ItemKey == "" && ws.ItemType != WorkspaceItemTypeKataTask {
+		ws.ItemKey = strconv.Itoa(ws.ItemNumber)
+	}
+	ws.CreatedAt = ws.CreatedAt.UTC()
+	if strings.TrimSpace(kataMetadataJSON) != "" {
+		var metadata WorkspaceKataMetadata
+		if err := json.Unmarshal([]byte(kataMetadataJSON), &metadata); err != nil {
+			return nil, fmt.Errorf("decode workspace kata metadata: %w", err)
+		}
+		ws.KataMetadata = &metadata
+	}
+	return &ws, nil
+}
+
 // InsertWorkspace inserts a new workspace row.
 func (d *DB) InsertWorkspace(
 	ctx context.Context, ws *Workspace,
@@ -4379,25 +4429,34 @@ func (d *DB) InsertWorkspace(
 	if ws.TerminalBackend == "" {
 		ws.TerminalBackend = "tmux"
 	}
+	itemKey, err := workspaceItemKeyForInsert(ws)
+	if err != nil {
+		return fmt.Errorf("insert workspace: %w", err)
+	}
+	kataMetadataJSON, err := workspaceKataMetadataJSON(ws)
+	if err != nil {
+		return fmt.Errorf("encode workspace kata metadata: %w", err)
+	}
 	_, err = d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform, platform_host, repo_owner, repo_name,
 		     repo_owner_key, repo_name_key, repo_path_key,
-		     item_type, item_number, associated_pr_number,
+		     item_type, item_number, item_key, associated_pr_number,
 		     git_head_ref, mr_head_repo, workspace_branch,
 		     worktree_path, tmux_session, terminal_backend, status,
-		     error_message)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		     error_message, kata_metadata)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ws.ID, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		repoOwnerKey, repoNameKey, repoPathKey,
-		ws.ItemType, ws.ItemNumber, ws.AssociatedPRNumber,
+		ws.ItemType, ws.ItemNumber, itemKey, ws.AssociatedPRNumber,
 		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
 		ws.WorktreePath, ws.TmuxSession, ws.TerminalBackend, ws.Status,
-		ws.ErrorMessage,
+		ws.ErrorMessage, kataMetadataJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("insert workspace: %w", err)
 	}
+	ws.ItemKey = itemKey
 	return nil
 }
 
@@ -4405,29 +4464,21 @@ func (d *DB) InsertWorkspace(
 func (d *DB) GetWorkspace(
 	ctx context.Context, id string,
 ) (*Workspace, error) {
-	var ws Workspace
-	err := d.ro.QueryRowContext(ctx, `
+	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
 		SELECT id, platform, platform_host, repo_owner, repo_name,
-		       item_type, item_number, associated_pr_number,
+		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at
+		       error_message, created_at, kata_metadata
 		FROM middleman_workspaces WHERE id = ?`, id,
-	).Scan(
-		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
-		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
-		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
-		&ws.ErrorMessage, &ws.CreatedAt,
-	)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get workspace: %w", err)
 	}
-	ws.CreatedAt = ws.CreatedAt.UTC()
-	return &ws, nil
+	return ws, nil
 }
 
 // GetWorkspaceByMR returns the workspace for a specific MR,
@@ -4459,34 +4510,26 @@ func (d *DB) getWorkspaceByMR(
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
-	var ws Workspace
-	err := d.ro.QueryRowContext(ctx, `
+	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
 		SELECT id, platform, platform_host, repo_owner, repo_name,
-		       item_type, item_number, associated_pr_number,
+		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at
+		       error_message, created_at, kata_metadata
 			FROM middleman_workspaces
 			WHERE platform_host = ? AND repo_owner_key = ?
 			  AND repo_name_key = ? AND item_type = ? AND item_number = ?
 			  AND (? = '' OR platform = ?)`,
 		platformHost, owner, name, WorkspaceItemTypePullRequest, mrNumber,
 		provider, provider,
-	).Scan(
-		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
-		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
-		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
-		&ws.ErrorMessage, &ws.CreatedAt,
-	)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get workspace by MR: %w", err)
 	}
-	ws.CreatedAt = ws.CreatedAt.UTC()
-	return &ws, nil
+	return ws, nil
 }
 
 // GetWorkspaceByIssue returns the workspace for a specific issue,
@@ -4518,34 +4561,58 @@ func (d *DB) getWorkspaceByIssue(
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
-	var ws Workspace
-	err := d.ro.QueryRowContext(ctx, `
+	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
 		SELECT id, platform, platform_host, repo_owner, repo_name,
-		       item_type, item_number, associated_pr_number,
+		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at
+		       error_message, created_at, kata_metadata
 		FROM middleman_workspaces
 		WHERE platform_host = ? AND repo_owner_key = ?
 		  AND repo_name_key = ? AND item_type = ? AND item_number = ?
 		  AND (? = '' OR platform = ?)`,
 		platformHost, owner, name, WorkspaceItemTypeIssue, issueNumber,
 		provider, provider,
-	).Scan(
-		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
-		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
-		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
-		&ws.ErrorMessage, &ws.CreatedAt,
-	)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get workspace by issue: %w", err)
 	}
-	ws.CreatedAt = ws.CreatedAt.UTC()
-	return &ws, nil
+	return ws, nil
+}
+
+func (d *DB) GetWorkspaceByItemKeyForProvider(
+	ctx context.Context,
+	provider, platformHost, owner, name, itemType, itemKey string,
+) (*Workspace, error) {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	itemType = strings.TrimSpace(itemType)
+	itemKey = strings.TrimSpace(itemKey)
+	if itemType == "" || itemKey == "" {
+		return nil, nil
+	}
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
+	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
+		SELECT id, platform, platform_host, repo_owner, repo_name,
+		       item_type, item_number, item_key, associated_pr_number,
+		       git_head_ref, mr_head_repo, workspace_branch,
+		       worktree_path, tmux_session, terminal_backend, status,
+		       error_message, created_at, kata_metadata
+		FROM middleman_workspaces
+		WHERE platform_host = ? AND repo_owner_key = ?
+		  AND repo_name_key = ? AND item_type = ? AND item_key = ?
+		  AND (? = '' OR platform = ?)`,
+		platformHost, owner, name, itemType, itemKey, provider, provider,
+	))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get workspace by item key: %w", err)
+	}
+	return ws, nil
 }
 
 // ListWorkspaces returns all workspaces ordered by
@@ -4555,10 +4622,10 @@ func (d *DB) ListWorkspaces(
 ) ([]Workspace, error) {
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, platform, platform_host, repo_owner, repo_name,
-		       item_type, item_number, associated_pr_number,
+		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at
+		       error_message, created_at, kata_metadata
 		FROM middleman_workspaces
 		ORDER BY created_at DESC`,
 	)
@@ -4569,20 +4636,11 @@ func (d *DB) ListWorkspaces(
 
 	var out []Workspace
 	for rows.Next() {
-		var ws Workspace
-		if err := rows.Scan(
-			&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner,
-			&ws.RepoName, &ws.ItemType, &ws.ItemNumber,
-			&ws.AssociatedPRNumber,
-			&ws.GitHeadRef, &ws.MRHeadRepo,
-			&ws.WorkspaceBranch,
-			&ws.WorktreePath, &ws.TmuxSession,
-			&ws.TerminalBackend, &ws.Status, &ws.ErrorMessage, &ws.CreatedAt,
-		); err != nil {
+		ws, err := scanWorkspace(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan workspace: %w", err)
 		}
-		ws.CreatedAt = ws.CreatedAt.UTC()
-		out = append(out, ws)
+		out = append(out, *ws)
 	}
 	return out, rows.Err()
 }
@@ -4960,10 +5018,10 @@ func (d *DB) DeleteWorkspace(
 // ListWorkspaceSummaries and GetWorkspaceSummary.
 const workspaceSummaryColumns = `
 	w.id, w.platform, w.platform_host, w.repo_owner, w.repo_name,
-	w.item_type, w.item_number, w.associated_pr_number,
+	w.item_type, w.item_number, w.item_key, w.associated_pr_number,
 	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
-	w.error_message, w.created_at,
+	w.error_message, w.created_at, w.kata_metadata,
 	CASE
 	    WHEN w.item_type = 'issue' THEN i.title
 	    ELSE m.title
@@ -5001,13 +5059,14 @@ func scanWorkspaceSummary(
 	scanner interface{ Scan(...any) error },
 ) (*WorkspaceSummary, error) {
 	var s WorkspaceSummary
+	var kataMetadataJSON string
 	var itemLastActivityAt sql.NullString
 	err := scanner.Scan(
 		&s.ID, &s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
-		&s.ItemType, &s.ItemNumber, &s.AssociatedPRNumber,
+		&s.ItemType, &s.ItemNumber, &s.ItemKey, &s.AssociatedPRNumber,
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,
-		&s.ErrorMessage, &s.CreatedAt,
+		&s.ErrorMessage, &s.CreatedAt, &kataMetadataJSON,
 		&s.MRTitle, &s.MRState, &s.MRIsDraft, &s.MRCIStatus,
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
 		&itemLastActivityAt,
@@ -5016,6 +5075,20 @@ func scanWorkspaceSummary(
 		return nil, err
 	}
 	s.CreatedAt = s.CreatedAt.UTC()
+	if s.ItemKey == "" && s.ItemType != WorkspaceItemTypeKataTask {
+		s.ItemKey = strconv.Itoa(s.ItemNumber)
+	}
+	if strings.TrimSpace(kataMetadataJSON) != "" {
+		var metadata WorkspaceKataMetadata
+		if err := json.Unmarshal([]byte(kataMetadataJSON), &metadata); err != nil {
+			return nil, fmt.Errorf("decode workspace kata metadata: %w", err)
+		}
+		s.KataMetadata = &metadata
+		if s.ItemType == WorkspaceItemTypeKataTask && s.MRTitle == nil && metadata.Title != "" {
+			title := metadata.Title
+			s.MRTitle = &title
+		}
+	}
 	if itemLastActivityAt.Valid {
 		parsed, err := parseDBTime(itemLastActivityAt.String)
 		if err != nil {

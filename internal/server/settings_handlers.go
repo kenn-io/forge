@@ -24,6 +24,7 @@ type settingsResponse struct {
 	Terminal      config.Terminal                 `json:"terminal"`
 	Modes         config.ModeVisibility           `json:"modes,omitzero"`
 	Agents        []config.Agent                  `json:"agents" nullable:"false"`
+	KataProjects  []config.KataProjectRepoMapping `json:"kata_projects" nullable:"false"`
 	LaunchTargets []localruntime.LaunchTarget     `json:"launch_targets,omitempty"`
 	Fleet         fleetSettingsResponse           `json:"fleet"`
 }
@@ -33,10 +34,11 @@ type notificationsSettingsResponse struct {
 }
 
 type updateSettingsRequest struct {
-	Activity *config.Activity       `json:"activity,omitempty"`
-	Terminal *config.Terminal       `json:"terminal,omitempty"`
-	Modes    *config.ModeVisibility `json:"modes,omitempty"`
-	Agents   *[]config.Agent        `json:"agents,omitempty"`
+	Activity     *config.Activity                 `json:"activity,omitempty"`
+	Terminal     *config.Terminal                 `json:"terminal,omitempty"`
+	Modes        *config.ModeVisibility           `json:"modes,omitempty"`
+	Agents       *[]config.Agent                  `json:"agents,omitempty"`
+	KataProjects *[]config.KataProjectRepoMapping `json:"kata_projects,omitempty"`
 }
 
 func (s *Server) configuredClients(
@@ -66,6 +68,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	terminal := s.cfg.Terminal
 	modes := cloneModeVisibility(s.cfg.Modes).WithDefaults()
 	agents := cloneConfigAgents(s.cfg.Agents)
+	kataProjects := slices.Clone(s.cfg.KataProjects)
 	tmuxCommand := s.cfg.TmuxCommand()
 	fleetSettings := s.buildFleetSettingsResponseLocked()
 	s.cfgMu.Unlock()
@@ -99,6 +102,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		Terminal:      terminal,
 		Modes:         modes,
 		Agents:        agents,
+		KataProjects:  kataProjects,
 		LaunchTargets: launchTargets,
 		Fleet:         fleetSettings,
 	}
@@ -395,6 +399,7 @@ func (s *Server) updateSettings(
 	prevTerminal := s.cfg.Terminal
 	prevModes := cloneModeVisibility(s.cfg.Modes)
 	prevAgents := cloneConfigAgents(s.cfg.Agents)
+	prevKataProjects := slices.Clone(s.cfg.KataProjects)
 	if input.Body.Activity != nil {
 		candidate := *input.Body.Activity
 		if candidate.ViewMode == "" {
@@ -414,11 +419,15 @@ func (s *Server) updateSettings(
 	if input.Body.Agents != nil {
 		s.cfg.Agents = cloneConfigAgents(*input.Body.Agents)
 	}
+	if input.Body.KataProjects != nil {
+		s.cfg.KataProjects = slices.Clone(*input.Body.KataProjects)
+	}
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.Terminal = prevTerminal
 		s.cfg.Modes = prevModes
 		s.cfg.Agents = prevAgents
+		s.cfg.KataProjects = prevKataProjects
 		s.cfgMu.Unlock()
 		return nil, problemBadRequest(CodeBadRequest, err.Error(), nil)
 	}
@@ -427,6 +436,7 @@ func (s *Server) updateSettings(
 		s.cfg.Terminal = prevTerminal
 		s.cfg.Modes = prevModes
 		s.cfg.Agents = prevAgents
+		s.cfg.KataProjects = prevKataProjects
 		s.cfgMu.Unlock()
 		return nil, problemInternal("save config: " + err.Error())
 	}

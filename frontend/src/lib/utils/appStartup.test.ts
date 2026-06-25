@@ -37,6 +37,7 @@ function makeStores(): StoreInstances {
 function makeSettings(): Settings {
   return {
     repos: [],
+    kata_projects: [],
     fleet: {
       enabled: false,
       sessions: {},

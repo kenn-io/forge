@@ -138,6 +138,11 @@ func runMigrations(rw *sql.DB) (int, error) {
 			fmt.Errorf("repair workspace terminal backend column: %w", err),
 		)
 	}
+	if err := reconcileKataWorkspaceOwnerColumns(rw); err != nil {
+		return migratedb.NilVersion, wrapMigrationError(
+			fmt.Errorf("repair Kata workspace owner columns: %w", err),
+		)
+	}
 	if err := reconcileFleetIntegrationSchema(rw); err != nil {
 		return migratedb.NilVersion, wrapMigrationError(
 			fmt.Errorf("repair fleet integration schema: %w", err),
@@ -257,6 +262,48 @@ func reconcileWorkspaceTerminalBackendColumn(rw *sql.DB) error {
 		    ADD COLUMN terminal_backend TEXT NOT NULL DEFAULT ''
 	`)
 	return err
+}
+
+func reconcileKataWorkspaceOwnerColumns(rw *sql.DB) error {
+	if !hasTable(rw, "middleman_workspaces") {
+		return nil
+	}
+	if err := ensureColumn(rw, "middleman_workspaces", "item_key", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(rw, "middleman_workspaces", "kata_metadata", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err := rw.Exec(`
+		UPDATE middleman_workspaces
+		SET item_key = CAST(item_number AS TEXT)
+		WHERE item_key = ''
+	`); err != nil {
+		return err
+	}
+	if _, err := rw.Exec(`
+		DROP TRIGGER IF EXISTS middleman_workspaces_item_key_fill_insert;
+
+		CREATE TRIGGER middleman_workspaces_item_key_fill_insert
+		AFTER INSERT ON middleman_workspaces
+		WHEN NEW.item_key = ''
+		BEGIN
+		    UPDATE middleman_workspaces
+		    SET item_key = CAST(item_number AS TEXT)
+		    WHERE id = NEW.id;
+		END;
+	`); err != nil {
+		return err
+	}
+	if _, err := rw.Exec(`
+		DROP INDEX IF EXISTS idx_workspaces_provider_item_key;
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_provider_item_key
+		    ON middleman_workspaces(platform, platform_host, repo_path_key, item_type, item_key);
+	`); err != nil {
+		return err
+	}
+	return nil
 }
 
 func reconcileFleetIntegrationSchema(rw *sql.DB) error {

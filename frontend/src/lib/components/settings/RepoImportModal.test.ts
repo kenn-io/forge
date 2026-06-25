@@ -120,6 +120,7 @@ describe("RepoImportModal", () => {
     });
     bulk.mockResolvedValue({
       repos: [],
+      kata_projects: [],
       activity: {
         view_mode: "threaded",
         time_range: "7d",
@@ -196,6 +197,7 @@ describe("RepoImportModal", () => {
     });
     bulk.mockResolvedValue({
       repos: [],
+      kata_projects: [],
       activity: {
         view_mode: "threaded",
         time_range: "7d",

@@ -70,6 +70,14 @@ type Repo struct {
 	WorktreeBasePath string `toml:"worktree_base_path,omitempty" json:"worktree_base_path,omitempty"`
 }
 
+type KataProjectRepoMapping struct {
+	DaemonID     string `toml:"daemon_id,omitempty" json:"daemon_id,omitempty"`
+	ProjectUID   string `toml:"project_uid" json:"project_uid"`
+	Provider     string `toml:"provider" json:"provider"`
+	PlatformHost string `toml:"platform_host" json:"platform_host"`
+	RepoPath     string `toml:"repo_path" json:"repo_path"`
+}
+
 // DocFolder names a markdown folder registered for docs mode. Path
 // normalization and existence checks are handled by the docs registry
 // when the folder is used or edited.
@@ -766,22 +774,23 @@ type Config struct {
 	// Forwarded RFC 7239 host= for the Public Host validation step.
 	// The raw Host header must still pass the allowed_hosts gate
 	// before any forwarded header is read.
-	TrustReverseProxy bool              `toml:"trust_reverse_proxy"`
-	Repos             []Repo            `toml:"repos"`
-	Platforms         []PlatformConfig  `toml:"platforms"`
-	GitHubApps        []GitHubAppConfig `toml:"github_apps"`
-	Activity          Activity          `toml:"activity"`
-	Notifications     Notifications     `toml:"notifications"`
-	Terminal          Terminal          `toml:"terminal"`
-	Modes             ModeVisibility    `toml:"modes"`
-	Agents            []Agent           `toml:"agents"`
-	DocFolders        []DocFolder       `toml:"doc_folders"`
-	Roborev           Roborev           `toml:"roborev"`
-	Msgvault          *Msgvault         `toml:"msgvault"`
-	Tmux              Tmux              `toml:"tmux"`
-	Shell             Shell             `toml:"shell"`
-	Fleet             Fleet             `toml:"fleet"`
-	API               API               `toml:"api"`
+	TrustReverseProxy bool                     `toml:"trust_reverse_proxy"`
+	Repos             []Repo                   `toml:"repos"`
+	KataProjects      []KataProjectRepoMapping `toml:"kata_projects"`
+	Platforms         []PlatformConfig         `toml:"platforms"`
+	GitHubApps        []GitHubAppConfig        `toml:"github_apps"`
+	Activity          Activity                 `toml:"activity"`
+	Notifications     Notifications            `toml:"notifications"`
+	Terminal          Terminal                 `toml:"terminal"`
+	Modes             ModeVisibility           `toml:"modes"`
+	Agents            []Agent                  `toml:"agents"`
+	DocFolders        []DocFolder              `toml:"doc_folders"`
+	Roborev           Roborev                  `toml:"roborev"`
+	Msgvault          *Msgvault                `toml:"msgvault"`
+	Tmux              Tmux                     `toml:"tmux"`
+	Shell             Shell                    `toml:"shell"`
+	Fleet             Fleet                    `toml:"fleet"`
+	API               API                      `toml:"api"`
 
 	// parsedAllowedHosts is the canonicalised form of AllowedHosts,
 	// populated by Validate so the server constructor does not have
@@ -1318,6 +1327,9 @@ func (c *Config) validate(skipAppCoverage bool) error {
 			)
 		}
 		seen[key] = display
+	}
+	if err := c.validateKataProjectRepoMappings(seen); err != nil {
+		return err
 	}
 
 	if !skipAppCoverage {
@@ -1947,6 +1959,67 @@ func repoPathOrFullName(r Repo) string {
 	return r.Owner + "/" + r.Name
 }
 
+func kataProjectMappingKey(mapping KataProjectRepoMapping) string {
+	return strings.TrimSpace(mapping.DaemonID) + "\x00" + strings.TrimSpace(mapping.ProjectUID)
+}
+
+func (c *Config) validateKataProjectRepoMappings(configuredExact map[string]string) error {
+	seen := make(map[string]struct{}, len(c.KataProjects))
+	for i := range c.KataProjects {
+		mapping := &c.KataProjects[i]
+		mapping.DaemonID = strings.TrimSpace(mapping.DaemonID)
+		mapping.ProjectUID = strings.TrimSpace(mapping.ProjectUID)
+		if mapping.ProjectUID == "" {
+			return fmt.Errorf("config: kata_projects[%d]: project_uid is required", i)
+		}
+		normalizedProvider, err := normalizePlatform(mapping.Provider)
+		if err != nil {
+			return fmt.Errorf("config: kata_projects[%d]: provider: %w", i, err)
+		}
+		mapping.Provider = normalizedProvider
+		mapping.PlatformHost, err = normalizePlatformHost(mapping.Provider, mapping.PlatformHost)
+		if err != nil {
+			return fmt.Errorf("config: kata_projects[%d]: platform_host: %w", i, err)
+		}
+
+		repo := Repo{
+			Platform:     mapping.Provider,
+			PlatformHost: mapping.PlatformHost,
+			RepoPath:     mapping.RepoPath,
+		}
+		if err := repo.normalize(c.DefaultPlatformHost); err != nil {
+			return fmt.Errorf("config: kata_projects[%d]: repo_path: %w", i, err)
+		}
+		if repo.HasNameGlob() {
+			return fmt.Errorf(
+				"config: kata_projects[%d]: repo_path does not match a configured exact repo",
+				i,
+			)
+		}
+		mapping.RepoPath = repoPathOrFullName(repo)
+
+		dupKey := kataProjectMappingKey(*mapping)
+		if _, ok := seen[dupKey]; ok {
+			return fmt.Errorf(
+				"config: kata_projects[%d]: duplicate kata project mapping for daemon %q project %q",
+				i,
+				mapping.DaemonID,
+				mapping.ProjectUID,
+			)
+		}
+		seen[dupKey] = struct{}{}
+
+		if _, ok := configuredExact[repoIdentityKey(repo)]; !ok {
+			return fmt.Errorf(
+				"config: kata_projects[%d]: repo_path %q does not match a configured exact repo",
+				i,
+				mapping.RepoPath,
+			)
+		}
+	}
+	return nil
+}
+
 var reservedSystemLaunchTargetKeys = map[string]bool{
 	"tmux":        true,
 	"plain_shell": true,
@@ -2540,35 +2613,36 @@ func reposForSave(repos []Repo) []Repo {
 
 // configFile is the subset of Config written to disk.
 type configFile struct {
-	SyncInterval              string            `toml:"sync_interval"`
-	ActivePRRefreshInterval   string            `toml:"active_pr_refresh_interval"`
-	ActivePRWindow            string            `toml:"active_pr_window"`
-	GitHubTokenEnv            string            `toml:"github_token_env"`
-	DefaultPlatformHost       string            `toml:"default_platform_host,omitempty"`
-	Host                      string            `toml:"host"`
-	Port                      int               `toml:"port"`
-	SyncBudgetPerHour         int               `toml:"sync_budget_per_hour,omitempty"`
-	SSEBufferSize             int               `toml:"sse_buffer_size,omitempty"`
-	BasePath                  string            `toml:"base_path,omitempty"`
-	DataDir                   string            `toml:"data_dir,omitempty"`
-	IssueWorkspaceBranchStyle string            `toml:"issue_workspace_branch_style,omitempty"`
-	AllowedHosts              []string          `toml:"allowed_hosts,omitempty"`
-	TrustReverseProxy         bool              `toml:"trust_reverse_proxy,omitempty"`
-	Repos                     []Repo            `toml:"repos"`
-	Platforms                 []PlatformConfig  `toml:"platforms,omitempty"`
-	GitHubApps                []GitHubAppConfig `toml:"github_apps,omitempty"`
-	Activity                  Activity          `toml:"activity"`
-	Notifications             Notifications     `toml:"notifications,omitempty"`
-	Terminal                  Terminal          `toml:"terminal,omitempty"`
-	Modes                     ModeVisibility    `toml:"modes,omitempty"`
-	Agents                    []Agent           `toml:"agents,omitempty"`
-	DocFolders                []DocFolder       `toml:"doc_folders,omitempty"`
-	Roborev                   Roborev           `toml:"roborev,omitempty"`
-	Msgvault                  *Msgvault         `toml:"msgvault,omitempty"`
-	Tmux                      Tmux              `toml:"tmux,omitempty"`
-	Shell                     Shell             `toml:"shell,omitempty"`
-	Fleet                     Fleet             `toml:"fleet,omitempty"`
-	API                       API               `toml:"api,omitempty"`
+	SyncInterval              string                   `toml:"sync_interval"`
+	ActivePRRefreshInterval   string                   `toml:"active_pr_refresh_interval"`
+	ActivePRWindow            string                   `toml:"active_pr_window"`
+	GitHubTokenEnv            string                   `toml:"github_token_env"`
+	DefaultPlatformHost       string                   `toml:"default_platform_host,omitempty"`
+	Host                      string                   `toml:"host"`
+	Port                      int                      `toml:"port"`
+	SyncBudgetPerHour         int                      `toml:"sync_budget_per_hour,omitempty"`
+	SSEBufferSize             int                      `toml:"sse_buffer_size,omitempty"`
+	BasePath                  string                   `toml:"base_path,omitempty"`
+	DataDir                   string                   `toml:"data_dir,omitempty"`
+	IssueWorkspaceBranchStyle string                   `toml:"issue_workspace_branch_style,omitempty"`
+	AllowedHosts              []string                 `toml:"allowed_hosts,omitempty"`
+	TrustReverseProxy         bool                     `toml:"trust_reverse_proxy,omitempty"`
+	Repos                     []Repo                   `toml:"repos"`
+	KataProjects              []KataProjectRepoMapping `toml:"kata_projects,omitempty"`
+	Platforms                 []PlatformConfig         `toml:"platforms,omitempty"`
+	GitHubApps                []GitHubAppConfig        `toml:"github_apps,omitempty"`
+	Activity                  Activity                 `toml:"activity"`
+	Notifications             Notifications            `toml:"notifications,omitempty"`
+	Terminal                  Terminal                 `toml:"terminal,omitempty"`
+	Modes                     ModeVisibility           `toml:"modes,omitempty"`
+	Agents                    []Agent                  `toml:"agents,omitempty"`
+	DocFolders                []DocFolder              `toml:"doc_folders,omitempty"`
+	Roborev                   Roborev                  `toml:"roborev,omitempty"`
+	Msgvault                  *Msgvault                `toml:"msgvault,omitempty"`
+	Tmux                      Tmux                     `toml:"tmux,omitempty"`
+	Shell                     Shell                    `toml:"shell,omitempty"`
+	Fleet                     Fleet                    `toml:"fleet,omitempty"`
+	API                       API                      `toml:"api,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -2588,6 +2662,7 @@ func (c *Config) Save(path string) error {
 		AllowedHosts:            slices.Clone(cfg.AllowedHosts),
 		TrustReverseProxy:       cfg.TrustReverseProxy,
 		Repos:                   reposForSave(cfg.Repos),
+		KataProjects:            slices.Clone(cfg.KataProjects),
 		Platforms:               cfg.Platforms,
 		GitHubApps:              cfg.GitHubApps,
 		Activity:                cfg.Activity,
@@ -2671,6 +2746,7 @@ func (c *Config) copyForSave() Config {
 	}
 	cfg := *c
 	cfg.Repos = slices.Clone(c.Repos)
+	cfg.KataProjects = slices.Clone(c.KataProjects)
 	cfg.Platforms = slices.Clone(c.Platforms)
 	cfg.AllowedHosts = slices.Clone(c.AllowedHosts)
 	cfg.GitHubApps = slices.Clone(c.GitHubApps)

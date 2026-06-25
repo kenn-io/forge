@@ -1,0 +1,250 @@
+<script lang="ts">
+  import { createKataTaskAPI } from "../../api/kata/taskClient.js";
+  import type {
+    KataRecurrence,
+    KataTaskEditPatch,
+  } from "../../api/kata/taskTypes.js";
+  import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
+  import KataIssueDetail from "../../components/kata/KataIssueDetail.svelte";
+  import type { TypeaheadOption } from "../../components/shared/TypeaheadTrigger.svelte";
+  import { computeRemoveMessageLinkPatch, readMessageLinks } from "../../messages/messageLinks.js";
+  import type { MessageLinkRef } from "../../messages/types";
+  import { createKataWorkspaceStore } from "../../stores/kata-workspace.svelte.js";
+
+  interface Props {
+    kata: KataWorkspaceMetadata;
+    disabled?: boolean;
+  }
+
+  let { kata, disabled = false }: Props = $props();
+
+  const actor = "middleman";
+  const api = createKataTaskAPI({ getDaemonId: () => kata.daemon_id });
+  const store = createKataWorkspaceStore({ api });
+
+  let loading = $state(true);
+  let error = $state<string | null>(null);
+  let checklistRevealed = $state(false);
+  let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
+  let unlinkError = $state<string | null>(null);
+  let loadRequestID = 0;
+
+  $effect(() => {
+    const issueUID = kata.issue_uid;
+    const requestID = ++loadRequestID;
+    loading = true;
+    error = null;
+    checklistRevealed = false;
+    void store
+      .bootstrap("all", issueUID, { selectFirst: false })
+      .catch((err) => {
+        if (requestID !== loadRequestID) return;
+        error = err instanceof Error ? err.message : "Could not load Kata task.";
+      })
+      .finally(() => {
+        if (requestID === loadRequestID) {
+          loading = false;
+        }
+      });
+  });
+
+  function ownerOptions(): TypeaheadOption[] {
+    const selected = store.selectedIssue?.issue;
+    return [selected?.owner, ...store.currentView.groups.flatMap((group) => group.issues.map((issue) => issue.owner))]
+      .filter((owner): owner is string => typeof owner === "string" && owner.trim().length > 0)
+      .filter((owner, index, owners) => owners.indexOf(owner) === index)
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+      .map((owner) => ({ value: owner, label: owner }));
+  }
+
+  function selectedMessageLinks(): MessageLinkRef[] {
+    return store.selectedIssue ? readMessageLinks(store.selectedIssue.issue.metadata) : [];
+  }
+
+  async function runTask(task: () => Promise<void | boolean>): Promise<boolean> {
+    error = null;
+    try {
+      return (await task()) ?? true;
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Kata request failed.";
+      return false;
+    }
+  }
+
+  async function moveSelectedIssue(toProjectUID: string | null): Promise<void> {
+    const selected = store.selectedIssue?.issue;
+    if (!selected || !toProjectUID) return;
+    await runTask(() => store.moveIssue(selected.uid, actor, toProjectUID));
+  }
+
+  function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {
+    return runTask(() => store.patchMetadata(uid, actor, patch));
+  }
+
+  function addSelectedComment(uid: string, body: string): Promise<boolean> {
+    return runTask(() => store.addComment(uid, actor, body));
+  }
+
+  function editSelectedIssue(uid: string, patch: KataTaskEditPatch): Promise<boolean> {
+    return runTask(() => store.editIssue(uid, actor, patch));
+  }
+
+  function assignSelectedOwner(uid: string, owner: string): Promise<boolean> {
+    return runTask(() => store.assignOwner(uid, actor, owner));
+  }
+
+  function unassignSelectedOwner(uid: string): Promise<boolean> {
+    return runTask(() => store.unassignOwner(uid, actor));
+  }
+
+  function setSelectedPriority(uid: string, priority: number | null): Promise<boolean> {
+    return runTask(() => store.setPriority(uid, actor, priority));
+  }
+
+  function addSelectedLabel(uid: string, label: string): Promise<boolean> {
+    return runTask(() => store.addLabel(uid, actor, label));
+  }
+
+  async function removeSelectedLabel(uid: string, label: string): Promise<void> {
+    await runTask(() => store.removeLabel(uid, actor, label));
+  }
+
+  function revealChecklist(): void {
+    checklistRevealed = true;
+  }
+
+  async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
+    return runTask(() => store.deleteRecurrence(recurrence.id, actor));
+  }
+
+  function closeSelectedIssue(
+    reason: "done" | "wontfix" | "duplicate" | "superseded",
+    message: string,
+  ): Promise<boolean> {
+    const selected = store.selectedIssue;
+    if (!selected) return Promise.resolve(false);
+    return runTask(() => store.closeIssue(selected.issue.uid, actor, { reason, message }));
+  }
+
+  async function reopenSelectedIssue(): Promise<void> {
+    const selected = store.selectedIssue;
+    if (!selected) return;
+    await runTask(() => store.reopenIssue(selected.issue.uid, actor));
+  }
+
+  function deleteSelectedIssue(): Promise<boolean> {
+    return closeSelectedIssue("wontfix", "Deleted from workspace sidebar.");
+  }
+
+  async function unlinkMessageLink(link: MessageLinkRef): Promise<void> {
+    if (unlinkBusyIds.size > 0) return;
+    const selected = store.selectedIssue;
+    if (!selected) return;
+    const links = selectedMessageLinks();
+    const patch = computeRemoveMessageLinkPatch(links, link.message_id);
+    if (patch === null) return;
+    unlinkBusyIds = new Set([link.message_id]);
+    unlinkError = null;
+    const ok = await runTask(() =>
+      store.patchMetadata(selected.issue.uid, actor, {
+        mail_links: patch.mail_links,
+      }),
+    );
+    unlinkBusyIds = new Set();
+    if (!ok) {
+      unlinkError = error;
+    }
+  }
+
+  async function selectIssue(uid: string): Promise<void> {
+    await runTask(() => store.selectIssue(uid));
+  }
+</script>
+
+<div class="kata-workspace-sidebar" inert={disabled}>
+  {#if loading}
+    <div class="state">Loading task</div>
+  {:else if error && !store.selectedIssue}
+    <div class="state error" role="alert">{error}</div>
+  {:else if store.selectedIssue}
+    {#if error}
+      <p class="inline-error" role="alert">{error}</p>
+    {/if}
+    <KataIssueDetail
+      issue={store.selectedIssue}
+      events={store.selectedEvents}
+      currentView={store.currentView}
+      api={store.api}
+      activeDaemonId={kata.daemon_id}
+      projects={store.projects}
+      ownerOptions={ownerOptions()}
+      messageLinks={selectedMessageLinks()}
+      unlinkBusyIds={unlinkBusyIds}
+      {unlinkError}
+      selectedRecurrences={store.selectedRecurrences}
+      {checklistRevealed}
+      onMoveIssue={moveSelectedIssue}
+      onPatchMetadata={patchSelectedMetadata}
+      onAddComment={addSelectedComment}
+      onEditIssue={editSelectedIssue}
+      onAssignOwner={assignSelectedOwner}
+      onUnassignOwner={unassignSelectedOwner}
+      onSetPriority={setSelectedPriority}
+      onAddLabel={addSelectedLabel}
+      onRemoveLabel={removeSelectedLabel}
+      onUnlinkMessage={unlinkMessageLink}
+      onRevealChecklist={revealChecklist}
+      onCreateRecurrence={() => {}}
+      onEditRecurrence={() => {}}
+      onDeleteRecurrence={deleteRecurrence}
+      onCloseIssue={closeSelectedIssue}
+      onReopenIssue={reopenSelectedIssue}
+      onDeleteIssue={deleteSelectedIssue}
+      onSelectIssue={(uid) => {
+        void selectIssue(uid);
+      }}
+    />
+  {:else}
+    <div class="state">Task not found</div>
+  {/if}
+</div>
+
+<style>
+  .kata-workspace-sidebar {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
+  }
+
+  .kata-workspace-sidebar :global(.kata-detail) {
+    padding: 16px;
+  }
+
+  .state {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    text-align: center;
+  }
+
+  .state.error,
+  .inline-error {
+    color: var(--accent-red);
+  }
+
+  .inline-error {
+    flex: 0 0 auto;
+    margin: 0;
+    border-bottom: 1px solid var(--border-muted);
+    background: color-mix(in srgb, var(--accent-red) 8%, transparent);
+    padding: 8px 12px;
+    font-size: var(--font-size-xs);
+  }
+</style>

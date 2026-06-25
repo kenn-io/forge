@@ -458,34 +458,36 @@ type commitsResponse struct {
 // the correct item-specific presentation around it. It represents middleman's
 // own persisted workspace model, not an arbitrary host worktree inventory.
 type workspaceResponse struct {
-	ID                 string          `json:"id"`
-	Repo               repoRefResponse `json:"repo"`
-	PlatformHost       string          `json:"platform_host"`
-	RepoOwner          string          `json:"repo_owner"`
-	RepoName           string          `json:"repo_name"`
-	ItemType           string          `json:"item_type"`
-	ItemNumber         int             `json:"item_number"`
-	GitHeadRef         string          `json:"git_head_ref"`
-	WorktreePath       string          `json:"worktree_path"`
-	TmuxSession        string          `json:"tmux_session"`
-	TmuxPaneTitle      *string         `json:"tmux_pane_title,omitempty"`
-	TmuxWorking        bool            `json:"tmux_working"`
-	TmuxActivitySource string          `json:"tmux_activity_source"`
-	TmuxLastOutputAt   *string         `json:"tmux_last_output_at"`
-	Status             string          `json:"status"`
-	ErrorMessage       *string         `json:"error_message,omitempty"`
-	CreatedAt          string          `json:"created_at"`
-	ItemLastActivityAt *string         `json:"item_last_activity_at,omitempty"`
-	MRTitle            *string         `json:"mr_title,omitempty"`
-	MRState            *string         `json:"mr_state,omitempty"`
-	MRIsDraft          *bool           `json:"mr_is_draft,omitempty"`
-	MRCIStatus         *string         `json:"mr_ci_status,omitempty"`
-	MRReviewDecision   *string         `json:"mr_review_decision,omitempty"`
-	MRAdditions        *int            `json:"mr_additions,omitempty"`
-	MRDeletions        *int            `json:"mr_deletions,omitempty"`
-	CommitsAhead       *int            `json:"commits_ahead,omitempty"`
-	CommitsBehind      *int            `json:"commits_behind,omitempty"`
-	AssociatedPRNumber *int            `json:"associated_pr_number,omitempty"`
+	ID                 string                    `json:"id"`
+	Repo               repoRefResponse           `json:"repo"`
+	PlatformHost       string                    `json:"platform_host"`
+	RepoOwner          string                    `json:"repo_owner"`
+	RepoName           string                    `json:"repo_name"`
+	ItemType           string                    `json:"item_type"`
+	ItemNumber         int                       `json:"item_number"`
+	ItemKey            string                    `json:"item_key"`
+	GitHeadRef         string                    `json:"git_head_ref"`
+	WorktreePath       string                    `json:"worktree_path"`
+	TmuxSession        string                    `json:"tmux_session"`
+	TmuxPaneTitle      *string                   `json:"tmux_pane_title,omitempty"`
+	TmuxWorking        bool                      `json:"tmux_working"`
+	TmuxActivitySource string                    `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string                   `json:"tmux_last_output_at"`
+	Status             string                    `json:"status"`
+	ErrorMessage       *string                   `json:"error_message,omitempty"`
+	CreatedAt          string                    `json:"created_at"`
+	ItemLastActivityAt *string                   `json:"item_last_activity_at,omitempty"`
+	MRTitle            *string                   `json:"mr_title,omitempty"`
+	MRState            *string                   `json:"mr_state,omitempty"`
+	MRIsDraft          *bool                     `json:"mr_is_draft,omitempty"`
+	MRCIStatus         *string                   `json:"mr_ci_status,omitempty"`
+	MRReviewDecision   *string                   `json:"mr_review_decision,omitempty"`
+	MRAdditions        *int                      `json:"mr_additions,omitempty"`
+	MRDeletions        *int                      `json:"mr_deletions,omitempty"`
+	CommitsAhead       *int                      `json:"commits_ahead,omitempty"`
+	CommitsBehind      *int                      `json:"commits_behind,omitempty"`
+	AssociatedPRNumber *int                      `json:"associated_pr_number,omitempty"`
+	Kata               *db.WorkspaceKataMetadata `json:"kata,omitempty"`
 }
 
 type workspaceRuntimeResponse struct {
@@ -531,6 +533,7 @@ func toWorkspaceResponse(
 		RepoName:           s.RepoName,
 		ItemType:           s.ItemType,
 		ItemNumber:         s.ItemNumber,
+		ItemKey:            s.ItemKey,
 		GitHeadRef:         s.GitHeadRef,
 		WorktreePath:       s.WorktreePath,
 		TmuxSession:        s.TmuxSession,
@@ -547,6 +550,7 @@ func toWorkspaceResponse(
 		MRAdditions:        s.MRAdditions,
 		MRDeletions:        s.MRDeletions,
 		AssociatedPRNumber: s.AssociatedPRNumber,
+		Kata:               s.KataMetadata,
 	}
 }
 

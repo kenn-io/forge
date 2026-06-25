@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
+  import KataWorkspaceSidebarPane from "./KataWorkspaceSidebarPane.svelte";
   import TerminalPane from "./TerminalPane.svelte";
   import Modal from "../shared/Modal.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
@@ -80,6 +81,7 @@
     SpinnerIcon,
   } from "../../icons.ts";
   import { apiErrorMessage, client } from "../../api/runtime.js";
+  import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import { showFlash } from "../../stores/flash.svelte.js";
 
   interface Workspace {
@@ -94,8 +96,9 @@
       name: string;
       repo_path: string;
     };
-    item_type: "pull_request" | "issue";
+    item_type: "pull_request" | "issue" | "kata_task";
     item_number: number;
+    item_key?: string | undefined;
     git_head_ref: string;
     worktree_path: string;
     tmux_session: string;
@@ -106,6 +109,7 @@
     mr_state?: string | null;
     mr_is_draft?: boolean | null;
     associated_pr_number?: number | null;
+    kata?: KataWorkspaceMetadata | null;
     fleet_host_key?: string;
   }
 
@@ -234,7 +238,7 @@
   let selectedWorkflowPresetId = $state<string | null>(null);
   let applyingWorkflowPreset = $state(false);
 
-  type SidebarTab = "diff" | "pr" | "issue" | "reviews";
+  type SidebarTab = "diff" | "pr" | "issue" | "reviews" | "kata_task";
 
   const MIN_WORKSPACE_LIST_WIDTH = 220;
   const DEFAULT_WORKSPACE_LIST_WIDTH = 260;
@@ -962,6 +966,9 @@
     if (tab === "diff") return true;
     if (tab === "issue") {
       return ws.item_type === "issue";
+    }
+    if (tab === "kata_task") {
+      return ws.item_type === "kata_task";
     }
     if (tab === "reviews") {
       return ws.item_type === "pull_request";
@@ -2648,6 +2655,16 @@
                     Issue
                   </button>
                 {/if}
+                {#if workspace.item_type === "kata_task"}
+                  <button
+                    class="seg-btn"
+                    class:active={sidebarOpen && sidebarTab === "kata_task"}
+                    disabled={actionsBlocked}
+                    onclick={() => handleSegmentClick("kata_task")}
+                  >
+                    Kata task
+                  </button>
+                {/if}
                 {#if getWorkspacePRNumber(workspace) !== null}
                   <button
                     class="seg-btn"
@@ -2906,6 +2923,17 @@
               class="right-sidebar"
               style="width: {sidebarWidth}px"
             >
+              {#snippet kataTaskPanel()}
+                {@const sidebarWorkspace = workspace}
+                {#if sidebarWorkspace?.kata}
+                  <KataWorkspaceSidebarPane
+                    kata={sidebarWorkspace.kata}
+                    disabled={actionsBlocked}
+                  />
+                {:else}
+                  <div class="sidebar-empty-state">No linked Kata task</div>
+                {/if}
+              {/snippet}
               <WorkspaceRightSidebar
                 activeTab={sidebarTab}
                 workspaceID={workspace.id}
@@ -2922,6 +2950,7 @@
                 roborevBaseUrl={basePath + "/api/roborev"}
                 refreshToken={sidebarRefreshToken}
                 disabled={actionsBlocked}
+                {kataTaskPanel}
               />
             </div>
           {/if}
@@ -3482,6 +3511,18 @@
 
   .right-sidebar:has(:global(.modal-overlay)) {
     z-index: 80;
+  }
+
+  .sidebar-empty-state {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    text-align: center;
+    background: var(--bg-surface);
   }
 
   .rename-form {

@@ -619,10 +619,21 @@ type StackMemberWithPR struct {
 const (
 	WorkspaceItemTypePullRequest = "pull_request"
 	WorkspaceItemTypeIssue       = "issue"
+	WorkspaceItemTypeKataTask    = "kata_task"
 )
 
+type WorkspaceKataMetadata struct {
+	DaemonID    string `json:"daemon_id"`
+	ProjectUID  string `json:"project_uid"`
+	ProjectName string `json:"project_name"`
+	IssueUID    string `json:"issue_uid"`
+	ShortID     string `json:"short_id,omitempty"`
+	QualifiedID string `json:"qualified_id,omitempty"`
+	Title       string `json:"title"`
+}
+
 // Workspace represents a middleman-managed git worktree linked to a
-// pull request or issue.
+// pull request, provider issue, or external Kata task.
 type Workspace struct {
 	ID                 string
 	Platform           string
@@ -631,6 +642,7 @@ type Workspace struct {
 	RepoName           string
 	ItemType           string
 	ItemNumber         int
+	ItemKey            string
 	AssociatedPRNumber *int
 	GitHeadRef         string
 	MRHeadRepo         *string // nil for same-repo PRs
@@ -644,6 +656,7 @@ type Workspace struct {
 	Status          string // "creating", "ready", "error"
 	ErrorMessage    *string
 	CreatedAt       time.Time
+	KataMetadata    *WorkspaceKataMetadata
 }
 
 // WorkspaceSummary extends Workspace with joined MR metadata.

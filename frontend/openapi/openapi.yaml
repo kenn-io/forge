@@ -2341,6 +2341,76 @@ components:
       required:
         - daemons
       type: object
+    KataProjectRepoMapping:
+      additionalProperties: false
+      properties:
+        daemon_id:
+          type: string
+        platform_host:
+          type: string
+        project_uid:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+      required:
+        - project_uid
+        - provider
+        - platform_host
+        - repo_path
+      type: object
+    KataWorkspaceTargetResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/KataWorkspaceTargetResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        available:
+          type: boolean
+        existing_workspace:
+          $ref: "#/components/schemas/WorkspaceRef"
+        item_key:
+          type: string
+        item_type:
+          type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
+      required:
+        - available
+      type: object
+    KataWorkspaceTaskRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/KataWorkspaceTaskRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        daemon_id:
+          type: string
+        issue_uid:
+          type: string
+        project_name:
+          type: string
+        project_uid:
+          type: string
+        qualified_id:
+          type: string
+        short_id:
+          type: string
+        title:
+          type: string
+      required:
+        - project_uid
+        - issue_uid
+      type: object
     Label:
       additionalProperties: false
       properties:
@@ -5887,6 +5957,10 @@ components:
           type: array
         fleet:
           $ref: "#/components/schemas/FleetSettingsResponse"
+        kata_projects:
+          items:
+            $ref: "#/components/schemas/KataProjectRepoMapping"
+          type: array
         launch_targets:
           items:
             $ref: "#/components/schemas/LaunchTarget"
@@ -5909,6 +5983,7 @@ components:
         - notifications
         - terminal
         - agents
+        - kata_projects
         - fleet
       type: object
     Snapshot:
@@ -6382,6 +6457,10 @@ components:
           items:
             $ref: "#/components/schemas/Agent"
           type: array
+        kata_projects:
+          items:
+            $ref: "#/components/schemas/KataProjectRepoMapping"
+          type: array
         modes:
           $ref: "#/components/schemas/ModeVisibility"
         terminal:
@@ -6429,6 +6508,30 @@ components:
         - required
         - count
       type: object
+    WorkspaceKataMetadata:
+      additionalProperties: false
+      properties:
+        daemon_id:
+          type: string
+        issue_uid:
+          type: string
+        project_name:
+          type: string
+        project_uid:
+          type: string
+        qualified_id:
+          type: string
+        short_id:
+          type: string
+        title:
+          type: string
+      required:
+        - daemon_id
+        - project_uid
+        - project_name
+        - issue_uid
+        - title
+      type: object
     WorkspaceRef:
       additionalProperties: false
       properties:
@@ -6467,6 +6570,8 @@ components:
           type: string
         id:
           type: string
+        item_key:
+          type: string
         item_last_activity_at:
           type: string
         item_number:
@@ -6474,6 +6579,8 @@ components:
           type: integer
         item_type:
           type: string
+        kata:
+          $ref: "#/components/schemas/WorkspaceKataMetadata"
         mr_additions:
           format: int64
           type: integer
@@ -6522,6 +6629,7 @@ components:
         - repo_name
         - item_type
         - item_number
+        - item_key
         - git_head_ref
         - worktree_path
         - tmux_session
@@ -12501,6 +12609,56 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List Kata daemons
+      tags:
+        - Kata
+  /kata/workspace-target:
+    post:
+      operationId: resolve-kata-workspace-target
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KataWorkspaceTaskRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataWorkspaceTargetResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Resolve Kata workspace target
+      tags:
+        - Kata
+  /kata/workspaces:
+    post:
+      operationId: create-kata-workspace
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KataWorkspaceTaskRequest"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create Kata workspace
       tags:
         - Kata
   /messages/saved-searches:

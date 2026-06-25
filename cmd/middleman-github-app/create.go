@@ -49,12 +49,22 @@ func runCreate(args []string, env *appEnv) error {
 	if err != nil {
 		return err
 	}
-	if existing, ok := cfg.GitHubAppForHost(h); ok {
-		return fmt.Errorf(
-			"a github app for host %q already exists (app id %d, slug %q); "+
-				"use \"install\" to add an installation or \"delete\" to replace it",
-			h, existing.AppID, existing.Slug,
-		)
+	for _, existing := range cfg.GitHubAppsForHost(h) {
+		if *org != "" && strings.EqualFold(existing.Owner, *org) {
+			return fmt.Errorf(
+				"a github app for host %q and owner %q already exists (app id %d, slug %q); "+
+					"use \"install --owner %s\" to add an installation or \"delete --owner %s\" to replace it",
+				h, existing.Owner, existing.AppID, existing.Slug, existing.Owner, existing.Owner,
+			)
+		}
+		if *org == "" && strings.EqualFold(existing.OwnerType, "User") {
+			return fmt.Errorf(
+				"a user-owned github app for host %q already exists (app id %d, slug %q); "+
+					"use \"install --owner %s\" to add an installation, \"create --org\" for an org-owned app, "+
+					"or \"delete --owner %s\" to replace it",
+				h, existing.AppID, existing.Slug, existing.Owner, existing.Owner,
+			)
+		}
 	}
 
 	appName := strings.TrimSpace(*name)

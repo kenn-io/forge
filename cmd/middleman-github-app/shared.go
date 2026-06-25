@@ -38,29 +38,45 @@ func (env *appEnv) webBaseFor(host string) string {
 	return githubapp.WebBaseForHost(host)
 }
 
-// selectApp picks a configured app credential for host. Multiple installation
-// rows can share one GitHub App credential; management commands only need one
-// of those rows to sign app JWTs.
-func selectApp(cfg *config.Config, host string) (config.GitHubAppConfig, error) {
-	if host == "" {
-		switch len(cfg.GitHubApps) {
-		case 0:
+// selectApp picks a configured app credential. Same-host configs can carry
+// multiple private apps, so management commands must disambiguate by owner when
+// a host alone is not unique.
+func selectApp(cfg *config.Config, host, owner string) (config.GitHubAppConfig, error) {
+	if cfg == nil || len(cfg.GitHubApps) == 0 {
+		return config.GitHubAppConfig{}, fmt.Errorf(
+			"no github apps configured; run \"middleman-github-app create\" first",
+		)
+	}
+	owner = strings.TrimSpace(owner)
+	var matches []config.GitHubAppConfig
+	for _, app := range cfg.GitHubApps {
+		if host != "" && app.Host != normalizeHostFlag(host) {
+			continue
+		}
+		if owner != "" &&
+			!strings.EqualFold(app.Owner, owner) &&
+			!strings.EqualFold(app.InstallationAccount, owner) {
+			continue
+		}
+		matches = append(matches, app)
+	}
+	if len(matches) == 0 {
+		if host != "" && owner != "" {
 			return config.GitHubAppConfig{}, fmt.Errorf(
-				"no github apps configured; run \"middleman-github-app create\" first",
-			)
-		case 1:
-			return cfg.GitHubApps[0], nil
-		default:
-			return config.GitHubAppConfig{}, fmt.Errorf(
-				"multiple github apps configured; pass --host to pick one",
+				"no github app configured for host %q and owner %q", normalizeHostFlag(host), owner,
 			)
 		}
+		if host != "" {
+			return config.GitHubAppConfig{}, fmt.Errorf("no github app configured for host %q", normalizeHostFlag(host))
+		}
+		return config.GitHubAppConfig{}, fmt.Errorf("no github app configured for owner %q", owner)
 	}
-	app, ok := cfg.GitHubAppForHost(host)
-	if !ok {
-		return config.GitHubAppConfig{}, fmt.Errorf("no github app configured for host %q", host)
+	if len(matches) > 1 {
+		return config.GitHubAppConfig{}, fmt.Errorf(
+			"multiple github apps match; pass --owner to select one",
+		)
 	}
-	return app, nil
+	return matches[0], nil
 }
 
 func appJWT(app config.GitHubAppConfig, now time.Time) (string, error) {
@@ -86,9 +102,8 @@ func installURL(webBase string, app config.GitHubAppConfig) string {
 	return fmt.Sprintf("%s/apps/%s/installations/new", webBase, app.Slug)
 }
 
-// updateAppInConfig replaces the entry for app.Host and app.InstallationAccount
-// and saves. If a create flow saved a pending, uninstalled row for the same
-// app credential, the first successful install replaces that pending row.
+// updateAppInConfig replaces the matching app credential and saves. Same-host
+// entries are distinct apps, usually one private app per GitHub account.
 func updateAppInConfig(
 	cfg *config.Config, configPath string, app config.GitHubAppConfig,
 ) error {
@@ -97,13 +112,13 @@ func updateAppInConfig(
 		if existing.Host != app.Host {
 			continue
 		}
-		sameInstallation := strings.EqualFold(
-			existing.InstallationAccount, app.InstallationAccount,
-		)
-		pendingSameApp := existing.InstallationAccount == "" &&
-			existing.AppID == app.AppID &&
-			existing.PrivateKeyPath == app.PrivateKeyPath
-		if sameInstallation || pendingSameApp {
+		sameAppID := existing.AppID == app.AppID
+		sameOwner := existing.Owner != "" && app.Owner != "" &&
+			strings.EqualFold(existing.Owner, app.Owner)
+		sameInstallation := existing.InstallationAccount != "" &&
+			app.InstallationAccount != "" &&
+			strings.EqualFold(existing.InstallationAccount, app.InstallationAccount)
+		if sameAppID || sameOwner || sameInstallation {
 			cfg.GitHubApps[i] = app
 			return cfg.Save(configPath)
 		}
@@ -121,7 +136,7 @@ func updateAppSlotInConfig(
 	for i := range cfg.GitHubApps {
 		existing := cfg.GitHubApps[i]
 		if existing.Host == oldApp.Host &&
-			existing.InstallationID == oldApp.InstallationID &&
+			existing.AppID == oldApp.AppID &&
 			strings.EqualFold(existing.InstallationAccount, oldApp.InstallationAccount) {
 			cfg.GitHubApps[i] = newApp
 			return cfg.Save(configPath)
@@ -130,14 +145,13 @@ func updateAppSlotInConfig(
 	return updateAppInConfig(cfg, configPath, newApp)
 }
 
-func removeAppFromConfig(
-	cfg *config.Config, configPath, host string,
-) error {
+func removeAppFromConfig(cfg *config.Config, configPath string, app config.GitHubAppConfig) error {
 	kept := cfg.GitHubApps[:0]
-	for _, app := range cfg.GitHubApps {
-		if app.Host != host {
-			kept = append(kept, app)
+	for _, existing := range cfg.GitHubApps {
+		if existing.Host == app.Host && existing.AppID == app.AppID {
+			continue
 		}
+		kept = append(kept, existing)
 	}
 	cfg.GitHubApps = kept
 	return cfg.Save(configPath)

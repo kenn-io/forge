@@ -93,6 +93,7 @@ installation_id = 5
 			toml: `
 [[github_apps]]
 app_id = 1
+owner = "app-owner-a"
 private_key_path = "a.pem"
 installation_id = 10
 installation_account = "kenn-io"
@@ -101,12 +102,29 @@ repository_selection = "all"
 [[github_apps]]
 host = "github.com"
 app_id = 2
+owner = "app-owner-b"
 private_key_path = "b.pem"
 installation_id = 11
 installation_account = "KENN-IO"
 repository_selection = "all"
 `,
-			wantErr: `duplicate github app for host "github.com" and installation account "KENN-IO"`,
+			wantErr: `duplicate github app installation for host "github.com" and account "KENN-IO"`,
+		},
+		{
+			name: "duplicate app owner",
+			toml: `
+[[github_apps]]
+app_id = 1
+owner = "kenn-io"
+private_key_path = "a.pem"
+
+[[github_apps]]
+host = "github.com"
+app_id = 2
+owner = "KENN-IO"
+private_key_path = "b.pem"
+`,
+			wantErr: `duplicate github app for host "github.com" and owner "KENN-IO"`,
 		},
 	}
 	for _, tt := range tests {
@@ -408,6 +426,7 @@ token_env = "OTHER_ORG_PAT"
 [[github_apps]]
 host = "github.com"
 app_id = 4321
+owner = "kenn-io"
 private_key_path = "app.pem"
 installation_id = 99
 installation_account = "kenn-io"
@@ -490,8 +509,9 @@ repository_selection = "all"
 
 [[github_apps]]
 host = "github.com"
-app_id = 4321
-private_key_path = "app.pem"
+app_id = 4322
+owner = "other-org"
+private_key_path = "other-app.pem"
 installation_id = 100
 installation_account = "other-org"
 repository_selection = "all"

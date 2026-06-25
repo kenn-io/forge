@@ -1704,6 +1704,7 @@ func (c *Config) validatePlatforms() error {
 }
 
 func (c *Config) validateGitHubApps() error {
+	seenOwners := make(map[string]struct{}, len(c.GitHubApps))
 	seenInstallations := make(map[string]struct{}, len(c.GitHubApps))
 	for i := range c.GitHubApps {
 		app := &c.GitHubApps[i]
@@ -1751,22 +1752,35 @@ func (c *Config) validateGitHubApps() error {
 					"installation_id is set", i,
 			)
 		}
-		// GitHub App credentials are host-shaped, but installation tokens are
-		// account-scoped. Multiple rows may share a host when the same app is
-		// installed on multiple owners; only one row per installation account
-		// can be selected for a given owner.
-		installKey := host + "\x00" + strings.ToLower(app.InstallationAccount)
-		if _, ok := seenInstallations[installKey]; ok {
-			account := app.InstallationAccount
-			if account == "" {
-				account = "<pending installation>"
+		// GitHub App credentials are host-shaped, but private apps are owned by
+		// one account. Multiple rows may share a host only when they describe
+		// distinct apps, selected by app owner or installation account.
+		owner := strings.ToLower(app.Owner)
+		if owner == "" {
+			owner = fmt.Sprintf("app:%d", app.AppID)
+		}
+		ownerKey := host + "\x00" + owner
+		if _, ok := seenOwners[ownerKey]; ok {
+			label := app.Owner
+			if label == "" {
+				label = fmt.Sprintf("app:%d", app.AppID)
 			}
 			return fmt.Errorf(
-				"config: github_apps[%d]: duplicate github app for host %q and installation account %q",
-				i, host, account,
+				"config: github_apps[%d]: duplicate github app for host %q and owner %q",
+				i, host, label,
 			)
 		}
-		seenInstallations[installKey] = struct{}{}
+		seenOwners[ownerKey] = struct{}{}
+		if app.InstallationAccount != "" {
+			installKey := host + "\x00" + strings.ToLower(app.InstallationAccount)
+			if _, ok := seenInstallations[installKey]; ok {
+				return fmt.Errorf(
+					"config: github_apps[%d]: duplicate github app installation for host %q and account %q",
+					i, host, app.InstallationAccount,
+				)
+			}
+			seenInstallations[installKey] = struct{}{}
+		}
 	}
 	return nil
 }
@@ -1857,8 +1871,8 @@ func (c *Config) GitHubAppsForHost(host string) []GitHubAppConfig {
 }
 
 // GitHubAppForHost returns a configured GitHub App credential for host, if any.
-// When multiple installation rows share one app credential, the first row is
-// enough for management operations that only need the app's private key.
+// Callers that manage app state should use GitHubAppsForHost and disambiguate
+// when multiple app credentials share one host.
 func (c *Config) GitHubAppForHost(host string) (GitHubAppConfig, bool) {
 	apps := c.GitHubAppsForHost(host)
 	if len(apps) == 0 {

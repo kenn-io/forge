@@ -1219,6 +1219,7 @@
   }
 
   .repo-browser__viewer {
+    flex: 1 1 0;
     min-width: 0;
     min-height: 0;
     display: flex;

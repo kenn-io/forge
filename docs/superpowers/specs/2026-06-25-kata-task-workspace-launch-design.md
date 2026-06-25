@@ -3,13 +3,15 @@
 ## Problem
 
 Kata task detail should offer the same workspace affordance that provider issues
-have, but only when middleman can map the selected Kata task to one tracked
-repository unambiguously.
+have, but only when middleman can map the selected Kata task's project to one
+tracked repository unambiguously.
 
-Kata tasks live in external Kata daemons, while middleman workspaces are tied to
-middleman's provider repository identity and synced provider issues. The bridge
-between the two domains must not turn Kata into a provider or make middleman
-config the source of truth for Kata daemon/project definitions.
+Kata tasks live in external Kata daemons and are not provider issues. A Kata
+issue UID is a string owned by Kata, not a GitHub/GitLab/etc. issue number.
+The bridge between the two domains must therefore map only the repository that
+should back the local worktree; the workspace owner stays the Kata task.
+This must not turn Kata into a provider or make middleman config the source of
+truth for Kata daemon/project definitions.
 
 The common case should not need manual setup: watched repositories can already
 have configured local clone paths, and those clones can carry `.kata.toml`
@@ -18,12 +20,14 @@ ambiguity.
 
 ## Goals
 
-- Show a `Create workspace` action on a Kata task detail when the task resolves
-  to one tracked provider repository and one provider issue number.
-- Show `Open workspace` instead when a middleman issue workspace already exists
-  for that provider issue.
-- Hide the action entirely when repository or issue mapping is missing,
-  ambiguous, or points at an untracked repository.
+- Show a `Create workspace` action on a Kata task detail when the task's project
+  resolves to one tracked provider repository.
+- Show `Open workspace` instead when a middleman Kata workspace already exists
+  for that Kata task UID.
+- Hide the action entirely when repository mapping or Kata issue identity is
+  missing, ambiguous, or points at an untracked repository.
+- Store Kata workspace ownership by string task UID rather than by numeric
+  provider item number.
 - Prefer automatic project mapping from configured local clones with `.kata.toml`
   over manual setup.
 - Add a settings surface for explicit Kata project to repository mappings.
@@ -32,11 +36,10 @@ ambiguity.
 
 ## Non-Goals
 
-- Creating workspaces for arbitrary Kata tasks that do not correspond to a
-  synced provider issue.
+- Treating a Kata task as a provider issue or requiring a synced provider issue
+  row before a workspace can be created.
 - Moving Kata project or task records into middleman's SQLite schema.
 - Scanning arbitrary filesystem paths for `.kata.toml`.
-- Inferring provider issue numbers from task title text or labels alone.
 - Supporting fleet-remote workspace creation from Kata tasks in this design.
 
 ## Recommended Approach
@@ -62,11 +65,12 @@ repo clone setup.
 ### Frontend-Only Mapping
 
 The frontend could combine Kata project metadata and settings data, then call the
-existing issue workspace endpoint directly.
+workspace creation endpoint directly.
 
 This is rejected because provider route construction, default-host handling,
-workspace existence checks, and ambiguity rules already belong on the server.
-Duplicating them in Svelte would create another place for provider identity bugs.
+workspace existence checks, schema migration rules, and ambiguity rules already
+belong on the server. Duplicating them in Svelte would create another place for
+provider identity bugs.
 
 ### Manual Mappings Only
 
@@ -82,8 +86,8 @@ Kata tasks could be treated as provider issues and reused through provider issue
 components.
 
 This is rejected because Kata is a first-class non-provider mode. Its task data
-stays owned by external Kata daemons, and only the workspace launch target crosses
-into provider repository identity.
+stays owned by external Kata daemons, and only the repository used to create the
+local worktree crosses into provider repository identity.
 
 ## Repository Mapping
 
@@ -131,31 +135,53 @@ Manual mapping validation rejects duplicate entries with the same daemon scope
 and project UID. A daemon-specific entry and a global entry may coexist; the
 daemon-specific entry wins for that daemon.
 
-## Task Issue Mapping
+## Workspace Ownership Schema
 
-A Kata workspace target requires both repository identity and provider issue
-number.
+The current `middleman_workspaces` owner model is numeric because it was built
+for provider PRs and issues: `item_type` plus `item_number` identifies the
+owning item inside a provider repo. Kata task UIDs are strings, so the workspace
+table needs a string owner key before Kata workspaces can be represented
+correctly.
 
-The resolver reads the issue number from structured Kata task metadata, not from
-display text. The accepted metadata shape is:
+Add an `item_key` text column and make it the canonical owner key:
 
-```json
-{
-  "provider_issue": {
-    "number": 123
-  }
-}
-```
+- Existing PR and provider-issue workspaces use decimal `item_number` as
+  `item_key`.
+- Kata workspaces use `item_type = "kata_task"` and `item_key = issue.uid`.
+- `item_number` remains populated for PR/provider issue workspaces and is absent
+  or ignored for Kata workspaces.
+- The workspace uniqueness constraint uses
+  `(platform, platform_host, repo_path_key, item_type, item_key)`.
 
-If later Kata already emits a richer provider issue reference, middleman can
-accept that as an additional input, but the resolver must still verify that the
-repository side maps to exactly one watched repo. The mapped provider issue must
-already be synced in middleman's DB; if it is not present, the resolver returns
-no target.
+API responses should expose both fields:
+
+- `item_key` is always present.
+- `item_number` is present only for numeric provider-owned workspaces.
+
+Existing PR and issue summary joins continue to use `item_number`. Kata
+workspace summaries do not join provider issue or PR tables; they use the stored
+Kata task summary fields described below.
+
+## Kata Workspace Metadata
+
+Middleman should not copy full Kata tasks into SQLite, but a workspace row needs
+enough owner metadata to render stable labels when the Kata daemon is unavailable
+or the workspace list is open:
+
+- Kata daemon ID.
+- Kata project UID and project name.
+- Kata issue UID.
+- Kata short ID or qualified ID.
+- Kata task title.
+
+Store this as a small JSON metadata object or explicit nullable columns attached
+to the workspace row. The workspace lifecycle remains middleman-owned; the Kata
+daemon remains the source of truth for task details, comments, status, labels,
+and project data.
 
 ## API Shape
 
-Add a middleman API for resolving the selected task:
+Add a middleman API for resolving the selected task's workspace target:
 
 `POST /api/v1/kata/workspace-target`
 
@@ -163,22 +189,41 @@ Request body:
 
 - `daemon_id`
 - `project_uid`
+- `project_name`
 - `issue_uid`
-- `issue_metadata`
+- `short_id`
+- `qualified_id`
+- `title`
 
 Response body:
 
 - `available: false` when no button should render.
-- `available: true` with repository identity, provider issue number, and
+- `available: true` with repository identity, Kata task owner key, and
   optional existing `workspace` ref when an action can render.
 
 The endpoint does not call the Kata daemon. It resolves only from the task data
 the frontend already has, middleman settings, local clone `.kata.toml` files, and
-middleman's synced provider DB.
+middleman's configured watched repositories.
 
-Workspace creation continues to use the existing provider-aware issue workspace
-endpoint. This keeps workspace lifecycle behavior, branch naming, duplicate
-handling, and setup events in one place.
+Add a middleman API for creating or reusing a Kata-backed workspace:
+
+`POST /api/v1/kata/workspaces`
+
+Request body:
+
+- Repository identity from the resolver response.
+- Kata daemon ID.
+- Kata project UID and project name.
+- Kata issue UID.
+- Kata short ID or qualified ID.
+- Kata task title.
+
+The server creates a workspace with `item_type = "kata_task"` and
+`item_key = issue_uid`, starting from the mapped repository's current
+`origin/HEAD`. Branch names should be derived from the Kata short ID or
+qualified ID plus a title slug, not from the opaque UID alone.
+
+Provider PR and provider issue workspace endpoints remain unchanged.
 
 ## Frontend Behavior
 
@@ -189,8 +234,8 @@ button is rendered in the existing detail action row:
 - `Open workspace` when an existing workspace ref is returned.
 - No button when `available` is false or the target request fails.
 
-Clicking `Create workspace` calls the existing issue workspace endpoint for the
-resolved provider repo and issue number, then navigates to the created workspace.
+Clicking `Create workspace` calls the Kata workspace endpoint with the resolved
+repository and selected task identity, then navigates to the created workspace.
 Clicking `Open workspace` navigates to `/terminal/{workspace_id}`.
 
 Transient resolver errors should be surfaced as a small request error in the Kata
@@ -204,8 +249,7 @@ The resolver intentionally uses absence for non-actionable states:
 
 - No project mapping.
 - Ambiguous project mapping.
-- Missing provider issue metadata.
-- Provider issue not synced.
+- Missing Kata issue UID.
 - Repository is no longer tracked.
 
 Those cases return `available: false`. They are expected states, not user-facing
@@ -227,9 +271,13 @@ Backend coverage:
   `available: false`.
 - Manual mapping resolves to a watched repository and overrides an automatic
   mapping for the same daemon/project.
-- Missing provider issue metadata, unsynced provider issue, and removed watched
-  repo mappings return `available: false`.
-- Existing issue workspace is returned as a workspace ref.
+- Missing Kata issue UID and removed watched repo mappings return
+  `available: false`.
+- Existing Kata workspace is returned as a workspace ref.
+- Workspace DB migration backfills `item_key` for existing PR and issue rows and
+  enforces uniqueness on `item_key`.
+- Kata workspace creation stores `item_type = "kata_task"` and a string
+  `item_key` without requiring a provider issue row.
 
 Frontend coverage:
 
@@ -243,9 +291,10 @@ Frontend coverage:
 
 ## Rollout
 
-This can ship behind the existing Kata mode. No migration is needed for automatic
-mapping. Manual mappings require a config schema addition but can default to an
-empty list.
+This can ship behind the existing Kata mode. Automatic mapping needs no config
+migration. Manual mappings require a config schema addition but can default to an
+empty list. Workspaces require a database migration for `item_key` before the
+Kata workspace endpoint ships.
 
 The implementation should update OpenAPI artifacts after adding the endpoint and
 settings schema, then regenerate the frontend API types through the existing

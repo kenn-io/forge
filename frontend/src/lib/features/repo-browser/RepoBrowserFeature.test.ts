@@ -401,6 +401,32 @@ describe("RepoBrowserFeature", () => {
     expect(viewer.textContent).toContain("package main");
   });
 
+  it("renders an empty viewer for a direct directory route without loading a blob", async () => {
+    const client = testClient();
+    render(RepoBrowserFeature, {
+      props: {
+        client,
+        route: {
+          ...route,
+          path: "docs",
+          mode: "source",
+        },
+        onRouteChange: vi.fn(),
+      },
+    });
+
+    await screen.findByText("docs");
+    expect(await screen.findByText("Select a file")).toBeTruthy();
+    expect(screen.queryByTestId("repo-browser-pierre-file-contents")).toBeNull();
+    expect(document.body.textContent).not.toContain("unexpected");
+    expect(requestedURLs(client)).not.toContain(
+      "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=docs",
+    );
+    expect(requestedURLs(client)).not.toContain(
+      "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=docs",
+    );
+  });
+
   it("resizes both side rails within usable viewer constraints across view modes", async () => {
     render(RepoBrowserFeature, {
       props: {
@@ -674,6 +700,12 @@ function testURL(path: string, options?: TestGetOptions): string {
   const serializer = createQuerySerializer(options?.querySerializer ?? runtimeQuerySerializerOptions);
   const qs = serializer(options?.params?.query ?? {});
   return qs ? `${url}?${qs}` : url;
+}
+
+function requestedURLs(client: MiddlemanClient): string[] {
+  return (client.GET as unknown as { mock: { calls: Array<[string, TestGetOptions | undefined]> } }).mock.calls.map(
+    ([path, options]) => testURL(path, options),
+  );
 }
 
 function blobResponse(path: string, content: string) {

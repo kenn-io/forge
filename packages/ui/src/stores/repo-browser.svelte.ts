@@ -25,6 +25,7 @@ type RepoBrowserHistoryResponse = components["schemas"]["RepoBrowserHistoryRespo
 type RepoBrowserLastChangedResponse = components["schemas"]["RepoBrowserLastChangedResponse"];
 type RepoBrowserCommitResponse = components["schemas"]["RepoBrowserCommitResponse"];
 type MissingRequestedPathBehavior = "fallback" | "retain";
+type RepoBrowserPathKind = "file" | "directory" | "missing";
 
 const viewModeStorageKey = "repo-browser-view-mode";
 const lastChangedBatchSize = 250;
@@ -63,6 +64,10 @@ function apiErrorMessage(error: Problem | undefined, fallback: string): string {
 
 function defaultRepoBrowserClient(): MiddlemanClient {
   throw new Error("repo browser store requires a client");
+}
+
+function normalizeRepoBrowserTreePath(path: string): string {
+  return path.replace(/^\/+|\/+$/g, "");
 }
 
 export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
@@ -208,7 +213,8 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     lastChanged = {};
     const autoSelectPathGeneration = pathRequestGeneration;
     if (pathRequestGeneration !== autoSelectPathGeneration) return;
-    const requestedPathExists = requestedPath && tree.some((entry) => entry.path === requestedPath);
+    const requestedPathKind = requestedPath ? repoBrowserPathKind(requestedPath) : "missing";
+    const requestedPathExists = requestedPathKind === "file" || requestedPathKind === "directory";
     const firstPath =
       requestedPathExists || !requestedPath || missingPathBehavior === "fallback"
         ? requestedPathExists
@@ -295,11 +301,13 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     if (!ref || !requestedRef) return;
     const generation = nextPathRequestGeneration();
     selectedPath = path;
-    blobLoading = true;
+    const pathKind = repoBrowserPathKind(path);
+    blobLoading = pathKind === "file";
     error = null;
     blob = null;
     fileHistory = [];
     selectedCommit = null;
+    if (pathKind === "directory") return;
     try {
       const [{ data: blobData, error: blobError, response: blobResponse }, historyResponse] = await Promise.all([
         client.GET(providerRepoPath(ref, "/browser/blob"), {
@@ -339,6 +347,21 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     } finally {
       if (isCurrentPathRequest(generation)) blobLoading = false;
     }
+  }
+
+  function repoBrowserPathKind(path: string): RepoBrowserPathKind {
+    const normalized = normalizeRepoBrowserTreePath(path);
+    if (!normalized) return "missing";
+    const entry = tree.find((candidate) => normalizeRepoBrowserTreePath(candidate.path) === normalized);
+    if (entry) return isRepoBrowserFileEntry(entry) ? "file" : "directory";
+    if (tree.some((candidate) => normalizeRepoBrowserTreePath(candidate.path).startsWith(`${normalized}/`))) {
+      return "directory";
+    }
+    return "missing";
+  }
+
+  function isRepoBrowserFileEntry(entry: RepoBrowserTreeEntry): boolean {
+    return entry.type === "blob" || entry.type === "file";
   }
 
   async function selectCommit(sha: string): Promise<void> {

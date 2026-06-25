@@ -517,7 +517,7 @@ type mockClient struct {
 	checkRunsErr                    error
 	workflowRuns                    []*gh.WorkflowRun
 	approveWorkflowRunFn            func(context.Context, string, string, int64) error
-	listOpenPRsCalled               bool
+	listOpenPRsCalled               atomic.Bool
 	getUserCalls                    atomic.Int32
 	getCombinedCalls                atomic.Int32
 	invalidateCalls                 atomic.Int32
@@ -799,7 +799,7 @@ func (m *mockClient) InvalidateListETagsForRepo(_, _ string, _ ...string) {
 
 func (m *mockClient) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
 	m.trackCall()
-	m.listOpenPRsCalled = true
+	m.listOpenPRsCalled.Store(true)
 	if m.listOpenPRsFn != nil {
 		return m.listOpenPRsFn(ctx, owner, repo)
 	}
@@ -6206,9 +6206,9 @@ func TestSyncerMultiHostClientDispatch(t *testing.T) {
 	syncer := NewSyncer(clients, d, nil, repos, time.Minute, nil, nil)
 	syncer.RunOnce(t.Context())
 
-	assert.True(ghMock.listOpenPRsCalled,
+	assert.True(ghMock.listOpenPRsCalled.Load(),
 		"github.com mock should have been called")
-	assert.True(gheMock.listOpenPRsCalled,
+	assert.True(gheMock.listOpenPRsCalled.Load(),
 		"ghe.corp.com mock should have been called")
 }
 
@@ -7124,9 +7124,9 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 		"ghe.corp.com repo should be skipped when paused")
 
 	// github.com mock should have been called, GHE should not.
-	assert.True(ghMock.listOpenPRsCalled,
+	assert.True(ghMock.listOpenPRsCalled.Load(),
 		"github.com client should have been called")
-	assert.False(gheMock.listOpenPRsCalled,
+	assert.False(gheMock.listOpenPRsCalled.Load(),
 		"ghe.corp.com client should NOT have been called")
 }
 
@@ -7279,7 +7279,7 @@ func TestRunOnceIndexOnly(t *testing.T) {
 	syncer.RunOnce(ctx)
 
 	// ListOpenPullRequests should have been called.
-	assert.True(mc.listOpenPRsCalled,
+	assert.True(mc.listOpenPRsCalled.Load(),
 		"index scan should call ListOpenPullRequests")
 
 	// GetPullRequest should NOT have been called (no detail fetch).
@@ -7767,7 +7767,7 @@ func TestRunOnceLargeExistingRepoSkipsBulkGraphQLAndFetchesChangedPRDetail(t *te
 
 	syncer.RunOnce(ctx)
 
-	assert.True(mc.listOpenPRsCalled,
+	assert.True(mc.listOpenPRsCalled.Load(),
 		"large repo refresh should still read the open PR index")
 	assert.Zero(int(graphQLPRCalls.Load()),
 		"large existing repo refresh should not bulk-fetch every PR through GraphQL")
@@ -12267,7 +12267,7 @@ func TestRunOnceRecoveredRateLimitSnapshotClearsStaleThrottleGate(t *testing.T) 
 	beforeRun := time.Now().UTC()
 	syncer.RunOnce(t.Context())
 
-	assert.True(mock.listOpenPRsCalled)
+	assert.True(mock.listOpenPRsCalled.Load())
 	nextSyncAfter, ok := syncer.nextSyncAfter["github.com"]
 	if assert.True(ok) {
 		assert.Less(nextSyncAfter.Sub(beforeRun), 2*interval)

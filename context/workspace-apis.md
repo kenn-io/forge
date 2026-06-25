@@ -63,15 +63,20 @@ owning provider item has not synced yet, the summary leaves
 
 Kata task repository resolution is deliberately exact. Manual settings mappings
 key by optional daemon ID plus Kata project UID and point to a configured exact
-repo identity. Automatic resolution only uses watched exact repos with
-`worktree_base_path` whose clone contains a matching `.kata.toml`. Matching
-first compares both explicit identifiers, `project.uid` and `project.identity`,
-to the Kata project UID. If either identifier matches exactly, that clone is a
-candidate; if more than one clone matches, the result is ambiguous. Name
-fallback is only allowed when the watched clone metadata set has no usable
-`project.uid` or `project.identity` values at all, and then exactly one
-case-insensitive `project.name` match is required. Ambiguous, mismatched, or
-missing matches mean the Create/Open workspace button must not render.
+repo identity. Config validation rejects mappings whose repo target is no
+longer configured, so settings repo deletion must remove mappings for the
+deleted repo in the same save/rollback path
+(`internal/config/config.go::validateKataProjectRepoMappings`,
+`internal/server/settings_handlers.go::deleteConfiguredRepo`). Automatic
+resolution only uses watched exact repos with `worktree_base_path` whose clone
+contains a matching `.kata.toml`. Matching first compares both explicit
+identifiers, `project.uid` and `project.identity`, to the Kata project UID. If
+either identifier matches exactly, that clone is a candidate; if more than one
+clone matches, the result is ambiguous. Name fallback is only allowed when the
+watched clone metadata set has no usable `project.uid` or `project.identity`
+values at all, and then exactly one case-insensitive `project.name` match is
+required. Ambiguous, mismatched, or missing matches mean the Create/Open
+workspace button must not render.
 
 Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so

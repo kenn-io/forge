@@ -27,6 +27,7 @@ type RepoBrowserCommitResponse = components["schemas"]["RepoBrowserCommitRespons
 type MissingRequestedPathBehavior = "fallback" | "retain";
 
 const viewModeStorageKey = "repo-browser-view-mode";
+const lastChangedBatchSize = 250;
 const validViewModes: RepoBrowserViewMode[] = ["source", "preview"];
 const repeatedPathQuerySerializer: QuerySerializerOptions = {
   array: {
@@ -233,28 +234,34 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     const ref = repo;
     const requestedRef = treeContentQueryRef();
     if (!ref || !requestedRef) return;
-    const paths = tree.slice(0, 250).map((entry) => entry.path);
+    const paths = tree.map((entry) => entry.path);
     if (paths.length === 0) {
       lastChanged = {};
       return;
     }
-    const {
-      data,
-      error: apiError,
-      response,
-    } = await client.GET(providerRepoPath(ref, "/browser/last-changed"), {
-      querySerializer: repeatedPathQuerySerializer,
-      params: {
-        path: providerRouteParams(ref),
-        query: {
-          ...queryFor(ref, requestedRef),
-          path: paths,
+    const commits: Record<string, RepoBrowserCommit> = {};
+    for (let start = 0; start < paths.length; start += lastChangedBatchSize) {
+      const batch = paths.slice(start, start + lastChangedBatchSize);
+      const {
+        data,
+        error: apiError,
+        response,
+      } = await client.GET(providerRepoPath(ref, "/browser/last-changed"), {
+        querySerializer: repeatedPathQuerySerializer,
+        params: {
+          path: providerRouteParams(ref),
+          query: {
+            ...queryFor(ref, requestedRef),
+            path: batch,
+          },
         },
-      },
-    });
+      });
+      if (!isCurrentTreeRequest(generation)) return;
+      if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
+      Object.assign(commits, (data as RepoBrowserLastChangedResponse).commits ?? {});
+    }
     if (!isCurrentTreeRequest(generation)) return;
-    if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
-    lastChanged = (data as RepoBrowserLastChangedResponse).commits ?? {};
+    lastChanged = commits;
   }
 
   async function selectRef(ref: RepoBrowserRef): Promise<void> {

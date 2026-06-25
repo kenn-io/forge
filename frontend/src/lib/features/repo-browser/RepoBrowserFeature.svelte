@@ -19,10 +19,12 @@
   import { RefreshIcon, ExternalLinkIcon, SpinnerIcon } from "../../icons";
   import {
     chooseRepoBrowserInitialPath,
+    formatRepoBrowserCommitAge,
     formatRepoBrowserCommitDate,
     formatRepoBrowserFileSize,
     isRepoBrowserMarkdownPath,
   } from "./repoBrowserViewState.js";
+  import PierreFileContents from "./PierreFileContents.svelte";
   import { apiBaseURL } from "../../api/runtime.js";
   import type { FolderIndex } from "../../api/docs/folderLinks";
 
@@ -262,8 +264,8 @@
     return {
       path: file.path,
       ...(lastChanged ? {
-        decoration: formatRepoBrowserCommitDate(lastChanged.authored_at),
-        decorationTitle: `${lastChanged.subject} (${lastChanged.sha.slice(0, 12)})`,
+        decoration: formatRepoBrowserCommitAge(lastChanged.authored_at),
+        decorationTitle: `${formatRepoBrowserCommitDate(lastChanged.authored_at)} · ${lastChanged.subject} (${lastChanged.sha.slice(0, 12)})`,
       } : {}),
     };
   }
@@ -452,6 +454,7 @@
         {#each diffFileCategoryOptions as option (option.value)}
           <button
             type="button"
+            aria-pressed={store.getFileCategoryFilter() === option.value}
             class:repo-browser__category--active={store.getFileCategoryFilter() === option.value}
             onclick={() => setCategoryFilter(option.value)}
           >
@@ -527,7 +530,9 @@
           />
         </article>
       {:else}
-        <pre class="repo-browser__source"><code>{selectedBlob.content}</code></pre>
+        <div class="repo-browser__source repo-browser__source--pierre">
+          <PierreFileContents path={selectedBlob.path} contents={selectedBlob.content} />
+        </div>
       {/if}
     </main>
 
@@ -711,10 +716,18 @@
     font-size: var(--font-size-xs);
   }
 
-  .repo-browser__categories button:hover,
-  .repo-browser__category--active {
+  .repo-browser__categories button:hover {
     color: var(--text-primary);
     background: var(--bg-surface-hover);
+  }
+
+  .repo-browser__categories button.repo-browser__category--active {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+    background: var(--bg-surface-hover);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 55%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--accent-blue) 18%, transparent);
   }
 
   .repo-browser__tree {
@@ -801,6 +814,14 @@
     font-size: var(--font-size-sm);
     line-height: 1.55;
     tab-size: 2;
+  }
+
+  .repo-browser__source--pierre {
+    padding: 0;
+  }
+
+  .repo-browser__source--pierre :global(.pierre-file-contents) {
+    padding: 14px 16px;
   }
 
   .repo-browser__markdown {

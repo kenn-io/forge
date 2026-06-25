@@ -80,8 +80,15 @@
       }
       [data-item-section='icon'],
       [data-item-section='git'],
+      [data-item-section='decoration'],
       [data-item-section='action'] {
         flex-shrink: 0;
+      }
+      [data-item-section='decoration'] {
+        max-width: 4ch;
+        overflow: hidden;
+        color: var(--text-muted);
+        text-overflow: ellipsis;
       }
       [data-item-section='content'] {
         flex: 1 1 auto;

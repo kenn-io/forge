@@ -29,6 +29,8 @@ describe("diff file categorization", () => {
     expect(categorizeDiffFile(file("flake.nix"))).toBe("code");
     expect(categorizeDiffFile(file("config/middleman.toml"))).toBe("code");
     expect(categorizeDiffFile(file("Makefile"))).toBe("code");
+    expect(categorizeDiffFile(file("docs/scripts/bootstrap.sh"))).toBe("code");
+    expect(categorizeDiffFile(file("docs/screenshots/playwright.config.ts"))).toBe("code");
   });
 
   it("treats lockfiles as generated", () => {

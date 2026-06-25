@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   chooseRepoBrowserInitialPath,
+  formatRepoBrowserCommitAge,
   formatRepoBrowserCommitDate,
   formatRepoBrowserFileSize,
   isRepoBrowserMarkdownPath,
@@ -42,5 +43,16 @@ describe("repo browser view state", () => {
   it("formats commit timestamps as stable local dates", () => {
     expect(formatRepoBrowserCommitDate("2026-06-23T14:30:00Z")).toBe("Jun 23, 2026");
     expect(formatRepoBrowserCommitDate("not-a-date")).toBe("");
+  });
+
+  it("formats commit timestamps as compact file tree ages", () => {
+    const now = new Date("2026-06-25T12:00:00Z");
+
+    expect(formatRepoBrowserCommitAge("2026-06-25T11:45:00Z", now)).toBe("15m");
+    expect(formatRepoBrowserCommitAge("2026-06-25T09:00:00Z", now)).toBe("3h");
+    expect(formatRepoBrowserCommitAge("2026-06-22T12:00:00Z", now)).toBe("3d");
+    expect(formatRepoBrowserCommitAge("2026-05-28T12:00:00Z", now)).toBe("4w");
+    expect(formatRepoBrowserCommitAge("2025-06-25T12:00:00Z", now)).toBe("12mo");
+    expect(formatRepoBrowserCommitAge("not-a-date", now)).toBe("");
   });
 });

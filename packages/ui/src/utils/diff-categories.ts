@@ -22,7 +22,6 @@ export const diffFileCategoryOptions: {
 
 const docsExtensions = new Set([".adoc", ".md", ".mdx", ".rst", ".txt"]);
 
-const docsDirectoryNames = new Set(["doc", "docs", "documentation"]);
 const generatedBasenames = new Set([
   "bun.lock",
   "bun.lockb",
@@ -79,14 +78,11 @@ function hasTestSignal(parts: string[], base: string): boolean {
   );
 }
 
-function hasDocsSignal(parts: string[], base: string, ext: string): boolean {
-  return (
-    parts.some((part) => docsDirectoryNames.has(part)) ||
-    docsExtensions.has(ext) ||
-    ["changelog", "code_of_conduct", "contributing", "license", "notice", "readme", "security"].some(
-      (name) => base === name || base.startsWith(`${name}.`),
-    )
+function hasDocsSignal(base: string, ext: string): boolean {
+  const docsName = ["changelog", "code_of_conduct", "contributing", "license", "notice", "readme", "security"].some(
+    (name) => base === name || base.startsWith(`${name}.`),
   );
+  return docsExtensions.has(ext) || docsName;
 }
 
 function hasGeneratedSignal(base: string): boolean {
@@ -105,7 +101,7 @@ export function categorizeDiffFile(file: string | CategorizableDiffFile): DiffFi
   if (generatedMetadata !== false && hasGeneratedSignal(base)) return "generated";
   if (binaryMetadata === true) return "other";
   if (hasTestSignal(parts, base)) return "tests";
-  if (hasDocsSignal(parts, base, ext)) return "plansDocs";
+  if (hasDocsSignal(base, ext)) return "plansDocs";
   return "code";
 }
 

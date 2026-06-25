@@ -246,6 +246,68 @@ describe("createRepoBrowserStore", () => {
     expect(store.getFileHistory().map((item) => item.subject)).toEqual(["readme changed"]);
   });
 
+  it("loads last-changed metadata for file trees larger than one backend batch", async () => {
+    const entries = Array.from({ length: 251 }, (_, index) => ({
+      path: `src/file-${index.toString().padStart(3, "0")}.ts`,
+      type: "blob",
+      size: 10,
+    }));
+    const lastChangedBatches: string[][] = [];
+    const base = testClient();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=main-sha"
+        ) {
+          return Promise.resolve({
+            data: {
+              repo,
+              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+              entries,
+              truncated: false,
+            },
+            response: new Response(null, { status: 200 }),
+          });
+        }
+        if (url.startsWith("/repo/github/acme/widgets/browser/last-changed?")) {
+          const params = new URL(`http://middleman.test${url}`).searchParams;
+          const paths = params.getAll("path");
+          lastChangedBatches.push(paths);
+          return Promise.resolve({
+            data: {
+              repo,
+              ref: { type: "branch", name: "main", sha: "main-sha", stale: false },
+              commits: Object.fromEntries(paths.map((filePath) => [filePath, commit(`changed ${filePath}`)])),
+            },
+            response: new Response(null, { status: 200 }),
+          });
+        }
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=src%2Ffile-250.ts"
+        ) {
+          return Promise.resolve(blobResponse("src/file-250.ts", "export const selected = true;\n"));
+        }
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=src%2Ffile-250.ts"
+        ) {
+          return Promise.resolve(historyResponse("src/file-250.ts", "changed src/file-250.ts"));
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createRepoBrowserStore({ client });
+
+    await store.loadRepo(repo, { path: "src/file-250.ts" });
+
+    expect(lastChangedBatches.map((batch) => batch.length)).toEqual([250, 1]);
+    expect(store.getFileEntries()[0]?.lastChanged?.subject).toBe("changed src/file-000.ts");
+    expect(store.getFileEntries()[250]?.lastChanged?.subject).toBe("changed src/file-250.ts");
+  });
+
   it("persists source and preview view mode", () => {
     const store = createRepoBrowserStore({ client: testClient() });
 

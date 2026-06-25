@@ -7768,6 +7768,9 @@ func (s *Syncer) syncMRForRepo(
 		}
 		return fmt.Errorf("get MR %s/%s#%d: %w", owner, name, number, err)
 	}
+	if normalized == nil {
+		return fmt.Errorf("get MR %s/%s#%d: provider returned no merge request", owner, name, number)
+	}
 	headChanged := existing != nil &&
 		existing.PlatformHeadSHA != normalized.PlatformHeadSHA
 	if existing != nil {

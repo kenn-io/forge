@@ -254,6 +254,28 @@ describe("renderMarkdown code highlighting", () => {
     expect(html).toContain("--shiki-dark:");
   });
 
+  it("strips styles from raw HTML that forges Shiki class names", async () => {
+    const html = await renderMarkdown(
+      [
+        '<pre class="shiki" style="--shiki-light:#000000;--shiki-dark:#000000">',
+        '<span style="--shiki-light:#000000;--shiki-dark:#000000">forged</span>',
+        "</pre>",
+        "",
+        "```ts",
+        "const value = 1;",
+        "```",
+      ].join("\n"),
+    );
+
+    expect(html).toContain('<pre class="shiki">');
+    expect(html).toContain("<span>forged</span>");
+    expect(html).not.toContain("--shiki-light:#000000");
+    expect(html).not.toContain("--shiki-dark:#000000");
+    expect(html).not.toContain("data-middleman-shiki");
+    expect(html).toContain("--shiki-light:");
+    expect(html).toContain("--shiki-dark:");
+  });
+
   it("keeps synchronous block rendering explicitly unhighlighted after Shiki has loaded", async () => {
     await renderMarkdown("```ts\nconst value = 1;\n```");
 

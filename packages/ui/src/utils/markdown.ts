@@ -157,6 +157,7 @@ let renderState: {
   taskIndex: number;
   interactiveTasks: boolean;
   highlightCode: boolean;
+  shikiNonce: string;
   itemStack: ListItemFrame[];
   // Counts blockquote nesting depth so listitem can detect when it
   // sits inside `> ...`. The source-side task helpers don't see
@@ -169,6 +170,7 @@ let renderState: {
   taskIndex: 0,
   interactiveTasks: false,
   highlightCode: true,
+  shikiNonce: "",
   itemStack: [],
   blockquoteDepth: 0,
 };
@@ -187,6 +189,7 @@ const MARKDOWN_ALLOWED_ATTRS = [
   "data-item-type",
   "data-external-url",
   "data-task-index",
+  "data-middleman-shiki",
   "draggable",
 ];
 
@@ -209,6 +212,7 @@ const SHIKI_THEMES = {
   dark: SHIKI_DARK_THEME,
 } as const;
 const SHIKI_PLAINTEXT_LANG = "text";
+const SHIKI_GENERATED_ATTR = "data-middleman-shiki";
 let shikiHighlighter: Highlighter | undefined;
 let shikiHighlighterPromise: Promise<Highlighter> | undefined;
 
@@ -239,14 +243,23 @@ function renderHighlightedCode(token: Tokens.Code): string {
   if (!renderState.highlightCode || !shikiHighlighter) return plainCodeBlock(token.text);
   const lang = codeFenceLanguage(token.lang);
   try {
-    return shikiHighlighter.codeToHtml(token.text, { lang, themes: SHIKI_THEMES, defaultColor: false });
+    return markTrustedShikiHtml(
+      shikiHighlighter.codeToHtml(token.text, { lang, themes: SHIKI_THEMES, defaultColor: false }),
+    );
   } catch {
-    return shikiHighlighter.codeToHtml(token.text, {
-      lang: SHIKI_PLAINTEXT_LANG,
-      themes: SHIKI_THEMES,
-      defaultColor: false,
-    });
+    return markTrustedShikiHtml(
+      shikiHighlighter.codeToHtml(token.text, {
+        lang: SHIKI_PLAINTEXT_LANG,
+        themes: SHIKI_THEMES,
+        defaultColor: false,
+      }),
+    );
   }
+}
+
+function markTrustedShikiHtml(html: string): string {
+  const marker = `${SHIKI_GENERATED_ATTR}="${renderState.shikiNonce}"`;
+  return html.replace("<pre ", `<pre ${marker} `).replaceAll("<span ", `<span ${marker} `);
 }
 
 function escapeHtml(value: string): string {
@@ -342,6 +355,7 @@ function resetRenderState(opts: RenderMarkdownOpts, highlightCode = true): void 
     taskIndex: 0,
     interactiveTasks: !!opts.interactiveTasks,
     highlightCode,
+    shikiNonce: shikiNonce(),
     itemStack: [],
     blockquoteDepth: 0,
   };
@@ -350,12 +364,17 @@ function resetRenderState(opts: RenderMarkdownOpts, highlightCode = true): void 
 function sanitizeMarkdownHtml(html: string): string {
   DOMPurify.addHook("uponSanitizeAttribute", shikiStyleSanitizer);
   try {
-    return DOMPurify.sanitize(html, {
+    const sanitized = DOMPurify.sanitize(html, {
       ADD_ATTR: MARKDOWN_ALLOWED_ATTRS,
     });
+    return sanitized.replaceAll(new RegExp(`\\s${SHIKI_GENERATED_ATTR}="[^"]*"`, "g"), "");
   } finally {
     DOMPurify.removeHook("uponSanitizeAttribute", shikiStyleSanitizer);
   }
+}
+
+function shikiNonce(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 const SHIKI_STYLE_PROPERTY = /^--shiki-(?:light|dark)(?:-bg)?$/;
@@ -379,8 +398,10 @@ function shikiStyleIsAllowed(value: string): boolean {
 const shikiStyleSanitizer: UponSanitizeAttributeHook = (node, data) => {
   if (data.attrName !== "style") return;
   const tagName = node.tagName.toLowerCase();
+  const trustedShikiNode = node.getAttribute(SHIKI_GENERATED_ATTR) === renderState.shikiNonce;
   const isStyledShikiNode =
-    (tagName === "pre" && node.classList.contains("shiki")) || (tagName === "span" && node.closest("pre.shiki"));
+    trustedShikiNode &&
+    ((tagName === "pre" && node.classList.contains("shiki")) || (tagName === "span" && node.closest("pre.shiki")));
   if (!isStyledShikiNode || !shikiStyleIsAllowed(data.attrValue)) {
     data.keepAttr = false;
   }

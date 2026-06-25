@@ -71,6 +71,38 @@ test.describe("PR description task list", () => {
     }
   });
 
+  test("renders highlighted code fences and strips forged Shiki styles through PR detail", async ({ page }) => {
+    const server = await openPullDetail(page);
+    try {
+      await page.locator(".edit-body-btn").click();
+      await page
+        .locator(".body-edit-textarea")
+        .fill(
+          [
+            "```toml",
+            'model_provider = "my-custom"',
+            "```",
+            "",
+            '<pre class="shiki" style="--shiki-light:#000000;--shiki-dark:#000000">',
+            '<span style="--shiki-light:#000000;--shiki-dark:#000000">forged</span>',
+            "</pre>",
+          ].join("\n"),
+        );
+      await page.locator(".body-edit .title-edit-save").click();
+
+      const body = page.locator(".body-section .markdown-body");
+      const highlightedFence = body.locator("pre.shiki[style]").filter({ hasText: "model_provider" });
+      const forgedBlock = body.locator("pre.shiki").filter({ hasText: "forged" });
+      await expect(highlightedFence).toBeVisible();
+      await expect(highlightedFence.locator("span[style]").first()).toBeVisible();
+      await expect(forgedBlock).toBeVisible();
+      await expect(forgedBlock).not.toHaveAttribute("style", /--shiki-light/);
+      await expect(forgedBlock.locator("span")).not.toHaveAttribute("style", /--shiki-light/);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("checkbox clicks toggle locally and persist on reload", async ({ page }) => {
     const server = await openPullDetail(page);
     try {

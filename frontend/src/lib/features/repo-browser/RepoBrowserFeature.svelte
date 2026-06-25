@@ -56,10 +56,11 @@
   };
   type RefPickerType = "branch" | "tag";
 
+  const DEFAULT_FILES_WIDTH = 340;
   const DEFAULT_HISTORY_WIDTH = 320;
-  const MIN_HISTORY_WIDTH = 260;
+  const MIN_RAIL_WIDTH = 260;
   const MIN_VIEWER_WIDTH = 360;
-  const HISTORY_RESIZE_HANDLE_WIDTH = 4;
+  const RESIZE_HANDLE_WIDTH = 4;
 
   let { client, route, onRouteChange }: Props = $props();
 
@@ -85,9 +86,11 @@
   let contentEl = $state<HTMLElement | null>(null);
   let sidebarEl = $state<HTMLElement | null>(null);
   let contentWidth = $state(0);
-  let sidebarWidth = $state(0);
+  let filesWidth = $state(DEFAULT_FILES_WIDTH);
+  let filesResizeStartWidth = DEFAULT_FILES_WIDTH;
   let historyWidth = $state(DEFAULT_HISTORY_WIDTH);
   let historyResizeStartWidth = DEFAULT_HISTORY_WIDTH;
+  let historyRailVisible = $state(true);
 
   const selectedPath = $derived(store.getSelectedPath());
   const selectedRef = $derived(store.getSelectedRef());
@@ -388,27 +391,82 @@
 
   function updateSplitMeasurements(): void {
     const nextContentWidth = contentEl?.clientWidth ?? 0;
-    const nextSidebarWidth = sidebarEl?.getBoundingClientRect().width ?? 0;
+    historyRailVisible =
+      typeof window === "undefined" || typeof window.matchMedia !== "function"
+        ? true
+        : window.matchMedia("(min-width: 981px)").matches;
     contentWidth = nextContentWidth;
-    sidebarWidth = nextSidebarWidth;
     if (nextContentWidth <= 0) return;
-    const nextHistoryWidth = clampHistoryWidth(historyWidth, nextContentWidth, nextSidebarWidth);
+    const nextFilesWidth = clampFilesWidth(filesWidth, nextContentWidth, historyWidth, historyRailVisible);
+    if (nextFilesWidth !== filesWidth) {
+      filesWidth = nextFilesWidth;
+    }
+    const nextHistoryWidth = clampHistoryWidth(historyWidth, nextContentWidth, nextFilesWidth, historyRailVisible);
     if (nextHistoryWidth !== historyWidth) {
       historyWidth = nextHistoryWidth;
     }
   }
 
-  function maxHistoryWidth(nextContentWidth = contentWidth, nextSidebarWidth = sidebarWidth): number {
-    if (nextContentWidth <= 0) return Math.max(DEFAULT_HISTORY_WIDTH, MIN_HISTORY_WIDTH);
-    const availableForViewerAndHistory = nextContentWidth - nextSidebarWidth - HISTORY_RESIZE_HANDLE_WIDTH;
-    if (availableForViewerAndHistory <= 0) return MIN_HISTORY_WIDTH;
-    return Math.max(MIN_HISTORY_WIDTH, availableForViewerAndHistory - MIN_VIEWER_WIDTH);
+  function railHandleCount(nextHistoryRailVisible = historyRailVisible): number {
+    return nextHistoryRailVisible ? 2 : 1;
   }
 
-  function clampHistoryWidth(width: number, nextContentWidth = contentWidth, nextSidebarWidth = sidebarWidth): number {
-    const maxWidth = maxHistoryWidth(nextContentWidth, nextSidebarWidth);
-    const minWidth = Math.min(MIN_HISTORY_WIDTH, maxWidth);
+  function maxFilesWidth(
+    nextContentWidth = contentWidth,
+    nextHistoryWidth = historyWidth,
+    nextHistoryRailVisible = historyRailVisible,
+  ): number {
+    if (nextContentWidth <= 0) return Math.max(DEFAULT_FILES_WIDTH, MIN_RAIL_WIDTH);
+    const visibleHistoryWidth = nextHistoryRailVisible ? nextHistoryWidth : 0;
+    const availableForFiles =
+      nextContentWidth - visibleHistoryWidth - railHandleCount(nextHistoryRailVisible) * RESIZE_HANDLE_WIDTH;
+    if (availableForFiles <= 0) return MIN_RAIL_WIDTH;
+    return Math.max(MIN_RAIL_WIDTH, availableForFiles - MIN_VIEWER_WIDTH);
+  }
+
+  function maxHistoryWidth(
+    nextContentWidth = contentWidth,
+    nextFilesWidth = filesWidth,
+    nextHistoryRailVisible = historyRailVisible,
+  ): number {
+    if (!nextHistoryRailVisible) return Math.max(DEFAULT_HISTORY_WIDTH, MIN_RAIL_WIDTH);
+    if (nextContentWidth <= 0) return Math.max(DEFAULT_HISTORY_WIDTH, MIN_RAIL_WIDTH);
+    const availableForHistory =
+      nextContentWidth - nextFilesWidth - railHandleCount(nextHistoryRailVisible) * RESIZE_HANDLE_WIDTH;
+    if (availableForHistory <= 0) return MIN_RAIL_WIDTH;
+    return Math.max(MIN_RAIL_WIDTH, availableForHistory - MIN_VIEWER_WIDTH);
+  }
+
+  function clampFilesWidth(
+    width: number,
+    nextContentWidth = contentWidth,
+    nextHistoryWidth = historyWidth,
+    nextHistoryRailVisible = historyRailVisible,
+  ): number {
+    const maxWidth = maxFilesWidth(nextContentWidth, nextHistoryWidth, nextHistoryRailVisible);
+    const minWidth = Math.min(MIN_RAIL_WIDTH, maxWidth);
     return Math.max(minWidth, Math.min(maxWidth, width));
+  }
+
+  function clampHistoryWidth(
+    width: number,
+    nextContentWidth = contentWidth,
+    nextFilesWidth = filesWidth,
+    nextHistoryRailVisible = historyRailVisible,
+  ): number {
+    const maxWidth = maxHistoryWidth(nextContentWidth, nextFilesWidth, nextHistoryRailVisible);
+    const minWidth = Math.min(MIN_RAIL_WIDTH, maxWidth);
+    return Math.max(minWidth, Math.min(maxWidth, width));
+  }
+
+  function startFilesResize(): void {
+    updateSplitMeasurements();
+    filesWidth = clampFilesWidth(filesWidth);
+    filesResizeStartWidth = filesWidth;
+  }
+
+  function resizeFiles(event: SplitResizeEvent): void {
+    filesWidth = clampFilesWidth(filesResizeStartWidth + event.deltaX);
   }
 
   function startHistoryResize(): void {
@@ -694,7 +752,12 @@
   </header>
 
   <div class="repo-browser__content" bind:this={contentEl}>
-    <aside class="repo-browser__sidebar" aria-label="Files" bind:this={sidebarEl}>
+    <aside
+      class="repo-browser__sidebar"
+      aria-label="Files"
+      bind:this={sidebarEl}
+      style:width={`${Math.round(filesWidth)}px`}
+    >
       <div class="repo-browser__filter">
         <input
           type="search"
@@ -727,6 +790,13 @@
         />
       </div>
     </aside>
+
+    <SplitResizeHandle
+      class="repo-browser__files-resize"
+      ariaLabel="Resize file tree"
+      onResizeStart={startFilesResize}
+      onResize={resizeFiles}
+    />
 
     <main class="repo-browser__viewer" aria-label="Selected file">
       <div class="repo-browser__filebar">
@@ -1085,7 +1155,7 @@
   }
 
   .repo-browser__sidebar {
-    flex: 0 0 clamp(260px, 28vw, 340px);
+    flex: 0 0 auto;
     border-right: thin solid var(--border-default);
   }
 
@@ -1094,6 +1164,7 @@
     border-left: thin solid var(--border-default);
   }
 
+  :global(.repo-browser__files-resize),
   :global(.repo-browser__history-resize) {
     background: var(--border-default);
   }
@@ -1340,12 +1411,10 @@
       display: none;
     }
 
-    .repo-browser__sidebar {
-      flex-basis: clamp(220px, 32vw, 300px);
-    }
   }
 
   @media (max-width: 720px) {
+    :global(.repo-browser__files-resize),
     .repo-browser__sidebar {
       display: none;
     }

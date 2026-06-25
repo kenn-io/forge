@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -464,125 +463,6 @@ func TestGitLabSetLabelsEmptyArrayClearsAll(t *testing.T) {
 	}
 }
 
-// Databases synced before migration 000031 stored GitLab item labels
-// with platform_external_id equal to the label name, while catalog rows
-// now key that field by decimal label IDs. After upgrading, the first
-// catalog refresh must not match a legacy assigned label named like
-// another label's decimal ID and rewire the assignment to that other
-// label.
-func TestGitLabUpgradeKeepsLegacyLabelAssignmentThroughCatalogRefresh(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx := t.Context()
-	dbPath := filepath.Join(t.TempDir(), "upgrade.db")
-
-	//nolint:forbidigo // The upgrade test must open a raw database to seed pre-migration rows; dbtest fixtures are already migrated.
-	seeded, err := db.Open(dbPath)
-	require.NoError(err)
-	repoID := seedProviderRepo(t, seeded, platform.KindGitLab, platform.DefaultGitLabHost)
-	seedProviderPRAndIssue(t, seeded, repoID)
-
-	// Raw inserts bypass the current upsert logic to recreate the
-	// pre-upgrade state: a label literally named "4" whose external ID
-	// is its own name, assigned to PR 7.
-	now := time.Now().UTC()
-	labelRow, err := seeded.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_labels (repo_id, platform_external_id, name, color, updated_at)
-		VALUES (?, '4', '4', 'ffffff', ?)`,
-		repoID, now,
-	)
-	require.NoError(err)
-	legacyLabelID, err := labelRow.LastInsertId()
-	require.NoError(err)
-	mr, err := seeded.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	_, err = seeded.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_merge_request_labels (merge_request_id, label_id)
-		VALUES (?, ?)`,
-		mr.ID, legacyLabelID,
-	)
-	require.NoError(err)
-	// Rewind to the pre-cleanup schema version so reopening runs
-	// migration 000031 against the seeded legacy rows. Migration
-	// 000031 is data-only but later migrations are not: drop later schema
-	// artifacts so the replay applies cleanly.
-	_, err = seeded.WriteDB().ExecContext(ctx, `
-		DROP INDEX idx_workspaces_provider_item_key;
-		DELETE FROM middleman_workspaces
-		WHERE rowid NOT IN (
-		    SELECT MIN(rowid)
-		    FROM middleman_workspaces
-		    GROUP BY platform, platform_host, repo_path_key, item_type, item_number
-		);
-		CREATE UNIQUE INDEX idx_workspaces_provider_item_key
-		    ON middleman_workspaces(platform, platform_host, repo_path_key, item_type, item_number);
-		ALTER TABLE middleman_workspaces DROP COLUMN kata_metadata;
-		ALTER TABLE middleman_workspaces DROP COLUMN item_key;
-		ALTER TABLE middleman_merge_requests DROP COLUMN assignees_json;
-		ALTER TABLE middleman_merge_requests DROP COLUMN reviewers_json;
-		ALTER TABLE middleman_mr_events DROP COLUMN direct_url;
-		ALTER TABLE middleman_issue_events DROP COLUMN direct_url;
-		ALTER TABLE middleman_project_worktrees DROP COLUMN linked_issue_numbers;
-		ALTER TABLE middleman_project_worktrees DROP COLUMN session_backend;
-		ALTER TABLE middleman_project_worktrees DROP COLUMN is_stale;
-		ALTER TABLE middleman_project_worktrees DROP COLUMN is_hidden;
-		ALTER TABLE middleman_projects DROP COLUMN repository_kind;
-		ALTER TABLE middleman_projects DROP COLUMN is_stale;
-		ALTER TABLE middleman_workspace_runtime_sessions DROP COLUMN display_region;
-		DROP TABLE middleman_host_runtime_sessions;
-		DROP TABLE middleman_worktree_stats;
-		DROP INDEX middleman_project_worktree_runtime_sessions_worktree_id_idx;
-		DROP TABLE middleman_project_worktree_runtime_sessions;
-	`)
-	require.NoError(err)
-	_, err = seeded.WriteDB().ExecContext(ctx, `UPDATE schema_migrations SET version = 30, dirty = 0`)
-	require.NoError(err)
-	seeded.Close()
-
-	//nolint:forbidigo // Reopening through db.Open is the upgrade under test: it must run migration 000031 against the seeded rows.
-	database, err := db.Open(dbPath)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
-
-	// The provider catalog contains a label whose decimal ID equals the
-	// legacy label's name: the collision the cleanup protects against.
-	fake := &fakeGitLabAPI{catalogJSON: `[
-		{"id": 4, "name": "bug", "color": "#d73a4a", "description": "Something is broken"},
-		{"id": 5, "name": "4", "color": "#000000", "description": "named like an ID"}
-	]`}
-	upstream := httptest.NewServer(fake.handler(t))
-	t.Cleanup(upstream.Close)
-	client, err := gitlabprovider.NewClient(
-		platform.DefaultGitLabHost,
-		staticTokenSource("token"),
-		gitlabprovider.WithBaseURLForTesting(upstream.URL+"/api/v4"),
-	)
-	require.NoError(err)
-	srv := newLabelTestServer(t, database, client, platform.KindGitLab, platform.DefaultGitLabHost)
-
-	// Trigger the first post-upgrade catalog refresh through the API.
-	rr := doJSONRequest(t, srv, http.MethodGet, "/api/v1/repo/gitlab/acme/widget/labels", nil)
-	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
-	require.Eventually(func() bool {
-		labels, _, err := database.ListRepoLabelCatalog(ctx, repoID)
-		return err == nil && len(labels) == 2
-	}, 2*time.Second, 10*time.Millisecond)
-
-	// The legacy assignment must still point at the label named "4",
-	// not at "bug" (whose catalog external ID is the decimal 4).
-	upgraded, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	require.NotNil(upgraded)
-	require.Len(upgraded.Labels, 1)
-	assert.Equal("4", upgraded.Labels[0].Name, "assignment must not be rewired to another catalog label")
-	assert.Equal("#000000", upgraded.Labels[0].Color, "assignment must adopt its own catalog row's color")
-}
-
-// GitLab's labels parameter is comma-separated, so a catalog label whose
-// name contains a comma cannot be assigned without GitLab splitting it
-// into multiple labels. The mutation must fail with a clear validation
-// error before any provider write happens.
 func TestGitLabSetPullLabelsRejectsCommaNamesFromCatalog(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

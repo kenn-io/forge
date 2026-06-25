@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createKataTaskAPI } from "../../api/kata/taskClient.js";
   import type {
+    KataCreateRecurrenceInput,
+    KataPatchRecurrenceInput,
     KataRecurrence,
     KataTaskEditPatch,
   } from "../../api/kata/taskTypes.js";
@@ -9,6 +11,7 @@
   import type { TypeaheadOption } from "../../components/shared/TypeaheadTrigger.svelte";
   import { computeRemoveMessageLinkPatch, readMessageLinks } from "../../messages/messageLinks.js";
   import type { MessageLinkRef } from "../../messages/types";
+  import KataRecurrenceDialogs from "../../features/kata/KataRecurrenceDialogs.svelte";
   import { createKataWorkspaceStore } from "../../stores/kata-workspace.svelte.js";
 
   interface Props {
@@ -28,6 +31,12 @@
   let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let unlinkError = $state<string | null>(null);
   let loadRequestID = 0;
+  let recurrenceDialogs = $state<{
+    openCreateRecurrence: () => void;
+    openEditRecurrence: (recurrence: KataRecurrence) => void;
+    openDeleteRecurrence: (recurrence: KataRecurrence) => void;
+    closeAll: () => void;
+  } | null>(null);
 
   $effect(() => {
     const issueUID = kata.issue_uid;
@@ -68,6 +77,16 @@
     } catch (err) {
       error = err instanceof Error ? err.message : "Kata request failed.";
       return false;
+    }
+  }
+
+  async function runTaskOrThrow(task: () => Promise<void>): Promise<void> {
+    error = null;
+    try {
+      await task();
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Kata request failed.";
+      throw err;
     }
   }
 
@@ -115,6 +134,18 @@
 
   async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
     return runTask(() => store.deleteRecurrence(recurrence.id, actor));
+  }
+
+  async function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<void> {
+    await runTaskOrThrow(async () => {
+      await store.createRecurrence(projectID, input);
+    });
+  }
+
+  async function patchRecurrence(id: number, input: KataPatchRecurrenceInput, etag: string): Promise<void> {
+    await runTaskOrThrow(async () => {
+      await store.patchRecurrence(id, input, etag);
+    });
   }
 
   function closeSelectedIssue(
@@ -194,9 +225,9 @@
       onRemoveLabel={removeSelectedLabel}
       onUnlinkMessage={unlinkMessageLink}
       onRevealChecklist={revealChecklist}
-      onCreateRecurrence={() => {}}
-      onEditRecurrence={() => {}}
-      onDeleteRecurrence={deleteRecurrence}
+      onCreateRecurrence={() => recurrenceDialogs?.openCreateRecurrence()}
+      onEditRecurrence={(recurrence) => recurrenceDialogs?.openEditRecurrence(recurrence)}
+      onDeleteRecurrence={(recurrence) => recurrenceDialogs?.openDeleteRecurrence(recurrence)}
       onCloseIssue={closeSelectedIssue}
       onReopenIssue={reopenSelectedIssue}
       onDeleteIssue={deleteSelectedIssue}
@@ -208,6 +239,15 @@
     <div class="state">Task not found</div>
   {/if}
 </div>
+
+<KataRecurrenceDialogs
+  bind:this={recurrenceDialogs}
+  selectedIssue={store.selectedIssue}
+  {actor}
+  onCreate={createRecurrence}
+  onPatch={patchRecurrence}
+  onDelete={deleteRecurrence}
+/>
 
 <style>
   .kata-workspace-sidebar {

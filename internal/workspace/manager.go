@@ -480,13 +480,23 @@ func (m *Manager) CreateKataTask(
 }
 
 func kataTaskBranchID(metadata db.WorkspaceKataMetadata) string {
+	scopeHash := kataTaskScopeHash(metadata)
 	for _, candidate := range []string{metadata.ShortID, metadata.QualifiedID, metadata.IssueUID} {
 		if slug := slugifyIssueTitle(candidate); slug != "" {
-			return truncateSlug(slug, 48)
+			slug = truncateSlug(slug, 48-len(scopeHash)-1)
+			if slug != "" {
+				return slug + "-" + scopeHash
+			}
 		}
 	}
-	sum := sha256.Sum256([]byte(metadata.ProjectUID + "\x00" + metadata.IssueUID))
-	return "task-" + hex.EncodeToString(sum[:])[:8]
+	return "task-" + scopeHash
+}
+
+func kataTaskScopeHash(metadata db.WorkspaceKataMetadata) string {
+	sum := sha256.Sum256([]byte(
+		metadata.DaemonID + "\x00" + metadata.ProjectUID + "\x00" + metadata.IssueUID,
+	))
+	return hex.EncodeToString(sum[:])[:8]
 }
 
 func kataWorkspaceBranch(branchID, title string) string {

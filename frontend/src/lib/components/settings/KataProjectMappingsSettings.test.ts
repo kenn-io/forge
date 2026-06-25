@@ -20,6 +20,19 @@ describe("KataProjectMappingsSettings", () => {
     mockUpdateSettings.mockReset();
   });
 
+  it("treats missing Kata project mappings as empty settings", () => {
+    render(KataProjectMappingsSettings, {
+      props: {
+        mappings: undefined,
+        repos: [],
+        onUpdate: vi.fn(),
+      },
+    });
+
+    expect(screen.getByRole("button", { name: "Add mapping" })).toBeTruthy();
+    expect(screen.getByText("No exact watched repositories are configured.")).toBeTruthy();
+  });
+
   it("saves a Kata project mapping to an exact watched repository", async () => {
     const savedMappings = [
       {

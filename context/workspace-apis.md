@@ -41,6 +41,10 @@ state.
 - `item_number`: the provider item number within the repo. For Kata task
   workspaces this is `0` and must not be used for owner identity.
 - `git_head_ref`: the Git branch name middleman opens in the worktree.
+  Kata-task workspaces keep a readable slug from `short_id`, `qualified_id`, or
+  issue UID, but the branch/worktree leaf must also include a short stable hash
+  of daemon ID, project UID, and issue UID so project-scoped visible task IDs do
+  not collide in the same watched repo.
 - `item_last_activity_at`: the synced provider item activity timestamp for the
   owning PR or issue, when middleman has that owner item row.
 
@@ -61,10 +65,13 @@ Kata task repository resolution is deliberately exact. Manual settings mappings
 key by optional daemon ID plus Kata project UID and point to a configured exact
 repo identity. Automatic resolution only uses watched exact repos with
 `worktree_base_path` whose clone contains a matching `.kata.toml`. Matching
-first compares `project.uid` or `project.identity` to the Kata project UID; when
-that is unavailable, it may fall back to a case-insensitive `project.name` match
-against the selected task's project name. Ambiguous or missing matches mean the
-Create/Open workspace button must not render.
+first compares both explicit identifiers, `project.uid` and `project.identity`,
+to the Kata project UID. If either identifier matches exactly, that clone is a
+candidate; if more than one clone matches, the result is ambiguous. Name
+fallback is only allowed when the watched clone metadata set has no usable
+`project.uid` or `project.identity` values at all, and then exactly one
+case-insensitive `project.name` match is required. Ambiguous, mismatched, or
+missing matches mean the Create/Open workspace button must not render.
 
 Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so
@@ -82,7 +89,8 @@ target. The merge-target scope only exists when the workspace has a PR identity:
 PR-backed workspaces use their own `item_number`, while issue-backed and
 Kata-backed workspaces use `associated_pr_number`. If no associated PR is known,
 the API returns "workspace merge target branch not available" and the workspace
-sidebar must not render the Target scope control.
+sidebar must not render merge-target-dependent controls, including both the
+Target scope control and the commit range picker.
 
 ## Sidebar Ordering
 

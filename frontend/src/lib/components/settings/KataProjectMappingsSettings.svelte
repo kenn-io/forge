@@ -11,7 +11,7 @@
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
 
   interface Props {
-    mappings: KataProjectRepoMapping[];
+    mappings?: KataProjectRepoMapping[] | undefined;
     repos: ConfigRepo[];
     onUpdate: (mappings: KataProjectRepoMapping[]) => void;
   }
@@ -77,8 +77,8 @@
     return repoKey(mapping.provider, mapping.platform_host, mapping.repo_path);
   }
 
-  function normalizeMappings(configured: KataProjectRepoMapping[]): KataProjectRepoMapping[] {
-    return configured
+  function normalizeMappings(configured: KataProjectRepoMapping[] | undefined): KataProjectRepoMapping[] {
+    return (configured ?? [])
       .map((mapping) => {
         const out: KataProjectRepoMapping = {
           project_uid: mapping.project_uid.trim(),

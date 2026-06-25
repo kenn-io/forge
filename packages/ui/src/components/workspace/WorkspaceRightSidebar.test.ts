@@ -222,9 +222,11 @@ describe("WorkspaceRightSidebar", () => {
     expect(screen.getByRole("button", { name: "Compare with HEAD" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Compare with pushed branch" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Compare with merge target" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Select commit range/ })).toBeNull();
     await waitFor(() => {
       expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-kata-1/diff?base=head"))).toBe(true);
     });
     expect(calls.some((url) => url.includes("base=merge-target"))).toBe(false);
+    expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-kata-1/commits"))).toBe(false);
   });
 });

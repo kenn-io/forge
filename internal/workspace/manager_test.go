@@ -393,9 +393,10 @@ func TestCreateKataTaskDoesNotRequireProviderIssue(t *testing.T) {
 	assert.Equal(db.WorkspaceItemTypeKataTask, ws.ItemType)
 	assert.Equal(0, ws.ItemNumber)
 	assert.Equal(db.KataWorkspaceItemKey(metadata), ws.ItemKey)
-	assert.Equal("middleman/kata/task-123-fix-widget", ws.GitHeadRef)
-	assert.Equal("middleman/kata/task-123-fix-widget", ws.WorkspaceBranch)
-	assert.Contains(ws.WorktreePath, "kata-task-123")
+	assert.Contains(ws.GitHeadRef, "middleman/kata/task-123-")
+	assert.Contains(ws.GitHeadRef, "-fix-widget")
+	assert.Equal(ws.GitHeadRef, ws.WorkspaceBranch)
+	assert.Contains(ws.WorktreePath, "kata-task-123-")
 	require.NotNil(ws.KataMetadata)
 	assert.Equal("issue-kata-1", ws.KataMetadata.IssueUID)
 
@@ -436,7 +437,7 @@ func TestCreateKataTaskNormalizesRelativeWorktreeDir(t *testing.T) {
 	assert.Equal(
 		filepath.Join(
 			cwd, "relative-worktrees", "github", "github.com",
-			"acme", "widget", "kata-task-123",
+			"acme", "widget", "kata-"+kataTaskBranchID(metadata),
 		),
 		ws.WorktreePath,
 	)
@@ -455,14 +456,14 @@ func TestCreateKataTaskScopesItemKeyByDaemonAndProject(t *testing.T) {
 		DaemonID:   "desktop",
 		ProjectUID: "project-kata",
 		IssueUID:   "shared-issue",
-		ShortID:    "desk-1",
+		ShortID:    "task-1",
 		Title:      "Fix desktop task",
 	}
 	second := db.WorkspaceKataMetadata{
 		DaemonID:   "laptop",
 		ProjectUID: "project-kata",
 		IssueUID:   "shared-issue",
-		ShortID:    "lap-1",
+		ShortID:    "task-1",
 		Title:      "Fix laptop task",
 	}
 
@@ -474,6 +475,10 @@ func TestCreateKataTaskScopesItemKeyByDaemonAndProject(t *testing.T) {
 	assert.NotEqual(ws1.ItemKey, ws2.ItemKey)
 	assert.Equal(db.KataWorkspaceItemKey(first), ws1.ItemKey)
 	assert.Equal(db.KataWorkspaceItemKey(second), ws2.ItemKey)
+	assert.NotEqual(ws1.GitHeadRef, ws2.GitHeadRef)
+	assert.NotEqual(ws1.WorktreePath, ws2.WorktreePath)
+	assert.Contains(ws1.GitHeadRef, "middleman/kata/task-1-")
+	assert.Contains(ws2.GitHeadRef, "middleman/kata/task-1-")
 }
 
 func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) {

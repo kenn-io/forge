@@ -268,10 +268,13 @@ func kataMappingMatchesRepo(mapping config.KataProjectRepoMapping, repo config.R
 
 func kataAutomaticWorkspaceRepo(repos []config.Repo, projectUID string, projectName string) (config.Repo, bool) {
 	if repo, matches := kataAutomaticWorkspaceRepoByTOML(repos, func(project kataProjectTOML) bool {
-		return project.uidOrIdentity() == projectUID
+		return project.matchesProjectUID(projectUID)
 	}); matches == 1 {
 		return repo, true
 	} else if matches > 1 {
+		return config.Repo{}, false
+	}
+	if kataAutomaticWorkspaceRepoIdentifierCount(repos) > 0 {
 		return config.Repo{}, false
 	}
 	name := strings.TrimSpace(projectName)
@@ -304,17 +307,38 @@ func kataAutomaticWorkspaceRepoByTOML(repos []config.Repo, matches func(kataProj
 	return matched[0], 1
 }
 
+func kataAutomaticWorkspaceRepoIdentifierCount(repos []config.Repo) int {
+	count := 0
+	for _, repo := range repos {
+		if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
+			continue
+		}
+		project, ok := readKataProjectTOML(repo.WorktreeBasePath)
+		if ok && project.hasIdentifier() {
+			count++
+		}
+	}
+	return count
+}
+
 type kataProjectTOML struct {
 	UID      string
 	Identity string
 	Name     string
 }
 
-func (project kataProjectTOML) uidOrIdentity() string {
-	if uid := strings.TrimSpace(project.UID); uid != "" {
-		return uid
+func (project kataProjectTOML) matchesProjectUID(projectUID string) bool {
+	projectUID = strings.TrimSpace(projectUID)
+	if projectUID == "" {
+		return false
 	}
-	return strings.TrimSpace(project.Identity)
+	return strings.TrimSpace(project.UID) == projectUID ||
+		strings.TrimSpace(project.Identity) == projectUID
+}
+
+func (project kataProjectTOML) hasIdentifier() bool {
+	return strings.TrimSpace(project.UID) != "" ||
+		strings.TrimSpace(project.Identity) != ""
 }
 
 func readKataProjectTOML(root string) (kataProjectTOML, bool) {

@@ -104,7 +104,9 @@
         </button>
       {/if}
     </div>
-    <DiffScopePicker compact {disabled} />
+    {#if showMergeTarget}
+      <DiffScopePicker compact {disabled} />
+    {/if}
   </div>
   <DiffToolbar
     compact

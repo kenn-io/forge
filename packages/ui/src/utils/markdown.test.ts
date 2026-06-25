@@ -242,6 +242,29 @@ describe("renderMarkdown code highlighting", () => {
     expect(html).not.toContain("language-toml");
   });
 
+  it("strips user-authored inline styles while preserving Shiki theme variables", async () => {
+    const html = await renderMarkdown(
+      '<span style="position:fixed;color:red">raw</span>\n\n```ts\nconst value = 1;\n```',
+    );
+
+    expect(html).toContain("<span>raw</span>");
+    expect(html).not.toContain("position:fixed");
+    expect(html).not.toContain("color:red");
+    expect(html).toContain("--shiki-light:");
+    expect(html).toContain("--shiki-dark:");
+  });
+
+  it("keeps synchronous block rendering explicitly unhighlighted after Shiki has loaded", async () => {
+    await renderMarkdown("```ts\nconst value = 1;\n```");
+
+    const blocks = renderMarkdownBlocks("```ts\nconst value = 1;\n```");
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.html).toContain("<pre><code>");
+    expect(blocks[0]?.html).not.toContain("shiki");
+    expect(blocks[0]?.html).toContain("const value = 1;");
+  });
+
   it("falls back to escaped plain text for unknown fence languages", async () => {
     const html = await renderMarkdown("```not-a-real-language\n<script>alert(1)</script>\n```");
 

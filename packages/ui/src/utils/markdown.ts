@@ -1,6 +1,7 @@
 import { Marked } from "marked";
 import type { RendererObject, TokenizerAndRendererExtension, Tokens } from "marked";
 import DOMPurify from "dompurify";
+import type { UponSanitizeAttributeHook } from "dompurify";
 import { getSingletonHighlighter, type BundledLanguage, type Highlighter } from "shiki";
 import { canonicalProvider } from "../api/provider-routes.js";
 import { itemReferenceAnchorAttributes } from "./item-reference.js";
@@ -155,6 +156,7 @@ type ListItemFrame = { checkboxIndex: number };
 let renderState: {
   taskIndex: number;
   interactiveTasks: boolean;
+  highlightCode: boolean;
   itemStack: ListItemFrame[];
   // Counts blockquote nesting depth so listitem can detect when it
   // sits inside `> ...`. The source-side task helpers don't see
@@ -166,6 +168,7 @@ let renderState: {
 } = {
   taskIndex: 0,
   interactiveTasks: false,
+  highlightCode: true,
   itemStack: [],
   blockquoteDepth: 0,
 };
@@ -233,7 +236,7 @@ function plainCodeBlock(text: string): string {
 }
 
 function renderHighlightedCode(token: Tokens.Code): string {
-  if (!shikiHighlighter) return plainCodeBlock(token.text);
+  if (!renderState.highlightCode || !shikiHighlighter) return plainCodeBlock(token.text);
   const lang = codeFenceLanguage(token.lang);
   try {
     return shikiHighlighter.codeToHtml(token.text, { lang, themes: SHIKI_THEMES, defaultColor: false });
@@ -334,20 +337,54 @@ export interface RenderedMarkdownBlock {
   html: string;
 }
 
-function resetRenderState(opts: RenderMarkdownOpts): void {
+function resetRenderState(opts: RenderMarkdownOpts, highlightCode = true): void {
   renderState = {
     taskIndex: 0,
     interactiveTasks: !!opts.interactiveTasks,
+    highlightCode,
     itemStack: [],
     blockquoteDepth: 0,
   };
 }
 
 function sanitizeMarkdownHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
-    ADD_ATTR: MARKDOWN_ALLOWED_ATTRS,
+  DOMPurify.addHook("uponSanitizeAttribute", shikiStyleSanitizer);
+  try {
+    return DOMPurify.sanitize(html, {
+      ADD_ATTR: MARKDOWN_ALLOWED_ATTRS,
+    });
+  } finally {
+    DOMPurify.removeHook("uponSanitizeAttribute", shikiStyleSanitizer);
+  }
+}
+
+const SHIKI_STYLE_PROPERTY = /^--shiki-(?:light|dark)(?:-bg)?$/;
+const SHIKI_STYLE_VALUE = /^#[0-9a-fA-F]{3,8}$/;
+
+function shikiStyleIsAllowed(value: string): boolean {
+  const declarations = value
+    .split(";")
+    .map((declaration) => declaration.trim())
+    .filter(Boolean);
+  if (declarations.length === 0) return false;
+  return declarations.every((declaration) => {
+    const separator = declaration.indexOf(":");
+    if (separator <= 0) return false;
+    const property = declaration.slice(0, separator).trim();
+    const styleValue = declaration.slice(separator + 1).trim();
+    return SHIKI_STYLE_PROPERTY.test(property) && SHIKI_STYLE_VALUE.test(styleValue);
   });
 }
+
+const shikiStyleSanitizer: UponSanitizeAttributeHook = (node, data) => {
+  if (data.attrName !== "style") return;
+  const tagName = node.tagName.toLowerCase();
+  const isStyledShikiNode =
+    (tagName === "pre" && node.classList.contains("shiki")) || (tagName === "span" && node.closest("pre.shiki"));
+  if (!isStyledShikiNode || !shikiStyleIsAllowed(data.attrValue)) {
+    data.keepAttr = false;
+  }
+};
 
 function visibleTokenLineCount(raw: string): number {
   if (!raw) return 0;
@@ -415,7 +452,9 @@ export function renderMarkdownBlocks(
   if (!raw) return [];
   const marked = getMarked(repo);
   const tokens = marked.lexer(raw) as Tokens.Generic[];
-  resetRenderState(opts);
+  // Rich-preview block slicing is synchronous by design; keep code fences
+  // plain here instead of making output depend on prior async Shiki loads.
+  resetRenderState(opts, false);
   const blocks: RenderedMarkdownBlock[] = [];
   let line = 1;
   for (let i = 0; i < tokens.length; i++) {
@@ -501,10 +540,15 @@ export function renderMarkdownSync(raw: string, repo?: RepoContext, opts: Render
   if (!raw) return "";
   const marked = getMarked(repo);
   const tokens = marked.lexer(raw) as Tokens.Generic[];
-  return renderMarkdownTokens(marked, tokens, opts);
+  return renderMarkdownTokens(marked, tokens, opts, false);
 }
 
-function renderMarkdownTokens(marked: Marked, tokens: Tokens.Generic[], opts: RenderMarkdownOpts): string {
-  resetRenderState(opts);
+function renderMarkdownTokens(
+  marked: Marked,
+  tokens: Tokens.Generic[],
+  opts: RenderMarkdownOpts,
+  highlightCode = true,
+): string {
+  resetRenderState(opts, highlightCode);
   return sanitizeMarkdownHtml(marked.parser(tokens) as string);
 }

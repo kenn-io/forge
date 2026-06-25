@@ -97,6 +97,28 @@ async function expectHeadingScrolledIntoView(heading: Locator): Promise<void> {
   expect(scrollTop).toBeGreaterThan(100);
 }
 
+async function boundingWidth(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) throw new Error("missing element box");
+  return box.width;
+}
+
+async function dragResizeHandle(page: Page, handle: Locator, deltaX: number): Promise<void> {
+  const box = await handle.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) throw new Error("resize handle missing");
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + deltaX, box.y + box.height / 2, { steps: 10 });
+  await page.mouse.up();
+}
+
+async function expectWidthAtLeast(locator: Locator, minWidth: number): Promise<void> {
+  await expect.poll(async () => Math.round(await boundingWidth(locator))).toBeGreaterThanOrEqual(minWidth);
+}
+
 test.describe("repository source browser", () => {
   test("does not reload repository data when the no-ref route is replaced with the default ref", async ({ page }) => {
     const server = await startIsolatedE2EServer();
@@ -371,6 +393,87 @@ test.describe("repository source browser", () => {
       await expect(history).toContainText("Initial commit");
       await history.getByRole("button", { name: /Initial commit/ }).click();
       await expect(history.locator(".repo-browser__commit-detail")).toContainText("Initial commit");
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("resizes both source browser rails with stable viewer constraints", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+
+      const treeLoaded = treeResponse(page, "main");
+      const blobLoaded = blobResponse(page, "README.md");
+      await page.goto(
+        `${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md&desktop=1`,
+      );
+      await treeLoaded;
+      await blobLoaded;
+
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      const content = browser.locator(".repo-browser__content");
+      const sidebar = browser.locator(".repo-browser__sidebar");
+      const viewer = browser.getByRole("main", { name: "Selected file" });
+      const history = browser.getByRole("complementary", { name: "File history" });
+      const filesHandle = browser.getByRole("button", { name: "Resize file tree" });
+      const historyHandle = browser.getByRole("button", { name: "Resize file history" });
+
+      await expect(viewer.locator(".repo-browser__path")).toContainText("README.md");
+      await expect(sidebar).toBeVisible();
+      await expect(history).toBeVisible();
+      await expect(filesHandle).toBeVisible();
+      await expect(historyHandle).toBeVisible();
+
+      const initialContentWidth = await boundingWidth(content);
+      const initialFilesWidth = await boundingWidth(sidebar);
+      const initialViewerWidth = await boundingWidth(viewer);
+      const initialHistoryWidth = await boundingWidth(history);
+      expect(Math.round(initialFilesWidth)).toBe(340);
+      expect(Math.round(initialHistoryWidth)).toBe(320);
+      expect(initialViewerWidth).toBeGreaterThanOrEqual(360);
+
+      await dragResizeHandle(page, filesHandle, 80);
+      await expect.poll(async () => Math.round(await boundingWidth(sidebar))).toBe(420);
+      await expectWidthAtLeast(viewer, 360);
+      await expect.poll(async () => Math.round(await boundingWidth(history))).toBe(320);
+
+      await dragResizeHandle(page, historyHandle, -80);
+      await expect.poll(async () => Math.round(await boundingWidth(history))).toBe(400);
+      await expectWidthAtLeast(viewer, 360);
+
+      await dragResizeHandle(page, filesHandle, 1000);
+      await expectWidthAtLeast(viewer, 360);
+      await expectWidthAtLeast(history, 260);
+
+      await dragResizeHandle(page, historyHandle, -1000);
+      await expectWidthAtLeast(viewer, 360);
+      await expectWidthAtLeast(sidebar, 260);
+      await expect.poll(async () => Math.round(await boundingWidth(content))).toBe(Math.round(initialContentWidth));
+
+      const constrainedFilesWidth = Math.round(await boundingWidth(sidebar));
+      const constrainedHistoryWidth = Math.round(await boundingWidth(history));
+      const constrainedViewerWidth = Math.round(await boundingWidth(viewer));
+      await browser.getByRole("button", { name: "Preview" }).click();
+      await expect(viewer.locator(".repo-browser__markdown h1")).toHaveText("Widget Service");
+      expect(Math.round(await boundingWidth(sidebar))).toBe(constrainedFilesWidth);
+      expect(Math.round(await boundingWidth(history))).toBe(constrainedHistoryWidth);
+      expect(Math.round(await boundingWidth(viewer))).toBe(constrainedViewerWidth);
+      await browser.getByRole("button", { name: "Source" }).click();
+      await expect(viewer.locator(".repo-browser__source")).toContainText("# Widget Service");
+      expect(Math.round(await boundingWidth(sidebar))).toBe(constrainedFilesWidth);
+      expect(Math.round(await boundingWidth(history))).toBe(constrainedHistoryWidth);
+      expect(Math.round(await boundingWidth(viewer))).toBe(constrainedViewerWidth);
+
+      await page.setViewportSize({ width: 900, height: 900 });
+      await expect(history).toBeHidden();
+      await expect(historyHandle).toBeHidden();
+      await expect(sidebar).toBeVisible();
+      await expect(filesHandle).toBeVisible();
+
+      await page.setViewportSize({ width: 680, height: 900 });
+      await expect(sidebar).toBeHidden();
+      await expect(filesHandle).toBeHidden();
     } finally {
       await server.stop();
     }

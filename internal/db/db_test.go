@@ -114,6 +114,7 @@ func TestOpenRepairsFleetSchemaSkippedByBranchNotificationMigrationCollision(t *
 		VALUES ('ws-1', 'session-1', 'plain_shell', 'Terminal', 'terminal', 'session', '');
 	`)
 	require.NoError(err)
+	require.NoError(removeKataWorkspaceOwnerColumnsForTest(raw))
 	require.NoError(removeProjectDiscoveryColumnsForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 34, dirty = FALSE`)
 	require.NoError(err)
@@ -953,6 +954,7 @@ func TestOpenRenamesWorkspaceTmuxSessionsTableToRuntimeSessions(t *testing.T) {
 		UPDATE schema_migrations SET version = 28, dirty = FALSE;
 	`)
 	require.NoError(err)
+	require.NoError(removeKataWorkspaceOwnerColumnsForTest(raw))
 	require.NoError(removeIssueAssigneesColumnForTest(raw))
 	require.NoError(removeMergeRequestUserListColumnsForTest(raw))
 	require.NoError(removeEventDirectURLColumnsForTest(raw))
@@ -1717,6 +1719,27 @@ func removeEventDirectURLColumnsForTest(raw *sql.DB) error {
 	_, err := raw.Exec(`
 		ALTER TABLE middleman_mr_events DROP COLUMN direct_url;
 		ALTER TABLE middleman_issue_events DROP COLUMN direct_url;
+	`)
+	return err
+}
+
+func removeKataWorkspaceOwnerColumnsForTest(raw *sql.DB) error {
+	_, err := raw.Exec(`
+		DROP INDEX idx_workspaces_provider_item_key;
+		DROP TRIGGER middleman_workspaces_item_key_fill_insert;
+
+		DELETE FROM middleman_workspaces
+		WHERE rowid NOT IN (
+		    SELECT MIN(rowid)
+		    FROM middleman_workspaces
+		    GROUP BY platform, platform_host, repo_path_key, item_type, item_number
+		);
+
+		CREATE UNIQUE INDEX idx_workspaces_provider_item_key
+		    ON middleman_workspaces(platform, platform_host, repo_path_key, item_type, item_number);
+
+		ALTER TABLE middleman_workspaces DROP COLUMN kata_metadata;
+		ALTER TABLE middleman_workspaces DROP COLUMN item_key;
 	`)
 	return err
 }

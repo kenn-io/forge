@@ -505,9 +505,21 @@ func TestGitLabUpgradeKeepsLegacyLabelAssignmentThroughCatalogRefresh(t *testing
 	require.NoError(err)
 	// Rewind to the pre-cleanup schema version so reopening runs
 	// migration 000031 against the seeded legacy rows. Migration
-	// 000031 is data-only but 000032-000034 are not: drop the columns
-	// they add so the replay applies cleanly.
+	// 000031 is data-only but later migrations are not: drop later schema
+	// artifacts so the replay applies cleanly.
 	_, err = seeded.WriteDB().ExecContext(ctx, `
+		DROP INDEX idx_workspaces_provider_item_key;
+		DROP TRIGGER middleman_workspaces_item_key_fill_insert;
+		DELETE FROM middleman_workspaces
+		WHERE rowid NOT IN (
+		    SELECT MIN(rowid)
+		    FROM middleman_workspaces
+		    GROUP BY platform, platform_host, repo_path_key, item_type, item_number
+		);
+		CREATE UNIQUE INDEX idx_workspaces_provider_item_key
+		    ON middleman_workspaces(platform, platform_host, repo_path_key, item_type, item_number);
+		ALTER TABLE middleman_workspaces DROP COLUMN kata_metadata;
+		ALTER TABLE middleman_workspaces DROP COLUMN item_key;
 		ALTER TABLE middleman_merge_requests DROP COLUMN assignees_json;
 		ALTER TABLE middleman_merge_requests DROP COLUMN reviewers_json;
 		ALTER TABLE middleman_mr_events DROP COLUMN direct_url;

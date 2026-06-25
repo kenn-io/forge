@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
@@ -215,7 +215,7 @@ func msgvaultOKUpstream(t *testing.T) *httptest.Server {
 }
 
 func TestMsgvaultHealthAbsentConfig(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupMsgvaultRouteServer(t, &config.Config{})
 
@@ -234,7 +234,7 @@ func TestMsgvaultHealthAbsentConfig(t *testing.T) {
 
 func TestMsgvaultDoesNotMountLegacyMessageAPIRoutes(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv := setupMsgvaultRouteServer(t, &config.Config{})
 
 	tests := []struct {
@@ -267,7 +267,7 @@ func TestMsgvaultDoesNotMountLegacyMessageAPIRoutes(t *testing.T) {
 }
 
 func TestMsgvaultHealthAbsentOmitsCapabilityMetadata(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupMsgvaultRouteServer(t, &config.Config{})
 
@@ -280,7 +280,7 @@ func TestMsgvaultHealthAbsentOmitsCapabilityMetadata(t *testing.T) {
 }
 
 func TestMsgvaultHealthOKProbesUpstream(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var statsAuth string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -316,7 +316,7 @@ func TestMsgvaultHealthOKProbesUpstream(t *testing.T) {
 }
 
 func TestMsgvaultHealthDown(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(err)
@@ -340,7 +340,7 @@ func TestMsgvaultHealthDown(t *testing.T) {
 }
 
 func TestMsgvaultHealthUnauthorized(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -370,7 +370,7 @@ func TestMsgvaultHealthUnauthorized(t *testing.T) {
 }
 
 func TestMsgvaultHealthMisconfiguredEchoesValidCapabilityMetadata(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MSGVAULT_API_KEY_TEST", "")
 	srv := setupMsgvaultRouteServer(t, &config.Config{
@@ -394,7 +394,7 @@ func TestMsgvaultHealthMisconfiguredEchoesValidCapabilityMetadata(t *testing.T) 
 }
 
 func TestMsgvaultHealthDoesNotEchoUnsafeManualURL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
 	srv := setupMsgvaultRouteServer(t, &config.Config{
@@ -416,7 +416,7 @@ func TestMsgvaultHealthDoesNotEchoUnsafeManualURL(t *testing.T) {
 }
 
 func TestMsgvaultHealthInvalidStoredURLOmitsURL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupMsgvaultRouteServer(t, &config.Config{
 		Msgvault: &config.Msgvault{
@@ -434,7 +434,7 @@ func TestMsgvaultHealthInvalidStoredURLOmitsURL(t *testing.T) {
 }
 
 func TestMsgvaultHealthInvalidStoredEnvNameOmitsEnvKey(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("lowercase_bad", "")
 	srv := setupMsgvaultRouteServer(t, &config.Config{
@@ -478,7 +478,7 @@ func TestMsgvaultHealthCachesWithinTTL(t *testing.T) {
 		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	}
 
-	Assert.Equal(t, int32(1), probes.Load())
+	assert.Equal(t, int32(1), probes.Load())
 }
 
 func TestMsgvaultHealthCacheUnderConcurrency(t *testing.T) {
@@ -509,11 +509,11 @@ func TestMsgvaultHealthCacheUnderConcurrency(t *testing.T) {
 	}
 	wg.Wait()
 
-	Assert.Equal(t, int32(1), probes.Load())
+	assert.Equal(t, int32(1), probes.Load())
 }
 
 func TestMsgvaultSearchFtsReturnsPaginatableShape(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -563,7 +563,7 @@ func TestMsgvaultSearchFtsReturnsPaginatableShape(t *testing.T) {
 }
 
 func TestMsgvaultSearchRejectsUnsupportedMode(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/search" {
@@ -583,7 +583,7 @@ func TestMsgvaultSearchRejectsUnsupportedMode(t *testing.T) {
 }
 
 func TestMsgvaultSearchNotConfiguredIs503(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupMsgvaultRouteServer(t, &config.Config{})
 
@@ -596,7 +596,7 @@ func TestMsgvaultSearchNotConfiguredIs503(t *testing.T) {
 }
 
 func TestMsgvaultSearchNilUpstreamPayloadIs502(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -620,7 +620,7 @@ func TestMsgvaultSearchNilUpstreamPayloadIs502(t *testing.T) {
 }
 
 func TestMsgvaultMessageSanitizesBodyHTML(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -654,7 +654,7 @@ func TestMsgvaultMessageSanitizesBodyHTML(t *testing.T) {
 }
 
 func TestMsgvaultMessageNilUpstreamPayloadIs502(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -678,7 +678,7 @@ func TestMsgvaultMessageNilUpstreamPayloadIs502(t *testing.T) {
 }
 
 func TestMsgvaultMessageExposesRemoteImageToken(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -724,7 +724,7 @@ func TestMsgvaultMessageExposesRemoteImageToken(t *testing.T) {
 }
 
 func TestMsgvaultMessageWithoutRemoteImagesOmitsToken(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -765,7 +765,7 @@ func TestMsgvaultMessageWithoutRemoteImagesOmitsToken(t *testing.T) {
 }
 
 func TestMsgvaultMessageSanitizationFailedFallsBack(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	huge := strings.Repeat("<p>x</p>", 1<<18)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -805,7 +805,7 @@ func TestMsgvaultMessageSanitizationFailedFallsBack(t *testing.T) {
 }
 
 func TestMsgvaultConfigureBumpsSanitizerAndPurgesCache(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
 	upstreamSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -865,7 +865,7 @@ func TestMsgvaultConfigureBumpsSanitizerAndPurgesCache(t *testing.T) {
 }
 
 func TestMsgvaultMessageCIDImagesUseBasePath(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -900,7 +900,7 @@ func TestMsgvaultMessageCIDImagesUseBasePath(t *testing.T) {
 }
 
 func TestMsgvaultMessageBadIDIs422(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -916,7 +916,7 @@ func TestMsgvaultMessageBadIDIs422(t *testing.T) {
 }
 
 func TestMsgvaultInlineStreamsAndPassesContentType(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -948,7 +948,7 @@ func TestMsgvaultInlineStreamsAndPassesContentType(t *testing.T) {
 func TestMsgvaultInlineRejectsUnsafeContentType(t *testing.T) {
 	for _, contentType := range []string{"text/html", "image/svg+xml", "application/javascript"} {
 		t.Run(contentType, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
@@ -975,7 +975,7 @@ func TestMsgvaultInlineRejectsUnsafeContentType(t *testing.T) {
 }
 
 func TestMsgvaultInlineMissingCidIs400(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -992,7 +992,7 @@ func TestMsgvaultInlineMissingCidIs400(t *testing.T) {
 }
 
 func TestMsgvaultAggregatesTranslatesQ(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var seenSearchQuery, seenHideDeleted string
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1018,7 +1018,7 @@ func TestMsgvaultAggregatesTranslatesQ(t *testing.T) {
 }
 
 func TestMsgvaultAggregatesNilUpstreamPayloadIs502(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1042,7 +1042,7 @@ func TestMsgvaultAggregatesNilUpstreamPayloadIs502(t *testing.T) {
 }
 
 func TestMsgvaultAggregatesHideDeletedFalseRespected(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var seenHideDeleted string
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1066,7 +1066,7 @@ func TestMsgvaultAggregatesHideDeletedFalseRespected(t *testing.T) {
 }
 
 func TestMsgvaultAggregatesMissingViewTypeIs400(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -1083,7 +1083,7 @@ func TestMsgvaultAggregatesMissingViewTypeIs400(t *testing.T) {
 }
 
 func TestMsgvaultThreadPinsSortOrder(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var seenSort, seenDirection, seenConversationID string
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1118,7 +1118,7 @@ func TestMsgvaultThreadPinsSortOrder(t *testing.T) {
 }
 
 func TestMsgvaultThreadNormalizesMessages(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1150,7 +1150,7 @@ func TestMsgvaultThreadNormalizesMessages(t *testing.T) {
 }
 
 func TestMsgvaultThreadNilUpstreamPayloadIs502(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1174,7 +1174,7 @@ func TestMsgvaultThreadNilUpstreamPayloadIs502(t *testing.T) {
 }
 
 func TestMsgvaultThreadBadConversationIDIs422(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -1190,7 +1190,7 @@ func TestMsgvaultThreadBadConversationIDIs422(t *testing.T) {
 }
 
 func TestMsgvaultConfigureHappyPathPersistsAndHotReloads(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
 	upstream := msgvaultOKUpstream(t)
@@ -1225,7 +1225,7 @@ func TestMsgvaultConfigureHappyPathPersistsAndHotReloads(t *testing.T) {
 }
 
 func TestMsgvaultConfigureEnvVarAbsentPersistsMisconfigured(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MSGVAULT_API_KEY_TEST", "")
 	srv, cfgPath := setupPersistentMsgvaultRouteServer(t, nil)
@@ -1252,8 +1252,8 @@ func TestMsgvaultConfigureEnvVarAbsentPersistsMisconfigured(t *testing.T) {
 }
 
 func TestMsgvaultConfigureRejectsInvalidUpdateWithoutReplacingPriorConfig(t *testing.T) {
-	assert := Assert.New(t)
-	requireAssert := require.New(t)
+	check := assert.New(t)
+	requireCheck := require.New(t)
 	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
 	var searches atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1262,8 +1262,8 @@ func TestMsgvaultConfigureRejectsInvalidUpdateWithoutReplacingPriorConfig(t *tes
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
 		case "/api/v1/search":
 			searches.Add(1)
-			assert.Equal("project", r.URL.Query().Get("q"))
-			assert.Equal("Bearer secret-key", r.Header.Get("Authorization"))
+			check.Equal("project", r.URL.Query().Get("q"))
+			check.Equal("Bearer secret-key", r.Header.Get("Authorization"))
 			_, _ = w.Write([]byte(`{
 				"query":"project","total":1,"page":1,"page_size":20,
 				"messages":[{"id":101,"conversation_id":1001,"subject":"Project sync","from":"alice@example.com","to":["bob@example.com"],"sent_at":"2026-05-15T10:00:00Z","snippet":"...","labels":["work"],"has_attachments":false,"size_bytes":2048}]
@@ -1279,7 +1279,7 @@ func TestMsgvaultConfigureRejectsInvalidUpdateWithoutReplacingPriorConfig(t *tes
 		"url":         upstream.URL,
 		"api_key_env": "MSGVAULT_API_KEY_TEST",
 	})
-	requireAssert.Equal(http.StatusOK, configure.Code, configure.Body.String())
+	requireCheck.Equal(http.StatusOK, configure.Code, configure.Body.String())
 
 	for _, tc := range []struct {
 		name   string
@@ -1317,7 +1317,7 @@ func TestMsgvaultConfigureRejectsInvalidUpdateWithoutReplacingPriorConfig(t *tes
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			rr := doMsgvaultJSON(t, srv, http.MethodPost, "/api/v1/msgvault/configure", tc.body)
 			require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
@@ -1342,7 +1342,7 @@ func TestMsgvaultConfigureRejectsInvalidUpdateWithoutReplacingPriorConfig(t *tes
 			assert.Equal("MSGVAULT_API_KEY_TEST", reloaded.Msgvault.APIKeyEnv)
 		})
 	}
-	assert.Equal(int32(5), searches.Load())
+	check.Equal(int32(5), searches.Load())
 }
 
 func TestMsgvaultConfigureRejectsAPIKey(t *testing.T) {
@@ -1355,7 +1355,7 @@ func TestMsgvaultConfigureRejectsAPIKey(t *testing.T) {
 		{name: "null", apiKey: nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			srv, cfgPath := setupPersistentMsgvaultRouteServer(t, nil)
 			body := map[string]any{
@@ -1393,7 +1393,7 @@ func TestMsgvaultConfigureRejectsMalformedURL(t *testing.T) {
 		{"whitespace only", "   "},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 
 			rr := doMsgvaultJSON(t, srv, http.MethodPost, "/api/v1/msgvault/configure", map[string]any{
@@ -1409,7 +1409,7 @@ func TestMsgvaultConfigureRejectsMalformedURL(t *testing.T) {
 	}
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(t, err)
-	Assert.Nil(t, reloaded.Msgvault)
+	assert.Nil(t, reloaded.Msgvault)
 }
 
 func TestMsgvaultConfigureRejectsBadEnvVarName(t *testing.T) {
@@ -1426,7 +1426,7 @@ func TestMsgvaultConfigureRejectsBadEnvVarName(t *testing.T) {
 		{"empty", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 
 			rr := doMsgvaultJSON(t, srv, http.MethodPost, "/api/v1/msgvault/configure", map[string]any{
@@ -1443,7 +1443,7 @@ func TestMsgvaultConfigureRejectsBadEnvVarName(t *testing.T) {
 }
 
 func TestMsgvaultConfigureCacheBust(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
 	first := msgvaultOKUpstream(t)
@@ -1470,7 +1470,7 @@ func TestMsgvaultConfigureCacheBust(t *testing.T) {
 }
 
 func TestMsgvaultConfigureRefreshesRuntimeTokenStripping(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
 	upstream := msgvaultOKUpstream(t)
@@ -1507,7 +1507,7 @@ func TestMsgvaultConfigureRefreshesRuntimeTokenStripping(t *testing.T) {
 }
 
 func TestMsgvaultConfigureKeepsStartupBoundTokenStrippingAfterReload(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
 	upstream := msgvaultOKUpstream(t)
@@ -1575,7 +1575,7 @@ func TestMsgvaultConfigureConcurrentSavesKeepDiskAndMemoryAligned(t *testing.T) 
 	wg.Wait()
 
 	for i, status := range statuses {
-		Assert.Equalf(t, http.StatusOK, status, "worker %d", i)
+		assert.Equalf(t, http.StatusOK, status, "worker %d", i)
 	}
 	var diskURL, healthURL string
 	require.Eventually(func() bool {
@@ -1621,8 +1621,8 @@ func TestMsgvaultConfigureResponseEchoesOwnSavedConfig(t *testing.T) {
 
 	for i, status := range statuses {
 		require.Equalf(http.StatusOK, status, "worker %d", i)
-		Assert.Equalf(t, workerURL(i), responses[i].URL, "worker %d", i)
-		Assert.Equalf(t, workerEnv(i), responses[i].APIKeyEnv, "worker %d", i)
+		assert.Equalf(t, workerURL(i), responses[i].URL, "worker %d", i)
+		assert.Equalf(t, workerEnv(i), responses[i].APIKeyEnv, "worker %d", i)
 	}
 }
 
@@ -1787,7 +1787,7 @@ func TestMsgvaultConfigureRejectsBadJSONAndUnknownFields(t *testing.T) {
 		{name: "unknown field", body: `{"url":"https://msgvault.example.com","apikey":"MSGVAULT_API_KEY_TEST"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 
 			rr := doMsgvaultRaw(t, srv, http.MethodPost, "/api/v1/msgvault/configure",
@@ -1801,11 +1801,11 @@ func TestMsgvaultConfigureRejectsBadJSONAndUnknownFields(t *testing.T) {
 	}
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(t, err)
-	Assert.Nil(t, reloaded.Msgvault)
+	assert.Nil(t, reloaded.Msgvault)
 }
 
 func TestMsgvaultConfigureRejectsBodyTooLarge(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, cfgPath := setupPersistentMsgvaultRouteServer(t, nil)
 	pad := strings.Repeat("a", 5<<20)
@@ -1827,7 +1827,7 @@ func TestMsgvaultConfigureRejectsBodyTooLarge(t *testing.T) {
 }
 
 func TestMsgvaultConfigureRequiresJSONContentType(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, cfgPath := setupPersistentMsgvaultRouteServer(t, nil)
 
@@ -1843,7 +1843,7 @@ func TestMsgvaultConfigureRequiresJSONContentType(t *testing.T) {
 }
 
 func TestMsgvaultConfigureRequiresMiddlemanCSRFHeader(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, cfgPath := setupPersistentMsgvaultRouteServer(t, nil)
 
@@ -1861,7 +1861,7 @@ func TestMsgvaultConfigureRequiresMiddlemanCSRFHeader(t *testing.T) {
 }
 
 func TestMsgvaultConfigureRejectsNonLoopback(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupPersistentMsgvaultRouteServer(t, nil)
 
@@ -1876,7 +1876,7 @@ func TestMsgvaultConfigureRejectsNonLoopback(t *testing.T) {
 }
 
 func TestMsgvaultConfigureRequestBodyIsJSON(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	doc := NewOpenAPI()
 	item := doc.Paths["/msgvault/configure"]
@@ -1894,7 +1894,7 @@ func TestMsgvaultConfigureRequestBodyIsJSON(t *testing.T) {
 }
 
 func TestMsgvaultOpenAPIDocumentsMutationCSRFHeaders(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	doc := NewOpenAPI()
 	spec, err := json.Marshal(doc)
@@ -1912,7 +1912,7 @@ func TestMsgvaultOpenAPIDocumentsMutationCSRFHeaders(t *testing.T) {
 }
 
 func TestMsgvaultOpenAPIImageRoutesAndRequiredQueries(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupMsgvaultRouteServer(t, &config.Config{})
 

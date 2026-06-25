@@ -8,7 +8,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -73,7 +73,7 @@ func setupAssigneeTestServer(t *testing.T) (*server.Server, *db.DB, *testutil.Fi
 
 func TestAPISetPullAssigneesUpdatesProviderAndPersists(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, database, providerClient, syncer := setupAssigneeTestServer(t)
 	repoID := seedPR(t, database, "acme", "widget", 1)
 
@@ -109,7 +109,7 @@ func TestAPISetPullAssigneesUpdatesProviderAndPersists(t *testing.T) {
 
 func TestAPISetPullAssigneesClearsAssignees(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, database, _, _ := setupAssigneeTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
@@ -138,7 +138,7 @@ func TestAPISetPullAssigneesClearsAssignees(t *testing.T) {
 
 func TestAPISetIssueAssigneesUpdatesProviderAndPersists(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, database, providerClient, syncer := setupAssigneeTestServer(t)
 	seedIssue(t, database, "acme", "widget", 7, "open")
 
@@ -171,7 +171,7 @@ func TestAPISetIssueAssigneesUpdatesProviderAndPersists(t *testing.T) {
 
 func TestAPISetPullReviewersRequestsAndRemoves(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, database, providerClient, _ := setupAssigneeTestServer(t)
 	repoID := seedPR(t, database, "acme", "widget", 1)
 	prID, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
@@ -202,7 +202,7 @@ func TestAPISetPullReviewersRequestsAndRemoves(t *testing.T) {
 
 func TestAPISetPullReviewersRemovesAllRequests(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, database, providerClient, _ := setupAssigneeTestServer(t)
 	repoID := seedPR(t, database, "acme", "widget", 1)
 	pr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
@@ -226,7 +226,7 @@ func TestAPISetPullReviewersRemovesAllRequests(t *testing.T) {
 
 func TestAPISetPullReviewersRemovesProviderReviewersWhenSyncedStateIsUnknown(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, database, providerClient, _ := setupAssigneeTestServer(t)
 	// seedPR leaves reviewers_json empty, so the last synced state is
 	// unknown. The provider still has carol requested; clearing the set
@@ -252,7 +252,7 @@ func TestAPISetPullReviewersRemovesProviderReviewersWhenSyncedStateIsUnknown(t *
 
 func TestAPISetPullReviewersRemovesDriftedProviderReviewers(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, database, providerClient, _ := setupAssigneeTestServer(t)
 	repoID := seedPR(t, database, "acme", "widget", 1)
 	pr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
@@ -279,7 +279,7 @@ func TestAPISetPullReviewersRemovesDriftedProviderReviewers(t *testing.T) {
 
 func TestAPISyncPersistsAssigneesAndRequestedReviewers(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, _, providerClient, syncer := setupAssigneeTestServer(t)
 
 	providerPR := providerClient.PRs["acme/widget"][0]
@@ -346,7 +346,7 @@ func (p readOnlyProvider) Capabilities() platform.Capabilities {
 
 func TestAPIAssigneeAndReviewerMutationsAreCapabilityGated(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	database := dbtest.Open(t)
 	registry, err := ghclient.NewProviderRegistry(nil, readOnlyProvider{
 		kind: platform.KindForgejo,

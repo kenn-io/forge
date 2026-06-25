@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
@@ -61,7 +61,7 @@ func TestMessagesSavedSearchesEmpty(t *testing.T) {
 	etagHeader := rr.Header().Get("ETag")
 	require.True(t, strings.HasPrefix(etagHeader, `"sha256:`), "ETag header = %q", etagHeader)
 	body := decodeSavedSearches(t, rr)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Empty(body.Searches)
 	assert.NotNil(body.Searches)
 	assert.Equal(etagHeader, body.ETag)
@@ -82,14 +82,14 @@ func TestMessagesSavedSearchesPutThenGetRoundTrip(t *testing.T) {
 	require.Equal(t, http.StatusOK, getRR.Code)
 	getBody := decodeSavedSearches(t, getRR)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(putBody.ETag, getBody.ETag)
 	assert.Equal(in, getBody.Searches)
 }
 
 func TestMessagesSavedSearchesPutIfMatchStaleReturns412(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv := setupSavedSearchesRouteServer(t)
 	firstRR := doSavedSearchesReplace(t, srv, []messages.SavedSearch{{Name: "x", Query: "y"}}, "")
 	require.Equal(http.StatusOK, firstRR.Code)
@@ -117,7 +117,7 @@ func TestMessagesSavedSearchesPutRequiresMiddlemanCSRFHeader(t *testing.T) {
 		"127.0.0.1:12345", "application/json", `{"searches":[]}`)
 
 	require.Equal(t, http.StatusForbidden, rr.Code)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	problem := decodeMsgvaultProblem(t, rr)
 	assert.Equal(CodeForbidden, problem.Code)
 	assert.Equal("missingCsrfHeader", problem.Details["reason"])
@@ -135,7 +135,7 @@ func TestMessagesSavedSearchesPutCanonicalizes(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	body := decodeSavedSearches(t, rr)
-	Assert.Equal(t, []messages.SavedSearch{{Name: "a", Query: "q2"}}, body.Searches)
+	assert.Equal(t, []messages.SavedSearch{{Name: "a", Query: "q2"}}, body.Searches)
 }
 
 func TestMessagesSavedSearchesPutLoopbackOnly(t *testing.T) {
@@ -144,7 +144,7 @@ func TestMessagesSavedSearchesPutLoopbackOnly(t *testing.T) {
 	rr := doMsgvaultRaw(t, srv, http.MethodPut, "/api/v1/messages/saved-searches", "203.0.113.7:54321", "application/json", `{"searches":[]}`)
 
 	require.Equal(t, http.StatusForbidden, rr.Code)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	problem := decodeMsgvaultProblem(t, rr)
 	assert.Equal(CodeForbidden, problem.Code)
 	assert.Equal("loopbackOnly", problem.Details["reason"])
@@ -156,7 +156,7 @@ func TestMessagesSavedSearchesGetLoopbackOnly(t *testing.T) {
 	rr := doMsgvaultRaw(t, srv, http.MethodGet, "/api/v1/messages/saved-searches", "203.0.113.7:54321", "", "")
 
 	require.Equal(t, http.StatusForbidden, rr.Code)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	problem := decodeMsgvaultProblem(t, rr)
 	assert.Equal(CodeForbidden, problem.Code)
 	assert.Equal("loopbackOnly", problem.Details["reason"])
@@ -168,7 +168,7 @@ func TestMessagesSavedSearchesPutInvalidJSON(t *testing.T) {
 	rr := doMsgvaultRaw(t, srv, http.MethodPut, "/api/v1/messages/saved-searches", "127.0.0.1:12345", "application/json", "{")
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
-	Assert.Equal(t, CodeBadRequest, decodeMsgvaultProblem(t, rr).Code)
+	assert.Equal(t, CodeBadRequest, decodeMsgvaultProblem(t, rr).Code)
 }
 
 func TestMessagesSavedSearchesPutMissingSearchesField(t *testing.T) {
@@ -177,7 +177,7 @@ func TestMessagesSavedSearchesPutMissingSearchesField(t *testing.T) {
 	rr := doMsgvaultRaw(t, srv, http.MethodPut, "/api/v1/messages/saved-searches", "127.0.0.1:12345", "application/json", "{}")
 
 	require.Equal(t, http.StatusUnprocessableEntity, rr.Code)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	problem := decodeMsgvaultProblem(t, rr)
 	assert.Equal(CodeValidationError, problem.Code)
 }
@@ -188,7 +188,7 @@ func TestMessagesSavedSearchesPutNullSearchesField(t *testing.T) {
 	rr := doMsgvaultRaw(t, srv, http.MethodPut, "/api/v1/messages/saved-searches", "127.0.0.1:12345", "application/json", `{"searches":null}`)
 
 	require.Equal(t, http.StatusUnprocessableEntity, rr.Code)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	problem := decodeMsgvaultProblem(t, rr)
 	assert.Equal(CodeValidationError, problem.Code)
 }
@@ -211,12 +211,12 @@ func TestMessagesSavedSearchesPutTolerantPerEntry(t *testing.T) {
 		{Name: "keep-name-fallback", Query: "keep-name-fallback"},
 		{Name: "good", Query: "q"},
 	}
-	Assert.Equal(t, want, got.Searches)
+	assert.Equal(t, want, got.Searches)
 }
 
 func TestMessagesSavedSearchesConcurrentSameETagPutsSerialize(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv := setupSavedSearchesRouteServer(t)
 	seedRR := doSavedSearchesReplace(t, srv, []messages.SavedSearch{{Name: "seed", Query: "q"}}, "")
 	require.Equal(http.StatusOK, seedRR.Code)

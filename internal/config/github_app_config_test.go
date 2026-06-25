@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
@@ -33,7 +33,7 @@ func TestLoadGitHubApps(t *testing.T) {
 	require.Len(t, cfg.GitHubApps, 1)
 
 	app := cfg.GitHubApps[0]
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal("github.com", app.Host)
 	assert.Equal(int64(4321), app.AppID)
 	assert.Equal("middleman-abc", app.Slug)
@@ -50,7 +50,7 @@ func TestLoadGitHubApps(t *testing.T) {
 func TestGitHubAppsSaveLoadRoundTrip(t *testing.T) {
 	cfg, cfg2 := roundTripConfigString(t, githubAppConfigTOML)
 	require.Len(t, cfg2.GitHubApps, 1)
-	Assert.Equal(t, cfg.GitHubApps[0], cfg2.GitHubApps[0])
+	assert.Equal(t, cfg.GitHubApps[0], cfg2.GitHubApps[0])
 }
 
 func TestGitHubAppsValidation(t *testing.T) {
@@ -131,7 +131,7 @@ private_key_path = "b.pem"
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Load(writeConfig(t, tt.toml))
 			require.Error(t, err)
-			Assert.ErrorContains(t, err, tt.wantErr)
+			assert.ErrorContains(t, err, tt.wantErr)
 		})
 	}
 }
@@ -356,7 +356,7 @@ selected_repos = ["kenn-io/middleman"]
 				return
 			}
 			require.Error(t, err)
-			Assert.ErrorContains(t, err, tt.wantErr)
+			assert.ErrorContains(t, err, tt.wantErr)
 		})
 	}
 }
@@ -433,7 +433,7 @@ installation_account = "kenn-io"
 repository_selection = "all"
 `))
 	require.Error(t, err)
-	Assert.ErrorContains(t, err, "conflicting token source")
+	assert.ErrorContains(t, err, "conflicting token source")
 }
 
 func TestGitHubAppHostDefaultsToPublicHost(t *testing.T) {
@@ -444,7 +444,7 @@ private_key_path = "key.pem"
 `))
 	require.NoError(t, err)
 	require.Len(t, cfg.GitHubApps, 1)
-	Assert.Equal(t, "github.com", cfg.GitHubApps[0].Host)
+	assert.Equal(t, "github.com", cfg.GitHubApps[0].Host)
 }
 
 func TestTokenSourceChainPrefersGitHubAppOverPATs(t *testing.T) {
@@ -477,7 +477,7 @@ repository_selection = "all"
 		tokenauth.SourceKindGitHubCLI,
 	}, kinds)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	app := desc.Candidates[0]
 	assert.Equal(int64(4321), app.AppID)
 	assert.Equal(int64(99), app.InstallationID)
@@ -554,7 +554,7 @@ repository_selection = "all"
 	// token and reopen the cross-account 404 the validation prevents.
 	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "OTHER_ORG_PAT", "")
 	for _, cand := range desc.Candidates {
-		Assert.NotEqual(t, tokenauth.SourceKindGitHubApp, cand.Kind,
+		assert.NotEqual(t, tokenauth.SourceKindGitHubApp, cand.Kind,
 			"repo-level override chains must not fall through to the app token")
 	}
 }
@@ -581,7 +581,7 @@ repository_selection = "all"
 	} {
 		desc := cfg.TokenSourceForPlatformHost(tc.platform, tc.host, "", "")
 		for _, cand := range desc.Candidates {
-			Assert.NotEqual(
+			assert.NotEqual(
 				t, tokenauth.SourceKindGitHubApp, cand.Kind,
 				"%s/%s must not inherit the github.com app", tc.platform, tc.host,
 			)

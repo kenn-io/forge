@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/procutil"
@@ -23,7 +23,7 @@ func TestCloneProject(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -72,7 +72,7 @@ func TestCloneProjectBranchAndHomePath(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
@@ -115,7 +115,7 @@ func TestCloneProjectFailureCleansOwnedDestination(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)

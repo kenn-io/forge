@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 )
@@ -25,7 +25,7 @@ func TestRemoveStaleWorktreeRoute(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -88,7 +88,7 @@ func TestRemoveStaleWorktreeRoute(t *testing.T) {
 func TestRemoveStaleWorktreeRouteStopsRuntimeSessions(t *testing.T) {
 	requirePTYAvailable(t)
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID, recordPath :=
 		setupProjectWorktreeCommandSessionTestWithRecord(t)

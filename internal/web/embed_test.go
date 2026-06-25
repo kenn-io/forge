@@ -4,7 +4,7 @@ import (
 	"io/fs"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,5 +14,5 @@ func TestAssetsIncludesStubFile(t *testing.T) {
 
 	content, err := fs.ReadFile(assets, "stub.html")
 	require.NoError(t, err)
-	Assert.Equal(t, "ok\n", string(content))
+	assert.Equal(t, "ok\n", string(content))
 }

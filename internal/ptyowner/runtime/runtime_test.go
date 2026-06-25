@@ -6,12 +6,12 @@ import (
 	"runtime"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestHasRelativePathSyntaxRejectsWindowsPathForms(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	assert.False(hasRelativePathSyntax("tool.exe"))
 	assert.True(hasRelativePathSyntax(`dir\\tool.exe`))
@@ -21,7 +21,7 @@ func TestHasRelativePathSyntaxRejectsWindowsPathForms(t *testing.T) {
 
 func TestResolveExecutableRejectsPathSyntaxEvenIfPATHContainsMatch(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))

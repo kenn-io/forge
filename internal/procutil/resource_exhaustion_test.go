@@ -6,12 +6,12 @@ import (
 	"syscall"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestIsResourceExhausted(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	assert.True(IsResourceExhausted(syscall.EAGAIN))
 	assert.True(IsResourceExhausted(fmt.Errorf("wrap: %w", syscall.EAGAIN)))
@@ -22,7 +22,7 @@ func TestIsResourceExhausted(t *testing.T) {
 }
 
 func TestWrapResourceExhaustion(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	err := WrapResourceExhaustion(

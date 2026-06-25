@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -65,7 +65,7 @@ endpoint = %q
 }
 
 func TestRoborevProxyForwarding(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	var mu sync.Mutex
 	var receivedMethod, receivedPath string
@@ -97,7 +97,7 @@ func TestRoborevProxyForwarding(t *testing.T) {
 }
 
 func TestRoborevProxyE2EForwardsSubpathAndNonGETMethod(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var mu sync.Mutex
@@ -158,7 +158,7 @@ func TestRoborevProxyE2EForwardsSubpathAndNonGETMethod(t *testing.T) {
 }
 
 func TestRoborevProxy502(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv := setupTestServerWithRoborev(t, "http://127.0.0.1:1")
 
@@ -173,7 +173,7 @@ func TestRoborevProxy502(t *testing.T) {
 }
 
 func TestRoborevHealthProbeAvailable(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +207,7 @@ func TestRoborevHealthProbeAvailable(t *testing.T) {
 }
 
 func TestRoborevHealthProbeUnavailable(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv := setupTestServerWithRoborev(t, "http://127.0.0.1:1")
 

@@ -3,13 +3,13 @@ package testutil
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 )
 
 func TestSeedFixtures_Repos(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d, _ := OpenFixtureTestDB(t)
 
@@ -27,7 +27,7 @@ func TestSeedFixtures_Repos(t *testing.T) {
 }
 
 func TestSeedFixtures_PRCounts(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d, _ := OpenFixtureTestDB(t)
 	ctx := t.Context()
@@ -60,7 +60,7 @@ func TestSeedFixtures_PRCounts(t *testing.T) {
 }
 
 func TestSeedFixtures_IssueCounts(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d, _ := OpenFixtureTestDB(t)
 	ctx := t.Context()
@@ -80,7 +80,7 @@ func TestSeedFixtures_IssueCounts(t *testing.T) {
 }
 
 func TestSeedFixtures_Activity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d, _ := OpenFixtureTestDB(t)
 
@@ -103,7 +103,7 @@ func TestSeedFixtures_Activity(t *testing.T) {
 }
 
 func TestSeedFixtures_FixtureClient(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	_, result := OpenFixtureTestDB(t)
 
@@ -168,7 +168,7 @@ func TestSeedFixtures_FixtureClient(t *testing.T) {
 }
 
 func TestSeedFixtures_MergeTargetsHaveReviewedHeads(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d, result := OpenFixtureTestDB(t)
 	ctx := t.Context()

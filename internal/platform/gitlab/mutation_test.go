@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
@@ -29,7 +29,7 @@ func projectRef() platform.RepoRef {
 // require because it runs inside httptest handler goroutines.
 func decodeBody(t *testing.T, r *http.Request, into any) bool {
 	t.Helper()
-	return Assert.NoError(t, json.NewDecoder(r.Body).Decode(into))
+	return assert.NoError(t, json.NewDecoder(r.Body).Decode(into))
 }
 
 func TestGitLabCommentMutations(t *testing.T) {
@@ -114,7 +114,7 @@ func TestGitLabCommentMutations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := Require.New(t)
 			var sawRequest bool
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +161,7 @@ func TestGitLabSetMergeRequestStateSendsStateEvent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.state, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := Require.New(t)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.EscapedPath() != "/api/v4/projects/42/merge_requests/7" {
@@ -189,7 +189,7 @@ func TestGitLabSetMergeRequestStateSendsStateEvent(t *testing.T) {
 }
 
 func TestGitLabSetIssueStateSendsStateEvent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.EscapedPath() != "/api/v4/projects/42/issues/11" {
@@ -215,7 +215,7 @@ func TestGitLabSetIssueStateSendsStateEvent(t *testing.T) {
 }
 
 func TestGitLabSetStateRejectsUnknownState(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	client, err := NewClient("gitlab.example.com", testTokenSource("token"))
 	require.NoError(err)
@@ -269,7 +269,7 @@ func TestGitLabMergeMergeRequestMapsMethods(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := Require.New(t)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.EscapedPath() != "/api/v4/projects/42/merge_requests/7/merge" {
@@ -333,7 +333,7 @@ func TestGitLabMergeMergeRequestClassifies409s(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := Require.New(t)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.EscapedPath() != "/api/v4/projects/42/merge_requests/7/merge" {
@@ -360,7 +360,7 @@ func TestGitLabMergeMergeRequestClassifies409s(t *testing.T) {
 }
 
 func TestGitLabMergeMergeRequestRejectsRebaseWithTypedError(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	// No fake server: rebase must fail before any API call because GitLab
 	// selects rebase/fast-forward behavior via project settings, not per merge.
@@ -378,7 +378,7 @@ func TestGitLabMergeMergeRequestRejectsRebaseWithTypedError(t *testing.T) {
 }
 
 func TestGitLabCreateIssueAndEditContent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var createSeen, editIssueSeen, editMRSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -446,7 +446,7 @@ func TestGitLabCreateIssueAndEditContent(t *testing.T) {
 }
 
 func TestGitLabApproveMergeRequestPostsNoteAndApproves(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var noteSeen, approveSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -498,7 +498,7 @@ func TestGitLabApproveMergeRequestPostsNoteAndApproves(t *testing.T) {
 }
 
 func TestGitLabApproveMergeRequestReportsNotePostedWhenApprovalFails(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var noteSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -527,7 +527,7 @@ func TestGitLabApproveMergeRequestReportsNotePostedWhenApprovalFails(t *testing.
 }
 
 func TestGitLabApproveMergeRequestSkipsNoteForEmptyBody(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var noteSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -557,7 +557,7 @@ func TestGitLabApproveMergeRequestSkipsNoteForEmptyBody(t *testing.T) {
 }
 
 func TestGitLabApproveMergeRequestRejectsStaleHeadBeforePostingNote(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var noteSeen, approveSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -601,7 +601,7 @@ func TestCombineCommitMessage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			Assert.Equal(t, tt.want, combineCommitMessage(tt.title, tt.message))
+			assert.Equal(t, tt.want, combineCommitMessage(tt.title, tt.message))
 		})
 	}
 }

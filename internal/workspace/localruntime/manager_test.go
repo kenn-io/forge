@@ -18,7 +18,7 @@ import (
 	"github.com/cenkalti/backoff/v5"
 	"github.com/creack/pty/v2"
 	shellquote "github.com/kballard/go-shellquote"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
@@ -78,7 +78,7 @@ func TestManagerLaunchesIndependentSessionsPerWorkspaceTarget(t *testing.T) {
 	require.NoError(t, err)
 
 	sessions := mgr.ListSessions("ws-1")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.NotEqual(session1.Key, session2.Key)
 	assert.Equal("helper", session1.Label)
 	assert.Equal("helper 2", session2.Label)
@@ -102,7 +102,7 @@ func TestManagerRenamesSessionMetadata(t *testing.T) {
 	renamed, err := mgr.RenameSession("ws-1", session.Key, "Review helper")
 	require.NoError(t, err)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(session.Key, renamed.Key)
 	assert.Equal("Review helper", renamed.Label)
 	sessions := mgr.ListSessions("ws-1")
@@ -114,7 +114,7 @@ func TestManagerLaunchConcurrentStartsIndependentProcesses(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	ctx := context.Background()
 	record := filepath.Join(t.TempDir(), "starts")
@@ -171,7 +171,7 @@ func TestNewSessionKeyUsesWorkspacePrefixAndRandomSuffix(t *testing.T) {
 	second, err := NewSessionKey("ws-1")
 	require.NoError(t, err)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.True(strings.HasPrefix(first, "ws-1_"))
 	assert.True(strings.HasPrefix(second, "ws-1_"))
 	assert.NotEqual(first, second)
@@ -204,7 +204,7 @@ func TestManagerLaunchMissingTarget(t *testing.T) {
 func TestManagerUpdateTargetsAffectsFutureLaunches(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	ctx := context.Background()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
@@ -229,7 +229,7 @@ func TestManagerUpdateTargetsAffectsFutureLaunches(t *testing.T) {
 }
 
 func TestManagerTmuxSessionsReturnsWrappedAgentSessions(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	mgr := NewManager(Options{})
 	mgr.sessions["ws-1:codex"] = &session{
 		info: SessionInfo{
@@ -268,7 +268,7 @@ func TestStartTmuxAttachSessionKeepsBackingTmuxSession(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	info := SessionInfo{
 		Key:         "session-1",
@@ -293,7 +293,7 @@ func TestStartTmuxAttachSessionKeepsBackingTmuxSession(t *testing.T) {
 
 func TestManagerLaunchCommandWrapsAgentsInTmuxWhenEnabled(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	t.Setenv("XDG_RUNTIME_DIR", "argv-visible-value")
 	dir := t.TempDir()
 	record := filepath.Join(dir, "tmux-record")
@@ -355,7 +355,7 @@ exit 0
 
 func TestManagerLaunchCommandResolvesTmuxBeforeEmbeddingScript(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
 	require.NoError(os.MkdirAll(binDir, 0o755))
@@ -415,7 +415,7 @@ func TestManagerLaunchCommandRejectsRelativeTmuxCommandWhenWrapped(t *testing.T)
 }
 
 func TestManagerLaunchCommandMarksWrappedAgentTmuxSession(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	record := filepath.Join(dir, "tmux-record")
@@ -463,7 +463,7 @@ exit 0
 
 func TestManagerLaunchPlainShellWrapsInTmuxWhenAvailable(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	t.Setenv("XDG_RUNTIME_DIR", "argv-visible-value")
 	t.Setenv("MIDDLEMAN_TEST_CUSTOM_SHELL_ENV", "custom-visible-value")
 	dir := t.TempDir()
@@ -542,7 +542,7 @@ exit 0
 
 func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	tmuxPath := writeLongRunningAttachTmux(t)
 	mgr := NewManager(Options{
 		TmuxCommand: []string{tmuxPath},
@@ -572,7 +572,7 @@ func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T)
 
 func TestManagerRestoreTmuxSessionReusesExistingPlainShellRuntimeSession(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	tmuxPath := writeLongRunningAttachTmux(t)
 	mgr := NewManager(Options{
 		TmuxCommand: []string{tmuxPath},
@@ -598,7 +598,7 @@ func TestManagerRestoreTmuxSessionReusesExistingPlainShellRuntimeSession(t *test
 
 func TestManagerRestorePtyOwnerSessionIgnoresRemovedTarget(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	sessionKey := "ws-1_removedtarget"
 	owner := newFakeRuntimePtyOwner()
 	owner.startedSession = sessionKey
@@ -636,7 +636,7 @@ func TestManagerRestorePtyOwnerSessionIgnoresRemovedTarget(t *testing.T) {
 
 func TestManagerRestorePtyOwnerSessionRetriesAttach(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	sessionKey := "ws-1_retry-attach"
 	owner := newFakeRuntimePtyOwner()
 	owner.startedSession = sessionKey
@@ -682,7 +682,7 @@ func TestManagerRestorePtyOwnerSessionRetriesAttach(t *testing.T) {
 
 func TestManagerRestorePtyOwnerAttachFailureIsUnavailable(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	sessionKey := "ws-1_unavailable-attach"
 	owner := newFakeRuntimePtyOwner()
 	owner.startedSession = sessionKey
@@ -727,7 +727,7 @@ func TestManagerRestorePtyOwnerAttachFailureIsUnavailable(t *testing.T) {
 
 func TestManagerRestoreTmuxSessionAttachesStoredSessionWithoutOwnerValidation(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	tmuxPath := filepath.Join(dir, "tmux")
@@ -782,7 +782,7 @@ func TestManagerRestoreTmuxSessionUnavailableWhenCommandCannotResolve(
 }
 
 func TestTmuxSessionNameUsesOpaqueTargetHash(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	fooSlash := tmuxSessionName("ws:alpha", "foo/bar")
 	fooColon := tmuxSessionName("ws:alpha", "foo:bar")
@@ -799,7 +799,7 @@ func TestManagerLaunchCommandFailsWhenOwnerMarkingFailsDuringCreate(t *testing.T
 		t.Skip("tmux owner shell wrapper uses Unix shell semantics")
 	}
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
@@ -857,7 +857,7 @@ func TestManagerLaunchCommandDoesNotKillSessionWhenTmuxCreateFails(t *testing.T)
 		t.Skip("tmux owner shell wrapper uses Unix shell semantics")
 	}
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
@@ -931,7 +931,7 @@ func TestManagerLaunchCommandDoesNotEmbedEnvForWrappedAgent(t *testing.T) {
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "secret-token")
 	t.Setenv("CONTEXT7_API_KEY", "context7-secret")
 	t.Setenv("XDG_RUNTIME_DIR", "not-carried")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	resolvedShell, err := resolveExecutable("sh")
 	require.NoError(t, err)
 
@@ -1040,7 +1040,7 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 }
 
 func TestManagerLaunchCommandFallsBackWhenTmuxUnavailable(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	agent := helperTarget("codex", "sleep")
 	mgr := NewManager(Options{
 		Targets: []LaunchTarget{
@@ -1065,7 +1065,7 @@ func TestManagerLaunchCommandFallsBackWhenTmuxUnavailable(t *testing.T) {
 
 func TestManagerLaunchUsesPtyOwnerWhenConfigured(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ctx := context.Background()
 	backend := newFakeRuntimePtyOwner()
 	agent := helperTarget("codex", "exit")
@@ -1087,7 +1087,7 @@ func TestManagerLaunchUsesPtyOwnerWhenConfigured(t *testing.T) {
 
 func TestManagerLaunchPassesStripEnvVarsToPtyOwner(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ctx := context.Background()
 	backend := newFakeRuntimePtyOwner()
 	agent := helperTarget("codex", "exit")
@@ -1106,7 +1106,7 @@ func TestManagerLaunchPassesStripEnvVarsToPtyOwner(t *testing.T) {
 
 func TestManagerUpdateStripEnvVarsPreservesPreviousNamesForFutureLaunches(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ctx := context.Background()
 	backend := newFakeRuntimePtyOwner()
 	agent := helperTarget("codex", "exit")
@@ -1125,7 +1125,7 @@ func TestManagerUpdateStripEnvVarsPreservesPreviousNamesForFutureLaunches(t *tes
 }
 
 func TestManagerUpdateTargetsAndStripEnvVarsPreservesPreviousNames(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	oldAgent := helperTarget("old", "exit")
 	newAgent := helperTarget("new", "exit")
 	mgr := NewManager(Options{
@@ -1157,14 +1157,14 @@ func TestManagerLaunchTargetsHideInternalShellTarget(t *testing.T) {
 	t.Cleanup(mgr.Shutdown)
 
 	targets := mgr.LaunchTargets()
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Len(targets, 2)
 	assert.Equal(string(LaunchTargetPlainShell), targets[0].Key)
 	assert.Equal("codex", targets[1].Key)
 }
 
 func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	agent := helperTarget("codex", "sleep")
 	mgr := NewManager(Options{
 		Targets: []LaunchTarget{
@@ -1189,7 +1189,7 @@ func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
 
 func TestManagerStopReportsTmuxCleanupFailure(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	tmuxPath := filepath.Join(t.TempDir(), "tmux-fails")
 	require.NoError(os.WriteFile(
 		tmuxPath,
@@ -1222,7 +1222,7 @@ func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	tmuxPath := filepath.Join(t.TempDir(), "tmux-fails")
 	require.NoError(os.WriteFile(
@@ -1287,7 +1287,7 @@ func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	tmuxPath := filepath.Join(dir, "tmux-records")
@@ -1347,7 +1347,7 @@ func TestManagerRejectsUnownedRuntimeSessions(t *testing.T) {
 
 func TestManagerShutdownDetachesPtyOwnerSessions(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	ctx := context.Background()
 	owner := newFakeRuntimePtyOwner()
@@ -1378,7 +1378,7 @@ func TestManagerShutdownDetachesPtyOwnerSessions(t *testing.T) {
 }
 
 func TestManagerStopWorkspaceStopsKnownPtyOwnerSessionsAfterRestart(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	owner := newFakeRuntimePtyOwner()
 	mgr := NewManager(Options{
@@ -1398,7 +1398,7 @@ func TestManagerStopWorkspaceStopsKnownPtyOwnerSessionsAfterRestart(t *testing.T
 
 func TestPtyOwnerLifecycleStopClosesAttachmentAfterOwnerStopFailure(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	owner := newFakeRuntimePtyOwner()
 	owner.stopErr = errors.New("stop failed")
@@ -1424,7 +1424,7 @@ func TestPtyOwnerLifecycleStopClosesAttachmentAfterOwnerStopFailure(t *testing.T
 
 func TestManagerStopKeepsPtyOwnerSessionRetryableAfterStopFailure(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	ctx := context.Background()
 	owner := newFakeRuntimePtyOwner()
@@ -1469,7 +1469,7 @@ func TestManagerStopRemovesSession(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, mgr.Stop(ctx, "ws-1", session.Key))
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Empty(mgr.ListSessions("ws-1"))
 	assert.Error(mgr.Stop(ctx, "ws-1", session.Key))
 }
@@ -1478,7 +1478,7 @@ func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	record := filepath.Join(t.TempDir(), "pids")
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{{
@@ -1546,7 +1546,7 @@ func TestBeginStoppingRejectsLaunchUntilEnd(t *testing.T) {
 
 func TestStopWorkspaceWaitsForInflightLaunches(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	mgr := NewManager(Options{})
 	t.Cleanup(mgr.Shutdown)
@@ -1596,7 +1596,7 @@ func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	record := filepath.Join(t.TempDir(), "pids")
 	ctx := context.Background()
@@ -1724,7 +1724,7 @@ func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
 		}
 	}, 2*time.Second, 20*time.Millisecond)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(session.Key, got.Key)
 	assert.Equal(SessionStatusExited, got.Status)
 	assert.NotNil(got.ExitedAt)
@@ -1763,7 +1763,7 @@ func TestManagerRemovesNaturallyExitedShell(t *testing.T) {
 		}
 	}, 2*time.Second, 20*time.Millisecond)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(shell.Key, got.Key)
 	assert.Equal(SessionStatusExited, got.Status)
 	assert.NotNil(got.ExitedAt)
@@ -1792,7 +1792,7 @@ func TestManagerLaunchPlainShellCreatesIndependentSessions(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.NotEqual(shell1.Key, shell2.Key)
 	assert.Equal(SessionStatusRunning, shell1.Status)
 	assert.Equal(SessionStatusRunning, shell2.Status)
@@ -1817,7 +1817,7 @@ func TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop(t *testing.T) 
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ctx := context.Background()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
 		ShellCommand: helperCommand("sleep"),
@@ -1896,7 +1896,7 @@ drain:
 
 func TestAttachmentResizeOwnerPrefersActiveLocalUntilInactive(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	pty := &fakeRuntimePTY{
 		output: make(chan []byte),
@@ -2074,7 +2074,7 @@ func TestManagerPlainShellConcurrentLaunchesStartIndependentProcesses(t *testing
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	ctx := context.Background()
 	record := filepath.Join(t.TempDir(), "shell-starts")
@@ -2148,7 +2148,7 @@ func TestSessionBroadcastClosesSlowSubscriber(t *testing.T) {
 	s.broadcast([]byte("new"))
 
 	got := <-ch
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal([]byte("queued"), got)
 	select {
 	case _, ok := <-ch:
@@ -2172,7 +2172,7 @@ func TestSessionSubscribeReplaysBufferedOutput(t *testing.T) {
 	ch, cancel := s.subscribe()
 	t.Cleanup(cancel)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	select {
 	case data := <-ch:
 		assert.Equal("startup-banner\r\n$ ", string(data))
@@ -2199,7 +2199,7 @@ func TestSessionSubscribeSkipsReplayWhileAlternateScreenActive(t *testing.T) {
 	ch, cancel := s.subscribe()
 	t.Cleanup(cancel)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	select {
 	case data := <-ch:
 		assert.Failf(
@@ -2230,7 +2230,7 @@ func TestSessionSubscribeReplaysNormalOutputAfterAlternateScreenExit(t *testing.
 	ch, cancel := s.subscribe()
 	t.Cleanup(cancel)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	select {
 	case data := <-ch:
 		assert.Equal("\r\n$ ", string(data))
@@ -2249,7 +2249,7 @@ func TestSessionAlternateScreenTrackingHandlesSplitEscapeSequences(t *testing.T)
 	ch, cancel := s.subscribe()
 	t.Cleanup(cancel)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	select {
 	case data := <-ch:
 		assert.Failf(
@@ -2297,7 +2297,7 @@ func TestSessionSubscribeAfterCloseStillReplays(t *testing.T) {
 	ch, cancel := s.subscribe()
 	t.Cleanup(cancel)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	select {
 	case data, ok := <-ch:
 		assert.True(ok)
@@ -2328,7 +2328,7 @@ func TestSessionOutputBufferIsBounded(t *testing.T) {
 	s.mu.Lock()
 	bufLen := len(s.outputBuffer)
 	s.mu.Unlock()
-	Assert.New(t).LessOrEqual(bufLen, maxSessionOutputReplay)
+	assert.New(t).LessOrEqual(bufLen, maxSessionOutputReplay)
 }
 
 func TestManagerStopWorkspaceStopsAllSessions(t *testing.T) {
@@ -2336,7 +2336,7 @@ func TestManagerStopWorkspaceStopsAllSessions(t *testing.T) {
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	ctx := context.Background()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
@@ -2409,7 +2409,7 @@ func helperCommand(mode string) []string {
 // names are accepted; relative names with separators are rejected.
 func TestResolveExecutableRejectsRelativePaths(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	// Absolute path: pass through unchanged.
 	absCommand := "/usr/local/bin/codex"
@@ -2462,7 +2462,7 @@ func TestResolveExecutableRejectsRelativePaths(t *testing.T) {
 
 func TestResolveExecutableForcesAbsoluteFromRelativePATH(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
@@ -2529,7 +2529,7 @@ func writeFakeRuntimeTool(
 // the maintainer's credentials.
 func TestSessionEnvironmentStripsCredentials(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	in := []string{
 		"PATH=/usr/bin",

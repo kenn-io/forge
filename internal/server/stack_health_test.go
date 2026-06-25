@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"go.kenn.io/middleman/internal/db"
 )
 
@@ -92,13 +92,13 @@ func TestComputeStackHealth(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			Assert.Equal(t, tt.want, computeStackHealth(tt.members))
+			assert.Equal(t, tt.want, computeStackHealth(tt.members))
 		})
 	}
 }
 
 func TestComputeBlockedBy(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	// No blockers
 	members := []db.StackMemberWithPR{

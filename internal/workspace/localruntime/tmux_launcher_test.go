@@ -10,12 +10,12 @@ import (
 	"testing"
 
 	shellquote "github.com/kballard/go-shellquote"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	t.Setenv("XDG_RUNTIME_DIR", "argv-visible-value")
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "secret-value")
 
@@ -68,7 +68,7 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 }
 
 func TestTmuxLauncherCanHideStatusOnNewSessions(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	paneEnv := tmuxAgentEnvPolicy.paneEnvironment(
 		os.Environ(), []string{"/bin/sh", "-lc", "sleep 10"}, nil,
@@ -99,7 +99,7 @@ func TestTmuxLauncherCanHideStatusOnNewSessions(t *testing.T) {
 
 func TestTmuxLauncherCleansUpWhenHideStatusFails(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	record := filepath.Join(dir, "tmux-record")
 	created := filepath.Join(dir, "created")
@@ -178,7 +178,7 @@ exit 0
 }
 
 func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	t.Setenv("MIDDLEMAN_TEST_CUSTOM_SHELL_ENV", "custom-visible-value")
 
 	shellKeys := tmuxShellEnvPolicy.keys(nil)
@@ -199,7 +199,7 @@ func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {
 
 func TestTmuxLauncherRejectsUnownedExistingSession(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	record := filepath.Join(dir, "tmux-record")
 	tmuxPath := filepath.Join(dir, "tmux")

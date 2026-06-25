@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/tokenauth"
@@ -26,7 +26,7 @@ func branchSyncTestManager(t *testing.T) *Manager {
 
 func TestPushWorktreeBranchPushesAheadCommitsAndRunsHooks(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	work := setupDivergenceWorktree(t)
 	marker := filepath.Join(filepath.Dir(work), "pre-push-ran")
 	hook := filepath.Join(work, ".git", "hooks", "pre-push")
@@ -52,7 +52,7 @@ func TestPushWorktreeBranchPushesAheadCommitsAndRunsHooks(t *testing.T) {
 
 func TestPullWorktreeBranchFastForwardsBehindBranch(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	work := setupDivergenceWorktree(t)
 	other := filepath.Join(filepath.Dir(work), "other")
 	remote := filepath.Join(filepath.Dir(work), "remote.git")
@@ -103,7 +103,7 @@ func TestPushWorktreeBranchRejectsDivergedBranch(t *testing.T) {
 	err := branchSyncTestManager(t).PushWorktreeBranch(t.Context(), "", work)
 
 	require.Error(err)
-	Assert.New(t).ErrorIs(err, ErrWorktreeDiverged)
+	assert.New(t).ErrorIs(err, ErrWorktreeDiverged)
 }
 
 func TestPullWorktreeBranchRejectsDirtyWorktree(t *testing.T) {
@@ -116,7 +116,7 @@ func TestPullWorktreeBranchRejectsDirtyWorktree(t *testing.T) {
 	err := branchSyncTestManager(t).PullWorktreeBranch(t.Context(), "", work)
 
 	require.Error(err)
-	Assert.New(t).ErrorIs(err, ErrWorktreeDirty)
+	assert.New(t).ErrorIs(err, ErrWorktreeDirty)
 }
 
 // TestPushWorktreeBranchUsesAuthenticatedRunnerAndMutationAuth proves that
@@ -129,7 +129,7 @@ func TestPullWorktreeBranchRejectsDirtyWorktree(t *testing.T) {
 // records which token each networked operation carried.
 func TestPushWorktreeBranchUsesAuthenticatedRunnerAndMutationAuth(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	work := setupDivergenceWorktree(t)
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "f.txt"), []byte("ahead\n"), 0o644,

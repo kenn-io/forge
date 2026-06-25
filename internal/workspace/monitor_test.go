@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/db"
@@ -108,7 +108,7 @@ func seedIssue(
 }
 
 func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -149,7 +149,7 @@ func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 }
 
 func TestPRMonitorRunOnceFallsBackToLocalBranchNameAndHeadSHA(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -193,7 +193,7 @@ func TestPRMonitorRunOnceFallsBackToLocalBranchNameAndHeadSHA(t *testing.T) {
 }
 
 func TestPRMonitorRunOnceFallsBackToLocalHeadSHAWhenUpstreamRepoMetadataMissing(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -244,7 +244,7 @@ func TestPRMonitorRunOnceFallsBackToLocalHeadSHAWhenUpstreamRepoMetadataMissing(
 }
 
 func TestPRMonitorRunOnceRejectsLocalBranchWithMismatchedHeadSHA(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -284,7 +284,7 @@ func TestPRMonitorRunOnceRejectsLocalBranchWithMismatchedHeadSHA(t *testing.T) {
 }
 
 func TestPRMonitorRunOnceRejectsLocalBranchWithMismatchedUpstreamRemote(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -343,7 +343,7 @@ func TestPRMonitorRunOnceRejectsLocalBranchWithMismatchedUpstreamRemote(t *testi
 }
 
 func TestPRMonitorRunOnceSkipsSyntheticIssueBranch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -368,7 +368,7 @@ func TestPRMonitorRunOnceSkipsSyntheticIssueBranch(t *testing.T) {
 }
 
 func TestPRMonitorRunOnceAssociatesPRFromManagedIssueBranch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -414,7 +414,7 @@ func TestPRMonitorRunOnceAssociatesPRWhenSlugWorkspaceCheckedOutToBareBranch(t *
 	// `middleman/issue-<n>` is NOT on its managed branch and should
 	// not suppress PR detection. The bare-form fallback only applies
 	// to pre-feature workspaces with an empty GitHeadRef.
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -477,7 +477,7 @@ func TestPRMonitorRunOnceAssociatesPRWhenSlugWorkspaceCheckedOutToBareBranch(t *
 }
 
 func TestPRMonitorRunOnceUsesUpstreamRemoteIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -518,7 +518,7 @@ func TestPRMonitorRunOnceUsesUpstreamRemoteIdentity(t *testing.T) {
 }
 
 func TestPRMonitorRunOnceScopesCandidatesByWorkspaceProvider(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -568,7 +568,7 @@ func TestPRMonitorRunOnceScopesCandidatesByWorkspaceProvider(t *testing.T) {
 }
 
 func TestPRMonitorRefreshWorkspaceAssociationReturnsInspectionError(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -592,7 +592,7 @@ func TestPRMonitorRefreshWorkspaceAssociationReturnsInspectionError(t *testing.T
 }
 
 func TestSelectPRByUpstream(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	candidates := []db.MergeRequest{
 		{
 			Number:           41,
@@ -641,7 +641,7 @@ func TestSelectPRByUpstream(t *testing.T) {
 }
 
 func TestSelectPRByBranchRejectsAmbiguousMatches(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	candidates := []db.MergeRequest{
 		{Number: 41, HeadBranch: "shared-local", PlatformHeadSHA: "abc123"},
 		{Number: 42, HeadBranch: "shared-local", PlatformHeadSHA: "abc123"},
@@ -713,13 +713,13 @@ func TestWorkspacePRMonitorEligible(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			Assert.Equal(t, tt.want, workspacePRMonitorEligible(tt.ws))
+			assert.Equal(t, tt.want, workspacePRMonitorEligible(tt.ws))
 		})
 	}
 }
 
 func TestNormalizeCloneRepoIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	assert.Equal(
 		"github.com/fork/widget",
@@ -742,7 +742,7 @@ func TestNormalizeCloneRepoIdentity(t *testing.T) {
 }
 
 func TestNormalizePlatformHostIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	assert.Equal("ghe.example.com:8443", normalizePlatformHostIdentity("GHE.example.com:8443"))
 	assert.Equal("ghe.example.com", normalizePlatformHostIdentity("ghe.example.com:443"))

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/db"
@@ -75,7 +75,7 @@ func seedMergeRequest(
 // origin, materialized as a new worktree, and registered.
 func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -143,7 +143,7 @@ func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
 // request is a 404 with the pullNotFound code, and nothing touches disk.
 func TestCreateWorktreeFromMergeRequestRouteUnknownNumber(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -195,7 +195,7 @@ func TestCreateWorktreeFromMergeRequestRouteNoIdentity(t *testing.T) {
 // hub proxying into this host) does not need a separate sync step.
 func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	origin := initLifecycleRouteRepo(t)
 	clone := filepath.Join(t.TempDir(), "clone")

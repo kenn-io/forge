@@ -14,7 +14,7 @@ import (
 	"time"
 
 	shellquote "github.com/kballard/go-shellquote"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
@@ -140,7 +140,7 @@ agent_sessions = false
 func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 	requirePTYAvailable(t)
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeCommandSessionTest(t)
 	ts := httptest.NewServer(srv)
@@ -206,7 +206,7 @@ func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 
 func TestProjectWorktreeRuntimeCommandSessionValidation(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeCommandSessionTest(t)
 	ts := httptest.NewServer(srv)
@@ -246,7 +246,7 @@ func TestProjectWorktreeRuntimeCommandSessionValidation(t *testing.T) {
 
 func TestProjectWorktreeRuntimeListsStoredCommandSessionLabel(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeCommandSessionTest(t)
 	ts := httptest.NewServer(srv)

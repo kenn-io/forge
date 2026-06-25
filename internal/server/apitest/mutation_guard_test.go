@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +27,7 @@ import (
 // envelope writeError produces, and the response Content-Type header
 // writeJSON sets.
 func TestMutationGuardRejectsNonJSONContentTypeWithProblemBody(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)

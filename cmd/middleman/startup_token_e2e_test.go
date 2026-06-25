@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/tokenauth"
@@ -25,7 +25,7 @@ import (
 // wiring from TOML parsing through subprocess invocation as the daemon
 // would run it on startup.
 func TestCollectProviderTokensInvokesGHWithHostnameForEnterprise(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	// Fake gh on PATH. Records argv (one invocation per line) and
@@ -100,7 +100,7 @@ name = "widget"
 }
 
 func TestCollectProviderTokenSourcesReadsRotatedTokenFile(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	tokenPath := filepath.Join(t.TempDir(), "token")

@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
 
 func TestGitLabPublishDiffReviewDraftCreatesDraftNotesAndApproves(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var createdDrafts int
 	var published bool
@@ -116,7 +116,7 @@ func TestGitLabPublishDiffReviewDraftCreatesDraftNotesAndApproves(t *testing.T) 
 }
 
 func TestGitLabPublishDiffReviewDraftReturnsPartialErrorWhenApproveFails(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var published bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +164,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorWhenApproveFails(t *test
 }
 
 func TestGitLabPublishDiffReviewDraftReturnsPartialStaleErrorWhenApproveHeadMoves(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var published bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -226,7 +226,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialStaleErrorWhenApproveHeadMove
 }
 
 func TestGitLabPublishDiffReviewDraftReportsSummaryPostedWhenApproveHeadMoves(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var summaryCreated bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -275,7 +275,7 @@ func TestGitLabPublishDiffReviewDraftReportsSummaryPostedWhenApproveHeadMoves(t 
 }
 
 func TestGitLabPublishDiffReviewDraftUsesHeadSHAForSummaryApproval(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var approved bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -334,11 +334,11 @@ func TestGitLabPublishDiffReviewDraftRejectsApprovalWithoutHeadSHA(t *testing.T)
 
 	require.Error(err)
 	require.Nil(result)
-	Assert.New(t).False(calledProvider)
+	assert.New(t).False(calledProvider)
 }
 
 func TestGitLabPublishDiffReviewDraftDoesNotApproveWhenPublishFails(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var approved bool
 	var deleted bool
@@ -389,7 +389,7 @@ func TestGitLabPublishDiffReviewDraftDoesNotApproveWhenPublishFails(t *testing.T
 }
 
 func TestGitLabPublishDiffReviewDraftReturnsNormalErrorWhenFirstPublishCleanupFails(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -434,7 +434,7 @@ func TestGitLabPublishDiffReviewDraftReturnsNormalErrorWhenFirstPublishCleanupFa
 }
 
 func TestGitLabPublishDiffReviewDraftReturnsPartialErrorAfterSomeDraftsPublish(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var createdDrafts int
 	var approved bool
@@ -503,7 +503,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorAfterSomeDraftsPublish(t
 }
 
 func TestGitLabPublishDiffReviewDraftKeepsPartialErrorWhenRemainingCleanupFails(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var createdDrafts int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -564,7 +564,7 @@ func TestGitLabPublishDiffReviewDraftKeepsPartialErrorWhenRemainingCleanupFails(
 }
 
 func TestGitLabPublishDiffReviewDraftDeletesCreatedDraftsWhenLaterCreateFails(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var createAttempts int
 	var deleted bool
@@ -623,7 +623,7 @@ func TestGitLabPublishDiffReviewDraftDeletesCreatedDraftsWhenLaterCreateFails(t 
 }
 
 func TestGitLabListMergeRequestReviewThreadsReadsDiscussions(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	updated := created.Add(time.Minute)
@@ -685,7 +685,7 @@ func TestGitLabListMergeRequestReviewThreadsReadsDiscussions(t *testing.T) {
 }
 
 func TestGitLabListMergeRequestReviewThreadsReadsContextLinePositions(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -739,7 +739,7 @@ func TestGitLabListMergeRequestReviewThreadsReadsContextLinePositions(t *testing
 }
 
 func TestGitLabListMergeRequestReviewThreadsCollapsesDiscussionReplies(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -809,7 +809,7 @@ func TestGitLabListMergeRequestReviewThreadsCollapsesDiscussionReplies(t *testin
 }
 
 func TestGitLabResolveDiffReviewThreadUpdatesDiscussion(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	discussionID := "0123456789abcdef0123456789abcdef01234567"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

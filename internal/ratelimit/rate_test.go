@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -21,7 +21,7 @@ func newGitHubRateTracker(d *db.DB, host string, apiType string) *RateTracker {
 }
 
 func TestRateTrackerCounting(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 
@@ -45,7 +45,7 @@ func TestRateTrackerCounting(t *testing.T) {
 }
 
 func TestRateTrackerScopesPersistenceByPlatform(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 
@@ -75,7 +75,7 @@ func TestRateTrackerScopesPersistenceByPlatform(t *testing.T) {
 }
 
 func TestRateTrackerBackoff(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 
 	rt := newGitHubRateTracker(d, "github.com", "rest")
@@ -131,7 +131,7 @@ func TestRateTrackerHourRollover(t *testing.T) {
 	for range 5 {
 		rt.RecordRequest()
 	}
-	Assert.Equal(t, 5, rt.RequestsThisHour())
+	assert.Equal(t, 5, rt.RequestsThisHour())
 
 	// Simulate hour rollover by manipulating internal state.
 	rt.mu.Lock()
@@ -139,7 +139,7 @@ func TestRateTrackerHourRollover(t *testing.T) {
 	rt.mu.Unlock()
 
 	rt.RecordRequest()
-	Assert.Equal(t, 1, rt.RequestsThisHour(),
+	assert.Equal(t, 1, rt.RequestsThisHour(),
 		"counter should reset after hour boundary")
 }
 
@@ -157,11 +157,11 @@ func TestRateTrackerConcurrentAccess(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	Assert.GreaterOrEqual(t, rt.RequestsThisHour(), 1)
+	assert.GreaterOrEqual(t, rt.RequestsThisHour(), 1)
 }
 
 func TestRateTrackerThrottleFactor(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	rt := newGitHubRateTracker(d, "github.com", "rest")
 
@@ -216,7 +216,7 @@ func TestRateTrackerThrottleFactor(t *testing.T) {
 }
 
 func TestRateTrackerStaleQuota(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	rt := newGitHubRateTracker(d, "github.com", "rest")
 
@@ -232,7 +232,7 @@ func TestRateTrackerStaleQuota(t *testing.T) {
 }
 
 func TestRateTrackerHydrateFromDB(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 
@@ -257,7 +257,7 @@ func TestRateTrackerHydrateFromDB(t *testing.T) {
 }
 
 func TestRateTrackerWindowRolloverResetsQuota(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	rt := newGitHubRateTracker(d, "github.com", "rest")
 
@@ -286,7 +286,7 @@ func TestRateTrackerWindowRolloverResetsQuota(t *testing.T) {
 }
 
 func TestRateTrackerWindowResetResetsCounter(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	rt := newGitHubRateTracker(d, "github.com", "rest")
 
@@ -326,7 +326,7 @@ func TestRateTrackerWindowResetResetsCounter(t *testing.T) {
 }
 
 func TestRateTrackerResetAtJitterDoesNotResetCounter(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	rt := newGitHubRateTracker(d, "github.com", "rest")
 
@@ -354,7 +354,7 @@ func TestRateTrackerResetAtJitterDoesNotResetCounter(t *testing.T) {
 }
 
 func TestRateTrackerSnapshotResetDoesNotRequireRemainingIncrease(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	rt := newGitHubRateTracker(d, "github.com", "rest")
 	var resetCallbacks int
@@ -393,7 +393,7 @@ func TestRateTrackerSnapshotResetDoesNotRequireRemainingIncrease(t *testing.T) {
 // (via the /rate-limits endpoint). Verifies the counter survives
 // repeated reads and window expiry.
 func TestRateTrackerProductionFlow(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	rt := newGitHubRateTracker(d, "github.com", "rest")
 
@@ -442,7 +442,7 @@ func TestRateTrackerProductionFlow(t *testing.T) {
 }
 
 func TestRateTrackerAPITypeIsolation(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 

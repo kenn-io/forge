@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPublicGitHubAPIGuardTransportBlocksAPIGitHub(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	baseCalls := 0
 	transport := publicGitHubAPIGuardTransport{base: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		baseCalls++
@@ -26,7 +26,7 @@ func TestPublicGitHubAPIGuardTransportBlocksAPIGitHub(t *testing.T) {
 }
 
 func TestPublicGitHubAPIGuardTransportAllowsOtherHosts(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	baseCalls := 0
 	transport := publicGitHubAPIGuardTransport{base: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		baseCalls++

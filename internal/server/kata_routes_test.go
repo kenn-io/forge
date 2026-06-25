@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,7 +32,7 @@ type kataDaemonRosterWire struct {
 }
 
 func TestKataDaemonsEndpointEmptyWhenCatalogAbsent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("KATA_HOME", t.TempDir())
@@ -51,7 +51,7 @@ func TestKataDaemonsEndpointEmptyWhenCatalogAbsent(t *testing.T) {
 }
 
 func TestKataDaemonsEndpointIgnoresMiddlemanConfigAndLegacyEnvCatalogSources(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var probes atomic.Int32
@@ -93,7 +93,7 @@ url = "`+upstream.URL+`"
 }
 
 func TestKataDaemonsEndpointReportsHealthAndRedactsSecrets(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	connected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +147,7 @@ url = "`+authRequired.URL+`"
 }
 
 func TestKataDaemonsEndpointRejectsUnsetTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -171,7 +171,7 @@ token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
 }
 
 func TestKataDaemonsEndpointRejectsInvalidCatalog(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -197,7 +197,7 @@ local = true
 }
 
 func TestKataDaemonsEndpointReportsDownLocalWithHint(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -223,7 +223,7 @@ local = true
 }
 
 func TestKataDaemonsEndpointDoesNotReportAuthRequiredForLocalNoAuthDaemon(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -249,7 +249,7 @@ local = true
 }
 
 func TestKataDaemonsEndpointLocalDaemonDoesNotUseTokenAuth(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Empty(r.Header.Get("Authorization"))
@@ -277,7 +277,7 @@ token = "local-secret"
 }
 
 func TestKataDaemonsEndpointLocalDaemonUsesKataAuthTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -310,7 +310,7 @@ local = true
 }
 
 func TestKataDaemonsEndpointLocalDaemonIgnoresTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Empty(r.Header.Get("Authorization"))
@@ -339,7 +339,7 @@ token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
 }
 
 func TestKataDaemonsEndpointRedactsMalformedTargetErrors(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -361,7 +361,7 @@ url = "http://user:s3cr3t@%zz?token=leak"
 }
 
 func TestKataDaemonsEndpointReportsAuthKindAndMetadata(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -394,7 +394,7 @@ url = "`+upstream.URL+`"
 }
 
 func TestKataDaemonsEndpointReportsUnreachableAsDown(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -417,7 +417,7 @@ url = "http://`+addr+`"
 }
 
 func TestKataDaemonsEndpointHealthOverUnixSocket(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("TMPDIR", "/tmp") // Keep Unix socket paths below macOS' length limit.
@@ -455,7 +455,7 @@ url = "unix://`+socketPath+`"
 }
 
 func TestKataDaemonsEndpointCachesHealthWithinTTL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	var probes atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -480,7 +480,7 @@ url = "`+upstream.URL+`"
 }
 
 func TestKataDaemonsEndpointHealthCacheSeparatesLocalAndRemoteMode(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -513,7 +513,7 @@ local = true
 }
 
 func TestKataDaemonsEndpointHealthCacheSeparatesRemoteTokens(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	var mu sync.Mutex
 	authorizations := []string{}
@@ -559,7 +559,7 @@ token = "second-secret"
 }
 
 func TestKataDaemonsEndpointHealthOverTrailingSlashURL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/instance" {
@@ -585,7 +585,7 @@ url = "`+upstream.URL+`/"
 }
 
 func TestKataDaemonsEndpointPreservesConfigOrder(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -622,7 +622,7 @@ url = "`+upstream.URL+`"
 }
 
 func TestKataDaemonsEndpointReportsEffectiveDefaultForLoneDaemon(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -644,7 +644,7 @@ url = "`+upstream.URL+`"
 }
 
 func TestKataDaemonsEndpointRedactsDaemonURLCredentials(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -670,7 +670,7 @@ url = "http://user:s3cr3t@`+hostport+`/kata/pathsecret?access_token=leak"
 }
 
 func TestKataDaemonsEndpointDoesNotFollowProbeRedirects(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	var followed atomic.Bool
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -699,7 +699,7 @@ url = "`+upstream.URL+`"
 }
 
 func TestKataDaemonsEndpointCoalescesConcurrentProbes(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	var probes atomic.Int32
 	entered := make(chan struct{}, 1)

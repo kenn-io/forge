@@ -14,7 +14,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -275,7 +275,7 @@ func (p *parallelMockClient) ListOpenPullRequests(
 }
 
 func TestRunOnceSyncesReposInParallel(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 
@@ -333,7 +333,7 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 }
 
 func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 
@@ -393,7 +393,7 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 }
 
 func TestRunOnceCancelAfterCompleteReportsSuccess(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 
@@ -449,7 +449,7 @@ func (c *cancelDuringSyncMockClient) ListOpenPullRequests(
 }
 
 func TestRunOnceCancelDuringSyncRepoDoesNotReportSuccess(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 
@@ -508,7 +508,7 @@ func (c *deadlineExceededMockClient) ListOpenPullRequests(
 }
 
 func TestRunOncePerRequestDeadlineRecordsError(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 
@@ -548,7 +548,7 @@ func (sw *syncedWriter) Write(p []byte) (int, error) {
 }
 
 func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 
 	var buf bytes.Buffer
@@ -592,7 +592,7 @@ func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) {
 }
 
 func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	mock := &mockClient{openPRs: []*gh.PullRequest{}}
 	d := openTestDB(t)
 	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "o", "n"))
@@ -627,7 +627,7 @@ func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
 }
 
 func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var mu sync.Mutex

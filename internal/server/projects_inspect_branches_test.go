@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	dbpkg "go.kenn.io/middleman/internal/db"
@@ -23,7 +23,7 @@ func TestListProjectBranches(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -58,7 +58,7 @@ func TestInspectProjectWorktree(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -134,7 +134,7 @@ func TestInspectProjectWorktreeCountsStoredTmuxSessions(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -178,7 +178,7 @@ func TestInspectProjectWorktreeCountsStoredTmuxSessionsWithRuntime(t *testing.T)
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID, _ :=
 		setupProjectWorktreeCommandSessionTestWithRecord(t)

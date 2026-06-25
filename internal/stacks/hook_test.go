@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	realdb "go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestSyncCompletedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/git/env"
 	"go.kenn.io/middleman/internal/config"
@@ -111,7 +111,7 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 }
 
 func TestGitChangesNotARepo(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	reg := NewRegistry([]config.DocFolder{{ID: "f", Name: "F", Path: dir}})
@@ -124,7 +124,7 @@ func TestGitChangesNotARepo(t *testing.T) {
 }
 
 func TestGitChangesEmptyRepo(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 
@@ -138,7 +138,7 @@ func TestGitChangesEmptyRepo(t *testing.T) {
 }
 
 func TestGitChangesIncludesUntrackedAndModifiedMarkdown(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -159,7 +159,7 @@ func TestGitChangesIncludesUntrackedAndModifiedMarkdown(t *testing.T) {
 }
 
 func TestGitChangesNoUpstream(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepoNoUpstream(t)
 
@@ -171,7 +171,7 @@ func TestGitChangesNoUpstream(t *testing.T) {
 }
 
 func TestGitPublishHappyPath(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -192,7 +192,7 @@ func TestGitPublishHappyPath(t *testing.T) {
 }
 
 func TestGitPublishPushesConfiguredUpstreamDespitePushDefaults(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	backup := t.TempDir()
@@ -282,7 +282,7 @@ func TestGitPublishRefusesConflict(t *testing.T) {
 }
 
 func TestGitPublishRefusesNoUpstream(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepoNoUpstream(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -296,7 +296,7 @@ func TestGitPublishRefusesNoUpstream(t *testing.T) {
 }
 
 func TestGitPublishStagesRenamePair(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	runGit(t, g.dir, "mv", "seed.md", "renamed.md")
@@ -310,7 +310,7 @@ func TestGitPublishStagesRenamePair(t *testing.T) {
 }
 
 func TestGitPublishStagesWorktreeRename(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	require.NoError(os.Rename(filepath.Join(g.dir, "seed.md"), filepath.Join(g.dir, "moved.md")))
@@ -326,7 +326,7 @@ func TestGitPublishStagesWorktreeRename(t *testing.T) {
 }
 
 func TestGitPublishPushFailedAfterCommit(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -344,7 +344,7 @@ func TestGitPublishPushFailedAfterCommit(t *testing.T) {
 }
 
 func TestGitPublishDoesNotRunDocsRepoHooks(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -364,7 +364,7 @@ func TestGitPublishDoesNotRunDocsRepoHooks(t *testing.T) {
 }
 
 func TestGitPublishIgnoresRepoHooksPathOverride(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -406,7 +406,7 @@ func TestGitPublishRejectsCommandBearingLocalConfig(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			g := newGitRepo(t)
 			g.writeFile(t, "new.md", "# new\n")
@@ -422,7 +422,7 @@ func TestGitPublishRejectsCommandBearingLocalConfig(t *testing.T) {
 }
 
 func TestGitPublishRejectsIncludedCommandBearingConfig(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -457,7 +457,7 @@ func TestGitPublishRejectsPushTargetInsideDocsFolder(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			g := newGitRepo(t)
 			g.writeFile(t, "new.md", "# new\n")
@@ -497,7 +497,7 @@ func TestGitPublishRejectsPushInsteadOfRewriteIntoDocsFolder(t *testing.T) {
 }
 
 func TestGitPublishRejectsMixedLocalAndNetworkPushURLs(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -517,7 +517,7 @@ func TestGitPublishRejectsMixedLocalAndNetworkPushURLs(t *testing.T) {
 }
 
 func TestGitPublishRejectsRemoteHelperPushTarget(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -532,7 +532,7 @@ func TestGitPublishRejectsRemoteHelperPushTarget(t *testing.T) {
 }
 
 func TestGitPublishNeutralizesLocalRemoteReceiveHooks(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -553,7 +553,7 @@ func TestGitPublishNeutralizesLocalRemoteReceiveHooks(t *testing.T) {
 }
 
 func TestGitPublishRejectsFilterAttributes(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -569,7 +569,7 @@ func TestGitPublishRejectsFilterAttributes(t *testing.T) {
 }
 
 func TestGitPublishRejectsSubdirectoryFilterAttributes(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "sub/new.md", "# new\n")
@@ -585,7 +585,7 @@ func TestGitPublishRejectsSubdirectoryFilterAttributes(t *testing.T) {
 }
 
 func TestGitPublishGatesAttributesBeforeStatusRunsFilter(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	marker := filepath.Join(t.TempDir(), "filter-ran")
@@ -664,7 +664,7 @@ func TestGitPublishAllowsBenignLocalConfig(t *testing.T) {
 }
 
 func TestGitStatusDoesNotRunRepoFsmonitor(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -681,7 +681,7 @@ func TestGitStatusDoesNotRunRepoFsmonitor(t *testing.T) {
 }
 
 func TestGitPublishBlocksExtRemoteHelperOnPush(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -701,7 +701,7 @@ func TestGitPublishBlocksExtRemoteHelperOnPush(t *testing.T) {
 }
 
 func TestGitPublishCommitFailurePreservesStderr(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -717,7 +717,7 @@ func TestGitPublishCommitFailurePreservesStderr(t *testing.T) {
 }
 
 func TestGitPublishStagesLiteralPathspec(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "weird *.md", "# weird\n")

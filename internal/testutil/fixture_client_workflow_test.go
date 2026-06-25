@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestFixtureClientPullRequestsAreReturnedAsCopies(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	client := NewFixtureClient()
 	fc, ok := client.(*FixtureClient)
@@ -52,7 +52,7 @@ func TestFixtureClientPullRequestsAreReturnedAsCopies(t *testing.T) {
 }
 
 func TestFixtureClientCreateReviewWithCommentsRecordsReview(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	client := NewFixtureClient()
 	fc, ok := client.(*FixtureClient)
@@ -85,7 +85,7 @@ func TestFixtureClientCreateReviewWithCommentsRecordsReview(t *testing.T) {
 }
 
 func TestFixtureClientCheckRunsConcurrentStatusUpdates(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	client := NewFixtureClient()
 	fc, ok := client.(*FixtureClient)
@@ -141,7 +141,7 @@ func TestFixtureClientCheckRunsConcurrentStatusUpdates(t *testing.T) {
 }
 
 func TestFixtureClientWorkflowRunsConcurrentAccess(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	client := NewFixtureClient()
 	fc, ok := client.(*FixtureClient)

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/db"
@@ -19,7 +19,7 @@ import (
 func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 	requirePTYAvailable(t)
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _, _, _ := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	ts := httptest.NewServer(srv)
@@ -89,7 +89,7 @@ func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 
 func TestHostRuntimeCommandSessionValidation(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _, _, _ := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	ts := httptest.NewServer(srv)
@@ -136,7 +136,7 @@ func TestHostRuntimeCommandSessionValidation(t *testing.T) {
 
 func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _, _, recordPath := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	ts := httptest.NewServer(srv)
@@ -184,7 +184,7 @@ func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
 // executing host knows its home directory.
 func TestHostRuntimeCommandSessionExpandsHomeCWD(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home, err := os.UserHomeDir()
 	require.NoError(err)
@@ -223,7 +223,7 @@ func TestHostRuntimeCommandSessionExpandsHomeCWD(t *testing.T) {
 // the /api/v1 mounting and proxy wiring, not just the handler.
 func TestFleetHostRuntimeSessionRoutesE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _, _, recordPath := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	ts := httptest.NewServer(srv)

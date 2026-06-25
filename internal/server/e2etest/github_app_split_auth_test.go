@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
@@ -35,7 +35,7 @@ import (
 // (posting a PR comment) must carry the user's PAT so GitHub
 // attributes it to the user instead of the app bot.
 func TestGitHubAppSplitAuthE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "user-pat-e2e")
 
@@ -364,7 +364,7 @@ repository_selection = "all"
 }
 
 func TestGitHubAppGlobDiscoveryUsesInstallationRepositoriesE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "user-pat-e2e")
 
@@ -599,7 +599,7 @@ func decodeRepoOperations(t *testing.T, body io.Reader) map[string]repoOperation
 // app every write must be reported unavailable up front and the
 // mutation endpoint must refuse rather than write as the app bot.
 func TestGitHubAppNoUserCredentialGatesWritesE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	// The configured PAT env var is present but empty: only the app
 	// candidate can resolve a token.

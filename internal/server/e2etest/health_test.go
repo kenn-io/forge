@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +26,7 @@ func TestHealthEndpointsE2E_ReturnOKWhenReady(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 
 			resp, err := ts.Client().Get(ts.URL + tt.path)
@@ -59,7 +59,7 @@ func TestHealthEndpointsE2E_RemainAvailableAtRootWithBasePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 
 			resp, err := ts.Client().Get(ts.URL + tt.path)
@@ -78,7 +78,7 @@ func TestHealthEndpointsE2E_RemainAvailableAtRootWithBasePath(t *testing.T) {
 }
 
 func TestHealthzE2E_ReturnsServiceUnavailableWhenDatabaseClosed(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, database := setupTestServer(t)

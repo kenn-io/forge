@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestIssueWorkspaceBranchSlug(t *testing.T) {
@@ -138,7 +138,7 @@ func TestIssueWorkspaceBranchSlug(t *testing.T) {
 			t.Parallel()
 			got := issueWorkspaceBranchWithTitle(tc.number, tc.title)
 
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			if tc.want != "" {
 				assert.Equal(tc.want, got)
 			}
@@ -166,7 +166,7 @@ func TestIssueWorkspaceBranchSlug(t *testing.T) {
 
 func TestIssueWorkspaceBranchSlugTruncatesAtWordBoundary(t *testing.T) {
 	t.Parallel()
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	long := strings.Repeat("alpha-beta-gamma-delta ", 20)
 	got := issueWorkspaceBranchWithTitle(42, long)
@@ -182,7 +182,7 @@ func TestIssueWorkspaceBranchSlugTruncatesAtWordBoundary(t *testing.T) {
 
 func TestIssueWorkspaceBranchSlugProducesValidGitRef(t *testing.T) {
 	t.Parallel()
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	cases := []struct {
 		number int
@@ -207,7 +207,7 @@ func TestIssueWorkspaceBranchSlugProducesValidGitRef(t *testing.T) {
 
 func TestIssueWorkspaceBranchBareIgnoresTitle(t *testing.T) {
 	t.Parallel()
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	assert.Equal(
 		"middleman/issue-42",

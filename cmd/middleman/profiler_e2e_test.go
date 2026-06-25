@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/procutil"
@@ -20,7 +20,7 @@ import (
 )
 
 func TestServeStartsProfilerListenerE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	bin := buildMiddleman(t)

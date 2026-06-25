@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +25,7 @@ func fakeMsgvault(t *testing.T, handler http.Handler) (*httptest.Server, func())
 }
 
 func TestClientCapabilitiesProbesBothEndpoints(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	var sawHealth, sawStats bool
 	var statsAuth string
 	srv, cleanup := fakeMsgvault(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,7 @@ func TestClientCapabilitiesUnauthorizedFromStats(t *testing.T) {
 
 	c := NewClient(srv.URL, "wrong-key")
 	err := c.Capabilities(context.Background())
-	Assert.Equal(t, "unauthorized", Classify(err))
+	assert.Equal(t, "unauthorized", Classify(err))
 }
 
 func TestClientCapabilitiesDownOnRefused(t *testing.T) {
@@ -80,7 +80,7 @@ func TestClientCapabilitiesDownOnRefused(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	err = c.Capabilities(ctx)
-	Assert.Equal(t, "down", Classify(err))
+	assert.Equal(t, "down", Classify(err))
 }
 
 func TestClientCapabilitiesTimeoutOnSlowUpstream(t *testing.T) {
@@ -97,11 +97,11 @@ func TestClientCapabilitiesTimeoutOnSlowUpstream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	err := c.Capabilities(ctx)
-	Assert.Equal(t, "timeout", Classify(err))
+	assert.Equal(t, "timeout", Classify(err))
 }
 
 func TestClientSearchPassesQueryParams(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, cleanup := fakeMsgvault(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		assert.Equal("/api/v1/search", r.URL.Path)
@@ -123,7 +123,7 @@ func TestClientSearchPassesQueryParams(t *testing.T) {
 }
 
 func TestClientNormalizesOmittedArrays(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, cleanup := fakeMsgvault(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -169,7 +169,7 @@ func TestClientNormalizesOmittedArrays(t *testing.T) {
 func TestClientAggregatesTranslatesSearchQuery(t *testing.T) {
 	var seenSearchQuery string
 	srv, cleanup := fakeMsgvault(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		Assert.Equal(t, "/api/v1/aggregates", r.URL.Path)
+		assert.Equal(t, "/api/v1/aggregates", r.URL.Path)
 		seenSearchQuery = r.URL.Query().Get("search_query")
 		_ = json.NewEncoder(w).Encode(AggregateResult{ViewType: "senders", Rows: nil})
 	}))
@@ -178,11 +178,11 @@ func TestClientAggregatesTranslatesSearchQuery(t *testing.T) {
 	c := NewClient(srv.URL, "k")
 	_, err := c.Aggregates(context.Background(), AggregateParams{ViewType: "senders", SearchQuery: "label:Inbox"})
 	require.NoError(t, err)
-	Assert.Equal(t, "label:Inbox", seenSearchQuery)
+	assert.Equal(t, "label:Inbox", seenSearchQuery)
 }
 
 func TestClientThreadPinsSort(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, cleanup := fakeMsgvault(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		assert.Equal("1001", q.Get("conversation_id"))
@@ -199,7 +199,7 @@ func TestClientThreadPinsSort(t *testing.T) {
 
 func TestClientThreadRejectsNullPayload(t *testing.T) {
 	srv, cleanup := fakeMsgvault(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		Assert.Equal(t, "/api/v1/messages/filter", r.URL.Path)
+		assert.Equal(t, "/api/v1/messages/filter", r.URL.Path)
 		_, _ = w.Write([]byte(`null`))
 	}))
 	defer cleanup()
@@ -207,12 +207,12 @@ func TestClientThreadRejectsNullPayload(t *testing.T) {
 	c := NewClient(srv.URL, "k")
 	_, err := c.Thread(context.Background(), 1001, "date", "asc")
 	require.ErrorIs(t, err, ErrMalformedUpstream)
-	Assert.Equal(t, "malformed", Classify(err))
+	assert.Equal(t, "malformed", Classify(err))
 }
 
 func TestClientMessageDecodesBodyHTML(t *testing.T) {
 	srv, cleanup := fakeMsgvault(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		Assert.Equal(t, "/api/v1/messages/42", r.URL.Path)
+		assert.Equal(t, "/api/v1/messages/42", r.URL.Path)
 		_, _ = w.Write([]byte(`{
 			"id": 42, "subject": "Hi",
 			"body": "plain text body",
@@ -225,12 +225,12 @@ func TestClientMessageDecodesBodyHTML(t *testing.T) {
 	c := NewClient(srv.URL, "k")
 	out, err := c.Message(context.Background(), 42)
 	require.NoError(t, err)
-	Assert.Equal(t, "plain text body", out.Body)
-	Assert.Equal(t, "<p>hi</p>", out.BodyHTML)
+	assert.Equal(t, "plain text body", out.Body)
+	assert.Equal(t, "<p>hi</p>", out.BodyHTML)
 }
 
 func TestClientInlineStreamsAndPassesContentType(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, cleanup := fakeMsgvault(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -260,12 +260,12 @@ func TestClientUpstreamErrorDecodesEnvelope(t *testing.T) {
 	_, err := c.Message(context.Background(), 99)
 	var apiErr *Error
 	require.ErrorAs(t, err, &apiErr)
-	Assert.Equal(t, http.StatusNotFound, apiErr.Status)
-	Assert.Equal(t, "message_not_found", apiErr.Code)
+	assert.Equal(t, http.StatusNotFound, apiErr.Status)
+	assert.Equal(t, "message_not_found", apiErr.Code)
 }
 
 func TestClientSearchWrapsDecodeError(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, cleanup := fakeMsgvault(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{ this is not json`))
 	}))
@@ -289,18 +289,18 @@ func TestClientUpstreamErrorWithNonJSONBody(t *testing.T) {
 	_, err := c.Message(context.Background(), 7)
 	var apiErr *Error
 	require.ErrorAs(t, err, &apiErr)
-	Assert.Equal(t, http.StatusBadGateway, apiErr.Status)
-	Assert.Contains(t, apiErr.Message, "upstream crashed")
+	assert.Equal(t, http.StatusBadGateway, apiErr.Status)
+	assert.Contains(t, apiErr.Message, "upstream crashed")
 }
 
 func TestErrorStringIncludesMsgvaultPrefix(t *testing.T) {
 	err := &Error{Status: http.StatusBadGateway, Code: "bad_gateway", Message: "upstream crashed"}
-	Assert.Equal(t, "msgvault: upstream 502 bad_gateway: upstream crashed", err.Error())
+	assert.Equal(t, "msgvault: upstream 502 bad_gateway: upstream crashed", err.Error())
 }
 
 func TestErrorsAsStillFindsClientError(t *testing.T) {
 	err := errors.Join(&Error{Status: http.StatusNotFound, Code: "missing", Message: "gone"})
 	var apiErr *Error
 	require.ErrorAs(t, err, &apiErr)
-	Assert.Equal(t, "missing", apiErr.Code)
+	assert.Equal(t, "missing", apiErr.Code)
 }

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +18,7 @@ func writeTempFile(t *testing.T, name, body string) string {
 }
 
 func TestScanBodyFindsFirstMatchingLine(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	req := require.New(t)
 	path := writeTempFile(t, "doc.md",
 		"intro line\nsecond mentions budget here\nthird mentions budget again\n")
@@ -40,7 +40,7 @@ func TestScanBodySkipsOversizeFile(t *testing.T) {
 	path := writeTempFile(t, "big.md", big)
 	hit, warn, err := scanBody(path, "budget")
 	require.NoError(t, err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(0, hit.Line)
 	assert.Contains(warn, "skipped")
 }
@@ -51,7 +51,7 @@ func TestScanBodySkipsTokenTooLong(t *testing.T) {
 	path := writeTempFile(t, "long.md", long)
 	hit, warn, err := scanBody(path, "budget")
 	require.NoError(t, err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(0, hit.Line)
 	assert.Contains(warn, "line too long")
 }
@@ -66,7 +66,7 @@ func TestScanBodyReturnsCodePointOffsets(t *testing.T) {
 	req.Equal(1, hit.Line)
 	req.Len(hit.Snippet.Matches, 1)
 	// "warm café " is 10 runes; "budget" starts at rune index 10.
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(10, hit.Snippet.Matches[0].Start)
 	assert.Equal(16, hit.Snippet.Matches[0].End)
 }
@@ -75,7 +75,7 @@ func TestScanBodyReturnsNoHitForEmptyQuery(t *testing.T) {
 	path := writeTempFile(t, "e.md", "anything")
 	hit, warn, err := scanBody(path, "")
 	require.NoError(t, err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Empty(warn)
 	assert.Equal(0, hit.Line)
 }
@@ -86,7 +86,7 @@ func TestScanBodyCapsScoreAtMax(t *testing.T) {
 	path := writeTempFile(t, "many.md", body)
 	hit, _, err := scanBody(path, "budget")
 	require.NoError(t, err)
-	Assert.Equal(t, MaxScoreCap, hit.Score)
+	assert.Equal(t, MaxScoreCap, hit.Score)
 }
 
 func TestScanBodyAcceptsLongLineUnderBufferCap(t *testing.T) {
@@ -97,7 +97,7 @@ func TestScanBodyAcceptsLongLineUnderBufferCap(t *testing.T) {
 	path := writeTempFile(t, "long.md", long)
 	hit, warn, err := scanBody(path, "budget")
 	require.NoError(t, err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Empty(warn, "unexpected warning")
 	assert.Equal(1, hit.Line)
 }

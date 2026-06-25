@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ func TestDisplayNameCacheSuccessHit(t *testing.T) {
 	c.putSuccess("k", "Alice")
 
 	entry, fresh := c.get("k")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.True(fresh)
 	assert.True(entry.ok)
 	assert.Equal("Alice", entry.name)
@@ -30,7 +30,7 @@ func TestDisplayNameCacheFailureHit(t *testing.T) {
 	c.putFailure("k")
 
 	entry, fresh := c.get("k")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.True(fresh)
 	assert.False(entry.ok)
 	assert.Empty(entry.name)
@@ -45,7 +45,7 @@ func TestDisplayNameCacheExpiry(t *testing.T) {
 	fakeNow = fakeNow.Add(time.Hour + time.Second)
 
 	entry, fresh := c.get("k")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.False(fresh, "entry should be expired")
 	assert.True(entry.ok, "stale entry still returned")
 	assert.Equal("Alice", entry.name)
@@ -97,7 +97,7 @@ func TestDisplayNameCacheUpdate(t *testing.T) {
 	c.putSuccess("k", "New")
 	entry, fresh := c.get("k")
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.True(fresh)
 	assert.Equal("New", entry.name)
 	assert.Equal(1, c.len())

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
@@ -87,7 +87,7 @@ func TestProviderCapabilitiesAdvertiseLabelsOnlyWithLabelTransport(t *testing.T)
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			provider := NewProvider(platform.KindForgejo, "codeberg.org", tt.transport, tt.opts...)
 			caps := provider.Capabilities()
 			assert.Equal(tt.readLabels, caps.ReadLabels)
@@ -98,7 +98,7 @@ func TestProviderCapabilitiesAdvertiseLabelsOnlyWithLabelTransport(t *testing.T)
 
 func TestProviderListLabelsCollectsPagesAndNormalizes(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	transport := &fakeLabelTransport{
 		fakeTransport: &fakeTransport{},
 		labels: [][]LabelDTO{
@@ -149,7 +149,7 @@ func TestProviderSetLabelsResolvesNamesToIDs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require := Require.New(t)
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			transport := &fakeLabelTransport{
 				fakeTransport: &fakeTransport{},
 				labels: [][]LabelDTO{{
@@ -178,7 +178,7 @@ func TestProviderSetLabelsResolvesNamesToIDs(t *testing.T) {
 
 func TestProviderSetLabelsClearsWithEmptyNames(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	transport := &fakeLabelTransport{
 		fakeTransport: &fakeTransport{},
 		labels:        [][]LabelDTO{{{ID: 11, Name: "bug"}}},
@@ -194,7 +194,7 @@ func TestProviderSetLabelsClearsWithEmptyNames(t *testing.T) {
 
 func TestProviderSetLabelsFailsWhenNameMissingUpstream(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	transport := &fakeLabelTransport{
 		fakeTransport: &fakeTransport{},
 		labels:        [][]LabelDTO{{{ID: 11, Name: "bug"}}},
@@ -222,7 +222,7 @@ func TestProviderSetLabelsWithoutMutationsIsUnsupported(t *testing.T) {
 	_, err := provider.SetMergeRequestLabels(t.Context(), labelTestRef(), 7, []string{"bug"})
 
 	Require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
-	Assert.Empty(t, transport.replaceCalls)
+	assert.Empty(t, transport.replaceCalls)
 }
 
 func TestProviderSetLabelsMapsTransportErrors(t *testing.T) {

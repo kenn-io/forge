@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTmuxActivityTrackerUsesOutputFingerprintChanges(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
 
@@ -58,7 +58,7 @@ func TestTmuxActivityTrackerUsesOutputFingerprintChanges(t *testing.T) {
 }
 
 func TestTmuxActivityTrackerPrefersTitleProtocol(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
 
@@ -74,7 +74,7 @@ func TestTmuxActivityTrackerPrefersTitleProtocol(t *testing.T) {
 }
 
 func TestTmuxActivityTrackerCachesFreshSamples(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
 
@@ -98,7 +98,7 @@ func TestTmuxActivityTrackerCachesFreshSamples(t *testing.T) {
 }
 
 func TestTmuxActivityTrackerBoundsAndCoalescesProbes(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTrackerWithProbeLimit(
@@ -146,7 +146,7 @@ func TestTmuxActivityTrackerBoundsAndCoalescesProbes(t *testing.T) {
 }
 
 func TestNormalizeTmuxOutputForFingerprinting(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	assert.Equal(
 		"one\ntwo\t\nthree\n",
@@ -159,7 +159,7 @@ func TestNormalizeTmuxOutputForFingerprinting(t *testing.T) {
 }
 
 func TestMergeTmuxActivityPrefersWorkingSession(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	lastOutput := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	merged, ok := mergeTmuxActivityResults([]tmuxActivityResult{
 		{
@@ -182,7 +182,7 @@ func TestMergeTmuxActivityPrefersWorkingSession(t *testing.T) {
 }
 
 func TestMergeTmuxActivityPrefersTitleOverOutput(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	merged, ok := mergeTmuxActivityResults([]tmuxActivityResult{
 		{
 			PaneTitle: "agent output",

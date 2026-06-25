@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 )
 
 func TestDocFolderDaemonBindingWarnsWhenCatalogTargetMissingOnStartup(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
@@ -44,7 +44,7 @@ local = true
 }
 
 func TestConfigReloadWarnsWhenDocFolderDaemonBindingTargetIsMissing(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -81,7 +81,7 @@ local = true
 }
 
 func TestConfigWatcherWarnsWhenDocFolderDaemonBindingTargetIsMissing(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()

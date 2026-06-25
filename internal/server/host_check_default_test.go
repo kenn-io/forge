@@ -8,7 +8,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"go.kenn.io/middleman/internal/config"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -43,7 +43,7 @@ func TestNewCfgNilTestFriendlyDefault(t *testing.T) {
 			req.Host = tc.host
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
-			Assert.Equal(t, tc.status, rr.Code, rr.Body.String())
+			assert.Equal(t, tc.status, rr.Code, rr.Body.String())
 		})
 	}
 }
@@ -65,7 +65,7 @@ func TestNewDerivesHostCheckFromUnvalidatedConfig(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	Assert.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 }
 
 func TestNewRejectsUnvalidatedConfigWithNonLoopbackHost(t *testing.T) {
@@ -79,7 +79,7 @@ func TestNewRejectsUnvalidatedConfigWithNonLoopbackHost(t *testing.T) {
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 
-	Assert.PanicsWithError(t,
+	assert.PanicsWithError(t,
 		`server: config did not provide valid Host check options: config: host "0.0.0.0" is not loopback; only loopback addresses are supported`,
 		func() {
 			New(database, syncer, emptyFrontend(), "/", &config.Config{

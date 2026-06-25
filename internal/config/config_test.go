@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
@@ -150,7 +150,7 @@ propagation_interval = "-1s"
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Load(writeConfig(t, tt.content))
 			require.Error(t, err)
-			Assert.Contains(t, err.Error(), tt.wantErr)
+			assert.Contains(t, err.Error(), tt.wantErr)
 		})
 	}
 }
@@ -159,7 +159,7 @@ func TestLoadAppliesActivePRRefreshDefaults(t *testing.T) {
 	cfg, err := Load(writeConfig(t, ``))
 	require.NoError(t, err)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(defaultActivePRRefreshInterval, cfg.ActivePRRefreshInterval)
 	assert.Equal(defaultActivePRWindow, cfg.ActivePRWindow)
 	assert.Equal(2*time.Minute, cfg.ActivePRRefreshDuration())
@@ -192,14 +192,14 @@ active_pr_window = "-1s"
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Load(writeConfig(t, tt.content))
 			require.Error(t, err)
-			Assert.Contains(t, err.Error(), tt.wantErr)
+			assert.Contains(t, err.Error(), tt.wantErr)
 		})
 	}
 }
 
 func TestSaveAppliesNotificationDefaultsForInMemoryConfig(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := &Config{
 		SyncInterval:        "5m",
 		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
@@ -231,7 +231,7 @@ func TestSaveAppliesNotificationDefaultsForInMemoryConfig(t *testing.T) {
 }
 
 func TestLoadValid(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 sync_interval = "10m"
 github_token_env = "MY_TOKEN"
@@ -256,7 +256,7 @@ name = "ibis"
 }
 
 func TestLoadCasefoldsRepoOwnerAndName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "Org"
@@ -287,7 +287,7 @@ name = "foo"
 }
 
 func TestLoadDefaults(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "test"
@@ -319,11 +319,11 @@ name = "repo"
 enabled = false
 `))
 	require.NoError(t, err)
-	Assert.True(t, cfg.NotificationsEnabled())
+	assert.True(t, cfg.NotificationsEnabled())
 }
 
 func TestLoadDocFoldersRoundTrips(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg, cfg2 := roundTripConfigString(t, `
 [[doc_folders]]
 id = "notes"
@@ -367,13 +367,13 @@ path = "/tmp/notes"
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Load(writeConfig(t, tc.body))
 			require.Error(t, err)
-			Assert.Contains(t, err.Error(), "[[doc_folders]]")
+			assert.Contains(t, err.Error(), "[[doc_folders]]")
 		})
 	}
 }
 
 func TestLoadDocFoldersCanonicalizesPathAndDefaultName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -420,7 +420,7 @@ func TestLoadDocFoldersRejectsNonSegmentSafeID(t *testing.T) {
 			path := writeConfig(t, "[[doc_folders]]\nid = \""+id+"\"\npath = \"/tmp/a\"\n")
 			_, err := Load(path)
 			require.Error(t, err)
-			Assert.Contains(t, err.Error(), "may contain only")
+			assert.Contains(t, err.Error(), "may contain only")
 		})
 	}
 }
@@ -451,7 +451,7 @@ id = "notes"`,
 }
 
 func TestLoadRoundTripsHostAuthorityConfig(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	cfg, cfg2 := roundTripConfigString(t, `
 host = "127.0.0.1"
@@ -470,7 +470,7 @@ trust_reverse_proxy = true
 }
 
 func TestListenAddrBracketsIPv6Host(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	cfg, err := Load(writeConfig(t, `
@@ -487,7 +487,7 @@ port = 8091
 }
 
 func TestLoadRoundTripsAPIAuthConfig(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	cfg, cfg2 := roundTripConfigString(t, `
 [api]
@@ -499,7 +499,7 @@ require_auth = true
 }
 
 func TestLoadNormalizesDefaultPlatformHost(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg, cfg2 := roundTripConfigString(t, `
 default_platform_host = "GHE.Example.COM"
 
@@ -513,7 +513,7 @@ name = "repo"
 }
 
 func TestLoadAppliesDefaultPlatformHostToLegacyGitHubRepos(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	// github_token_env is github.com-only, so a GHE-primary setup names
 	// its host token through a [[platforms]] entry instead.
 	path := writeConfig(t, `
@@ -546,7 +546,7 @@ func TestLoadNoRepos(t *testing.T) {
 	path := writeConfig(t, `host = "127.0.0.1"`)
 	cfg, err := Load(path)
 	require.NoError(t, err)
-	Assert.Empty(t, cfg.Repos)
+	assert.Empty(t, cfg.Repos)
 }
 
 func TestLoadInvalidSyncInterval(t *testing.T) {
@@ -615,7 +615,7 @@ name = "https://github.com/acme/widgets"
 }
 
 func TestRepoHasNameGlob(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	assert.False((&Repo{Owner: "acme", Name: "widgets"}).HasNameGlob())
 	assert.True((&Repo{Owner: "acme", Name: "widgets-*"}).HasNameGlob())
@@ -625,7 +625,7 @@ func TestRepoHasNameGlob(t *testing.T) {
 func TestGitHubToken(t *testing.T) {
 	t.Setenv("TEST_GH_TOKEN", "secret123")
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
-	Assert.Equal(t, "secret123", cfg.GitHubToken())
+	assert.Equal(t, "secret123", cfg.GitHubToken())
 }
 
 func TestGitHubTokenFallsBackToGHCli(t *testing.T) {
@@ -633,7 +633,7 @@ func TestGitHubTokenFallsBackToGHCli(t *testing.T) {
 	t.Setenv("TEST_GH_TOKEN", "")
 
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
-	Assert.Equal(t, "gh-secret", cfg.GitHubToken())
+	assert.Equal(t, "gh-secret", cfg.GitHubToken())
 }
 
 func TestGitHubTokenPrefersEnvVarOverGHCli(t *testing.T) {
@@ -641,7 +641,7 @@ func TestGitHubTokenPrefersEnvVarOverGHCli(t *testing.T) {
 	t.Setenv("TEST_GH_TOKEN", "secret123")
 
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
-	Assert.Equal(t, "secret123", cfg.GitHubToken())
+	assert.Equal(t, "secret123", cfg.GitHubToken())
 }
 
 func TestBasePathValidation(t *testing.T) {
@@ -679,7 +679,7 @@ name = "b"
 				return
 			}
 			require.NoError(t, err)
-			Assert.Equal(t, tt.wantBP, cfg.BasePath)
+			assert.Equal(t, tt.wantBP, cfg.BasePath)
 		})
 	}
 }
@@ -689,11 +689,11 @@ func TestGitHubTokenReturnsEmptyWhenGHCliUnavailable(t *testing.T) {
 	t.Setenv("TEST_GH_TOKEN", "")
 
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
-	Assert.Empty(t, cfg.GitHubToken())
+	assert.Empty(t, cfg.GitHubToken())
 }
 
 func TestMiddlemanHomeOverridesDefaultPaths(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	t.Setenv("MIDDLEMAN_HOME", "/tmp/middleman-test")
 
 	assert.Equal(
@@ -704,7 +704,7 @@ func TestMiddlemanHomeOverridesDefaultPaths(t *testing.T) {
 }
 
 func TestDefaultPathsWithoutMiddlemanHome(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	t.Setenv("MIDDLEMAN_HOME", "")
 	t.Setenv("HOME", "/fakehome")
 
@@ -718,11 +718,11 @@ func TestDefaultPathsWithoutMiddlemanHome(t *testing.T) {
 func TestDBPath(t *testing.T) {
 	cfg := &Config{DataDir: "/tmp/middleman-test"}
 	expected := filepath.FromSlash("/tmp/middleman-test/middleman.db")
-	Assert.Equal(t, expected, cfg.DBPath())
+	assert.Equal(t, expected, cfg.DBPath())
 }
 
 func TestLoadActivityDefaults(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -738,7 +738,7 @@ name = "b"
 }
 
 func TestLoadActivityExplicit(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -761,7 +761,7 @@ collapse_threads = true
 }
 
 func TestLoadActivityExplicitCollapseThreadsFalse(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -938,7 +938,7 @@ func TestLoadNormalizesRepoNames(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			cfg := fmt.Sprintf(`
 [[repos]]
 owner = %q
@@ -954,7 +954,7 @@ name = %q
 }
 
 func TestLoadOmittedPlatformGitLabURLRemainsGitHub(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "Ignored"
@@ -1032,13 +1032,13 @@ name = %q
 			path := writeConfig(t, cfg)
 			_, err := Load(path)
 			require.Error(t, err)
-			Assert.Contains(t, err.Error(), "incomplete GitHub reference")
+			assert.Contains(t, err.Error(), "incomplete GitHub reference")
 		})
 	}
 }
 
 func TestSaveRoundTrip(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg, cfg2 := roundTripConfigString(t, `
 sync_interval = "10m"
 github_token_env = "MY_TOKEN"
@@ -1072,7 +1072,7 @@ collapse_threads = true
 }
 
 func TestSavePreservesDefaults(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	_, cfg2 := roundTripConfigString(t, `
 [[repos]]
 owner = "a"
@@ -1086,7 +1086,7 @@ name = "b"
 }
 
 func TestEnsureDefaultCreatesFile(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sub", "config.toml")
 
@@ -1111,7 +1111,7 @@ name = "b"
 
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	Assert.Contains(t, string(data), `owner = "a"`)
+	assert.Contains(t, string(data), `owner = "a"`)
 }
 
 func TestEnsureDefaultIdempotent(t *testing.T) {
@@ -1131,7 +1131,7 @@ func TestEnsureDefaultIdempotent(t *testing.T) {
 }
 
 func TestLoadRepoPlatformHost(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "apache"
@@ -1157,7 +1157,7 @@ name = "ibis"
 }
 
 func TestLoadTokenFilePathsAreNormalized(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
@@ -1188,7 +1188,7 @@ token_file = "~/tokens/github"
 }
 
 func TestConfigTokenSourceDescriptorPrecedence(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := &Config{
 		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
 		Platforms: []PlatformConfig{{
@@ -1210,7 +1210,7 @@ func TestConfigTokenSourceDescriptorPrecedence(t *testing.T) {
 }
 
 func TestTokenSourceForPlatformHostScopesGitHubTokenEnvToDefaultHost(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	// The env var being set must not matter: a non-default GitHub host's
 	// candidate chain may only contain the host-scoped gh credential, so
@@ -1233,7 +1233,7 @@ func TestTokenSourceForPlatformHostScopesGitHubTokenEnvToDefaultHost(t *testing.
 }
 
 func TestConfigProviderTokenSourcesKeepsCredentiallessPlatformHosts(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	// A platform host whose token config was removed must stay in the
 	// plans with an empty candidate chain: config reload updates live
@@ -1259,7 +1259,7 @@ func TestConfigProviderTokenSourcesKeepsCredentiallessPlatformHosts(t *testing.T
 }
 
 func TestConfigCloneTokenDescriptorsUseFirstNonEmptyHostChain(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	// Clone auth is host-scoped. The credential-less forgejo entry comes
 	// first, so the host descriptor must carry the first non-empty plan
@@ -1289,7 +1289,7 @@ func TestConfigCloneTokenDescriptorsUseFirstNonEmptyHostChain(t *testing.T) {
 }
 
 func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := &Config{
 		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
 		Platforms: []PlatformConfig{
@@ -1330,7 +1330,7 @@ func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
 }
 
 func TestConfigProviderTokenSourcesIncludesOptionalDefaultGitHub(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
 
 	plans := cfg.ProviderTokenSources()
@@ -1346,7 +1346,7 @@ func TestConfigProviderTokenSourcesIncludesOptionalDefaultGitHub(t *testing.T) {
 }
 
 func TestValidateRejectsConflictingTokenSources(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := &Config{
 		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
 		Repos: []Repo{
@@ -1385,7 +1385,7 @@ name = "fallback"
 }
 
 func TestSaveRoundTripTokenFile(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := filepath.Join(t.TempDir(), "config.toml")
 	cfg := &Config{
 		SyncInterval:        defaultSyncInterval,
@@ -1409,7 +1409,7 @@ func TestSaveRoundTripTokenFile(t *testing.T) {
 }
 
 func TestLoadPlatformConfigGitLabToken(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[platforms]]
 type = "gitlab"
@@ -1440,7 +1440,7 @@ name = "widgets"
 }
 
 func TestLoadPlatformConfigForgejoToken(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[platforms]]
 type = "forgejo"
@@ -1479,8 +1479,8 @@ name = "forgejo"
 
 	cfg, err := Load(path)
 	require.NoError(t, err)
-	Assert.Equal(t, "codeberg-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
-	Assert.Empty(t, cfg.TokenForPlatformHost("forgejo", "forgejo.example.com", ""))
+	assert.Equal(t, "codeberg-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
+	assert.Empty(t, cfg.TokenForPlatformHost("forgejo", "forgejo.example.com", ""))
 }
 
 func TestLoadPlatformConfigForgejoTokensAreHostScoped(t *testing.T) {
@@ -1512,12 +1512,12 @@ name = "service"
 
 	cfg, err := Load(path)
 	require.NoError(t, err)
-	Assert.Equal(t, "codeberg-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
-	Assert.Equal(t, "self-hosted-secret", cfg.TokenForPlatformHost("forgejo", "forgejo.example.com", ""))
+	assert.Equal(t, "codeberg-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
+	assert.Equal(t, "self-hosted-secret", cfg.TokenForPlatformHost("forgejo", "forgejo.example.com", ""))
 }
 
 func TestLoadParsesForgejoCodebergURL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 name = "https://codeberg.org/forgejo/forgejo.git"
@@ -1534,7 +1534,7 @@ name = "https://codeberg.org/forgejo/forgejo.git"
 }
 
 func TestLoadPlatformConfigGiteaToken(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[platforms]]
 type = "gitea"
@@ -1573,8 +1573,8 @@ name = "tea"
 
 	cfg, err := Load(path)
 	require.NoError(t, err)
-	Assert.Equal(t, "gitea-public-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
-	Assert.Empty(t, cfg.TokenForPlatformHost("gitea", "gitea.internal.example", ""))
+	assert.Equal(t, "gitea-public-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
+	assert.Empty(t, cfg.TokenForPlatformHost("gitea", "gitea.internal.example", ""))
 }
 
 func TestLoadPlatformConfigGiteaTokensAreHostScoped(t *testing.T) {
@@ -1606,12 +1606,12 @@ name = "service"
 
 	cfg, err := Load(path)
 	require.NoError(t, err)
-	Assert.Equal(t, "gitea-public-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
-	Assert.Equal(t, "gitea-internal-secret", cfg.TokenForPlatformHost("gitea", "gitea.internal.example", ""))
+	assert.Equal(t, "gitea-public-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
+	assert.Equal(t, "gitea-internal-secret", cfg.TokenForPlatformHost("gitea", "gitea.internal.example", ""))
 }
 
 func TestLoadParsesGiteaURL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 name = "https://gitea.com/gitea/tea.git"
@@ -1628,7 +1628,7 @@ name = "https://gitea.com/gitea/tea.git"
 }
 
 func TestLoadKeepsExistingGitHubURLInference(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 name = "https://github.com/wesm/middleman.git"
@@ -1645,7 +1645,7 @@ name = "https://github.com/wesm/middleman.git"
 }
 
 func TestLoadKeepsExistingGitLabURLInference(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 platform = "gitlab"
@@ -1677,7 +1677,7 @@ token_env = "GITLAB_TOKEN"
 
 	_, err := Load(path)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), `duplicate platform "gitlab/gitlab.example.com"`)
+	assert.Contains(t, err.Error(), `duplicate platform "gitlab/gitlab.example.com"`)
 }
 
 func TestLoadRejectsConflictingPlatformTokenEnv(t *testing.T) {
@@ -1695,11 +1695,11 @@ token_env = "GITLAB_TOKEN_B"
 
 	_, err := Load(path)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "conflicting token_env")
+	assert.Contains(t, err.Error(), "conflicting token_env")
 }
 
 func TestLoadGitLabNestedNamespaceURL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 platform = "gitlab"
@@ -1717,7 +1717,7 @@ name = "https://gitlab.com/My-Group/SubGroup/My-Project.git"
 }
 
 func TestLoadGitLabMergeRequestURL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 platform = "gitlab"
@@ -1735,7 +1735,7 @@ name = "https://gitlab.com/group/project/-/merge_requests/1"
 }
 
 func TestLoadPreservesExplicitGitLabOwnerNameCase(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 platform = "gitlab"
@@ -1753,7 +1753,7 @@ name = "My-Project"
 }
 
 func TestLoadNormalizesSelfHostedGitLabPlatformHost(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[platforms]]
 type = "gitlab"
@@ -1774,7 +1774,7 @@ name = "widgets"
 }
 
 func TestLoadPreservesSelfHostedGitLabHostPort(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[platforms]]
 type = "gitlab"
@@ -1805,7 +1805,7 @@ name = "widgets"
 
 	_, err := Load(path)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "invalid_repo_ref")
+	assert.Contains(t, err.Error(), "invalid_repo_ref")
 }
 
 func TestLoadRejectsUnsafePlatformHosts(t *testing.T) {
@@ -1831,7 +1831,7 @@ name = "widgets"
 
 			_, err := Load(path)
 			require.Error(t, err)
-			Assert.Contains(t, err.Error(), "invalid_repo_ref")
+			assert.Contains(t, err.Error(), "invalid_repo_ref")
 		})
 	}
 }
@@ -1846,7 +1846,7 @@ name = "https://gitlab.com/acme"
 
 	_, err := Load(path)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "incomplete GitLab reference")
+	assert.Contains(t, err.Error(), "incomplete GitLab reference")
 }
 
 func TestRepoPlatformHostOrDefault(t *testing.T) {
@@ -1866,7 +1866,7 @@ func TestRepoPlatformHostOrDefault(t *testing.T) {
 				Name:         "b",
 				PlatformHost: tt.host,
 			}
-			Assert.Equal(t, tt.want, r.PlatformHostOrDefault())
+			assert.Equal(t, tt.want, r.PlatformHostOrDefault())
 		})
 	}
 }
@@ -1875,23 +1875,23 @@ func TestRepoResolveToken(t *testing.T) {
 	t.Run("token_env set and populated", func(t *testing.T) {
 		t.Setenv("MY_GHE_TOKEN", "ghe-secret")
 		r := Repo{Owner: "a", Name: "b", TokenEnv: "MY_GHE_TOKEN"}
-		Assert.Equal(t, "ghe-secret", r.ResolveToken("global-token"))
+		assert.Equal(t, "ghe-secret", r.ResolveToken("global-token"))
 	})
 
 	t.Run("token_env set but empty falls back to global", func(t *testing.T) {
 		t.Setenv("MY_GHE_TOKEN", "")
 		r := Repo{Owner: "a", Name: "b", TokenEnv: "MY_GHE_TOKEN"}
-		Assert.Equal(t, "global-token", r.ResolveToken("global-token"))
+		assert.Equal(t, "global-token", r.ResolveToken("global-token"))
 	})
 
 	t.Run("token_env not set falls back to global", func(t *testing.T) {
 		r := Repo{Owner: "a", Name: "b"}
-		Assert.Equal(t, "global-token", r.ResolveToken("global-token"))
+		assert.Equal(t, "global-token", r.ResolveToken("global-token"))
 	})
 }
 
 func TestConfigResolveRepoTokenUsesPlatformToken(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 github_token_env = "GH_TOKEN"
 
@@ -1921,7 +1921,7 @@ name = "project"
 }
 
 func TestConfigResolveRepoTokenPrefersRepoTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[platforms]]
 type = "gitlab"
@@ -1956,7 +1956,7 @@ name = "arrow"
 `)
 	_, err := Load(path)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "duplicate repo")
+	assert.Contains(t, err.Error(), "duplicate repo")
 }
 
 func TestValidateAllowsSameOwnerNameAcrossPlatformHosts(t *testing.T) {
@@ -2000,7 +2000,7 @@ name = "Arrow"
 
 	_, err := Load(path)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), `duplicate repo "gitlab/gitlab.com/Apache/Arrow"`)
+	assert.Contains(t, err.Error(), `duplicate repo "gitlab/gitlab.com/Apache/Arrow"`)
 }
 
 func TestValidateRejectsGitLabDuplicateRepoByCaseWithinSamePlatformHost(t *testing.T) {
@@ -2020,11 +2020,11 @@ name = "arrow"
 
 	_, err := Load(path)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), `duplicate repo "gitlab/gitlab.com/Apache/Arrow"`)
+	assert.Contains(t, err.Error(), `duplicate repo "gitlab/gitlab.com/Apache/Arrow"`)
 }
 
 func TestLoadGitLabSSHURIWithPortDoesNotUseSSHPortAsPlatformHost(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 platform = "gitlab"
@@ -2042,7 +2042,7 @@ name = "ssh://git@gitlab.example.com:2222/group/project.git"
 }
 
 func TestLoadGitLabSSHURIWithPortKeepsExplicitPlatformHost(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[platforms]]
 type = "gitlab"
@@ -2081,7 +2081,7 @@ token_env = "GHE_TOKEN_B"
 `)
 	_, err := Load(path)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "conflicting token_env")
+	assert.Contains(t, err.Error(), "conflicting token_env")
 }
 
 func TestValidateScopesTokenEnvConflictsByPlatformHost(t *testing.T) {
@@ -2113,7 +2113,7 @@ token_env = "OTHER_GITLAB_TOKEN"
 }
 
 func TestSaveRoundTripPlatformHost(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	path := writeConfig(t, `
 [[repos]]
@@ -2142,7 +2142,7 @@ name = "ibis"
 }
 
 func TestSaveRoundTripHostCheckSettings(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	path := writeConfig(t, `
 allowed_hosts = ["proxy.local:8091", "middleman.example"]
@@ -2169,7 +2169,7 @@ name = "arrow"
 }
 
 func TestSaveWritesPrivateFileMode(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("file permission semantics differ on Windows")
@@ -2191,7 +2191,7 @@ name = "arrow"
 }
 
 func TestSaveCreatesParentDirectory(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	path := writeConfig(t, `
 [[repos]]
@@ -2213,7 +2213,7 @@ name = "arrow"
 }
 
 func TestSaveFollowsExistingSymlink(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink permissions require elevated privileges on Windows")
@@ -2245,7 +2245,7 @@ name = "arrow"
 }
 
 func TestSaveRejectsInvalidConfigWithoutWriting(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	cfg := &Config{
 		SyncInterval:   "5m",
@@ -2265,7 +2265,7 @@ func TestSaveRejectsInvalidConfigWithoutWriting(t *testing.T) {
 }
 
 func TestSaveDoesNotInheritStaleTmpPermissions(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("file permission semantics differ on Windows")
@@ -2291,7 +2291,7 @@ name = "arrow"
 }
 
 func TestSaveRoundTripEmptyGitHubTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 github_token_env = ""
 
@@ -2312,7 +2312,7 @@ name = "b"
 }
 
 func TestRoborevConfigRoundTrip(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -2334,7 +2334,7 @@ endpoint = "http://custom:9999"
 }
 
 func TestTerminalConfigRoundTrip(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	path := writeConfig(t, `
 [[repos]]
@@ -2380,7 +2380,7 @@ renderer = "ghostty-web"
 }
 
 func TestTerminalRendererDefaultsToXterm(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	path := writeConfig(t, `
 [[repos]]
@@ -2409,8 +2409,8 @@ name = "b"
 	cfg, err := Load(path)
 	require.NoError(t, err)
 
-	Assert.Equal(t, IssueWorkspaceBranchStyleSlug, cfg.IssueWorkspaceBranchStyle)
-	Assert.True(t, cfg.IssueWorkspaceBranchSlugEnabled())
+	assert.Equal(t, IssueWorkspaceBranchStyleSlug, cfg.IssueWorkspaceBranchStyle)
+	assert.True(t, cfg.IssueWorkspaceBranchSlugEnabled())
 }
 
 func TestIssueWorkspaceBranchStyleAcceptsBare(t *testing.T) {
@@ -2424,8 +2424,8 @@ name = "b"
 	cfg, err := Load(path)
 	require.NoError(t, err)
 
-	Assert.Equal(t, IssueWorkspaceBranchStyleBare, cfg.IssueWorkspaceBranchStyle)
-	Assert.False(t, cfg.IssueWorkspaceBranchSlugEnabled())
+	assert.Equal(t, IssueWorkspaceBranchStyleBare, cfg.IssueWorkspaceBranchStyle)
+	assert.False(t, cfg.IssueWorkspaceBranchSlugEnabled())
 }
 
 func TestIssueWorkspaceBranchStyleRejectsInvalidValue(t *testing.T) {
@@ -2438,11 +2438,11 @@ name = "b"
 `)
 	_, err := Load(path)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "invalid issue_workspace_branch_style")
+	assert.Contains(t, err.Error(), "invalid issue_workspace_branch_style")
 }
 
 func TestIssueWorkspaceBranchStyleRoundTrip(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 issue_workspace_branch_style = "bare"
 
@@ -2464,7 +2464,7 @@ name = "b"
 }
 
 func TestIssueWorkspaceBranchStyleSlugIsOmittedFromSavedConfig(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 issue_workspace_branch_style = "slug"
 
@@ -2487,7 +2487,7 @@ name = "b"
 }
 
 func TestKataProjectMappingsRoundTrip(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	cfg, cfg2 := roundTripConfigString(t, `
@@ -2542,7 +2542,7 @@ platform_host = "github.com"
 repo_path = "acme/widget"
 `))
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "duplicate kata project mapping")
+	assert.Contains(t, err.Error(), "duplicate kata project mapping")
 }
 
 func TestKataProjectMappingsRejectUnconfiguredRepos(t *testing.T) {
@@ -2558,7 +2558,7 @@ platform_host = "github.com"
 repo_path = "acme/other"
 `))
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "does not match a configured exact repo")
+	assert.Contains(t, err.Error(), "does not match a configured exact repo")
 }
 
 func TestTerminalRendererRejectsInvalidValue(t *testing.T) {
@@ -2572,7 +2572,7 @@ renderer = "vt100"
 `)
 	_, err := Load(path)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "invalid terminal.renderer")
+	assert.Contains(t, err.Error(), "invalid terminal.renderer")
 }
 
 func TestSyncBudgetPerHour(t *testing.T) {
@@ -2584,7 +2584,7 @@ name = "b"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		Assert.Equal(t, 500, cfg.BudgetPerHour())
+		assert.Equal(t, 500, cfg.BudgetPerHour())
 	})
 
 	t.Run("rejects value below 50", func(t *testing.T) {
@@ -2596,7 +2596,7 @@ name = "b"
 `)
 		_, err := Load(path)
 		require.Error(t, err)
-		Assert.Contains(t, err.Error(), "sync_budget_per_hour must be >= 50 or omitted")
+		assert.Contains(t, err.Error(), "sync_budget_per_hour must be >= 50 or omitted")
 	})
 
 	t.Run("configured value preserved", func(t *testing.T) {
@@ -2608,7 +2608,7 @@ name = "b"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		Assert.Equal(t, 1000, cfg.BudgetPerHour())
+		assert.Equal(t, 1000, cfg.BudgetPerHour())
 	})
 
 	t.Run("round-trips through Save", func(t *testing.T) {
@@ -2627,13 +2627,13 @@ name = "b"
 
 		cfg2, err := Load(savePath)
 		require.NoError(err)
-		Assert.Equal(t, 750, cfg2.BudgetPerHour())
+		assert.Equal(t, 750, cfg2.BudgetPerHour())
 	})
 }
 
 func TestActivityDefaultBranchBounds(t *testing.T) {
 	t.Run("defaults retention and max commits when unset", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		path := writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -2648,7 +2648,7 @@ name = "b"
 	})
 
 	t.Run("configured values are preserved", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		path := writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -2677,7 +2677,7 @@ default_branch_retention_days = -1
 `)
 		_, err := Load(path)
 		require.Error(t, err)
-		Assert.Contains(t, err.Error(), "default_branch_retention_days")
+		assert.Contains(t, err.Error(), "default_branch_retention_days")
 	})
 
 	t.Run("round-trips through Save", func(t *testing.T) {
@@ -2699,14 +2699,14 @@ default_branch_max_commits = 1000
 
 		cfg2, err := Load(savePath)
 		require.NoError(err)
-		Assert.Equal(t, 30, cfg2.Activity.DefaultBranchRetentionDays)
-		Assert.Equal(t, 1000, cfg2.Activity.DefaultBranchMaxCommits)
+		assert.Equal(t, 30, cfg2.Activity.DefaultBranchRetentionDays)
+		assert.Equal(t, 1000, cfg2.Activity.DefaultBranchMaxCommits)
 	})
 }
 
 func TestModeVisibilityDefaultsAndRoundTrip(t *testing.T) {
 	t.Run("defaults imported modes hidden when unset", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		cfg, err := Load(writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -2727,7 +2727,7 @@ name = "b"
 	})
 
 	t.Run("preserves configured false values through save", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		cfg, err := Load(writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -2774,13 +2774,13 @@ name = "b"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		Assert.Equal(t, 256, cfg.SSEBufferSize)
-		Assert.Equal(t, 256, cfg.SSEBufferSizeOrDefault())
+		assert.Equal(t, 256, cfg.SSEBufferSize)
+		assert.Equal(t, 256, cfg.SSEBufferSizeOrDefault())
 	})
 
 	t.Run("nil receiver returns default", func(t *testing.T) {
 		var cfg *Config
-		Assert.Equal(t, 256, cfg.SSEBufferSizeOrDefault())
+		assert.Equal(t, 256, cfg.SSEBufferSizeOrDefault())
 	})
 
 	t.Run("rejects below minimum", func(t *testing.T) {
@@ -2792,7 +2792,7 @@ name = "b"
 `)
 		_, err := Load(path)
 		require.Error(t, err)
-		Assert.Contains(t, err.Error(), "sse_buffer_size must be between 16 and 16384")
+		assert.Contains(t, err.Error(), "sse_buffer_size must be between 16 and 16384")
 	})
 
 	t.Run("rejects above maximum", func(t *testing.T) {
@@ -2804,7 +2804,7 @@ name = "b"
 `)
 		_, err := Load(path)
 		require.Error(t, err)
-		Assert.Contains(t, err.Error(), "sse_buffer_size must be between 16 and 16384")
+		assert.Contains(t, err.Error(), "sse_buffer_size must be between 16 and 16384")
 	})
 
 	t.Run("accepts valid value in range", func(t *testing.T) {
@@ -2816,8 +2816,8 @@ name = "b"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		Assert.Equal(t, 1024, cfg.SSEBufferSize)
-		Assert.Equal(t, 1024, cfg.SSEBufferSizeOrDefault())
+		assert.Equal(t, 1024, cfg.SSEBufferSize)
+		assert.Equal(t, 1024, cfg.SSEBufferSizeOrDefault())
 	})
 
 	t.Run("accepts boundary minimum 16", func(t *testing.T) {
@@ -2829,7 +2829,7 @@ name = "b"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		Assert.Equal(t, 16, cfg.SSEBufferSize)
+		assert.Equal(t, 16, cfg.SSEBufferSize)
 	})
 
 	t.Run("accepts boundary maximum 16384", func(t *testing.T) {
@@ -2841,7 +2841,7 @@ name = "b"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		Assert.Equal(t, 16384, cfg.SSEBufferSize)
+		assert.Equal(t, 16384, cfg.SSEBufferSize)
 	})
 
 	t.Run("round-trips through Save", func(t *testing.T) {
@@ -2860,7 +2860,7 @@ name = "b"
 
 		cfg2, err := Load(savePath)
 		require.NoError(err)
-		Assert.Equal(t, 1024, cfg2.SSEBufferSize)
+		assert.Equal(t, 1024, cfg2.SSEBufferSize)
 	})
 
 	t.Run("default value is omitted from Save output", func(t *testing.T) {
@@ -2879,19 +2879,19 @@ name = "b"
 		// Reload should still produce the default.
 		cfg2, err := Load(savePath)
 		require.NoError(err)
-		Assert.Equal(t, 256, cfg2.SSEBufferSize)
+		assert.Equal(t, 256, cfg2.SSEBufferSize)
 	})
 }
 
 func TestRoborevEndpointDefault(t *testing.T) {
 	cfg := &Config{}
-	Assert.Equal(
+	assert.Equal(
 		t, "http://127.0.0.1:7373", cfg.RoborevEndpoint(),
 	)
 }
 
 func TestLoadTmuxCommand(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [tmux]
 command = ["systemd-run", "--user", "--scope", "tmux"]
@@ -2905,7 +2905,7 @@ command = ["systemd-run", "--user", "--scope", "tmux"]
 }
 
 func TestLoadTmuxCommandOmitted(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, ``)
 	cfg, err := Load(path)
 	require.NoError(t, err)
@@ -2915,7 +2915,7 @@ func TestLoadTmuxCommandOmitted(t *testing.T) {
 }
 
 func TestLoadTmuxCommandEmptyArray(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [tmux]
 command = []
@@ -2926,7 +2926,7 @@ command = []
 }
 
 func TestLoadTmuxAgentSessionsDisabled(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [tmux]
 agent_sessions = false
@@ -2937,7 +2937,7 @@ agent_sessions = false
 }
 
 func TestSavePreservesTmuxAgentSessionsDisabled(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	disabled := false
@@ -2961,7 +2961,7 @@ func TestSavePreservesTmuxAgentSessionsDisabled(t *testing.T) {
 }
 
 func TestTmuxCommandDefensiveCopy(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := &Config{Tmux: Tmux{
 		Command: []string{"tmux"},
 	}}
@@ -2972,7 +2972,7 @@ func TestTmuxCommandDefensiveCopy(t *testing.T) {
 }
 
 func TestTmuxCommandNilReceiver(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	var cfg *Config
 	assert.Equal([]string{"tmux"}, cfg.TmuxCommand())
 }
@@ -3008,7 +3008,7 @@ command = ["   ", "extra"]
 }
 
 func TestLoadShellCommand(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [shell]
 command = ["systemd-run", "--user", "--scope", "zsh"]
@@ -3026,7 +3026,7 @@ command = ["systemd-run", "--user", "--scope", "zsh"]
 }
 
 func TestLoadShellCommandOmitted(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, ``)
 	cfg, err := Load(path)
 	require.NoError(t, err)
@@ -3036,7 +3036,7 @@ func TestLoadShellCommandOmitted(t *testing.T) {
 }
 
 func TestLoadShellCommandEmptyArray(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [shell]
 command = []
@@ -3047,7 +3047,7 @@ command = []
 }
 
 func TestShellCommandDefensiveCopy(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := &Config{Shell: Shell{Command: []string{"zsh"}}}
 	first := cfg.ShellCommand()
 	first[0] = "hacked"
@@ -3056,7 +3056,7 @@ func TestShellCommandDefensiveCopy(t *testing.T) {
 }
 
 func TestShellCommandNilReceiver(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	var cfg *Config
 	assert.Nil(cfg.ShellCommand())
 }
@@ -3091,7 +3091,7 @@ command = ["   ", "zsh"]
 }
 
 func TestSavePreservesShellCommand(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
@@ -3117,7 +3117,7 @@ func TestSavePreservesShellCommand(t *testing.T) {
 }
 
 func TestSavePreservesTmuxCommand(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
@@ -3146,7 +3146,7 @@ func TestSavePreservesTmuxCommand(t *testing.T) {
 // [fleet] section: peers, the local host key, peer timeout, and the
 // [fleet.sessions] toggle must all survive a Save/Load round trip.
 func TestSaveRoundTripsFleet(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
@@ -3182,7 +3182,7 @@ func TestSaveRoundTripsFleet(t *testing.T) {
 // TestSaveOmitsEmptyFleet keeps default configs clean: a daemon with no
 // fleet federation must not gain a [fleet] section on save.
 func TestSaveOmitsEmptyFleet(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
@@ -3202,7 +3202,7 @@ func TestSaveOmitsEmptyFleet(t *testing.T) {
 }
 
 func TestLoadAgents(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[agents]]
 key = "codex"
@@ -3229,7 +3229,7 @@ enabled = false
 }
 
 func TestLoadAgentDefaultsLabelAndNormalizesKey(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [[agents]]
 key = "  Codex  "
@@ -3275,7 +3275,7 @@ enabled = false
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	require.Len(t, cfg.Agents, 1)
-	Assert.False(t, cfg.Agents[0].EnabledOrDefault())
+	assert.False(t, cfg.Agents[0].EnabledOrDefault())
 }
 
 func TestLoadAgentRejectsEmptyCommandFirstElement(t *testing.T) {
@@ -3336,7 +3336,7 @@ command = ["codex"]
 }
 
 func TestSavePreservesAgents(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	disabled := false
@@ -3388,7 +3388,7 @@ func TestTokenEnvNamesIncludesGlobalPlatformAndPerRepo(t *testing.T) {
 			{Owner: "third", Name: "x", TokenEnv: "THIRD_TOKEN"},
 		},
 	}
-	Assert.Equal(
+	assert.Equal(
 		t,
 		[]string{
 			"WORK_GH_BOT_TOKEN",
@@ -3421,7 +3421,7 @@ func TestTokenEnvNamesIncludesImplicitPublicForgeTokenEnvs(t *testing.T) {
 		},
 	}
 
-	Assert.Equal(
+	assert.Equal(
 		t,
 		[]string{
 			"WORK_GH_BOT_TOKEN",
@@ -3443,7 +3443,7 @@ func TestTokenEnvNamesIncludesImplicitPublicForgeTokenEnvsFromPlatformOnly(t *te
 		},
 	}
 
-	Assert.Equal(
+	assert.Equal(
 		t,
 		[]string{
 			"WORK_GH_BOT_TOKEN",
@@ -3475,7 +3475,7 @@ func TestTokenEnvNamesIncludesFallbackProviderDefaultsForRepoTokenEnv(t *testing
 		},
 	}
 
-	Assert.Equal(
+	assert.Equal(
 		t,
 		[]string{
 			"WORK_GH_BOT_TOKEN",
@@ -3496,7 +3496,7 @@ func TestTokenEnvNamesIncludesMsgvaultAPIKeyEnv(t *testing.T) {
 		},
 	}
 
-	Assert.Contains(t, cfg.TokenEnvNames(), "MSGVAULT_API_KEY_TEST")
+	assert.Contains(t, cfg.TokenEnvNames(), "MSGVAULT_API_KEY_TEST")
 }
 
 func TestGhAuthTokenForHostPassesHostnameFlag(t *testing.T) {
@@ -3505,15 +3505,15 @@ func TestGhAuthTokenForHostPassesHostnameFlag(t *testing.T) {
 	})
 
 	got := ghAuthTokenForHost("github.com")
-	Assert.Equal(t, "gh-secret-github", got)
+	assert.Equal(t, "gh-secret-github", got)
 
 	argv := readFakeGHArgv(t, argvPath)
 	require.Len(t, argv, 1)
-	Assert.Equal(t, "auth token --hostname github.com", argv[0])
+	assert.Equal(t, "auth token --hostname github.com", argv[0])
 }
 
 func TestGhAuthTokenForHostRetriesBareWhenOldGHRejectsHostnameFlag(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	argvPath := setFakeGHCLIWithScript(
@@ -3536,15 +3536,15 @@ func TestGhAuthTokenForHostDoesNotRetryBareOnAuthFailure(t *testing.T) {
 	})
 
 	got := ghAuthTokenForHost("github.com")
-	Assert.Empty(t, got)
+	assert.Empty(t, got)
 
 	argv := readFakeGHArgv(t, argvPath)
 	require.Len(t, argv, 1, "should not retry bare on non-flag-rejection failure")
-	Assert.Equal(t, "auth token --hostname github.com", argv[0])
+	assert.Equal(t, "auth token --hostname github.com", argv[0])
 }
 
 func TestGhAuthTokenForHostDoesNotRetryBareOnGHEFlagRejection(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	argvPath := setFakeGHCLIWithScript(t, fakeGHCLIRejectHostnameScript())
@@ -3559,7 +3559,7 @@ func TestGhAuthTokenForHostDoesNotRetryBareOnGHEFlagRejection(t *testing.T) {
 
 func TestGhAuthTokenForHostReturnsEmptyWhenBinaryMissing(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	Assert.Empty(t, ghAuthTokenForHost("github.com"))
+	assert.Empty(t, ghAuthTokenForHost("github.com"))
 }
 
 func TestGitHubCLITokenForHostTimesOutWithoutCallerDeadline(t *testing.T) {
@@ -3576,8 +3576,8 @@ func TestGitHubCLITokenForHostTimesOutWithoutCallerDeadline(t *testing.T) {
 	elapsed := time.Since(start)
 
 	require.NoError(t, err)
-	Assert.Empty(t, got)
-	Assert.Less(
+	assert.Empty(t, got)
+	assert.Less(
 		t, elapsed, ghAuthExecTimeout+2*time.Second,
 		"helper should return shortly after timeout, took %s", elapsed,
 	)
@@ -3591,11 +3591,11 @@ func TestTokenForPlatformHostUsesGHWithHostnameForGHE(t *testing.T) {
 
 	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
 	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "")
-	Assert.Equal(t, "ghe-secret", got)
+	assert.Equal(t, "ghe-secret", got)
 
 	argv := readFakeGHArgv(t, argvPath)
 	require.Len(t, argv, 1)
-	Assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
+	assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
 }
 
 func TestTokenForPlatformHostIgnoresGitHubTokenEnvForGHE(t *testing.T) {
@@ -3609,11 +3609,11 @@ func TestTokenForPlatformHostIgnoresGitHubTokenEnvForGHE(t *testing.T) {
 
 	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
 	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "")
-	Assert.Equal(t, "ghe-from-gh", got)
+	assert.Equal(t, "ghe-from-gh", got)
 
 	argv := readFakeGHArgv(t, argvPath)
 	require.Len(t, argv, 1)
-	Assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
+	assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
 }
 
 func TestTokenForPlatformHostPrefersPlatformsEntryOverGHForGHE(t *testing.T) {
@@ -3630,9 +3630,9 @@ func TestTokenForPlatformHostPrefersPlatformsEntryOverGHForGHE(t *testing.T) {
 		},
 	}
 	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "")
-	Assert.Equal(t, "ghe-from-platforms", got)
+	assert.Equal(t, "ghe-from-platforms", got)
 
-	Assert.Empty(t, readFakeGHArgv(t, argvPath), "[[platforms]] should short-circuit gh")
+	assert.Empty(t, readFakeGHArgv(t, argvPath), "[[platforms]] should short-circuit gh")
 }
 
 func TestTokenForPlatformHostPrefersRepoTokenEnvOverGHForGHE(t *testing.T) {
@@ -3644,9 +3644,9 @@ func TestTokenForPlatformHostPrefersRepoTokenEnvOverGHForGHE(t *testing.T) {
 
 	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
 	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "REPO_GHE_TOKEN")
-	Assert.Equal(t, "ghe-from-repo", got)
+	assert.Equal(t, "ghe-from-repo", got)
 
-	Assert.Empty(t, readFakeGHArgv(t, argvPath), "repo token_env should short-circuit gh")
+	assert.Empty(t, readFakeGHArgv(t, argvPath), "repo token_env should short-circuit gh")
 }
 
 func TestGitHubTokenInvokesGHWithGithubComHostname(t *testing.T) {
@@ -3657,15 +3657,15 @@ func TestGitHubTokenInvokesGHWithGithubComHostname(t *testing.T) {
 
 	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
 	got := cfg.GitHubToken()
-	Assert.Equal(t, "default-host-secret", got)
+	assert.Equal(t, "default-host-secret", got)
 
 	argv := readFakeGHArgv(t, argvPath)
 	require.Len(t, argv, 1)
-	Assert.Equal(t, "auth token --hostname github.com", argv[0])
+	assert.Equal(t, "auth token --hostname github.com", argv[0])
 }
 
 func TestLoadAllowedHostsDefault(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg, err := Load(writeConfig(t, `host = "127.0.0.1"
 port = 8091
 `))
@@ -3684,11 +3684,11 @@ func TestLoadRejectsZeroPort(t *testing.T) {
 port = 0
 `))
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "invalid port 0")
+	assert.Contains(t, err.Error(), "invalid port 0")
 }
 
 func TestLoadAllowedHostsParsesAndCanonicalises(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg, err := Load(writeConfig(t, `host = "127.0.0.1"
 port = 8091
 allowed_hosts = ["mm.local:8091", "MM.Example.Com", "[::1]:8443"]
@@ -3725,13 +3725,13 @@ allowed_hosts = [%q]
 `, tc.entry))
 			_, err := Load(path)
 			require.Error(t, err)
-			Assert.Contains(t, err.Error(), "allowed_hosts")
+			assert.Contains(t, err.Error(), "allowed_hosts")
 		})
 	}
 }
 
 func TestParsedAllowedHostsDefensiveCopy(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg, err := Load(writeConfig(t, `host = "127.0.0.1"
 port = 8091
 allowed_hosts = ["mm.local:8091"]
@@ -3772,7 +3772,7 @@ base_url = "http://mbp:8091"
 }
 
 func TestFleetConfigNormalizesHostKeys(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	path := writeConfig(t, `
 [fleet]
 key = " studio "

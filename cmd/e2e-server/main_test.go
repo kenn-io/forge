@@ -15,7 +15,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/testutil"
@@ -38,7 +38,7 @@ func TestWriteServerInfoFile(t *testing.T) {
 
 	var got e2eServerInfo
 	require.NoError(t, json.Unmarshal(content, &got))
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(info, got)
 }
 
@@ -49,7 +49,7 @@ func TestCleanupServerInfoFileRemovesFile(t *testing.T) {
 	cleanupServerInfoFile(path)
 
 	_, err := os.Stat(path)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.ErrorIs(err, os.ErrNotExist)
 }
 
@@ -67,7 +67,7 @@ func TestPatchFixturePRSHAsUpdatesOpenPRs(t *testing.T) {
 
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, "head-sha", "base-sha")
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	updated := fc.OpenPRs["acme/widgets"][0]
 	assert.Equal("head-sha", updated.GetHead().GetSHA())
 	assert.Equal("base-sha", updated.GetBase().GetSHA())
@@ -88,7 +88,7 @@ func TestPatchFixturePRSHAsUpdatesLookupPRs(t *testing.T) {
 
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, "head-sha", "base-sha")
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	updated := fc.PRs["acme/widgets"][0]
 	assert.Equal("head-sha", updated.GetHead().GetSHA())
 	assert.Equal("base-sha", updated.GetBase().GetSHA())
@@ -162,7 +162,7 @@ func TestAppStateRegistryWaitsForInFlightHandlersAfterSwap(t *testing.T) {
 // playwright runs.
 func TestDefaultRoborevEndpointIsUnbindable(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	u, err := url.Parse(defaultRoborevEndpoint)
 	require.NoError(err)
@@ -197,7 +197,7 @@ func TestBuildAppStateSeedsReviewedHeadsForUTCMergeTargets(t *testing.T) {
 	} {
 		t.Run(target.repo+"-"+strconv.Itoa(target.number), func(t *testing.T) {
 			require := require.New(t)
-			assert := Assert.New(t)
+			assert := assert.New(t)
 
 			repo, err := state.database.GetRepoByIdentity(
 				t.Context(), db.GitHubRepoIdentity("github.com", target.owner, target.repo),
@@ -247,7 +247,7 @@ func TestBuildAppStateSeedsReviewedHeadsForUTCMergeTargets(t *testing.T) {
 // which pins the constant value itself.
 func TestRunDefaultRoborevFailsClosedThroughProxy(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
@@ -325,7 +325,7 @@ func waitForServerInfoBaseURL(
 // malformed bodies instead of silently resetting to defaults.
 func TestResetSwapsFixtureState(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)

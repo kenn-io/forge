@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +20,7 @@ func fastBackOff() *backoff.ExponentialBackOff {
 
 func TestDoWithBackOffStopsOnPermanentError(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	calls := 0
 	permanent := errors.New("permanent")
@@ -42,7 +42,7 @@ func TestDoWithBackOffStopsOnPermanentError(t *testing.T) {
 
 func TestDoWithBackOffRetriesTransientErrorUntilBudgetExhausted(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	calls := 0
 	transient := errors.New("transient")
@@ -64,7 +64,7 @@ func TestDoWithBackOffRetriesTransientErrorUntilBudgetExhausted(t *testing.T) {
 
 func TestDoWithBackOffRetriesTransientErrorUntilSuccess(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	calls := 0
 

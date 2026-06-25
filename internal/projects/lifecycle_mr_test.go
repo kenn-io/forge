@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 
 	gitenv "go.kenn.io/kit/git/env"
@@ -54,7 +54,7 @@ func worktreeConfig(t *testing.T, dir, key string) string {
 // it, and upstream tracking points at origin's head branch.
 func TestCreateWorktreeFromMergeRequestSameRepo(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	origin, clone := initOriginAndClone(t)
 	lifecycleGit(t, origin, "checkout", "-q", "-b", "feature-x")
@@ -90,7 +90,7 @@ func TestCreateWorktreeFromMergeRequestSameRepo(t *testing.T) {
 // no upstream tracking is configured.
 func TestCreateWorktreeFromMergeRequestPullRefFallback(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	origin, clone := initOriginAndClone(t)
 	lifecycleGit(t, origin, "checkout", "-q", "-b", "contributor-work")
@@ -120,7 +120,7 @@ func TestCreateWorktreeFromMergeRequestPullRefFallback(t *testing.T) {
 // a dedicated fork remote.
 func TestCreateWorktreeFromMergeRequestFork(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	origin, clone := initOriginAndClone(t)
 
@@ -164,7 +164,7 @@ func TestCreateWorktreeFromMergeRequestFork(t *testing.T) {
 // and tracking is silently disabled.
 func TestCreateWorktreeFromMergeRequestTrackingFetchFailureIsNonFatal(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	origin, clone := initOriginAndClone(t)
 	lifecycleGit(t, origin, "checkout", "-q", "-b", "gone-fork-work")
@@ -194,7 +194,7 @@ func TestCreateWorktreeFromMergeRequestTrackingFetchFailureIsNonFatal(t *testing
 // hook rolls back the imported worktree and its branch.
 func TestCreateWorktreeFromMergeRequestHookFailureRollsBack(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	origin, clone := initOriginAndClone(t)
 	lifecycleGit(t, origin, "checkout", "-q", "-b", "feature-x")

@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestLoadCatalogMapsEntries(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -47,7 +47,7 @@ allow_insecure = true
 }
 
 func TestLoadCatalogAbsentReturnsEmpty(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("KATA_HOME", t.TempDir())
@@ -60,7 +60,7 @@ func TestLoadCatalogAbsentReturnsEmpty(t *testing.T) {
 }
 
 func TestLoadCatalogRejectsDuplicateNames(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -75,7 +75,7 @@ func TestLoadCatalogRejectsDuplicateNames(t *testing.T) {
 }
 
 func TestLoadCatalogRejectsMissingName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -90,7 +90,7 @@ func TestLoadCatalogRejectsMissingName(t *testing.T) {
 }
 
 func TestLoadCatalogRejectsWhitespaceOnlyName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -105,7 +105,7 @@ func TestLoadCatalogRejectsWhitespaceOnlyName(t *testing.T) {
 }
 
 func TestLoadCatalogTrimsDaemonFields(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -130,7 +130,7 @@ token = "  target-token  "
 }
 
 func TestLoadCatalogTrimsDaemonTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -152,7 +152,7 @@ token_env = "  KATA_WORK_TOKEN  "
 }
 
 func TestLoadCatalogLocalEntryIsTokenless(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -175,7 +175,7 @@ token_env = "IGNORED"
 }
 
 func TestLoadCatalogRejectsNeitherLocalNorURL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -190,7 +190,7 @@ func TestLoadCatalogRejectsNeitherLocalNorURL(t *testing.T) {
 }
 
 func TestLoadCatalogRejectsBothLocalAndURL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -205,7 +205,7 @@ func TestLoadCatalogRejectsBothLocalAndURL(t *testing.T) {
 }
 
 func TestLoadCatalogRejectsTokenAndTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -220,7 +220,7 @@ func TestLoadCatalogRejectsTokenAndTokenEnv(t *testing.T) {
 }
 
 func TestLoadCatalogRejectsActiveNotInCatalog(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()

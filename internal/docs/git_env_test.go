@@ -3,11 +3,11 @@ package docs
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCleanGitEnvStripsConfigRedirects(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	got := cleanGitEnv([]string{
 		"PATH=/bin",

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,11 +15,11 @@ func TestHandleCacheSetGet(t *testing.T) {
 	c.Set(42, "tok", 1, urls)
 	got, ok := c.Get(42, "tok", 1)
 	require.True(t, ok)
-	Assert.Equal(t, urls, got)
+	assert.Equal(t, urls, got)
 }
 
 func TestHandleCacheGenerationMismatch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	c := newHandleCache(10, time.Minute)
 	c.Set(42, "tok", 1, []string{"u"})
 	_, ok := c.Get(42, "tok", 2)
@@ -35,11 +35,11 @@ func TestHandleCacheTTLExpiry(t *testing.T) {
 	c.Set(42, "tok", 1, []string{"u"})
 	time.Sleep(25 * time.Millisecond)
 	_, ok := c.Get(42, "tok", 1)
-	Assert.False(t, ok)
+	assert.False(t, ok)
 }
 
 func TestHandleCacheLRUEviction(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	c := newHandleCache(2, time.Minute)
 	c.Set(1, "t", 1, []string{"a"})
 	c.Set(2, "t", 1, []string{"b"})
@@ -53,7 +53,7 @@ func TestHandleCacheLRUEviction(t *testing.T) {
 }
 
 func TestHandleCacheStaleLookupsDoNotPromote(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	c := newHandleCache(2, time.Minute)
 	c.Set(1, "stale", 1, []string{"stale"})
 	c.Set(2, "valid", 2, []string{"valid"})
@@ -71,7 +71,7 @@ func TestHandleCacheStaleLookupsDoNotPromote(t *testing.T) {
 }
 
 func TestHandleCachePurge(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	c := newHandleCache(10, time.Minute)
 	c.Set(1, "t", 1, []string{"a"})
 	c.Set(2, "t", 1, []string{"b"})
@@ -86,7 +86,7 @@ func TestHandleCacheRotationRace(t *testing.T) {
 	c := newHandleCache(10, time.Minute)
 	c.Set(42, "tok", 1, []string{"u"})
 	_, ok := c.Get(42, "tok", 2)
-	Assert.False(t, ok)
+	assert.False(t, ok)
 }
 
 func TestHandleCacheConcurrentAccess(t *testing.T) {

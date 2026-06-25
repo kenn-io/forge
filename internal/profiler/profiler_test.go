@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +27,7 @@ func TestNewHandlerRegistersStandardProfilerEndpoints(t *testing.T) {
 
 			_, pattern := mux.Handler(req)
 
-			Assert.Equal(t, path, pattern)
+			assert.Equal(t, path, pattern)
 		})
 	}
 }
@@ -47,8 +47,8 @@ func TestStartRejectsNonLoopbackAddress(t *testing.T) {
 			srv, err := Start(addr)
 
 			require.Error(t, err)
-			Assert.Nil(t, srv)
-			Assert.Contains(t, err.Error(), "loopback")
+			assert.Nil(t, srv)
+			assert.Contains(t, err.Error(), "loopback")
 		})
 	}
 }
@@ -76,7 +76,7 @@ func TestStartAcceptsLoopbackAddress(t *testing.T) {
 }
 
 func TestStartServesProfilerIndex(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, err := Start("127.0.0.1:0")
@@ -99,7 +99,7 @@ func TestStartServesProfilerIndex(t *testing.T) {
 }
 
 func TestStartRejectsNonBoundHostHeader(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, err := Start("127.0.0.1:0")
@@ -127,7 +127,7 @@ func TestStartRejectsNonBoundHostHeader(t *testing.T) {
 }
 
 func TestStartRejectsCrossSiteBrowserRequest(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, err := Start("127.0.0.1:0")
@@ -155,7 +155,7 @@ func TestStartRejectsCrossSiteBrowserRequest(t *testing.T) {
 }
 
 func TestStartRejectsMismatchedOrigin(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, err := Start("127.0.0.1:0")
@@ -183,7 +183,7 @@ func TestStartRejectsMismatchedOrigin(t *testing.T) {
 }
 
 func TestStartRejectsBrowserRequestWithoutMetadata(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, err := Start("127.0.0.1:0")
@@ -214,7 +214,7 @@ func TestStartRejectsBrowserRequestWithoutMetadata(t *testing.T) {
 }
 
 func TestStartAllowsNonBrowserRequestWithoutMetadata(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, err := Start("127.0.0.1:0")
@@ -242,7 +242,7 @@ func TestStartAllowsNonBrowserRequestWithoutMetadata(t *testing.T) {
 }
 
 func TestStartCapsExpensiveProfileSeconds(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, err := Start("127.0.0.1:0")
@@ -264,7 +264,7 @@ func TestStartCapsExpensiveProfileSeconds(t *testing.T) {
 }
 
 func TestStartCapsRuntimeProfileSeconds(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, err := Start("127.0.0.1:0")

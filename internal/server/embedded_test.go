@@ -8,7 +8,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
@@ -56,7 +56,7 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 		srv.ServeHTTP(rr, req)
 
 		body := rr.Body.String()
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		assert.Contains(body, `"activeWorktreeKey":"wt-123"`)
 		assert.Contains(body, `window.__middleman_config=`)
 	})
@@ -68,7 +68,7 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 		srv.ServeHTTP(rr, req)
 
 		body := rr.Body.String()
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		assert.NotContains(body, `__middleman_config`)
 		assert.Contains(body, `window.__BASE_PATH__="/app/"`)
 	})
@@ -138,7 +138,7 @@ func TestSPACacheHeaders(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			assert.Equal(tc.wantStatus, rr.Code)
 			assert.Equal(tc.wantCacheHdr, rr.Header().Get("Cache-Control"))
 			assert.Equal(tc.wantPragma, rr.Header().Get("Pragma"))
@@ -173,7 +173,7 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			assert.Equal(http.StatusOK, rr.Code)
 			assert.Equal(spaFrameAncestorsPolicy, rr.Header().Get("Content-Security-Policy"))
 			assert.Equal(spaXFrameOptions, rr.Header().Get("X-Frame-Options"))
@@ -184,7 +184,7 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/assets/index-DEADBEEF.js", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		assert.Equal(http.StatusOK, rr.Code)
 		assert.Empty(rr.Header().Get("Content-Security-Policy"))
 		assert.Empty(rr.Header().Get("X-Frame-Options"))
@@ -194,7 +194,7 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/workspaces/embed/list", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		assert.Equal(http.StatusOK, rr.Code)
 		assert.Empty(rr.Header().Get("Content-Security-Policy"))
 		assert.Empty(rr.Header().Get("X-Frame-Options"))

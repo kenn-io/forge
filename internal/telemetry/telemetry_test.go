@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/posthog/posthog-go"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
@@ -22,7 +22,7 @@ func (f *fakePostHogClient) Enqueue(message posthog.Message) error {
 func (f *fakePostHogClient) Close() error { return nil }
 
 func TestNewReporterDisabledByEnvDoesNotCreateInstallID(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv(EnabledEnv, "0")
@@ -38,7 +38,7 @@ func TestNewReporterDisabledByEnvDoesNotCreateInstallID(t *testing.T) {
 }
 
 func TestNewReporterDisabledInGoTestEvenWhenEnvEnabled(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv(EnabledEnv, "1")
@@ -54,7 +54,7 @@ func TestNewReporterDisabledInGoTestEvenWhenEnvEnabled(t *testing.T) {
 }
 
 func TestLoadOrCreateInstallIDIsStableAndAnonymous(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	database := dbtest.Open(t)
@@ -74,7 +74,7 @@ func TestLoadOrCreateInstallIDIsStableAndAnonymous(t *testing.T) {
 }
 
 func TestReporterCaptureUsesAnonymousDistinctID(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	client := &fakePostHogClient{}
@@ -132,7 +132,7 @@ func TestReporterCaptureRejectsUnsupportedEvents(t *testing.T) {
 }
 
 func TestReporterCaptureDropsUnsafePropertyValues(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	client := &fakePostHogClient{}
@@ -155,7 +155,7 @@ func TestReporterCaptureDropsUnsafePropertyValues(t *testing.T) {
 }
 
 func TestSanitizePropertiesAddsNonOverridablePrivacyAndApplication(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	properties, err := SanitizeProperties("app_loaded", map[string]any{

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
@@ -50,7 +50,7 @@ func joinNames(names []string) string {
 }
 
 func TestProviderCapabilitiesAdvertiseReviewerMutationWithReviewRequestTransport(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	provider := NewProvider(
 		platform.KindGitea,
 		"gitea.example.com",
@@ -64,7 +64,7 @@ func TestProviderCapabilitiesAdvertiseReviewerMutationWithReviewRequestTransport
 }
 
 func TestProviderSetAssigneesReplacesSetThroughEditOptions(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.example.com", Owner: "acme", Name: "widget"}
 	transport := &fakeTransport{
@@ -102,7 +102,7 @@ func TestProviderSetAssigneesWithoutMutationsReturnsUnsupportedCapability(t *tes
 }
 
 func TestProviderReviewerMutationsReadBackFromPullRequestField(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.example.com", Owner: "acme", Name: "widget"}
 	transport := &reviewRequestFakeTransport{
@@ -128,7 +128,7 @@ func TestProviderReviewerMutationsReadBackFromPullRequestField(t *testing.T) {
 }
 
 func TestProviderRequestReviewersWithEmptyListReadsWithoutMutating(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.example.com", Owner: "acme", Name: "widget"}
 	transport := &reviewRequestFakeTransport{
@@ -147,7 +147,7 @@ func TestProviderRequestReviewersWithEmptyListReadsWithoutMutating(t *testing.T)
 }
 
 func TestProviderReviewerMutationsDeriveFromReviewsWhenFieldUnknown(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "codeberg.org", Owner: "acme", Name: "widget"}
 	transport := &reviewRequestFakeTransport{
@@ -182,7 +182,7 @@ func TestProviderReviewerMutationsWithoutTransportReturnUnsupportedCapability(t 
 }
 
 func TestNormalizePullRequestMapsAssigneesAndRequestedReviewers(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.example.com", Owner: "acme", Name: "widget"}
 
 	known := NormalizePullRequest(ref, PullRequestDTO{

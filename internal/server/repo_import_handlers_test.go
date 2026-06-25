@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +22,7 @@ func TestNormalizeImportPlatformRejectsUnsafeHosts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, err := normalizeImportPlatform("gitlab", tt.host)
 			require.Error(t, err)
-			Assert.Contains(t, err.Error(), "platform_host")
+			assert.Contains(t, err.Error(), "platform_host")
 		})
 	}
 }

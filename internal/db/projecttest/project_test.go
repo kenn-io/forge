@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/db"
@@ -19,7 +19,7 @@ func openTestDB(t *testing.T) *db.DB {
 }
 
 func TestCreateProjectWithoutPlatformIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -45,7 +45,7 @@ func TestCreateProjectWithoutPlatformIdentity(t *testing.T) {
 }
 
 func TestCreateProjectLinkedToRepo(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -75,7 +75,7 @@ func TestCreateProjectLinkedToRepo(t *testing.T) {
 }
 
 func TestCreateProjectFKSetNullOnRepoDelete(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -108,7 +108,7 @@ func TestCreateProjectFKSetNullOnRepoDelete(t *testing.T) {
 }
 
 func TestCreateProjectRejectsBlankRequiredFields(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -129,7 +129,7 @@ func TestCreateProjectRejectsBlankRequiredFields(t *testing.T) {
 }
 
 func TestCreateProjectDuplicateLocalPath(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -149,7 +149,7 @@ func TestCreateProjectDuplicateLocalPath(t *testing.T) {
 }
 
 func TestGetProjectByIDNotFound(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -160,7 +160,7 @@ func TestGetProjectByIDNotFound(t *testing.T) {
 }
 
 func TestGetProjectByLocalPath(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -180,7 +180,7 @@ func TestGetProjectByLocalPath(t *testing.T) {
 }
 
 func TestListProjectsOrdersByDisplayName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -203,7 +203,7 @@ func TestListProjectsOrdersByDisplayName(t *testing.T) {
 }
 
 func TestCreateProjectWorktreeRoundTrip(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -230,7 +230,7 @@ func TestCreateProjectWorktreeRoundTrip(t *testing.T) {
 }
 
 func TestCreateProjectWorktreeRejectsUnknownProject(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -249,7 +249,7 @@ func TestCreateProjectWorktreeRejectsUnknownProject(t *testing.T) {
 // background discovery pass created) rather than conflicting — while still
 // rejecting a path already owned by a different project.
 func TestCreateProjectWorktreeConvergesByPath(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -291,7 +291,7 @@ func TestCreateProjectWorktreeConvergesByPath(t *testing.T) {
 }
 
 func TestListProjectWorktreesScopedToProject(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -327,7 +327,7 @@ func TestListProjectWorktreesScopedToProject(t *testing.T) {
 }
 
 func TestProjectWorktreeCascadesOnProjectDelete(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -356,7 +356,7 @@ func TestProjectWorktreeCascadesOnProjectDelete(t *testing.T) {
 }
 
 func TestProjectWorktreeTmuxSessionRoundTrip(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -383,7 +383,7 @@ func TestProjectWorktreeTmuxSessionRoundTrip(t *testing.T) {
 }
 
 func TestProjectWorktreeTmuxSessionKeyedBySessionKey(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -428,7 +428,7 @@ func TestProjectWorktreeTmuxSessionKeyedBySessionKey(t *testing.T) {
 }
 
 func TestProjectWorktreeTmuxSessionForgetAndCascade(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()

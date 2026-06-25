@@ -8,7 +8,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/apiclient"
 	"go.kenn.io/middleman/internal/apiclient/generated"
@@ -18,7 +18,7 @@ import (
 )
 
 func TestNotificationsTriageFlowE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -164,7 +164,7 @@ name = "tools"
 }
 
 func TestNotificationReadPropagationDefersQueuedAcksOnRefetchRateLimitE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	resetAt := time.Now().UTC().Add(time.Hour).Round(0)
 	var fetchedThreads []string

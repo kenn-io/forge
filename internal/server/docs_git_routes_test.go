@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/git/env"
 	"go.kenn.io/middleman/internal/config"
@@ -101,7 +101,7 @@ func setupDocsGitRouteServer(t *testing.T, root string) *Server {
 }
 
 func TestDocsGitStatusEndpointReturnsEntries(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
@@ -119,7 +119,7 @@ func TestDocsGitStatusEndpointReturnsEntries(t *testing.T) {
 }
 
 func TestDocsGitChangesEndpointReturnsPreview(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
@@ -139,7 +139,7 @@ func TestDocsGitChangesEndpointReturnsPreview(t *testing.T) {
 }
 
 func TestDocsGitChangesEndpointNotARepoAndUnknownFolder(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupDocsGitRouteServer(t, t.TempDir())
 
@@ -164,7 +164,7 @@ func TestDocsGitStatusAndChangesEndpointsRejectUnsafeAttributes(t *testing.T) {
 		"/api/v1/docs/folders/f/git/changes",
 	} {
 		t.Run(path, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 
 			rr := doDocsJSON(t, srv, http.MethodGet, path, nil)
@@ -179,7 +179,7 @@ func TestDocsGitStatusAndChangesEndpointsRejectUnsafeAttributes(t *testing.T) {
 }
 
 func TestDocsGitChangesEndpointRejectsUnsafeLocalConfig(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
@@ -199,7 +199,7 @@ func TestDocsGitChangesEndpointRejectsUnsafeLocalConfig(t *testing.T) {
 }
 
 func TestDocsGitReadEndpointsRejectNonLoopback(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	srv := setupDocsGitRouteServer(t, repo.dir)
@@ -222,7 +222,7 @@ func TestDocsGitReadEndpointsRejectNonLoopback(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointHappyPath(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
@@ -245,7 +245,7 @@ func TestDocsGitPublishEndpointHappyPath(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointAcceptsLargeMessageBelowRouteLimit(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
@@ -263,7 +263,7 @@ func TestDocsGitPublishEndpointAcceptsLargeMessageBelowRouteLimit(t *testing.T) 
 }
 
 func TestDocsGitPublishEndpointPushesConfiguredUpstreamDespitePushDefaults(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	backup := t.TempDir()
@@ -290,7 +290,7 @@ func TestDocsGitPublishEndpointPushesConfiguredUpstreamDespitePushDefaults(t *te
 }
 
 func TestDocsGitPublishEndpointRejectsNonLoopback(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	srv := setupDocsGitRouteServer(t, repo.dir)
@@ -309,7 +309,7 @@ func TestDocsGitPublishEndpointRejectsNonLoopback(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointRejectsNonJSONContentType(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupDocsGitRouteServer(t, t.TempDir())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders/f/git/publish", strings.NewReader("docs: x"))
@@ -330,7 +330,7 @@ func TestDocsGitPublishEndpointRejectsNonJSONContentType(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointErrors(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
@@ -351,7 +351,7 @@ func TestDocsGitPublishEndpointErrors(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointNoUpstreamAndCommitFailure(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	noUpstream := newDocsGitRepo(t, false)
 	noUpstream.write(t, "new.md", "# new\n")
@@ -388,7 +388,7 @@ func TestDocsGitPublishEndpointNoUpstreamAndCommitFailure(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointRejectsUnsafeGitConfig(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
@@ -406,7 +406,7 @@ func TestDocsGitPublishEndpointRejectsUnsafeGitConfig(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointIgnoresDocsRepoHooks(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
@@ -508,7 +508,7 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			srv := tc.setup(t)
 
@@ -529,7 +529,7 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 }
 
 func TestDocsPublishLockSetReleasesAndScopesPerFolder(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	locks := newDocsPublishLockSet()
 
 	assert.True(locks.tryAcquire("a"))
@@ -542,7 +542,7 @@ func TestDocsPublishLockSetReleasesAndScopesPerFolder(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointLockHeldReturnsConflict(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
@@ -562,7 +562,7 @@ func TestDocsGitPublishEndpointLockHeldReturnsConflict(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "blocked.md", "# blocked\n")

@@ -6,14 +6,14 @@ import (
 	"testing"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/platform"
 )
 
 func TestResolveConfiguredRepos_ExpandsGlobAndSkipsArchived(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	client := &mockClient{
 		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
 			return []*gh.Repository{
@@ -54,7 +54,7 @@ func TestResolveConfiguredRepos_ExpandsGlobAndSkipsArchived(t *testing.T) {
 }
 
 func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	client := &mockClient{
 		getRepositoryFn: func(
 			_ context.Context, owner, repo string,
@@ -98,7 +98,7 @@ func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 }
 
 func TestResolveConfiguredRepos_DeduplicatesOwnerCase(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	client := &mockClient{
 		getRepositoryFn: func(
 			_ context.Context, owner, repo string,
@@ -139,7 +139,7 @@ func TestResolveConfiguredRepos_DeduplicatesOwnerCase(t *testing.T) {
 }
 
 func TestResolveConfiguredReposCasefoldsResolvedRepoRefs(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	client := &mockClient{
 		getRepositoryFn: func(
 			_ context.Context, _, _ string,
@@ -168,7 +168,7 @@ func TestResolveConfiguredReposCasefoldsResolvedRepoRefs(t *testing.T) {
 }
 
 func TestResolveConfiguredRepos_ReportsZeroCountOnStartupWarning(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	client := &mockClient{
 		listReposByOwnerFn: func(
 			_ context.Context, owner string,
@@ -191,7 +191,7 @@ func TestResolveConfiguredRepos_ReportsZeroCountOnStartupWarning(t *testing.T) {
 }
 
 func TestResolveConfiguredRepos_MatchesRepoNamesCaseInsensitively(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	client := &mockClient{
 		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
 			return []*gh.Repository{
@@ -222,7 +222,7 @@ func TestResolveConfiguredRepos_MatchesRepoNamesCaseInsensitively(t *testing.T) 
 }
 
 func TestResolveConfiguredReposReportsMissingProvider(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	result := resolveConfiguredRepos(
 		t.Context(),
@@ -244,7 +244,7 @@ func TestResolveConfiguredReposReportsMissingProvider(t *testing.T) {
 }
 
 func TestResolveConfiguredReposReportsMissingRepositoryReader(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	result := resolveConfiguredRepos(
 		t.Context(),
@@ -301,7 +301,7 @@ func TestResolveConfiguredReposKeepsDuplicateOwnerNameOnDifferentPlatforms(t *te
 	)
 
 	require.Empty(t, result.Warnings)
-	Assert.ElementsMatch(t, []RepoRef{
+	assert.ElementsMatch(t, []RepoRef{
 		{
 			Platform:     platform.KindGitHub,
 			PlatformHost: "code.example.com",
@@ -320,7 +320,7 @@ func TestResolveConfiguredReposKeepsDuplicateOwnerNameOnDifferentPlatforms(t *te
 }
 
 func TestFallbackConfiguredRepoRefsSynthesizesGitHubProvider(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	got := FallbackConfiguredRepoRefs(nil, config.Repo{
 		Platform:     "github",
@@ -339,7 +339,7 @@ func TestFallbackConfiguredRepoRefsSynthesizesGitHubProvider(t *testing.T) {
 }
 
 func TestFallbackConfiguredRepoRefsPreservesProviderIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	previous := []RepoRef{
 		{
 			Platform:     platform.KindGitHub,
@@ -371,7 +371,7 @@ func TestFallbackConfiguredRepoRefsPreservesProviderIdentity(t *testing.T) {
 }
 
 func TestFallbackConfiguredRepoRefsSynthesizesNonGitHubProvider(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	got := FallbackConfiguredRepoRefs(nil, config.Repo{
 		Platform: "gitlab",
@@ -389,7 +389,7 @@ func TestFallbackConfiguredRepoRefsSynthesizesNonGitHubProvider(t *testing.T) {
 }
 
 func TestFallbackConfiguredRepoRefsGlobFiltersByProvider(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	previous := []RepoRef{
 		{
 			Platform:     platform.KindGitHub,
@@ -438,7 +438,7 @@ func TestResolveConfiguredReposWithRegistryUsesNonGitHubProvider(t *testing.T) {
 	)
 
 	require.Empty(t, result.Warnings)
-	Assert.Equal(t, []RepoRef{{
+	assert.Equal(t, []RepoRef{{
 		Platform:     platform.KindGitLab,
 		PlatformHost: "gitlab.com",
 		Owner:        "acme/subgroup",

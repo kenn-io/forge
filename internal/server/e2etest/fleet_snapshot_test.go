@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
@@ -276,7 +276,7 @@ func TestFleetSnapshotFanOutE2E(t *testing.T) {
 }
 
 func TestFleetDisabledBlocksRemoteSnapshotAndProxyE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	ctx := context.Background()
 
@@ -696,7 +696,7 @@ exit 0
 }
 
 func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	req := require.New(t)
 
 	type observedRequest struct {
@@ -914,7 +914,7 @@ func TestFleetOperationProxyUnknownHostE2E(t *testing.T) {
 }
 
 func TestFleetOperationProxyPeerDispatchFailureE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	peerTS := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	peerURL := peerTS.URL
 	peerTS.Close()
@@ -946,7 +946,7 @@ func TestFleetOperationProxyPeerDispatchFailureE2E(t *testing.T) {
 }
 
 func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	hubCfg := &config.Config{
 		BasePath: "/",
@@ -1002,7 +1002,7 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 }
 
 func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var handlerMu sync.Mutex
@@ -1075,7 +1075,7 @@ func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 }
 
 func TestFleetTerminalWebSocketProxyPeerDialFailureE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	peerTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "websocket unavailable", http.StatusServiceUnavailable)

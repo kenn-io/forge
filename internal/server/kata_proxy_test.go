@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/kata"
 )
@@ -24,7 +24,7 @@ import (
 const kataProxyTestDaemonHeaderName = "X-Middleman-Kata-Daemon"
 
 func TestKataProxyRoutesDefaultDaemon(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var mu sync.Mutex
@@ -60,7 +60,7 @@ url = "`+daemon.URL+`"
 }
 
 func TestKataProxyRoutesSelectedDaemonAndInjectsToken(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	stub := func(id string) *httptest.Server {
@@ -102,7 +102,7 @@ token = "work-secret"
 }
 
 func TestKataProxyDoesNotOverrideAuthorization(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var receivedAuthorization string
@@ -132,7 +132,7 @@ token = "configured-secret"
 }
 
 func TestKataProxyStripsBrowserAndSelectorHeaders(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var receivedOrigin, receivedSelector string
@@ -164,7 +164,7 @@ url = "`+daemon.URL+`"
 }
 
 func TestKataProxyStreamsSSEAndForwardsCursorHeaders(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	type receivedHeaders struct {
@@ -262,7 +262,7 @@ token = "stream-secret"
 }
 
 func TestKataProxyReusesProxyForResolvedDaemon(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)
@@ -278,7 +278,7 @@ func TestKataProxyReusesProxyForResolvedDaemon(t *testing.T) {
 }
 
 func TestKataProxyHTTPDaemonUsesOwnedTransport(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -308,7 +308,7 @@ url = "`+daemon.URL+`"
 }
 
 func TestKataProxyHTTPDaemonIgnoresMutatedDefaultHTTPTransport(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -342,7 +342,7 @@ url = "`+daemon.URL+`"
 }
 
 func TestKataProxyUnknownDaemonSelectionReturnsProblem(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -370,7 +370,7 @@ url = "`+daemon.URL+`"
 }
 
 func TestKataProxyRejectsUnsetTokenEnvBeforeForwarding(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var reached bool
@@ -402,7 +402,7 @@ token_env = "MIDDLEMAN_KATA_PROXY_MISSING_TOKEN"
 }
 
 func TestKataProxyRejectsInvalidCatalogBeforeForwarding(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var reached bool
@@ -436,7 +436,7 @@ local = true
 }
 
 func TestKataProxyNoConfiguredDaemonReturnsServiceUnavailable(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("KATA_HOME", t.TempDir())
@@ -449,7 +449,7 @@ func TestKataProxyNoConfiguredDaemonReturnsServiceUnavailable(t *testing.T) {
 }
 
 func TestKataProxyUnreachableDaemonReturnsBadGateway(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -473,7 +473,7 @@ url = "http://`+addr+`"
 }
 
 func TestKataProxyLocalDaemonResolvesRuntimeAfterServerStart(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -519,7 +519,7 @@ local = true
 }
 
 func TestKataProxyLocalNoAuthDoesNotForwardAuthChallenge(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -555,7 +555,7 @@ local = true
 }
 
 func TestKataProxyLocalDaemonStripsAuthorization(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var mu sync.Mutex
@@ -598,7 +598,7 @@ token = "local-secret"
 }
 
 func TestKataProxyLocalDaemonUsesKataAuthTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var receivedAuthorization string
@@ -634,7 +634,7 @@ local = true
 }
 
 func TestKataProxyCacheSeparatesLocalAndRemoteDaemonMode(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var mu sync.Mutex
@@ -686,7 +686,7 @@ local = true
 }
 
 func TestKataProxyLocalDaemonIgnoresTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -720,7 +720,7 @@ token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
 }
 
 func TestKataProxyLocalDaemonRejectsNonLocalRuntimeTargets(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	for _, target := range []string{"http://203.0.113.10:8080", "https://kata.example.com"} {
@@ -747,7 +747,7 @@ local = true
 }
 
 func TestKataProxyForwardsViaUnixSocket(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("TMPDIR", "/tmp") // Keep Unix socket paths below macOS' length limit.
@@ -790,7 +790,7 @@ token = "unix-secret"
 }
 
 func TestKataProxyForwardsNonJSONMutationWithSameOriginFetchSite(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var receivedContentType, receivedBody string
@@ -854,7 +854,7 @@ url = "`+daemon.URL+`"
 }
 
 func TestKataProxyRejectsCrossSiteMutationBeforeForwarding(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var reached bool
@@ -884,7 +884,7 @@ url = "`+daemon.URL+`"
 }
 
 func TestKataProxyDoesNotForwardTrace(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	var reached bool
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -914,7 +914,7 @@ token = "secret"
 }
 
 func TestKataProxyHiddenFromOpenAPI(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("KATA_HOME", t.TempDir())

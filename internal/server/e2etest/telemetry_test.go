@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTelemetryEndpointE2E_ReturnsDisabledWithoutReporter(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)
@@ -42,7 +42,7 @@ func TestTelemetryEndpointE2E_ReturnsDisabledWithoutReporter(t *testing.T) {
 }
 
 func TestTelemetryEndpointE2E_RejectsUnsupportedEvents(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)

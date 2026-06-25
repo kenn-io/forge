@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestResolveBinaryRejectsRelativePathMatch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	root := t.TempDir()
@@ -29,7 +29,7 @@ func TestResolveBinaryRejectsRelativePathMatch(t *testing.T) {
 }
 
 func TestResolveBinarySkipsRelativePathMatchForLaterAbsoluteMatch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	root := t.TempDir()
@@ -50,7 +50,7 @@ func TestResolveBinarySkipsRelativePathMatchForLaterAbsoluteMatch(t *testing.T) 
 }
 
 func TestResolveBinarySkipsNonExecutablePathMatch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	dir := t.TempDir()

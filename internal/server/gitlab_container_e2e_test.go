@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
@@ -51,7 +51,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 		t.Skip("set MIDDLEMAN_GITLAB_CONTAINER_E2E=1 to run GitLab CE container e2e")
 	}
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Minute)
 	defer cancel()

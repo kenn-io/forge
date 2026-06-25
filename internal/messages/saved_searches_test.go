@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +18,7 @@ func TestSavedSearchesPathOverride(t *testing.T) {
 	got, err := SavedSearchesPath()
 
 	require.NoError(t, err)
-	Assert.Equal(t, filepath.Join(dir, "x.toml"), got)
+	assert.Equal(t, filepath.Join(dir, "x.toml"), got)
 }
 
 func TestLoadSavedSearchesMissingFileReturnsEmpty(t *testing.T) {
@@ -28,7 +28,7 @@ func TestLoadSavedSearchesMissingFileReturnsEmpty(t *testing.T) {
 	got, err := LoadSavedSearches()
 
 	require.NoError(t, err)
-	Assert.Empty(t, got)
+	assert.Empty(t, got)
 }
 
 func TestSaveSavedSearchesRoundTrip(t *testing.T) {
@@ -44,7 +44,7 @@ func TestSaveSavedSearchesRoundTrip(t *testing.T) {
 	got, err := LoadSavedSearches()
 
 	require.NoError(t, err)
-	Assert.Equal(t, in, got)
+	assert.Equal(t, in, got)
 }
 
 func TestCanonicalizeSavedSearches(t *testing.T) {
@@ -61,7 +61,7 @@ func TestCanonicalizeSavedSearches(t *testing.T) {
 	out := CanonicalizeSavedSearches(in)
 
 	require.Len(t, out, 4)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(SavedSearch{Name: "has:attachment", Query: "has:attachment"}, out[0])
 	assert.Equal(SavedSearch{Name: "RECENT", Query: "from:alice@example.com"}, out[1])
 	assert.Len(out[2].Query, 500)
@@ -77,7 +77,7 @@ func TestCanonicalizeSavedSearchesCap(t *testing.T) {
 	out := CanonicalizeSavedSearches(in)
 
 	require.Len(t, out, 50)
-	Assert.Equal(t, in[len(in)-50:], out)
+	assert.Equal(t, in[len(in)-50:], out)
 }
 
 func TestSavedSearchesETagDeterministicAndChanges(t *testing.T) {
@@ -88,7 +88,7 @@ func TestSavedSearchesETagDeterministicAndChanges(t *testing.T) {
 	ea2 := SavedSearchesETag(a)
 	eb := SavedSearchesETag(b)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(ea1, ea2)
 	assert.NotEqual(ea1, eb)
 	assert.True(strings.HasPrefix(ea1, `"sha256:`), "etag shape = %q", ea1)
@@ -105,7 +105,7 @@ func TestCanonicalizeSavedSearchesReappearingDuplicateAfterCap(t *testing.T) {
 	out := CanonicalizeSavedSearches(in)
 
 	require.Len(t, out, 50)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(SavedSearch{Name: "n0", Query: "REAPPEARED"}, out[len(out)-1])
 	for _, e := range out {
 		assert.NotEqual(SavedSearch{Name: "n0", Query: "q"}, e)
@@ -121,7 +121,7 @@ func TestCanonicalizeSavedSearchesTruncatesOnRuneBoundary(t *testing.T) {
 	})
 
 	require.Len(t, out, 1)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.NotContains(out[0].Name, "�")
 	assert.NotContains(out[0].Query, "�")
 	assert.Len([]rune(out[0].Name), 200)
@@ -129,7 +129,7 @@ func TestCanonicalizeSavedSearchesTruncatesOnRuneBoundary(t *testing.T) {
 }
 
 func TestSavedSearchesETagNilAndEmptyEquivalent(t *testing.T) {
-	Assert.Equal(t, SavedSearchesETag(nil), SavedSearchesETag([]SavedSearch{}))
+	assert.Equal(t, SavedSearchesETag(nil), SavedSearchesETag([]SavedSearch{}))
 }
 
 func TestSaveSavedSearchesAtomicNoHalfFile(t *testing.T) {
@@ -142,7 +142,7 @@ func TestSaveSavedSearchesAtomicNoHalfFile(t *testing.T) {
 	entries, err := os.ReadDir(dir)
 
 	require.NoError(t, err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	for _, e := range entries {
 		assert.NotContains(e.Name(), ".tmp")
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ type xssFixture struct {
 }
 
 func TestSanitizerSkeleton(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	s := NewSanitizer()
 	require.NotNil(s)
@@ -33,7 +33,7 @@ func TestSanitizerBumpGeneration(t *testing.T) {
 	s := NewSanitizer()
 	before := s.generation.Load()
 	s.BumpGeneration()
-	Assert.Equal(t, before+1, s.generation.Load())
+	assert.Equal(t, before+1, s.generation.Load())
 }
 
 func TestSanitizeXSSCanon(t *testing.T) {
@@ -65,7 +65,7 @@ func TestSanitizeXSSCanon(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			res, err := s.Sanitize(context.Background(), 42, tc.input, 0)
 			require.NoError(err)
@@ -86,11 +86,11 @@ func TestSanitizeImageRewrites(t *testing.T) {
 	t.Run("cid_rewrites_to_inline", func(t *testing.T) {
 		res, err := s.Sanitize(context.Background(), 1234, `<img src="cid:abc">`, 0)
 		require.NoError(t, err)
-		Assert.Contains(t, res.HTML, `src="/api/v1/msgvault/messages/1234/inline?cid=abc"`)
+		assert.Contains(t, res.HTML, `src="/api/v1/msgvault/messages/1234/inline?cid=abc"`)
 	})
 
 	t.Run("multiple_images_assign_indices_in_document_order", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		res, err := s.Sanitize(context.Background(), 1, strings.Join([]string{
 			`<img src="http://e.com/a">`,
@@ -109,7 +109,7 @@ func TestSanitizeImageRewrites(t *testing.T) {
 	t.Run("empty_src_no_handle", func(t *testing.T) {
 		res, err := s.Sanitize(context.Background(), 1, `<img src=""><img>`, 0)
 		require.NoError(t, err)
-		Assert.Zero(t, res.RemoteImageCount)
+		assert.Zero(t, res.RemoteImageCount)
 	})
 }
 
@@ -129,7 +129,7 @@ func TestSanitizeAnchorRewrites(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			res, err := s.Sanitize(context.Background(), 1, tc.input, 0)
 			require.NoError(err)
@@ -144,7 +144,7 @@ func TestSanitizeAnchorRewrites(t *testing.T) {
 }
 
 func TestSanitizeTokenDeterminism(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	s := newSanitizerForBasePathWithTokenKey("/", bytesOf(0x11, 32))
 	in := `<p>x</p><img src="http://e.com/a"><img src="http://e.com/b">`
@@ -226,7 +226,7 @@ func TestSanitizeRejectsDeeplyNestedHTML(t *testing.T) {
 }
 
 func TestSanitizeStripsForgedDataRemoteImageIdx(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	s := NewSanitizer()
 	res, err := s.Sanitize(context.Background(), 1, `<img src="http://e.com/a" data-remote-image-idx="99">`, 0)
@@ -280,7 +280,7 @@ func TestSafeInvariantURL(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			Assert.Equal(t, tc.safe, safeInvariantURL(tc.url))
+			assert.Equal(t, tc.safe, safeInvariantURL(tc.url))
 		})
 	}
 }

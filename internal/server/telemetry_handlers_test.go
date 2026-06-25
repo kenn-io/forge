@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,7 +29,7 @@ func (f *fakeTelemetry) Close() error { return nil }
 func (f *fakeTelemetry) Enabled() bool { return f.enabled }
 
 func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	telemetry := &fakeTelemetry{enabled: true}
@@ -61,7 +61,7 @@ func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 }
 
 func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv := New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
@@ -84,7 +84,7 @@ func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testin
 }
 
 func TestCaptureTelemetryEvent_RejectsMissingEvent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv := New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
 	req := httptest.NewRequest(
@@ -102,7 +102,7 @@ func TestCaptureTelemetryEvent_RejectsMissingEvent(t *testing.T) {
 }
 
 func TestCaptureTelemetryEvent_RejectsUnsupportedEvent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv := New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
 	req := httptest.NewRequest(

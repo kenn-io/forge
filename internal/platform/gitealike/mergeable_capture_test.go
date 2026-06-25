@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 )
 
 func TestMergeableCaptureTransportOnlyCapturesPullRequestJSON(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	cache := NewMergeableCache()
 	body := []byte(`[
@@ -49,7 +49,7 @@ func TestMergeableCaptureTransportOnlyCapturesPullRequestJSON(t *testing.T) {
 }
 
 func TestMergeableCacheCapturesKnownAndUnknownValues(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	cache := NewMergeableCache()
 	cache.CapturePullRequestJSON([]byte(`[
@@ -145,13 +145,13 @@ func TestShouldCaptureMergeable(t *testing.T) {
 				StatusCode: tt.status,
 				Header:     http.Header{"Content-Type": []string{tt.contentType}},
 			}
-			Assert.Equal(t, tt.want, shouldCaptureMergeable(req, resp))
+			assert.Equal(t, tt.want, shouldCaptureMergeable(req, resp))
 		})
 	}
 }
 
 func TestMergeableCaptureTransportSkipsOversizedBodiesWithoutConsumingThem(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	cache := NewMergeableCache()
 	body := []byte(`{"html_url":"https://gitea.test/owner/repo/pulls/1","mergeable":false,"padding":"` +

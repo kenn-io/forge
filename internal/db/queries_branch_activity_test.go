@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBranchActivityPersistence(t *testing.T) {
 	t.Run("upserts commits and prunes outside retention", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
 		base := baseTime()
@@ -92,7 +92,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 	})
 
 	t.Run("keeps the same commit sha on different tracked branches", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
 		base := baseTime()
@@ -133,7 +133,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 	})
 
 	t.Run("caps stored commit metadata", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -164,7 +164,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 	})
 
 	t.Run("records force pushes idempotently and tracks tips", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -216,7 +216,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 	})
 
 	t.Run("records repeated force push pairs as distinct observed rewrites", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -251,7 +251,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 	})
 
 	t.Run("prunes old force pushes outside retention", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
 		base := baseTime()
@@ -280,7 +280,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 	})
 
 	t.Run("caps commits per repo branch", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -348,7 +348,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 	})
 
 	t.Run("cap preserves git log order for same timestamp commits", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()

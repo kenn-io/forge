@@ -6,7 +6,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/db"
@@ -93,7 +93,7 @@ func TestAPIListPullsAcceptsMixedCaseProviderQualifiedRepoFilter(t *testing.T) {
 
 func TestAPIListPullsAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
 	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
@@ -280,7 +280,7 @@ func TestAPIGetIssueIncludesAssignees(t *testing.T) {
 
 func TestAPISyncIssuePersistsAssigneesFromProvider(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 

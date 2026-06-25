@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ import (
 // the daemon's local filesystem.
 func TestFilesystemComplete(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -68,7 +68,7 @@ func TestFilesystemValidateRepo(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)

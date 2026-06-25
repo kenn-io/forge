@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
 
 func TestPublishDiffReviewDraftCreatesForgejoReview(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	submitted := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +80,7 @@ func TestPublishDiffReviewDraftCreatesForgejoReview(t *testing.T) {
 }
 
 func TestPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	submitted := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +127,7 @@ func TestPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) {
 }
 
 func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

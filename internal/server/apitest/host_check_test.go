@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/apiclient"
 	"go.kenn.io/middleman/internal/apiclient/generated"
@@ -53,7 +53,7 @@ func TestHostValidationE2E(t *testing.T) {
 			Error string `json:"error"`
 		}
 		require.NoError(t, json.Unmarshal(resp.Body, &payload))
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		assert.Contains(payload.Error, "allowed_hosts")
 		assert.Contains(payload.Error, "trust_reverse_proxy")
 	})
@@ -66,7 +66,7 @@ func TestHostValidationE2E(t *testing.T) {
 		require.Equal(http.StatusOK, resp.StatusCode())
 		require.NotNil(resp.JSON200)
 		require.Len(*resp.JSON200, 1)
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		assert.Equal("acme", (*resp.JSON200)[0].RepoOwner)
 		assert.Equal("widget", (*resp.JSON200)[0].RepoName)
 		assert.EqualValues(1, (*resp.JSON200)[0].Number)

@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestOwnerAttachInputAndReplay(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("in-process PTY owner test requires a host PTY")
 	}
@@ -101,7 +101,7 @@ func TestOwnerStopWhileRunOwnerReturns(t *testing.T) {
 
 func TestOwnerQuickExitRemainsAttachable(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("in-process PTY owner test requires a host PTY")
 	}
@@ -204,7 +204,7 @@ func TestPtyOwnerClosePTYThenSleepHelperProcess(t *testing.T) {
 
 func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("in-process PTY owner test requires a host PTY")
 	}
@@ -304,7 +304,7 @@ func TestOwnerNaturalExitWaitsForPreExitAttachmentBeforePostExitAttach(t *testin
 }
 
 func TestTerminalTitleParserTracksOSCSequences(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	var parser terminalTitleParser
 
 	title, ok := parser.Update([]byte("before\x1b]0;busy title\x07after"))
@@ -579,7 +579,7 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 }
 
 func TestClientOwnerCommandUsesExternalManagerDirectly(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	client := Client{
 		Root:        "/tmp/owner-root",
@@ -646,7 +646,7 @@ func TestOwnerDialTargetParsesTransportAddresses(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			assert.Equal(tt.wantNetwork, network)
 			assert.Equal(tt.wantAddr, addr)
 		})
@@ -761,7 +761,7 @@ func TestClientEnsuresExternalManagerWithGoTestHelper(t *testing.T) {
 }
 
 func TestBoundedOutputBufferRetainsTail(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	buf := newBoundedOutputBuffer(8)
 
 	n, err := buf.Write([]byte("hello "))
@@ -793,7 +793,7 @@ func blockPtyOwnerTestHelper() {
 
 func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("external pty manager uses Unix sockets")
 	}

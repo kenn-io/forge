@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/server"
@@ -25,7 +25,7 @@ import (
 )
 
 func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.toml")
@@ -63,7 +63,7 @@ func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
 }
 
 func TestPrepareEphemeralConfigForcesBackendToLoopback(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.toml")
@@ -95,7 +95,7 @@ func TestPrepareEphemeralConfigForcesBackendToLoopback(t *testing.T) {
 }
 
 func TestPrepareEphemeralConfigDisablesReverseProxyTrustForDirectBackend(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.toml")
@@ -164,7 +164,7 @@ func TestPrepareEphemeralConfigCopiesSourceDatabaseByDefault(t *testing.T) {
 	})
 	require.NoError(err)
 
-	Assert.Equal(t, "copied state", readSQLiteMarker(t, filepath.Join(prepared.dataDir, "middleman.db")))
+	assert.Equal(t, "copied state", readSQLiteMarker(t, filepath.Join(prepared.dataDir, "middleman.db")))
 }
 
 func TestPrepareEphemeralDatabaseRejectsSourceDestinationMatch(t *testing.T) {
@@ -176,8 +176,8 @@ func TestPrepareEphemeralDatabaseRejectsSourceDestinationMatch(t *testing.T) {
 	err := prepareEphemeralDatabase(dbPath, dbPath, true)
 	require.Error(err)
 
-	Assert.Contains(t, err.Error(), "source and destination database are the same")
-	Assert.Equal(t, "preserve me", readSQLiteMarker(t, dbPath))
+	assert.Contains(t, err.Error(), "source and destination database are the same")
+	assert.Equal(t, "preserve me", readSQLiteMarker(t, dbPath))
 }
 
 func TestPrepareEphemeralDatabaseRejectsSymlinkedSourceDestinationMatch(t *testing.T) {
@@ -195,8 +195,8 @@ func TestPrepareEphemeralDatabaseRejectsSymlinkedSourceDestinationMatch(t *testi
 	err := prepareEphemeralDatabase(sourcePath, destPath, true)
 	require.Error(err)
 
-	Assert.Contains(t, err.Error(), "source and destination database are the same")
-	Assert.Equal(t, "preserve me", readSQLiteMarker(t, sourcePath))
+	assert.Contains(t, err.Error(), "source and destination database are the same")
+	assert.Equal(t, "preserve me", readSQLiteMarker(t, sourcePath))
 }
 
 func TestPrepareEphemeralConfigCanStartWithFreshDatabase(t *testing.T) {
@@ -257,11 +257,11 @@ func TestPrepareEphemeralConfigKeepsBasePathInBackendURL(t *testing.T) {
 	})
 	require.NoError(err)
 
-	Assert.Equal(t, "http://127.0.0.1:39201/middleman", prepared.backendURL)
+	assert.Equal(t, "http://127.0.0.1:39201/middleman", prepared.backendURL)
 }
 
 func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	t.Setenv("PATH", "/bin")
 	t.Setenv("HOME", "/tmp/home")
 	t.Setenv("TMPDIR", "/tmp")
@@ -307,7 +307,7 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 }
 
 func TestBuildCommandSpecsPreservesExplicitTelemetrySetting(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	t.Setenv("TELEMETRY_ENABLED", "1")
 
 	specs := buildCommandSpecs(ephemeralRun{
@@ -327,7 +327,7 @@ func TestBuildCommandSpecsReferenceExecutableScripts(t *testing.T) {
 }
 
 func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	statusPath := filepath.Join(dir, "dev-ephemeral.json")
@@ -362,14 +362,14 @@ func TestResolveRunWorkDirDefaultsToStableDirectory(t *testing.T) {
 	workDir, err := resolveRunWorkDir("")
 	require.NoError(t, err)
 
-	Assert.Equal(t, filepath.Join("tmp", "dev-ephemeral"), workDir)
+	assert.Equal(t, filepath.Join("tmp", "dev-ephemeral"), workDir)
 }
 
 func TestResolveStopStatusPathDefaultsToStableStatusPath(t *testing.T) {
 	statusPath, err := resolveStopStatusPath("", "")
 	require.NoError(t, err)
 
-	Assert.Equal(t, filepath.Join("tmp", "dev-ephemeral", "dev-ephemeral.json"), statusPath)
+	assert.Equal(t, filepath.Join("tmp", "dev-ephemeral", "dev-ephemeral.json"), statusPath)
 }
 
 func TestLockEphemeralWorkDirRejectsConcurrentLock(t *testing.T) {
@@ -381,7 +381,7 @@ func TestLockEphemeralWorkDirRejectsConcurrentLock(t *testing.T) {
 
 	_, err = lockEphemeralWorkDir(dir)
 	require.Error(err)
-	Assert.Contains(t, err.Error(), "ephemeral work directory is locked")
+	assert.Contains(t, err.Error(), "ephemeral work directory is locked")
 
 	require.NoError(release())
 	release, err = lockEphemeralWorkDir(dir)
@@ -443,7 +443,7 @@ func TestRunWaitsForWorkDirLockBeforeReusingLiveStatus(t *testing.T) {
 }
 
 func TestRunWaitsForStopLockBeforeStartingReplacementStack(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.toml")
@@ -570,7 +570,7 @@ func TestReadRunningEphemeralStatusReturnsLiveStatus(t *testing.T) {
 	status, running, err := readRunningEphemeralStatus(statusPath)
 	require.NoError(err)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.True(running)
 	assert.Equal(os.Getpid(), status.PID)
 	assert.Equal("http://127.0.0.1:39411", status.BackendURL)
@@ -590,14 +590,14 @@ func TestReadRunningEphemeralStatusRemovesStaleStatus(t *testing.T) {
 	_, running, err := readRunningEphemeralStatus(statusPath)
 	require.NoError(err)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.False(running)
 	_, err = os.Stat(statusPath)
 	assert.ErrorIs(err, os.ErrNotExist)
 }
 
 func TestReadRunningEphemeralStatusStopsPartialStackAndRemovesStatus(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	statusPath := filepath.Join(dir, "dev-ephemeral.json")
@@ -631,7 +631,7 @@ func TestStopEphemeralStackTreatsMissingStatusAsStopped(t *testing.T) {
 }
 
 func TestStopEphemeralStackWaitsForProcessesBeforeRemovingStatus(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	statusPath := filepath.Join(dir, "dev-ephemeral.json")
@@ -656,7 +656,7 @@ func TestStopEphemeralStackWaitsForProcessesBeforeRemovingStatus(t *testing.T) {
 }
 
 func TestStopEphemeralStackDoesNotSignalMismatchedProcessIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	statusPath := filepath.Join(dir, "dev-ephemeral.json")
@@ -709,8 +709,8 @@ func TestWaitForCommandsEscalatesIgnoredInterrupt(t *testing.T) {
 	require.NoError(err)
 	frontendRunning, err := processRunning(frontend.Process.Pid)
 	require.NoError(err)
-	Assert.False(t, backendRunning)
-	Assert.False(t, frontendRunning)
+	assert.False(t, backendRunning)
+	assert.False(t, frontendRunning)
 }
 
 func TestStopStartedCommandsEscalatesAndWaits(t *testing.T) {
@@ -727,11 +727,11 @@ func TestStopStartedCommandsEscalatesAndWaits(t *testing.T) {
 
 	running, err := processRunning(cmd.Process.Pid)
 	require.NoError(err)
-	Assert.False(t, running)
+	assert.False(t, running)
 }
 
 func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source.toml")
@@ -813,7 +813,7 @@ func assertExecutable(t *testing.T, path string) {
 	t.Helper()
 	info, err := os.Stat(path)
 	require.NoError(t, err)
-	Assert.NotZero(t, info.Mode().Perm()&0o111, "%s must be executable", path)
+	assert.NotZero(t, info.Mode().Perm()&0o111, "%s must be executable", path)
 }
 
 func repoRoot(t *testing.T) string {

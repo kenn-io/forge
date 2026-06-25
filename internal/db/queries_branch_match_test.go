@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +28,7 @@ func createLinkedProject(t *testing.T, d *DB, name string, repoID int64) *Projec
 // identity, and excludes worktrees on local-only projects that cannot match a
 // platform merge request.
 func TestListWorktreesForBranchMatch_ReturnsRepoLinkedWorktrees(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -74,7 +74,7 @@ func TestListWorktreesForBranchMatch_ReturnsRepoLinkedWorktrees(t *testing.T) {
 // display fields, keyed by the worktree key the snapshot overlays onto
 // registered worktrees.
 func TestListWorktreeLinkPRs_JoinsLinkedMergeRequestDisplayFields(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -111,7 +111,7 @@ func TestListWorktreeLinkPRs_EmptyWhenNoLinks(t *testing.T) {
 	d := openTestDB(t)
 	prs, err := d.ListWorktreeLinkPRs(context.Background())
 	require.NoError(t, err)
-	Assert.Empty(t, prs)
+	assert.Empty(t, prs)
 }
 
 // TestListWorktreesForBranchMatch_ExcludesStaleAndEmptyBranch verifies the
@@ -120,7 +120,7 @@ func TestListWorktreeLinkPRs_EmptyWhenNoLinks(t *testing.T) {
 // "detached"/"detached/<short-sha>" representation discovery stores and the
 // empty-branch form.
 func TestListWorktreesForBranchMatch_ExcludesStaleAndEmptyBranch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()

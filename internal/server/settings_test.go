@@ -15,7 +15,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
@@ -312,7 +312,7 @@ func doJSON(
 
 func TestHandleGetSettings(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
@@ -358,7 +358,7 @@ command = ["codex", "--full-auto"]
 }
 
 func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
@@ -402,7 +402,7 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 }
 
 func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
@@ -434,7 +434,7 @@ func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
 
 func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 	t.Helper()
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.True(*modes.Activity)
 	assert.True(*modes.Repos)
 	assert.False(*modes.Kata)
@@ -448,7 +448,7 @@ func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 }
 
 func TestHandleUpdateSettings(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	activity := config.Activity{
@@ -490,7 +490,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 }
 
 func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
@@ -543,7 +543,7 @@ messages = false
 }
 
 func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 	disabled := false
 	agents := []config.Agent{{
@@ -619,7 +619,7 @@ name = "widget"
 	target := findRuntimeTargetForSettingsTest(
 		t, srv.runtime.LaunchTargets(), "codex",
 	)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal("Custom Codex", target.Label)
 	assert.Equal([]string{agentPath, "--full-auto"}, target.Command)
 	assert.True(target.Available)
@@ -658,7 +658,7 @@ func TestHandleUpdateSettingsInvalid(t *testing.T) {
 	// Verify config was NOT modified (rollback).
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(t, err)
-	Assert.Equal(t, "threaded", cfg2.Activity.ViewMode)
+	assert.Equal(t, "threaded", cfg2.Activity.ViewMode)
 }
 
 func TestHandleAddRepo(t *testing.T) {
@@ -800,11 +800,11 @@ func TestHandleDeleteRepo(t *testing.T) {
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(err)
 	require.Len(cfg2.Repos, 1)
-	Assert.Equal(t, "other-org", cfg2.Repos[0].Owner)
+	assert.Equal(t, "other-org", cfg2.Repos[0].Owner)
 }
 
 func TestGetSettingsWithoutPersistence(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	database := dbtest.Open(t)
@@ -869,11 +869,11 @@ func TestHandleDeleteLastRepo(t *testing.T) {
 
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(t, err)
-	Assert.Empty(t, cfg2.Repos)
+	assert.Empty(t, cfg2.Repos)
 }
 
 func TestHandleGetSettingsIncludesGlobCounts(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockGH{
 		listReposByOwnerFn: func(
@@ -922,7 +922,7 @@ name = "*"
 }
 
 func TestHandleRefreshRepoRebuildsExpandedSyncSet(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockGH{
 		listReposByOwnerFn: func(
@@ -973,7 +973,7 @@ name = "*"
 }
 
 func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	includeRefreshRepo := atomic.Bool{}
 	mock := &mockGH{
@@ -1033,7 +1033,7 @@ name = "*"
 }
 
 func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockGH{
 		getRepositoryFn: func(
@@ -1128,8 +1128,8 @@ name = "tools"
 		"/api/v1/repo/gh/roborev-dev/*", nil,
 	)
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
-	Assert.True(t, srv.syncer.IsTrackedRepo("roborev-dev", "tools"))
-	Assert.False(t, srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
+	assert.True(t, srv.syncer.IsTrackedRepo("roborev-dev", "tools"))
+	assert.False(t, srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
 }
 
 func TestHandleDeleteRepoUsesProviderHostQuery(t *testing.T) {
@@ -1162,12 +1162,12 @@ name = "widget"
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(settingsRR.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
-	Assert.Equal(t, "github", resp.Repos[0].Provider)
-	Assert.Equal(t, "github.com", resp.Repos[0].PlatformHost)
+	assert.Equal(t, "github", resp.Repos[0].Provider)
+	assert.Equal(t, "github.com", resp.Repos[0].PlatformHost)
 }
 
 func TestRefreshRepoPreservesExistingWhenResolutionFails(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	fail := true
 	mock := &mockGH{
@@ -1211,7 +1211,7 @@ name = "*"
 }
 
 func TestGetSettingsDoesNotCallGitHub(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockGH{
 		getRepositoryFn: func(
@@ -1271,7 +1271,7 @@ name = "widget"
 }
 
 func TestGlobMatchingIsCaseInsensitive(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockGH{
 		listReposByOwnerFn: func(
@@ -1309,7 +1309,7 @@ func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
 	// The setup mutates s.cfg.Activity after the add's
 	// pre-check but before its save, then verifies the
 	// activity change survives in both memory and on disk.
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
@@ -1347,7 +1347,7 @@ func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
 // the refresh would apply its stale expansion after the delete
 // and re-add the removed repos to the syncer's tracked set.
 func TestConcurrentRefreshAndDeleteDoesNotResurrect(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var calls atomic.Int32
@@ -1435,7 +1435,7 @@ name = "*"
 // operator-visible contract: mutating activity settings (or any
 // other field the UI touches) must not silently erase tmux.command.
 func TestHandleUpdateSettingsPreservesTmuxCommand(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
@@ -1470,7 +1470,7 @@ command = ["systemd-run", "--user", "--scope", "tmux"]
 }
 
 func TestHandlePreviewReposFiltersAndMarksAlreadyConfigured(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	pushedNewer := gh.Timestamp{Time: time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)}
 	pushedOlder := gh.Timestamp{Time: time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)}
@@ -1557,7 +1557,7 @@ name = "widget-*"
 }
 
 func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	privateRepo := true
 	forkRepo := false
@@ -1621,7 +1621,7 @@ port = 8091
 }
 
 func TestHandlePreviewReposUsesExactLookupForConcreteRepo(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	privateRepo := true
 	forkRepo := false
@@ -1683,7 +1683,7 @@ port = 8091
 }
 
 func TestHandlePreviewReposRejectsInvalidPattern(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfig(t)
 
@@ -1707,7 +1707,7 @@ func TestHandlePreviewReposRejectsInvalidPattern(t *testing.T) {
 }
 
 func TestHandlePreviewReposSupportsGitLabNamespaces(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	updatedAt := time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC)
 	provider := repoImportTestProvider{
@@ -1790,7 +1790,7 @@ name = "Project"
 }
 
 func TestHandlePreviewReposSupportsForgejoOrgFallback(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	updatedAt := time.Date(2026, 5, 2, 14, 0, 0, 0, time.UTC)
 	transport := &gitealikeImportTransport{
@@ -1867,7 +1867,7 @@ repo_path = "ForgeOrg/Widget"
 }
 
 func TestHandleBulkAddReposPersistsExactRepos(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var getCalls atomic.Int32
 	mock := &mockGH{
@@ -1919,7 +1919,7 @@ name = "widget"
 }
 
 func TestHandleBulkAddReposPersistsGitLabProviderIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -1991,7 +1991,7 @@ port = 8091
 }
 
 func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv := &Server{cfg: &config.Config{Repos: []config.Repo{
@@ -2021,7 +2021,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 }
 
 func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	transport := &gitealikeImportTransport{
 		repository: gitealike.RepositoryDTO{
@@ -2091,7 +2091,7 @@ port = 8091
 }
 
 func TestHandleBulkAddReposValidationFailureChangesNothing(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockGH{
 		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
@@ -2132,7 +2132,7 @@ name = "widget"
 }
 
 func TestHandleBulkAddReposSkipsAlreadyConfiguredBeforeValidation(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var apiCalls atomic.Int32
 	mock := &mockGH{
@@ -2174,7 +2174,7 @@ name = "api"
 }
 
 func TestHandleBulkAddReposReturnsAlreadyConfiguredWhenAllSkippedBeforeValidation(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var apiCalls atomic.Int32
 	mock := &mockGH{
@@ -2209,7 +2209,7 @@ name = "api"
 }
 
 func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	unblockGet := make(chan struct{})
 	getStarted := make(chan struct{}, 1)

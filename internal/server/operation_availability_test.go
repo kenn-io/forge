@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -199,7 +199,7 @@ func TestDeriveOperationAvailability(t *testing.T) {
 }
 
 func TestFormatRateLimit(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	resetAt := time.Date(2026, 5, 19, 14, 35, 0, 0, time.UTC)
 	got := formatRateLimit("github.com", &resetAt)
@@ -273,7 +273,7 @@ func newServerWithRateTracker(t *testing.T) (*Server, *db.DB, *ratelimit.RateTra
 
 func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database, _ := newServerWithRateTracker(t)
 	_, err := database.UpsertRepo(
@@ -297,7 +297,7 @@ func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
 
 func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database, rt := newServerWithRateTracker(t)
 	_, err := database.UpsertRepo(
@@ -324,7 +324,7 @@ func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 
 func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	// Mutations in middleman are REST-backed, so a paused GraphQL
 	// tracker must leave merge_pr available; this guards against
@@ -373,7 +373,7 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 
 func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	// With a GitHub App handling sync reads, mutations ride the user's
 	// PAT and must gate on the write credential's budget: an exhausted
@@ -449,7 +449,7 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 
 func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	// A host can sync with only the GitHub App configured, but
 	// mutations skip the app candidate so they stay attributed to the
@@ -492,7 +492,7 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 
 func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	// A resolver failure (unreadable token file, broken gh helper) is
 	// not a missing credential: the UI must not tell the user to
@@ -566,7 +566,7 @@ func newSplitTestServer(
 
 func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
 	repoID, err := database.UpsertRepo(

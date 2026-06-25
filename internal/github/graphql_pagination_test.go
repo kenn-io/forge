@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestFetchAllPagesSinglePage(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	items, err := fetchAllPages(
 		t.Context(),
@@ -24,7 +24,7 @@ func TestFetchAllPagesSinglePage(t *testing.T) {
 }
 
 func TestFetchAllPagesMultiPage(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	calls := 0
 
 	items, err := fetchAllPages(
@@ -56,7 +56,7 @@ func TestFetchAllPagesMultiPage(t *testing.T) {
 }
 
 func TestFetchAllPagesError(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	// Test error on first page
 	_, err := fetchAllPages(
@@ -83,7 +83,7 @@ func TestFetchAllPagesContextCanceled(t *testing.T) {
 }
 
 func TestFetchAllPagesEmptyCursor(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	items, err := fetchAllPages(
 		t.Context(),
@@ -100,7 +100,7 @@ func TestFetchAllPagesEmptyCursor(t *testing.T) {
 }
 
 func TestFetchAllPagesRepeatedCursor(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	calls := 0
 
 	items, err := fetchAllPages(
@@ -119,7 +119,7 @@ func TestFetchAllPagesRepeatedCursor(t *testing.T) {
 }
 
 func TestFetchAllPagesPartialResultsOnError(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	calls := 0
 
 	items, err := fetchAllPages(

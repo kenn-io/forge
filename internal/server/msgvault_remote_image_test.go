@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
@@ -210,7 +210,7 @@ func decodeMsgvaultProblemResponse(t *testing.T, resp *http.Response) ProblemErr
 }
 
 func TestMsgvaultRemoteImageLiveHTTPHappyPath(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	imageSrv, dial := startMsgvaultImageUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -272,7 +272,7 @@ func TestMsgvaultRemoteImageLiveHTTPRefetchErrors(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			imageSrv, dial := startMsgvaultImageUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "image/png")
@@ -298,7 +298,7 @@ func TestMsgvaultRemoteImageLiveHTTPRefetchErrors(t *testing.T) {
 }
 
 func TestMsgvaultRemoteImageHappyPath(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	imageSrv, dial := startMsgvaultImageUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -345,7 +345,7 @@ func TestMsgvaultValidateRemoteImageURL(t *testing.T) {
 		t.Run(tc.raw, func(t *testing.T) {
 			u, err := url.Parse(tc.raw)
 			require.NoError(t, err)
-			Assert.ErrorIs(t, validateMsgvaultRemoteImageURL(u), tc.want)
+			assert.ErrorIs(t, validateMsgvaultRemoteImageURL(u), tc.want)
 		})
 	}
 }
@@ -379,7 +379,7 @@ func TestMsgvaultRemoteImagePrivateOrReserved(t *testing.T) {
 	} {
 		t.Run(tc.ip, func(t *testing.T) {
 			got := isMsgvaultRemoteImagePrivateOrReserved(netip.MustParseAddr(tc.ip))
-			Assert.Equal(t, tc.want, got)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -398,12 +398,12 @@ func TestMsgvaultRemoteImageDialerRejectsMixedPrivate(t *testing.T) {
 		},
 	}
 	_, err := deps.dialContext(context.Background(), "tcp", "x.com:443")
-	Assert.ErrorIs(t, err, errMsgvaultRemoteImagePrivateIP)
+	assert.ErrorIs(t, err, errMsgvaultRemoteImagePrivateIP)
 }
 
 func TestMsgvaultRemoteImageDialerFallsBackAcrossPublicAddresses(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	deps := msgvaultRemoteImageDeps{
 		lookup: func(context.Context, string) ([]netip.Addr, error) {
 			return []netip.Addr{
@@ -432,7 +432,7 @@ func TestMsgvaultRemoteImageDialerFallsBackAcrossPublicAddresses(t *testing.T) {
 
 func TestMsgvaultRemoteImageRouteFallsBackAcrossPublicAddresses(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	imageSrv, imageDial := startMsgvaultImageUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write([]byte{0x89, 'P', 'N', 'G'})
@@ -493,8 +493,8 @@ func TestMsgvaultRemoteImageRejectsWrongContentType(t *testing.T) {
 
 	require.Equal(t, http.StatusUnsupportedMediaType, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	Assert.Equal(t, CodeBadRequest, problem.Code)
-	Assert.Equal(t, "unsupportedImageType", problem.Details["reason"])
+	assert.Equal(t, CodeBadRequest, problem.Code)
+	assert.Equal(t, "unsupportedImageType", problem.Details["reason"])
 }
 
 func TestMsgvaultRemoteImageRejectsContentEncoding(t *testing.T) {
@@ -541,7 +541,7 @@ func TestMsgvaultRemoteImageRejectsOversize(t *testing.T) {
 }
 
 func TestMsgvaultRemoteImageHeaderHygiene(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var captured http.Header
 	imageSrv, dial := startMsgvaultImageUpstream(t, func(w http.ResponseWriter, r *http.Request) {
@@ -577,7 +577,7 @@ func TestMsgvaultRemoteImageHeaderHygiene(t *testing.T) {
 }
 
 func TestMsgvaultRemoteImageRedirectStripsReferer(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var captured http.Header
 	imageSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -726,8 +726,8 @@ func TestMsgvaultRemoteImageErrorEnvelopeShape(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	Assert.Equal(t, CodeNotFound, problem.Code)
-	Assert.Equal(t, "imageNotFound", problem.Details["reason"])
+	assert.Equal(t, CodeNotFound, problem.Code)
+	assert.Equal(t, "imageNotFound", problem.Details["reason"])
 }
 
 func TestMsgvaultRemoteImageContextCancel(t *testing.T) {

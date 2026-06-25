@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -92,7 +92,7 @@ func TestHostCheckBackendHost(t *testing.T) {
 			req.Host = tc.host
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
-			Assert.Equal(t, tc.status, rr.Code, rr.Body.String())
+			assert.Equal(t, tc.status, rr.Code, rr.Body.String())
 		})
 	}
 }
@@ -228,7 +228,7 @@ func TestHostCheckForwardedHost(t *testing.T) {
 			}
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
-			Assert.Equal(t, tc.status, rr.Code, rr.Body.String())
+			assert.Equal(t, tc.status, rr.Code, rr.Body.String())
 		})
 	}
 }
@@ -247,7 +247,7 @@ func TestHostCheck403BodyShape(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require.Equal(http.StatusForbidden, rr.Code)
 	body, err := io.ReadAll(rr.Body)
 	require.NoError(err)
@@ -309,9 +309,9 @@ func TestParseForwardedHost(t *testing.T) {
 				got, err := parseForwardedHost(tc.input)
 				if tc.wantOK {
 					require.NoError(t, err)
-					Assert.Equal(t, tc.want, got)
+					assert.Equal(t, tc.want, got)
 				} else {
-					Assert.Error(t, err)
+					assert.Error(t, err)
 				}
 			})
 		}
@@ -348,9 +348,9 @@ func TestParseForwardedHost(t *testing.T) {
 				got, err := parseXForwardedHost(tc.input)
 				if tc.wantOK {
 					require.NoError(t, err)
-					Assert.Equal(t, tc.want, got)
+					assert.Equal(t, tc.want, got)
 				} else {
-					Assert.Error(t, err)
+					assert.Error(t, err)
 				}
 			})
 		}
@@ -362,7 +362,7 @@ func TestParseForwardedHost(t *testing.T) {
 // repoint the accept-set at the actual bound port — otherwise every
 // request to an ephemeral-port daemon is rejected.
 func TestHostCheckEphemeralPortFollowsListener(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupHostCheckServer(t, HostCheckOptions{
 		Bind: config.HostKey{Host: "127.0.0.1", Port: "0"},

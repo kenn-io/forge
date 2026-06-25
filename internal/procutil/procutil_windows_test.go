@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows"
 )
 
 func TestRunHidesBackgroundWindows(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	//nolint:forbidigo // This test verifies Run configures an externally-created Cmd.
@@ -32,7 +32,7 @@ func TestRunHidesBackgroundWindows(t *testing.T) {
 }
 
 func TestCommandHidesBackgroundWindows(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	cmd := Command("cmd.exe", "/c", "exit 0")
@@ -44,7 +44,7 @@ func TestCommandHidesBackgroundWindows(t *testing.T) {
 }
 
 func TestCommandResolvesWindowsPathextBinary(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	dir := t.TempDir()
@@ -59,11 +59,11 @@ func TestCommandResolvesWindowsPathextBinary(t *testing.T) {
 }
 
 func TestShouldRunShebangScriptWithShellRejectsBareName(t *testing.T) {
-	Assert.False(t, shouldRunShebangScriptWithShell("fake-gh"))
+	assert.False(t, shouldRunShebangScriptWithShell("fake-gh"))
 }
 
 func TestResolveCommandRunsShebangScriptWithResolvedShellDirectly(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	dir := t.TempDir()

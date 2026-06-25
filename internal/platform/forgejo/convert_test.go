@@ -5,12 +5,12 @@ import (
 	"time"
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 )
 
 func TestConvertForgejoSDKRecords(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	created := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	updated := created.Add(time.Hour)
@@ -147,7 +147,7 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 }
 
 func TestConvertForgejoActionRun(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	created := time.Date(2026, 5, 1, 2, 0, 0, 0, time.UTC)
 	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	stopped := started.Add(time.Minute)

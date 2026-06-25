@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 )
 
@@ -14,7 +14,7 @@ import (
 // callers thread into RollbackCreatedWorktree: a branch this call created may
 // be force-deleted on rollback, a pre-existing one must never be.
 func TestCreateWorktreeOnDiskReportsBranchCreated(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	repo := initLifecycleRepo(t)
 	lifecycleGit(t, repo, "branch", "existing")
@@ -41,7 +41,7 @@ func TestCreateWorktreeOnDiskReportsBranchCreated(t *testing.T) {
 // registry-conflict rollback path: rolling back with BranchCreated=false
 // removes the worktree but leaves the branch intact.
 func TestRollbackCreatedWorktreePreservesPreexistingBranch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	repo := initLifecycleRepo(t)
 	lifecycleGit(t, repo, "branch", "keep-me")
@@ -91,7 +91,7 @@ func TestCreateWorktreeOnDiskRejectsSymlinkedHookEscape(t *testing.T) {
 // refs/merge-requests/<n>/head instead of GitHub's refs/pull/<n>/head.
 func TestCreateWorktreeFromMergeRequestGitLabRef(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	origin, clone := initOriginAndClone(t)
 	lifecycleGit(t, origin, "checkout", "-q", "-b", "mr-work")

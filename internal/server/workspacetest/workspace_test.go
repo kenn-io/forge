@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/config"
@@ -21,7 +21,7 @@ import (
 
 func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := t.Context()
@@ -43,7 +43,7 @@ func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
 
 func TestWorkspaceRuntimeTargetsHideInternalShellTargetE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	tmuxPath := filepath.Join(dir, "tmux-wrapper")
@@ -103,7 +103,7 @@ func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
 
 func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := t.Context()
@@ -134,7 +134,7 @@ func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) 
 
 func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	tmuxPath := writeWorkspaceRuntimeTmuxProbe(t, "workspace-runtime-live", 0, "")
 	cfg := &config.Config{Tmux: config.Tmux{

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/tokenauth"
@@ -57,7 +57,7 @@ func newSplitAuthTestClient(
 // GitHub attributes them to the user, not "<app>[bot]".
 func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	t.Setenv("TEST_SPLIT_AUTH_PAT", "user-pat")
 
 	var mu sync.Mutex
@@ -198,7 +198,7 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 
 func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	t.Setenv("TEST_NOTIFICATION_AUTH_PAT", "user-pat")
 
 	var mu sync.Mutex
@@ -350,5 +350,5 @@ func TestMutationAuthFallsBackToReadClientWhenUnsplit(t *testing.T) {
 
 	_, err = c.CreateIssueComment(t.Context(), "acme", "widgets", 5, "hello")
 	require.NoError(t, err)
-	Assert.Equal(t, "Bearer only-pat", gotAuth)
+	assert.Equal(t, "Bearer only-pat", gotAuth)
 }

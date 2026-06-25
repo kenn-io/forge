@@ -3,7 +3,7 @@ package gitlab
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
@@ -16,7 +16,7 @@ func TestNotificationStubsReturnUnsupportedCapability(t *testing.T) {
 	require := Require.New(t)
 	require.NoError(err)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	caps := client.Capabilities()
 	assert.False(caps.ReadNotifications)
 	assert.False(caps.NotificationMutation)

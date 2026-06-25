@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	gitcmd "go.kenn.io/kit/git/cmd"
@@ -25,7 +25,7 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := context.Background()

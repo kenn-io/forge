@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/db"
@@ -49,7 +49,7 @@ func assertFakeTmuxKilledSession(
 	t.Helper()
 	record, err := os.ReadFile(recordPath)
 	require.NoError(t, err)
-	Assert.Contains(
+	assert.Contains(
 		t, string(record), "kill-session\x00-t\x00"+tmuxSession,
 	)
 }
@@ -57,7 +57,7 @@ func assertFakeTmuxKilledSession(
 func TestRemoveProjectWorktreeStopsRuntimeSessions(t *testing.T) {
 	requirePTYAvailable(t)
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID, recordPath :=
 		setupProjectWorktreeCommandSessionTestWithRecord(t)
@@ -88,7 +88,7 @@ func TestRemoveProjectWorktreeStopsRuntimeSessions(t *testing.T) {
 func TestDeleteProjectStopsWorktreeRuntimeSessions(t *testing.T) {
 	requirePTYAvailable(t)
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID, recordPath :=
 		setupProjectWorktreeCommandSessionTestWithRecord(t)

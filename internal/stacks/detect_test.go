@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	realdb "go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -35,7 +35,7 @@ func makePRWithHeadRepo(id int64, number int, head, base, headRepo string, state
 }
 
 func TestDetectChains_LinearStack(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	prs := []realdb.MergeRequest{
 		makePR(1, 100, "feature/auth-token", "main", prOpen),
 		makePR(2, 101, "feature/auth-retry", "feature/auth-token", prOpen),
@@ -51,7 +51,7 @@ func TestDetectChains_LinearStack(t *testing.T) {
 }
 
 func TestDetectChains_SinglePRNotAStack(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	prs := []realdb.MergeRequest{
 		makePR(1, 100, "feature/solo", "main", prOpen),
 	}
@@ -60,7 +60,7 @@ func TestDetectChains_SinglePRNotAStack(t *testing.T) {
 }
 
 func TestDetectChains_ForkPicksLowestNumber(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	prs := []realdb.MergeRequest{
 		makePR(1, 100, "feature/base", "main", prOpen),
 		makePR(2, 102, "feature/child-b", "feature/base", prOpen),
@@ -75,7 +75,7 @@ func TestDetectChains_ForkPicksLowestNumber(t *testing.T) {
 }
 
 func TestDetectChains_CycleSkipped(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	prs := []realdb.MergeRequest{
 		makePR(1, 100, "branch-a", "branch-b", prOpen),
 		makePR(2, 101, "branch-b", "branch-a", prOpen),
@@ -85,7 +85,7 @@ func TestDetectChains_CycleSkipped(t *testing.T) {
 }
 
 func TestDetectChains_PartialMerge(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	prs := []realdb.MergeRequest{
 		makePR(1, 100, "feature/a", "main", prMerged),
 		makePR(2, 101, "feature/b", "feature/a", prOpen),
@@ -96,7 +96,7 @@ func TestDetectChains_PartialMerge(t *testing.T) {
 }
 
 func TestDetectChains_ForkDefaultBranchPRDoesNotHideRoot(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	const fork = "https://github.com/mjacobs/widget.git"
 	prs := []realdb.MergeRequest{
@@ -112,7 +112,7 @@ func TestDetectChains_ForkDefaultBranchPRDoesNotHideRoot(t *testing.T) {
 }
 
 func TestDetectChains_SameRepoSelfEdgeDoesNotHideRoot(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	prs := []realdb.MergeRequest{
 		makePR(1, 449, "legacy-parser-base", "legacy-parser-base", prMerged),
@@ -127,7 +127,7 @@ func TestDetectChains_SameRepoSelfEdgeDoesNotHideRoot(t *testing.T) {
 }
 
 func TestDetectChains_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	const fork = "https://github.com/fork/widget.git"
 	prs := []realdb.MergeRequest{
@@ -142,7 +142,7 @@ func TestDetectChains_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.
 }
 
 func TestDetectChains_UnknownHeadRepoDoesNotShadowKnownUpstreamStackBranch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	prs := []realdb.MergeRequest{
 		makePRWithHeadRepo(1, 100, "feature/auth", "main", testRepoCloneURL, prOpen),
@@ -156,7 +156,7 @@ func TestDetectChains_UnknownHeadRepoDoesNotShadowKnownUpstreamStackBranch(t *te
 }
 
 func TestDetectChains_UnknownHeadRepoDoesNotChainWithKnownUpstreamStackBranch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	prs := []realdb.MergeRequest{
 		makePRWithHeadRepo(1, 100, "feature/auth", "main", testRepoCloneURL, prOpen),
@@ -170,7 +170,7 @@ func TestDetectChains_UnknownHeadRepoDoesNotChainWithKnownUpstreamStackBranch(t 
 }
 
 func TestDetectChains_NormalizesRepoCloneURLs(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	prs := []realdb.MergeRequest{
 		makePRWithHeadRepo(1, 100, "feature/auth", "main", "HTTPS://GITHUB.COM/acme/widget.git/", prOpen),
@@ -183,7 +183,7 @@ func TestDetectChains_NormalizesRepoCloneURLs(t *testing.T) {
 }
 
 func TestDetectChains_DuplicateHeadPrefersOpen(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	// Merged PR and open PR share same head branch.
 	// Open PR should be preferred for chain building.
 	prs := []realdb.MergeRequest{
@@ -201,7 +201,7 @@ func TestDetectChains_DuplicateHeadPrefersOpen(t *testing.T) {
 }
 
 func TestDetectChains_ForkPrefersOpenOverMerged(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	// A -> B (merged, lower number) and A -> C (open, higher number).
 	// Should follow A -> C since C is open.
 	prs := []realdb.MergeRequest{
@@ -218,7 +218,7 @@ func TestDetectChains_ForkPrefersOpenOverMerged(t *testing.T) {
 }
 
 func TestDetectChains_FullyMergedNotAStack(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	// All PRs merged — should still detect the chain structure.
 	prs := []realdb.MergeRequest{
 		makePR(1, 100, "feature/a", "main", prMerged),
@@ -230,7 +230,7 @@ func TestDetectChains_FullyMergedNotAStack(t *testing.T) {
 }
 
 func TestDeriveStackName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	// Common prefix on token boundary
 	assert.Equal("auth", DeriveStackName([]realdb.MergeRequest{
@@ -273,7 +273,7 @@ func openTestDB(t *testing.T) *realdb.DB {
 }
 
 func TestRunDetection(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -317,7 +317,7 @@ func TestRunDetection(t *testing.T) {
 }
 
 func TestRunDetection_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -368,7 +368,7 @@ func TestRunDetection_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.
 }
 
 func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

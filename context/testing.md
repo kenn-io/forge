@@ -1,5 +1,13 @@
 # Testing
 
+## Go assertion style
+
+Go tests use `testify` consistently. Import
+`github.com/stretchr/testify/assert` without an alias and create local helpers
+as `assert := assert.New(t)` when a test has more than three assertions.
+Aliasing the `assert` package, including `Assert`, is not allowed and is
+enforced by golangci-lint's `importas` rule.
+
 ## Live GraphQL validation
 
 GraphQL query shape changes must be validated against GitHub's live GraphQL API before they are merged. The local test suite includes a gated live test:

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/db"
@@ -73,7 +73,7 @@ func TestHandlerWorkspaceNotFound(t *testing.T) {
 
 	h.ServeHTTP(rec, req)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(http.StatusNotFound, rec.Code)
 	assert.Contains(rec.Body.String(), "not found")
 }
@@ -104,13 +104,13 @@ func TestHandlerWorkspaceNotReady(t *testing.T) {
 
 	h.ServeHTTP(rec, req)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(http.StatusConflict, rec.Code)
 	assert.Contains(rec.Body.String(), "not ready")
 }
 
 func TestHandlerRejectsConcurrentWorkspaceTerminals(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	h := &Handler{}
@@ -202,7 +202,7 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 }
 
 func TestProcessExitCode(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(0, processExitCode(nil))
 	assert.Equal(-1, processExitCode(errors.New("wait failed")))
 }
@@ -212,7 +212,7 @@ func TestParseSizeFallsBack(t *testing.T) {
 		http.MethodGet, "/?cols=bad&rows=0", nil,
 	)
 	cols, rows := parseSize(req)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(120, cols)
 	assert.Equal(30, rows)
 }

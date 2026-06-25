@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/server"
 )
@@ -58,7 +58,7 @@ func waitForSubscribe(t *testing.T, srv *server.Server, want int) {
 }
 
 func TestE2E_SSEReconnectReplaysMissedEvents(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)
@@ -124,7 +124,7 @@ func TestE2E_SSEReconnectReplaysMissedEvents(t *testing.T) {
 }
 
 func TestE2E_SSESinceQueryWorks(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)
@@ -152,7 +152,7 @@ func TestE2E_SSESinceQueryWorks(t *testing.T) {
 }
 
 func TestE2E_SSEBufferWraparoundReplaysRetainedEvents(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _, _ := setupTestServerWithSSEBufferSize(t, 4)
@@ -193,7 +193,7 @@ func TestE2E_SSEBufferWraparoundReplaysRetainedEvents(t *testing.T) {
 }
 
 func TestE2E_SSEStaleCursorEmitsReconnectStale(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _, _ := setupTestServerWithSSEBufferSize(t, 4)
@@ -228,7 +228,7 @@ func TestE2E_SSEStaleCursorEmitsReconnectStale(t *testing.T) {
 }
 
 func TestE2E_SSEFutureCursorEmitsReconnectStale(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)
@@ -259,7 +259,7 @@ func TestE2E_SSEFutureCursorEmitsReconnectStale(t *testing.T) {
 }
 
 func TestE2E_SSEFirstConnectGetsCachedSyncStatus(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)
@@ -288,7 +288,7 @@ func TestE2E_SSEFirstConnectGetsCachedSyncStatus(t *testing.T) {
 
 func TestE2E_SSEFramesAlwaysIncludeID(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	defer gracefulShutdown(t, srv)

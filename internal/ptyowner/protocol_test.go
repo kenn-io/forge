@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +24,7 @@ func TestSessionPathsRejectUnsafeNames(t *testing.T) {
 }
 
 func TestSessionPathsAreStable(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	root := t.TempDir()
 
@@ -38,7 +38,7 @@ func TestSessionPathsAreStable(t *testing.T) {
 }
 
 func TestSessionPathsHashFilesystemHostileNames(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	root := t.TempDir()
 
@@ -52,7 +52,7 @@ func TestSessionPathsHashFilesystemHostileNames(t *testing.T) {
 }
 
 func TestSessionPathsUsePrivateSocketDirForLongRoots(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
 
@@ -69,7 +69,7 @@ func TestSessionPathsUseShortPrivateTmpWhenTempDirIsTooLong(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("/private/tmp is a macOS-specific socket fallback")
 	}
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
 	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
@@ -88,7 +88,7 @@ func TestSessionPathsUseShortPrivateTmpWhenTempDirIsTooLong(t *testing.T) {
 }
 
 func TestFallbackSocketDirSkipsPrivateTmpOffDarwin(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
 	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
 
@@ -103,7 +103,7 @@ func TestFallbackSocketDirSkipsPrivateTmpOffDarwin(t *testing.T) {
 }
 
 func TestFallbackSocketDirUsesPrivateTmpOnDarwin(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
 	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
 
@@ -154,7 +154,7 @@ func TestCreatePrivateSocketDirRejectsSharedExistingDir(t *testing.T) {
 }
 
 func TestProtocolRequestRoundTrip(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	want := Request{
 		Type:  RequestAttach,
 		Token: "secret",
@@ -172,7 +172,7 @@ func TestProtocolRequestRoundTrip(t *testing.T) {
 }
 
 func TestProtocolResponseRoundTrip(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	code := 7
 	want := Response{
 		Type:     ResponseExit,

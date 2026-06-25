@@ -6,7 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,7 +55,7 @@ func TestLimiterWaitsForReleaseWhenAtCapacity(t *testing.T) {
 }
 
 func TestLimiterAcquireTimeoutIsResourceExhausted(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	type acquireResult struct {
@@ -96,7 +96,7 @@ func TestLimiterAcquireTimeoutIsResourceExhausted(t *testing.T) {
 }
 
 func TestLimiterAcquirePreservesCallerCancellation(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	limiter := NewLimiterWithAcquireTimeout(1, time.Second)
@@ -116,7 +116,7 @@ func TestLimiterAcquirePreservesCallerCancellation(t *testing.T) {
 }
 
 func TestLimiterAcquireCanceledContextWithCapacityIsNotResourceExhausted(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	limiter := NewLimiterWithAcquireTimeout(1, time.Second)

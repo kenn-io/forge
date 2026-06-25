@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,7 +31,7 @@ func writeRuntimeFile(t *testing.T, home string, rec RuntimeRecord) {
 }
 
 func TestDiscoverAlivenessFromRuntimeFile(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -50,7 +50,7 @@ func TestDiscoverAlivenessFromRuntimeFile(t *testing.T) {
 }
 
 func TestDiscoverNoRuntimeDir(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
@@ -60,7 +60,7 @@ func TestDiscoverNoRuntimeDir(t *testing.T) {
 }
 
 func TestDiscoverSkipsDeadProcess(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
@@ -74,7 +74,7 @@ func TestDiscoverSkipsDeadProcess(t *testing.T) {
 }
 
 func TestDiscoverPrefersHTTPOverUnix(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -96,7 +96,7 @@ func TestDiscoverPrefersHTTPOverUnix(t *testing.T) {
 }
 
 func TestDiscoverSkipsUnparseableJSON(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -115,7 +115,7 @@ func TestDiscoverSkipsUnparseableJSON(t *testing.T) {
 }
 
 func TestDiscoverLocalDaemonURLRunningDaemon(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
@@ -129,7 +129,7 @@ func TestDiscoverLocalDaemonURLRunningDaemon(t *testing.T) {
 }
 
 func TestDiscoverLocalDaemonURLLocalhostRuntimeRecord(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
@@ -143,7 +143,7 @@ func TestDiscoverLocalDaemonURLLocalhostRuntimeRecord(t *testing.T) {
 }
 
 func TestDiscoverLocalDaemonURLNoneRunning(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	t.Setenv("KATA_HOME", t.TempDir())
 	t.Setenv("KATA_DB", "")
@@ -152,7 +152,7 @@ func TestDiscoverLocalDaemonURLNoneRunning(t *testing.T) {
 }
 
 func TestDiscoverLocalDaemonURLRejectsNonLoopbackHTTP(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
@@ -166,7 +166,7 @@ func TestDiscoverLocalDaemonURLRejectsNonLoopbackHTTP(t *testing.T) {
 }
 
 func TestDiscoverLocalDaemonURLUnixSocket(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
@@ -180,7 +180,7 @@ func TestDiscoverLocalDaemonURLUnixSocket(t *testing.T) {
 }
 
 func TestDiscoverLocalDaemonURLUnixSocketRuntimeRecord(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
@@ -195,7 +195,7 @@ func TestDiscoverLocalDaemonURLUnixSocketRuntimeRecord(t *testing.T) {
 }
 
 func TestDiscoverLocalDaemonURLPrefersLocalOverNonLoopbackHTTP(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
@@ -213,7 +213,7 @@ func TestDiscoverLocalDaemonURLPrefersLocalOverNonLoopbackHTTP(t *testing.T) {
 }
 
 func TestAliveRuntimeRecordsRejectsMismatchedFilenamePID(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -231,7 +231,7 @@ func TestAliveRuntimeRecordsRejectsMismatchedFilenamePID(t *testing.T) {
 }
 
 func TestAliveRuntimeRecordsRejectsEmptyAddress(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
@@ -242,7 +242,7 @@ func TestAliveRuntimeRecordsRejectsEmptyAddress(t *testing.T) {
 }
 
 func TestAliveRuntimeRecordsSortsByStartedAtThenPID(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	base := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
 	records := []RuntimeRecord{
@@ -273,7 +273,7 @@ func TestRuntimeAddressURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.addr, func(t *testing.T) {
-			Assert.Equal(t, tt.want, RuntimeAddressURL(tt.addr))
+			assert.Equal(t, tt.want, RuntimeAddressURL(tt.addr))
 		})
 	}
 }
@@ -291,7 +291,7 @@ func TestRuntimeRecordAddressURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			Assert.Equal(t, tt.want, runtimeRecordAddressURL(tt.rec))
+			assert.Equal(t, tt.want, runtimeRecordAddressURL(tt.rec))
 		})
 	}
 }
@@ -317,7 +317,7 @@ func TestIsLocalDaemonAddress(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.addr, func(t *testing.T) {
-			Assert.Equal(t, tt.want, isLocalDaemonAddress(tt.addr))
+			assert.Equal(t, tt.want, isLocalDaemonAddress(tt.addr))
 		})
 	}
 }

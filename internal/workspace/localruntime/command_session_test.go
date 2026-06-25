@@ -10,7 +10,7 @@ import (
 	"time"
 
 	shellquote "github.com/kballard/go-shellquote"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,7 +70,7 @@ func commandSessionTestSpec(key string, cwd string) CommandLaunchSpec {
 func TestEnsureCommandSessionLaunchesTmuxBackedCommand(t *testing.T) {
 	requirePTYAvailable(t)
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	tmuxPath, recordPath, _ := writeCommandSessionFakeTmux(
 		t, "middleman:test-owner",
 	)
@@ -118,7 +118,7 @@ func TestEnsureCommandSessionLaunchesTmuxBackedCommand(t *testing.T) {
 func TestEnsureCommandSessionReturnsExistingLiveSession(t *testing.T) {
 	requirePTYAvailable(t)
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	tmuxPath, recordPath, _ := writeCommandSessionFakeTmux(
 		t, "middleman:test-owner",
 	)
@@ -197,7 +197,7 @@ func TestEnsureCommandSessionRequiresCommand(t *testing.T) {
 func TestEnsureCommandSessionReattachesToSurvivingTmuxSession(t *testing.T) {
 	requirePTYAvailable(t)
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	tmuxPath, recordPath, statePath := writeCommandSessionFakeTmux(
 		t, "middleman:test-owner",
 	)

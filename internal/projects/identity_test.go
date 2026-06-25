@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
@@ -31,7 +31,7 @@ func TestParseRemoteURL_GitHubFormats(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			got := ParseRemoteURL(tc.remote)
 			require.NotNil(got)
@@ -51,7 +51,7 @@ func TestParseRemoteURL_OtherHosts(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := require.New(t)
 			got := ParseRemoteURL(tc.remote)
 			require.NotNil(got)
@@ -61,7 +61,7 @@ func TestParseRemoteURL_OtherHosts(t *testing.T) {
 }
 
 func TestParseRemoteURL_ConfiguredSelfHostedGitLab(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	got := ParseRemoteURLWithKnownPlatforms(
@@ -77,7 +77,7 @@ func TestParseRemoteURL_ConfiguredSelfHostedGitLab(t *testing.T) {
 }
 
 func TestParseRemoteURL_ConfiguredSelfHostedGitLabWithURLPort(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	got := ParseRemoteURLWithKnownPlatforms(
@@ -93,7 +93,7 @@ func TestParseRemoteURL_ConfiguredSelfHostedGitLabWithURLPort(t *testing.T) {
 }
 
 func TestParseRemoteURL_NestedGitLabRepoPath(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	got := ParseRemoteURL("git@gitlab.com:group/subgroup/project.git")
@@ -106,7 +106,7 @@ func TestParseRemoteURL_NestedGitLabRepoPath(t *testing.T) {
 }
 
 func TestParseRemoteURL_UnknownSelfHostedRemoteIsLocalOnly(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	assert.Nil(ParseRemoteURL("git@code.example.com:group/project.git"))
 }
@@ -128,7 +128,7 @@ func TestParseRemoteURL_Unrecognized(t *testing.T) {
 	}
 	for _, remote := range cases {
 		t.Run(remote, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			assert.Nil(ParseRemoteURL(remote))
 		})
 	}
@@ -139,7 +139,7 @@ func TestResolveIdentityFromPath_NoOriginRemote(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	require.NoError(runGit(t, dir, "init", "-q"))
@@ -154,7 +154,7 @@ func TestResolveIdentityFromPath_UnrecognizableRemote(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	require.NoError(runGit(t, dir, "init", "-q"))
@@ -170,7 +170,7 @@ func TestResolveIdentityFromPath_RecognizedRemote(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	require.NoError(runGit(t, dir, "init", "-q"))
@@ -189,7 +189,7 @@ func TestResolveIdentityFromPath_NotAGitRepoIsTreatedAsNoIdentity(t *testing.T) 
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	// A plain directory that is not a git repo causes git to exit
 	// non-zero. The resolver's contract is identity-only, so it
@@ -224,7 +224,7 @@ func TestResolveIdentityFromPath_ResolvesRelativePaths(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	require.NoError(runGit(t, dir, "init", "-q"))

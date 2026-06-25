@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	realdb "go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/fleet"
@@ -63,7 +63,7 @@ func seedLinkOpenMR(t *testing.T, d *realdb.DB, repoID int64, number int, head s
 // branch, persists a worktree link keyed by the snapshot scoped key, and reports
 // the match to the watcher.
 func TestRecomputeWorktreeLinks_LinksWorktreeToOpenMRByBranch(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := dbtest.Open(t)
 	ctx := t.Context()
@@ -98,7 +98,7 @@ func TestRecomputeWorktreeLinks_LinksWorktreeToOpenMRByBranch(t *testing.T) {
 // recompute over the same matched set reports changed=false yet still re-applies
 // the watched-MR set, which is lost across a syncer restart.
 func TestRecomputeWorktreeLinks_UnchangedSecondRunSkipsRewrite(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := dbtest.Open(t)
 	ctx := t.Context()
@@ -124,7 +124,7 @@ func TestRecomputeWorktreeLinks_UnchangedSecondRunSkipsRewrite(t *testing.T) {
 // branch has no open merge request produces no links and reports changed=false,
 // with an empty watched set.
 func TestRecomputeWorktreeLinks_NoOpenMRLeavesNoLinks(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := dbtest.Open(t)
 	ctx := t.Context()
@@ -149,7 +149,7 @@ func TestRecomputeWorktreeLinks_NoOpenMRLeavesNoLinks(t *testing.T) {
 // drops a link once its merge request leaves the open state, so a merged PR's
 // worktree stops reporting a live link on the next sync.
 func TestRecomputeWorktreeLinks_LinkRemovedWhenMRMerges(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := dbtest.Open(t)
 	ctx := t.Context()
@@ -306,7 +306,7 @@ func TestDeleteProjectWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 // runs the recompute, persists the matched links, fires onRecomputed because
 // the link set changed, and chains to next.
 func TestWorktreeLinksSyncHook_FiresOnRecomputedAndChainsNext(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := dbtest.Open(t)
 	ctx := t.Context()
@@ -333,7 +333,7 @@ func TestWorktreeLinksSyncHook_FiresOnRecomputedAndChainsNext(t *testing.T) {
 // TestWorktreeLinksSyncHook_NoFireWhenUnchanged verifies a second pass over the
 // same matched set does not fire onRecomputed, since nothing changed.
 func TestWorktreeLinksSyncHook_NoFireWhenUnchanged(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := dbtest.Open(t)
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
@@ -353,7 +353,7 @@ func TestWorktreeLinksSyncHook_NoFireWhenUnchanged(t *testing.T) {
 // TestWorktreeLinksSyncHook_CanceledContextSkipsRecomputeButChainsNext verifies
 // a canceled hook context skips the recompute yet still chains to next.
 func TestWorktreeLinksSyncHook_CanceledContextSkipsRecomputeButChainsNext(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := dbtest.Open(t)
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
@@ -384,7 +384,7 @@ func TestWorktreeLinksSyncHook_CanceledContextSkipsRecomputeButChainsNext(t *tes
 // refetch hint.
 func TestNotifyWorktreeChangeBroadcasts(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv := &Server{
 		hub: NewEventHub(),

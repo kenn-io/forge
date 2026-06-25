@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
@@ -52,7 +52,7 @@ func TestResolveLaunchTargetsConfigOverridesBuiltin(t *testing.T) {
 	)
 
 	codex := findTarget(t, targets, "codex")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal("Custom Codex", codex.Label)
 	assert.Equal(LaunchTargetAgent, codex.Kind)
 	assert.Equal("config", codex.Source)
@@ -77,7 +77,7 @@ func TestResolveLaunchTargetsDisabledConfigSuppressesBuiltin(
 	)
 
 	codex := findTarget(t, targets, "codex")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.False(codex.Available)
 	assert.Equal("config", codex.Source)
 	assert.Contains(codex.DisabledReason, "disabled")
@@ -100,7 +100,7 @@ func TestResolveLaunchTargetsConfigKeyCoexistsWithBuiltin(
 		}),
 	)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal("Custom Agent", findTarget(t, targets, "custom").Label)
 	assert.True(findTarget(t, targets, "custom").Available)
 	assert.True(findTarget(t, targets, "codex").Available)
@@ -112,7 +112,7 @@ func TestResolveLaunchTargetsUndetectedBuiltinUnavailable(
 	targets := ResolveLaunchTargets(nil, []string{"tmux"}, fakeLookPath(nil))
 
 	codex := findTarget(t, targets, "codex")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.False(codex.Available)
 	assert.Contains(codex.DisabledReason, "not found")
 }
@@ -128,7 +128,7 @@ func TestResolveLaunchTargetsIncludesSystemTargets(t *testing.T) {
 
 	shell := findTarget(t, targets, "shell")
 	plainShell := findTarget(t, targets, "plain_shell")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(LaunchTargetShell, shell.Kind)
 	assert.True(shell.Available)
 	assert.Equal([]string{"tmux"}, shell.Command)
@@ -140,7 +140,7 @@ func TestResolveLaunchTargetsMarksTmuxUnavailable(t *testing.T) {
 	targets := ResolveLaunchTargets(nil, []string{"tmux"}, fakeLookPath(nil))
 
 	shell := findTarget(t, targets, "shell")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(LaunchTargetShell, shell.Kind)
 	assert.False(shell.Available)
 	assert.Contains(shell.DisabledReason, "not found")
@@ -156,7 +156,7 @@ func TestResolveLaunchTargetsUsesConfiguredTmuxCommand(t *testing.T) {
 	)
 
 	shell := findTarget(t, targets, "shell")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal([]string{"/opt/bin/tmux-wrapper", "--scope", "tmux"}, shell.Command)
 	assert.True(shell.Available)
 }
@@ -183,7 +183,7 @@ func TestResolveLaunchTargetsSkipsSystemKeyAgents(t *testing.T) {
 		}),
 	)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Len(targetsWithKey(targets, "shell"), 1)
 	assert.Len(targetsWithKey(targets, "plain_shell"), 1)
 	assert.Equal("system", findTarget(t, targets, "shell").Source)

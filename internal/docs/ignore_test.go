@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 )
@@ -29,7 +29,7 @@ func seedFolder(t *testing.T, files map[string]string) (*Registry, string) {
 }
 
 func TestBaselineHidesVCSAndCachesWithoutUserConfig(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	// No .gitignore / .middlemanignore - baseline alone must still
 	// drop .git, node_modules, and .DS_Store.
 	r, _ := seedFolder(t, map[string]string{
@@ -49,7 +49,7 @@ func TestBaselineHidesVCSAndCachesWithoutUserConfig(t *testing.T) {
 }
 
 func TestRootGitignoreHidesPytestCache(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	// The user's specific motivating case: a Python project mixing
 	// notes with code, where .pytest_cache pollutes the docs view.
 	r, _ := seedFolder(t, map[string]string{
@@ -65,7 +65,7 @@ func TestRootGitignoreHidesPytestCache(t *testing.T) {
 }
 
 func TestNestedGitignoreScopesToItsSubtree(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	// A nested .gitignore must hide files only under its own dir,
 	// not its siblings.
 	r, _ := seedFolder(t, map[string]string{
@@ -83,7 +83,7 @@ func TestNestedGitignoreScopesToItsSubtree(t *testing.T) {
 }
 
 func TestMiddlemanIgnoreOverlaysOnGitignore(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	// .middlemanignore lives next to .gitignore at the root and
 	// stacks additively - both layers can hide paths.
 	r, _ := seedFolder(t, map[string]string{
@@ -109,7 +109,7 @@ func TestMissingIgnoreFilesAreSilent(t *testing.T) {
 	})
 	tree, err := r.Tree("notes")
 	require.NoError(t, err, "tree without ignore files errored")
-	Assert.Contains(t, walkNames(tree), "kept.md", "expected kept.md visible without ignore files")
+	assert.Contains(t, walkNames(tree), "kept.md", "expected kept.md visible without ignore files")
 }
 
 func TestReadFileRefusesGitignoredPath(t *testing.T) {
@@ -119,12 +119,12 @@ func TestReadFileRefusesGitignoredPath(t *testing.T) {
 		"kept.md":       "# kept",
 	})
 	if _, err := r.ReadFile("notes", "drafts/wip.md"); !errors.Is(err, ErrOutsideFolder) {
-		Assert.ErrorIs(t, err, ErrOutsideFolder)
+		assert.ErrorIs(t, err, ErrOutsideFolder)
 	}
 	// Non-ignored read still works.
 	body, err := r.ReadFile("notes", "kept.md")
 	require.NoError(t, err, "kept.md should read")
-	Assert.Equal(t, "# kept", string(body))
+	assert.Equal(t, "# kept", string(body))
 }
 
 func TestWriteFileRefusesGitignoredPath(t *testing.T) {
@@ -133,7 +133,7 @@ func TestWriteFileRefusesGitignoredPath(t *testing.T) {
 		"drafts/wip.md": "old",
 	})
 	if err := r.WriteFile("notes", "drafts/wip.md", []byte("new")); !errors.Is(err, ErrOutsideFolder) {
-		Assert.ErrorIs(t, err, ErrOutsideFolder)
+		assert.ErrorIs(t, err, ErrOutsideFolder)
 	}
 }
 
@@ -143,7 +143,7 @@ func TestCreateFileRefusesGitignoredPath(t *testing.T) {
 		"drafts/wip.md": "x",
 	})
 	if err := r.CreateFile("notes", "drafts/new.md", []byte("# new")); !errors.Is(err, ErrOutsideFolder) {
-		Assert.ErrorIs(t, err, ErrOutsideFolder)
+		assert.ErrorIs(t, err, ErrOutsideFolder)
 	}
 }
 
@@ -153,7 +153,7 @@ func TestDeleteFileRefusesGitignoredPath(t *testing.T) {
 		"drafts/wip.md": "x",
 	})
 	if err := r.DeleteFile("notes", "drafts/wip.md"); !errors.Is(err, ErrOutsideFolder) {
-		Assert.ErrorIs(t, err, ErrOutsideFolder)
+		assert.ErrorIs(t, err, ErrOutsideFolder)
 	}
 }
 
@@ -164,10 +164,10 @@ func TestRenameFileRefusesIgnoredSourceOrDest(t *testing.T) {
 		"drafts/wip.md": "wip",
 	})
 	if err := r.RenameFile("notes", "drafts/wip.md", "moved.md"); !errors.Is(err, ErrOutsideFolder) {
-		Assert.ErrorIs(t, err, ErrOutsideFolder)
+		assert.ErrorIs(t, err, ErrOutsideFolder)
 	}
 	if err := r.RenameFile("notes", "kept.md", "drafts/kept.md"); !errors.Is(err, ErrOutsideFolder) {
-		Assert.ErrorIs(t, err, ErrOutsideFolder)
+		assert.ErrorIs(t, err, ErrOutsideFolder)
 	}
 }
 
@@ -180,7 +180,7 @@ func TestReadBlobRefusesGitignoredPath(t *testing.T) {
 	req.NoError(os.MkdirAll(filepath.Join(root, "drafts"), 0o755))
 	req.NoError(os.WriteFile(filepath.Join(root, "drafts/icon.png"), pngData, 0o644))
 	if _, err := r.ReadBlob("notes", "drafts/icon.png"); !errors.Is(err, ErrOutsideFolder) {
-		Assert.ErrorIs(t, err, ErrOutsideFolder)
+		assert.ErrorIs(t, err, ErrOutsideFolder)
 	}
 }
 
@@ -190,7 +190,7 @@ func TestReadFileRefusesMiddlemanIgnoredPath(t *testing.T) {
 		"private/diary.md": "personal",
 	})
 	if _, err := r.ReadFile("notes", "private/diary.md"); !errors.Is(err, ErrOutsideFolder) {
-		Assert.ErrorIs(t, err, ErrOutsideFolder)
+		assert.ErrorIs(t, err, ErrOutsideFolder)
 	}
 }
 
@@ -206,7 +206,7 @@ func TestTreeDoesNotDescendIntoIgnoredDir(t *testing.T) {
 	require.NoError(t, err)
 	for _, child := range tree.Children {
 		if child.IsDir && child.Name == "build" {
-			Assert.False(t, child.IsDir && child.Name == "build", "build/ should be entirely absent from tree")
+			assert.False(t, child.IsDir && child.Name == "build", "build/ should be entirely absent from tree")
 		}
 	}
 }
@@ -221,7 +221,7 @@ func TestBaselineSurvivesUserGitignore(t *testing.T) {
 	tree, err := r.Tree("notes")
 	require.NoError(t, err)
 	names := walkNames(tree)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Contains(names, "kept.md")
 	assert.NotContains(names, ".git/HEAD", "baseline must apply even with empty .gitignore")
 }

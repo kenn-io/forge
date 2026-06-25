@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
 func TestWorkspacePushBranchRoutePushesAheadBranch(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
@@ -40,7 +40,7 @@ func TestWorkspacePushBranchRoutePushesAheadBranch(t *testing.T) {
 
 func TestWorkspacePullBranchRouteFastForwardsBehindBranch(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
@@ -93,12 +93,12 @@ func TestWorkspacePullBranchRouteRejectsDirtyWorktree(t *testing.T) {
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem rawProblemDetail
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	Assert.New(t).Equal(string(CodeWorktreeDirty), problem.Code)
+	assert.New(t).Equal(string(CodeWorktreeDirty), problem.Code)
 }
 
 func TestWorkspaceRevealRouteOpensWorkspacePath(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)

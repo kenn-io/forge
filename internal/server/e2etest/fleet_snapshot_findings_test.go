@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	dbpkg "go.kenn.io/middleman/internal/db"
@@ -115,7 +115,7 @@ func findRawWorktreeByPath(
 // snapshots overlay the linked PR onto the registered worktree.
 func TestFleetSnapshotBranchMatchLinkE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
 	ctx := context.Background()
 
@@ -169,7 +169,7 @@ func TestFleetSnapshotBranchMatchLinkE2E(t *testing.T) {
 // response and the raw/enriched snapshots.
 func TestProjectWorktreeHiddenToggleE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
 
 	project, _ := seedLinkedProject(
@@ -223,7 +223,7 @@ func TestProjectWorktreeHiddenToggleE2E(t *testing.T) {
 // counts (even zero) while an unsampled one omits them.
 func TestFleetSnapshotWorktreeStatsE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
 	ctx := context.Background()
 
@@ -273,7 +273,7 @@ func TestFleetSnapshotWorktreeStatsE2E(t *testing.T) {
 // stored localTmux override surfaces with its canonical casing.
 func TestFleetSnapshotSessionBackendE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
 
 	project, _ := seedLinkedProject(
@@ -308,7 +308,7 @@ func TestFleetSnapshotSessionBackendE2E(t *testing.T) {
 // routes instead of assuming GitHub.
 func TestFleetSnapshotProjectPlatformE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
 
 	project, _ := seedLinkedProject(t, database, dbpkg.RepoIdentity{

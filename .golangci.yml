@@ -26,6 +26,8 @@ linters:
       alias:
         - pkg: github.com/google/go-github/v84/github
           alias: gh
+        - pkg: github.com/stretchr/testify/assert
+          alias: ""
     forbidigo:
       forbid:
         - pattern: '^t\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)$'

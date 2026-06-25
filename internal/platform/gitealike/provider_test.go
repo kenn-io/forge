@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
@@ -13,7 +13,7 @@ import (
 func TestProviderCapabilitiesEnableSharedReadBehavior(t *testing.T) {
 	provider := NewProvider(platform.KindForgejo, "codeberg.org", &fakeTransport{}, WithReadActions())
 
-	Assert.Equal(t, platform.Capabilities{
+	assert.Equal(t, platform.Capabilities{
 		ReadRepositories:  true,
 		ReadMergeRequests: true,
 		ReadIssues:        true,
@@ -32,7 +32,7 @@ func TestProviderCapabilitiesEnableProvenMutations(t *testing.T) {
 		WithMutations(),
 	)
 
-	Assert.Equal(t, platform.Capabilities{
+	assert.Equal(t, platform.Capabilities{
 		ReadRepositories:    true,
 		ReadMergeRequests:   true,
 		ReadIssues:          true,
@@ -52,7 +52,7 @@ func TestProviderCapabilitiesEnableProvenMutations(t *testing.T) {
 }
 
 func TestProviderCapabilitiesDoNotAdvertiseInlineReviewSupportByDefault(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	provider := NewProvider(
 		platform.KindForgejo,
 		"codeberg.org",
@@ -71,7 +71,7 @@ func TestProviderCapabilitiesDoNotAdvertiseInlineReviewSupportByDefault(t *testi
 }
 
 func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "codeberg.org", Owner: "forgejo", Name: "forgejo", RepoPath: "forgejo/forgejo"}
@@ -124,7 +124,7 @@ func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
 }
 
 func TestProviderPaginatesAndNormalizesReadMethods(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	ref := platform.RepoRef{
@@ -200,7 +200,7 @@ func TestProviderPaginatesAndNormalizesReadMethods(t *testing.T) {
 }
 
 func TestCollectPagesRejectsNonAdvancingPagination(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	_, err := collectPages(context.Background(), func(opts PageOptions) ([]int, Page, error) {
 		return []int{opts.Page}, Page{Next: opts.Page}, nil
@@ -210,7 +210,7 @@ func TestCollectPagesRejectsNonAdvancingPagination(t *testing.T) {
 }
 
 func TestCollectPagesRejectsExcessivePagination(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	_, err := collectPages(context.Background(), func(opts PageOptions) ([]int, Page, error) {
 		return []int{opts.Page}, Page{Next: opts.Page + 1}, nil
@@ -220,7 +220,7 @@ func TestCollectPagesRejectsExcessivePagination(t *testing.T) {
 }
 
 func TestProviderMergesActionRunsWithStatusesWithoutDuplicates(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	ref := platform.RepoRef{
@@ -290,7 +290,7 @@ func TestProviderMergesActionRunsWithStatusesWithoutDuplicates(t *testing.T) {
 }
 
 func TestProviderFallsBackFromUserToOrgRepositoryImport(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	transport := &fakeTransport{
 		userRepoErr: &HTTPError{StatusCode: 404, Message: "user missing"},
@@ -322,7 +322,7 @@ func TestProviderMapsHTTPStatusErrorsToTypedPlatformErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			require := Require.New(t)
 			provider := NewProvider(platform.KindForgejo, "codeberg.org", &fakeTransport{
 				repoErr: &HTTPError{StatusCode: tt.statusCode, Message: "failed"},
@@ -534,7 +534,7 @@ func pageFor[T any](pages [][]T, page int) ([]T, Page, error) {
 
 func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
 
 	transport := &fakeTransport{merge: MergeResultDTO{Merged: true}}
@@ -569,7 +569,7 @@ func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 
 func TestProviderApproveSubmitsReview(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
 
 	transport := &fakeTransport{

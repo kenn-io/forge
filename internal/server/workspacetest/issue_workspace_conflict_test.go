@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 )
@@ -27,7 +27,7 @@ import (
 // home because setupWorkspaceServerFixture already wires up a real git
 // remote, which apitest/ does not.
 func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
@@ -81,7 +81,7 @@ func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.
 }
 
 func TestIssueWorkspaceCreateIgnoresBrokenCallerCwdForBranchValidation(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)

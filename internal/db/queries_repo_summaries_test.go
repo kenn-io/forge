@@ -4,12 +4,12 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestListRepoSummariesIncludesOverviewSnapshot(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	d := openTestDB(t)
@@ -83,7 +83,7 @@ func TestListRepoSummariesIncludesOverviewSnapshot(t *testing.T) {
 }
 
 func TestUpsertRepoOverviewClearsTimelineWhenReleaseChangesWithoutCloneData(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	d := openTestDB(t)

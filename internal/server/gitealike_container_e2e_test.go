@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -130,7 +130,7 @@ func assertGiteaLikeContainerSync(
 	client giteaLikeContainerClient,
 ) {
 	t.Helper()
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	registry, err := platform.NewRegistry(client)
@@ -226,7 +226,7 @@ func runGiteaLikeContainerFixture(
 	cfg giteaLikeFixtureConfig,
 ) giteaLikeContainerManifest {
 	t.Helper()
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	stack, err := compose.NewDockerComposeWith(

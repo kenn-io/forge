@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/config"
@@ -84,7 +84,7 @@ func activityItemKey(it generated.ActivityItemResponse) string {
 // tests cannot give on their own.
 func TestActivityNotificationsFullStack(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database := setupNotificationsAPIServer(t)
 	client := setupTestClient(t, srv)

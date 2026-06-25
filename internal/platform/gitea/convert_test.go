@@ -5,12 +5,12 @@ import (
 	"time"
 
 	giteasdk "code.gitea.io/sdk/gitea"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 )
 
 func TestConvertGiteaSDKRecords(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	created := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	updated := created.Add(time.Hour)
@@ -137,7 +137,7 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 }
 
 func TestConvertGiteaActionRun(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	completed := started.Add(time.Minute)
 

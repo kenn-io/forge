@@ -12,14 +12,14 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/apiclient"
 	"go.kenn.io/middleman/internal/kata"
 )
 
 func TestKataLocalDaemonChallengeIsDownAndProxyUpstreamErrorE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var mu sync.Mutex
@@ -92,7 +92,7 @@ local = true
 }
 
 func TestKataLocalDaemonTokenEnvIsNotUsedForRosterOrProxyE2E(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	var mu sync.Mutex

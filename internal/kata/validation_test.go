@@ -3,7 +3,7 @@ package kata
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,7 +80,7 @@ func TestValidateLocalTarget(t *testing.T) {
 }
 
 func TestResolveDaemonResolvesTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("KATA_TEST_TOKEN", "secret-from-env")
@@ -92,7 +92,7 @@ func TestResolveDaemonResolvesTokenEnv(t *testing.T) {
 }
 
 func TestResolveDaemonRejectsUnsetTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("KATA_TEST_TOKEN", "")
@@ -105,7 +105,7 @@ func TestResolveDaemonRejectsUnsetTokenEnv(t *testing.T) {
 }
 
 func TestResolveDaemonLocalIgnoresTokenFields(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("KATA_AUTH_TOKEN", "")
@@ -125,7 +125,7 @@ func TestResolveDaemonLocalIgnoresTokenFields(t *testing.T) {
 }
 
 func TestResolveDaemonLocalUsesKataAuthTokenEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("KATA_AUTH_TOKEN", "local-secret")
@@ -138,7 +138,7 @@ func TestResolveDaemonLocalUsesKataAuthTokenEnv(t *testing.T) {
 }
 
 func TestResolveDaemonLocalUsesKataAuthConfig(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	home := t.TempDir()
@@ -169,7 +169,7 @@ func TestResolveDaemonAppliesSecurityGuard(t *testing.T) {
 }
 
 func TestResolveDaemonInlineTokenPreserved(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	daemon, err := ResolveDaemon(Daemon{ID: "a", URL: "https://x.example", Token: "inline"})
@@ -179,7 +179,7 @@ func TestResolveDaemonInlineTokenPreserved(t *testing.T) {
 }
 
 func TestResolveDaemonAllowsDynamicLocalEntry(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv("KATA_AUTH_TOKEN", "")
@@ -205,7 +205,7 @@ func TestRedactURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			Assert.Equal(t, tt.want, RedactURL(tt.raw))
+			assert.Equal(t, tt.want, RedactURL(tt.raw))
 		})
 	}
 }

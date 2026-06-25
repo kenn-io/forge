@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
@@ -25,7 +25,7 @@ import (
 // exhausted credential.
 func TestBuildProviderStartupScopesWriteTrackersToAppChains(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	database := dbtest.Open(t)
 	t.Setenv("SPLIT_TEST_PAT", "pat-token")
 

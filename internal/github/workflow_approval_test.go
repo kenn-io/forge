@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFilterWorkflowRunsAwaitingApproval(t *testing.T) {
@@ -129,7 +129,7 @@ func TestFilterWorkflowRunsAwaitingApproval(t *testing.T) {
 			for _, run := range got {
 				gotIDs = append(gotIDs, run.GetID())
 			}
-			Assert.Equal(t, tt.wantIDs, gotIDs)
+			assert.Equal(t, tt.wantIDs, gotIDs)
 		})
 	}
 }
@@ -149,13 +149,13 @@ func TestParseHeadRepoFullName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			Assert.Equal(t, tt.want, ParseHeadRepoFullName(tt.in))
+			assert.Equal(t, tt.want, ParseHeadRepoFullName(tt.in))
 		})
 	}
 }
 
 func TestWorkflowApprovalStateFromRuns(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	runs := []*gh.WorkflowRun{
 		{ID: new(int64(11))},
 		{ID: new(int64(12))},

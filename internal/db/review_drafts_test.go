@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +24,7 @@ func testReviewLineRange() ReviewLineRange {
 }
 
 func TestMRReviewDraftCRUD(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -74,7 +74,7 @@ func TestMRReviewDraftCRUD(t *testing.T) {
 }
 
 func TestMRReviewThreadsUpsertAndResolve(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -120,7 +120,7 @@ func TestMRReviewThreadsUpsertAndResolve(t *testing.T) {
 }
 
 func TestMRReviewThreadsUseCommentIDWhenProviderThreadIDIsMissing(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

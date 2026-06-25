@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,7 +54,7 @@ func TestListActivity(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("unfiltered returns all types in desc order", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		items, err := d.ListActivity(
 			ctx, ListActivityOpts{Limit: 50})
 		require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("repo filter", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		items, err := d.ListActivity(ctx, ListActivityOpts{
 			Repo: "alice/alpha", Limit: 50,
 		})
@@ -94,7 +94,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("multiple repo filters", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -124,7 +124,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("provider qualified repo filter", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -164,7 +164,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("type filter", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		items, err := d.ListActivity(ctx, ListActivityOpts{
 			Types: []string{"new_pr", "new_issue"},
 			Limit: 50,
@@ -177,7 +177,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("force push events appear in the activity feed", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
 		base := baseTime()
@@ -203,7 +203,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("search filter", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		items, err := d.ListActivity(ctx, ListActivityOpts{
 			Search: "bug", Limit: 50,
 		})
@@ -215,7 +215,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("limit and before cursor", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		page1, err := d.ListActivity(
 			ctx, ListActivityOpts{Limit: 3})
@@ -244,7 +244,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("after cursor for polling", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		all, err := d.ListActivity(
 			ctx, ListActivityOpts{Limit: 50})
@@ -271,7 +271,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("since time window", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		since := base.Add(4 * time.Minute)
 		items, err := d.ListActivity(ctx, ListActivityOpts{
 			Limit: 50,
@@ -289,7 +289,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("includes branch commits and force pushes with stable cursor order", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -377,7 +377,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("repo filters include branch activity only for matching repos", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -414,7 +414,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("time window uses committed and detected timestamps", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -448,7 +448,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("caps oversized default branch commit metadata in activity projection", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -548,7 +548,7 @@ func TestListActivity(t *testing.T) {
 	})
 
 	t.Run("type filter can hide default branch activity", func(t *testing.T) {
-		assert := Assert.New(t)
+		assert := assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
@@ -606,7 +606,7 @@ func insertOversizedBranchCommitRow(
 }
 
 func TestListActivityItemAuthor(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -726,7 +726,7 @@ func activityBodies(items []ActivityItem) []string {
 }
 
 func TestParseDBTime(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	tests := []struct {
 		name  string
 		input string
@@ -975,7 +975,7 @@ func TestUpsertIssueEventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing
 
 func TestListActivityIncludesNotifications(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()
@@ -1041,7 +1041,7 @@ func TestListActivityIncludesNotifications(t *testing.T) {
 
 func TestListActivityNotificationCarriesSubjectState(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()
@@ -1083,7 +1083,7 @@ func TestListActivityNotificationCarriesSubjectState(t *testing.T) {
 
 func TestListActivityNotificationMatchesRepoByIdentity(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()
@@ -1124,7 +1124,7 @@ func TestListActivityNotificationMatchesRepoByIdentity(t *testing.T) {
 
 func TestListActivityNotificationRepoFiltersApplyBeforeUnionLimit(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	giteasdk "code.gitea.io/sdk/gitea"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	ghsync "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
@@ -34,7 +34,7 @@ var (
 )
 
 func TestClientLooksUpRepositoryAndSendsToken(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +90,7 @@ func TestClientLookupUsesForegroundTimeout(t *testing.T) {
 }
 
 func TestTransportGetRepositoryRawCancelsInFlightRequest(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	requestStarted := make(chan struct{})
 
@@ -132,7 +132,7 @@ func TestTransportGetRepositoryRawCancelsInFlightRequest(t *testing.T) {
 }
 
 func TestTransportGetRepositoryRawCancelsWhileWaitingForRequestContext(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	requestStarted := make(chan struct{})
 	releaseRequest := make(chan struct{})
@@ -198,7 +198,7 @@ func TestTransportGetRepositoryRawCancelsWhileWaitingForRequestContext(t *testin
 }
 
 func TestClientLookupCountsSyncBudget(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -230,7 +230,7 @@ func TestClientLookupCountsSyncBudget(t *testing.T) {
 }
 
 func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()
@@ -265,7 +265,7 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 }
 
 func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 
 	var sawPulls, sawIssues, sawStatuses, sawActions bool
@@ -335,7 +335,7 @@ func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
 }
 
 func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -399,7 +399,7 @@ func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 }
 
 func TestClientFallsBackToStatusesWhenActionsRequireNewerGitea(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -445,7 +445,7 @@ func TestClientFallsBackToStatusesWhenActionsRequireNewerGitea(t *testing.T) {
 }
 
 func TestClientMutationCapabilityUsesGiteaEndpoints(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var seen []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -514,7 +514,7 @@ func TestClientMutationCapabilityUsesGiteaEndpoints(t *testing.T) {
 }
 
 func TestClientApproveMergeRequestSubmitsReview(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	var sawRequest bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -558,7 +558,7 @@ func TestClientApproveMergeRequestSubmitsReview(t *testing.T) {
 }
 
 func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -586,7 +586,7 @@ func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {
 // mismatch classifies as stale) instead of recording a merge that
 // never happened.
 func TestClientMergeRejectionSurfacesProviderStatusAndMessage(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	message := "head out of date"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -627,7 +627,7 @@ func TestClientMergeRejectionSurfacesProviderStatusAndMessage(t *testing.T) {
 // section, so concurrent rejected merges must each surface their own
 // status, message, and stale classification without cross-talk.
 func TestClientConcurrentMergeRejectionsDoNotCrossTalk(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

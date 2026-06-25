@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/server"
 )
@@ -30,7 +30,7 @@ import (
 // before the server starts removes the broadcast / read race a non-cached
 // first event would introduce.
 func TestSSEContractPinDeliversCachedSyncStatusFrame(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)

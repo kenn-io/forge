@@ -9,7 +9,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -54,7 +54,7 @@ func TestBasePathAPIRouting(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			srv := setupWithBasePath(t, tt.basePath, frontend)
 			req := httptest.NewRequest(http.MethodGet, tt.reqPath, nil)
 			rr := httptest.NewRecorder()
@@ -77,7 +77,7 @@ func TestBasePathHealthEndpointsStayAtRoot(t *testing.T) {
 		srv.ServeHTTP(rr, req)
 
 		require.Equal(t, http.StatusOK, rr.Code, path)
-		Assert.Contains(t, rr.Body.String(), `"status":"ok"`, path)
+		assert.Contains(t, rr.Body.String(), `"status":"ok"`, path)
 	}
 }
 
@@ -94,7 +94,7 @@ func TestBasePathInjectsScript(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	body := rr.Body.String()
-	Assert.Contains(t, body, `window.__BASE_PATH__="/middleman/"`)
+	assert.Contains(t, body, `window.__BASE_PATH__="/middleman/"`)
 }
 
 func TestBasePathRewritesAssetURLs(t *testing.T) {
@@ -110,7 +110,7 @@ func TestBasePathRewritesAssetURLs(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	body := rr.Body.String()
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.NotContains(body, `href="/assets/`)
 	assert.Contains(body, `href="/middleman/assets/`)
 	assert.Contains(body, `src="/middleman/assets/`)
@@ -197,7 +197,7 @@ func TestCSRFAppliesUnderBasePath(t *testing.T) {
 }
 
 func TestBasePathDocsAndOpenAPIUsePrefixedURLs(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),

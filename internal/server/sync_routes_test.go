@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/github"
 )
 
 func TestSyncRoutesWithoutSyncer(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv := New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})

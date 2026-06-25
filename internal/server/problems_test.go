@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/tokenauth"
@@ -68,7 +68,7 @@ func TestProblemErrorEnumTagMatchesConstants(t *testing.T) {
 }
 
 func TestProblemErrorContentTypeRewritesJSON(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	p := &ProblemError{Status: http.StatusBadRequest, Code: CodeBadRequest}
 
 	assert.Equal("application/problem+json", p.ContentType("application/json"))
@@ -78,7 +78,7 @@ func TestProblemErrorContentTypeRewritesJSON(t *testing.T) {
 
 func TestProblemErrorRoundTripJSONPreservesCodeAndDetails(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	original := newProblem(
 		http.StatusConflict,
@@ -126,14 +126,14 @@ func TestCodeForStatus(t *testing.T) {
 		{http.StatusTeapot, CodeBadRequest},
 	}
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	for _, tc := range cases {
 		assert.Equal(tc.want, codeForStatus(tc.status), "status %d", tc.status)
 	}
 }
 
 func TestProblemHelpersSetStatusCodeAndDetails(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	cases := []struct {
@@ -251,7 +251,7 @@ func TestProblemHelpersSetStatusCodeAndDetails(t *testing.T) {
 
 func TestProblemHelpersRedactTokenMaterial(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	err := newProblem(
 		http.StatusBadGateway,
@@ -289,7 +289,7 @@ func TestProblemHelpersRedactTokenMaterial(t *testing.T) {
 }
 
 func TestProblemRateLimitedFormatsResetAt(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	reset := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
@@ -311,7 +311,7 @@ func TestProblemRateLimitedFormatsResetAt(t *testing.T) {
 }
 
 func TestMapPlatformError(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	reset := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
@@ -432,7 +432,7 @@ func TestMapPlatformError(t *testing.T) {
 }
 
 func TestProviderCallProblemMapsRuntimeMissingToken(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	got := providerCallProblem(
@@ -449,7 +449,7 @@ func TestProviderCallProblemMapsRuntimeMissingToken(t *testing.T) {
 }
 
 func TestProviderCallProblemDoesNotReturnNilForContextWrappedPlatformError(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	got := providerCallProblem(
@@ -476,7 +476,7 @@ func TestProviderCallProblemDoesNotReturnNilForContextWrappedPlatformError(t *te
 // against regressing the fallback behavior.
 func TestHumaNewErrorIsReplaced(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	got := huma.Error400BadRequest("oops")
 	pe, ok := got.(*ProblemError)

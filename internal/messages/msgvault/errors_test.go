@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestClassifyMapsStatusToCode(t *testing.T) {
@@ -26,17 +26,17 @@ func TestClassifyMapsStatusToCode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			Assert.Equal(t, tc.wantCode, Classify(&Error{Status: tc.status}))
+			assert.Equal(t, tc.wantCode, Classify(&Error{Status: tc.status}))
 		})
 	}
 }
 
 func TestClassifyNetworkErrorsAsDown(t *testing.T) {
-	Assert.Equal(t, "down", Classify(&net.OpError{Op: "dial"}))
-	Assert.Equal(t, "timeout", Classify(context.DeadlineExceeded))
+	assert.Equal(t, "down", Classify(&net.OpError{Op: "dial"}))
+	assert.Equal(t, "timeout", Classify(context.DeadlineExceeded))
 }
 
 func TestClassifyUnknownErrorIsUnknown(t *testing.T) {
-	Assert.Equal(t, "unknown", Classify(errors.New("???")))
-	Assert.Empty(t, Classify(nil))
+	assert.Equal(t, "unknown", Classify(errors.New("???")))
+	assert.Empty(t, Classify(nil))
 }

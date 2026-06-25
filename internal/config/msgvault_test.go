@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMsgvaultStateAbsent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := Config{}
 	state, canonURL, key, err := cfg.MsgvaultState()
 	require.NoError(t, err)
@@ -24,7 +24,7 @@ func TestMsgvaultStateWellFormedEnvKey(t *testing.T) {
 	cfg := Config{Msgvault: &Msgvault{URL: "http://127.0.0.1:8123", APIKeyEnv: "MSGVAULT_API_KEY_TEST"}}
 	state, canonURL, key, err := cfg.MsgvaultState()
 	require.NoError(t, err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(MsgvaultOK, state)
 	assert.Equal("http://127.0.0.1:8123", canonURL)
 	assert.Equal("env-key", key)
@@ -34,7 +34,7 @@ func TestMsgvaultStateMissingEnvVar(t *testing.T) {
 	t.Setenv("MSGVAULT_DEFINITELY_NOT_SET", "")
 	cfg := Config{Msgvault: &Msgvault{URL: "http://127.0.0.1:8123", APIKeyEnv: "MSGVAULT_DEFINITELY_NOT_SET"}}
 	state, _, _, err := cfg.MsgvaultState()
-	Assert.Equal(t, MsgvaultMisconfigured, state)
+	assert.Equal(t, MsgvaultMisconfigured, state)
 	require.Error(t, err)
 }
 
@@ -61,9 +61,9 @@ func TestMsgvaultStateRejectsBadURLs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := Config{Msgvault: &Msgvault{URL: tc.url, APIKeyEnv: "MSGVAULT_API_KEY"}}
 			state, _, _, err := cfg.MsgvaultState()
-			Assert.Equal(t, MsgvaultMisconfigured, state)
+			assert.Equal(t, MsgvaultMisconfigured, state)
 			require.Error(t, err)
-			Assert.Contains(t, err.Error(), "url")
+			assert.Contains(t, err.Error(), "url")
 		})
 	}
 }
@@ -75,7 +75,7 @@ func TestMsgvaultStateAllowsLoopbackHTTP(t *testing.T) {
 			cfg := Config{Msgvault: &Msgvault{URL: rawURL, APIKeyEnv: "MSGVAULT_API_KEY_TEST"}}
 			state, _, _, err := cfg.MsgvaultState()
 			require.NoError(t, err)
-			Assert.Equal(t, MsgvaultOK, state)
+			assert.Equal(t, MsgvaultOK, state)
 		})
 	}
 }
@@ -85,7 +85,7 @@ func TestMsgvaultStateCanonicalizesSurroundingWhitespace(t *testing.T) {
 	cfg := Config{Msgvault: &Msgvault{URL: "  http://127.0.0.1:8123/  ", APIKeyEnv: " MSGVAULT_API_KEY_TEST "}}
 	state, canonURL, key, err := cfg.MsgvaultState()
 	require.NoError(t, err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(MsgvaultOK, state)
 	assert.Equal("http://127.0.0.1:8123", canonURL)
 	assert.Equal("env-key", key)
@@ -103,7 +103,7 @@ func TestMsgvaultStateRejectsWhitespaceOnly(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := Config{Msgvault: &tc.mv}
 			state, _, _, err := cfg.MsgvaultState()
-			Assert.Equal(t, MsgvaultMisconfigured, state)
+			assert.Equal(t, MsgvaultMisconfigured, state)
 			require.Error(t, err)
 		})
 	}
@@ -122,7 +122,7 @@ api_key_env = "MSGVAULT_API_KEY_TEST"
 `)
 	require.NotNil(t, cfg.Msgvault)
 	require.NotNil(t, cfg2.Msgvault)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal("http://127.0.0.1:8123", cfg2.Msgvault.URL)
 	assert.Equal("MSGVAULT_API_KEY_TEST", cfg2.Msgvault.APIKeyEnv)
 	state, canonURL, key, err := cfg2.MsgvaultState()
@@ -168,7 +168,7 @@ api_key_env = "MSGVAULT_API_KEY_TEST"
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Load(writeConfig(t, tc.body))
 			require.Error(t, err)
-			Assert.Contains(t, err.Error(), "api_key")
+			assert.Contains(t, err.Error(), "api_key")
 		})
 	}
 }
@@ -189,7 +189,7 @@ api_key_env = "MSGVAULT_API_KEY_TEST"
 	dataBytes, err := os.ReadFile(savePath)
 	require.NoError(t, err)
 	data := string(dataBytes)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Contains(data, "[msgvault]")
 	assert.Contains(data, `api_key_env = "MSGVAULT_API_KEY_TEST"`)
 	assert.NotContains(data, "api_key =")

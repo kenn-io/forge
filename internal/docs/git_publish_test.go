@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,7 +39,7 @@ func TestParsePorcelainRecords(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := parsePorcelainRecords(tc.in)
 			require.NoError(t, err)
-			Assert.Equal(t, tc.want, got)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -47,7 +47,7 @@ func TestParsePorcelainRecords(t *testing.T) {
 func TestParsePorcelainRecordsRejectsMalformedRename(t *testing.T) {
 	_, err := parsePorcelainRecords([]byte("R  newname.md\x00"))
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "malformed rename")
+	assert.Contains(t, err.Error(), "malformed rename")
 }
 
 func TestComputePublishSet(t *testing.T) {
@@ -146,7 +146,7 @@ func TestComputePublishSet(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			Assert.Equal(t, tc.want, computePublishSet(tc.records))
+			assert.Equal(t, tc.want, computePublishSet(tc.records))
 		})
 	}
 }
@@ -180,7 +180,7 @@ func TestSuggestedCommitMessage(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			Assert.Equal(t, tc.want, suggestedCommitMessage(tc.changes))
+			assert.Equal(t, tc.want, suggestedCommitMessage(tc.changes))
 		})
 	}
 }

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/cli/serve"
 	"go.kenn.io/middleman/internal/config"
@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestConfigureLoggingRedactsTokens(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	orig := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(orig) })
@@ -70,7 +70,7 @@ func TestConfigureLoggingRedactsTokens(t *testing.T) {
 }
 
 func TestConfigureLoggingRedactsTokensInConfiguredLogFile(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	orig := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(orig) })
@@ -121,7 +121,7 @@ func mainTestTokenSource(
 
 func TestWriteRuntimeMetadataRecordsBoundTCPPort(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dataDir := t.TempDir()
 	lockHandle, err := runtimelock.Acquire(dataDir)
 	require.NoError(err)
@@ -159,7 +159,7 @@ func TestWriteRuntimeMetadataRejectsNonTCPListener(t *testing.T) {
 		dataDir, "/", false,
 	)
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "non-TCP")
+	assert.Contains(t, err.Error(), "non-TCP")
 }
 
 func TestRunMainShutdownStopsSignalsBeforeLongCleanup(t *testing.T) {
@@ -193,8 +193,8 @@ func TestRunMainShutdownStopsSignalsBeforeLongCleanup(t *testing.T) {
 		},
 	})
 
-	Assert.Empty(t, errs)
-	Assert.Equal(t, []string{
+	assert.Empty(t, errs)
+	assert.Equal(t, []string{
 		"signals",
 		"primary-http",
 		"syncer",
@@ -206,7 +206,7 @@ func TestRunMainShutdownStopsSignalsBeforeLongCleanup(t *testing.T) {
 
 func TestRunClosesPrimaryListenerWhenProfilerStartFails(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	root := t.TempDir()
 	dataDir := filepath.Join(root, "data")
@@ -234,7 +234,7 @@ func TestRunClosesPrimaryListenerWhenProfilerStartFails(t *testing.T) {
 }
 
 func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := &config.Config{
 		Repos: []config.Repo{{Owner: "roborev-dev", Name: "*"}},
 	}
@@ -286,7 +286,7 @@ func (l fakeListener) Close() error { return nil }
 func (l fakeListener) Addr() net.Addr { return l.addr }
 
 func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := &config.Config{
 		Repos: []config.Repo{{Owner: "roborev-dev", Name: "middleman"}},
 	}
@@ -308,7 +308,7 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 }
 
 func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	database := dbtest.Open(t)
@@ -344,7 +344,7 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 }
 
 func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	cfg := &config.Config{
 		Repos: []config.Repo{{
 			Platform:     "gitlab",
@@ -370,7 +370,7 @@ func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 }
 
 func TestValidateProviderHostKeysRejectsMixedProvidersOnSameHostWithDifferentTokens(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	err := validateProviderHostKeys(map[string]string{
 		providerHostKey("github", "code.example.com"): "github-token",
 		providerHostKey("gitlab", "code.example.com"): "gitlab-token",
@@ -390,7 +390,7 @@ func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHostWithSameToken(t *
 }
 
 func TestValidateProviderHostKeysRejectsMixedProviderSourcesOnSameHost(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	host := "code.example.com"
 	err := validateProviderHostKeys(map[string]tokenauth.Source{
 		providerHostKey("github", host): tokenauth.NewManagedSource(
@@ -488,14 +488,14 @@ func TestValidateProviderHostKeysAllowsEquivalentSourceChainsOnSameHost(t *testi
 func TestDefaultProviderFactoriesRegisterForgejoAndGitea(t *testing.T) {
 	factories := defaultProviderFactories()
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Contains(factories, string(platform.KindForgejo))
 	assert.Contains(factories, string(platform.KindGitea))
 }
 
 func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	database := dbtest.Open(t)
 
@@ -590,7 +590,7 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 
 func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	database := dbtest.Open(t)
 
@@ -644,7 +644,7 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 
 func TestBuildProviderStartupSharedHostCloneAuthUsesHostLevelSource(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	database := dbtest.Open(t)
 	t.Setenv("SHARED_FORGE_TOKEN", "shared-token")
@@ -709,7 +709,7 @@ func TestBuildProviderStartupSharedHostCloneAuthUsesHostLevelSource(t *testing.T
 
 func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	database := dbtest.Open(t)
@@ -854,7 +854,7 @@ func (r mainTestRepositoryReader) ListRepositories(
 
 func TestRunCLIConfigReadPort(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
@@ -868,7 +868,7 @@ func TestRunCLIConfigReadPort(t *testing.T) {
 
 func TestRunCLIConfigReadPortCreatesDefaultConfig(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
@@ -884,7 +884,7 @@ func TestRunCLIConfigReadPortCreatesDefaultConfig(t *testing.T) {
 }
 
 func TestRunCLIDefaultsToServe(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	original := runServer
 	t.Cleanup(func() { runServer = original })
@@ -904,7 +904,7 @@ func TestRunCLIDefaultsToServe(t *testing.T) {
 }
 
 func TestRunCLIServeSubcommandUsesServerRunner(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	original := runServer
 	t.Cleanup(func() { runServer = original })
@@ -925,7 +925,7 @@ func TestRunCLIServeSubcommandUsesServerRunner(t *testing.T) {
 }
 
 func TestRunCLIServePassesProfilerAddress(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	original := runServer
 	t.Cleanup(func() { runServer = original })
@@ -951,7 +951,7 @@ func TestRunCLIServePassesProfilerAddress(t *testing.T) {
 }
 
 func TestRunCLIServeDefaultsProfilerAddressFromEnv(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	original := runServer
 	t.Cleanup(func() { runServer = original })
@@ -972,7 +972,7 @@ func TestRunCLIServeDefaultsProfilerAddressFromEnv(t *testing.T) {
 }
 
 func TestRunCLIControlCommandsDoNotStartServer(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	original := runServer
 	t.Cleanup(func() { runServer = original })

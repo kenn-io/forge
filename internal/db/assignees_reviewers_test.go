@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,7 +31,7 @@ func seedAssigneeTestMR(t *testing.T, d *DB, updatedAt time.Time, assigneesJSON,
 }
 
 func TestUpsertMergeRequestPersistsAndParsesUserLists(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
@@ -51,7 +51,7 @@ func TestUpsertMergeRequestPersistsAndParsesUserLists(t *testing.T) {
 }
 
 func TestUpsertMergeRequestPreservesUserListsWhenProviderOmitsThem(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -104,7 +104,7 @@ func TestUpsertMergeRequestPreservesUserListsWhenProviderOmitsThem(t *testing.T)
 }
 
 func TestUpdateMergeRequestUserListsPersistMutationResults(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -130,7 +130,7 @@ func TestUpdateMergeRequestUserListsPersistMutationResults(t *testing.T) {
 }
 
 func TestUpdateIssueAssigneesPersistsMutationResults(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

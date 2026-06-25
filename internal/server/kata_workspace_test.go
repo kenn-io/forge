@@ -8,14 +8,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
 func TestKataWorkspaceTargetAutomaticMapping(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	cloneDir := t.TempDir()
@@ -68,7 +68,7 @@ worktree_base_path = %q
 }
 
 func TestKataWorkspaceTargetAutomaticMappingFromProjectIdentity(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	cloneDir := t.TempDir()
@@ -111,7 +111,7 @@ worktree_base_path = %q
 }
 
 func TestKataWorkspaceTargetAutomaticMappingFromProjectIdentityWhenUIDPresent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	cloneDir := t.TempDir()
@@ -152,7 +152,7 @@ worktree_base_path = %q
 }
 
 func TestKataWorkspaceTargetAutomaticMappingFromProjectName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	cloneDir := t.TempDir()
@@ -198,7 +198,7 @@ worktree_base_path = %q
 }
 
 func TestKataWorkspaceTargetUnavailableWhenProjectNameMatchesButIdentifierDiffers(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	cloneDir := t.TempDir()
@@ -248,7 +248,7 @@ func TestKataWorkspaceTargetRequiresDaemonID(t *testing.T) {
 }
 
 func TestKataWorkspaceTargetUnavailableWhenAutomaticMappingAmbiguous(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	firstClone := t.TempDir()
@@ -300,7 +300,7 @@ worktree_base_path = %q
 }
 
 func TestKataWorkspaceTargetUnavailableWhenProjectNameMappingAmbiguous(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	firstClone := t.TempDir()
@@ -349,7 +349,7 @@ worktree_base_path = %q
 }
 
 func TestKataWorkspaceTargetUnavailableWhenMappingMissing(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _, _ := setupTestServerWithConfig(t)
@@ -371,7 +371,7 @@ func TestKataWorkspaceTargetUnavailableWhenMappingMissing(t *testing.T) {
 }
 
 func TestKataWorkspaceTargetManualMappingReturnsExistingWorkspace(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `
@@ -440,7 +440,7 @@ repo_path = "acme/widget"
 }
 
 func TestCreateKataWorkspaceDoesNotRequireProviderIssue(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `
@@ -490,7 +490,7 @@ repo_path = "acme/widget"
 }
 
 func TestCreateKataWorkspaceReusesExistingScopedTaskWorkspace(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `

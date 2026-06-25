@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,7 +50,7 @@ func TestWorktreeDivergenceCleanInSync(t *testing.T) {
 	require := require.New(t)
 	require.NoError(err)
 	require.True(ok)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(0, div.Ahead)
 	assert.Equal(0, div.Behind)
 }
@@ -72,7 +72,7 @@ func TestWorktreeDivergenceAheadOfRemote(t *testing.T) {
 	require := require.New(t)
 	require.NoError(err)
 	require.True(ok)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(2, div.Ahead)
 	assert.Equal(0, div.Behind)
 }
@@ -101,7 +101,7 @@ func TestWorktreeDivergenceBehindRemote(t *testing.T) {
 	div, ok, err := WorktreeDivergence(t.Context(), work)
 	require.NoError(err)
 	require.True(ok)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(0, div.Ahead)
 	assert.Equal(1, div.Behind)
 }
@@ -121,6 +121,6 @@ func TestWorktreeDivergenceWithoutUpstream(t *testing.T) {
 
 	div, ok, err := WorktreeDivergence(t.Context(), work)
 	require.NoError(err)
-	Assert.New(t).False(ok, "expected ok=false for branch without upstream")
-	Assert.New(t).Equal(Divergence{}, div)
+	assert.New(t).False(ok, "expected ok=false for branch without upstream")
+	assert.New(t).Equal(Divergence{}, div)
 }

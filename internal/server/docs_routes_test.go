@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 )
@@ -97,7 +97,7 @@ func decodeDocsFolder(t *testing.T, rr *httptest.ResponseRecorder) docsFolderWir
 }
 
 func TestDocsFoldersEndpointListsConfiguredFolders(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, root := setupDocsRouteServer(t)
 
@@ -116,7 +116,7 @@ func TestDocsFoldersEndpointListsConfiguredFolders(t *testing.T) {
 }
 
 func TestDocsFolderConfigEndpointsAddRenameRemoveAndPersist(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupPersistentDocsRouteServer(t)
 	extraRoot := t.TempDir()
@@ -161,7 +161,7 @@ func TestDocsFolderConfigEndpointsAddRenameRemoveAndPersist(t *testing.T) {
 }
 
 func TestDocsFolderAddRejectsNonLoopback(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _ := setupPersistentDocsRouteServer(t)
 
@@ -182,7 +182,7 @@ func TestDocsFolderAddRejectsNonLoopback(t *testing.T) {
 }
 
 func TestDocsFolderAddDerivesIDAndRejectsInvalidRequests(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _ := setupPersistentDocsRouteServer(t)
 	extraRoot := filepath.Join(t.TempDir(), "Research Papers!")
@@ -261,7 +261,7 @@ func TestDocsFolderAddDerivesIDAndRejectsInvalidRequests(t *testing.T) {
 }
 
 func TestDocsFolderMutationsRequireConfigPersistenceAndRollbackOnSaveFailure(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 
@@ -300,7 +300,7 @@ func TestDocsFolderMutationsRequireConfigPersistenceAndRollbackOnSaveFailure(t *
 }
 
 func TestDocsBrowseEndpointListsDirectoriesOnly(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 	root := t.TempDir()
@@ -336,7 +336,7 @@ func TestDocsBrowseEndpointListsDirectoriesOnly(t *testing.T) {
 }
 
 func TestDocsBrowseEndpointExpandsHomeShortcut(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 	home := t.TempDir()
@@ -353,7 +353,7 @@ func TestDocsBrowseEndpointExpandsHomeShortcut(t *testing.T) {
 }
 
 func TestDocsBrowseEndpointRejectsNonLoopback(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/docs/browse?path="+t.TempDir(), nil)
@@ -371,7 +371,7 @@ func TestDocsBrowseEndpointRejectsNonLoopback(t *testing.T) {
 }
 
 func TestDocsTreeEndpointListsMarkdownOnly(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 
@@ -400,7 +400,7 @@ func TestDocsTreeEndpointListsMarkdownOnly(t *testing.T) {
 }
 
 func TestDocsFileEndpointReadsAndWritesMarkdown(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, root := setupDocsRouteServer(t)
 
@@ -431,7 +431,7 @@ func TestDocsFileEndpointReadsAndWritesMarkdown(t *testing.T) {
 }
 
 func TestDocsSearchEndpointsReturnArrays(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 
@@ -462,7 +462,7 @@ func TestDocsSearchEndpointsReturnArrays(t *testing.T) {
 }
 
 func TestDocsFileCreateDeleteRenameAndBlob(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, root := setupDocsRouteServer(t)
 
@@ -529,7 +529,7 @@ func TestDocsFileCreateDeleteRenameAndBlob(t *testing.T) {
 }
 
 func TestDocsBlobOpenAPIResponseIsBinary(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	doc := NewOpenAPI()
 	item := doc.Paths["/docs/folders/{id}/blob"]
@@ -547,7 +547,7 @@ func TestDocsBlobOpenAPIResponseIsBinary(t *testing.T) {
 }
 
 func TestDocsFileEndpointRejectsInvalidPathsAndTypes(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, _ := setupDocsRouteServer(t)
 
 	unknownRR := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/missing/tree", nil)
@@ -569,7 +569,7 @@ func TestDocsFileEndpointRejectsInvalidPathsAndTypes(t *testing.T) {
 }
 
 func TestDocsSearchEndpointEmptyQueryReturnsEmptyArray(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 
@@ -585,7 +585,7 @@ func TestDocsSearchEndpointEmptyQueryReturnsEmptyArray(t *testing.T) {
 }
 
 func TestDocsSearchEndpointTruncationAndFailure(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 
@@ -613,7 +613,7 @@ func TestDocsSearchEndpointTruncationAndFailure(t *testing.T) {
 }
 
 func TestDocsSearchEndpointSerializesPartialWarnings(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	goodRoot := t.TempDir()
 	require.NoError(os.WriteFile(filepath.Join(goodRoot, "hit.md"), []byte("budget partial\n"), 0o644))
@@ -644,7 +644,7 @@ func TestDocsSearchEndpointSerializesPartialWarnings(t *testing.T) {
 }
 
 func TestDocsSearchEndpointFindsHitsAcrossFolders(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	rootA := t.TempDir()
 	rootB := t.TempDir()
@@ -675,7 +675,7 @@ func TestDocsSearchEndpointFindsHitsAcrossFolders(t *testing.T) {
 }
 
 func TestDocsFileMutationsRejectNonLoopback(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 
@@ -732,7 +732,7 @@ func TestDocsFileMutationsRejectNonLoopback(t *testing.T) {
 }
 
 func TestDocsMutationsRejectBodyTooLarge(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 	huge := strings.Repeat("a", 5<<20)
@@ -798,7 +798,7 @@ func TestDocsMutationsRejectBodyTooLarge(t *testing.T) {
 }
 
 func TestDocsFileWriteAllowsBodyBelowEditorLimit(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 	content := strings.Repeat("a", 2<<20)
@@ -825,7 +825,7 @@ func TestDocsFileWriteAllowsBodyBelowEditorLimit(t *testing.T) {
 }
 
 func TestDocsReadEndpointsRejectNonLoopback(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 

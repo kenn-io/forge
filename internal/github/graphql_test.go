@@ -13,12 +13,12 @@ import (
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/shurcooL/githubv4"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAdaptPR(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	merged := now.Add(-time.Hour)
@@ -71,7 +71,7 @@ func TestAdaptPR(t *testing.T) {
 }
 
 func TestAdaptComment(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	gql := gqlComment{
@@ -92,7 +92,7 @@ func TestAdaptComment(t *testing.T) {
 }
 
 func TestAdaptReview(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	gql := gqlReview{
@@ -112,7 +112,7 @@ func TestAdaptReview(t *testing.T) {
 }
 
 func TestAdaptCommit(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	gql := gqlCommitNode{
@@ -134,7 +134,7 @@ func TestAdaptCommit(t *testing.T) {
 }
 
 func TestAdaptCheckContext(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	now := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 	contexts := []gqlCheckContext{
@@ -175,7 +175,7 @@ func TestAdaptCheckContext(t *testing.T) {
 }
 
 func TestAdaptCheckRunURLSanitization(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	safe := adaptCheckRun(&gqlCheckRunFields{
 		Name:       "ci",
@@ -195,7 +195,7 @@ func TestAdaptCheckRunURLSanitization(t *testing.T) {
 }
 
 func TestGraphqlRateTransport(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	rt := NewRateTracker(d, "github.com", "graphql")
 
@@ -244,7 +244,7 @@ func TestGraphQLFetcherRateTrackerNilReceiver(t *testing.T) {
 }
 
 func TestConvertGQLPRCompleteness(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	gql := gqlPR{
 		Number:    1,
@@ -274,7 +274,7 @@ func TestConvertGQLPRCompleteness(t *testing.T) {
 }
 
 func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2024, 6, 3, 15, 0, 0, 0, time.UTC).Format(time.RFC3339)
 
@@ -413,7 +413,7 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 }
 
 func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2024, 6, 3, 15, 0, 0, 0, time.UTC).Format(time.RFC3339)
 
@@ -505,7 +505,7 @@ func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
 }
 
 func TestGraphQLFetcherFetchRepoIssuesLogsFetchProgressForPaginatedIssueSet(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
 
@@ -600,7 +600,7 @@ func testGQLIssueNodes(start, count int, now string) []map[string]any {
 }
 
 func TestGraphQLFetcherFetchRepoPRsLogsFetchProgressForPaginatedPullRequestSet(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
 
@@ -702,7 +702,7 @@ func testGQLPRNodes(start, count int, now string) []map[string]any {
 }
 
 func TestNormalizeBulkCI(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	nameTest := "test"
 	statusCompleted := "completed"
@@ -741,7 +741,7 @@ func TestNormalizeBulkCI(t *testing.T) {
 }
 
 func TestAdaptPRNilFields(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	gql := gqlPR{
 		Number:    1,
@@ -758,7 +758,7 @@ func TestAdaptPRNilFields(t *testing.T) {
 }
 
 func TestAdaptIssue(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	closed := now.Add(-time.Hour)
@@ -813,7 +813,7 @@ func TestAdaptIssue(t *testing.T) {
 }
 
 func TestAdaptIssueNilFields(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	gql := gqlIssue{
 		Number:    1,
@@ -834,7 +834,7 @@ func TestAdaptIssueNilFields(t *testing.T) {
 // repos using bulk GraphQL sync would persist assignees as [] and overwrite
 // any values set by a prior REST detail fetch (roborev finding on 2b9ca4d).
 func TestAdaptIssueAssignees(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	gql := gqlIssue{
 		Number:    2,
@@ -855,7 +855,7 @@ func TestAdaptIssueAssignees(t *testing.T) {
 }
 
 func TestConvertGQLIssue(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	now := time.Now()
 	gql := gqlIssue{
@@ -908,21 +908,21 @@ func TestConvertGQLIssue(t *testing.T) {
 }
 
 func TestStateConversion(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal("open", stateToREST("OPEN"))
 	assert.Equal("closed", stateToREST("CLOSED"))
 	assert.Equal("closed", stateToREST("MERGED"))
 }
 
 func TestMergeableConversion(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal("clean", mergeableToREST("MERGEABLE"))
 	assert.Equal("dirty", mergeableToREST("CONFLICTING"))
 	assert.Equal("unknown", mergeableToREST("UNKNOWN"))
 }
 
 func TestNormalizeBulkCIPendingStatus(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	contextDeploy := "ci/deploy"
 	statePending := "pending"
@@ -946,7 +946,7 @@ func TestNormalizeBulkCIPendingStatus(t *testing.T) {
 }
 
 func TestNormalizeBulkCI_SortsByCasefoldedName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	buildName := "build"
 	zebraName := "Zebra"
@@ -972,7 +972,7 @@ func TestNormalizeBulkCI_SortsByCasefoldedName(t *testing.T) {
 }
 
 func TestNormalizeBulkCI_LatestCheckRunPerNameWins(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	older := gh.Timestamp{Time: time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)}
 	newer := gh.Timestamp{Time: older.Add(10 * time.Minute)}

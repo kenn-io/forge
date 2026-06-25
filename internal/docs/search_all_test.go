@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 )
@@ -34,7 +34,7 @@ func newCrossFolderRegistry(t *testing.T) *Registry {
 }
 
 func TestSearchAllReturnsHitsAcrossFolders(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	req := require.New(t)
 	r := newCrossFolderRegistry(t)
 	res, err := r.SearchAll(context.Background(), "budget", 50)
@@ -86,7 +86,7 @@ func TestSearchAllRankingBuckets(t *testing.T) {
 	req := require.New(t)
 	req.NoError(err)
 	req.Len(res.Hits, 2)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal("filename", res.Hits[0].HitType, "bucket should beat score")
 	assert.Equal("body", res.Hits[1].HitType)
 }
@@ -103,8 +103,8 @@ func TestSearchAllOneRowPerFile(t *testing.T) {
 	req.NoError(err)
 	req.Len(res.Hits, 1)
 	h := res.Hits[0]
-	Assert.Equal(t, "filename", h.HitType)
-	Assert.NotNil(t, h.Snippet, "snippet should be attached to the filename hit")
+	assert.Equal(t, "filename", h.HitType)
+	assert.NotNil(t, h.Snippet, "snippet should be attached to the filename hit")
 }
 
 func TestSearchAllTruncationProbe(t *testing.T) {
@@ -119,7 +119,7 @@ func TestSearchAllTruncationProbe(t *testing.T) {
 	// limit=3 -> 3 hits returned + Truncated=true.
 	res, err := r.SearchAll(context.Background(), "budget", 3)
 	req.NoError(err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Len(res.Hits, 3)
 	assert.True(res.Truncated, "Truncated should be true when more hits existed than limit")
 
@@ -139,7 +139,7 @@ func TestSearchAllPerFolderWarning(t *testing.T) {
 	})
 	res, err := r.SearchAll(context.Background(), "budget", 50)
 	req.NoError(err, "partial failure shouldn't be a hard error")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Len(res.Hits, 1, "good folder still scans")
 	if assert.NotEmpty(res.Warnings) {
 		assert.Contains(res.Warnings[0], "Gone")
@@ -160,7 +160,7 @@ func TestSearchAllContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before calling
 	res, err := r.SearchAll(ctx, "budget", 50)
-	Assert.NoError(t, err, "cancelled SearchAll should return cleanly")
+	assert.NoError(t, err, "cancelled SearchAll should return cleanly")
 	// We don't assert hit count - the goroutines may have raced past the
 	// first ctx check. The important thing is no panic, no hang.
 	_ = res
@@ -170,7 +170,7 @@ func TestSearchAllEmptyQueryReturnsEmpty(t *testing.T) {
 	r := newCrossFolderRegistry(t)
 	res, err := r.SearchAll(context.Background(), "  ", 50)
 	require.NoError(t, err)
-	Assert.Empty(t, res.Hits, "whitespace-only query")
+	assert.Empty(t, res.Hits, "whitespace-only query")
 }
 
 // An in-folder .md symlink whose target lives outside the registered
@@ -197,6 +197,6 @@ func TestSearchAllSymlinkEscapeIsContained(t *testing.T) {
 	res, err := r.SearchAll(context.Background(), "budget", 50)
 	req.NoError(err)
 	for _, h := range res.Hits {
-		Assert.NotEqual(t, "looks-inside.md", h.RelPath, "symlink escape was not contained: %+v", h)
+		assert.NotEqual(t, "looks-inside.md", h.RelPath, "symlink escape was not contained: %+v", h)
 	}
 }

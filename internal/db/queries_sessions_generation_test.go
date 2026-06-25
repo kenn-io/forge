@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +17,7 @@ import (
 func TestDeleteProjectWorktreeTmuxSessionCreatedAtPreservesNewerGeneration(
 	t *testing.T,
 ) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -62,7 +62,7 @@ func TestDeleteProjectWorktreeTmuxSessionCreatedAtPreservesNewerGeneration(
 func TestDeleteHostRuntimeTmuxSessionCreatedAtPreservesNewerGeneration(
 	t *testing.T,
 ) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -90,7 +90,7 @@ func TestDeleteHostRuntimeTmuxSessionCreatedAtPreservesNewerGeneration(
 }
 
 func TestDeleteProjectWorktreeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -117,7 +117,7 @@ func TestDeleteProjectWorktreeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
 }
 
 func TestDeleteHostRuntimeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -139,7 +139,7 @@ func TestDeleteHostRuntimeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
 // collision across projects: discovery for project B must not move a worktree
 // row (and its stable id and tmux links) owned by project A.
 func TestReconcileProjectInventoryDoesNotStealForeignWorktree(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()

@@ -3,12 +3,12 @@ package docs
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestClassifyPushURLDriveLetterPaths(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	root := t.TempDir()
 
 	// On non-Windows platforms a drive-letter string is an scp-like ssh

@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
@@ -26,7 +26,7 @@ func gitlabLabelTestRef() platform.RepoRef {
 
 func TestClientListLabelsCollectsPagesAndNormalizes(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	var pages []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal("/api/v4/projects/42/labels", r.URL.EscapedPath())
@@ -85,7 +85,7 @@ func TestClientSetLabelsSendsCommaJoinedNames(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require := Require.New(t)
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			var body map[string]any
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(http.MethodPut, r.Method)
@@ -109,7 +109,7 @@ func TestClientSetLabelsSendsCommaJoinedNames(t *testing.T) {
 
 func TestClientSetLabelsSendsEmptyStringToClearAll(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	var body map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
@@ -133,7 +133,7 @@ func TestClientSetLabelsSendsEmptyStringToClearAll(t *testing.T) {
 
 func TestClientSetLabelsRejectsCommaNamesWithoutCallingProvider(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++

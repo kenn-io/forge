@@ -3,12 +3,12 @@ package db
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGetOrCreateAppMetadataValueCreatesAndReusesValue(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	d := openTemplateTestDB(t)
@@ -33,7 +33,7 @@ func TestGetOrCreateAppMetadataValueCreatesAndReusesValue(t *testing.T) {
 }
 
 func TestAppMetadataValueReturnsNotFound(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	d := openTemplateTestDB(t)

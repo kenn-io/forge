@@ -3,7 +3,7 @@ package gitealike
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
@@ -14,7 +14,7 @@ import (
 func TestNotificationStubsReturnUnsupportedCapability(t *testing.T) {
 	provider := NewProvider(platform.KindForgejo, "codeberg.org", &fakeTransport{}, WithReadActions())
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	caps := provider.Capabilities()
 	assert.False(caps.ReadNotifications)

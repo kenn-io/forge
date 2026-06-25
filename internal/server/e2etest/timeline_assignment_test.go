@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 )
@@ -24,7 +24,7 @@ type timelineDetailResponse struct {
 }
 
 func TestE2E_DetailTimelineReturnsAssignmentEvents(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, database := setupTestServer(t)
@@ -68,7 +68,7 @@ func TestE2E_DetailTimelineReturnsAssignmentEvents(t *testing.T) {
 }
 
 func TestE2E_DetailTimelineReturnsCommentDirectURLs(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, database := setupTestServer(t)
@@ -108,7 +108,7 @@ func TestE2E_DetailTimelineReturnsCommentDirectURLs(t *testing.T) {
 }
 
 func TestE2E_DetailTimelineReturnsForcePushCommitOrderingMetadata(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, database := setupTestServer(t)

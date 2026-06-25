@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 
 	gitenv "go.kenn.io/kit/git/env"
@@ -98,7 +98,7 @@ func worktreeRowByPathBase(rows []map[string]any, base string) map[string]any {
 // is on disk.
 func TestWorktreeCreateOnDiskRoute(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -144,7 +144,7 @@ func TestWorktreeCreateOnDiskRoute(t *testing.T) {
 // attaching a branch that is already checked out (the primary checkout).
 func TestWorktreeCreateOnDiskBranchInUse(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -173,7 +173,7 @@ func TestWorktreeCreateOnDiskBranchInUse(t *testing.T) {
 // is rolled back so nothing is registered and a retry is possible.
 func TestWorktreeCreateOnDiskHookFailure(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -221,7 +221,7 @@ func TestWorktreeCreateOnDiskHookFailure(t *testing.T) {
 // the git work back so the conflicting state is not made worse.
 func TestWorktreeCreateOnDiskRollsBackWhenRowConflicts(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -259,7 +259,7 @@ func TestWorktreeCreateOnDiskRollsBackWhenRowConflicts(t *testing.T) {
 // directory removed, branch deleted, registry row dropped.
 func TestWorktreeDeleteFromDiskRoute(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -309,7 +309,7 @@ func TestWorktreeDeleteFromDiskRoute(t *testing.T) {
 // kept (registry row and disk both intact) unless force is set.
 func TestWorktreeDeleteFromDiskRefusesDirtyWithoutForce(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -368,7 +368,7 @@ func TestWorktreeDeleteFromDiskRefusesDirtyWithoutForce(t *testing.T) {
 // project's default branch is protected from disk-removing deletes.
 func TestWorktreeDeleteFromDiskRefusesDefaultBranch(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -410,7 +410,7 @@ func TestWorktreeDeleteFromDiskRefusesDefaultBranch(t *testing.T) {
 // the worktree before removal; its failure aborts the delete entirely.
 func TestWorktreeDeleteFromDiskRunsTeardownHook(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -457,7 +457,7 @@ func TestWorktreeDeleteFromDiskRunsTeardownHook(t *testing.T) {
 // keeps both the disk worktree and the registry row.
 func TestWorktreeDeleteFromDiskAbortsOnTeardownFailure(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -539,7 +539,7 @@ func TestWorktreeRegisterWithoutCreateOnDiskUnchanged(t *testing.T) {
 // satisfies (and must satisfy) the same contract.
 func TestWorktreeCreateOnDiskSameBranchConcurrent(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 )
@@ -40,7 +40,7 @@ func TestNormalizeIssueNilInputReturnsError(t *testing.T) {
 }
 
 func TestNormalizePR_OpenPR(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	ghPR := &gh.PullRequest{
 		ID:        new(int64(1001)),
@@ -90,7 +90,7 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 }
 
 func TestNormalizePR_MergedPR(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	mergedAt := time.Now().UTC().Truncate(time.Second)
 	ghPR := &gh.PullRequest{
 		ID:       new(int64(2002)),
@@ -213,7 +213,7 @@ func TestNormalizeIssue_LabelsFallbackToCreatedAt(t *testing.T) {
 }
 
 func TestNormalizeCommentEvent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	c := &gh.IssueComment{
 		ID:        new(int64(555)),
@@ -260,7 +260,7 @@ func TestNormalizeForcePushEvent(t *testing.T) {
 
 func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 15, 0, 0, time.UTC)
 
 	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
@@ -291,7 +291,7 @@ func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
 
 func TestNormalizeTimelineEventCommentDeleted(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 18, 0, 0, time.UTC)
 
 	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
@@ -314,7 +314,7 @@ func TestNormalizeTimelineEventCommentDeleted(t *testing.T) {
 
 func TestNormalizeTimelineEventRenamedTitle(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 5, 0, 0, time.UTC)
 
 	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
@@ -336,7 +336,7 @@ func TestNormalizeTimelineEventRenamedTitle(t *testing.T) {
 
 func TestNormalizeTimelineEventBaseRefChanged(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 10, 0, 0, time.UTC)
 
 	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
@@ -358,7 +358,7 @@ func TestNormalizeTimelineEventBaseRefChanged(t *testing.T) {
 
 func TestNormalizeTimelineEventAssigned(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 22, 0, 0, time.UTC)
 
 	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
@@ -379,7 +379,7 @@ func TestNormalizeTimelineEventAssigned(t *testing.T) {
 
 func TestNormalizeTimelineEventLifecycle(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 30, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -414,7 +414,7 @@ func TestNormalizeTimelineEventLifecycle(t *testing.T) {
 
 func TestNormalizeIssueTimelineEventAssigned(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 22, 0, 0, time.UTC)
 
 	event := NormalizeIssueTimelineEvent(23, PullRequestTimelineEvent{
@@ -436,7 +436,7 @@ func TestNormalizeIssueTimelineEventAssigned(t *testing.T) {
 
 func TestNormalizeIssueTimelineEventCrossReferenced(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 30, 0, 0, time.UTC)
 
 	event := NormalizeIssueTimelineEvent(23, PullRequestTimelineEvent{
@@ -490,7 +490,7 @@ func TestNormalizeIssueTimelineEventLifecycle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require := require.New(t)
-			assert := Assert.New(t)
+			assert := assert.New(t)
 
 			event := NormalizeIssueTimelineEvent(23, PullRequestTimelineEvent{
 				NodeID:    tt.nodeID,
@@ -512,7 +512,7 @@ func TestNormalizeIssueTimelineEventLifecycle(t *testing.T) {
 
 func TestNormalizeTimelineEventForcePush(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 20, 0, 0, time.UTC)
 
 	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
@@ -576,7 +576,7 @@ func TestNormalizeTimelineEventFallbackDedupeIgnoresCrossReferenceTitle(t *testi
 }
 
 func TestNormalizeCommitEvent_CreatedAtIsUTC(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	//nolint:forbidigo // Test fixture intentionally uses a non-UTC zone to verify normalization.
 	edt := time.FixedZone("EDT", -4*3600)
 	authorDate := time.Date(2024, 6, 1, 10, 30, 0, 0, edt)
@@ -601,7 +601,7 @@ func TestNormalizeCommitEvent_CreatedAtIsUTC(t *testing.T) {
 }
 
 func TestNormalizeIssueCommentEvent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Date(2024, 6, 7, 8, 9, 10, 0, time.UTC)
 	id := int64(777)
 	body := "needs follow-up"
@@ -654,20 +654,20 @@ func TestNormalizePR_MergeableState(t *testing.T) {
 			}
 			pr, err := NormalizePR(1, ghPR)
 			require.NoError(t, err)
-			Assert.Equal(t, tt.want, pr.MergeableState)
+			assert.Equal(t, tt.want, pr.MergeableState)
 		})
 	}
 }
 
 func TestDeriveOverallCIStatus_NoChecksOrStatuses(t *testing.T) {
 	result := DeriveOverallCIStatus(nil, nil)
-	Assert.Empty(t, result)
+	assert.Empty(t, result)
 }
 
 func TestDeriveOverallCIStatus_EmptyCombined(t *testing.T) {
 	combined := &gh.CombinedStatus{State: new("pending")}
 	result := DeriveOverallCIStatus(nil, combined)
-	Assert.Empty(t, result, "no actual statuses means empty, even if state says pending")
+	assert.Empty(t, result, "no actual statuses means empty, even if state says pending")
 }
 
 func TestDeriveOverallCIStatus_CheckRunsOnly(t *testing.T) {
@@ -734,7 +734,7 @@ func TestDeriveOverallCIStatus_CheckRunsOnly(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := DeriveOverallCIStatus(tt.runs, nil)
-			Assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -749,7 +749,7 @@ func TestDeriveOverallCIStatus_NonSuccessConclusions(t *testing.T) {
 			runs := []*gh.CheckRun{
 				{Status: new("completed"), Conclusion: new(conclusion)},
 			}
-			Assert.Equal(t, "failure", DeriveOverallCIStatus(runs, nil))
+			assert.Equal(t, "failure", DeriveOverallCIStatus(runs, nil))
 		})
 	}
 }
@@ -762,7 +762,7 @@ func TestDeriveOverallCIStatus_CombinedStatusOnly(t *testing.T) {
 			{State: new("success"), Context: new("ci/build")},
 		},
 	}
-	Assert.Equal(t, "success", DeriveOverallCIStatus(nil, combined))
+	assert.Equal(t, "success", DeriveOverallCIStatus(nil, combined))
 }
 
 func TestDeriveOverallCIStatus_CombinedUsesAggregatedState(t *testing.T) {
@@ -775,7 +775,7 @@ func TestDeriveOverallCIStatus_CombinedUsesAggregatedState(t *testing.T) {
 			{State: new("success"), Context: new("ci/build")},
 		},
 	}
-	Assert.Equal(t, "failure", DeriveOverallCIStatus(nil, combined))
+	assert.Equal(t, "failure", DeriveOverallCIStatus(nil, combined))
 }
 
 func TestDeriveOverallCIStatus_MixedSources(t *testing.T) {
@@ -789,11 +789,11 @@ func TestDeriveOverallCIStatus_MixedSources(t *testing.T) {
 			{State: new("pending"), Context: new("ci/deploy")},
 		},
 	}
-	Assert.Equal(t, "pending", DeriveOverallCIStatus(runs, combined))
+	assert.Equal(t, "pending", DeriveOverallCIStatus(runs, combined))
 }
 
 func TestNormalizeCIChecks_ExpectedAndPendingStatus(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	combined := &gh.CombinedStatus{
 		TotalCount: new(2),
@@ -825,7 +825,7 @@ func TestNormalizeCIChecks_ExpectedAndPendingStatus(t *testing.T) {
 }
 
 func TestNormalizeCheckRuns_SortsByCasefoldedName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	buildName := "build"
 	zebraName := "Zebra"
@@ -852,7 +852,7 @@ func TestNormalizeCheckRuns_SortsByCasefoldedName(t *testing.T) {
 }
 
 func TestNormalizeCheckRunsIncludesDurationWhenTimestampsPresent(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	name := "build"
@@ -883,7 +883,7 @@ func TestNormalizeCheckRunsIncludesDurationWhenTimestampsPresent(t *testing.T) {
 }
 
 func TestNormalizeCIChecks_LatestCheckRunPerNameWins(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 	newer := older.Add(10 * time.Minute)
@@ -920,7 +920,7 @@ func TestNormalizeCIChecks_LatestCheckRunPerNameWins(t *testing.T) {
 }
 
 func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 	newer := older.Add(10 * time.Minute)
@@ -957,7 +957,7 @@ func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *tes
 }
 
 func TestNormalizeCIChecks_CheckRunMissingStartedAtFallsBackToCreatedAt(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 	newer := older.Add(10 * time.Minute)
@@ -994,7 +994,7 @@ func TestNormalizeCIChecks_CheckRunMissingStartedAtFallsBackToCreatedAt(t *testi
 }
 
 func TestNormalizeCIChecks_DeduplicatesBySourceAwareKey(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
@@ -1052,7 +1052,7 @@ func TestNormalizeCIChecks_DeduplicatesBySourceAwareKey(t *testing.T) {
 }
 
 func TestNormalizeCIChecks_StatusMissingUpdatedAtFallsBackToCreatedAt(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 	newer := older.Add(10 * time.Minute)
@@ -1115,11 +1115,11 @@ func TestDeriveOverallCIStatus_LatestCheckRunPerNameWins(t *testing.T) {
 		},
 	}, nil)
 
-	Assert.Equal(t, "success", result)
+	assert.Equal(t, "success", result)
 }
 
 func TestNormalizeCIChecks_SortsByCasefoldedName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	buildName := "build"
 	zebraName := "Zebra"
@@ -1147,7 +1147,7 @@ func TestNormalizeCIChecks_SortsByCasefoldedName(t *testing.T) {
 
 func TestDeriveReviewDecision_Empty(t *testing.T) {
 	result := DeriveReviewDecision(nil)
-	Assert.Empty(t, result)
+	assert.Empty(t, result)
 }
 
 func TestDeriveReviewDecision_ApprovedOnly(t *testing.T) {
@@ -1156,7 +1156,7 @@ func TestDeriveReviewDecision_ApprovedOnly(t *testing.T) {
 		{User: &gh.User{Login: new("bob")}, State: new("COMMENTED")},
 	}
 	result := DeriveReviewDecision(reviews)
-	Assert.Equal(t, "approved", result)
+	assert.Equal(t, "approved", result)
 }
 
 func TestDeriveReviewDecision_ChangesRequestedWins(t *testing.T) {
@@ -1165,7 +1165,7 @@ func TestDeriveReviewDecision_ChangesRequestedWins(t *testing.T) {
 		{User: &gh.User{Login: new("bob")}, State: new("CHANGES_REQUESTED")},
 	}
 	result := DeriveReviewDecision(reviews)
-	Assert.Equal(t, "changes_requested", result)
+	assert.Equal(t, "changes_requested", result)
 }
 
 func TestDeriveReviewDecision_CommentedOnlyIgnored(t *testing.T) {
@@ -1174,7 +1174,7 @@ func TestDeriveReviewDecision_CommentedOnlyIgnored(t *testing.T) {
 		{User: &gh.User{Login: new("bob")}, State: new("DISMISSED")},
 	}
 	result := DeriveReviewDecision(reviews)
-	Assert.Empty(t, result)
+	assert.Empty(t, result)
 }
 
 func TestDeriveReviewDecision_LatestStatePerUser(t *testing.T) {
@@ -1184,11 +1184,11 @@ func TestDeriveReviewDecision_LatestStatePerUser(t *testing.T) {
 		{User: &gh.User{Login: new("bob")}, State: new("APPROVED")},
 	}
 	result := DeriveReviewDecision(reviews)
-	Assert.Equal(t, "approved", result)
+	assert.Equal(t, "approved", result)
 }
 
 func TestNormalizePR_BotUserDisplayName(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ghPR := &gh.PullRequest{
 		ID:     new(int64(3003)),
 		Number: new(7),
@@ -1242,7 +1242,7 @@ func TestNameOrEmpty(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			Assert.Equal(t, tt.want, nameOrEmpty(tt.user))
+			assert.Equal(t, tt.want, nameOrEmpty(tt.user))
 		})
 	}
 }

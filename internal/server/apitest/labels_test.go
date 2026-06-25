@@ -10,7 +10,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -195,7 +195,7 @@ func TestAPIListRepoLabelsReturnsCachedCatalogWhileRefreshRuns(t *testing.T) {
 
 func TestAPIListRepoLabelsReturnsCachedCatalog(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	srv, database, _, _ := setupLabelTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	seedRepoLabelCatalog(t, database, "acme", "widget")

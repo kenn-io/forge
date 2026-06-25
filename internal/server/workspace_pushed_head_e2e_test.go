@@ -13,14 +13,14 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 )
 
 func TestWorkspacePushedHeadObserverE2ERefreshesPRDetailAndSSE(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -110,7 +110,7 @@ func TestWorkspacePushedHeadObserverE2ERefreshesPRDetailAndSSE(t *testing.T) {
 }
 
 func TestWorkspacePushedHeadObserverE2ELocalOnlyCommitTriggersNothing(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)

@@ -135,7 +135,7 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - Only pass `-count=N` when `N > 1` (e.g. `-count=10` for flake hunting)
 - Table-driven tests for Go code
 - Use `testify` consistently in Go tests; prefer `require` for setup/preconditions and `assert` for non-blocking checks
-- When a test function has more than 3 assertions, create a local helper with `assert := Assert.New(t)` and use the helper methods for the rest of the checks
+- When a test function has more than 3 assertions, create a local helper with `assert := assert.New(t)` and use the helper methods for the rest of the checks. Import `github.com/stretchr/testify/assert` without an alias; aliased assert imports are rejected by golangci-lint.
 - Do not use `t.Fatal`, `t.Fatalf`, `t.Error`, `t.Errorf`, `t.Fail`, or `t.FailNow` in tests; use testify assertions instead
 - Prefer the generated Go API client in `internal/apiclient` for integration-style API tests
 - For HTTP tests of user-visible behavior, follow the wire-level discipline in `context/testing.md`: route through `srv.ServeHTTP`, assert on what a client observes, and pick `internal/server/apitest/` or `internal/server/e2etest/` per the rules there.

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 )
@@ -39,7 +39,7 @@ func newTestRegistry(t *testing.T) (*Registry, string) {
 }
 
 func TestTreeListsMarkdownAndSkipsHidden(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	r, _ := newTestRegistry(t)
 	tree, err := r.Tree("notes")
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestTreeAndSearchSkipNonRegularMarkdownEntries(t *testing.T) {
 
 	tree, err := r.Tree("notes")
 	req.NoError(err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	names := walkNames(tree)
 	assert.NotContains(names, "notes/directory-link.md")
 	assert.Contains(names, "notes/regular-link.md")
@@ -88,14 +88,14 @@ func TestTreeAndSearchSkipNonRegularMarkdownEntries(t *testing.T) {
 func TestTreeUnknownFolder(t *testing.T) {
 	r, _ := newTestRegistry(t)
 	_, err := r.Tree("missing")
-	Assert.ErrorIs(t, err, ErrFolderNotFound)
+	assert.ErrorIs(t, err, ErrFolderNotFound)
 }
 
 func TestReadFileRoundTrip(t *testing.T) {
 	r, _ := newTestRegistry(t)
 	body, err := r.ReadFile("notes", "notes/ideas.md")
 	require.NoError(t, err)
-	Assert.Equal(t, "# Ideas", string(body))
+	assert.Equal(t, "# Ideas", string(body))
 }
 
 func TestReadFileRefusesTraversal(t *testing.T) {
@@ -108,7 +108,7 @@ func TestReadFileRefusesTraversal(t *testing.T) {
 	for _, p := range cases {
 		t.Run(p, func(t *testing.T) {
 			_, err := r.ReadFile("notes", p)
-			Assert.ErrorIs(t, err, ErrOutsideFolder)
+			assert.ErrorIs(t, err, ErrOutsideFolder)
 		})
 	}
 }
@@ -121,7 +121,7 @@ func TestReadFileRefusesEscapingSymlink(t *testing.T) {
 	link := filepath.Join(root, "escape.md")
 	req.NoError(os.Symlink(outside, link))
 	_, err := r.ReadFile("notes", "escape.md")
-	Assert.ErrorIs(t, err, ErrOutsideFolder, "symlink escape should be refused")
+	assert.ErrorIs(t, err, ErrOutsideFolder, "symlink escape should be refused")
 }
 
 func TestWriteFileAtomic(t *testing.T) {
@@ -130,7 +130,7 @@ func TestWriteFileAtomic(t *testing.T) {
 	req.NoError(r.WriteFile("notes", "notes/ideas.md", []byte("new body")))
 	body, err := os.ReadFile(filepath.Join(root, "notes/ideas.md"))
 	req.NoError(err)
-	Assert.Equal(t, "new body", string(body))
+	assert.Equal(t, "new body", string(body))
 }
 
 func TestWriteFilePreservesMode(t *testing.T) {
@@ -143,14 +143,14 @@ func TestWriteFilePreservesMode(t *testing.T) {
 
 	info, err := os.Stat(target)
 	req.NoError(err)
-	Assert.Equal(t, fs.FileMode(0o664), info.Mode().Perm())
+	assert.Equal(t, fs.FileMode(0o664), info.Mode().Perm())
 }
 
 func TestWriteFileRefusesNonMarkdown(t *testing.T) {
 	r, _ := newTestRegistry(t)
 	err := r.WriteFile("notes", "notes/foo.bin", []byte("x"))
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "only .md")
+	assert.Contains(t, err.Error(), "only .md")
 }
 
 func TestWriteFileRefusesMissingParent(t *testing.T) {
@@ -166,7 +166,7 @@ func TestReadBlobServesImageWithMime(t *testing.T) {
 	req.NoError(os.WriteFile(filepath.Join(root, "notes/avatar.png"), pngData, 0o644))
 	blob, err := r.ReadBlob("notes", "notes/avatar.png")
 	req.NoError(err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal("image/png", blob.ContentType)
 	assert.True(bytes.Equal(blob.Body, pngData), "body mismatch")
 }
@@ -175,13 +175,13 @@ func TestReadBlobRefusesNonImage(t *testing.T) {
 	r, _ := newTestRegistry(t)
 	_, err := r.ReadBlob("notes", "notes/ideas.md")
 	require.Error(t, err)
-	Assert.Contains(t, err.Error(), "unsupported extension")
+	assert.Contains(t, err.Error(), "unsupported extension")
 }
 
 func TestReadBlobRefusesTraversal(t *testing.T) {
 	r, _ := newTestRegistry(t)
 	_, err := r.ReadBlob("notes", "../escape.png")
-	Assert.ErrorIs(t, err, ErrOutsideFolder)
+	assert.ErrorIs(t, err, ErrOutsideFolder)
 }
 
 func TestReadBlobRefusesSVG(t *testing.T) {
@@ -190,7 +190,7 @@ func TestReadBlobRefusesSVG(t *testing.T) {
 	req.NoError(os.WriteFile(filepath.Join(root, "notes/icon.svg"), []byte("<svg/>"), 0o644))
 	_, err := r.ReadBlob("notes", "notes/icon.svg")
 	req.Error(err)
-	Assert.ErrorIs(t, err, ErrUnsupportedExtension)
+	assert.ErrorIs(t, err, ErrUnsupportedExtension)
 }
 
 func TestReadFileRefusesNonMarkdown(t *testing.T) {
@@ -199,7 +199,7 @@ func TestReadFileRefusesNonMarkdown(t *testing.T) {
 	req.NoError(os.WriteFile(filepath.Join(root, "notes/secret.bin"), []byte("x"), 0o644))
 	_, err := r.ReadFile("notes", "notes/secret.bin")
 	req.Error(err)
-	Assert.Contains(t, err.Error(), "only .md")
+	assert.Contains(t, err.Error(), "only .md")
 }
 
 func TestReadFileRefusesNonRegularMarkdownTarget(t *testing.T) {
@@ -224,7 +224,7 @@ func TestReadFileRefusesIgnoredDir(t *testing.T) {
 	r, _ := newTestRegistry(t)
 	// .git/HEAD exists in the fixture; reading it would expose repo state.
 	_, err := r.ReadFile("notes", ".git/HEAD")
-	Assert.ErrorIs(t, err, ErrOutsideFolder)
+	assert.ErrorIs(t, err, ErrOutsideFolder)
 }
 
 func TestCreateFileFailsOnExisting(t *testing.T) {
@@ -239,12 +239,12 @@ func TestCreateFileWritesNewFile(t *testing.T) {
 	req.NoError(r.CreateFile("notes", "notes/new.md", []byte("# Fresh")))
 	body, err := os.ReadFile(filepath.Join(root, "notes/new.md"))
 	req.NoError(err)
-	Assert.Equal(t, "# Fresh", string(body))
+	assert.Equal(t, "# Fresh", string(body))
 }
 
 func TestFileMutationsRefuseExistingNonRegularTargets(t *testing.T) {
 	req := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	r, root := newTestRegistry(t)
 
 	writeTarget := filepath.Join(root, "notes", "write-dir.md")
@@ -285,7 +285,7 @@ func TestDeleteFileRemovesAndRefuses(t *testing.T) {
 	req.NoError(os.WriteFile(filepath.Join(root, "notes/image.png"), []byte{0}, 0o644))
 	if err := r.DeleteFile("notes", "notes/image.png"); err == nil || !strings.Contains(err.Error(), "only .md") {
 		req.Error(err)
-		Assert.Contains(t, err.Error(), "only .md")
+		assert.Contains(t, err.Error(), "only .md")
 	}
 }
 
@@ -304,7 +304,7 @@ func TestDeleteFileRemovesSymlinkNotTarget(t *testing.T) {
 	}
 	body, err := os.ReadFile(target)
 	req.NoError(err)
-	Assert.Equal(t, "target", string(body))
+	assert.Equal(t, "target", string(body))
 }
 
 func TestRenameFileMovesAndRefusesCollision(t *testing.T) {
@@ -316,7 +316,7 @@ func TestRenameFileMovesAndRefusesCollision(t *testing.T) {
 	}
 	// Refuses to clobber an existing destination.
 	err := r.RenameFile("notes", "README.md", "notes/ideas-renamed.md")
-	Assert.ErrorIs(t, err, ErrAlreadyExists)
+	assert.ErrorIs(t, err, ErrAlreadyExists)
 }
 
 func TestRenameFileMovesSymlinkNotTarget(t *testing.T) {
@@ -335,10 +335,10 @@ func TestRenameFileMovesSymlinkNotTarget(t *testing.T) {
 	}
 	info, err := os.Lstat(renamed)
 	req.NoError(err)
-	Assert.Equal(t, fs.ModeSymlink, info.Mode()&fs.ModeSymlink)
+	assert.Equal(t, fs.ModeSymlink, info.Mode()&fs.ModeSymlink)
 	body, err := os.ReadFile(target)
 	req.NoError(err)
-	Assert.Equal(t, "target", string(body))
+	assert.Equal(t, "target", string(body))
 }
 
 func TestWriteFileRefusesSymlinkParentEscape(t *testing.T) {
@@ -362,7 +362,7 @@ func TestWriteFileAllowsLeadingDotDotFilename(t *testing.T) {
 
 	got, err := os.ReadFile(filepath.Join(root, "..notes.md"))
 	req.NoError(err)
-	Assert.Equal(t, "ok", string(got))
+	assert.Equal(t, "ok", string(got))
 }
 
 func TestSearchScoresExactBeforeSubstring(t *testing.T) {
@@ -371,14 +371,14 @@ func TestSearchScoresExactBeforeSubstring(t *testing.T) {
 	hits, err := r.Search("notes", "ideas", 0)
 	req.NoError(err)
 	req.NotEmpty(hits, "expected hits for 'ideas'")
-	Assert.Equal(t, "ideas.md", hits[0].Name)
+	assert.Equal(t, "ideas.md", hits[0].Name)
 }
 
 func TestSearchRespectsLimit(t *testing.T) {
 	r, _ := newTestRegistry(t)
 	hits, err := r.Search("notes", "2026", 1)
 	require.NoError(t, err)
-	Assert.Len(t, hits, 1, "limit ignored")
+	assert.Len(t, hits, 1, "limit ignored")
 }
 
 // helpers --------------------------------------------------------------
@@ -401,7 +401,7 @@ func walkNames(n Node) []string {
 
 func TestRegistryAdd(t *testing.T) {
 	req := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	r := NewRegistry(nil)
 	dir := t.TempDir()
 	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: dir}))
@@ -417,7 +417,7 @@ func TestRegistryAdd(t *testing.T) {
 
 func TestRegistryAddResolvesSymlinkRoot(t *testing.T) {
 	req := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	parent := t.TempDir()
 	target := filepath.Join(parent, "target")
 	link := filepath.Join(parent, "link")
@@ -439,7 +439,7 @@ func TestRegistryAddRejectsDuplicateID(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, r.Add(config.DocFolder{ID: "notes", Path: dir}))
 	err := r.Add(config.DocFolder{ID: "notes", Path: dir})
-	Assert.ErrorIs(t, err, ErrDuplicateFolderID)
+	assert.ErrorIs(t, err, ErrDuplicateFolderID)
 }
 
 func TestRegistryAddRejectsMissingPath(t *testing.T) {
@@ -456,7 +456,7 @@ func TestRegistryAddRejectsFilePath(t *testing.T) {
 	req.NoError(os.WriteFile(file, []byte("hi"), 0o644))
 	err := r.Add(config.DocFolder{ID: "bad", Path: file})
 	req.Error(err)
-	Assert.Contains(t, err.Error(), "not a directory")
+	assert.Contains(t, err.Error(), "not a directory")
 }
 
 func TestRegistryAddRequiresIDAndPath(t *testing.T) {
@@ -466,7 +466,7 @@ func TestRegistryAddRequiresIDAndPath(t *testing.T) {
 }
 
 func TestRegistryAddRejectsNonSegmentSafeID(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	dir := t.TempDir()
 	for _, id := range []string{"a/b", "with space", "..", ".", "tab\tid", "weird?id", "emoji😀"} {
 		err := NewRegistry(nil).Add(config.DocFolder{ID: id, Path: dir})
@@ -475,7 +475,7 @@ func TestRegistryAddRejectsNonSegmentSafeID(t *testing.T) {
 }
 
 func TestRegistryAddAcceptsSegmentSafeID(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	for _, id := range []string{"notes", "My_Docs", "team.docs", "a-b-2"} {
 		err := NewRegistry(nil).Add(config.DocFolder{ID: id, Path: t.TempDir()})
 		assert.NoError(err, "id %q should be accepted", id)
@@ -499,7 +499,7 @@ func TestRegistryAddDuplicateIDBeatsBadPath(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, r.Add(config.DocFolder{ID: "notes", Path: dir}))
 	err := r.Add(config.DocFolder{ID: "notes", Path: "/nope/missing"})
-	Assert.ErrorIs(t, err, ErrDuplicateFolderID, "duplicate ID must beat path error")
+	assert.ErrorIs(t, err, ErrDuplicateFolderID, "duplicate ID must beat path error")
 }
 
 func TestRegistryAddExpandsTilde(t *testing.T) {
@@ -512,7 +512,7 @@ func TestRegistryAddExpandsTilde(t *testing.T) {
 	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: "~/Notes"}))
 	got, err := r.Lookup("notes")
 	req.NoError(err)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.True(strings.HasSuffix(got.Path, "Notes"), "stored path = %q, want path ending in 'Notes'", got.Path)
 	assert.True(filepath.IsAbs(got.Path), "stored path = %q, want absolute", got.Path)
 }
@@ -526,7 +526,7 @@ func TestRegistryAddResolvesRelative(t *testing.T) {
 	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: "Notes"}))
 	got, err := r.Lookup("notes")
 	req.NoError(err)
-	Assert.True(t, filepath.IsAbs(got.Path), "stored path = %q, want absolute", got.Path)
+	assert.True(t, filepath.IsAbs(got.Path), "stored path = %q, want absolute", got.Path)
 }
 
 func TestRegistryRemove(t *testing.T) {
@@ -536,15 +536,15 @@ func TestRegistryRemove(t *testing.T) {
 	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: dir}))
 	req.NoError(r.Remove("notes"))
 	if _, err := r.Lookup("notes"); !errors.Is(err, ErrFolderNotFound) {
-		Assert.ErrorIs(t, err, ErrFolderNotFound)
+		assert.ErrorIs(t, err, ErrFolderNotFound)
 	}
-	Assert.Empty(t, r.Folders())
+	assert.Empty(t, r.Folders())
 }
 
 func TestRegistryRemoveUnknown(t *testing.T) {
 	r := NewRegistry(nil)
 	if err := r.Remove("ghost"); !errors.Is(err, ErrFolderNotFound) {
-		Assert.ErrorIs(t, err, ErrFolderNotFound)
+		assert.ErrorIs(t, err, ErrFolderNotFound)
 	}
 }
 
@@ -558,7 +558,7 @@ func TestRegistryRemovePreservesOthers(t *testing.T) {
 	req.NoError(r.Remove("a"))
 	got := r.Folders()
 	require.Len(t, got, 1)
-	Assert.Equal(t, "b", got[0].ID)
+	assert.Equal(t, "b", got[0].ID)
 }
 
 func TestRegistryRename(t *testing.T) {
@@ -568,7 +568,7 @@ func TestRegistryRename(t *testing.T) {
 	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: dir}))
 	req.NoError(r.Rename("notes", "My Notes"))
 	v, _ := r.Lookup("notes")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal("My Notes", v.Name)
 	assert.Equal("My Notes", r.Folders()[0].Name)
 }
@@ -578,14 +578,14 @@ func TestRegistryRenameRejectsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, r.Add(config.DocFolder{ID: "notes", Path: dir}))
 	if err := r.Rename("notes", ""); err == nil {
-		Assert.Error(t, err, "expected error for empty name")
+		assert.Error(t, err, "expected error for empty name")
 	}
 }
 
 func TestRegistryRenameUnknown(t *testing.T) {
 	r := NewRegistry(nil)
 	if err := r.Rename("ghost", "anything"); !errors.Is(err, ErrFolderNotFound) {
-		Assert.ErrorIs(t, err, ErrFolderNotFound)
+		assert.ErrorIs(t, err, ErrFolderNotFound)
 	}
 }
 
@@ -601,11 +601,11 @@ func TestDeriveFolderIDSanitizes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		got := DeriveFolderID(tc.in, nil)
-		Assert.Equal(t, tc.want, got, "DeriveFolderID(%q)", tc.in)
+		assert.Equal(t, tc.want, got, "DeriveFolderID(%q)", tc.in)
 	}
 }
 
 func TestDeriveFolderIDAvoidsCollisions(t *testing.T) {
 	existing := []config.DocFolder{{ID: "notes"}, {ID: "notes-2"}}
-	Assert.Equal(t, "notes-3", DeriveFolderID("/tmp/notes", existing))
+	assert.Equal(t, "notes-3", DeriveFolderID("/tmp/notes", existing))
 }

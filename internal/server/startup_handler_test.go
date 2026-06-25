@@ -13,7 +13,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -67,7 +67,7 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 	rootRR := httptest.NewRecorder()
 	handler.ServeHTTP(rootRR, rootReq)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(http.StatusOK, rootRR.Code)
 	assert.Contains(rootRR.Body.String(), `<body>app</body>`)
 	assert.Contains(rootRR.Body.String(), `window.__BASE_PATH__="/"`)
@@ -118,7 +118,7 @@ func TestStartupHandlerUsesHostValidation(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	Assert.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
+	assert.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
 }
 
 func TestStartupHandlerHonorsBasePath(t *testing.T) {
@@ -145,7 +145,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(http.StatusOK, rr.Code)
 	assert.Contains(rr.Body.String(), `<body>app</body>`)
 	assert.Contains(rr.Body.String(), `window.__BASE_PATH__="/middleman/"`)
@@ -233,7 +233,7 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 	baseURL := "http://" + ln.Addr().String()
 
 	rootStatus, _, rootBody := getHTTPBody(t, client, baseURL+"/")
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Equal(http.StatusOK, rootStatus)
 	assert.Contains(rootBody, `<body>app</body>`)
 	assert.Contains(rootBody, `window.__BASE_PATH__="/"`)

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/tokenauth"
@@ -158,7 +158,7 @@ func TestListTagsTracksRate(t *testing.T) {
 }
 
 func TestTrackGraphQLRateHeadersUsesGraphQLTracker(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	database := openTestDB(t)
 	restRT := NewRateTracker(database, "github.example.com", "rest")
 	gqlRT := NewRateTracker(database, "github.example.com", "graphql")
@@ -183,7 +183,7 @@ func TestTrackGraphQLRateHeadersUsesGraphQLTracker(t *testing.T) {
 
 func TestListOpenIssuesLogsFetchProgressForLargeIssueSet(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
 
 	var buf bytes.Buffer
@@ -266,7 +266,7 @@ func testIssuePage(page int, now string) []map[string]any {
 
 func TestListOpenPullRequestsLogsFetchProgressForLargePullRequestSet(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
 
 	var buf bytes.Buffer
@@ -675,7 +675,7 @@ func TestListPullRequestTimelineEvents(t *testing.T) {
 }
 
 func TestListPullRequestReviewThreads(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var calls int
 	var methods []string

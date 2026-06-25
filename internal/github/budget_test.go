@@ -3,11 +3,11 @@ package github
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSyncBudgetBasics(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	b := NewSyncBudget(100)
 
 	assert.Equal(100, b.Limit())
@@ -29,6 +29,6 @@ func TestSyncBudgetBasics(t *testing.T) {
 func TestSyncBudgetWorstCase(t *testing.T) {
 	b := NewSyncBudget(10)
 	b.Spend(5)
-	Assert.False(t, b.CanSpend(PRDetailWorstCase))   // 9 > 5 remaining
-	Assert.True(t, b.CanSpend(IssueDetailWorstCase)) // 2 <= 5 remaining
+	assert.False(t, b.CanSpend(PRDetailWorstCase))   // 9 > 5 remaining
+	assert.True(t, b.CanSpend(IssueDetailWorstCase)) // 2 <= 5 remaining
 }

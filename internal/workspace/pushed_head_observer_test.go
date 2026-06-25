@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/db"
@@ -105,7 +105,7 @@ func newPushedHeadObserverForTest(
 }
 
 func TestPushedHeadObserverFirstObservationSkipsWhenProviderHeadMatches(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -132,7 +132,7 @@ func TestPushedHeadObserverFirstObservationSkipsWhenProviderHeadMatches(t *testi
 }
 
 func TestPushedHeadObserverFirstObservationEnqueuesWhenProviderHeadDiffers(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -168,7 +168,7 @@ func TestPushedHeadObserverFirstObservationEnqueuesWhenProviderHeadDiffers(t *te
 }
 
 func TestPushedHeadObserverRetriesObservedSHAUntilProviderHeadMatches(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -204,7 +204,7 @@ func TestPushedHeadObserverRetriesObservedSHAUntilProviderHeadMatches(t *testing
 }
 
 func TestPushedHeadObserverDoesNotRetryAfterRefreshSucceeds(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -232,7 +232,7 @@ func TestPushedHeadObserverDoesNotRetryAfterRefreshSucceeds(t *testing.T) {
 }
 
 func TestPushedHeadObserverDetectsSubsequentTrackingRefMove(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -263,7 +263,7 @@ func TestPushedHeadObserverDetectsSubsequentTrackingRefMove(t *testing.T) {
 }
 
 func TestPushedHeadObserverAssociatesIssueWorkspaceAndObservesHead(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -299,7 +299,7 @@ func TestPushedHeadObserverAssociatesIssueWorkspaceAndObservesHead(t *testing.T)
 }
 
 func TestPushedHeadObserverMissingRefAndTransientErrorKeepObservationState(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")

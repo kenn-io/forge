@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
@@ -26,7 +26,7 @@ import (
 // authenticate with an app token even when a PAT env var is set,
 // because taking sync traffic off the PAT is the feature.
 func TestCollectProviderTokensMintsGitHubAppToken(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 
 	fake := githubapptest.NewFake()

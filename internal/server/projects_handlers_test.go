@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/config"
@@ -37,7 +37,7 @@ func TestW1SliceAGate(t *testing.T) {
 	}
 
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -207,7 +207,7 @@ func TestW1SliceAGate(t *testing.T) {
 
 func TestRegisterProject_RejectsMissingPath(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -227,7 +227,7 @@ func TestRegisterProject_PreservesExplicitProviderIdentity(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -278,7 +278,7 @@ func TestRegisterProject_UsesConfiguredProviderForRemoteIdentity(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -317,7 +317,7 @@ func TestRegisterProject_UsesDefaultPlatformHostForRemoteIdentity(t *testing.T) 
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -391,7 +391,7 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -463,7 +463,7 @@ func TestRegisterProject_DoesNotSubscribeRepoToSync(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -773,7 +773,7 @@ func TestListLaunchTargets_NotFoundReturns404(t *testing.T) {
 
 func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
 	ts := httptest.NewServer(srv)
@@ -839,7 +839,7 @@ func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 
 func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
 	ts := httptest.NewServer(srv)
@@ -903,7 +903,7 @@ func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
 
 func TestProjectWorktreeRuntimeRejectsPlainShellOnSessionsRoute(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
 	ts := httptest.NewServer(srv)
@@ -923,7 +923,7 @@ func TestProjectWorktreeRuntimeRejectsPlainShellOnSessionsRoute(t *testing.T) {
 
 func TestProjectWorktreeRuntimeRejectsMismatchedProject(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
 	other := createRuntimeTestProject(t, srv.db, t.TempDir())
@@ -943,7 +943,7 @@ func TestProjectWorktreeRuntimeRejectsMismatchedProject(t *testing.T) {
 
 func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
 	tmuxScript := writeProjectRuntimeTmuxProbe(t, "project-runtime-live", 0, "")
@@ -986,7 +986,7 @@ func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
 
 func TestProjectWorktreeRuntimeAttachSpecRejectsMissingTmuxSession(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
 	srv.cfg.Tmux.Command = []string{
@@ -1021,7 +1021,7 @@ func TestProjectWorktreeRuntimeAttachSpecRejectsMissingTmuxSession(t *testing.T)
 
 func TestProjectWorktreeRuntimeAttachSpecRejectsNonOwnedSession(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
 	ts := httptest.NewServer(srv)
@@ -1041,7 +1041,7 @@ func TestProjectWorktreeRuntimeAttachSpecRejectsNonOwnedSession(t *testing.T) {
 
 func TestProjectWorktreeRuntimeStopFallsBackToStoredTmuxSession(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
 	record := filepath.Join(t.TempDir(), "tmux-record")
@@ -1146,7 +1146,7 @@ func TestRegisterProject_RejectsPartialPlatformIdentity(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -1191,7 +1191,7 @@ func TestRegisterProject_RejectsPartialPlatformIdentity(t *testing.T) {
 // recording the row.
 func TestRegisterProject_RejectsPathThatIsAFile(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -1222,7 +1222,7 @@ func TestRegisterWorktree_RejectsBlankFields(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -1314,7 +1314,7 @@ func TestRegisterWorktree_NotFoundReturns404(t *testing.T) {
 // test catches a regression that lets the empty case marshal to null.
 func TestListProjects_ReturnsEmptyArrayNotNull(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -1439,7 +1439,7 @@ func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	host := t.TempDir()
 	initCmd := gitcmd.New().Command(t.Context(), "", "init", "-q", "-b", "main", host)

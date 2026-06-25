@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,7 +56,7 @@ func TestParsePorcelainV1(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := parsePorcelainV1(tc.in)
 			require.NoError(t, err)
-			Assert.Equal(t, tc.want, got)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }

@@ -4,13 +4,13 @@ import (
 	"testing"
 	"time"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
 
 func TestNormalizeRepositoryMapsSharedDTO(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	created := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	updated := created.Add(time.Hour)
@@ -62,7 +62,7 @@ func TestNormalizeRepositoryMapsSharedDTO(t *testing.T) {
 }
 
 func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	closed := base.Add(2 * time.Hour)
@@ -278,7 +278,7 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 }
 
 func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	stopped := started.Add(time.Minute)
@@ -313,7 +313,7 @@ func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 }
 
 func TestNormalizeStatusesKeepsQueuedActionRerunAsLatest(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := Require.New(t)
 	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	stopped := started.Add(time.Minute)
@@ -354,7 +354,7 @@ func TestNormalizeStatusesKeepsQueuedActionRerunAsLatest(t *testing.T) {
 }
 
 func TestNormalizeEventsPreserveCommentHTMLURL(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	repo := platform.RepoRef{
 		Platform: platform.KindGitea,
@@ -468,7 +468,7 @@ func TestNormalizeIssue_SkipsEmptyUsernames(t *testing.T) {
 }
 
 func TestSharedHelpersNormalizeStateDedupeAndPagination(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	assert.Equal("open", NormalizeState("opened"))
 	assert.Equal("closed", NormalizeState("closed"))

@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +41,7 @@ func TestParseHostKey(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			got, err := ParseHostKey(tc.in)
 			if tc.wantErr {
 				assert.Error(err)
@@ -65,13 +65,13 @@ func TestHostKeyString(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			Assert.Equal(t, tc.want, tc.key.String())
+			assert.Equal(t, tc.want, tc.key.String())
 		})
 	}
 }
 
 func TestHostKeyEqual(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	a := HostKey{Host: "mm.local", Port: "8091"}
 	b := HostKey{Host: "mm.local", Port: "8091"}
 	c := HostKey{Host: "mm.local", Port: ""}
@@ -82,7 +82,7 @@ func TestHostKeyEqual(t *testing.T) {
 }
 
 func TestHostKeyValid(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.False(HostKey{}.Valid())
 	assert.False(HostKey{Host: "mm.local"}.Valid())
 	assert.False(HostKey{Port: "8091"}.Valid())

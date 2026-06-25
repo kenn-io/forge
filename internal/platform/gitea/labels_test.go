@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitealike"
@@ -31,7 +31,7 @@ func giteaLabelTestRef() platform.RepoRef {
 
 func TestClientListLabelsFetchesRepoLabelCatalog(t *testing.T) {
 	require := Require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodGet, r.Method)
 		assert.Equal("/api/v1/repos/acme/widget/labels", r.URL.Path)
@@ -77,7 +77,7 @@ func TestClientSetLabelsReplacesByResolvedIDs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require := Require.New(t)
-			assert := Assert.New(t)
+			assert := assert.New(t)
 			var putBody map[string][]int64
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")

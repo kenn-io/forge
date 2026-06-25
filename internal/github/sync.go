@@ -2516,15 +2516,15 @@ func (s *Syncer) advanceNextSync(
 func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	ctx = WithSyncBudget(ctx)
 
-	mrs := s.watchedMRsForFastSync(ctx, time.Now().UTC())
-	if len(mrs) == 0 {
+	candidates := s.watchedMRCandidatesForFastSync(ctx, time.Now().UTC())
+	if len(candidates) == 0 {
 		return
 	}
 
 	watchInt, _ := s.watchSettings()
-	watchBuckets := make([]string, len(mrs))
-	for i, mr := range mrs {
-		watchBuckets[i] = watchedMRRateBucketKey(mr)
+	watchBuckets := make([]string, len(candidates))
+	for i, candidate := range candidates {
+		watchBuckets[i] = watchedMRRateBucketKey(candidate.mr)
 	}
 	eligibleBuckets := s.hostEligibility(
 		watchBuckets, s.nextWatchSyncAfter,
@@ -2532,8 +2532,8 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 
 	// Check backoff once per provider/host bucket to avoid redundant checks.
 	blockedBuckets := make(map[string]bool)
-	for _, mr := range mrs {
-		bucket := watchedMRRateBucketKey(mr)
+	for _, candidate := range candidates {
+		bucket := watchedMRRateBucketKey(candidate.mr)
 		if _, checked := blockedBuckets[bucket]; checked {
 			continue
 		}
@@ -2547,7 +2547,8 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	}
 
 	syncedAny := false
-	for _, mr := range mrs {
+	for _, candidate := range candidates {
+		mr := candidate.mr
 		host := watchedMRHost(mr)
 		bucket := watchedMRRateBucketKey(mr)
 		if !eligibleBuckets[bucket] {
@@ -2561,6 +2562,15 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		}
 		if blockedBuckets[bucket] {
 			slog.Debug("skipping fast-sync for rate-limited host",
+				"host", host,
+				"owner", mr.Owner,
+				"name", mr.Name,
+				"number", mr.Number,
+			)
+			continue
+		}
+		if candidate.automatic && !s.canSpendAutomaticMRRefresh(mr) {
+			slog.Debug("skipping automatic active MR fast-sync due to budget",
 				"host", host,
 				"owner", mr.Owner,
 				"name", mr.Name,
@@ -2593,18 +2603,35 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 }
 
 func (s *Syncer) watchedMRsForFastSync(ctx context.Context, now time.Time) []WatchedMR {
+	candidates := s.watchedMRCandidatesForFastSync(ctx, now)
+	out := make([]WatchedMR, 0, len(candidates))
+	for _, candidate := range candidates {
+		out = append(out, candidate.mr)
+	}
+	return out
+}
+
+func (s *Syncer) watchedMRCandidatesForFastSync(
+	ctx context.Context,
+	now time.Time,
+) []watchedMRCandidate {
 	s.watchMu.Lock()
 	mrs := slices.Clone(s.watchedMRs)
 	_, activeWindow := s.watchSettingsLocked()
 	s.watchMu.Unlock()
 
-	watched := newWatchedMRSet(mrs)
+	watched := newWatchedMRCandidateSet(mrs)
 	if activeWindow > 0 {
 		for _, mr := range s.recentlyActiveOpenMRs(ctx, now, activeWindow) {
-			watched.add(mr)
+			watched.addAutomatic(mr)
 		}
 	}
 	return watched.slice()
+}
+
+func (s *Syncer) canSpendAutomaticMRRefresh(mr WatchedMR) bool {
+	budget := s.budgets[watchedMRRateBucketKey(mr)]
+	return budget == nil || budget.CanSpend(PRDetailWorstCase)
 }
 
 func (s *Syncer) watchSettingsLocked() (time.Duration, time.Duration) {
@@ -2683,29 +2710,42 @@ func watchedMRKey(mr WatchedMR) string {
 	) + fmt.Sprintf("#%d", mr.Number)
 }
 
-type watchedMRSet struct {
-	seen  map[string]struct{}
-	items []WatchedMR
+type watchedMRCandidate struct {
+	mr        WatchedMR
+	automatic bool
 }
 
-func newWatchedMRSet(initial []WatchedMR) *watchedMRSet {
-	w := &watchedMRSet{seen: make(map[string]struct{}, len(initial))}
+type watchedMRCandidateSet struct {
+	seen  map[string]struct{}
+	items []watchedMRCandidate
+}
+
+func newWatchedMRCandidateSet(initial []WatchedMR) *watchedMRCandidateSet {
+	w := &watchedMRCandidateSet{seen: make(map[string]struct{}, len(initial))}
 	for _, mr := range initial {
-		w.add(mr)
+		w.addExplicit(mr)
 	}
 	return w
 }
 
-func (w *watchedMRSet) add(mr WatchedMR) {
+func (w *watchedMRCandidateSet) addExplicit(mr WatchedMR) {
+	w.add(mr, false)
+}
+
+func (w *watchedMRCandidateSet) addAutomatic(mr WatchedMR) {
+	w.add(mr, true)
+}
+
+func (w *watchedMRCandidateSet) add(mr WatchedMR, automatic bool) {
 	key := watchedMRKey(mr)
 	if _, ok := w.seen[key]; ok {
 		return
 	}
 	w.seen[key] = struct{}{}
-	w.items = append(w.items, mr)
+	w.items = append(w.items, watchedMRCandidate{mr: mr, automatic: automatic})
 }
 
-func (w *watchedMRSet) slice() []WatchedMR {
+func (w *watchedMRCandidateSet) slice() []watchedMRCandidate {
 	return slices.Clone(w.items)
 }
 

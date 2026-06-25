@@ -147,6 +147,7 @@ type mockGH struct {
 	dismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
 	getNotificationThreadFn    func(context.Context, string) (ghclient.NotificationThread, error)
 	markNotificationReadFn     func(context.Context, string) error
+	listIssueCommentsFn        func(context.Context, string, string, int) ([]*gh.IssueComment, error)
 }
 
 func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -192,7 +193,10 @@ func (m *mockGH) GetIssue(context.Context, string, string, int) (*gh.Issue, erro
 func (m *mockGH) CreateIssue(context.Context, string, string, string, string) (*gh.Issue, error) {
 	return nil, nil
 }
-func (m *mockGH) ListIssueComments(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+func (m *mockGH) ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsFn != nil {
+		return m.listIssueCommentsFn(ctx, owner, repo, number)
+	}
 	return nil, nil
 }
 func (m *mockGH) ListIssueCommentsIfChanged(context.Context, string, string, int) ([]*gh.IssueComment, error) {

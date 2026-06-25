@@ -6805,7 +6805,7 @@ func TestWatchedMRsIncludeRecentlyActiveOpenPRs(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
-	now := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second)
 
 	githubRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
 		Platform:     "github",
@@ -6900,6 +6900,89 @@ func TestWatchedMRsNotifyOnceAfterFastSync(t *testing.T) {
 	syncer.syncWatchedMRs(t.Context())
 
 	assert.Equal(1, calls)
+}
+
+func TestAutomaticActiveMRFastSyncRespectsBudget(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "app",
+	})
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1,
+		Title: "PR", Author: "octo", State: db.MergeRequestStateOpen,
+		HeadBranch: "feature", BaseBranch: "main",
+		CreatedAt: now.Add(-24 * time.Hour),
+		UpdatedAt: now.Add(-30 * time.Minute), LastActivityAt: now.Add(-30 * time.Minute),
+	})
+	require.NoError(err)
+
+	var getCalls atomic.Int32
+	mc := &mockClient{
+		singlePR: buildOpenPR(1, now),
+		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			getCalls.Add(1)
+			return buildOpenPR(1, now), nil
+		},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+	budgets := map[string]*SyncBudget{"github.com": NewSyncBudget(PRDetailWorstCase - 1)}
+	mc.budget = budgets["github.com"]
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "app"}},
+		time.Hour, nil, budgets,
+	)
+	syncer.SetActiveMRWindow(4 * time.Hour)
+
+	syncer.syncWatchedMRs(ctx)
+
+	assert.Equal(int32(0), getCalls.Load())
+	assert.Equal(0, budgets["github.com"].Spent())
+}
+
+func TestExplicitWatchedMRFastSyncBypassesActiveBudgetAdmission(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
+
+	var getCalls atomic.Int32
+	mc := &mockClient{
+		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			getCalls.Add(1)
+			return buildOpenPR(1, now), nil
+		},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+	budgets := map[string]*SyncBudget{"github.com": NewSyncBudget(PRDetailWorstCase - 1)}
+	mc.budget = budgets["github.com"]
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "app"}},
+		time.Hour, nil, budgets,
+	)
+	syncer.SetWatchedMRs([]WatchedMR{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "app", Number: 1,
+	}})
+
+	syncer.syncWatchedMRs(ctx)
+
+	assert.Equal(int32(1), getCalls.Load())
+	assert.Positive(budgets["github.com"].Spent())
 }
 
 func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {

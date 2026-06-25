@@ -55,4 +55,32 @@ describe("PierreFileContents", () => {
     expect(fallback.textContent).toBe("export const value = 1;\n");
     expect(pierreMock.cleanUp).toHaveBeenCalled();
   });
+
+  it.each([
+    [".github/workflows/desktop-release.yml", "yaml"],
+    ["deployment/config.yaml", "yaml"],
+    ["src/main.ts", undefined],
+  ])("maps %s to the expected Pierre language", async (path, expectedLang) => {
+    render(PierreFileContents, {
+      props: {
+        path,
+        contents: "name: release\n",
+      },
+    });
+
+    await vi.waitFor(() => expect(pierreMock.render).toHaveBeenCalled());
+
+    const [{ file }] = pierreMock.render.mock.calls.at(-1) ?? [];
+
+    expect(file).toMatchObject({
+      name: path,
+      contents: "name: release\n",
+    });
+
+    if (expectedLang === undefined) {
+      expect(file).not.toHaveProperty("lang");
+    } else {
+      expect(file).toHaveProperty("lang", expectedLang);
+    }
+  });
 });

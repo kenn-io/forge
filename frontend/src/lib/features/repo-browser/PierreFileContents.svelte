@@ -1,6 +1,6 @@
 <script lang="ts">
   import { File as PierreFile } from "@pierre/diffs";
-  import type { FileContents, FileOptions, ThemeTypes } from "@pierre/diffs";
+  import type { FileContents, FileOptions, SupportedLanguages, ThemeTypes } from "@pierre/diffs";
   import { onMount } from "svelte";
 
   interface Props {
@@ -17,10 +17,15 @@
   let themeType = $state<ThemeTypes>(appThemeType());
   let renderFailed = $state(false);
 
-  const fileContents = $derived<FileContents>({
-    name: path,
-    contents,
-    cacheKey: fileContentsCacheKey(path, contents),
+  const fileContents = $derived.by<FileContents>(() => {
+    const lang = sourceLanguageForPath(path);
+
+    return {
+      name: path,
+      contents,
+      ...(lang === undefined ? {} : { lang }),
+      cacheKey: fileContentsCacheKey(path, contents),
+    };
   });
 
   const options = $derived.by<FileOptions<undefined>>(() => ({
@@ -109,6 +114,11 @@
       hash = Math.imul(hash, 16777619);
     }
     return `${filePath}\0${text.length}\0${hash >>> 0}`;
+  }
+
+  function sourceLanguageForPath(filePath: string): SupportedLanguages | undefined {
+    if (/\.ya?ml$/i.test(filePath)) return "yaml";
+    return undefined;
   }
 </script>
 

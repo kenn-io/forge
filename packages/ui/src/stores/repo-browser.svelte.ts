@@ -114,6 +114,13 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     };
   }
 
+  function prioritizePath(paths: string[], priorityPath: string | undefined): string[] {
+    if (!priorityPath) return paths;
+    const index = paths.indexOf(priorityPath);
+    if (index <= 0) return paths;
+    return [priorityPath, ...paths.slice(0, index), ...paths.slice(index + 1)];
+  }
+
   async function loadRepo(
     nextRepo: ProviderRouteRef,
     initial?: { ref?: RepoBrowserRef; path?: string | null },
@@ -198,14 +205,8 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     selectedRef = payload.ref ?? requestedRef;
     tree = payload.entries ?? [];
     treeTruncated = payload.truncated;
+    lastChanged = {};
     const autoSelectPathGeneration = pathRequestGeneration;
-    try {
-      await loadLastChanged(generation);
-    } catch {
-      if (!isCurrentTreeRequest(generation)) return;
-      lastChanged = {};
-    }
-    if (!isCurrentTreeRequest(generation)) return;
     if (pathRequestGeneration !== autoSelectPathGeneration) return;
     const requestedPathExists = requestedPath && tree.some((entry) => entry.path === requestedPath);
     const firstPath =
@@ -228,13 +229,19 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       fileHistory = [];
       selectedCommit = null;
     }
+    void loadLastChanged(generation, selectedPath ?? firstPath ?? undefined).catch(() => {
+      // Last-changed metadata is decorative; keep the tree/blob usable if it fails.
+    });
   }
 
-  async function loadLastChanged(generation = treeRequestGeneration): Promise<void> {
+  async function loadLastChanged(generation = treeRequestGeneration, priorityPath?: string): Promise<void> {
     const ref = repo;
     const requestedRef = treeContentQueryRef();
     if (!ref || !requestedRef) return;
-    const paths = tree.map((entry) => entry.path);
+    const paths = prioritizePath(
+      tree.map((entry) => entry.path),
+      priorityPath,
+    );
     if (paths.length === 0) {
       lastChanged = {};
       return;
@@ -259,9 +266,8 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       if (!isCurrentTreeRequest(generation)) return;
       if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
       Object.assign(commits, (data as RepoBrowserLastChangedResponse).commits ?? {});
+      lastChanged = { ...commits };
     }
-    if (!isCurrentTreeRequest(generation)) return;
-    lastChanged = commits;
   }
 
   async function selectRef(ref: RepoBrowserRef): Promise<void> {

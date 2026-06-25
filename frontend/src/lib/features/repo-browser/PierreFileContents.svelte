@@ -15,6 +15,7 @@
   let host: HTMLElement | undefined = $state();
   let pierreFile: PierreFile<undefined> | undefined;
   let themeType = $state<ThemeTypes>(appThemeType());
+  let renderFailed = $state(false);
 
   const fileContents = $derived<FileContents>({
     name: path,
@@ -25,7 +26,6 @@
   const options = $derived.by<FileOptions<undefined>>(() => ({
     disableFileHeader: true,
     disableVirtualizationBuffers: true,
-    disableErrorHandling: true,
     overflow: wordWrap ? "wrap" : "scroll",
     theme: { dark: "pierre-dark", light: "pierre-light" },
     themeType,
@@ -71,19 +71,26 @@
 
   $effect(() => {
     if (!host) return;
-    pierreFile ??= new PierreFile<undefined>(options, undefined, true);
-    pierreFile.setOptions(options);
-    pierreFile.render({
-      file: fileContents,
-      fileContainer: host,
-      forceRender: true,
-      renderRange: {
-        startingLine: 0,
-        totalLines: Number.POSITIVE_INFINITY,
-        bufferBefore: 0,
-        bufferAfter: 0,
-      },
-    });
+    try {
+      renderFailed = false;
+      pierreFile ??= new PierreFile<undefined>(options, undefined, true);
+      pierreFile.setOptions(options);
+      pierreFile.render({
+        file: fileContents,
+        fileContainer: host,
+        forceRender: true,
+        renderRange: {
+          startingLine: 0,
+          totalLines: Number.POSITIVE_INFINITY,
+          bufferBefore: 0,
+          bufferAfter: 0,
+        },
+      });
+    } catch {
+      renderFailed = true;
+      pierreFile?.cleanUp();
+      pierreFile = undefined;
+    }
   });
 
   $effect(() => {
@@ -108,13 +115,33 @@
 <diffs-container
   bind:this={host}
   class="pierre-file-contents"
+  class:pierre-file-contents--hidden={renderFailed}
   data-testid="repo-browser-pierre-file-contents"
 ></diffs-container>
+{#if renderFailed}
+  <pre class="pierre-file-contents__fallback" data-testid="repo-browser-plaintext-file-contents"><code>{contents}</code></pre>
+{/if}
 
 <style>
   .pierre-file-contents {
     width: 100%;
     min-width: max-content;
     min-height: 100%;
+  }
+
+  .pierre-file-contents--hidden {
+    display: none;
+  }
+
+  .pierre-file-contents__fallback {
+    min-width: max-content;
+    min-height: 100%;
+    margin: 0;
+    background: var(--bg-primary, transparent);
+    color: var(--text-primary);
+    font: inherit;
+    line-height: 1.55;
+    tab-size: var(--diffs-tab-size, 2);
+    white-space: pre;
   }
 </style>

@@ -186,6 +186,48 @@ test.describe("repository source browser", () => {
     }
   });
 
+  test("does not reload repository data when the active ref is selected again", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const refsURLs = collectRepoBrowserResponseURLs(page, "refs");
+      const treeURLs = collectRepoBrowserResponseURLs(page, "tree", "main");
+      const blobURLs = collectRepoBrowserResponseURLs(page, "blob", undefined, "README.md");
+      const refsLoaded = repoBrowserResponse(page, "refs");
+      const treeLoaded = treeResponse(page, "main");
+      const blobLoaded = blobResponse(page, "README.md");
+
+      await page.goto(
+        `${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md`,
+      );
+      await refsLoaded;
+      await treeLoaded;
+      await blobLoaded;
+
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      await expect(browser.getByRole("main", { name: "Selected file" }).locator(".repo-browser__path")).toContainText(
+        "README.md",
+      );
+      const routeBeforeReselect = page.url();
+
+      await browser.getByRole("button", { name: /Select repository ref: branch: main/ }).click();
+      await browser.getByRole("option", { name: /branch: main/ }).click();
+
+      await expect(browser.getByRole("combobox", { name: "Search repository refs" })).toHaveCount(0);
+      expect(page.url()).toBe(routeBeforeReselect);
+      expect(refsURLs).toHaveLength(1);
+      expect(treeURLs).toHaveLength(1);
+      expect(blobURLs).toHaveLength(1);
+      await expectNoMoreRepoBrowserResponses(page, "refs");
+      await expectNoMoreRepoBrowserResponses(page, "tree", "main");
+      await expectNoMoreRepoBrowserResponses(page, "blob");
+      expect(refsURLs).toHaveLength(1);
+      expect(treeURLs).toHaveLength(1);
+      expect(blobURLs).toHaveLength(1);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("reloads repository data when a mounted route moves the same branch to a different SHA", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {

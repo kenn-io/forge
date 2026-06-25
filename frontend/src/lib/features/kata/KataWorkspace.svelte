@@ -155,10 +155,10 @@
     workspaceTarget = null;
     workspaceTargetLoading = false;
     requestError = null;
-    if (!selected) return;
+    if (!selected || !daemonID) return;
 
     workspaceTargetLoading = true;
-    const identity = kataWorkspaceIdentityFromIssue(selected, daemonID);
+    const identity = kataWorkspaceIdentityFromIssue(selected, daemonID, projectNameForIssue(selected));
     void resolveKataWorkspaceTarget(identity)
       .then((target) => {
         if (requestID !== workspaceTargetRequestID) return;
@@ -412,6 +412,11 @@
     const scope = store.searchFilters.scope;
     if (scope.kind !== "project") return null;
     return store.projects.find((project) => project.uid === scope.project_uid)?.name ?? null;
+  }
+
+  function projectNameForIssue(issue: KataTaskSummary): string | null {
+    const project = store.projects.find((candidate) => candidate.uid === issue.project_uid);
+    return project?.name ?? issue.project_name ?? null;
   }
 
   function ownerOptions(): TypeaheadOption[] {
@@ -729,7 +734,9 @@
     workspaceActionBusy = true;
     requestError = null;
     try {
-      const created = await createKataWorkspaceForTask(kataWorkspaceIdentityFromIssue(selected, activeKataDaemonId ?? null));
+      const created = await createKataWorkspaceForTask(
+        kataWorkspaceIdentityFromIssue(selected, activeKataDaemonId ?? null, projectNameForIssue(selected)),
+      );
       openWorkspace(created.id);
     } catch (err) {
       requestError = kataRequestErrorMessage(err);

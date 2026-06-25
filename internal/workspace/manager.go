@@ -412,11 +412,18 @@ func (m *Manager) CreateKataTask(
 	metadata.ShortID = strings.TrimSpace(metadata.ShortID)
 	metadata.QualifiedID = strings.TrimSpace(metadata.QualifiedID)
 	metadata.Title = strings.TrimSpace(metadata.Title)
+	if metadata.DaemonID == "" {
+		return nil, errors.New("kata daemon_id is required")
+	}
 	if metadata.ProjectUID == "" {
 		return nil, errors.New("kata project_uid is required")
 	}
 	if metadata.IssueUID == "" {
 		return nil, errors.New("kata issue_uid is required")
+	}
+	itemKey := db.KataWorkspaceItemKey(metadata)
+	if itemKey == "" {
+		return nil, errors.New("kata workspace item_key is required")
 	}
 
 	repo, err := m.workspaceRepo(ctx, provider, platformHost, owner, name)
@@ -445,7 +452,7 @@ func (m *Manager) CreateKataTask(
 		RepoOwner:       owner,
 		RepoName:        name,
 		ItemType:        db.WorkspaceItemTypeKataTask,
-		ItemKey:         metadata.IssueUID,
+		ItemKey:         itemKey,
 		GitHeadRef:      gitHeadRef,
 		WorkspaceBranch: gitHeadRef,
 		WorktreePath: filepath.Join(

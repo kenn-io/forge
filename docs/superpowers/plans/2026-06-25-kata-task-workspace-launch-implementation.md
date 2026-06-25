@@ -4,7 +4,7 @@
 
 **Goal:** Add Create/Open workspace support to Kata task details, using exact configured repository mappings and embedding the live Kata task details pane inside Kata-backed workspaces.
 
-**Architecture:** Kata tasks remain non-provider objects. Workspaces gain an `item_key` owner column so provider issues/PRs keep numeric keys while Kata task workspaces use the Kata issue UID string; Kata metadata is stored with the workspace for later live-detail lookup. Repository resolution is split into config-backed manual mappings and `.kata.toml` discovery under configured watched repos, and the frontend renders the same `KataIssueDetail.svelte` component from both the Kata browser and the workspace sidebar.
+**Architecture:** Kata tasks remain non-provider objects. Workspaces gain an `item_key` owner column so provider issues/PRs keep numeric keys while Kata task workspaces use a scoped key derived from Kata daemon/project/issue identity; Kata metadata is stored with the workspace for later live-detail lookup. Repository resolution is split into config-backed manual mappings and `.kata.toml` discovery under configured watched repos, and the frontend renders the same `KataIssueDetail.svelte` component from both the Kata browser and the workspace sidebar.
 
 **Tech Stack:** Go, SQLite migrations, Huma API handlers, Svelte 5 runes, TypeScript, Vite+ (`vp`), Bun-managed dependencies.
 
@@ -38,7 +38,7 @@
 
 - [ ] **Step 1: Write failing database tests**
 
-Add tests that insert a normal provider issue workspace and a Kata workspace. The provider issue row must read back with `ItemKey == "42"` and `ItemNumber == 42`; the Kata row must read back with `ItemType == "kata_task"`, `ItemKey == "kata-uid-1"`, `ItemNumber == 0`, and decoded Kata metadata.
+Add tests that insert a normal provider issue workspace and a Kata workspace. The provider issue row must read back with `ItemKey == "42"` and `ItemNumber == 42`; the Kata row must read back with `ItemType == "kata_task"`, a scoped `ItemKey` derived from daemon/project/issue identity, `ItemNumber == 0`, and decoded Kata metadata.
 
 - [ ] **Step 2: Verify red**
 
@@ -117,7 +117,7 @@ Expected: pass.
 Add tests for `POST /api/v1/kata/workspace-target`:
 - manual daemon/project mapping returns the configured repo,
 - manual global project mapping is used when daemon-specific mapping is absent,
-- `.kata.toml` under exactly one configured repo with `worktree_base_path` resolves automatically,
+- `.kata.toml` under exactly one configured repo with `worktree_base_path` resolves automatically by project UID, identity, or unambiguous project name,
 - no mapping or multiple automatic matches returns `available:false`,
 - existing Kata workspace returns an `existing_workspace` ref.
 
@@ -133,7 +133,7 @@ Expected: fail because the route is not registered.
 
 - [ ] **Step 3: Implement target resolver**
 
-Implement mapping precedence: manual daemon/project, manual global project, automatic `.kata.toml` discovery under exact configured repo clone paths. Return no button state when the mapping is absent or ambiguous. Match existing workspaces by provider, host, repo, `item_type="kata_task"`, and `item_key=issue_uid`.
+Implement mapping precedence: manual daemon/project, manual global project, automatic `.kata.toml` discovery under exact configured repo clone paths. Return no button state when the mapping is absent or ambiguous. Match existing workspaces by provider, host, repo, `item_type="kata_task"`, and the scoped Kata workspace item key.
 
 - [ ] **Step 4: Verify green**
 
@@ -157,7 +157,7 @@ Expected: pass.
 
 Add tests for `POST /api/v1/kata/workspaces`:
 - creating a workspace does not require a provider issue row,
-- the workspace uses `item_type="kata_task"`, `item_key` equal to Kata issue UID, stored metadata, and a branch generated from the Kata task ID/title,
+- the workspace uses `item_type="kata_task"`, a scoped Kata workspace `item_key`, stored metadata, and a branch generated from the Kata task ID/title,
 - calling create again returns the existing workspace instead of creating a duplicate.
 
 - [ ] **Step 2: Verify red**

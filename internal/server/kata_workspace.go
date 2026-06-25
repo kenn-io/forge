@@ -16,7 +16,7 @@ import (
 )
 
 type kataWorkspaceTaskRequest struct {
-	DaemonID    string `json:"daemon_id,omitempty"`
+	DaemonID    string `json:"daemon_id"`
 	ProjectUID  string `json:"project_uid"`
 	ProjectName string `json:"project_name,omitempty"`
 	IssueUID    string `json:"issue_uid"`
@@ -59,6 +59,9 @@ func (body kataWorkspaceTaskRequest) metadata() (db.WorkspaceKataMetadata, error
 	if metadata.ProjectUID == "" {
 		return metadata, problemValidation("body.project_uid", "project_uid is required")
 	}
+	if metadata.DaemonID == "" {
+		return metadata, problemValidation("body.daemon_id", "daemon_id is required")
+	}
 	if metadata.IssueUID == "" {
 		return metadata, problemValidation("body.issue_uid", "issue_uid is required")
 	}
@@ -89,7 +92,7 @@ func (s *Server) kataWorkspaceTarget(
 		Available: true,
 		Repo:      &repoRef,
 		ItemType:  db.WorkspaceItemTypeKataTask,
-		ItemKey:   metadata.IssueUID,
+		ItemKey:   db.KataWorkspaceItemKey(metadata),
 	}
 	existing, err := s.db.GetWorkspaceByItemKeyForProvider(
 		ctx,
@@ -98,7 +101,7 @@ func (s *Server) kataWorkspaceTarget(
 		target.Owner,
 		target.Name,
 		db.WorkspaceItemTypeKataTask,
-		metadata.IssueUID,
+		resp.ItemKey,
 	)
 	if err != nil {
 		return nil, problemInternal("lookup existing Kata workspace: " + err.Error())
@@ -142,7 +145,7 @@ func (s *Server) createKataWorkspace(
 		target.Owner,
 		target.Name,
 		db.WorkspaceItemTypeKataTask,
-		metadata.IssueUID,
+		db.KataWorkspaceItemKey(metadata),
 	)
 	if err != nil {
 		return nil, problemInternal("lookup existing Kata workspace: " + err.Error())
@@ -168,7 +171,7 @@ func (s *Server) createKataWorkspace(
 				target.Owner,
 				target.Name,
 				db.WorkspaceItemTypeKataTask,
-				metadata.IssueUID,
+				db.KataWorkspaceItemKey(metadata),
 			)
 			if getErr == nil && existing != nil {
 				return s.kataWorkspaceCreateOutput(ctx, existing.ID)
@@ -221,7 +224,7 @@ func (s *Server) resolveKataWorkspaceRepo(
 	if repo, ok := kataManualWorkspaceRepo(repos, mappings, metadata, false); ok {
 		return kataResolvedRepoFromConfig(repo), true, nil
 	}
-	repo, ok := kataAutomaticWorkspaceRepo(repos, metadata.ProjectUID)
+	repo, ok := kataAutomaticWorkspaceRepo(repos, metadata.ProjectUID, metadata.ProjectName)
 	if !ok {
 		return kataResolvedWorkspaceRepo{}, false, nil
 	}
@@ -263,36 +266,77 @@ func kataMappingMatchesRepo(mapping config.KataProjectRepoMapping, repo config.R
 		strings.EqualFold(mapping.RepoPath, configRepoPath(repo))
 }
 
-func kataAutomaticWorkspaceRepo(repos []config.Repo, projectUID string) (config.Repo, bool) {
+func kataAutomaticWorkspaceRepo(repos []config.Repo, projectUID string, projectName string) (config.Repo, bool) {
+	if repo, matches := kataAutomaticWorkspaceRepoByTOML(repos, func(project kataProjectTOML) bool {
+		return project.uidOrIdentity() == projectUID
+	}); matches == 1 {
+		return repo, true
+	} else if matches > 1 {
+		return config.Repo{}, false
+	}
+	name := strings.TrimSpace(projectName)
+	if name == "" {
+		return config.Repo{}, false
+	}
+	repo, matches := kataAutomaticWorkspaceRepoByTOML(repos, func(project kataProjectTOML) bool {
+		return strings.EqualFold(project.Name, name)
+	})
+	if matches != 1 {
+		return config.Repo{}, false
+	}
+	return repo, true
+}
+
+func kataAutomaticWorkspaceRepoByTOML(repos []config.Repo, matches func(kataProjectTOML) bool) (config.Repo, int) {
 	var matched []config.Repo
 	for _, repo := range repos {
 		if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
 			continue
 		}
-		if readKataProjectUID(repo.WorktreeBasePath) == projectUID {
+		project, ok := readKataProjectTOML(repo.WorktreeBasePath)
+		if ok && matches(project) {
 			matched = append(matched, repo)
 		}
 	}
 	if len(matched) != 1 {
-		return config.Repo{}, false
+		return config.Repo{}, len(matched)
 	}
-	return matched[0], true
+	return matched[0], 1
 }
 
-func readKataProjectUID(root string) string {
+type kataProjectTOML struct {
+	UID      string
+	Identity string
+	Name     string
+}
+
+func (project kataProjectTOML) uidOrIdentity() string {
+	if uid := strings.TrimSpace(project.UID); uid != "" {
+		return uid
+	}
+	return strings.TrimSpace(project.Identity)
+}
+
+func readKataProjectTOML(root string) (kataProjectTOML, bool) {
 	raw, err := os.ReadFile(filepath.Join(root, ".kata.toml"))
 	if err != nil {
-		return ""
+		return kataProjectTOML{}, false
 	}
 	var doc struct {
 		Project struct {
-			UID string `toml:"uid"`
+			UID      string `toml:"uid"`
+			Identity string `toml:"identity"`
+			Name     string `toml:"name"`
 		} `toml:"project"`
 	}
 	if _, err := toml.Decode(string(raw), &doc); err != nil {
-		return ""
+		return kataProjectTOML{}, false
 	}
-	return strings.TrimSpace(doc.Project.UID)
+	return kataProjectTOML{
+		UID:      strings.TrimSpace(doc.Project.UID),
+		Identity: strings.TrimSpace(doc.Project.Identity),
+		Name:     strings.TrimSpace(doc.Project.Name),
+	}, true
 }
 
 func kataResolvedRepoFromConfig(repo config.Repo) kataResolvedWorkspaceRepo {

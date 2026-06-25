@@ -2,6 +2,7 @@ package db
 
 import (
 	"cmp"
+	"encoding/base64"
 	"strings"
 	"time"
 )
@@ -625,11 +626,30 @@ const (
 type WorkspaceKataMetadata struct {
 	DaemonID    string `json:"daemon_id"`
 	ProjectUID  string `json:"project_uid"`
-	ProjectName string `json:"project_name"`
+	ProjectName string `json:"project_name,omitempty"`
 	IssueUID    string `json:"issue_uid"`
 	ShortID     string `json:"short_id,omitempty"`
 	QualifiedID string `json:"qualified_id,omitempty"`
-	Title       string `json:"title"`
+	Title       string `json:"title,omitempty"`
+}
+
+func KataWorkspaceItemKey(metadata WorkspaceKataMetadata) string {
+	daemonID := strings.TrimSpace(metadata.DaemonID)
+	projectUID := strings.TrimSpace(metadata.ProjectUID)
+	issueUID := strings.TrimSpace(metadata.IssueUID)
+	if daemonID == "" || projectUID == "" || issueUID == "" {
+		return ""
+	}
+	return strings.Join([]string{
+		"kata",
+		kataWorkspaceItemKeyPart(daemonID),
+		kataWorkspaceItemKeyPart(projectUID),
+		kataWorkspaceItemKeyPart(issueUID),
+	}, ":")
+}
+
+func kataWorkspaceItemKeyPart(value string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(value))
 }
 
 // Workspace represents a middleman-managed git worktree linked to a

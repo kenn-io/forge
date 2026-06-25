@@ -4299,27 +4299,29 @@ func TestKataWorkspaceMetadata(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
+	metadata := WorkspaceKataMetadata{
+		DaemonID:    "main",
+		ProjectUID:  "project-kata",
+		ProjectName: "Kata",
+		IssueUID:    "kata-uid-1",
+		ShortID:     "task-123",
+		QualifiedID: "Kata#task-123",
+		Title:       "Fix widget",
+	}
+	itemKey := KataWorkspaceItemKey(metadata)
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
 		ID:              "ws-kata-task",
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
 		ItemType:        WorkspaceItemTypeKataTask,
-		ItemKey:         "kata-uid-1",
+		ItemKey:         itemKey,
 		GitHeadRef:      "middleman/kata/task-123-fix-widget",
 		WorkspaceBranch: "middleman/kata/task-123-fix-widget",
 		WorktreePath:    "/tmp/ws-kata-task",
 		TmuxSession:     "ws-kata-task",
 		Status:          "ready",
-		KataMetadata: &WorkspaceKataMetadata{
-			DaemonID:    "main",
-			ProjectUID:  "project-kata",
-			ProjectName: "Kata",
-			IssueUID:    "kata-uid-1",
-			ShortID:     "task-123",
-			QualifiedID: "Kata#task-123",
-			Title:       "Fix widget",
-		},
+		KataMetadata:    &metadata,
 	}))
 
 	got, err := d.GetWorkspace(ctx, "ws-kata-task")
@@ -4327,7 +4329,7 @@ func TestKataWorkspaceMetadata(t *testing.T) {
 	require.NotNil(got)
 	assert.Equal(WorkspaceItemTypeKataTask, got.ItemType)
 	assert.Equal(0, got.ItemNumber)
-	assert.Equal("kata-uid-1", got.ItemKey)
+	assert.Equal(itemKey, got.ItemKey)
 	require.NotNil(got.KataMetadata)
 	assert.Equal("main", got.KataMetadata.DaemonID)
 	assert.Equal("project-kata", got.KataMetadata.ProjectUID)
@@ -4340,7 +4342,7 @@ func TestKataWorkspaceMetadata(t *testing.T) {
 	summary, err := d.GetWorkspaceSummary(ctx, "ws-kata-task")
 	require.NoError(err)
 	require.NotNil(summary)
-	assert.Equal("kata-uid-1", summary.ItemKey)
+	assert.Equal(itemKey, summary.ItemKey)
 	require.NotNil(summary.KataMetadata)
 	require.NotNil(summary.MRTitle)
 	assert.Equal("Fix widget", *summary.MRTitle)

@@ -5258,7 +5258,7 @@ export interface components {
              * @example /api/v1/schemas/KataWorkspaceTaskRequest.json
              */
             readonly $schema?: string;
-            daemon_id?: string;
+            daemon_id: string;
             issue_uid: string;
             project_name?: string;
             project_uid: string;
@@ -7069,11 +7069,11 @@ export interface components {
         WorkspaceKataMetadata: {
             daemon_id: string;
             issue_uid: string;
-            project_name: string;
+            project_name?: string;
             project_uid: string;
             qualified_id?: string;
             short_id?: string;
-            title: string;
+            title?: string;
         };
         WorkspaceRef: {
             id: string;

@@ -52,9 +52,11 @@ The resolver uses this precedence:
 
 1. Manual mapping for the selected Kata daemon and project UID.
 2. Manual mapping for any daemon and the selected project UID.
-3. Automatic mapping from `.kata.toml` in exact configured repositories with a
-   non-empty `worktree_base_path`.
-4. No target when neither source yields exactly one repository.
+3. Automatic mapping by `.kata.toml` project UID or identity in exact configured
+   repositories with a non-empty `worktree_base_path`.
+4. Automatic mapping by unambiguous `.kata.toml` project name when the selected
+   Kata issue only carries the daemon's opaque project UID.
+5. No target when neither source yields exactly one repository.
 
 Manual mappings are a fallback and override only the project they name. Automatic
 discovery remains the default path because it follows the user's existing watched
@@ -100,16 +102,25 @@ The `.kata.toml` parser accepts a small, explicit shape:
 ```toml
 [project]
 uid = "project-kata"
+identity = "github.com/acme/widget"
+name = "Widget"
 ```
 
-`uid` is the stable identity used for automatic matching. If a file is absent,
-unreadable, malformed, or missing `project.uid`, that repository contributes no
-automatic mapping.
+`uid` is the preferred stable identity used for automatic matching. Existing
+Kata clone metadata may instead use `project.identity`; middleman accepts that
+as a fallback identity. If the selected Kata issue carries only an opaque daemon
+project UID, middleman can also match `project.name` against the selected
+project name from the Kata project catalog. If a file is absent, unreadable,
+malformed, or missing all usable identity/name fields, that repository
+contributes no automatic mapping.
 
-If two repositories claim the same Kata project UID for the same daemon scope,
-the resolver treats the mapping as ambiguous and returns no workspace target.
-The UI should not show a disabled button for this state because the user asked
-for the button to be absent when there is no clear mapping.
+Automatic `.kata.toml` mappings are global by project UID, identity, or name
+because the file does not carry daemon identity. Identity matches are preferred
+over name matches. If two repositories claim the same Kata project identity or
+the same fallback project name, the resolver treats the mapping as ambiguous and
+returns no workspace target. The UI should not show a disabled button for this
+state because the user asked for the button to be absent when there is no clear
+mapping.
 
 ## Manual Settings
 
@@ -147,7 +158,8 @@ Add an `item_key` text column and make it the canonical owner key:
 
 - Existing PR and provider-issue workspaces use decimal `item_number` as
   `item_key`.
-- Kata workspaces use `item_type = "kata_task"` and `item_key = issue.uid`.
+- Kata workspaces use `item_type = "kata_task"` and an opaque `item_key`
+  derived from Kata daemon ID, project UID, and issue UID.
 - `item_number` remains populated for PR/provider issue workspaces and is absent
   or ignored for Kata workspaces.
 - The workspace uniqueness constraint uses
@@ -194,8 +206,8 @@ Request body:
 
 - `daemon_id`
 - `project_uid`
-- `project_name`
 - `issue_uid`
+- `project_name`
 - `short_id`
 - `qualified_id`
 - `title`
@@ -214,19 +226,14 @@ Add a middleman API for creating or reusing a Kata-backed workspace:
 
 `POST /api/v1/kata/workspaces`
 
-Request body:
+Request body uses the same selected-task identity fields as the resolver. The
+server re-runs repository resolution at mutation time rather than trusting a
+stale frontend repository target.
 
-- Repository identity from the resolver response.
-- Kata daemon ID.
-- Kata project UID and project name.
-- Kata issue UID.
-- Kata short ID or qualified ID.
-- Kata task title.
-
-The server creates a workspace with `item_type = "kata_task"` and
-`item_key = issue_uid`, starting from the mapped repository's current
-`origin/HEAD`. Branch names should be derived from the Kata short ID or
-qualified ID plus a title slug, not from the opaque UID alone.
+The server creates a workspace with `item_type = "kata_task"` and a scoped
+Kata owner key, starting from the mapped repository's current `origin/HEAD`.
+Branch names should be derived from the Kata short ID or qualified ID plus a
+title slug, not from the opaque UID alone.
 
 Provider PR and provider issue workspace endpoints remain unchanged.
 
@@ -286,6 +293,7 @@ The resolver intentionally uses absence for non-actionable states:
 - No project mapping.
 - Ambiguous project mapping.
 - Missing Kata issue UID.
+- Missing Kata daemon ID.
 - Repository is no longer tracked.
 
 Those cases return `available: false`. They are expected states, not user-facing
@@ -300,11 +308,12 @@ and code, not prose.
 Backend coverage:
 
 - Automatic mapping succeeds from a configured exact repo with
-  `worktree_base_path` and `.kata.toml`.
+  `worktree_base_path` and `.kata.toml` project UID, identity, or unambiguous
+  project name.
 - Glob repos and repos without local clone paths do not participate in automatic
   mapping.
-- Duplicate `.kata.toml` project UID claims are ambiguous and return
-  `available: false`.
+- Duplicate `.kata.toml` project UID, identity, or name claims are ambiguous and
+  return `available: false`.
 - Manual mapping resolves to a watched repository and overrides an automatic
   mapping for the same daemon/project.
 - Missing Kata issue UID and removed watched repo mappings return
@@ -313,7 +322,7 @@ Backend coverage:
 - Workspace DB migration backfills `item_key` for existing PR and issue rows and
   enforces uniqueness on `item_key`.
 - Kata workspace creation stores `item_type = "kata_task"` and a string
-  `item_key` without requiring a provider issue row.
+  scoped `item_key` without requiring a provider issue row.
 
 Frontend coverage:
 

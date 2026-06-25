@@ -1387,7 +1387,7 @@ type KataWorkspaceTargetResponse struct {
 type KataWorkspaceTaskRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema      *string `json:"$schema,omitempty"`
-	DaemonId    *string `json:"daemon_id,omitempty"`
+	DaemonId    string  `json:"daemon_id"`
 	IssueUid    string  `json:"issue_uid"`
 	ProjectName *string `json:"project_name,omitempty"`
 	ProjectUid  string  `json:"project_uid"`
@@ -2981,11 +2981,11 @@ type WorkflowApprovalResponse struct {
 type WorkspaceKataMetadata struct {
 	DaemonId    string  `json:"daemon_id"`
 	IssueUid    string  `json:"issue_uid"`
-	ProjectName string  `json:"project_name"`
+	ProjectName *string `json:"project_name,omitempty"`
 	ProjectUid  string  `json:"project_uid"`
 	QualifiedId *string `json:"qualified_id,omitempty"`
 	ShortId     *string `json:"short_id,omitempty"`
-	Title       string  `json:"title"`
+	Title       *string `json:"title,omitempty"`
 }
 
 // WorkspaceRef defines model for WorkspaceRef.

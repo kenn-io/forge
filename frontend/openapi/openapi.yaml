@@ -2408,6 +2408,7 @@ components:
         title:
           type: string
       required:
+        - daemon_id
         - project_uid
         - issue_uid
       type: object
@@ -6528,9 +6529,7 @@ components:
       required:
         - daemon_id
         - project_uid
-        - project_name
         - issue_uid
-        - title
       type: object
     WorkspaceRef:
       additionalProperties: false

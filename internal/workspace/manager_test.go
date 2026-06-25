@@ -377,28 +377,22 @@ func TestCreateKataTaskDoesNotRequireProviderIssue(t *testing.T) {
 	seedRepo(t, d, "github.com", "acme", "widget")
 
 	mgr := NewManager(d, t.TempDir())
-	ws, err := mgr.CreateKataTask(
-		ctx,
-		"github",
-		"github.com",
-		"acme",
-		"widget",
-		db.WorkspaceKataMetadata{
-			DaemonID:    "desktop",
-			ProjectUID:  "project-kata",
-			ProjectName: "Kata",
-			IssueUID:    "issue-kata-1",
-			ShortID:     "task-123",
-			QualifiedID: "Kata#task-123",
-			Title:       "Fix widget",
-		},
-	)
+	metadata := db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "Kata",
+		IssueUID:    "issue-kata-1",
+		ShortID:     "task-123",
+		QualifiedID: "Kata#task-123",
+		Title:       "Fix widget",
+	}
+	ws, err := mgr.CreateKataTask(ctx, "github", "github.com", "acme", "widget", metadata)
 	require.NoError(err)
 	require.NotNil(ws)
 
 	assert.Equal(db.WorkspaceItemTypeKataTask, ws.ItemType)
 	assert.Equal(0, ws.ItemNumber)
-	assert.Equal("issue-kata-1", ws.ItemKey)
+	assert.Equal(db.KataWorkspaceItemKey(metadata), ws.ItemKey)
 	assert.Equal("middleman/kata/task-123-fix-widget", ws.GitHeadRef)
 	assert.Equal("middleman/kata/task-123-fix-widget", ws.WorkspaceBranch)
 	assert.Contains(ws.WorktreePath, "kata-task-123")
@@ -409,9 +403,43 @@ func TestCreateKataTaskDoesNotRequireProviderIssue(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal(db.WorkspaceItemTypeKataTask, got.ItemType)
-	assert.Equal("issue-kata-1", got.ItemKey)
+	assert.Equal(db.KataWorkspaceItemKey(metadata), got.ItemKey)
 	require.NotNil(got.KataMetadata)
 	assert.Equal("Fix widget", got.KataMetadata.Title)
+}
+
+func TestCreateKataTaskScopesItemKeyByDaemonAndProject(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	ctx := t.Context()
+	seedRepo(t, d, "github.com", "acme", "widget")
+
+	mgr := NewManager(d, t.TempDir())
+	first := db.WorkspaceKataMetadata{
+		DaemonID:   "desktop",
+		ProjectUID: "project-kata",
+		IssueUID:   "shared-issue",
+		ShortID:    "desk-1",
+		Title:      "Fix desktop task",
+	}
+	second := db.WorkspaceKataMetadata{
+		DaemonID:   "laptop",
+		ProjectUID: "project-kata",
+		IssueUID:   "shared-issue",
+		ShortID:    "lap-1",
+		Title:      "Fix laptop task",
+	}
+
+	ws1, err := mgr.CreateKataTask(ctx, "github", "github.com", "acme", "widget", first)
+	require.NoError(err)
+	ws2, err := mgr.CreateKataTask(ctx, "github", "github.com", "acme", "widget", second)
+	require.NoError(err)
+
+	assert.NotEqual(ws1.ItemKey, ws2.ItemKey)
+	assert.Equal(db.KataWorkspaceItemKey(first), ws1.ItemKey)
+	assert.Equal(db.KataWorkspaceItemKey(second), ws2.ItemKey)
 }
 
 func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) {

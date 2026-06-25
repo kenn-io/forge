@@ -18,14 +18,16 @@ function requestErrorMessage(error: { detail?: string; title?: string } | undefi
 export function kataWorkspaceIdentityFromIssue(
   issue: KataTaskSummary,
   daemonID: string | null | undefined,
+  projectName?: string | null,
 ): KataWorkspaceTaskIdentity {
+  const trimmedDaemonID = daemonID?.trim() ?? "";
+  const trimmedProjectName = projectName?.trim() || issue.project_name;
   const identity: KataWorkspaceTaskIdentity = {
+    daemon_id: trimmedDaemonID,
     project_uid: issue.project_uid,
     issue_uid: issue.uid,
   };
-  const trimmedDaemonID = daemonID?.trim() ?? "";
-  if (trimmedDaemonID !== "") identity.daemon_id = trimmedDaemonID;
-  if (issue.project_name !== "") identity.project_name = issue.project_name;
+  if (trimmedProjectName !== "") identity.project_name = trimmedProjectName;
   if (issue.short_id !== "") identity.short_id = issue.short_id;
   if (issue.qualified_id !== "") identity.qualified_id = issue.qualified_id;
   if (issue.title !== "") identity.title = issue.title;

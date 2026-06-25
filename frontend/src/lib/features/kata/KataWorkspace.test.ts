@@ -97,7 +97,8 @@ describe("KataWorkspace", () => {
   });
 
   it("opens system views without auto-selecting the first task", async () => {
-    const { api } = createWorkspaceAPI();
+    const rows = initialIssues.map((item) => (item.uid === "issue-pay-rent" ? { ...item, project_name: "" } : item));
+    const { api } = createWorkspaceAPI(rows);
     const onRouteStateChange = vi.fn();
 
     render(KataWorkspace, { props: { api, onRouteStateChange } });
@@ -443,6 +444,14 @@ describe("KataWorkspace", () => {
       expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
       expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
     });
+    expect(mockResolveKataWorkspaceTarget).toHaveBeenCalledWith(
+      expect.objectContaining({
+        daemon_id: "home",
+        project_uid: "project-finances",
+        project_name: "Finances",
+        issue_uid: "issue-pay-rent",
+      }),
+    );
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => {
@@ -450,6 +459,7 @@ describe("KataWorkspace", () => {
         expect.objectContaining({
           daemon_id: "home",
           project_uid: "project-finances",
+          project_name: "Finances",
           issue_uid: "issue-pay-rent",
         }),
       );

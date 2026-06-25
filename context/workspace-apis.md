@@ -36,7 +36,8 @@ state.
   `issue`, or `kata_task`.
 - `item_key`: the canonical owner key within the repo/workspace namespace. PR
   and provider issue workspaces use the decimal item number as a string; Kata
-  task workspaces use the Kata issue UID.
+  task workspaces use an opaque composite of Kata daemon ID, project UID, and
+  issue UID so issue IDs from different Kata scopes cannot collide.
 - `item_number`: the provider item number within the repo. For Kata task
   workspaces this is `0` and must not be used for owner identity.
 - `git_head_ref`: the Git branch name middleman opens in the worktree.
@@ -59,8 +60,11 @@ owning provider item has not synced yet, the summary leaves
 Kata task repository resolution is deliberately exact. Manual settings mappings
 key by optional daemon ID plus Kata project UID and point to a configured exact
 repo identity. Automatic resolution only uses watched exact repos with
-`worktree_base_path` whose clone contains a matching `.kata.toml`; ambiguous or
-missing matches mean the Create/Open workspace button must not render.
+`worktree_base_path` whose clone contains a matching `.kata.toml`. Matching
+first compares `project.uid` or `project.identity` to the Kata project UID; when
+that is unavailable, it may fall back to a case-insensitive `project.name` match
+against the selected task's project name. Ambiguous or missing matches mean the
+Create/Open workspace button must not render.
 
 All workspace API timestamps are emitted as UTC RFC3339 strings. Keep timestamp
 normalization in the DB/server boundary; the Svelte UI can present local time

@@ -115,7 +115,7 @@ repository_selection = "all"
 
 	key := providerHostKey("github", "github.com")
 	require.Contains(sources, key)
-	got, err := sources[key].Token(t.Context())
+	got, err := sources[key].Token(tokenauth.WithGitHubOwner(t.Context(), "kenn-io"))
 	require.NoError(err)
 	assert.True(strings.HasPrefix(got, "ghs_"),
 		"expected a minted installation token, got %q", got)
@@ -125,4 +125,38 @@ repository_selection = "all"
 	rate, err := apiClient.CoreRateLimit(t.Context(), got)
 	require.NoError(err)
 	assert.Equal(5000, rate.Limit)
+}
+
+func TestCollectProviderTokensValidatesGitHubAppPerRepoOwner(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(configPath, []byte(`
+[[repos]]
+owner = "kenn-io"
+name = "middleman"
+
+[[repos]]
+owner = "mariusvniekerk"
+name = "skills"
+
+[[github_apps]]
+host = "github.com"
+app_id = 4321
+private_key_path = "app.pem"
+installation_id = 99
+installation_account = "kenn-io"
+repository_selection = "all"
+`), 0o600))
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubApp: func(_ context.Context, c tokenauth.Candidate) (string, time.Time, error) {
+			return "ghs_kenn", time.Now().Add(time.Hour), nil
+		},
+	})
+	_, err = collectProviderTokenSources(t.Context(), cfg, set)
+	require.Error(err)
+	Assert.ErrorContains(t, err, "owner mariusvniekerk")
 }

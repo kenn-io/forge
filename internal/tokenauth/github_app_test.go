@@ -3,6 +3,7 @@ package tokenauth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -92,6 +93,78 @@ func TestGitHubAppNilMinterFallsThrough(t *testing.T) {
 	token, err := src.Token(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "pat-token", token)
+}
+
+func TestGitHubAppRequiresMatchingOwnerScope(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("TEST_GITHUB_APP_FALLBACK", "pat-token")
+	var mints atomic.Int64
+	desc := githubAppDescriptor(42)
+	desc.Candidates[0].InstallationAccount = "kenn-io"
+	src := NewManagedSource(desc, Options{
+		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+			mints.Add(1)
+			return "ghs_minted", time.Now().Add(time.Hour), nil
+		},
+	})
+
+	token, err := src.Token(context.Background())
+	require.NoError(err)
+	assert.Equal("pat-token", token)
+
+	token, err = src.Token(WithGitHubOwner(context.Background(), "mariusvniekerk"))
+	require.NoError(err)
+	assert.Equal("pat-token", token)
+
+	token, err = src.Token(WithGitHubOwner(context.Background(), "Kenn-IO"))
+	require.NoError(err)
+	assert.Equal("ghs_minted", token)
+	assert.Equal(int64(1), mints.Load())
+}
+
+func TestGitHubAppCacheIsScopedToInstallationAccount(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	desc := githubAppDescriptor(42)
+	desc.Candidates = []Candidate{
+		{
+			Kind:                SourceKindGitHubApp,
+			Host:                "github.com",
+			FilePath:            "/tmp/app.pem",
+			AppID:               77,
+			InstallationID:      42,
+			InstallationAccount: "kenn-io",
+		},
+		{
+			Kind:                SourceKindGitHubApp,
+			Host:                "github.com",
+			FilePath:            "/tmp/app.pem",
+			AppID:               77,
+			InstallationID:      43,
+			InstallationAccount: "other-org",
+		},
+	}
+	minted := make(map[int64]int)
+	src := NewManagedSource(desc, Options{
+		GitHubApp: func(_ context.Context, c Candidate) (string, time.Time, error) {
+			minted[c.InstallationID]++
+			return fmt.Sprintf("ghs_%d", c.InstallationID), time.Now().Add(time.Hour), nil
+		},
+	})
+
+	token, err := src.Token(WithGitHubOwner(context.Background(), "kenn-io"))
+	require.NoError(err)
+	assert.Equal("ghs_42", token)
+
+	token, err = src.Token(WithGitHubOwner(context.Background(), "other-org"))
+	require.NoError(err)
+	assert.Equal("ghs_43", token)
+
+	token, err = src.Token(WithGitHubOwner(context.Background(), "kenn-io"))
+	require.NoError(err)
+	assert.Equal("ghs_42", token)
+	assert.Equal(map[int64]int{42: 1, 43: 1}, minted)
 }
 
 func TestGitHubAppMintFailureSurfacesError(t *testing.T) {

@@ -34,6 +34,7 @@ type AuthTransport struct {
 	SetHeader           HeaderSetter
 	RetryOnUnauthorized bool
 	AllowedOrigin       string
+	GitHubOwner         func(*http.Request) string
 }
 
 func (t AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -73,7 +74,11 @@ func (t AuthTransport) authorizedRequest(req *http.Request) (*http.Request, erro
 	if t.Source == nil {
 		return nil, fmt.Errorf("%w: nil token source", ErrMissingToken)
 	}
-	token, err := t.Source.Token(req.Context())
+	ctx := req.Context()
+	if t.GitHubOwner != nil {
+		ctx = WithGitHubOwner(ctx, t.GitHubOwner(req))
+	}
+	token, err := t.Source.Token(ctx)
 	if err != nil {
 		return nil, err
 	}

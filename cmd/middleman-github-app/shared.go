@@ -38,8 +38,9 @@ func (env *appEnv) webBaseFor(host string) string {
 	return githubapp.WebBaseForHost(host)
 }
 
-// selectApp picks the configured app for host. With one configured
-// app and no --host flag, that app is selected.
+// selectApp picks a configured app credential for host. Multiple installation
+// rows can share one GitHub App credential; management commands only need one
+// of those rows to sign app JWTs.
 func selectApp(cfg *config.Config, host string) (config.GitHubAppConfig, error) {
 	if host == "" {
 		switch len(cfg.GitHubApps) {
@@ -85,18 +86,48 @@ func installURL(webBase string, app config.GitHubAppConfig) string {
 	return fmt.Sprintf("%s/apps/%s/installations/new", webBase, app.Slug)
 }
 
-// updateAppInConfig replaces the entry for app.Host and saves.
+// updateAppInConfig replaces the entry for app.Host and app.InstallationAccount
+// and saves. If a create flow saved a pending, uninstalled row for the same
+// app credential, the first successful install replaces that pending row.
 func updateAppInConfig(
 	cfg *config.Config, configPath string, app config.GitHubAppConfig,
 ) error {
 	for i := range cfg.GitHubApps {
-		if cfg.GitHubApps[i].Host == app.Host {
+		existing := cfg.GitHubApps[i]
+		if existing.Host != app.Host {
+			continue
+		}
+		sameInstallation := strings.EqualFold(
+			existing.InstallationAccount, app.InstallationAccount,
+		)
+		pendingSameApp := existing.InstallationAccount == "" &&
+			existing.AppID == app.AppID &&
+			existing.PrivateKeyPath == app.PrivateKeyPath
+		if sameInstallation || pendingSameApp {
 			cfg.GitHubApps[i] = app
 			return cfg.Save(configPath)
 		}
 	}
 	cfg.GitHubApps = append(cfg.GitHubApps, app)
 	return cfg.Save(configPath)
+}
+
+func updateAppSlotInConfig(
+	cfg *config.Config,
+	configPath string,
+	oldApp config.GitHubAppConfig,
+	newApp config.GitHubAppConfig,
+) error {
+	for i := range cfg.GitHubApps {
+		existing := cfg.GitHubApps[i]
+		if existing.Host == oldApp.Host &&
+			existing.InstallationID == oldApp.InstallationID &&
+			strings.EqualFold(existing.InstallationAccount, oldApp.InstallationAccount) {
+			cfg.GitHubApps[i] = newApp
+			return cfg.Save(configPath)
+		}
+	}
+	return updateAppInConfig(cfg, configPath, newApp)
 }
 
 func removeAppFromConfig(

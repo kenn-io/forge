@@ -114,20 +114,35 @@ func TestParsePrivateKeyFormats(t *testing.T) {
 
 func TestNewManifestValidation(t *testing.T) {
 	t.Parallel()
+	require := require.New(t)
 	_, err := NewManifest("", "", "http://127.0.0.1:1/callback")
-	require.ErrorContains(t, err, "name is required")
+	require.ErrorContains(err, "name is required")
 
 	_, err = NewManifest(strings.Repeat("x", 35), "", "http://127.0.0.1:1/callback")
-	require.ErrorContains(t, err, "34 character limit")
+	require.ErrorContains(err, "34 character limit")
 
 	m, err := NewManifest("middleman-test", "", "http://127.0.0.1:9/callback")
-	require.NoError(t, err)
+	require.NoError(err)
 	assert := assert.New(t)
 	assert.False(m.Public)
 	assert.False(m.HookAttributes.Active)
+	assert.Equal(DefaultHomepageURL, m.HookAttributes.URL)
 	assert.Empty(m.DefaultEvents)
 	assert.Equal("http://127.0.0.1:9/callback", m.RedirectURL)
 	assert.Equal(DefaultHomepageURL, m.URL)
+	manifestJSON, err := m.JSON()
+	require.NoError(err)
+	var encoded struct {
+		URL            string `json:"url"`
+		HookAttributes struct {
+			URL    string `json:"url"`
+			Active bool   `json:"active"`
+		} `json:"hook_attributes"`
+	}
+	require.NoError(json.Unmarshal([]byte(manifestJSON), &encoded))
+	assert.Equal(DefaultHomepageURL, encoded.URL)
+	assert.Equal(DefaultHomepageURL, encoded.HookAttributes.URL)
+	assert.False(encoded.HookAttributes.Active)
 	// Sync needs to read repo contents and PRs.
 	assert.Equal("read", m.DefaultPermissions["contents"])
 	assert.Equal("read", m.DefaultPermissions["pull_requests"])

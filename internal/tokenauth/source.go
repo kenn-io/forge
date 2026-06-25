@@ -33,13 +33,17 @@ type Source interface {
 }
 
 type ManagedSource struct {
-	mu          sync.Mutex
-	desc        Descriptor
-	options     Options
-	ghToken     string
-	ghCached    bool
-	appToken    string
-	appTokenExp time.Time
+	mu        sync.Mutex
+	desc      Descriptor
+	options   Options
+	ghToken   string
+	ghCached  bool
+	appTokens map[Candidate]githubAppTokenCache
+}
+
+type githubAppTokenCache struct {
+	token string
+	exp   time.Time
 }
 
 func NewManagedSource(desc Descriptor, options Options) *ManagedSource {
@@ -58,8 +62,7 @@ func (s *ManagedSource) Update(desc Descriptor) {
 	if !s.desc.EqualSource(desc) {
 		s.ghToken = ""
 		s.ghCached = false
-		s.appToken = ""
-		s.appTokenExp = time.Time{}
+		s.appTokens = nil
 	}
 	s.desc = cloneDescriptor(desc)
 }
@@ -68,8 +71,7 @@ func (s *ManagedSource) Invalidate() {
 	s.mu.Lock()
 	s.ghToken = ""
 	s.ghCached = false
-	s.appToken = ""
-	s.appTokenExp = time.Time{}
+	s.appTokens = nil
 	s.mu.Unlock()
 }
 
@@ -119,6 +121,7 @@ func (s *ManagedSource) tokenFromCandidate(
 const githubAppTokenRefreshSkew = 5 * time.Minute
 
 type mutationAuthCtxKey struct{}
+type githubOwnerCtxKey struct{}
 
 // WithMutationAuth marks ctx so token resolution skips github_app
 // installation tokens and resolves the user's own credential chain
@@ -138,6 +141,22 @@ func IsMutationAuth(ctx context.Context) bool {
 	return ok && marked
 }
 
+// WithGitHubOwner scopes token resolution to a GitHub repository or account
+// owner. GitHub App installation tokens are account-scoped, so a candidate for
+// one installation account must not be used for another owner on the same host.
+func WithGitHubOwner(ctx context.Context, owner string) context.Context {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, githubOwnerCtxKey{}, owner)
+}
+
+func githubOwnerFromContext(ctx context.Context) (string, bool) {
+	owner, ok := ctx.Value(githubOwnerCtxKey{}).(string)
+	return owner, ok && owner != ""
+}
+
 func (s *ManagedSource) githubAppToken(
 	ctx context.Context,
 	candidate Candidate,
@@ -153,16 +172,22 @@ func (s *ManagedSource) githubAppToken(
 	if IsMutationAuth(ctx) {
 		return "", false, nil
 	}
+	if candidate.InstallationAccount != "" {
+		owner, ok := githubOwnerFromContext(ctx)
+		if !ok || !strings.EqualFold(owner, candidate.InstallationAccount) {
+			return "", false, nil
+		}
+	}
+	cacheKey := canonicalCandidate(candidate)
 	s.mu.Lock()
 	minter := s.options.GitHubApp
-	token := s.appToken
-	exp := s.appTokenExp
+	cached := s.appTokens[cacheKey]
 	s.mu.Unlock()
 	if minter == nil {
 		return "", false, nil
 	}
-	if token != "" && time.Until(exp) > githubAppTokenRefreshSkew {
-		return token, true, nil
+	if cached.token != "" && time.Until(cached.exp) > githubAppTokenRefreshSkew {
+		return cached.token, true, nil
 	}
 	token, exp, err := minter(ctx, candidate)
 	if err != nil {
@@ -177,8 +202,10 @@ func (s *ManagedSource) githubAppToken(
 		return "", true, nil
 	}
 	s.mu.Lock()
-	s.appToken = token
-	s.appTokenExp = exp
+	if s.appTokens == nil {
+		s.appTokens = make(map[Candidate]githubAppTokenCache)
+	}
+	s.appTokens[cacheKey] = githubAppTokenCache{token: token, exp: exp}
 	s.mu.Unlock()
 	return token, true, nil
 }

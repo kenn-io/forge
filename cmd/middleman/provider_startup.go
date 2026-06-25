@@ -108,15 +108,22 @@ func collectProviderTokenSources(
 	add := func(plan config.ProviderTokenSource) error {
 		desc := plan.Descriptor
 		key := providerHostKey(desc.Key.Platform, desc.Key.Host)
-		if _, seen := providerSources[key]; seen {
-			return nil
+		src, seen := providerSources[key]
+		if !seen {
+			src = set.Upsert(desc)
 		}
-		src := set.Upsert(desc)
-		if _, err := src.Token(ctx); err != nil {
+		tokenCtx := ctx
+		if plan.GitHubOwner != "" {
+			tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
+		}
+		if _, err := src.Token(tokenCtx); err != nil {
 			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
 				return nil
 			}
 			label := fmt.Sprintf("%s host %s", desc.Key.Platform, desc.Key.Host)
+			if plan.GitHubOwner != "" {
+				label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
+			}
 			if plan.Required {
 				return fmt.Errorf("no token for %s via %s: %w", label, desc.SafeString(), err)
 			}
@@ -125,7 +132,9 @@ func collectProviderTokenSources(
 				label, desc.SafeString(), err,
 			)
 		}
-		providerSources[key] = src
+		if !seen {
+			providerSources[key] = src
+		}
 		return nil
 	}
 	for _, plan := range cfg.ProviderTokenSources() {
@@ -164,12 +173,6 @@ func buildProviderStartup(
 	githubHosts := make(map[string]struct{}, len(providerSources))
 	for key, tokenSource := range providerSources {
 		platformName, host := splitProviderHostKey(key)
-		if _, err := tokenSource.Token(context.Background()); err != nil {
-			return providerStartup{}, fmt.Errorf(
-				"read token for %s host %s via %s: %w",
-				platformName, host, tokenSource.Descriptor().SafeString(), err,
-			)
-		}
 		rateKey := github.RateBucketKey(platformName, host)
 		if _, ok := startup.rateTrackers[rateKey]; !ok {
 			startup.rateTrackers[rateKey] = github.NewPlatformRateTracker(

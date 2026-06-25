@@ -83,7 +83,7 @@ func NewManifest(name, homepageURL, redirectURL string) (Manifest, error) {
 	return Manifest{
 		Name:               name,
 		URL:                homepageURL,
-		HookAttributes:     HookAttributes{Active: false},
+		HookAttributes:     HookAttributes{URL: homepageURL, Active: false},
 		RedirectURL:        redirectURL,
 		Public:             false,
 		DefaultPermissions: DefaultPermissions(),

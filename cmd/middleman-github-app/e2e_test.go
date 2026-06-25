@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/githubapp"
 	"go.kenn.io/middleman/internal/githubapp/githubapptest"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
@@ -225,13 +226,17 @@ func TestCreateFlowEndToEnd(t *testing.T) {
 	manifests := fake.Manifests()
 	require.Len(manifests, 1)
 	var sent struct {
-		Public         bool `json:"public"`
+		URL            string `json:"url"`
+		Public         bool   `json:"public"`
 		HookAttributes struct {
-			Active bool `json:"active"`
+			URL    string `json:"url"`
+			Active bool   `json:"active"`
 		} `json:"hook_attributes"`
 		DefaultPermissions map[string]string `json:"default_permissions"`
 	}
 	require.NoError(json.Unmarshal([]byte(manifests[0]), &sent))
+	assert.Equal(githubapp.DefaultHomepageURL, sent.URL)
+	assert.Equal(githubapp.DefaultHomepageURL, sent.HookAttributes.URL)
 	assert.False(sent.Public)
 	// The app stays read-only; mutations use the user's PAT chain.
 	for scope, level := range sent.DefaultPermissions {
@@ -403,7 +408,7 @@ func TestInstallHydratesMinimalAppMetadataBeforeOpeningInstallURL(t *testing.T) 
 	assert.NotZero(cfg.GitHubApps[0].InstallationID)
 }
 
-func TestInstallRefusesInstallationThatMissesConfiguredRepos(t *testing.T) {
+func TestInstallRecordsInstallationForOtherAccountWithoutJudgingOtherRepos(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	fake := githubapptest.NewFake()
@@ -414,25 +419,20 @@ func TestInstallRefusesInstallationThatMissesConfiguredRepos(t *testing.T) {
 	env, _ := newTestEnv(t, fake, configPath)
 	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
 
-	// Installing on an account that does not own kenn-io/middleman
-	// must not be recorded: the installation token cannot reach the
-	// repo, so sync would 404 while the config looks healthy. The
-	// flow reports the uncovering installation and keeps waiting for
-	// one on the owning account instead of dead-ending.
+	// Installing on another account is valid: repo owner is part of the sync
+	// identity, so this installation simply will not be used for kenn-io repos.
 	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "someone-else")
-	err := runCLI([]string{"install", "--timeout", "1s"}, env)
-	require.Error(err)
-	require.ErrorContains(err, "timed out")
-	require.Contains(out.String(), "someone-else")
-	require.Contains(out.String(), "kenn-io/middleman")
-	require.Contains(out.String(), "Still waiting for an installation on the owning account")
+	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NotContains(out.String(), "cannot reach")
+	require.NotContains(out.String(), "kenn-io/middleman")
 
 	cfg, err := config.Load(configPath)
 	require.NoError(err)
 	require.Len(cfg.GitHubApps, 1)
-	assert.Zero(t, cfg.GitHubApps[0].InstallationID,
-		"uncovered installation must not be recorded")
+	assert := assert.New(t)
+	assert.NotZero(cfg.GitHubApps[0].InstallationID)
+	assert.Equal("someone-else", cfg.GitHubApps[0].InstallationAccount)
 }
 
 func TestDeleteRefusesWhenCredentialsCannotBeVerified(t *testing.T) {
@@ -520,8 +520,6 @@ func TestDeleteOpensSettingsForRepairInvalidConfig(t *testing.T) {
 	broken := strings.Replace(string(raw), `installation_account = "kenn-io"`, `installation_account = "other-org"`, 1)
 	require.NotEqual(string(raw), broken)
 	require.NoError(os.WriteFile(configPath, []byte(broken), 0o600))
-	_, err = config.Load(configPath)
-	require.ErrorContains(err, "not covered by the github app")
 
 	var opened string
 	env, _ := newTestEnv(t, fake, configPath)
@@ -687,27 +685,26 @@ name = "thing"
 	}, env))
 
 	// The user re-points middleman at repos the recorded installation's
-	// account does not own; the strict loader now rejects the config.
+	// account does not own; install must not refresh that no-longer-relevant
+	// installation.
 	raw, err := os.ReadFile(configPath)
 	require.NoError(err)
 	repointed := strings.Replace(string(raw), `owner = "wrongorg"`, `owner = "kenn-io"`, 1)
 	repointed = strings.Replace(repointed, `name = "thing"`, `name = "middleman"`, 1)
 	require.NoError(os.WriteFile(configPath, []byte(repointed), 0o600))
-	_, err = config.Load(configPath)
-	require.ErrorContains(err, "not covered by the github app")
 
-	// install must not dead-end on refreshing the wrong-account
-	// installation: it falls through to waiting for an installation on
-	// the owning account and records that one.
+	// The existing installation remains valid for wrongorg. It is refreshed
+	// rather than judged against kenn-io repos.
 	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
 	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
-	require.Contains(out.String(), "waiting for an installation on the right account")
+	require.Contains(out.String(), "Refreshing recorded installation")
+	require.NotContains(out.String(), "cannot reach")
 
 	cfg, err := config.Load(configPath)
 	require.NoError(err)
 	require.Len(cfg.GitHubApps, 1)
-	require.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
+	require.Equal("wrongorg", cfg.GitHubApps[0].InstallationAccount)
 }
 
 func TestInstallSkipsPreexistingUncoveringInstallation(t *testing.T) {
@@ -721,11 +718,9 @@ func TestInstallSkipsPreexistingUncoveringInstallation(t *testing.T) {
 	env, _ := newTestEnv(t, fake, configPath)
 	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
 
-	// An unrecorded installation on an account that does not own the
-	// configured repos already exists before install runs. The poll
-	// must not grab it as "the first new installation" and dead-end at
-	// the coverage check; it ignores it and keeps waiting for the
-	// installation the browser flow creates on the owning account.
+	// An unrecorded installation already exists before install runs. When the
+	// browser path is active, the poll waits for a newly-created installation
+	// instead of grabbing an old one.
 	app, ok := fake.AppBySlug("middleman-preexist")
 	require.True(ok)
 	_, err := fake.Install(app.ID, "someone-else")
@@ -734,10 +729,43 @@ func TestInstallSkipsPreexistingUncoveringInstallation(t *testing.T) {
 	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
 	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
-	require.Contains(out.String(), "Ignoring installation")
-	require.Contains(out.String(), "someone-else")
+	require.NotContains(out.String(), "Ignoring installation")
+	require.NotContains(out.String(), "cannot reach")
 
 	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	require.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
+}
+
+func TestInstallRecordsOrgInstallationWithoutCoveringOtherOwners(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+
+	createTestApp(t, fake, configPath, "middleman-scoped")
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	appID := cfg.GitHubApps[0].AppID
+	raw, err := os.ReadFile(configPath)
+	require.NoError(err)
+	require.NoError(os.WriteFile(configPath, append(raw, []byte(`
+
+[[repos]]
+owner = "mariusvniekerk"
+name = "skills"
+`)...), 0o600))
+	_, err = fake.Install(appID, "kenn-io")
+	require.NoError(err)
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{
+		"install", "--no-browser", "--timeout", "10s",
+	}, env))
+
+	cfg, err = config.Load(configPath)
 	require.NoError(err)
 	require.Len(cfg.GitHubApps, 1)
 	require.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
@@ -942,8 +970,6 @@ func TestOpenOpensSettingsForRepairInvalidConfig(t *testing.T) {
 	broken := strings.Replace(string(raw), `installation_account = "kenn-io"`, `installation_account = "other-org"`, 1)
 	require.NotEqual(string(raw), broken)
 	require.NoError(os.WriteFile(configPath, []byte(broken), 0o600))
-	_, err = config.Load(configPath)
-	require.ErrorContains(err, "not covered by the github app")
 
 	var opened string
 	env, _ := newTestEnv(t, fake, configPath)

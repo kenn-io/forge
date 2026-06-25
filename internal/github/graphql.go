@@ -721,6 +721,7 @@ func NewGraphQLFetcher(
 		SetHeader:           tokenauth.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 		AllowedOrigin:       graphQLEndpointForHost(platformHost),
+		GitHubOwner:         githubOwnerFromRequest,
 	}
 	var base http.RoundTripper = authRT
 	if rateTracker != nil {
@@ -792,6 +793,7 @@ func (g *GraphQLFetcher) FetchRepoPRs(
 func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 	ctx context.Context, owner, name string, pageSize int,
 ) (*RepoBulkResult, error) {
+	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	progress := newMergeRequestListFetchProgressLogger(RepoRef{
 		Owner:        owner,
 		Name:         name,
@@ -850,6 +852,7 @@ func (g *GraphQLFetcher) FetchRepoIssues(
 func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 	ctx context.Context, owner, name string, pageSize int,
 ) (*RepoBulkResult, error) {
+	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	progress := newIssueListFetchProgressLogger(RepoRef{
 		Owner:        owner,
 		Name:         name,

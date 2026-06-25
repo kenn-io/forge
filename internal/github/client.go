@@ -241,6 +241,7 @@ func NewClient(
 		SetHeader:           tokenauth.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 		AllowedOrigin:       allowedOrigin,
+		GitHubOwner:         githubOwnerFromRequest,
 	}
 	et := &etagTransport{base: authRT}
 	var transport http.RoundTripper = et
@@ -317,6 +318,44 @@ func NewClient(
 		graphQLEndpoint:        graphQLEndpoint,
 		etag:                   et,
 	}, nil
+}
+
+func githubOwnerFromRequest(req *http.Request) string {
+	if req == nil || req.URL == nil {
+		return ""
+	}
+	if owner := githubOwnerFromPath(req.URL.Path); owner != "" {
+		return owner
+	}
+	if req.GetBody == nil {
+		return ""
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return ""
+	}
+	defer body.Close()
+	var payload struct {
+		Variables map[string]any `json:"variables"`
+	}
+	if err := json.NewDecoder(body).Decode(&payload); err != nil {
+		return ""
+	}
+	owner, _ := payload.Variables["owner"].(string)
+	return owner
+}
+
+func githubOwnerFromPath(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	for i, part := range parts {
+		if part == "repos" && i+2 < len(parts) {
+			return parts[i+1]
+		}
+		if (part == "orgs" || part == "users") && i+2 < len(parts) && parts[i+2] == "repos" {
+			return parts[i+1]
+		}
+	}
+	return ""
 }
 
 // mutationAuthTransport marks every request's context with
@@ -1334,6 +1373,7 @@ func (c *liveClient) ListRepositoriesByOwner(
 	ctx context.Context, owner string,
 ) ([]*gh.Repository, error) {
 	if c.splitAuthActive() {
+		ctx = tokenauth.WithGitHubOwner(ctx, owner)
 		repos, err := collectPages(
 			ctx,
 			func(opts *gh.ListOptions) ([]*gh.Repository, *gh.Response, error) {

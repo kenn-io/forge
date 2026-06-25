@@ -1704,7 +1704,7 @@ func (c *Config) validatePlatforms() error {
 }
 
 func (c *Config) validateGitHubApps() error {
-	seenHosts := make(map[string]struct{}, len(c.GitHubApps))
+	seenInstallations := make(map[string]struct{}, len(c.GitHubApps))
 	for i := range c.GitHubApps {
 		app := &c.GitHubApps[i]
 		app.Host = strings.TrimSpace(app.Host)
@@ -1751,14 +1751,22 @@ func (c *Config) validateGitHubApps() error {
 					"installation_id is set", i,
 			)
 		}
-		// One app per host: the token source chain is host-scoped, so a
-		// second app for the same host could never be selected.
-		if _, ok := seenHosts[host]; ok {
+		// GitHub App credentials are host-shaped, but installation tokens are
+		// account-scoped. Multiple rows may share a host when the same app is
+		// installed on multiple owners; only one row per installation account
+		// can be selected for a given owner.
+		installKey := host + "\x00" + strings.ToLower(app.InstallationAccount)
+		if _, ok := seenInstallations[installKey]; ok {
+			account := app.InstallationAccount
+			if account == "" {
+				account = "<pending installation>"
+			}
 			return fmt.Errorf(
-				"config: github_apps[%d]: duplicate github app for host %q", i, host,
+				"config: github_apps[%d]: duplicate github app for host %q and installation account %q",
+				i, host, account,
 			)
 		}
-		seenHosts[host] = struct{}{}
+		seenInstallations[installKey] = struct{}{}
 	}
 	return nil
 }
@@ -1766,10 +1774,9 @@ func (c *Config) validateGitHubApps() error {
 // validateGitHubAppCoverage rejects github repos that would resolve
 // to an app installation token without being reachable by it.
 // Installation tokens are scoped to the installed account, not the
-// host, so a repo owned by anyone else would 404 during sync while
-// the config looks healthy. Repos with their own token_env/token_file
-// override never reach the app candidate and are exempt. Runs after
-// repo normalization so owners are canonical.
+// host. Only repos owned by that account use the app candidate; other
+// owners on the same host fall through to the PAT/gh credential chain.
+// Runs after repo normalization so owners are canonical.
 func (c *Config) validateGitHubAppCoverage() error {
 	for _, app := range c.GitHubApps {
 		if app.InstallationID == 0 || app.InstallationAccount == "" {
@@ -1783,24 +1790,12 @@ func (c *Config) validateGitHubAppCoverage() error {
 			if r.TokenEnv != "" || r.TokenFile != "" {
 				continue
 			}
-			if strings.EqualFold(r.Owner, app.InstallationAccount) {
-				if err := validateSelectedRepoCoverage(i, r, app); err != nil {
-					return err
-				}
+			if !strings.EqualFold(r.Owner, app.InstallationAccount) {
 				continue
 			}
-			// Do not suggest per-repo token overrides here: middleman
-			// resolves one credential chain per host, so an override on
-			// only this repo would be rejected by the same-host conflict
-			// check. The real options are changing where the app is
-			// installed or not using an app for this host at all.
-			return fmt.Errorf(
-				"config: repos[%d]: %s/%s is not covered by the github app for %s "+
-					"(installed on %q): installation tokens only reach repos owned by the "+
-					"installed account. Install the app on %q instead, or remove the "+
-					"[[github_apps]] entry for %s so the host uses PAT auth for every repo",
-				i, r.Owner, r.Name, app.Host, app.InstallationAccount, r.Owner, app.Host,
-			)
+			if err := validateSelectedRepoCoverage(i, r, app); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -1843,21 +1838,33 @@ func validateSelectedRepoCoverage(i int, r Repo, app GitHubAppConfig) error {
 	)
 }
 
-// GitHubAppForHost returns the configured GitHub App for host, if any.
-func (c *Config) GitHubAppForHost(host string) (GitHubAppConfig, bool) {
+// GitHubAppsForHost returns the configured GitHub App installations for host.
+func (c *Config) GitHubAppsForHost(host string) []GitHubAppConfig {
 	if c == nil {
-		return GitHubAppConfig{}, false
+		return nil
 	}
 	h, err := normalizePlatformHost(defaultPlatform, host)
 	if err != nil {
-		return GitHubAppConfig{}, false
+		return nil
 	}
+	var apps []GitHubAppConfig
 	for _, app := range c.GitHubApps {
 		if app.Host == h {
-			return app, true
+			apps = append(apps, app)
 		}
 	}
-	return GitHubAppConfig{}, false
+	return apps
+}
+
+// GitHubAppForHost returns a configured GitHub App credential for host, if any.
+// When multiple installation rows share one app credential, the first row is
+// enough for management operations that only need the app's private key.
+func (c *Config) GitHubAppForHost(host string) (GitHubAppConfig, bool) {
+	apps := c.GitHubAppsForHost(host)
+	if len(apps) == 0 {
+		return GitHubAppConfig{}, false
+	}
+	return apps[0], true
 }
 
 func (c *Config) validateAgents() error {
@@ -2065,8 +2072,9 @@ func (c *Config) ResolveRepoTokenSource(r Repo) tokenauth.Descriptor {
 }
 
 type ProviderTokenSource struct {
-	Descriptor tokenauth.Descriptor
-	Required   bool
+	Descriptor  tokenauth.Descriptor
+	Required    bool
+	GitHubOwner string
 }
 
 func (c *Config) ProviderTokenSources() []ProviderTokenSource {
@@ -2094,7 +2102,27 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 		})
 	}
 	for _, repo := range c.Repos {
-		add(c.ResolveRepoTokenSource(repo), true)
+		plan := ProviderTokenSource{
+			Descriptor: c.ResolveRepoTokenSource(repo),
+			Required:   true,
+		}
+		if repo.PlatformOrDefault() == defaultPlatform {
+			plan.GitHubOwner = repo.Owner
+		}
+		key := plan.Descriptor.Key
+		if key.Host == "" {
+			continue
+		}
+		if _, ok := seen[key]; !ok {
+			seen[key] = struct{}{}
+			out = append(out, plan)
+			continue
+		}
+		// Keep same-host GitHub repo plans after the first so startup validates
+		// each owner against the owner-scoped app/PAT chain.
+		if plan.GitHubOwner != "" {
+			out = append(out, plan)
+		}
 	}
 	for _, p := range c.Platforms {
 		add(c.TokenSourceForPlatformHost(p.Type, p.Host, "", ""), false)
@@ -2170,13 +2198,17 @@ func (c *Config) TokenSourceForPlatformHost(
 	// validation exempts overridden repos and a fall-through would
 	// reopen the cross-account 404 hole when the override is unset.
 	if p == defaultPlatform && repoTokenEnv == "" && repoTokenFile == "" {
-		if app, ok := c.GitHubAppForHost(h); ok && app.AppID > 0 && app.PrivateKeyPath != "" {
+		for _, app := range c.GitHubAppsForHost(h) {
+			if app.AppID <= 0 || app.PrivateKeyPath == "" {
+				continue
+			}
 			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-				Kind:           tokenauth.SourceKindGitHubApp,
-				Host:           h,
-				FilePath:       app.PrivateKeyPath,
-				AppID:          app.AppID,
-				InstallationID: app.InstallationID,
+				Kind:                tokenauth.SourceKindGitHubApp,
+				Host:                h,
+				FilePath:            app.PrivateKeyPath,
+				AppID:               app.AppID,
+				InstallationID:      app.InstallationID,
+				InstallationAccount: app.InstallationAccount,
 			})
 		}
 	}

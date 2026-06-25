@@ -216,10 +216,22 @@ func (f *Fake) handleManifestSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var parsed struct {
+		URL            string `json:"url"`
+		HookAttributes struct {
+			URL string `json:"url"`
+		} `json:"hook_attributes"`
 		RedirectURL string `json:"redirect_url"`
 	}
 	if err := json.Unmarshal([]byte(manifest), &parsed); err != nil || parsed.RedirectURL == "" {
 		http.Error(w, "manifest missing redirect_url", http.StatusBadRequest)
+		return
+	}
+	if parsed.URL == "" {
+		http.Error(w, "manifest missing url", http.StatusBadRequest)
+		return
+	}
+	if parsed.HookAttributes.URL == "" {
+		http.Error(w, "manifest missing hook_attributes.url", http.StatusBadRequest)
 		return
 	}
 	code := randomHex(16)

@@ -105,6 +105,39 @@ change what a field means. Provider-neutral persistence should receive the same
 semantic shape regardless of whether data came from GraphQL, REST, tags, or
 fallback repository listing.
 
+## GitHub App Manifest Flow
+
+`middleman-github-app create` uses GitHub's App Manifest flow so sync can read
+with installation tokens. Even though middleman disables webhooks and polls,
+the manifest must still include a syntactically valid `hook_attributes.url`;
+GitHub's live manifest validator can report the missing hook URL as a generic
+`"url" wasn't supplied` error. Do not remove that hook URL from
+`internal/githubapp/manifest.go::NewManifest`; keep
+`cmd/middleman-github-app/e2e_test.go::TestCreateFlowEndToEnd` asserting the
+serialized manifest shape so the fake cannot accept a payload GitHub rejects.
+
+GitHub App installation tokens are account-scoped, not host-scoped. A
+`github.com` app installation for `kenn-io` must not authenticate
+`mariusvniekerk/*` reads just because both repos share the same host. Keep
+`internal/tokenauth/source.go::WithGitHubOwner`,
+`internal/tokenauth/source.go::ManagedSource.githubAppToken`,
+`internal/github/client.go::githubOwnerFromRequest`, and
+`internal/github/graphql.go::GraphQLFetcher.fetchRepoPRsWithPageSize` aligned:
+repo-scoped REST and GraphQL reads must put the GitHub owner into token
+resolution, token caches must be keyed per installation candidate, and
+ownerless contexts such as clone auth must fall through to PAT/`gh` credentials.
+Ownerless GitHub REST endpoints that are still logically scoped by an owner
+argument, such as installation repository discovery in
+`internal/github/client.go::liveClient.ListRepositoriesByOwner`, must set that
+owner explicitly before resolving the token.
+Config may carry multiple `[[github_apps]]` rows for one host when the same app
+is installed on multiple accounts; validation in
+`internal/config/config.go::validateGitHubAppCoverage` applies selected-repo
+coverage only to repos owned by that row's `installation_account`. The install
+CLI must not warn that an installation on one account "cannot reach" repos owned
+by another account; those repos are outside that installation's owner scope and
+fall through to the next credential source.
+
 ## Testing Expectations
 
 Changes in this area should usually add or update tests at the boundary where

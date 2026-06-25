@@ -192,7 +192,11 @@ repository_selection = "all"
 	var source tokenauth.Source
 	for _, plan := range cfg.ProviderTokenSources() {
 		src := sourceSet.Upsert(plan.Descriptor)
-		if _, err := src.Token(t.Context()); err != nil {
+		tokenCtx := t.Context()
+		if plan.GitHubOwner != "" {
+			tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
+		}
+		if _, err := src.Token(tokenCtx); err != nil {
 			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
 				continue
 			}
@@ -502,7 +506,11 @@ repository_selection = "all"
 	var source tokenauth.Source
 	for _, plan := range cfg.ProviderTokenSources() {
 		src := sourceSet.Upsert(plan.Descriptor)
-		if _, err := src.Token(t.Context()); err != nil {
+		tokenCtx := t.Context()
+		if plan.GitHubOwner != "" {
+			tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
+		}
+		if _, err := src.Token(tokenCtx); err != nil {
 			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
 				continue
 			}
@@ -665,7 +673,11 @@ repository_selection = "all"
 	var source tokenauth.Source
 	for _, plan := range cfg.ProviderTokenSources() {
 		src := sourceSet.Upsert(plan.Descriptor)
-		if _, err := src.Token(t.Context()); err != nil {
+		tokenCtx := t.Context()
+		if plan.GitHubOwner != "" {
+			tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
+		}
+		if _, err := src.Token(tokenCtx); err != nil {
 			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
 				continue
 			}

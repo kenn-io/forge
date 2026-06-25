@@ -89,18 +89,24 @@ installation_id = 5
 			wantErr: "installation_account is required when installation_id is set",
 		},
 		{
-			name: "duplicate host",
+			name: "duplicate installation account",
 			toml: `
 [[github_apps]]
 app_id = 1
 private_key_path = "a.pem"
+installation_id = 10
+installation_account = "kenn-io"
+repository_selection = "all"
 
 [[github_apps]]
 host = "github.com"
 app_id = 2
 private_key_path = "b.pem"
+installation_id = 11
+installation_account = "KENN-IO"
+repository_selection = "all"
 `,
-			wantErr: `duplicate github app for host "github.com"`,
+			wantErr: `duplicate github app for host "github.com" and installation account "KENN-IO"`,
 		},
 	}
 	for _, tt := range tests {
@@ -149,7 +155,7 @@ repository_selection = "all"
 `,
 		},
 		{
-			name: "uncovered repo without override fails",
+			name: "repo owned by another account does not use the app",
 			toml: `
 [[repos]]
 owner = "kenn-io"
@@ -166,7 +172,6 @@ installation_id = 9
 installation_account = "kenn-io"
 repository_selection = "all"
 `,
-			wantErr: "otherorg/thing is not covered by the github app",
 		},
 		{
 			name: "uncovered repo with its own token override passes",
@@ -458,8 +463,49 @@ repository_selection = "all"
 	assert.Equal(int64(4321), app.AppID)
 	assert.Equal(int64(99), app.InstallationID)
 	assert.Equal("github.com", app.Host)
+	assert.Equal("kenn-io", app.InstallationAccount)
 	assert.True(filepath.IsAbs(app.FilePath), "key path %q", app.FilePath)
 	assert.Equal("MY_PAT", desc.Candidates[1].EnvName)
+}
+
+func TestTokenSourceChainIncludesGitHubAppsForEachInstalledAccount(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+github_token_env = "MY_PAT"
+
+[[repos]]
+owner = "kenn-io"
+name = "middleman"
+
+[[repos]]
+owner = "other-org"
+name = "tool"
+
+[[github_apps]]
+host = "github.com"
+app_id = 4321
+private_key_path = "app.pem"
+installation_id = 99
+installation_account = "kenn-io"
+repository_selection = "all"
+
+[[github_apps]]
+host = "github.com"
+app_id = 4321
+private_key_path = "app.pem"
+installation_id = 100
+installation_account = "other-org"
+repository_selection = "all"
+`))
+	require.NoError(t, err)
+
+	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
+	var appAccounts []string
+	for _, cand := range desc.Candidates {
+		if cand.Kind == tokenauth.SourceKindGitHubApp {
+			appAccounts = append(appAccounts, cand.InstallationAccount)
+		}
+	}
+	Assert.Equal(t, []string{"kenn-io", "other-org"}, appAccounts)
 }
 
 func TestTokenSourceChainRepoOverrideExcludesGitHubApp(t *testing.T) {

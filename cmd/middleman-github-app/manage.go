@@ -83,9 +83,10 @@ func runUninstall(args []string, env *appEnv) error {
 		"Uninstalled app %q from %s. middleman falls back to PAT tokens for %s.\n",
 		app.Slug, app.InstallationAccount, app.Host,
 	)
+	oldApp := app
 	app.InstallationID = 0
 	app.InstallationAccount = ""
-	return updateAppInConfig(cfg, env.configPath, app)
+	return updateAppSlotInConfig(cfg, env.configPath, oldApp, app)
 }
 
 func runDelete(args []string, env *appEnv) error {

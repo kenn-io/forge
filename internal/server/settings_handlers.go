@@ -69,6 +69,12 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	modes := cloneModeVisibility(s.cfg.Modes).WithDefaults()
 	agents := cloneConfigAgents(s.cfg.Agents)
 	kataProjects := slices.Clone(s.cfg.KataProjects)
+	if kataProjects == nil {
+		// kata_projects is a required non-null array in the API schema, so a
+		// nil clone (the default, no-mappings case) must serialize as [] rather
+		// than null.
+		kataProjects = []config.KataProjectRepoMapping{}
+	}
 	tmuxCommand := s.cfg.TmuxCommand()
 	fleetSettings := s.buildFleetSettingsResponseLocked()
 	s.cfgMu.Unlock()

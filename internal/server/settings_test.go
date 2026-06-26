@@ -357,6 +357,33 @@ command = ["codex", "--full-auto"]
 	assert.Equal([]string{"codex", "--full-auto"}, resp.Agents[0].Command)
 }
 
+func TestHandleGetSettingsEncodesEmptyKataProjectsAsArray(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	// No [[kata_projects]] configured, so cfg.KataProjects is nil.
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, &mockGH{})
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	// kata_projects is a required non-null array in the schema. Assert on the
+	// raw wire value because decoding into a Go slice would hide a null/[]
+	// difference.
+	var raw map[string]json.RawMessage
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &raw))
+	require.Contains(raw, "kata_projects")
+	assert.JSONEq("[]", string(raw["kata_projects"]))
+}
+
 func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

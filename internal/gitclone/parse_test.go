@@ -171,6 +171,24 @@ index 3333333..4444444 100644
 	assert.NotContains(files[1].Patch, "Use generic fixture data.")
 }
 
+func TestParsePatchReturnsEmptySliceWithoutRawMetadata(t *testing.T) {
+	assert := assert.New(t)
+
+	patch := `diff --git a/src/example.go b/src/example.go
+index 1111111..2222222 100644
+--- a/src/example.go
++++ b/src/example.go
+@@ -1 +1 @@
+-old
++new
+`
+
+	files := ParsePatch([]byte(patch), nil)
+
+	assert.NotNil(files)
+	assert.Empty(files)
+}
+
 func TestSortDiffFilesUsesBytewisePathOrder(t *testing.T) {
 	assert := assert.New(t)
 

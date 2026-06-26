@@ -92,6 +92,9 @@ func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 	if len(fileDiffs) == 0 {
 		return rawFiles
 	}
+	if rawFiles == nil {
+		rawFiles = []DiffFile{}
+	}
 
 	pathIndex := diffFilePathIndex(rawFiles)
 	touched := make(map[int]bool, len(fileDiffs))

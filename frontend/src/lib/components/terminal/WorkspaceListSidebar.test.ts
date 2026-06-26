@@ -38,6 +38,7 @@ interface WorkspaceFixtureOptions {
   title?: string;
   branch?: string;
   itemType?: "pull_request" | "issue" | "kata_task";
+  itemKey?: string;
   kata?: {
     daemon_id: string;
     project_uid: string;
@@ -66,6 +67,7 @@ function workspaceFixture({
   title = `PR ${number}`,
   branch = `feature-${number}`,
   itemType = "pull_request",
+  itemKey = undefined,
   kata = undefined,
   createdAt = "2026-05-12T12:00:00Z",
   tmuxLastOutputAt = null,
@@ -90,6 +92,7 @@ function workspaceFixture({
     repo_name: name,
     item_type: itemType,
     item_number: number,
+    item_key: itemKey,
     kata,
     git_head_ref: branch,
     worktree_path: `/tmp/${id}`,
@@ -1151,7 +1154,7 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByRole("menuitem", { name: "Refresh git status" })).toBeTruthy();
   });
 
-  function kataWorkspaceFixture() {
+  function kataWorkspaceFixture(overrides: Partial<WorkspaceFixtureOptions> = {}) {
     return workspaceFixture({
       id: "ws-kata",
       provider: "github",
@@ -1161,6 +1164,7 @@ describe("WorkspaceListSidebar", () => {
       number: 0,
       branch: "middleman/kata/task-123-abcd1234",
       itemType: "kata_task",
+      itemKey: "kata:ZGVza3RvcA:cHJvamVjdC1rYXRh:aXNzdWUta2F0YS0x",
       kata: {
         daemon_id: "desktop",
         project_uid: "project-kata",
@@ -1170,6 +1174,7 @@ describe("WorkspaceListSidebar", () => {
         qualified_id: "Kata#task-123",
         title: "Wire kata workspace sidebar",
       },
+      ...overrides,
     });
   }
 
@@ -1227,6 +1232,39 @@ describe("WorkspaceListSidebar", () => {
 
     await fireEvent.input(filter, { target: { value: "no-such-task" } });
     expect(container.querySelectorAll(".ws-row")).toHaveLength(0);
+  });
+
+  it("finds a Kata workspace by its task UID when it has no short ID", async () => {
+    // A Kata task without a short/qualified ID renders the generic "Kata"
+    // bubble, so it must stay findable by its durable identifiers.
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          kataWorkspaceFixture({
+            kata: {
+              daemon_id: "desktop",
+              project_uid: "project-kata",
+              project_name: "Middleman",
+              issue_uid: "issue-kata-1",
+            },
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-kata" },
+    });
+    const filter = await screen.findByLabelText("Filter workspaces");
+
+    const bubble = container.querySelector(".item-bubble");
+    expect(bubble!.textContent?.trim()).toBe("Kata");
+
+    await fireEvent.input(filter, { target: { value: "issue-kata-1" } });
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
+
+    await fireEvent.input(filter, { target: { value: "project-kata" } });
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
   });
 
   it("pushes an ahead workspace branch and shows a busy state while pending", async () => {

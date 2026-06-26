@@ -312,7 +312,10 @@ presentation. A `kata_task` row:
   Kata task has no provider PR/issue, so building a provider URL from
   `item_number` would point at item `0`.
 - matches search against the Kata identity and title fields rather than a
-  numeric item number.
+  numeric item number. The haystack includes the durable identifiers (daemon,
+  project, and issue UIDs, plus the stored `item_key`) so a task without a
+  short/qualified ID stays findable by its key even though its bubble shows the
+  generic `Kata` label.
 
 ## Error Handling
 

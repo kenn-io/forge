@@ -522,6 +522,12 @@
         ws.kata?.qualified_id,
         ws.kata?.title,
         ws.kata?.project_name,
+        // Durable identifiers so a Kata workspace stays findable by its task
+        // key even when it has no short/qualified ID to display.
+        ws.kata?.daemon_id,
+        ws.kata?.project_uid,
+        ws.kata?.issue_uid,
+        ws.item_key,
       );
     } else {
       const itemKind = ws.item_type === "issue" ? "issue" : "pr";

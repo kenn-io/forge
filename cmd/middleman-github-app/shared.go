@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -207,8 +208,18 @@ func missingSelectedRepos(
 	return missing
 }
 
+// errPollDeadline marks a pollUntil return that ended on its own timeout
+// deadline, as opposed to a probe error or context cancellation. Callers
+// that recover from a clean "nothing appeared in time" (for example
+// adopting an existing installation when no new one shows up) must match
+// this so a transient probe failure surfaces instead of being silently
+// treated as a timeout.
+var errPollDeadline = errors.New("poll deadline reached")
+
 // pollUntil runs probe at the env's poll interval until it reports
-// done, the context ends, or timeout elapses.
+// done, the context ends, or timeout elapses. A timeout wraps
+// errPollDeadline; probe errors and context cancellation are returned
+// as-is so callers can tell them apart.
 func (env *appEnv) pollUntil(
 	ctx context.Context,
 	timeout time.Duration,
@@ -230,7 +241,7 @@ func (env *appEnv) pollUntil(
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("timed out after %s", timeout)
+			return fmt.Errorf("timed out after %s: %w", timeout, errPollDeadline)
 		case <-ticker.C:
 		}
 	}

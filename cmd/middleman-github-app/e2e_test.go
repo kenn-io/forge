@@ -898,6 +898,105 @@ func TestInstallAdoptsSoleExistingInstallationWhenNoNewAppears(t *testing.T) {
 	assert.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
 }
 
+func TestInstallSurfacesProbeErrorWithoutAdoptingStaleInstallation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-probeerr")
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+
+	// A sole unrecorded installation exists, so adoption recovery would
+	// grab it. But a transient list failure during the poll is a probe
+	// error, not a clean "nothing appeared in time"; it must surface
+	// rather than silently recording the stale installation.
+	app, ok := fake.AppBySlug("middleman-probeerr")
+	require.True(ok)
+	_, err := fake.Install(app.ID, "kenn-io")
+	require.NoError(err)
+	fake.FailNextListInstallations(1)
+
+	env, _ = newTestEnv(t, fake, configPath)
+	err = runCLI([]string{"install", "--no-browser", "--timeout", "10s"}, env)
+	require.Error(err)
+
+	cfg, err := config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	require.Zero(cfg.GitHubApps[0].InstallationID,
+		"a transient probe error must not adopt a stale installation")
+}
+
+func TestInstallKeepsTimeoutWhenSoleInstallationIsUnrelated(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t) // configures kenn-io/middleman
+	createTestApp(t, fake, configPath, "middleman-unrelated")
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+
+	// The app's only installation is on an account that owns none of the
+	// configured repos. A browser timeout must not adopt it as if it were
+	// the intended install -- the user still needs to install on the
+	// owning account -- so the timeout surfaces unchanged.
+	app, ok := fake.AppBySlug("middleman-unrelated")
+	require.True(ok)
+	_, err := fake.Install(app.ID, "unrelated-org")
+	require.NoError(err)
+
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = func(string) error { return nil } // no new installation
+	err = runCLI([]string{"install", "--timeout", "200ms"}, env)
+	require.Error(err)
+	require.ErrorContains(err, "timed out")
+
+	cfg, err := config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	require.Zero(cfg.GitHubApps[0].InstallationID,
+		"an unrelated sole installation must not be adopted on timeout")
+}
+
+func TestInstallKeepsTimeoutWhenMultipleInstallationsExist(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-multi")
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+
+	// Two installations exist, one of them on a configured-repo owner.
+	// Which one to record is ambiguous, so a browser timeout keeps
+	// waiting instead of guessing.
+	app, ok := fake.AppBySlug("middleman-multi")
+	require.True(ok)
+	_, err := fake.Install(app.ID, "kenn-io")
+	require.NoError(err)
+	_, err = fake.Install(app.ID, "acme")
+	require.NoError(err)
+
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = func(string) error { return nil } // no new installation
+	err = runCLI([]string{"install", "--timeout", "200ms"}, env)
+	require.Error(err)
+	require.ErrorContains(err, "timed out")
+
+	cfg, err := config.LoadForGitHubAppRepair(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	require.Zero(cfg.GitHubApps[0].InstallationID,
+		"ambiguous multiple installations must not be adopted on timeout")
+}
+
 func TestInstallRecordsOrgInstallationWithoutCoveringOtherOwners(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

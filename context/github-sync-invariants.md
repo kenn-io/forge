@@ -135,8 +135,13 @@ owned by that row's `installation_account`, and the install CLI must not warn
 that an installation on one account "cannot reach" repos owned by another
 account. Re-running `install` after a coverage failure (or against a restored
 config) reconfigures the existing installation instead of minting a new
-installation id, so the install flow must be able to adopt an already-present
-installation rather than waiting only for a newly created one.
+installation id, so on a clean install-poll timeout the flow adopts an
+already-present installation rather than only ever waiting for a newly created
+one. Adoption is bounded by intent: adopt only the app's sole installation when
+its account is the recorded installation account or owns a configured repo that
+resolves to the app. Multiple installations, a lone installation on an unrelated
+account, a transient probe error, or a user interrupt keep the timeout instead
+of recording the wrong account.
 
 ## Testing Expectations
 

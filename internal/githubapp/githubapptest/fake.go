@@ -72,6 +72,10 @@ type Fake struct {
 	nextID        int64
 	rateLimit     int
 	manifests     []string // every manifest JSON received, in order
+	// failListInstallations, when > 0, makes that many upcoming
+	// /app/installations requests respond 500 before serving normally,
+	// so tests can exercise transient install-poll probe failures.
+	failListInstallations int
 }
 
 func NewFake() *Fake {
@@ -110,6 +114,15 @@ func (f *Fake) Manifests() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.manifests...)
+}
+
+// FailNextListInstallations makes the next n list-installations requests
+// respond 500 before subsequent ones serve normally, letting tests model
+// a transient probe failure during the install poll.
+func (f *Fake) FailNextListInstallations(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failListInstallations = n
 }
 
 // Install simulates the user completing the browser install flow for
@@ -344,6 +357,14 @@ func (f *Fake) handleGetApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *Fake) handleListInstallations(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	if f.failListInstallations > 0 {
+		f.failListInstallations--
+		f.mu.Unlock()
+		writeJSONError(w, http.StatusInternalServerError, "transient listing failure")
+		return
+	}
+	f.mu.Unlock()
 	app, ok := f.authenticateAppJWT(r)
 	if !ok {
 		writeJSONError(w, http.StatusUnauthorized, "bad app JWT")

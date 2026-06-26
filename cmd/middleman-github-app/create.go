@@ -474,10 +474,14 @@ func (env *appEnv) runInstallFlow(
 			// installation ever appears and the poll times out -- the
 			// dead-end the coverage error's own "re-run install" guidance
 			// would otherwise hit. When exactly one installation exists
-			// for this app the intent is unambiguous, so adopt it.
-			// ctx.Err() separates the poll timeout from a user interrupt,
-			// which must not be swallowed.
-			adopted, adoptErr := env.adoptSoleInstallation(ctx, app, &picked)
+			// for this app the intent is unambiguous, so adopt it. Only a
+			// clean deadline qualifies: a probe error (transient API
+			// failure) or a user interrupt must surface, not silently
+			// adopt a stale installation.
+			if !errors.Is(err, errPollDeadline) {
+				return err
+			}
+			adopted, adoptErr := env.adoptSoleInstallation(ctx, cfg, app, &picked)
 			if adoptErr != nil {
 				return adoptErr
 			}
@@ -518,23 +522,28 @@ func (env *appEnv) runInstallFlow(
 	return nil
 }
 
-// adoptSoleInstallation recovers the install flow when the poll timed
-// out without a new installation appearing. Re-running "install" after a
+// adoptSoleInstallation recovers the install flow after the poll reached
+// its deadline without a new installation appearing. The caller gates
+// this on errPollDeadline, so probe errors and user interrupts never
+// reach it and are surfaced instead. Re-running "install" after a
 // coverage failure or a restored config reconfigures the existing
-// installation rather than minting a new ID, so the wait never
-// completes; when the app has exactly one GitHub-side installation the
-// target is unambiguous, so adopt it into picked and report true.
-// Multiple installations stay ambiguous and keep the timeout. A user
-// interrupt (ctx canceled) is never treated as an adoptable timeout, and
-// a non-zero picked means the poll already found a new installation.
+// installation rather than minting a new id, so the wait never
+// completes; when the app has exactly one GitHub-side installation that
+// belongs to an account this config actually intends the app to serve,
+// the target is unambiguous, so adopt it into picked and report true.
+//
+// Adoption is bounded by intent: the sole installation's account must be
+// the recorded installation account or own a configured repo that
+// resolves to the app. A lone installation on an unrelated account is
+// not what the user is waiting for, so it keeps the timeout rather than
+// recording the wrong account while reporting success. Multiple
+// installations stay ambiguous and also keep the timeout.
 func (env *appEnv) adoptSoleInstallation(
 	ctx context.Context,
+	cfg *config.Config,
 	app config.GitHubAppConfig,
 	picked *githubapp.Installation,
 ) (bool, error) {
-	if picked.ID != 0 || ctx.Err() != nil {
-		return false, nil
-	}
 	jwt, err := appJWT(app, env.now())
 	if err != nil {
 		return false, err
@@ -546,8 +555,35 @@ func (env *appEnv) adoptSoleInstallation(
 	if len(installs) != 1 {
 		return false, nil
 	}
-	*picked = installs[0]
+	inst := installs[0]
+	account := inst.Account.Login
+	if !strings.EqualFold(account, app.InstallationAccount) &&
+		!accountServesConfiguredRepos(cfg, app.Host, account) {
+		return false, nil
+	}
+	*picked = inst
 	return true, nil
+}
+
+// accountServesConfiguredRepos reports whether account owns at least one
+// configured github repo on host that resolves to the app token (no
+// per-repo credential override). It marks an account the app is actually
+// meant to serve, so install recovery adopts a sole existing
+// installation only for an intended account instead of any account that
+// happens to be the app's only installation.
+func accountServesConfiguredRepos(cfg *config.Config, host, account string) bool {
+	for _, r := range cfg.Repos {
+		if r.PlatformOrDefault() != "github" || r.PlatformHostOrDefault() != host {
+			continue
+		}
+		if r.TokenEnv != "" || r.TokenFile != "" {
+			continue
+		}
+		if strings.EqualFold(r.Owner, account) {
+			return true
+		}
+	}
+	return false
 }
 
 func (env *appEnv) refreshAppMetadata(

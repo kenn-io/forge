@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,11 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/workspace"
 )
+
+// maxKataProjectTOMLBytes caps how much of a .kata.toml middleman will read.
+// The file only carries a tiny [project] table, so this is generous while
+// preventing untrusted repo content from forcing an unbounded read.
+const maxKataProjectTOMLBytes = 64 << 10
 
 type kataWorkspaceTaskRequest struct {
 	DaemonID    string `json:"daemon_id"`
@@ -330,8 +336,29 @@ func (project kataProjectTOML) hasIdentifier() bool {
 }
 
 func readKataProjectTOML(root string) (kataProjectTOML, bool) {
-	raw, err := os.ReadFile(filepath.Join(root, ".kata.toml"))
+	path := filepath.Join(root, ".kata.toml")
+	// .kata.toml lives in a repo whose contents are not trusted. A contributor
+	// could commit it as a symlink to an endless or huge file (for example
+	// /dev/zero) and stall or exhaust the middleman process when the worktree
+	// is scanned. Lstat first and accept only a regular file (this rejects
+	// symlinks, devices, FIFOs, and directories) before opening it.
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return kataProjectTOML{}, false
+	}
+	f, err := os.Open(path)
 	if err != nil {
+		return kataProjectTOML{}, false
+	}
+	defer f.Close()
+	// Re-check the opened descriptor so a swap to a symlink/device between the
+	// Lstat and the open cannot slip through, then read through an explicit cap
+	// rather than slurping the whole file.
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return kataProjectTOML{}, false
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, maxKataProjectTOMLBytes+1))
+	if err != nil || len(raw) > maxKataProjectTOMLBytes {
 		return kataProjectTOML{}, false
 	}
 	var doc struct {

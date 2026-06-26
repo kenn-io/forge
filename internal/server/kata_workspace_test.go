@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -329,6 +330,54 @@ worktree_base_path = %q
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
 	assert.Equal("widget", resp.Repo.Name)
+}
+
+func TestReadKataProjectTOMLRejectsSymlink(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	dir := t.TempDir()
+	// The symlink points at a perfectly valid TOML file: without the
+	// regular-file guard os.ReadFile would happily follow it, which is the
+	// vector for pointing .kata.toml at /dev/zero or another huge file.
+	target := filepath.Join(dir, "payload.toml")
+	require.NoError(os.WriteFile(target, []byte("[project]\nuid = \"project-kata\"\n"), 0o644))
+	require.NoError(os.Symlink(target, filepath.Join(dir, ".kata.toml")))
+
+	_, ok := readKataProjectTOML(dir)
+	assert.False(ok, "symlinked .kata.toml must not be read")
+}
+
+func TestReadKataProjectTOMLRejectsOversizedFile(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	dir := t.TempDir()
+	// Valid TOML that simply exceeds the cap, so rejection can only come from
+	// the size guard and not from a decode failure.
+	oversized := "[project]\nuid = \"" + strings.Repeat("a", maxKataProjectTOMLBytes) + "\"\n"
+	require.NoError(os.WriteFile(filepath.Join(dir, ".kata.toml"), []byte(oversized), 0o644))
+
+	_, ok := readKataProjectTOML(dir)
+	assert.False(ok, "oversized .kata.toml must be rejected")
+}
+
+func TestReadKataProjectTOMLReadsRegularFile(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	dir := t.TempDir()
+	require.NoError(os.WriteFile(
+		filepath.Join(dir, ".kata.toml"),
+		[]byte("[project]\nuid = \"project-kata\"\nidentity = \"github.com/acme/widget\"\nname = \"Widget\"\n"),
+		0o644,
+	))
+
+	project, ok := readKataProjectTOML(dir)
+	require.True(ok)
+	assert.Equal("project-kata", project.UID)
+	assert.Equal("github.com/acme/widget", project.Identity)
+	assert.Equal("Widget", project.Name)
 }
 
 func TestKataWorkspaceTargetRequiresDaemonID(t *testing.T) {

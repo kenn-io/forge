@@ -20676,6 +20676,78 @@ func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
 	assert.Nil(byID["ws-unsynced-activity"].ItemLastActivityAt)
 }
 
+func TestListWorkspacesIncludesKataMetadata(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	client, database, _, _ := setupTestServerWithWorkspaces(t)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+
+	metadata := db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "Widget",
+		IssueUID:    "issue-kata-1",
+		ShortID:     "task-123",
+		QualifiedID: "Kata#task-123",
+		Title:       "Wire kata workspace sidebar",
+	}
+	itemKey := db.KataWorkspaceItemKey(metadata)
+	require.NotEmpty(itemKey)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "ws-kata-list",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypeKataTask,
+		ItemKey:      itemKey,
+		GitHeadRef:   "middleman/kata/task-123-abcd1234",
+		WorktreePath: filepath.Join(t.TempDir(), "ws-kata-list"),
+		TmuxSession:  "middleman-ws-kata-list",
+		Status:       "creating",
+		CreatedAt:    time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC),
+		KataMetadata: &metadata,
+	}))
+
+	// The workspace list UI reloads from GET /workspaces, so the kata owner
+	// metadata it renders must survive the DB summary hydration on that path,
+	// not just the create response.
+	resp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Workspaces)
+
+	var kata *generated.WorkspaceResponse
+	for i := range *resp.JSON200.Workspaces {
+		if (*resp.JSON200.Workspaces)[i].Id == "ws-kata-list" {
+			kata = &(*resp.JSON200.Workspaces)[i]
+			break
+		}
+	}
+	require.NotNil(kata)
+	assert.Equal(db.WorkspaceItemTypeKataTask, kata.ItemType)
+	assert.Equal(itemKey, kata.ItemKey)
+	// item_number is always emitted and is 0 (ignored) for Kata workspaces.
+	assert.Equal(int64(0), kata.ItemNumber)
+	require.NotNil(kata.Kata)
+	assert.Equal("desktop", kata.Kata.DaemonId)
+	assert.Equal("issue-kata-1", kata.Kata.IssueUid)
+	assert.Equal("project-kata", kata.Kata.ProjectUid)
+	require.NotNil(kata.Kata.ProjectName)
+	assert.Equal("Widget", *kata.Kata.ProjectName)
+	require.NotNil(kata.Kata.ShortId)
+	assert.Equal("task-123", *kata.Kata.ShortId)
+	require.NotNil(kata.Kata.QualifiedId)
+	assert.Equal("Kata#task-123", *kata.Kata.QualifiedId)
+	require.NotNil(kata.Kata.Title)
+	assert.Equal("Wire kata workspace sidebar", *kata.Kata.Title)
+}
+
 func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
 	require := require.New(t)
 	if testing.Short() {

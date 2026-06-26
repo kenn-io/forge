@@ -170,15 +170,19 @@ Add an `item_key` text column and make it the canonical owner key:
   `item_key`.
 - Kata workspaces use `item_type = "kata_task"` and an opaque `item_key`
   derived from Kata daemon ID, project UID, and issue UID.
-- `item_number` remains populated for PR/provider issue workspaces and is absent
-  or ignored for Kata workspaces.
+- `item_number` carries the provider item number for PR/provider issue
+  workspaces. It is a non-nullable integer that is always emitted on the wire and
+  is `0` for Kata workspaces; consumers must treat `0` on a `kata_task` workspace
+  as "no provider item" and ignore it rather than rendering it.
 - The workspace uniqueness constraint uses
   `(platform, platform_host, repo_path_key, item_type, item_key)`.
 
 API responses should expose both fields:
 
 - `item_key` is always present.
-- `item_number` is present only for numeric provider-owned workspaces.
+- `item_number` is always present and carries a meaningful provider item number
+  only for numeric provider-owned workspaces; it is `0` for `kata_task`
+  workspaces and must be ignored there.
 
 Existing PR and issue summary joins continue to use `item_number`. Kata
 workspace summaries do not join provider issue or PR tables; they use the stored
@@ -354,6 +358,10 @@ Backend coverage:
   enforces uniqueness on `item_key`.
 - Kata workspace creation stores `item_type = "kata_task"` and a string
   scoped `item_key` without requiring a provider issue row.
+- The workspace list endpoint (`GET /workspaces`) emits the Kata owner metadata
+  (`kata.project_uid`, `project_name`, `short_id`, `qualified_id`, `title`) and
+  `item_number = 0`, since the list UI reloads from that surface rather than the
+  create response.
 
 Frontend coverage:
 
@@ -371,6 +379,11 @@ Frontend coverage:
   so behavior does not split.
 - A `kata_task` workspace never renders the provider issue sidebar pane, even
   when its backing repository has a provider issue with a similar identifier.
+- In the workspace list, a `kata_task` row shows the Kata identity bubble
+  (covering the `short_id`, `qualified_id`, and `"Kata"` fallbacks), never `#0`,
+  uses the title-then-branch display-name fallback, suppresses provider item-URL
+  actions, opens the `kata_task` tab from the bubble, and stays findable by its
+  durable IDs when it has no short/qualified ID.
 - Unavailable Kata daemon or missing live task data renders a Kata-specific
   unavailable state using stored workspace metadata.
 

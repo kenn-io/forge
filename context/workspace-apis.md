@@ -90,12 +90,24 @@ where needed.
 ## Diff Scopes
 
 Workspace diffs compare against local `HEAD`, the pushed branch, or a merge
-target. The merge-target scope only exists when the workspace has a PR identity:
-PR-backed workspaces use their own `item_number`, while issue-backed and
-Kata-backed workspaces use `associated_pr_number`. If no associated PR is known,
-the API returns "workspace merge target branch not available" and the workspace
-sidebar must not render merge-target-dependent controls, including both the
-Target scope control and the commit range picker.
+target. The merge-target scope exists only when the server can resolve a real
+merge target branch, not merely when the workspace carries a PR identity.
+Resolution requires all of: a positive PR number (PR-backed workspaces use their
+own `item_number`; issue-backed and Kata-backed workspaces use
+`associated_pr_number`), a synced repo row, a synced merge request row, and a
+non-empty base branch on that row. When any of those is missing the API returns
+"workspace merge target branch not available" and treats it as the
+non-actionable state.
+
+The server is authoritative for availability. The sidebar hides the
+merge-target-dependent controls (both the Target scope control and the commit
+range picker) whenever the workspace has no PR identity, which is necessary but
+not sufficient: a workspace whose PR identity is present but whose merge request
+row is unsynced, removed, or has no base branch can still surface those controls
+and then receive the unavailable response. Clients must treat the unavailable
+response as expected rather than an error, and a future change should expose a
+resolved-merge-target signal on the workspace summary so the UI gate matches the
+server check exactly.
 
 ## Sidebar Ordering
 

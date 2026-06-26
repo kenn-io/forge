@@ -37,7 +37,16 @@ interface WorkspaceFixtureOptions {
   number: number;
   title?: string;
   branch?: string;
-  itemType?: "pull_request" | "issue";
+  itemType?: "pull_request" | "issue" | "kata_task";
+  kata?: {
+    daemon_id: string;
+    project_uid: string;
+    project_name?: string;
+    issue_uid: string;
+    short_id?: string;
+    qualified_id?: string;
+    title?: string;
+  };
   createdAt?: string;
   tmuxLastOutputAt?: string | null;
   itemLastActivityAt?: string | null;
@@ -57,6 +66,7 @@ function workspaceFixture({
   title = `PR ${number}`,
   branch = `feature-${number}`,
   itemType = "pull_request",
+  kata = undefined,
   createdAt = "2026-05-12T12:00:00Z",
   tmuxLastOutputAt = null,
   itemLastActivityAt = null,
@@ -65,6 +75,7 @@ function workspaceFixture({
   commitsAhead = null,
   commitsBehind = null,
 }: WorkspaceFixtureOptions) {
+  const isKata = itemType === "kata_task";
   return {
     id,
     repo: {
@@ -79,6 +90,7 @@ function workspaceFixture({
     repo_name: name,
     item_type: itemType,
     item_number: number,
+    kata,
     git_head_ref: branch,
     worktree_path: `/tmp/${id}`,
     tmux_session: id,
@@ -86,8 +98,8 @@ function workspaceFixture({
     created_at: createdAt,
     tmux_last_output_at: tmuxLastOutputAt,
     item_last_activity_at: itemLastActivityAt,
-    mr_title: title,
-    mr_state: "open",
+    mr_title: isKata ? null : title,
+    mr_state: isKata ? null : "open",
     mr_additions: additions,
     mr_deletions: deletions,
     commits_ahead: commitsAhead,
@@ -1137,6 +1149,84 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByRole("menuitem", { name: "Copy worktree path" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Reveal in Finder" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Refresh git status" })).toBeTruthy();
+  });
+
+  function kataWorkspaceFixture() {
+    return workspaceFixture({
+      id: "ws-kata",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "kenn-io",
+      name: "middleman",
+      number: 0,
+      branch: "middleman/kata/task-123-abcd1234",
+      itemType: "kata_task",
+      kata: {
+        daemon_id: "desktop",
+        project_uid: "project-kata",
+        project_name: "Middleman",
+        issue_uid: "issue-kata-1",
+        short_id: "task-123",
+        qualified_id: "Kata#task-123",
+        title: "Wire kata workspace sidebar",
+      },
+    });
+  }
+
+  it("renders Kata task identity and opens the kata sidebar tab", async () => {
+    mockGet.mockResolvedValue({
+      data: { workspaces: [kataWorkspaceFixture()] },
+    });
+    const onOpenItemSidebar = vi.fn();
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-kata", onOpenItemSidebar },
+    });
+    await screen.findByText("Wire kata workspace sidebar");
+
+    const bubble = container.querySelector(".item-bubble");
+    expect(bubble).not.toBeNull();
+    expect(bubble!.classList.contains("kata")).toBe(true);
+    expect(bubble!.textContent?.trim()).toBe("task-123");
+    // A Kata task has no provider item number, so the row must not show #0.
+    expect(container.textContent).not.toContain("#0");
+
+    await fireEvent.click(bubble!);
+    expect(onOpenItemSidebar).toHaveBeenCalledWith("ws-kata", "kata_task", undefined);
+  });
+
+  it("omits provider item actions in the Kata workspace context menu", async () => {
+    mockGet.mockResolvedValue({
+      data: { workspaces: [kataWorkspaceFixture()] },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-kata" },
+    });
+    await screen.findByText("Wire kata workspace sidebar");
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+
+    expect(screen.getByRole("menu", { name: "Workspace actions" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /Open item on/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Copy item URL" })).toBeNull();
+  });
+
+  it("filters a Kata workspace by its task identity", async () => {
+    mockGet.mockResolvedValue({
+      data: { workspaces: [kataWorkspaceFixture()] },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-kata" },
+    });
+    const filter = await screen.findByLabelText("Filter workspaces");
+
+    await fireEvent.input(filter, { target: { value: "task-123" } });
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
+
+    await fireEvent.input(filter, { target: { value: "no-such-task" } });
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(0);
   });
 
   it("pushes an ahead workspace branch and shows a busy state while pending", async () => {

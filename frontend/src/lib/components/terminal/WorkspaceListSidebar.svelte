@@ -45,8 +45,10 @@
     platform_host: string;
     repo_owner: string;
     repo_name: string;
-    item_type: "pull_request" | "issue";
+    item_type: "pull_request" | "issue" | "kata_task";
     item_number: number;
+    item_key?: string;
+    kata?: KataWorkspaceMetadata | null;
     git_head_ref: string;
     worktree_path: string;
     tmux_session: string;
@@ -77,13 +79,14 @@
   }
 
   type HostSummary = components["schemas"]["HostSummary"];
+  type KataWorkspaceMetadata = components["schemas"]["WorkspaceKataMetadata"];
 
   interface Props {
     selectedId: string;
     selectedHostKey?: string | undefined;
     onOpenItemSidebar?: (
       workspaceId: string,
-      tab: "pr" | "issue",
+      tab: "pr" | "issue" | "kata_task",
       hostKey?: string,
     ) => void;
     onWorkspaceListStateChange?: (
@@ -460,7 +463,34 @@
   }
 
   function displayName(ws: Workspace): string {
+    if (ws.item_type === "kata_task") {
+      return ws.kata?.title?.trim() || ws.git_head_ref;
+    }
     return ws.mr_title ?? ws.git_head_ref;
+  }
+
+  function kataIdentityLabel(ws: Workspace): string {
+    return (
+      ws.kata?.short_id?.trim() ||
+      ws.kata?.qualified_id?.trim() ||
+      "Kata"
+    );
+  }
+
+  function itemBubbleLabel(ws: Workspace): string {
+    if (ws.item_type === "kata_task") return kataIdentityLabel(ws);
+    return `#${ws.item_number}`;
+  }
+
+  function itemBubbleTitle(ws: Workspace): string {
+    if (ws.item_type === "kata_task") {
+      const title = ws.kata?.title?.trim();
+      const identity = kataIdentityLabel(ws);
+      return title ? `Open Kata task ${identity}: ${title}` : `Open Kata task ${identity}`;
+    }
+    return ws.item_type === "issue"
+      ? `Open issue #${ws.item_number}`
+      : `Open PR #${ws.item_number}`;
   }
 
   function updateSearch(event: Event): void {
@@ -473,8 +503,6 @@
     ws: Workspace,
     query: string,
   ): boolean {
-    const itemKind = ws.item_type === "issue" ? "issue" : "pr";
-    const itemNumber = String(ws.item_number);
     const haystack = [
       displayName(ws),
       ws.git_head_ref,
@@ -485,11 +513,26 @@
       ws.repo?.repo_path,
       `${ws.repo_owner}/${ws.repo_name}`,
       `${ws.platform_host}/${ws.repo_owner}/${ws.repo_name}`,
-      itemNumber,
-      `#${itemNumber}`,
-      `${itemKind} ${itemNumber}`,
-      `${itemKind} #${itemNumber}`,
     ];
+
+    if (ws.item_type === "kata_task") {
+      haystack.push(
+        "kata",
+        ws.kata?.short_id,
+        ws.kata?.qualified_id,
+        ws.kata?.title,
+        ws.kata?.project_name,
+      );
+    } else {
+      const itemKind = ws.item_type === "issue" ? "issue" : "pr";
+      const itemNumber = String(ws.item_number);
+      haystack.push(
+        itemNumber,
+        `#${itemNumber}`,
+        `${itemKind} ${itemNumber}`,
+        `${itemKind} #${itemNumber}`,
+      );
+    }
 
     return haystack.some((value) =>
       value?.toLowerCase().includes(query),
@@ -515,6 +558,9 @@
   }
 
   function itemStateClass(ws: Workspace): string {
+    if (ws.item_type === "kata_task") {
+      return "kata";
+    }
     if (ws.item_type === "issue") {
       return ws.mr_state === "closed" ? "closed" : "open";
     }
@@ -571,6 +617,9 @@
   }
 
   function providerItemURL(ws: Workspace): string | null {
+    // Kata workspaces are owned by an external Kata task, not a provider
+    // PR/issue, so there is no provider item URL (item_number is 0).
+    if (ws.item_type === "kata_task") return null;
     const provider = workspaceProvider(ws)?.toLowerCase();
     const repoPath = ws.repo?.repo_path ?? `${ws.repo_owner}/${ws.repo_name}`;
     const encodedPath = repoPath
@@ -880,7 +929,12 @@
   ): void {
     e.stopPropagation();
     e.preventDefault();
-    const tab = ws.item_type === "issue" ? "issue" : "pr";
+    const tab =
+      ws.item_type === "kata_task"
+        ? "kata_task"
+        : ws.item_type === "issue"
+          ? "issue"
+          : "pr";
 
     if (onOpenItemSidebar) {
       onOpenItemSidebar(ws.id, tab, ws.fleet_host_key);
@@ -1163,7 +1217,11 @@
               </div>
             </div>
             <button
-              class={["item-bubble", itemStateClass(ws)]}
+              class={[
+                "item-bubble",
+                itemStateClass(ws),
+                ws.item_type === "kata_task" && "item-bubble--kata",
+              ]}
               onclick={(e) => handleItemBubbleClick(e, ws)}
               onkeydown={(e) => {
                 // Stop Enter/Space from bubbling to the row,
@@ -1172,11 +1230,9 @@
                   e.stopPropagation();
                 }
               }}
-              title={ws.item_type === "issue"
-                ? `Open issue #${ws.item_number}`
-                : `Open PR #${ws.item_number}`}
+              title={itemBubbleTitle(ws)}
             >
-              #{ws.item_number}
+              {itemBubbleLabel(ws)}
             </button>
           </div>
     {/snippet}
@@ -1904,6 +1960,21 @@
   .item-bubble.draft {
     --bubble-bg: color-mix(in srgb, var(--text-muted) 55%, #ffffff);
     --bubble-fg: #0a0d14;
+  }
+
+  .item-bubble.kata {
+    --bubble-bg: color-mix(in srgb, var(--accent-blue) 70%, #ffffff);
+    --bubble-fg: color-mix(in srgb, var(--accent-blue) 25%, #0a0d14);
+  }
+
+  /* Kata identity labels are short slugs/qualified IDs rather than a
+   * fixed-width number, so cap the width and ellipsize to keep the row
+   * layout stable. */
+  .item-bubble--kata {
+    max-width: 9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .item-bubble:hover {

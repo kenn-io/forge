@@ -736,7 +736,7 @@ func TestListPullRequestReviewThreads(t *testing.T) {
 }
 
 func TestListPullRequestReviewThreadsScopesPaginatedCommentAuthByOwner(t *testing.T) {
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	require := require.New(t)
 	var calls int
 	var minted int

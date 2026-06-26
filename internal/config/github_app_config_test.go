@@ -525,7 +525,7 @@ repository_selection = "all"
 			appAccounts = append(appAccounts, cand.InstallationAccount)
 		}
 	}
-	Assert.Equal(t, []string{"kenn-io", "other-org"}, appAccounts)
+	assert.Equal(t, []string{"kenn-io", "other-org"}, appAccounts)
 }
 
 func TestTokenSourceChainRepoOverrideExcludesGitHubApp(t *testing.T) {

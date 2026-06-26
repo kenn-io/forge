@@ -158,5 +158,5 @@ repository_selection = "all"
 	})
 	_, err = collectProviderTokenSources(t.Context(), cfg, set)
 	require.Error(err)
-	Assert.ErrorContains(t, err, "owner mariusvniekerk")
+	assert.ErrorContains(t, err, "owner mariusvniekerk")
 }

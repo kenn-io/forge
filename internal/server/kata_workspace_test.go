@@ -582,6 +582,14 @@ repo_path = "acme/widget"
 	require.NotNil(created.Kata)
 	assert.Equal("desktop", created.Kata.DaemonID)
 	assert.Equal("issue-kata-1", created.Kata.IssueUID)
+	// The workspace list renders the bubble label, display name, and search
+	// haystack from these fields, so assert the full identity round-trips on
+	// the wire rather than trusting a hand-written frontend fixture.
+	assert.Equal("project-kata", created.Kata.ProjectUID)
+	assert.Equal("Kata", created.Kata.ProjectName)
+	assert.Equal("task-123", created.Kata.ShortID)
+	assert.Equal("Kata#task-123", created.Kata.QualifiedID)
+	assert.Equal("Fix widget", created.Kata.Title)
 }
 
 func TestCreateKataWorkspaceReusesExistingScopedTaskWorkspace(t *testing.T) {

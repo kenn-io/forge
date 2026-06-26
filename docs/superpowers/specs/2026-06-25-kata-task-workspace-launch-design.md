@@ -296,6 +296,24 @@ before checking numeric issue state. A Kata workspace has a repository backing
 its worktree, but that repository identity must not cause the right sidebar to
 look up or render a provider issue with the same number or title.
 
+The left workspace list applies the same item-type branching to row
+presentation. A `kata_task` row:
+
+- shows the stored Kata identity in the item bubble, preferring `short_id`, then
+  `qualified_id`, then a literal `Kata` label. `item_number` is `0` for Kata
+  workspaces and is incidental data, not a sentinel to display, so the row never
+  renders `#0`.
+- uses the stored Kata `title` as the display name, falling back to the branch
+  (`git_head_ref`) when the title is empty. The bubble identity and the display
+  name intentionally use different fallback chains because they answer different
+  questions (which task vs. what is it called).
+- opens the `kata_task` sidebar tab from the bubble rather than the PR/issue tab.
+- omits provider item-URL actions (open on provider, copy item URL) because a
+  Kata task has no provider PR/issue, so building a provider URL from
+  `item_number` would point at item `0`.
+- matches search against the Kata identity and title fields rather than a
+  numeric item number.
+
 ## Error Handling
 
 The resolver intentionally uses absence for non-actionable states:

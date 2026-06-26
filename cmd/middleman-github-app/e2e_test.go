@@ -922,6 +922,10 @@ func TestInstallSurfacesProbeErrorWithoutAdoptingStaleInstallation(t *testing.T)
 	env, _ = newTestEnv(t, fake, configPath)
 	err = runCLI([]string{"install", "--no-browser", "--timeout", "10s"}, env)
 	require.Error(err)
+	// The probe failure must surface unchanged, not be rewritten as a
+	// timeout that triggers stale adoption.
+	require.ErrorContains(err, "listing app installations")
+	require.NotErrorIs(err, errPollDeadline)
 
 	cfg, err := config.LoadForGitHubAppRepair(configPath)
 	require.NoError(err)

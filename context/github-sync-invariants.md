@@ -137,11 +137,13 @@ account. Re-running `install` after a coverage failure (or against a restored
 config) reconfigures the existing installation instead of minting a new
 installation id, so on a clean install-poll timeout the flow adopts an
 already-present installation rather than only ever waiting for a newly created
-one. Adoption is bounded by intent: adopt only the app's sole installation when
-its account is the recorded installation account or owns a configured repo that
-resolves to the app. Multiple installations, a lone installation on an unrelated
-account, a transient probe error, or a user interrupt keep the timeout instead
-of recording the wrong account.
+one. Adoption runs only after a clean poll deadline and is bounded by intent:
+adopt only the app's sole installation when its account is the recorded
+installation account or owns a configured repo that resolves to the app.
+Multiple installations or a lone installation on an unrelated account leave the
+deadline as a timeout instead of recording the wrong account. A transient probe
+error or a user interrupt is not a clean deadline: it surfaces the original
+error or cancellation unchanged and never adopts.
 
 ## Testing Expectations
 

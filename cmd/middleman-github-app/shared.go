@@ -208,18 +208,36 @@ func missingSelectedRepos(
 	return missing
 }
 
-// errPollDeadline marks a pollUntil return that ended on its own timeout
-// deadline, as opposed to a probe error or context cancellation. Callers
+// errPollDeadline is the sentinel a pollTimeoutError matches via Is, so
+// callers can recognize a clean deadline with errors.Is(err,
+// errPollDeadline) without the marker text leaking into the user-facing
+// message. It marks a pollUntil return that ended on its own timeout
+// deadline, as opposed to a probe error or context cancellation: callers
 // that recover from a clean "nothing appeared in time" (for example
 // adopting an existing installation when no new one shows up) must match
-// this so a transient probe failure surfaces instead of being silently
-// treated as a timeout.
+// this so a transient probe failure or interrupt surfaces instead of
+// being treated as a timeout.
 var errPollDeadline = errors.New("poll deadline reached")
 
+// pollTimeoutError is pollUntil's deadline result. Its message stays the
+// plain "timed out after <d>" the CLIs have always shown, while Is
+// reports a match against errPollDeadline so recovery paths can branch on
+// a clean timeout without changing what the user sees.
+type pollTimeoutError struct{ timeout time.Duration }
+
+func (e pollTimeoutError) Error() string {
+	return fmt.Sprintf("timed out after %s", e.timeout)
+}
+
+func (e pollTimeoutError) Is(target error) bool {
+	return target == errPollDeadline
+}
+
 // pollUntil runs probe at the env's poll interval until it reports
-// done, the context ends, or timeout elapses. A timeout wraps
-// errPollDeadline; probe errors and context cancellation are returned
-// as-is so callers can tell them apart.
+// done, the context ends, or timeout elapses. A timeout returns a
+// pollTimeoutError (errors.Is(err, errPollDeadline) is true); probe
+// errors and context cancellation are returned as-is so callers can tell
+// them apart.
 func (env *appEnv) pollUntil(
 	ctx context.Context,
 	timeout time.Duration,
@@ -241,7 +259,7 @@ func (env *appEnv) pollUntil(
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("timed out after %s: %w", timeout, errPollDeadline)
+			return pollTimeoutError{timeout: timeout}
 		case <-ticker.C:
 		}
 	}

@@ -120,6 +120,57 @@ index abc..def 100644
 	assert.Contains(files[0].Patch, "\\ No newline at end of file\n")
 }
 
+func TestParsePatchMatchesPatchEntriesByPath(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	patch := `diff --git a/docs/guide.md b/docs/guide.md
+deleted file mode 120000
+index 1111111..0000000
+--- a/docs/guide.md
++++ /dev/null
+@@ -1 +0,0 @@
+-README.md
+diff --git a/docs/guide.md b/docs/guide.md
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/docs/guide.md
+@@ -0,0 +1,2 @@
++# Example Guide
++Use generic fixture data.
+diff --git a/src/report.go b/src/report.go
+index 3333333..4444444 100644
+--- a/src/report.go
++++ b/src/report.go
+@@ -1,3 +1,2 @@
+ package src
+-func oldReport() {}
+-func removedReport() {}
++func newReport() {}
+`
+
+	rawFiles := []DiffFile{
+		{Path: "docs/guide.md", OldPath: "docs/guide.md", Status: "modified"},
+		{Path: "src/report.go", OldPath: "src/report.go", Status: "modified"},
+	}
+
+	files := ParsePatch([]byte(patch), rawFiles)
+	require.Len(files, 2)
+
+	assert.Equal("docs/guide.md", files[0].Path)
+	assert.Equal(2, files[0].Additions)
+	assert.Equal(1, files[0].Deletions)
+	assert.Contains(files[0].Patch, "+# Example Guide\n")
+
+	assert.Equal("src/report.go", files[1].Path)
+	assert.Equal(1, files[1].Additions)
+	assert.Equal(2, files[1].Deletions)
+	assert.Contains(files[1].Patch, "+func newReport() {}\n")
+	assert.NotContains(files[1].Patch, "# Example Guide")
+	assert.NotContains(files[1].Patch, "Use generic fixture data.")
+}
+
 func TestSortDiffFilesUsesBytewisePathOrder(t *testing.T) {
 	assert := assert.New(t)
 

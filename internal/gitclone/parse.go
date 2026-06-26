@@ -86,18 +86,22 @@ func rawStatusToString(s string) (status string, isRenameOrCopy bool) {
 }
 
 // ParsePatch parses unified diff patch output and merges it with
-// pre-populated file metadata from ParseRawZ. Files are correlated by
-// output order (git emits them in the same order).
+// pre-populated file metadata from ParseRawZ.
 func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 	fileDiffs, _ := godiff.ParseMultiFileDiff(patch)
 	if len(fileDiffs) == 0 {
 		return rawFiles
 	}
 
-	for i, fd := range fileDiffs {
-		if i >= len(rawFiles) {
-			break
+	pathIndex := diffFilePathIndex(rawFiles)
+	touched := make(map[int]bool, len(fileDiffs))
+
+	for _, fd := range fileDiffs {
+		i, ok := matchFileDiff(rawFiles, pathIndex, fd)
+		if !ok {
+			continue
 		}
+		touched[i] = true
 
 		// Detect binary from extended headers.
 		for _, ext := range fd.Extended {
@@ -176,8 +180,63 @@ func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 			}
 			rawFiles[i].Hunks = append(rawFiles[i].Hunks, hunk)
 		}
+	}
+
+	for i := range touched {
 		rawFiles[i].Patch = buildPatch(rawFiles[i])
 	}
 
 	return rawFiles
+}
+
+func diffFilePathIndex(files []DiffFile) map[string]int {
+	index := make(map[string]int, len(files)*2)
+	for i, file := range files {
+		if file.Path != "" {
+			index[file.Path] = i
+		}
+		if file.OldPath != "" {
+			index[file.OldPath] = i
+		}
+	}
+	return index
+}
+
+func matchFileDiff(
+	rawFiles []DiffFile,
+	pathIndex map[string]int,
+	fd *godiff.FileDiff,
+) (int, bool) {
+	for _, path := range fileDiffPaths(fd) {
+		i, ok := pathIndex[path]
+		if !ok {
+			continue
+		}
+		file := rawFiles[i]
+		if file.Path == path || file.OldPath == path {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+func fileDiffPaths(fd *godiff.FileDiff) []string {
+	paths := make([]string, 0, 2)
+	if path := normalizeDiffHeaderPath(fd.NewName); path != "" {
+		paths = append(paths, path)
+	}
+	if path := normalizeDiffHeaderPath(fd.OrigName); path != "" {
+		paths = append(paths, path)
+	}
+	return paths
+}
+
+func normalizeDiffHeaderPath(path string) string {
+	if path == "" || path == "/dev/null" {
+		return ""
+	}
+	if strings.HasPrefix(path, "a/") || strings.HasPrefix(path, "b/") {
+		return path[2:]
+	}
+	return path
 }

@@ -97,6 +97,14 @@ Middleman reads `.kata.toml` only from exact configured repositories where
 `worktree_base_path` is set. Glob entries are skipped because a glob does not
 name one local clone.
 
+`.kata.toml` is untrusted repository content, so middleman reads it defensively:
+it accepts only a regular file (rejecting symlinks, devices, and other
+non-regular entries) and reads through a small explicit size cap before
+decoding. This stops a malicious clone from pointing the file at an endless or
+oversized target (for example a symlink to `/dev/zero`) and stalling or
+exhausting the process during a worktree scan. A symlinked, oversized, or
+otherwise non-regular `.kata.toml` contributes no mapping.
+
 The `.kata.toml` parser accepts a small, explicit shape:
 
 ```toml

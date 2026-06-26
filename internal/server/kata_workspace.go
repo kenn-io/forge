@@ -274,15 +274,17 @@ func kataAutomaticWorkspaceRepo(repos []config.Repo, projectUID string, projectN
 	} else if matches > 1 {
 		return config.Repo{}, false
 	}
-	if kataAutomaticWorkspaceRepoIdentifierCount(repos) > 0 {
-		return config.Repo{}, false
-	}
 	name := strings.TrimSpace(projectName)
 	if name == "" {
 		return config.Repo{}, false
 	}
+	// Name fallback is only for clones whose .kata.toml carries no stable
+	// UID/identity. Restricting the match to identifier-less entries is the
+	// guardrail: a clone with stable identity is matched by UID/identity only,
+	// never by name, and a valid name-only project still resolves even when an
+	// unrelated watched clone happens to have identity metadata.
 	repo, matches := kataAutomaticWorkspaceRepoByTOML(repos, func(project kataProjectTOML) bool {
-		return strings.EqualFold(project.Name, name)
+		return !project.hasIdentifier() && strings.EqualFold(project.Name, name)
 	})
 	if matches != 1 {
 		return config.Repo{}, false
@@ -305,20 +307,6 @@ func kataAutomaticWorkspaceRepoByTOML(repos []config.Repo, matches func(kataProj
 		return config.Repo{}, len(matched)
 	}
 	return matched[0], 1
-}
-
-func kataAutomaticWorkspaceRepoIdentifierCount(repos []config.Repo) int {
-	count := 0
-	for _, repo := range repos {
-		if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
-			continue
-		}
-		project, ok := readKataProjectTOML(repo.WorktreeBasePath)
-		if ok && project.hasIdentifier() {
-			count++
-		}
-	}
-	return count
 }
 
 type kataProjectTOML struct {

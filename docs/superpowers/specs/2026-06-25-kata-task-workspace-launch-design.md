@@ -54,8 +54,8 @@ The resolver uses this precedence:
 2. Manual mapping for any daemon and the selected project UID.
 3. Automatic mapping by `.kata.toml` project UID or identity in exact configured
    repositories with a non-empty `worktree_base_path`.
-4. Automatic mapping by unambiguous `.kata.toml` project name when the selected
-   Kata issue only carries the daemon's opaque project UID.
+4. Automatic mapping by unambiguous `.kata.toml` project name, considering only
+   clones whose `.kata.toml` declares no `uid`/`identity`.
 5. No target when neither source yields exactly one repository.
 
 Manual mappings are a fallback and override only the project they name. Automatic
@@ -106,20 +106,30 @@ identity = "github.com/acme/widget"
 name = "Widget"
 ```
 
-`uid` is the preferred stable identity used for automatic matching. Existing
-Kata clone metadata may instead use `project.identity`; middleman accepts that
-as a fallback identity. If the selected Kata issue carries only an opaque daemon
-project UID, middleman can also match `project.name` against the selected
-project name from the Kata project catalog. If a file is absent, unreadable,
-malformed, or missing all usable identity/name fields, that repository
-contributes no automatic mapping.
+`uid` and `identity` are both treated as stable identity signals. When either
+field is present, the selected Kata project UID matches the clone if it equals
+`project.uid` or `project.identity`; when both fields are present, a match on
+either one is sufficient and they are never required to agree. `project.name` is
+not an identity signal. If a file is absent, unreadable, malformed, or missing
+all usable identity/name fields, that repository contributes no automatic
+mapping.
+
+Identity and name matching never mix per clone. A clone whose `.kata.toml`
+declares a `uid` or `identity` participates only in identity matching and is
+never resolved by name, even if its `project.name` equals the selected project
+name. Name matching is reserved for clones that declare no `uid`/`identity`,
+which is the case the selected Kata issue's opaque daemon project UID is meant to
+cover. Restricting name matching to identifier-less clones is the guardrail: a
+valid name-only project still resolves even when an unrelated watched clone
+carries identity metadata, and a clone with stable identity is never silently
+matched by a colliding name.
 
 Automatic `.kata.toml` mappings are global by project UID, identity, or name
-because the file does not carry daemon identity. Identity matches are preferred
-over name matches. If two repositories claim the same Kata project identity or
-the same fallback project name, the resolver treats the mapping as ambiguous and
-returns no workspace target. The UI should not show a disabled button for this
-state because the user asked for the button to be absent when there is no clear
+because the file does not carry daemon identity. If two repositories claim the
+same Kata project identity, or two identifier-less repositories claim the same
+project name, the resolver treats the mapping as ambiguous and returns no
+workspace target. The UI should not show a disabled button for this state
+because the user asked for the button to be absent when there is no clear
 mapping.
 
 ## Manual Settings

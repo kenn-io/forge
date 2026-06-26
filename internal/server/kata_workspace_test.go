@@ -236,6 +236,101 @@ worktree_base_path = %q
 	assert.Nil(resp.Repo)
 }
 
+func TestKataWorkspaceTargetNameFallbackResolvesWithUnrelatedIdentityClone(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	nameOnlyClone := t.TempDir()
+	identityClone := t.TempDir()
+	require.NoError(os.WriteFile(
+		filepath.Join(nameOnlyClone, ".kata.toml"),
+		[]byte("[project]\nname = \"Widget\"\n"),
+		0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(identityClone, ".kata.toml"),
+		[]byte("[project]\nuid = \"other-project\"\nname = \"Other\"\n"),
+		0o644,
+	))
+	cfg := fmt.Sprintf(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+worktree_base_path = %q
+
+[[repos]]
+owner = "acme"
+name = "other"
+worktree_base_path = %q
+`, nameOnlyClone, identityClone)
+	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+		"daemon_id":    "desktop",
+		"project_uid":  "project-kata-opaque",
+		"project_name": "Widget",
+		"issue_uid":    "issue-kata-1",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp kataWorkspaceTargetResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.True(resp.Available)
+	require.NotNil(resp.Repo)
+	assert.Equal("acme", resp.Repo.Owner)
+	assert.Equal("widget", resp.Repo.Name)
+}
+
+func TestKataWorkspaceTargetAutomaticMappingFromProjectUIDWhenIdentityPresent(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	cloneDir := t.TempDir()
+	require.NoError(os.WriteFile(
+		filepath.Join(cloneDir, ".kata.toml"),
+		[]byte("[project]\nuid = \"project-kata\"\nidentity = \"github.com/acme/widget\"\nname = \"Widget\"\n"),
+		0o644,
+	))
+	cfg := fmt.Sprintf(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+worktree_base_path = %q
+`, cloneDir)
+	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+		"daemon_id":    "desktop",
+		"project_uid":  "project-kata",
+		"project_name": "widget",
+		"issue_uid":    "issue-kata-1",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp kataWorkspaceTargetResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.True(resp.Available)
+	require.NotNil(resp.Repo)
+	assert.Equal("acme", resp.Repo.Owner)
+	assert.Equal("widget", resp.Repo.Name)
+}
+
 func TestKataWorkspaceTargetRequiresDaemonID(t *testing.T) {
 	require := require.New(t)
 

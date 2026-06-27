@@ -23858,6 +23858,52 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 	assert.NotContains(workspaceDiffPaths(*diff.Files), "second.go")
 }
 
+func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+
+	sourcePath := filepath.Join(ws.WorktreePath, "src", "a.txt")
+	copiedPath := filepath.Join(ws.WorktreePath, "src", "z.txt")
+	require.NoError(os.MkdirAll(filepath.Dir(sourcePath), 0o755))
+	require.NoError(os.WriteFile(sourcePath, []byte("base line\nshared line\n"), 0o644))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "add copy source fixture")
+
+	require.NoError(os.WriteFile(copiedPath, []byte("base line\nshared line\n"), 0o644))
+	require.NoError(os.WriteFile(sourcePath, []byte("changed line\nshared line\n"), 0o644))
+	runGit(t, ws.WorktreePath, "add", "src/z.txt")
+
+	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	require.NotNil(diff.Files)
+	source := requireWorkspaceDiffFile(t, *diff.Files, "src/a.txt")
+	copied := requireWorkspaceDiffFile(t, *diff.Files, "src/z.txt")
+
+	assert.Equal("modified", source.Status)
+	assert.Equal(int64(1), source.Additions)
+	assert.Equal(int64(1), source.Deletions)
+	assert.Contains(source.Patch, "diff --git a/src/a.txt b/src/a.txt\n")
+	assert.Contains(source.Patch, "+changed line\n")
+	assert.NotContains(source.Patch, "copy to src/z.txt")
+	require.NotNil(source.Hunks)
+	require.Len(*source.Hunks, 1)
+
+	assert.Equal("copied", copied.Status)
+	assert.Zero(copied.Additions)
+	assert.Zero(copied.Deletions)
+	assert.Empty(copied.Patch)
+	require.NotNil(copied.Hunks)
+	assert.Empty(*copied.Hunks)
+}
+
 func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
 	t.Parallel()
 

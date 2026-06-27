@@ -4,6 +4,9 @@ A local-first maintainer console. The original core syncs PRs and issues from yo
 
 Middleman runs entirely on your machine -- no hosted service, no account to create. One binary, one config file, and you're up.
 
+For user-facing setup and workflow docs, start with
+[docs/index.md](docs/index.md).
+
 This workstream expands middleman beyond provider PR/MR triage with first-class
 modes for external Kata task daemons, local markdown docs, and msgvault-backed
 message search. Those domains stay owned by their source systems: Kata task

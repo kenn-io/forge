@@ -1,0 +1,40 @@
+:root {
+  --md-text-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --md-code-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.md-typeset figure.workflow-shot {
+  margin: 1.5rem 0;
+}
+
+.md-typeset figure.workflow-shot img {
+  display: block;
+  width: 100%;
+  max-width: 980px;
+  height: auto;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.16);
+}
+
+.md-typeset figure.workflow-shot figcaption {
+  margin-top: 0.5rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.78rem;
+}
+
+.workflow-shot__image--dark {
+  display: none !important;
+}
+
+[data-md-color-scheme="default"] .workflow-shot__image--light {
+  display: block !important;
+}
+
+[data-md-color-scheme="slate"] .workflow-shot__image--light {
+  display: none !important;
+}
+
+[data-md-color-scheme="slate"] .workflow-shot__image--dark {
+  display: block !important;
+}

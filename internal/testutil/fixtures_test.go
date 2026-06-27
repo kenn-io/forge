@@ -105,7 +105,8 @@ func TestSeedFixtures_Activity(t *testing.T) {
 func TestSeedFixtures_FixtureClient(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	_, result := OpenFixtureTestDB(t)
+	d, result := OpenFixtureTestDB(t)
+	ctx := t.Context()
 
 	fc := result.FixtureClient()
 	require.NotNil(fc)
@@ -165,6 +166,26 @@ func TestSeedFixtures_FixtureClient(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("closed", issue.GetState())
+
+	repo, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	require.NotNil(repo)
+	widgetsIssue, err := d.GetIssueByRepoIDAndNumber(ctx, repo.ID, 10)
+	require.NoError(err)
+	require.NotNil(widgetsIssue)
+	assert.Contains(widgetsIssue.Body, "Safari users report the widget panel going blank")
+
+	fixtureIssue, err := fc.GetIssue(ctx, "acme", "widgets", 10)
+	require.NoError(err)
+	require.NotNil(fixtureIssue)
+	assert.Contains(fixtureIssue.GetBody(), "Safari users report the widget panel going blank")
+	assert.Equal(2, fixtureIssue.GetComments())
+
+	comments, err := fc.ListIssueComments(ctx, "acme", "widgets", 10)
+	require.NoError(err)
+	require.Len(comments, 2)
+	assert.Contains(comments[0].GetBody(), "Confirmed on Safari 17")
+	assert.Contains(comments[1].GetBody(), "I can reproduce on 17.4")
 }
 
 func TestSeedFixtures_MergeTargetsHaveReviewedHeads(t *testing.T) {

@@ -163,14 +163,11 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - When a backwards compatibility adapter, shim, alias, fallback wrapper, or legacy translation layer seems useful, ask the user for EXPRESS permission before introducing it. These shims carry very high maintenance cost because they preserve old paths, multiply edge cases, and make future changes harder to reason about; explain the compatibility benefit and why direct migration or removal is not the better choice.
 - Use `huma` for the web framework and OpenAPI generation
 - Regenerate API artifacts with `make api-generate`; the Go client also supports `go generate ./internal/apiclient/generated`
+- User-facing docs should be concise and workflow-oriented: state the UI capabilities and the maintainer workflows middleman enables, avoid overexplaining internals, and treat the HTTP API as an internal/thin-client concern rather than regular user guidance.
+- User-facing workflow screenshots live under `docs/assets/generated/` and must be regenerated with the Playwright task in `docs/screenshots/`; those captures use the real seeded e2e backend, not mocked API fixtures or a developer daemon.
 - **Never use npm** — use `bun install` for frontend dependencies and invoke Vite+ directly via `./node_modules/.bin/vp ...` (or `../node_modules/.bin/vp ...` from `frontend/`). Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
 - Tests should be fast and isolated
 - No emojis in code or output
-- Do not copy names, paths, prose, domain details, data values, or other
-  specifics from developers' private projects into tests, fixtures,
-  implementation, docs, commit messages, or PR text unless the user explicitly
-  asks for those exact details to be preserved. Reproduce bugs with generic
-  synthetic examples instead.
 - For database schema changes, follow `context/db-migrations.md`; `internal/db/migrations/` is the source of truth for schema evolution.
 - For HTTP API error envelopes and frontend error branching, follow `context/error-handling.md`; branch on stable codes/details rather than prose.
 - For retries, backoff, and single-flight dedup against flaky upstreams, follow `context/retries-and-backoffs.md`.

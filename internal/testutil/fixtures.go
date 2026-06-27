@@ -441,6 +441,12 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#10: open, eve
 	wi10Created := now.Add(-5 * 24 * time.Hour)
+	wi10Body := "Safari users report the widget panel going blank after resizing the page.\n\n" +
+		"Observed on Safari 17.4 with the default widget theme. Chrome and Firefox keep rendering the panel.\n\n" +
+		"## Triage notes\n\n" +
+		"- Reproduces after opening the dashboard, resizing below 900px, then returning to desktop width\n" +
+		"- Suspect CSS containment around the widget frame\n" +
+		"- Needs a reduced test case before assigning implementation\n"
 	wi10ID, err := d.UpsertIssue(ctx, &db.Issue{
 		RepoID:         widgetsID,
 		PlatformID:     3010,
@@ -449,6 +455,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		Title:          "Widget rendering broken on Safari",
 		Author:         "eve",
 		State:          "open",
+		Body:           wi10Body,
 		CommentCount:   2,
 		CreatedAt:      wi10Created,
 		UpdatedAt:      now.Add(-4 * time.Hour),
@@ -1009,7 +1016,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	openIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
-			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
+			setIssueComments(setIssueBody(buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)), wi10Body), 2),
 			setIssueBody(buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created), wi11Body),
 			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
 		},
@@ -1096,7 +1103,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	allIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
-			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
+			setIssueComments(setIssueBody(buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)), wi10Body), 2),
 			setIssueBody(buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created), wi11Body),
 			buildGHIssue("acme", "widgets", 3012, 12, "Crash on empty input", "carol", "closed", now.Add(-7*24*time.Hour), wi12Closed),
 			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
@@ -1113,11 +1120,28 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	result := &SeedResult{
 		FixtureClient: func() *FixtureClient {
 			return &FixtureClient{
-				OpenPRs:       openPRs,
-				PRs:           allPRs,
-				OpenIssues:    openIssues,
-				Issues:        allIssues,
-				Comments:      make(map[string][]*gh.IssueComment),
+				OpenPRs:    openPRs,
+				PRs:        allPRs,
+				OpenIssues: openIssues,
+				Issues:     allIssues,
+				Comments: map[string][]*gh.IssueComment{
+					issueKey("acme", "widgets", 10): {
+						buildGHIssueComment(
+							7010,
+							"alice",
+							"Confirmed on Safari 17. Looks like the widget frame loses its computed height after the resize.",
+							"https://github.com/acme/widgets/issues/10#issuecomment-7010",
+							now.Add(-3*24*time.Hour),
+						),
+						buildGHIssueComment(
+							7011,
+							"bob",
+							"I can reproduce on 17.4. I will reduce it to the containment rule before assigning the fix.",
+							"https://github.com/acme/widgets/issues/10#issuecomment-7011",
+							now.Add(-2*24*time.Hour),
+						),
+					},
+				},
 				Reviews:       reviews,
 				ReviewThreads: reviewThreads,
 				Tags:          make(map[string][]*gh.RepositoryTag),
@@ -1230,6 +1254,22 @@ func setPRLocked(pr *gh.PullRequest) *gh.PullRequest {
 func setIssueBody(issue *gh.Issue, body string) *gh.Issue {
 	issue.Body = &body
 	return issue
+}
+
+func setIssueComments(issue *gh.Issue, count int) *gh.Issue {
+	issue.Comments = &count
+	return issue
+}
+
+func buildGHIssueComment(id int64, login, body, url string, createdAt time.Time) *gh.IssueComment {
+	return &gh.IssueComment{
+		ID:        &id,
+		Body:      &body,
+		HTMLURL:   &url,
+		CreatedAt: &gh.Timestamp{Time: createdAt},
+		UpdatedAt: &gh.Timestamp{Time: createdAt},
+		User:      &gh.User{Login: &login},
+	}
 }
 
 // setPRStats sets Additions and Deletions on a *gh.PullRequest so the

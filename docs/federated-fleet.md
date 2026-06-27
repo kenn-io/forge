@@ -15,28 +15,28 @@ that previously lived under `docs/superpowers/`.
 
 What the fleet does today:
 
-- **Read plane** — the hub fans out to every configured peer, fetches
+- **Read plane**: the hub fans out to every configured peer, fetches
   each peer's raw snapshot, and merges them into one enriched snapshot
   (projects, worktrees, sessions, hosts, live tmux state).
-- **Write plane** — mutations against a remote host's resources
+- **Write plane**: mutations against a remote host's resources
   (workspace create/delete, runtime session launch/stop, registered-
   worktree runtime, filesystem probes) ride hub-keyed proxy routes.
-- **Terminal plane** — attach-spec reads return the native command
+- **Terminal plane**: attach-spec reads return the native command
   vector for a tmux-backed session; WebSocket terminal routes proxy
   interactive sessions through the hub.
-- **Transports** — peers are reached over plain HTTP or over SSH
+- **Transports**: peers are reached over plain HTTP or over SSH
   (the hub holds a ControlMaster per SSH peer and relays API calls by
   executing the peer's own CLI remotely, so the peer's HTTP listener
   never leaves its host).
-- **Daemon contract** — runtime discovery via the lock file and
+- **Daemon contract**: runtime discovery via the lock file and
   published metadata, a minted bearer token, and the `middleman api`
   CLI verb give thin clients and relays one uniform way to reach a
   daemon.
 
-Out of scope (deliberately): remote binary provisioning/bootstrap
+Out of scope: remote binary provisioning/bootstrap
 (peers are expected to have `middleman` installed), cross-fleet
-identity beyond config keys, and any peer-to-peer topology — fan-out is
-always hub → peer, one hop.
+identity beyond config keys, and peer-to-peer topology. Fan-out is always
+hub → peer, one hop.
 
 ## Configuration
 
@@ -93,25 +93,25 @@ Validation rules (`internal/config/config.go`): peer keys must be
 non-empty and unique across `fleet.key`, `[[fleet.peers]]`, and
 `[[fleet.ssh_peers]]`; SSH `destination` is required (it is passed to
 ssh(1) as a single positional argument, never through a shell);
-`remote_command` must be a bare executable name or path — the relay
+`remote_command` must be a bare executable name or path. The relay
 embeds it unquoted in a remote shell fragment and the CLI only
-dispatches subcommands in argv[0] position, so flags or metacharacters
+dispatches subcommands in `argv[0]` position, so flags or metacharacters
 would change meaning. A custom remote config location is set via
 `MIDDLEMAN_HOME` in the remote login profile (the relay runs
 `sh -lc`). Editing `[api].require_auth` or the SSH peer set while the
-daemon runs reports `restart_required` on the `config.changed` event —
-both are wired at startup.
+daemon runs reports `restart_required` on the `config.changed` event.
+Both are wired at startup.
 
 ## Read plane: snapshots
 
 Two snapshot endpoints with distinct roles:
 
-- `GET /api/v1/snapshot/raw` — this host only, never fans out. The
+- `GET /api/v1/snapshot/raw`: this host only, never fans out. The
   schema-versioned wire shape (`fleet.RawSnapshot`, `schemaVersion: 2`,
   `internal/fleet/types.go`) carries the host record (hostname, platform,
   version, live tmux inventory), projects, worktrees, and sessions,
   each tagged with a `scopedKey` that is unique fleet-wide.
-- `GET /api/v1/snapshot?include_peers=true` — the merged, enriched
+- `GET /api/v1/snapshot?include_peers=true`: the merged, enriched
   view. The hub fetches every configured peer's `/snapshot/raw`
   concurrently (`fleet_hub.go`), bounded per peer by
   `fleet.peer_timeout`, and merges results (`fleet.Merge`,
@@ -138,9 +138,9 @@ per peer), so the next read benefits.
 
 Enrichment (`internal/fleet/enrich.go`) computes two per-host layers:
 
-- **Diagnostics** — informational warnings (tmux missing, platform
+- **Diagnostics**: informational warnings (tmux missing, platform
   auth absent, probe errors) surfaced to the UI.
-- **Operation availability** — a binary gate per operation. The hub
+- **Operation availability**: a binary gate per operation. The hub
   applies a routability policy (`fleet_hub.go`): operations it cannot
   route to a host are suppressed with an explanatory reason. HTTP and
   SSH peers are routable (proxy routes exist), so their workspace and
@@ -166,8 +166,8 @@ raw snapshot (`fleet_tmux_monitor.go`, `fleet_tmux_reconcile.go`):
   key; a live unowned session is `managed: false` and redacted to
   summary unless `include_unmanaged_details` is set. An owned session
   absent from two consecutive samples (both newer than the ownership
-  row) is marked exited — the two-sample debounce absorbs the race
-  with session creation.
+  row) is marked exited. The two-sample debounce absorbs the race with
+  session creation.
 - Probe failures surface as `tmuxProbeError` / `tmuxMetricsError` on
   the host record with `tmuxLastPolledAt` for staleness.
 
@@ -185,9 +185,9 @@ Hub-keyed routes under `/api/v1/fleet/hosts/{host_key}/...`
 
 Resolution order for `{host_key}`: the local host serves itself; an
 HTTP peer gets a reverse proxy to its base URL; an SSH peer gets the
-CLI relay (below). The request body rides verbatim and the remote's
-exact status code and body come back — error bodies are RFC 9457
-problem documents the caller wants.
+CLI relay below. The request body rides verbatim. The remote's exact
+status code and body come back, and error bodies are RFC 9457 problem
+documents the caller wants.
 
 WebSocket terminal routes (`/ws/v1/fleet/hosts/{host_key}/...`) proxy
 interactive terminals through the hub for workspace, runtime-shell,
@@ -213,9 +213,9 @@ tmux-backed session:
 The session must exist both as a DB ownership row and in live tmux;
 non-tmux sessions are not attachable. When the fleet proxy serves an
 attach-spec for an **SSH peer**, it wraps the command so it runs from
-the hub's host through the peer's ControlMaster —
+the hub's host through the peer's ControlMaster:
 `ssh -o ControlPath=<socket> -o ControlMaster=no -t <destination>
-tmux attach-session ...` — and flips `requires_local_host` to false
+tmux attach-session ...`. It also flips `requires_local_host` to false
 (`fleet_ssh.go: wrapAttachSpecForSSH`). Clients consume the socket
 path and connection state; they never spawn their own masters.
 
@@ -224,7 +224,7 @@ path and connection state; they never spawn their own masters.
 `internal/sshfleet` owns the SSH side; the hub is the single owner of
 the ControlMaster lifecycle.
 
-- **ConnectionManager** (`connection.go`) — one master per peer
+- **ConnectionManager** (`connection.go`): one master per peer
   (`-MNf`, `ServerAliveInterval=15`, `BatchMode=yes`,
   `ConnectTimeout=10`), deterministic socket path under
   `<data_dir>/ssh-sockets` (short hash of the host key). Sockets that
@@ -234,7 +234,7 @@ the ControlMaster lifecycle.
   (connecting / connected / probe_failed / disconnected / error)
   broadcast on the event hub as `fleet_host_state` and map onto the
   snapshot's `connectionState`.
-- **Runner** (`runner.go`) — relays one HTTP exchange by executing
+- **Runner** (`runner.go`): relays one HTTP exchange by executing
   the remote CLI through the master:
   `ssh -o ControlPath=<socket> -o ControlMaster=no <destination>
   sh -lc '<PATH=...>; middleman api -i [-d @-] METHOD PATH'`. The
@@ -242,7 +242,7 @@ the ControlMaster lifecycle.
   the exact remote status. Exit codes are the transport contract:
   0/1 → parse framed response, 2 → typed
   `ErrRemoteDaemonUnavailable`.
-- **Daemon auto-start** (`ensure.go`) — when a relay hits exit 2, the
+- **Daemon auto-start** (`ensure.go`): when a relay hits exit 2, the
   hub probes `status --json` on the peer, starts a detached daemon
   (`nohup middleman serve`) if none runs, polls until the probe
   reports running **with published runtime metadata** (the api verb
@@ -255,13 +255,13 @@ the ControlMaster lifecycle.
 Everything a local client (or the SSH relay acting as one) needs to
 reach a daemon, with no out-of-band configuration:
 
-- **Runtime discovery** (`internal/runtimelock`) — the daemon is
+- **Runtime discovery** (`internal/runtimelock`): the daemon is
   running iff the flock on `<data_dir>/middleman.lock` is held; only
   then is `<data_dir>/middleman.run.json` authoritative. The metadata
   publishes pid, `listen_addr` (from the actual bound listener),
-  `base_path` (canonical, no trailing slash — clients join API paths
+  `base_path` (canonical, no trailing slash; clients join API paths
   onto it), `token_path`, and `require_auth`.
-- **Auth token** — minted at startup (32-byte hex, 0600, reused
+- **Auth token**: minted at startup (32-byte hex, 0600, reused
   across restarts) at `<data_dir>/auth_token`. The file mode is the
   authorization boundary. With `[api] require_auth`, both the `/api/`
   routes and the `/ws/` terminal WebSocket routes demand
@@ -270,9 +270,9 @@ reach a daemon, with no out-of-band configuration:
   cookie + redirect; browsers carry the cookie on the WebSocket
   upgrade). `/healthz` and `/livez` stay exempt so supervisors can poll
   before reading the token file. The hub never forwards a caller's
-  token or cookie to an HTTP peer, so a require_auth daemon cannot also
-  serve as an HTTP peer — reach it as an SSH peer instead.
-- **`middleman api` verb** (`cmd/middleman/api_verb.go`) — the
+  token or cookie to an HTTP peer. A require_auth daemon must be reached
+  as an SSH peer instead.
+- **`middleman api` verb** (`cmd/middleman/api_verb.go`): the
   thin-client primitive: discovers the daemon through the runtime
   metadata, authenticates with the token, relays one request.
   Response bytes go to stdout verbatim; `-i` prefixes the exact
@@ -280,7 +280,7 @@ reach a daemon, with no out-of-band configuration:
   request was made. The running daemon's published `base_path` is
   authoritative for the URL prefix (a config edit awaiting restart
   must not repoint the verb).
-- **Host validation** — the TCP listener validates the `Host` header
+- **Host validation**: the TCP listener validates the `Host` header
   against the bind address and `allowed_hosts` (DNS-rebinding
   defense). An ephemeral bind (port 0 listeners passed to `Serve`)
   repoints the accept-set at the kernel-assigned port.
@@ -292,7 +292,7 @@ reach a daemon, with no out-of-band configuration:
   wrapping, and auto-start contracts against a faked ssh exec seam.
 - `internal/sshfleet` unit tests pin the ControlMaster lifecycle,
   relay framing, and ensure-daemon polling.
-- `cmd/middleman` e2e tests build the real binary and pin the api
+- `cmd/middleman` e2e tests build the middleman binary and pin the api
   verb's auth, framing, exit-code, and base-path behavior.
 - Container e2e (`fleet_container_e2e_test.go`,
   `scripts/e2e/fleet/`) runs a real hub + member over Docker

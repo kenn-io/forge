@@ -93,6 +93,62 @@ func WorktreeDivergence(
 	return Divergence{Ahead: ahead, Behind: behind}, true, nil
 }
 
+// WorktreeUnpushedSHAs returns the set of commit SHAs reachable from the
+// worktree's HEAD but not from its `@{upstream}` tracking branch — the commits
+// that have not been pushed yet.
+//
+// The second return value is false when the branch has no upstream configured.
+// That is the normal state for a branch that has never been pushed; callers
+// should treat every commit as unpushed in that case, because nothing has
+// reached a remote. The error return is reserved for unexpected git failures.
+func WorktreeUnpushedSHAs(
+	ctx context.Context, dir string,
+) (map[string]struct{}, bool, error) {
+	if dir == "" {
+		return nil, false, errors.New("empty worktree dir")
+	}
+
+	cmd := workspaceGitCommand(
+		ctx, dir, "rev-list", "@{upstream}..HEAD",
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Like WorktreeDivergence, the commit picker can fan this probe out per
+	// workspace, so gate it on the shared git subprocess limiter. We keep
+	// stderr separate (rather than using procutil's combined-output helpers)
+	// so the no-upstream branch below can recognize git's "no upstream"
+	// message exactly as the divergence probe does.
+	release, err := procutil.TryAcquire(
+		ctx, "git unpushed subprocess capacity",
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	defer release()
+
+	if err := cmd.Run(); err != nil {
+		stderrText := stderr.String()
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && isNoUpstreamMessage(stderrText) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf(
+			"git rev-list: %w: %s", err, strings.TrimSpace(stderrText),
+		)
+	}
+
+	// rev-list emits one full SHA per line and never embeds whitespace, so
+	// Fields cleanly tokenizes the output regardless of trailing newlines.
+	shas := strings.Fields(stdout.String())
+	unpushed := make(map[string]struct{}, len(shas))
+	for _, sha := range shas {
+		unpushed[sha] = struct{}{}
+	}
+	return unpushed, true, nil
+}
+
 // isNoUpstreamMessage matches the stderr texts git uses when the
 // current branch has no `@{upstream}` configured.
 func isNoUpstreamMessage(stderr string) bool {

@@ -446,6 +446,7 @@ type commitResponse struct {
 	Message    string    `json:"message"     doc:"First line of commit message"`
 	AuthorName string    `json:"author_name" doc:"Commit author display name"`
 	AuthoredAt time.Time `json:"authored_at" doc:"Commit author date (RFC3339)"`
+	Pushed     *bool     `json:"pushed,omitempty" doc:"Whether the commit is reachable from the workspace branch's upstream tracking ref; false means it has not been pushed. Omitted when push status is unknown, such as pull request commits."`
 }
 
 type commitsResponse struct {

@@ -37,6 +37,14 @@
   onclick={handleClick}
   title={commit.message}
 >
+  <span
+    class="commit-item__push"
+    class:commit-item__push--unpushed={commit.pushed === false}
+    role={commit.pushed === false ? "img" : null}
+    aria-label={commit.pushed === false ? "Not pushed to remote" : null}
+    aria-hidden={commit.pushed === false ? null : "true"}
+    title={commit.pushed === false ? "Not pushed to remote" : null}
+  ></span>
   <span class="commit-item__sha">{commit.sha.slice(0, 7)}</span>
   <span class="commit-item__msg">{commit.message}</span>
   <span class="commit-item__date">{relativeDate(commit.authored_at)}</span>
@@ -65,6 +73,18 @@
   .commit-item--active {
     background: var(--diff-sidebar-active);
     color: var(--text-primary);
+  }
+
+  .commit-item__push {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: transparent;
+  }
+
+  .commit-item__push--unpushed {
+    background: var(--accent-amber);
   }
 
   .commit-item__sha {

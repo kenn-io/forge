@@ -5477,14 +5477,36 @@ func (s *Server) getWorkspaceCommits(
 			"commits not available for this workspace", nil)
 	}
 
+	// Annotate each commit with whether it has reached the branch's upstream
+	// so the UI can flag local-only commits. Push status is an enhancement
+	// over the commit list, so a probe failure degrades to omitting the flag
+	// rather than failing the whole request. A branch with no upstream has
+	// pushed nothing yet, so every commit is treated as unpushed.
+	unpushed, hasUpstream, pushErr := workspace.WorktreeUnpushedSHAs(
+		ctx, req.Summary.WorktreePath,
+	)
+	if pushErr != nil {
+		slog.Warn(
+			"failed to determine unpushed workspace commits",
+			"workspace_id", input.ID,
+			"err", pushErr,
+		)
+	}
+
 	resp := commitsResponse{Commits: make([]commitResponse, len(commits))}
 	for i, c := range commits {
-		resp.Commits[i] = commitResponse{
+		cr := commitResponse{
 			SHA:        c.SHA,
 			Message:    c.Message,
 			AuthorName: c.AuthorName,
 			AuthoredAt: c.AuthoredAt.UTC(),
 		}
+		if pushErr == nil {
+			_, isUnpushed := unpushed[c.SHA]
+			pushed := hasUpstream && !isUnpushed
+			cr.Pushed = &pushed
+		}
+		resp.Commits[i] = cr
 	}
 	return &getWorkspaceCommitsOutput{Body: resp}, nil
 }

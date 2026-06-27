@@ -598,6 +598,9 @@ type CommitResponse struct {
 	// Message First line of commit message
 	Message string `json:"message"`
 
+	// Pushed Whether the commit is reachable from the workspace branch's upstream tracking ref; false means it has not been pushed. Omitted when push status is unknown, such as pull request commits.
+	Pushed *bool `json:"pushed,omitempty"`
+
 	// Sha Full commit SHA
 	Sha string `json:"sha"`
 }

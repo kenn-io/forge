@@ -3,6 +3,7 @@ package workspace
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -123,4 +124,70 @@ func TestWorktreeDivergenceWithoutUpstream(t *testing.T) {
 	require.NoError(err)
 	assert.New(t).False(ok, "expected ok=false for branch without upstream")
 	assert.New(t).Equal(Divergence{}, div)
+}
+
+func TestWorktreeUnpushedSHAsInSync(t *testing.T) {
+	work := setupDivergenceWorktree(t)
+
+	unpushed, ok, err := WorktreeUnpushedSHAs(t.Context(), work)
+	require := require.New(t)
+	require.NoError(err)
+	require.True(ok)
+	Assert.New(t).Empty(unpushed)
+}
+
+func TestWorktreeUnpushedSHAsAheadOfRemote(t *testing.T) {
+	require := require.New(t)
+	work := setupDivergenceWorktree(t)
+	pushedHead := revParseTestSHA(t, work, "HEAD")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "f.txt"), []byte("ahead-1\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "ahead 1")
+	first := revParseTestSHA(t, work, "HEAD")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "f.txt"), []byte("ahead-2\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "ahead 2")
+	second := revParseTestSHA(t, work, "HEAD")
+
+	unpushed, ok, err := WorktreeUnpushedSHAs(t.Context(), work)
+	require.NoError(err)
+	require.True(ok)
+	assert := Assert.New(t)
+	assert.Len(unpushed, 2)
+	assert.Contains(unpushed, first)
+	assert.Contains(unpushed, second)
+	assert.NotContains(unpushed, pushedHead,
+		"commit already on the upstream must not be reported as unpushed")
+}
+
+func TestWorktreeUnpushedSHAsWithoutUpstream(t *testing.T) {
+	require := require.New(t)
+	root := t.TempDir()
+	work := filepath.Join(root, "work")
+	runWorkspaceTestGit(t, root, "init", "--initial-branch=main", work)
+	runWorkspaceTestGit(t, work, "config", "user.email", "t@test.com")
+	runWorkspaceTestGit(t, work, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "x.txt"), []byte("x\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "init")
+
+	unpushed, ok, err := WorktreeUnpushedSHAs(t.Context(), work)
+	require.NoError(err)
+	Assert.New(t).False(ok, "expected ok=false for branch without upstream")
+	Assert.New(t).Nil(unpushed)
+}
+
+func revParseTestSHA(t *testing.T, dir, ref string) string {
+	t.Helper()
+	return strings.TrimSpace(string(
+		runWorkspaceTestGit(t, dir, "rev-parse", ref),
+	))
 }

@@ -4340,6 +4340,8 @@ export interface components {
             authored_at: string;
             /** @description First line of commit message */
             message: string;
+            /** @description Whether the commit is reachable from the workspace branch's upstream tracking ref; false means it has not been pushed. Omitted when push status is unknown, such as pull request commits. */
+            pushed?: boolean;
             /** @description Full commit SHA */
             sha: string;
         };

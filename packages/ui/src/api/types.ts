@@ -154,6 +154,10 @@ export interface CommitInfo {
   message: string;
   author_name: string;
   authored_at: string;
+  // True when the commit is reachable from the workspace branch's upstream
+  // tracking ref; false means it is local-only. Absent when push status is
+  // unknown, such as pull request commits.
+  pushed?: boolean;
 }
 
 export interface WorkspaceHost {

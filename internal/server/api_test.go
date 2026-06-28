@@ -18654,6 +18654,18 @@ func TestAPIListActivity(t *testing.T) {
 	assert.NotEmpty(*resp.JSON200.Items,
 		"activity feed should contain PR and comment items")
 	assert.Equal("github.com", (*resp.JSON200.Items)[0].PlatformHost)
+
+	search := "reviewer"
+	filtered, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since, Search: &search},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, filtered.StatusCode())
+	require.NotNil(filtered.JSON200)
+	require.NotNil(filtered.JSON200.Items)
+	require.Len(*filtered.JSON200.Items, 1)
+	assert.Equal("comment", (*filtered.JSON200.Items)[0].ActivityType)
+	assert.Equal("reviewer", (*filtered.JSON200.Items)[0].Author)
 }
 
 func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {

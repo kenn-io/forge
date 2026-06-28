@@ -214,6 +214,48 @@ func TestListActivity(t *testing.T) {
 		}
 	})
 
+	t.Run("search matches activity actor and item author", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "example", "activity-authors")
+		prID := insertTestMRWithOptions(t, d, testMR(
+			repoID,
+			1,
+			withMRTitle("Refactor cache invalidation"),
+			withMRAuthor("item-author-one"),
+			withMRActivity(base),
+		))
+		err := d.UpsertMREvents(ctx, []MREvent{{
+			MergeRequestID: prID,
+			EventType:      "issue_comment",
+			Author:         "commenter-one",
+			Body:           "Looks ready",
+			CreatedAt:      base.Add(time.Minute),
+			DedupeKey:      "comment-author-one",
+		}})
+		require.NoError(err)
+
+		actorItems, err := d.ListActivity(ctx, ListActivityOpts{
+			Search: "COMMENTER-ONE", Limit: 50,
+		})
+		require.NoError(err)
+		require.Len(actorItems, 1)
+		assert.Equal("comment", actorItems[0].ActivityType)
+		assert.Equal("commenter-one", actorItems[0].Author)
+
+		itemAuthorItems, err := d.ListActivity(ctx, ListActivityOpts{
+			Search: "ITEM-AUTHOR-ONE", Limit: 50,
+		})
+		require.NoError(err)
+		require.Len(itemAuthorItems, 2)
+		for _, it := range itemAuthorItems {
+			assert.Equal("item-author-one", it.ItemAuthor)
+		}
+	})
+
 	t.Run("limit and before cursor", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)

@@ -276,7 +276,7 @@ jobs:
     # old 10m cap off a slow mirror). Pinned by digest like the actions above so
     # a bot can bump it; the trailing comment records the version, which
     # `make playwright-version-check` keeps locked to the @playwright/test pin.
-    container: mcr.microsoft.com/playwright@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948  # v1.60.0-noble
+    container: mcr.microsoft.com/playwright@sha256:57b65fdc9ceabe0ef613124c7bbe2babcf9362c4d85e382fe3b03604e84b428a  # v1.61.0-noble
     strategy:
       fail-fast: false
       matrix:
@@ -405,7 +405,7 @@ jobs:
     # Keep browser-component tests on the same Playwright image as the full e2e
     # suite so Chromium and its OS dependencies are preinstalled instead of
     # depending on apt during the workflow.
-    container: mcr.microsoft.com/playwright@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948  # v1.60.0-noble
+    container: mcr.microsoft.com/playwright@sha256:57b65fdc9ceabe0ef613124c7bbe2babcf9362c4d85e382fe3b03604e84b428a  # v1.61.0-noble
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:

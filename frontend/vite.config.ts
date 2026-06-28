@@ -203,7 +203,7 @@ const browserTestProject = defineProject(async () => {
         headless: true,
       },
     },
-  };
+  } satisfies TestProjectInlineConfiguration;
 });
 
 const config = {

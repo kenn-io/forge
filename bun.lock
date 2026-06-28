@@ -40,12 +40,14 @@
         "@testing-library/svelte": "5.4.0",
         "@tsconfig/svelte": "5.0.8",
         "@types/node": "^24.9.2",
+        "@vitest/browser-playwright": "4.1.9",
         "jsdom": "26.1.0",
         "openapi-typescript": "^7.13.0",
         "playwright": "1.61.0",
         "svelte": "5.56.3",
         "vite": "8.0.16",
         "vite-plus": "0.2.1",
+        "vitest": "4.1.9",
         "vitest-browser-svelte": "^2.1.1",
       },
     },
@@ -532,6 +534,8 @@
     "@upsetjs/venn.js": ["@upsetjs/venn.js@2.0.0", "", { "optionalDependencies": { "d3-selection": "^3.0.0", "d3-transition": "^3.0.1" } }, "sha512-WbBhLrooyePuQ1VZxrJjtLvTc4NVfpOyKx0sKqioq9bX1C1m7Jgykkn8gLrtwumBioXIqam8DLxp88Adbue6Hw=="],
 
     "@vitest/browser": ["@vitest/browser@4.1.9", "", { "dependencies": { "@blazediff/core": "1.9.1", "@vitest/mocker": "4.1.9", "@vitest/utils": "4.1.9", "magic-string": "^0.30.21", "pngjs": "^7.0.0", "sirv": "^3.0.2", "tinyrainbow": "^3.1.0", "ws": "^8.19.0" }, "peerDependencies": { "vitest": "4.1.9" } }, "sha512-j1BKtWmPcqpMhmx/L9EPLgAJpCb0zKfwoWLmqBbxaogCXHjOwHFSEoHCBfnGtx93xKQwilZ26m+UOsHqHMkRNg=="],
+
+    "@vitest/browser-playwright": ["@vitest/browser-playwright@4.1.9", "", { "dependencies": { "@vitest/browser": "4.1.9", "@vitest/mocker": "4.1.9", "tinyrainbow": "^3.1.0" }, "peerDependencies": { "playwright": "*", "vitest": "4.1.9" } }, "sha512-Bq1rOGf9waevzG3EOkO/dene6bvKTUsZMVg8S1i+WH3JcMjuXEjiahP9rAqZRELUqjBySOJsvvSWqK/B3wjKQw=="],
 
     "@vitest/browser-preview": ["@vitest/browser-preview@4.1.9", "", { "dependencies": { "@testing-library/dom": "^10.4.1", "@testing-library/user-event": "^14.6.1", "@vitest/browser": "4.1.9" }, "peerDependencies": { "vitest": "4.1.9" } }, "sha512-a4/OrkMDb/WUnE4OOB/4FJbK3rYVO7YykqtUgcTKG4p2a0R3XcjPVu7SLRHFBs2+NIYhv5yxp1Lz3dbdGBjIow=="],
 

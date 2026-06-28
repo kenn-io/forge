@@ -82,6 +82,11 @@ func TestListWorktreeLinkPRs_JoinsLinkedMergeRequestDisplayFields(t *testing.T) 
 	mr := testMR(repoID, 7, withMRTitle("Add feature"), withMRBranches("feature", "main"))
 	mr.IsDraft = true
 	mr.CIStatus = "success"
+	mr.ReviewDecision = "approved"
+	mr.MergeableState = "clean"
+	mr.Additions = 12
+	mr.Deletions = 3
+	mr.CommentCount = 5
 	mrID := insertTestMRWithOptions(t, d, mr)
 
 	require.NoError(d.SetWorktreeLinks(ctx, []WorktreeLink{{
@@ -103,6 +108,14 @@ func TestListWorktreeLinkPRs_JoinsLinkedMergeRequestDisplayFields(t *testing.T) 
 	assert.Equal(MergeRequestStateOpen, got.State)
 	assert.True(got.IsDraft)
 	assert.Equal("success", got.CIStatus)
+	// Enrichment columns ride along on the same join so the snapshot
+	// producer can overlay review/mergeable/size/comment metadata without a
+	// second per-worktree merge-request fetch.
+	assert.Equal("approved", got.ReviewDecision)
+	assert.Equal("clean", got.MergeableState)
+	assert.Equal(12, got.Additions)
+	assert.Equal(3, got.Deletions)
+	assert.Equal(5, got.CommentCount)
 }
 
 // TestListWorktreeLinkPRs_EmptyWhenNoLinks verifies the snapshot-side read

@@ -76,6 +76,15 @@ type WorktreeLinkPR struct {
 	IsDraft     bool
 	Title       string
 	CIStatus    string
+	// Enrichment carried from the linked merge request. ReviewDecision and
+	// MergeableState are the platform's lowercase vocabularies; Additions,
+	// Deletions, and CommentCount are the merge request's own counts. The
+	// snapshot producer omits zero/empty values when overlaying these.
+	ReviewDecision string
+	MergeableState string
+	Additions      int
+	Deletions      int
+	CommentCount   int
 }
 
 // ListWorktreeLinkPRs returns every worktree link joined to its merge request's
@@ -85,7 +94,8 @@ type WorktreeLinkPR struct {
 // branch match at snapshot time.
 func (d *DB) ListWorktreeLinkPRs(ctx context.Context) ([]WorktreeLinkPR, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT l.worktree_key, m.number, m.state, m.is_draft, m.title, m.ci_status
+		SELECT l.worktree_key, m.number, m.state, m.is_draft, m.title, m.ci_status,
+		       m.review_decision, m.mergeable_state, m.additions, m.deletions, m.comment_count
 		FROM middleman_mr_worktree_links l
 		JOIN middleman_merge_requests m ON m.id = l.merge_request_id
 		ORDER BY l.worktree_key`)
@@ -100,6 +110,8 @@ func (d *DB) ListWorktreeLinkPRs(ctx context.Context) ([]WorktreeLinkPR, error) 
 		if err := rows.Scan(
 			&pr.WorktreeKey, &pr.Number, &pr.State,
 			&pr.IsDraft, &pr.Title, &pr.CIStatus,
+			&pr.ReviewDecision, &pr.MergeableState,
+			&pr.Additions, &pr.Deletions, &pr.CommentCount,
 		); err != nil {
 			return nil, fmt.Errorf("scan worktree link PR: %w", err)
 		}

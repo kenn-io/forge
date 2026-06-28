@@ -160,6 +160,11 @@ func applyLinkPR(wt *fleet.RawWorktree, pr db.WorktreeLinkPR) {
 	wt.PRState = &state
 	wt.PRTitle = strPtrOrNil(pr.Title)
 	wt.ChecksStatus = strPtrOrNil(pr.CIStatus)
+	wt.PRReviewDecision = strPtrOrNil(pr.ReviewDecision)
+	wt.PRMergeable = strPtrOrNil(pr.MergeableState)
+	wt.PRAdditions = intPtrOrNil(pr.Additions)
+	wt.PRDeletions = intPtrOrNil(pr.Deletions)
+	wt.PRCommentCount = intPtrOrNil(pr.CommentCount)
 }
 
 // strPtrOrNil returns nil for an empty string so an absent title or checks
@@ -169,6 +174,35 @@ func strPtrOrNil(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// intPtrOrNil returns nil for a zero count so an absent or undetailed
+// enrichment value (e.g. additions before a merge request's detail sync)
+// is omitted from the snapshot rather than serialized as a misleading 0.
+func intPtrOrNil(n int) *int {
+	if n == 0 {
+		return nil
+	}
+	return &n
+}
+
+// ptrStrOrNil returns nil for a nil or empty-string pointer so an absent
+// enrichment value carried as *string (e.g. a workspace summary's nullable
+// review decision) is omitted rather than serialized as "".
+func ptrStrOrNil(p *string) *string {
+	if p == nil || *p == "" {
+		return nil
+	}
+	return p
+}
+
+// ptrIntOrNil returns nil for a nil or zero pointer so an absent or undetailed
+// count carried as *int is omitted rather than serialized as a misleading 0.
+func ptrIntOrNil(p *int) *int {
+	if p == nil || *p == 0 {
+		return nil
+	}
+	return p
 }
 
 func repoBranchKey(repoID int64, branch string) string {

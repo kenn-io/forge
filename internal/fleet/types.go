@@ -98,6 +98,20 @@ type RawWorktree struct {
 	PRTitle        *string `json:"prTitle,omitempty"`
 	ChecksStatus   *string `json:"checksStatus,omitempty"`
 
+	// Pull-request enrichment carried straight from the linked merge
+	// request's cached metadata. ReviewDecision and Mergeable are the
+	// platform's own lowercase vocabularies (e.g. "approved",
+	// "changes_requested"; "clean", "dirty"). Additions/Deletions are the
+	// merge request's own diff size as reported by the platform, distinct
+	// from DiffAdded/DiffRemoved (the live working-tree stats). All are
+	// omitted when zero/empty so an unenriched or undetailed worktree
+	// carries no misleading zeros.
+	PRReviewDecision *string `json:"prReviewDecision,omitempty"`
+	PRMergeable      *string `json:"prMergeable,omitempty"`
+	PRAdditions      *int    `json:"prAdditions,omitempty"`
+	PRDeletions      *int    `json:"prDeletions,omitempty"`
+	PRCommentCount   *int    `json:"prCommentCount,omitempty"`
+
 	IsHidden           bool          `json:"isHidden,omitempty"`
 	PRURL              *string       `json:"prURL,omitempty"`
 	PRUpdatedAt        *string       `json:"prUpdatedAt,omitempty"`

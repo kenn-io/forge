@@ -146,6 +146,33 @@ func newDeferredMergeRouteServer(
 	return srv, database, repoID, setupTestClient(t, srv)
 }
 
+func TestDecodeCIChecks(t *testing.T) {
+	require := require.New(t)
+
+	none, err := decodeCIChecks("")
+	require.NoError(err)
+	require.Nil(none, "empty json yields no checks")
+
+	blank, err := decodeCIChecks("   ")
+	require.NoError(err)
+	require.Nil(blank, "whitespace-only json yields no checks")
+
+	checks, err := decodeCIChecks(
+		`[{"name":"build","status":"completed","conclusion":"success",` +
+			`"url":"https://ci/1","app":"GitHub Actions"}]`,
+	)
+	require.NoError(err)
+	require.Len(checks, 1)
+	require.Equal("build", checks[0].Name)
+	require.Equal("completed", checks[0].Status)
+	require.Equal("success", checks[0].Conclusion)
+	require.Equal("https://ci/1", checks[0].URL)
+	require.Equal("GitHub Actions", checks[0].App)
+
+	_, err = decodeCIChecks("not json")
+	require.Error(err, "malformed json is an error the caller decides how to handle")
+}
+
 func TestPendingDeferredMergeCheckKeysCapturesOnlyPendingChecks(t *testing.T) {
 	checksJSON := mustDeferredMergeChecksJSON(t, []db.CICheck{
 		{App: "GitHub Actions", Name: "unit", Status: "in_progress"},

@@ -1660,6 +1660,15 @@ func (s *Server) buildPullDetailResponse(
 	responseMR = mergeRequestResponseModel(responseMR)
 	resp.MergeRequest = &responseMR
 
+	checks, err := decodeCIChecks(mr.CIChecksJSON)
+	if err != nil {
+		slog.Warn(
+			"decode merge request ci checks for detail failed",
+			"merge_request_id", mr.ID, "err", err,
+		)
+	}
+	resp.Checks = checks
+
 	if s.workspaces != nil {
 		wsRef, wsErr := s.workspaces.GetByMRForProvider(
 			ctx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,

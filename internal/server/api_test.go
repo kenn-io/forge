@@ -1597,6 +1597,84 @@ func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
 	assert.Equal(db.KanbanStatusNew, detail.MergeRequest.KanbanStatus)
 }
 
+// TestAPIGetPullIncludesCIChecks confirms the PR-detail response decodes the
+// merge request's cached ci_checks_json into a top-level checks array.
+func TestAPIGetPullIncludesCIChecks(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	checksJSON := `[{"name":"build","status":"completed","conclusion":"success","url":"https://ci.example/build"},` +
+		`{"name":"lint","status":"in_progress","conclusion":"","url":"https://ci.example/lint"}]`
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     7000,
+		Number:         7,
+		URL:            "https://github.com/acme/widget/pull/7",
+		Title:          "Checks PR",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "feature/checks",
+		BaseBranch:     "main",
+		CIStatus:       "pending",
+		CIChecksJSON:   checksJSON,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
+	require.Equal(http.StatusOK, rawDetail.Code)
+	var detail mergeRequestDetailResponse
+	require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
+	require.Len(detail.Checks, 2)
+	assert.Equal("build", detail.Checks[0].Name)
+	assert.Equal("completed", detail.Checks[0].Status)
+	assert.Equal("success", detail.Checks[0].Conclusion)
+	assert.Equal("https://ci.example/build", detail.Checks[0].URL)
+	assert.Equal("lint", detail.Checks[1].Name)
+	assert.Equal("in_progress", detail.Checks[1].Status)
+}
+
+// TestAPIGetPullToleratesMalformedCIChecks confirms a corrupt ci_checks_json
+// cache does not fail the detail response: checks are simply omitted.
+func TestAPIGetPullToleratesMalformedCIChecks(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     7000,
+		Number:         7,
+		URL:            "https://github.com/acme/widget/pull/7",
+		Title:          "Corrupt checks PR",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "feature/corrupt",
+		BaseBranch:     "main",
+		CIChecksJSON:   "not valid json",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
+	require.Equal(http.StatusOK, rawDetail.Code)
+	var detail mergeRequestDetailResponse
+	require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
+	require.Empty(detail.Checks, "malformed checks cache yields no checks, not an error")
+}
+
 func TestAPIListItemsIncludeWorkspaceRefs(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

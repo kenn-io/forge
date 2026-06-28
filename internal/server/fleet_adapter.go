@@ -300,14 +300,21 @@ func worktreeFromWorkspace(sum db.WorkspaceSummary, wtKey, projKey string) fleet
 		return wt
 	}
 	// Pull-request workspaces: the PR number is the item itself, and the
-	// joined MR metadata describes that PR. Diff size comes from the live git
-	// stats sampler (overlaid by path), not the GitHub MR additions/deletions
-	// cache, so registered and orphan worktrees report it the same way.
+	// joined MR metadata describes that PR. The worktree's own diff size
+	// (DiffAdded/DiffRemoved) still comes from the live git stats sampler,
+	// overlaid by path, so registered and orphan worktrees report it the same
+	// way; PRAdditions/PRDeletions below are the merge request's own
+	// platform-reported size, a separate enrichment metric.
 	prNumber := sum.ItemNumber
 	wt.LinkedPRNumber = &prNumber
 	wt.PRState = foldedPRState(sum)
 	wt.PRTitle = sum.MRTitle
 	wt.ChecksStatus = sum.MRCIStatus
+	wt.PRReviewDecision = ptrStrOrNil(sum.MRReviewDecision)
+	wt.PRMergeable = ptrStrOrNil(sum.MRMergeableState)
+	wt.PRAdditions = ptrIntOrNil(sum.MRAdditions)
+	wt.PRDeletions = ptrIntOrNil(sum.MRDeletions)
+	wt.PRCommentCount = ptrIntOrNil(sum.MRCommentCount)
 	return wt
 }
 

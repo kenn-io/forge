@@ -689,6 +689,8 @@ type WorkspaceSummary struct {
 	MRReviewDecision   *string
 	MRAdditions        *int
 	MRDeletions        *int
+	MRCommentCount     *int
+	MRMergeableState   *string
 	ItemLastActivityAt *time.Time
 }
 

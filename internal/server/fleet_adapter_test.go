@@ -493,6 +493,56 @@ func requireRawProjectScoped(
 	return fleet.RawProject{}
 }
 
+// TestApplyLinkPRPopulatesEnrichment confirms the branch-match overlay carries
+// the linked merge request's review/mergeable/size/comment enrichment onto the
+// registered worktree.
+func TestApplyLinkPRPopulatesEnrichment(t *testing.T) {
+	require := require.New(t)
+	wt := fleet.RawWorktree{}
+	applyLinkPR(&wt, db.WorktreeLinkPR{
+		WorktreeKey:    "worktree:/work/wt",
+		Number:         7,
+		State:          db.MergeRequestStateOpen,
+		Title:          "Add feature",
+		CIStatus:       "success",
+		ReviewDecision: "changes_requested",
+		MergeableState: "dirty",
+		Additions:      12,
+		Deletions:      3,
+		CommentCount:   5,
+	})
+	require.NotNil(wt.LinkedPRNumber)
+	require.Equal(7, *wt.LinkedPRNumber)
+	require.NotNil(wt.PRReviewDecision)
+	require.Equal("changes_requested", *wt.PRReviewDecision)
+	require.NotNil(wt.PRMergeable)
+	require.Equal("dirty", *wt.PRMergeable)
+	require.NotNil(wt.PRAdditions)
+	require.Equal(12, *wt.PRAdditions)
+	require.NotNil(wt.PRDeletions)
+	require.Equal(3, *wt.PRDeletions)
+	require.NotNil(wt.PRCommentCount)
+	require.Equal(5, *wt.PRCommentCount)
+}
+
+// TestApplyLinkPROmitsZeroAndEmptyEnrichment confirms an undetailed linked PR
+// (no review decision, no mergeable state, zero counts) overlays no misleading
+// empty or zero enrichment values.
+func TestApplyLinkPROmitsZeroAndEmptyEnrichment(t *testing.T) {
+	require := require.New(t)
+	wt := fleet.RawWorktree{}
+	applyLinkPR(&wt, db.WorktreeLinkPR{
+		WorktreeKey: "worktree:/work/wt",
+		Number:      7,
+		State:       db.MergeRequestStateOpen,
+	})
+	require.Nil(wt.PRReviewDecision)
+	require.Nil(wt.PRMergeable)
+	require.Nil(wt.PRAdditions)
+	require.Nil(wt.PRDeletions)
+	require.Nil(wt.PRCommentCount)
+}
+
 func TestWorktreeFromWorkspaceFoldsDraft(t *testing.T) {
 	open := "open"
 	draftFlag := true
@@ -555,14 +605,24 @@ func TestWorktreeFromWorkspacePRPopulatesPRFields(t *testing.T) {
 	require := require.New(t)
 	title := "Add widget"
 	state := "open"
+	reviewDecision := "approved"
+	mergeable := "clean"
+	additions := 40
+	deletions := 9
+	comments := 4
 	sum := db.WorkspaceSummary{
 		Workspace: db.Workspace{
 			WorktreePath: "/tmp/wt-pr",
 			ItemType:     db.WorkspaceItemTypePullRequest,
 			ItemNumber:   7,
 		},
-		MRTitle: &title,
-		MRState: &state,
+		MRTitle:          &title,
+		MRState:          &state,
+		MRReviewDecision: &reviewDecision,
+		MRMergeableState: &mergeable,
+		MRAdditions:      &additions,
+		MRDeletions:      &deletions,
+		MRCommentCount:   &comments,
 	}
 	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-pr", "repo:/tmp")
 	require.Empty(wt.LinkedIssueNumbers, "PR workspaces carry no issue link")
@@ -572,6 +632,48 @@ func TestWorktreeFromWorkspacePRPopulatesPRFields(t *testing.T) {
 	require.Equal("Add widget", *wt.PRTitle)
 	require.NotNil(wt.PRState)
 	require.Equal("open", *wt.PRState)
+	require.NotNil(wt.PRReviewDecision)
+	require.Equal("approved", *wt.PRReviewDecision)
+	require.NotNil(wt.PRMergeable)
+	require.Equal("clean", *wt.PRMergeable)
+	require.NotNil(wt.PRAdditions)
+	require.Equal(40, *wt.PRAdditions)
+	require.NotNil(wt.PRDeletions)
+	require.Equal(9, *wt.PRDeletions)
+	require.NotNil(wt.PRCommentCount)
+	require.Equal(4, *wt.PRCommentCount)
+}
+
+// TestWorktreeFromWorkspacePREnrichmentOmitsZeroAndEmpty guards the
+// zero/empty normalization: a synced PR with no review decision (stored "")
+// and an undetailed PR (zero additions/deletions/comment count) must omit
+// those fields rather than overlay misleading empty or "+0 −0" values.
+func TestWorktreeFromWorkspacePREnrichmentOmitsZeroAndEmpty(t *testing.T) {
+	require := require.New(t)
+	title := "Add widget"
+	state := "open"
+	emptyDecision := ""
+	zero := 0
+	sum := db.WorkspaceSummary{
+		Workspace: db.Workspace{
+			WorktreePath: "/tmp/wt-pr",
+			ItemType:     db.WorkspaceItemTypePullRequest,
+			ItemNumber:   7,
+		},
+		MRTitle:          &title,
+		MRState:          &state,
+		MRReviewDecision: &emptyDecision,
+		MRMergeableState: nil,
+		MRAdditions:      &zero,
+		MRDeletions:      &zero,
+		MRCommentCount:   &zero,
+	}
+	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-pr", "repo:/tmp")
+	require.Nil(wt.PRReviewDecision, "empty review decision is omitted")
+	require.Nil(wt.PRMergeable, "absent mergeable state is omitted")
+	require.Nil(wt.PRAdditions, "zero additions are omitted")
+	require.Nil(wt.PRDeletions, "zero deletions are omitted")
+	require.Nil(wt.PRCommentCount, "zero comment count is omitted")
 }
 
 // TestWorktreeFromWorkspaceMapsSessionBackend confirms the workspace's

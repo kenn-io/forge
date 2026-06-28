@@ -125,6 +125,9 @@ type mergeRequestDetailResponse struct {
 	DetailFetchedAt  string                      `json:"detail_fetched_at,omitempty"`
 	Workspace        *workspaceRef               `json:"workspace,omitempty"`
 	Stack            *stackContextResponse       `json:"stack,omitempty"`
+	// Checks is the merge request's CI checks decoded from its cached
+	// ci_checks_json. Omitted when the merge request has no cached checks.
+	Checks []db.CICheck `json:"checks,omitempty"`
 }
 
 var validKanbanStates = map[string]bool{

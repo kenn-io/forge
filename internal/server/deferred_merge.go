@@ -509,12 +509,22 @@ func (s *Server) broadcastDeferredMergeFailure(repo db.Repo, number int, headSHA
 	})
 }
 
-func pendingDeferredMergeCheckKeys(checksJSON string) ([]deferredMergeCheckKey, error) {
-	var checks []db.CICheck
+// decodeCIChecks decodes a merge request's cached ci_checks_json into CICheck
+// values. An empty or whitespace-only string yields no checks and no error.
+func decodeCIChecks(checksJSON string) ([]db.CICheck, error) {
 	if strings.TrimSpace(checksJSON) == "" {
 		return nil, nil
 	}
+	var checks []db.CICheck
 	if err := json.Unmarshal([]byte(checksJSON), &checks); err != nil {
+		return nil, err
+	}
+	return checks, nil
+}
+
+func pendingDeferredMergeCheckKeys(checksJSON string) ([]deferredMergeCheckKey, error) {
+	checks, err := decodeCIChecks(checksJSON)
+	if err != nil {
 		return nil, err
 	}
 	keys := make([]deferredMergeCheckKey, 0)
@@ -531,11 +541,9 @@ func deferredMergeCheckState(aggregateStatus string, keys []deferredMergeCheckKe
 	if aggregateState == "failed" {
 		return "failed", nil
 	}
-	var checks []db.CICheck
-	if strings.TrimSpace(checksJSON) != "" {
-		if err := json.Unmarshal([]byte(checksJSON), &checks); err != nil {
-			return "", err
-		}
+	checks, err := decodeCIChecks(checksJSON)
+	if err != nil {
+		return "", err
 	}
 	// Middleman does not have a provider-neutral required-check model. Deferred
 	// merge therefore fails closed: the checks that were pending when queued

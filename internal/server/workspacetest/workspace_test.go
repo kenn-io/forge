@@ -226,6 +226,38 @@ func TestWorkspaceCommitsFlagsUnpushedCommitsE2E(t *testing.T) {
 	assert.False(*top.Pushed, "freshly committed local commit must be unpushed")
 }
 
+func TestWorkspaceCommitsOmitsPushStatusWithoutUpstreamE2E(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	require.NotEmpty(ws.WorktreePath)
+	require.NotEmpty(ws.GitHeadRef)
+
+	// Drop the branch's upstream so the worktree mimics a fork PR head: the
+	// commits exist but @{upstream} no longer resolves. Push status is then
+	// unknowable, so the endpoint must omit it rather than report every commit
+	// as unpushed (the false "Not pushed to remote" regression roborev flagged).
+	runGit(t, ws.WorktreePath,
+		"config", "--unset", "branch."+ws.GitHeadRef+".remote")
+	runGit(t, ws.WorktreePath,
+		"config", "--unset", "branch."+ws.GitHeadRef+".merge")
+
+	resp, err := fixture.client.HTTP.GetWorkspaceCommitsWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Commits)
+	require.NotEmpty(*resp.JSON200.Commits)
+
+	for _, c := range *resp.JSON200.Commits {
+		assert.Nil(c.Pushed,
+			"push status must be omitted when the branch has no upstream")
+	}
+}
+
 func writeWorkspaceRuntimeTmuxProbe(
 	t *testing.T,
 	expectedSession string,

@@ -354,6 +354,7 @@ name = "widget"
 	)
 	require.Equal(http.StatusAccepted, status, body)
 	waitForRepoSynced(t, database, "acme", "widget", nil)
+	waitForSyncIdle(t, client, baseURL)
 
 	status, body = postJSON(t, client, baseURL+"/api/v1/repos", map[string]string{
 		"provider": "github",
@@ -409,6 +410,7 @@ name = "*"
 	)
 	require.Equal(http.StatusAccepted, status, body)
 	waitForRepoSynced(t, database, "roborev-dev", "middleman", nil)
+	waitForSyncIdle(t, client, baseURL)
 
 	includeRefreshRepo.Store(true)
 

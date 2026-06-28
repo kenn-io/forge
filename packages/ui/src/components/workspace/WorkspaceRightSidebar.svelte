@@ -385,18 +385,6 @@
     overflow-y: auto;
   }
 
-  /* Wrap long code-fence lines in PR/issue markdown bodies so content
-     wraps instead of overflowing the narrow sidebar panel. The shared
-     PullDetail only applies this at mobile widths; the workspace
-     sidebar is desktop-width but just as narrow. */
-  .pr-scroll :global(.markdown-body pre),
-  .pr-scroll :global(.markdown-body code) {
-    max-width: 100%;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
   .empty-state {
     display: flex;
     align-items: center;

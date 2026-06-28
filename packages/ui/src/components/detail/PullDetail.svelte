@@ -2381,6 +2381,19 @@
     width: 100%;
   }
 
+  /* Wrap long code-fence lines at all widths. The detail panel clips
+     horizontal overflow (overflow-x: hidden above), so unwrapped lines
+     in a PR body or comment get cut off. The mobile media query rule
+     only covers narrow viewports, but this view also renders in the
+     desktop-width yet equally narrow workspace sidebar. */
+  .pull-detail :global(.markdown-body pre),
+  .pull-detail :global(.markdown-body code) {
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
   .pull-detail-content {
     container: pull-detail / inline-size;
     display: flex;

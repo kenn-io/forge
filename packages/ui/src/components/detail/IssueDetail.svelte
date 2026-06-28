@@ -1367,6 +1367,17 @@
     width: 100%;
   }
 
+  /* Wrap long code-fence lines at all widths (see PullDetail): the panel
+     clips horizontal overflow and also renders in the narrow workspace
+     sidebar. */
+  .issue-detail :global(.markdown-body pre),
+  .issue-detail :global(.markdown-body code) {
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
   .issue-detail-content {
     container: issue-detail / inline-size;
     display: flex;

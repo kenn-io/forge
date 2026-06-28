@@ -172,6 +172,12 @@ the fake or callback that observed the exact event under test. If the behavior
 is inherently observable only by polling, check once immediately, then poll with
 a short ticker bounded by a context deadline.
 
+When server e2e tests chain `POST /api/v1/sync` with another ad-hoc sync
+trigger, treat the HTTP 202 and DB row timestamps as intermediate observations.
+`TriggerRun` is non-blocking and single-flight; wait for `/api/v1/sync/status`
+to report `running=false` with a `last_run_at` before issuing the next trigger,
+or the next trigger can race the still-running sync and be skipped.
+
 `testing/synctest` is appropriate only when all goroutines and timers under test
 are pure in-process work created inside the `synctest.Run` bubble. Good
 candidates include fake-client backoff, cooldown, cancellation, and event-hub

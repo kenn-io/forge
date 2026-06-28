@@ -1,22 +1,25 @@
 // Browser-tier coverage for the PR/issue detail code-fence wrap fix.
 //
-// A long unbroken code-fence line in a pull request or issue body must wrap
-// inside the detail panel instead of overflowing horizontally and getting
-// clipped. PullDetail.svelte / IssueDetail.svelte now apply
-// `white-space: pre-wrap; overflow-wrap: anywhere` to their `.markdown-body`
-// `pre`/`code` at every width; previously that lived only inside each
-// component's `max-width: 640px` mobile media query, so the same components
-// clipped long lines whenever they rendered in a narrow panel at a
-// desktop-class width -- most visibly the workspace right sidebar, which
-// embeds these very components.
+// Two behaviors the fix must keep separate:
+//   1. A long unbroken line inside a fenced code block must wrap so the <pre>
+//      does not overflow horizontally and get clipped by the detail panel.
+//   2. A long inline-code identifier inside a markdown table must NOT wrap, so
+//      the column stays wide and the table scrolls (the app.css table-cell
+//      reset), matching how github.com renders it.
+//
+// PullDetail.svelte / IssueDetail.svelte scope the wrap to `.markdown-body pre`
+// (white-space/overflow-wrap/word-break inherit to the inner <code>), so fenced
+// code wraps while inline code -- including inline code in table cells -- is
+// untouched. A previous revision applied the wrap to `.markdown-body code` too,
+// which overrode the table-cell reset and let desktop tables soft-wrap; this
+// test guards both halves so that regression cannot return.
 //
 // The viewport is a 1280px desktop window, above the 640px mobile breakpoint,
-// so the pre-existing mobile rule is inactive and only the new all-width rule
-// can keep the ~400-char line from overflowing the ~800px detail column. The
-// assertion is computed layout (scrollWidth vs clientWidth and the resolved
-// white-space), a real-browser-only concern, so it belongs in the browser tier
-// rather than jsdom. The app is mounted for real with the detail mocked at the
-// fetch boundary.
+// so the component's pre-existing mobile rule is inactive and only the new
+// all-width rule is in play. The assertions are computed layout / resolved
+// white-space, a real-browser-only concern, so this lives in the Vitest browser
+// tier. The app is mounted for real with the detail mocked at the fetch
+// boundary.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
@@ -26,12 +29,25 @@ import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
 
-// One token with no internal break opportunities (no spaces/hyphens). At
-// 400 chars it is far wider than the detail content column, so it can only fit
-// without horizontal overflow when `overflow-wrap: anywhere` lets it wrap.
-const LONG_TOKEN = "abcdefghij".repeat(40);
+// A fenced line with no internal break opportunities. At 400 chars it is far
+// wider than the detail content column, so it can only fit without horizontal
+// overflow when the fenced-code wrap lets it break anywhere.
+const FENCED_LINE = "abcdefghij".repeat(40);
+// A long inline-code identifier placed in a table cell; it must stay on one
+// line so the column grows and the table scrolls.
+const TABLE_TOKEN = "z".repeat(80);
 const FENCE = "```";
-const CODE_BODY = `${FENCE}\n${LONG_TOKEN}\n${FENCE}`;
+
+const MIXED_BODY = [
+  "| Package | Version |",
+  "| --- | --- |",
+  "| `" + TABLE_TOKEN + "` | `1.2.3` |",
+  "",
+  FENCE,
+  FENCED_LINE,
+  FENCE,
+  "",
+].join("\n");
 
 function repoRef(owner: string, name: string) {
   return {
@@ -144,28 +160,36 @@ function issueRoute(owner: string, name: string, number: number, body: string): 
       : null;
 }
 
-async function waitForBodyPre(rootSelector: string): Promise<HTMLElement> {
+const squashedLen = (el: Element): number => (el.textContent ?? "").replace(/\s/g, "").length;
+
+// Wait for a node carrying its long token: guards against a falsely-passing
+// empty/short element before the computed-style/layout checks run.
+async function waitForEl(selector: string, minLen: number): Promise<HTMLElement> {
   await vi.waitFor(() => {
-    const el = document.querySelector(`${rootSelector} .markdown-body pre`);
+    const el = document.querySelector(selector);
     expect(el).not.toBeNull();
-    // Guard against a falsely-passing empty/short <pre>: the long token has to
-    // be in the DOM for the overflow check to mean anything.
-    expect((el?.textContent ?? "").replace(/\s/g, "").length).toBeGreaterThanOrEqual(300);
+    expect(squashedLen(el as Element)).toBeGreaterThanOrEqual(minLen);
   }, WAIT);
-  const pre = document.querySelector(`${rootSelector} .markdown-body pre`);
-  if (!pre) throw new Error(`no <pre> rendered under ${rootSelector} .markdown-body`);
-  return pre as HTMLElement;
+  const el = document.querySelector(selector);
+  if (!el) throw new Error(`no element rendered for ${selector}`);
+  return el as HTMLElement;
 }
 
-function assertWrapsWithoutOverflow(pre: HTMLElement): void {
-  // pre-wrap is the mechanism; scrollWidth <= clientWidth is the behavior it
-  // buys. An unwrapped `white-space: pre` line would make the content wider
-  // than the (clipped/scrollable) client box.
+async function assertDetailCodeLayout(root: string): Promise<void> {
+  // Fenced code wraps: pre-wrap is the mechanism, scrollWidth <= clientWidth is
+  // the behavior it buys (an unwrapped `white-space: pre` line would make the
+  // content wider than the clipped/scrollable client box).
+  const pre = await waitForEl(`${root} .markdown-body pre`, 300);
   expect(getComputedStyle(pre).whiteSpace).toBe("pre-wrap");
   expect(pre.scrollWidth).toBeLessThanOrEqual(pre.clientWidth + 1);
+
+  // Inline code in a table keeps the app.css table-cell reset: it must not
+  // inherit the fenced-code wrap, so the long identifier stays on one line.
+  const tableCode = await waitForEl(`${root} .markdown-body table td code`, 60);
+  expect(getComputedStyle(tableCode).whiteSpace).toBe("normal");
 }
 
-describe("PR/issue detail wraps long code-fence lines", () => {
+describe("PR/issue detail code-fence wrapping", () => {
   vi.setConfig({ testTimeout: 30_000 });
 
   let mounted: MountedBrowserApp | null = null;
@@ -181,17 +205,17 @@ describe("PR/issue detail wraps long code-fence lines", () => {
     await resetKeyboardModuleState();
   });
 
-  it("wraps an unbroken code-fence line in the pull request body", async () => {
+  it("wraps fenced code but not table inline code in the pull request body", async () => {
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/1", {
-      overrides: [pullRoute("acme", "widgets", 1, CODE_BODY)],
+      overrides: [pullRoute("acme", "widgets", 1, MIXED_BODY)],
     });
-    assertWrapsWithoutOverflow(await waitForBodyPre(".pull-detail"));
+    await assertDetailCodeLayout(".pull-detail");
   });
 
-  it("wraps an unbroken code-fence line in the issue body", async () => {
+  it("wraps fenced code but not table inline code in the issue body", async () => {
     mounted = await mountBrowserApp("/issues/github/acme/widgets/7", {
-      overrides: [issueRoute("acme", "widgets", 7, CODE_BODY)],
+      overrides: [issueRoute("acme", "widgets", 7, MIXED_BODY)],
     });
-    assertWrapsWithoutOverflow(await waitForBodyPre(".issue-detail"));
+    await assertDetailCodeLayout(".issue-detail");
   });
 });

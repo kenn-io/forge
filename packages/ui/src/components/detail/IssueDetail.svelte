@@ -1367,11 +1367,11 @@
     width: 100%;
   }
 
-  /* Wrap long code-fence lines at all widths (see PullDetail): the panel
-     clips horizontal overflow and also renders in the narrow workspace
-     sidebar. */
-  .issue-detail :global(.markdown-body pre),
-  .issue-detail :global(.markdown-body code) {
+  /* Wrap long lines inside fenced code blocks at all widths (see
+     PullDetail): scope to <pre> only so the wrap inherits to the inner
+     <code> without touching inline code, which must keep the table-cell
+     reset in app.css. */
+  .issue-detail :global(.markdown-body pre) {
     max-width: 100%;
     white-space: pre-wrap;
     overflow-wrap: anywhere;

@@ -133,7 +133,7 @@ func TestWorktreeUnpushedSHAsInSync(t *testing.T) {
 	require := require.New(t)
 	require.NoError(err)
 	require.True(ok)
-	Assert.New(t).Empty(unpushed)
+	assert.New(t).Empty(unpushed)
 }
 
 func TestWorktreeUnpushedSHAsAheadOfRemote(t *testing.T) {
@@ -158,7 +158,7 @@ func TestWorktreeUnpushedSHAsAheadOfRemote(t *testing.T) {
 	unpushed, ok, err := WorktreeUnpushedSHAs(t.Context(), work)
 	require.NoError(err)
 	require.True(ok)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	assert.Len(unpushed, 2)
 	assert.Contains(unpushed, first)
 	assert.Contains(unpushed, second)
@@ -181,8 +181,8 @@ func TestWorktreeUnpushedSHAsWithoutUpstream(t *testing.T) {
 
 	unpushed, ok, err := WorktreeUnpushedSHAs(t.Context(), work)
 	require.NoError(err)
-	Assert.New(t).False(ok, "expected ok=false for branch without upstream")
-	Assert.New(t).Nil(unpushed)
+	assert.New(t).False(ok, "expected ok=false for branch without upstream")
+	assert.New(t).Nil(unpushed)
 }
 
 func revParseTestSHA(t *testing.T, dir, ref string) string {

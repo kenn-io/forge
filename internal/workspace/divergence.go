@@ -98,9 +98,9 @@ func WorktreeDivergence(
 // that have not been pushed yet.
 //
 // The second return value is false when the branch has no upstream configured.
-// That is the normal state for a branch that has never been pushed; callers
-// should treat every commit as unpushed in that case, because nothing has
-// reached a remote. The error return is reserved for unexpected git failures.
+// Callers cannot infer push status in that case: a fresh branch has pushed
+// nothing, but a fork PR head also has no upstream while already existing on a
+// remote. The error return is reserved for unexpected git failures.
 func WorktreeUnpushedSHAs(
 	ctx context.Context, dir string,
 ) (map[string]struct{}, bool, error) {

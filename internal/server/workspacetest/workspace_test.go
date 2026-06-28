@@ -193,7 +193,7 @@ func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
 
 func TestWorkspaceCommitsFlagsUnpushedCommitsE2E(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := t.Context()

@@ -141,16 +141,16 @@
     "@tiptap/pm": "3.27.1",
     "@tiptap/suggestion": "3.27.1",
     "dompurify": "3.4.11",
-    "marked": "17.0.6",
+    "marked": "18.0.5",
     "openapi-fetch": "^0.17.0",
     "prosemirror-state": "^1.4.4",
-    "shiki": "3.23.0",
+    "shiki": "4.2.0",
     "svelte-tiptap": "3.0.1"
   },
   "devDependencies": {
     "@testing-library/svelte": "5.4.0",
     "@tsconfig/svelte": "^5.0.0",
-    "@types/node": "^24.9.2",
+    "@types/node": "^26.0.0",
     "openapi-fetch": "^0.17.0",
     "svelte": "^5.55.7",
     "vite-plus": "0.2.1"

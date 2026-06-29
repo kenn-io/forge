@@ -39,6 +39,7 @@ interface WorkspaceFixtureOptions {
   branch?: string;
   itemType?: "pull_request" | "issue" | "kata_task";
   itemKey?: string;
+  isDraft?: boolean;
   kata?: {
     daemon_id: string;
     project_uid: string;
@@ -68,6 +69,7 @@ function workspaceFixture({
   branch = `feature-${number}`,
   itemType = "pull_request",
   itemKey = undefined,
+  isDraft = false,
   kata = undefined,
   createdAt = "2026-05-12T12:00:00Z",
   tmuxLastOutputAt = null,
@@ -103,6 +105,7 @@ function workspaceFixture({
     item_last_activity_at: itemLastActivityAt,
     mr_title: isKata ? null : title,
     mr_state: isKata ? null : "open",
+    mr_is_draft: isKata ? null : isDraft,
     mr_additions: additions,
     mr_deletions: deletions,
     commits_ahead: commitsAhead,
@@ -1198,6 +1201,51 @@ describe("WorkspaceListSidebar", () => {
 
     await fireEvent.click(bubble!);
     expect(onOpenItemSidebar).toHaveBeenCalledWith("ws-kata", "kata_task", undefined);
+  });
+
+  it("gives a draft pull request bubble the draft state class, not open", async () => {
+    // A draft PR must read as draft in the sidebar bubble (amber draft
+    // styling) instead of falling through to the open/green treatment, so
+    // the chip reflects the same draft status shown in the PR detail view.
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-draft",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 241,
+            title: "Plan ACP agent chat integration",
+            isDraft: true,
+          }),
+          workspaceFixture({
+            id: "ws-open",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 242,
+            title: "Ready for review PR",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-draft" },
+    });
+    await screen.findByText("Plan ACP agent chat integration");
+
+    const bubbles = Array.from(container.querySelectorAll(".item-bubble"));
+    const draftBubble = bubbles.find((b) => b.textContent?.trim() === "#241");
+    const openBubble = bubbles.find((b) => b.textContent?.trim() === "#242");
+
+    expect(draftBubble?.classList.contains("draft")).toBe(true);
+    expect(draftBubble?.classList.contains("open")).toBe(false);
+    expect(openBubble?.classList.contains("open")).toBe(true);
+    expect(openBubble?.classList.contains("draft")).toBe(false);
   });
 
   it("omits provider item actions in the Kata workspace context menu", async () => {

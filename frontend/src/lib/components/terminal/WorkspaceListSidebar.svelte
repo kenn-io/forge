@@ -1964,8 +1964,11 @@
   }
 
   .item-bubble.draft {
-    --bubble-bg: color-mix(in srgb, var(--text-muted) 55%, #ffffff);
-    --bubble-fg: #0a0d14;
+    /* Amber matches the app-wide draft treatment (PR list, detail state
+     * chip, design system) so a draft PR reads as draft here too, rather
+     * than as a muted/neutral pill indistinguishable from other states. */
+    --bubble-bg: color-mix(in srgb, var(--accent-amber) 70%, #ffffff);
+    --bubble-fg: color-mix(in srgb, var(--accent-amber) 25%, #0a0d14);
   }
 
   .item-bubble.kata {

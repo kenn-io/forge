@@ -64,7 +64,6 @@
       <span>Tasks</span>
     </button>
     <div class="graph-source">
-      <span class="source-id">{source?.qualified_id ?? sourceUID}</span>
       <strong>{source?.title ?? "Reachable graph"}</strong>
     </div>
     <label class="hide-done">
@@ -142,8 +141,7 @@
   .graph-source {
     min-width: 0;
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    align-items: center;
   }
 
   .graph-source strong {
@@ -155,16 +153,12 @@
     font-size: var(--font-size-sm);
   }
 
-  .source-id {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-  }
-
   .graph-canvas {
     position: relative;
     flex: 1 1 auto;
     min-height: 360px;
+    overflow: hidden;
+    contain: paint;
   }
 
   :global(.kata-graph-pane .svelte-flow__controls) {

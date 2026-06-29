@@ -60,6 +60,10 @@ describe("KataReachableGraph (browser)", () => {
     expect(container.querySelector(".svelte-flow__minimap")).toBeTruthy();
     expect(container.querySelector(".svelte-flow__background")).toBeTruthy();
     expect(container.querySelector(".graph-node-list")).toBeNull();
+    expect(container.querySelector(".source-id")).toBeNull();
+    const graphCanvas = container.querySelector<HTMLElement>(".graph-canvas");
+    expect(graphCanvas).toBeTruthy();
+    expect(getComputedStyle(graphCanvas!).overflow).toBe("hidden");
     const controlsButton = container.querySelector<HTMLElement>(".svelte-flow__controls-button");
     const minimap = container.querySelector<SVGSVGElement>(".svelte-flow__minimap");
     expect(controlsButton).toBeTruthy();

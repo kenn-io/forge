@@ -96,8 +96,8 @@
   let checklistRevealed = $state(false);
   let recurrenceDialogs = $state<KataRecurrenceDialogController | null>(null);
   let workspaceTarget = $state.raw<KataWorkspaceTarget | null>(null);
-  let workspaceTargetLoading = $state(false);
   let workspaceActionBusy = $state(false);
+  let workspaceTargetKey: string | null = null;
   let workspaceTargetRequestID = 0;
   const store = createKataWorkspaceStore({ api: untrack(() => api) });
   const actor = "middleman";
@@ -152,27 +152,30 @@
     const selected = store.selectedIssue?.issue;
     const daemonID = activeKataDaemonId ?? null;
     const requestID = ++workspaceTargetRequestID;
-    workspaceTarget = null;
-    workspaceTargetLoading = false;
-    requestError = null;
-    if (!selected || !daemonID) return;
+    if (!selected || !daemonID) {
+      workspaceTargetKey = null;
+      workspaceTarget = null;
+      requestError = null;
+      return;
+    }
 
-    workspaceTargetLoading = true;
     const identity = kataWorkspaceIdentityFromIssue(selected, daemonID, projectNameForIssue(selected));
+    const targetKey = `${identity.daemon_id}:${identity.project_uid}:${identity.project_name ?? ""}:${identity.issue_uid}`;
+    requestError = null;
+    if (targetKey !== workspaceTargetKey) {
+      workspaceTargetKey = targetKey;
+      workspaceTarget = null;
+    }
     void resolveKataWorkspaceTarget(identity)
       .then((target) => {
         if (requestID !== workspaceTargetRequestID) return;
         workspaceTarget = target.available ? target : null;
+        requestError = null;
       })
       .catch((err) => {
         if (requestID !== workspaceTargetRequestID) return;
         requestError = kataRequestErrorMessage(err);
         workspaceTarget = null;
-      })
-      .finally(() => {
-        if (requestID === workspaceTargetRequestID) {
-          workspaceTargetLoading = false;
-        }
       });
   });
 
@@ -748,7 +751,7 @@
   function selectedWorkspaceAction():
     | { label: string; busy?: boolean; disabled?: boolean; onClick: () => void | Promise<void> }
     | undefined {
-    if (workspaceTargetLoading || !workspaceTarget?.available) return undefined;
+    if (!workspaceTarget?.available) return undefined;
     if (workspaceTarget.existing_workspace) {
       const id = workspaceTarget.existing_workspace.id;
       return {

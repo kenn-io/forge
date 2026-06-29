@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import { KataTaskAPIError } from "../../api/kata/taskClient.js";
 import type { KataTaskDetail, KataTaskSearchFilters, KataTaskSearchResponse } from "../../api/kata/taskTypes.js";
+import type { KataWorkspaceTarget } from "../../api/kata/workspaces.js";
 import {
   getActiveKataDaemon,
   getDefaultKataDaemon,
   getKataDaemonRoster,
 } from "../../stores/active-kata-daemon.svelte.js";
+import { defaultProviderCapabilities } from "../../components/repositories/repoSummary.js";
 import KataWorkspace from "./KataWorkspace.svelte";
 import {
   createDaemonWorkspaceAPI,
@@ -425,6 +427,7 @@ describe("KataWorkspace", () => {
         owner: "acme",
         name: "middleman",
         repo_path: "acme/middleman",
+        capabilities: defaultProviderCapabilities,
       },
       item_type: "kata_task",
       item_key: "issue-pay-rent",
@@ -465,6 +468,56 @@ describe("KataWorkspace", () => {
       );
       expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-kata");
     });
+  });
+
+  it("keeps the create workspace action visible while refreshing the same selected task", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const target: KataWorkspaceTarget = {
+      available: true,
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "middleman",
+        repo_path: "acme/middleman",
+        capabilities: defaultProviderCapabilities,
+      },
+      item_type: "kata_task",
+      item_key: "issue-pay-rent",
+    };
+    const refreshedTarget = deferred<KataWorkspaceTarget>();
+    mockResolveKataWorkspaceTarget.mockResolvedValueOnce(target).mockReturnValueOnce(refreshedTarget.promise);
+    const { api, addLabel } = createWorkspaceAPI();
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add label" }));
+    await fireEvent.input(screen.getByLabelText("New label"), { target: { value: "blocked" } });
+    await fireEvent.keyDown(screen.getByLabelText("New label"), { key: "Enter" });
+
+    await waitFor(() => {
+      expect(addLabel).toHaveBeenCalledWith(expect.objectContaining({ ref: "issue-pay-rent" }), "middleman", "blocked");
+      expect(mockResolveKataWorkspaceTarget).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
+
+    refreshedTarget.resolve(target);
   });
 
   it("opens an existing workspace for the selected Kata task", async () => {

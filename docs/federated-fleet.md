@@ -118,6 +118,17 @@ Two snapshot endpoints with distinct roles:
   `fleet.BuildEnriched`). Without `include_peers` the hub answers from
   local state alone.
 
+The enriched entity types (`WorktreeSummary`, `HostSummary`,
+`SessionSummary`, `ProjectSummary`) are a hand-maintained projection of
+the raw wire types, not a structural copy: `BuildEnriched`'s `build*`
+helpers copy fields one by one and stamp UUIDs. A field added to a raw
+type (e.g. `RawWorktree`) therefore reaches `/snapshot` clients only
+after it is also added to the matching enriched summary and copied in
+its builder (e.g. `buildWorktree`). Skip that second half and the field
+travels the hub<->peer wire but is silently dropped before the client,
+with no compile error to flag it — so a snapshot-path test must assert
+on the enriched `/snapshot` shape, not just the raw inventory.
+
 Peer failures degrade rather than break the merge: an unreachable or
 slow peer appears in `hosts[]` with `reachable: false` and a
 diagnostic `error`, while the rest of the snapshot stays intact. For

@@ -3,6 +3,7 @@
   import ClockIcon from "@lucide/svelte/icons/clock-3";
   import FlagIcon from "@lucide/svelte/icons/flag";
   import UserIcon from "@lucide/svelte/icons/user-round";
+  import XIcon from "@lucide/svelte/icons/x";
   import { ActionButton, Chip } from "@middleman/ui";
   import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
   import DatePicker from "../shared/DatePicker.svelte";
@@ -271,23 +272,26 @@
     <div>
       <dt>Labels</dt>
       <dd>
-        <div class="label-row">
+        <ul class="label-list" aria-label="Labels">
           {#each issue.labels as label (label.label)}
-            <Chip
-              size="sm"
-              tone="muted"
-              interactive
-              uppercase={false}
-              ariaLabel={`Remove ${label.label}`}
-              title={`Remove ${label.label}`}
-              onclick={() => {
-                void onRemoveLabel(uid(), label.label);
-              }}
-            >
-              {label.label} x
-            </Chip>
+            <li class="label-token">
+              <Chip size="sm" tone="muted" uppercase={false} class="kata-label-chip">
+                {label.label}
+              </Chip>
+              <button
+                type="button"
+                class="label-remove"
+                aria-label={`Remove label ${label.label}`}
+                title={`Remove label ${label.label}`}
+                onclick={() => {
+                  void onRemoveLabel(uid(), label.label);
+                }}
+              >
+                <XIcon size={11} strokeWidth={2.2} aria-hidden="true" />
+              </button>
+            </li>
           {/each}
-        </div>
+        </ul>
       </dd>
     </div>
   {/if}
@@ -424,10 +428,53 @@
     font-size: var(--font-size-sm);
   }
 
-  .label-row {
+  .label-list {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+    align-items: center;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .label-token {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .label-token :global(.kata-label-chip) {
+    max-width: min(220px, 100%);
+  }
+
+  .label-remove {
+    width: 18px;
+    height: 18px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: var(--bg-inset);
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .label-remove:hover {
+    border-color: var(--border-default);
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .label-remove:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
   }
 
   .label-editor {

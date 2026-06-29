@@ -95,8 +95,23 @@ describe("KataIssueProperties", () => {
 
     expect(onAddLabel).toHaveBeenCalledWith("issue-1", "blocked");
 
-    await fireEvent.click(screen.getByRole("button", { name: "Remove review" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Remove label review" }));
 
+    expect(onRemoveLabel).toHaveBeenCalledWith("issue-1", "review");
+  });
+
+  it("keeps label text passive and removes labels only from a dedicated button", async () => {
+    const onRemoveLabel = vi.fn();
+    renderProperties({ onRemoveLabel });
+
+    const labels = screen.getByRole("list", { name: "Labels" });
+    const labelText = within(labels).getByText("review");
+    expect(labelText.closest("button")).toBeNull();
+
+    await fireEvent.click(labelText);
+    expect(onRemoveLabel).not.toHaveBeenCalled();
+
+    await fireEvent.click(within(labels).getByRole("button", { name: "Remove label review" }));
     expect(onRemoveLabel).toHaveBeenCalledWith("issue-1", "review");
   });
 

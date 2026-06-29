@@ -160,7 +160,7 @@ describe("status bar counts", () => {
     expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["2 PRs", "1 issues", "1 repos"]);
   });
 
-  it("uses new open activity rows for activity-page counts", async () => {
+  it("uses open activity threads for activity-page counts", async () => {
     mounted = await mountBrowserApp("/?view=threaded&range=30d", {
       overrides: [pullsWithExtraOpenRows(), issuesWithExtraOpenRows(), activityWithNewRows()],
     });
@@ -174,6 +174,6 @@ describe("status bar counts", () => {
     await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
 
     const statusItems = Array.from(document.querySelectorAll(".status-left .status-item"));
-    expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["2 PRs", "1 issues", "1 repos"]);
+    expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["3 PRs", "2 issues", "3 repos"]);
   });
 });

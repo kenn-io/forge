@@ -107,17 +107,15 @@
       if (itemFilter === "prs" && item.item_type !== "pr") continue;
       if (itemFilter === "issues" && item.item_type !== "issue") continue;
 
-      const isNewOpenPullRequest = item.activity_type === "new_pr"
-        && item.item_type === "pr"
+      const isOpenPullRequest = item.item_type === "pr"
         && item.item_state === "open";
-      const isNewOpenIssue = item.activity_type === "new_issue"
-        && item.item_type === "issue"
+      const isOpenIssue = item.item_type === "issue"
         && item.item_state === "open";
 
-      if (isNewOpenPullRequest) {
+      if (isOpenPullRequest) {
         pullRequests.add(activityItemKey(item));
         repos.add(repoKey(item));
-      } else if (isNewOpenIssue) {
+      } else if (isOpenIssue) {
         issueKeys.add(activityItemKey(item));
         repos.add(repoKey(item));
       }

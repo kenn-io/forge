@@ -1,0 +1,61 @@
+name: CI PTY Windows
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ci-pty-windows.yml
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - Cargo.toml
+      - Cargo.lock
+      - rust/**
+  pull_request:
+    paths:
+      - .github/workflows/ci-pty-windows.yml
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - Cargo.toml
+      - Cargo.lock
+      - rust/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pty-windows:
+    name: PTY tests (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Stub frontend embed dir
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force internal/web/dist | Out-Null
+          Set-Content -Path internal/web/dist/stub.html -Value ok
+
+      - name: Run Go PTY owner tests
+        run: go test ./internal/ptyowner/... -shuffle=on
+
+      - name: Run localruntime PTY owner smoke test
+        run: go test ./internal/workspace/localruntime -run TestManagerLaunchUsesPtyOwnerWhenConfigured -shuffle=on
+
+      - name: Run Rust PTY manager server e2e tests
+        run: go test ./internal/server -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
+
+      - name: Run Rust PTY manager tests
+        run: cargo test -p middleman-pty-manager

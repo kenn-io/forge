@@ -22,60 +22,28 @@ jobs:
     name: Detect changed paths
     runs-on: ubuntu-latest
     outputs:
-      go: ${{ steps.classify.outputs.go }}
-      frontend: ${{ steps.classify.outputs.frontend }}
+      go: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.go }}
+      frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Classify changed paths
-        id: classify
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          go_changed=false
-          frontend_changed=false
-
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            go_changed=true
-            frontend_changed=true
-          else
-            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-              base="${{ github.event.pull_request.base.sha }}"
-              head="HEAD"
-            else
-              base="${{ github.event.before }}"
-              head="${{ github.sha }}"
-            fi
-
-            if [[ -z "${base}" || "${base}" =~ ^0+$ ]]; then
-              mapfile -t changed_paths < <(git diff-tree --no-commit-id --name-only -r "${head}")
-            else
-              mapfile -t changed_paths < <(git diff --name-only --diff-filter=ACMRTUXB "${base}" "${head}")
-            fi
-
-            for path in "${changed_paths[@]}"; do
-              case "${path}" in
-                *.go|go.mod|go.sum)
-                  go_changed=true
-                  ;;
-              esac
-
-              case "${path}" in
-                frontend/*|packages/*|package.json|bun.lock|vite.config.ts)
-                  frontend_changed=true
-                  ;;
-              esac
-            done
-          fi
-
-          {
-            echo "go=${go_changed}"
-            echo "frontend=${frontend_changed}"
-          } >> "${GITHUB_OUTPUT}"
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d  # v4.0.1
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - go.mod
+              - go.sum
+            frontend:
+              - frontend/**
+              - packages/**
+              - package.json
+              - bun.lock
+              - vite.config.ts
 
   lint:
     runs-on: ubuntu-latest

@@ -1,4 +1,4 @@
-import type { Edge, Node } from "@xyflow/svelte";
+import { MarkerType, Position, type Edge, type Node } from "@xyflow/svelte";
 
 import type { KataLinkPeer, KataTaskDetail, KataTaskLink, KataTaskSummary } from "../../api/kata/taskTypes.js";
 
@@ -15,7 +15,7 @@ export interface KataGraphNodeData extends Record<string, unknown> {
   selectable: boolean;
 }
 
-export type KataGraphNode = Node<KataGraphNodeData>;
+export type KataGraphNode = Node<KataGraphNodeData, "kataTask">;
 export type KataGraphEdge = Edge;
 
 export interface BuildKataReachableGraphInput {
@@ -46,6 +46,9 @@ interface ResolvedPeer {
 }
 
 type GraphEdgeKind = "parent" | "blocks" | "related";
+
+const KATA_GRAPH_X_SPACING = 320;
+const KATA_GRAPH_Y_SPACING = 92;
 
 function taskKey(projectUID: string, shortID: string): string {
   return `${projectUID}:${shortID}`;
@@ -151,13 +154,22 @@ function resolvePeer(peer: KataLinkPeer, projectUID: string, indexes: TaskIndexe
 }
 
 function makeEdge(source: string, target: string, kind: GraphEdgeKind): KataGraphEdge {
+  const markerColor =
+    kind === "blocks" ? "var(--accent-blue)" : kind === "parent" ? "var(--text-secondary)" : "var(--text-muted)";
   return {
     id: `${kind}:${source}:${target}`,
     source,
     target,
     type: "smoothstep",
-    label: kind === "parent" ? "parent" : kind === "blocks" ? "blocks" : "related",
     class: `kata-graph-edge kata-graph-edge--${kind}`,
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: markerColor,
+      width: 18,
+      height: 18,
+    },
+    ariaLabel: `${kind} relationship from ${source} to ${target}`,
+    interactionWidth: 12,
   };
 }
 
@@ -261,19 +273,64 @@ function nodeData(
 function layoutNode(
   id: string,
   task: KataTaskSummary | undefined,
-  index: number,
+  position: { x: number; y: number },
   sourceUID: string,
   selectedUID: string | null,
 ): KataGraphNode {
   return {
     id,
-    type: "default",
-    position: { x: (index % 3) * 260, y: Math.floor(index / 3) * 150 },
+    type: "kataTask",
+    position,
     data: nodeData(id, task, sourceUID, selectedUID),
     class: nodeClass(task, sourceUID, selectedUID),
     draggable: false,
     selectable: task !== undefined,
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
   };
+}
+
+function graphPositions(
+  ids: readonly string[],
+  edges: readonly KataGraphEdge[],
+  sourceUID: string,
+): Map<string, { x: number; y: number }> {
+  const adjacency = new Map<string, Set<string>>();
+  for (const id of ids) {
+    adjacency.set(id, new Set());
+  }
+  for (const edge of edges) {
+    adjacency.get(edge.source)?.add(edge.target);
+    adjacency.get(edge.target)?.add(edge.source);
+  }
+
+  const depthByID = new Map<string, number>([[sourceUID, 0]]);
+  const queued = [sourceUID];
+  while (queued.length > 0) {
+    const id = queued.shift()!;
+    const nextDepth = (depthByID.get(id) ?? 0) + 1;
+    for (const neighbor of adjacency.get(id) ?? []) {
+      if (depthByID.has(neighbor)) continue;
+      depthByID.set(neighbor, nextDepth);
+      queued.push(neighbor);
+    }
+  }
+
+  const fallbackDepth = Math.max(0, ...depthByID.values()) + 1;
+  const layers = new Map<number, string[]>();
+  for (const id of ids) {
+    const depth = depthByID.get(id) ?? fallbackDepth;
+    layers.set(depth, [...(layers.get(depth) ?? []), id]);
+  }
+
+  const positions = new Map<string, { x: number; y: number }>();
+  for (const [depth, layerIDs] of layers) {
+    const topOffset = -((layerIDs.length - 1) * KATA_GRAPH_Y_SPACING) / 2;
+    layerIDs.forEach((id, index) => {
+      positions.set(id, { x: depth * KATA_GRAPH_X_SPACING, y: topOffset + index * KATA_GRAPH_Y_SPACING });
+    });
+  }
+  return positions;
 }
 
 export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
@@ -377,14 +434,25 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   }
 
   const visibleIDs = new Set<string>();
-  const nodes = [...nodeTasks.entries()].flatMap(([id, task], index): KataGraphNode[] => {
-    if (task && id !== input.sourceUID && input.hideDone && isDone(task)) return [];
-    visibleIDs.add(id);
-    return [layoutNode(id, task, index, input.sourceUID, input.selectedUID)];
+  const visibleNodeEntries = [...nodeTasks.entries()].filter(([id, task]) => {
+    if (task && id !== input.sourceUID && input.hideDone && isDone(task)) return false;
+    return true;
   });
+  for (const [id] of visibleNodeEntries) {
+    visibleIDs.add(id);
+  }
+  const visibleEdges = [...edges.values()].filter((edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target));
+  const positions = graphPositions(
+    visibleNodeEntries.map(([id]) => id),
+    visibleEdges,
+    input.sourceUID,
+  );
+  const nodes = visibleNodeEntries.map(([id, task]) =>
+    layoutNode(id, task, positions.get(id) ?? { x: 0, y: 0 }, input.sourceUID, input.selectedUID),
+  );
 
   return {
     nodes,
-    edges: [...edges.values()].filter((edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target)),
+    edges: visibleEdges,
   };
 }

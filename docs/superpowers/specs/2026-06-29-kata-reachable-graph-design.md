@@ -96,19 +96,28 @@ graph action beside the workspace/detail actions.
 
 - `SvelteFlow` with `nodesDraggable={false}` and `nodesConnectable={false}`;
 - `fitView`, `Controls`, `MiniMap`, and `Background`;
-- custom node data with title, id label, project label, status, priority, source
-  and selected markers, and cached/placeholder state;
+- a registered custom task node type that renders title, id label, status,
+  priority, source and selected markers, and cached/placeholder state directly
+  inside the Svelte Flow canvas;
+- hidden `Handle` anchors inside the custom node so Svelte Flow can route edges
+  without showing connection handles as visible UI;
+- native Svelte Flow edge markers (`MarkerType.ArrowClosed`) on `markerEnd` to
+  show relationship direction, rather than text labels such as `blocks`;
+- themed `Controls` and `MiniMap` chrome; MiniMap node colors come from the
+  documented `nodeColor`/`nodeStrokeColor` callbacks;
 - `onnodeclick` to select cached nodes.
 
 A pure `kataReachableGraph.ts` module builds nodes and edges. It performs the
-reachability traversal and assigns stable positions so tests can assert the graph
-without depending on browser layout.
+reachability traversal, creates marker-backed edges, and assigns stable layered
+positions so tests can assert the graph without depending on browser layout.
+There is no duplicate card/button list below the canvas; the Svelte Flow node
+wrappers are the authoritative click targets.
 
 ## Error And Empty States
 
 If graph mode opens before the source task exists in cache, show an empty graph
 pane with a back-to-list action. If the source exists but has no reachable peers,
-show a single source node and a short empty-state line in the toolbar area.
+show a single source node.
 
 The graph does not surface daemon errors directly. It reflects whatever the
 workspace cache already knows. Normal detail selection errors continue to use the
@@ -133,6 +142,9 @@ Add Svelte tests for workspace integration:
 - graph nodes display task titles and priority markers;
 - clicking a cached graph node selects the task and updates the detail pane;
 - `Hide done` removes done nodes.
+- browser coverage verifies nonblank canvas nodes, hidden handles, native edge
+  markers, themed controls/minimap, and the absence of a duplicate node-list
+  fallback.
 
 ## Dependencies
 

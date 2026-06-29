@@ -109,6 +109,7 @@
   let syncedRouteIssueUID = $state<string | null>(null);
   let syncedRouteViewName: KataTaskViewName | null = null;
   let syncedRouteScopeUID: string | null = null;
+  let awaitingSelectedIssueRouteUID = $state<string | null>(null);
   let navigationGeneration = 0;
   // Reactive shadow of navigationGeneration so the issue list can drop
   // a pending keyboard selection the moment any navigation starts —
@@ -370,6 +371,10 @@
   $effect(() => {
     const uid = selectedIssueUID ?? null;
     if (loading) return;
+    if (awaitingSelectedIssueRouteUID) {
+      if (uid !== awaitingSelectedIssueRouteUID) return;
+      awaitingSelectedIssueRouteUID = null;
+    }
     if ((routeViewName ?? null) !== syncedRouteViewName || (routeScopeUID ?? null) !== syncedRouteScopeUID) return;
     if (!uid) {
       if (syncedRouteIssueUID === null) return;
@@ -687,9 +692,17 @@
 
   async function selectIssue(uid: string, notify = true): Promise<void> {
     const generation = beginNavigation();
+    if (notify) {
+      awaitingSelectedIssueRouteUID = uid;
+    }
     resetDetailDrafts();
     const ok = await runViewTask(() => store.selectIssue(uid));
-    if (!ok || !isCurrentNavigation(generation)) return;
+    if (!ok || !isCurrentNavigation(generation)) {
+      if (awaitingSelectedIssueRouteUID === uid) {
+        awaitingSelectedIssueRouteUID = null;
+      }
+      return;
+    }
     if (!notify || selectedIssueUID === uid) {
       syncedRouteIssueUID = uid;
     }

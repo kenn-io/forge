@@ -43,6 +43,15 @@ vi.mock("../../stores/router.svelte.js", () => ({
   navigate: mockNavigate,
 }));
 
+function graphNodeWithText(text: string): HTMLElement {
+  const node = screen
+    .getAllByText(text)
+    .find((element) => element.closest(".svelte-flow__node"))
+    ?.closest(".svelte-flow__node");
+  expect(node).toBeTruthy();
+  return node as HTMLElement;
+}
+
 describe("KataWorkspace", () => {
   beforeEach(() => {
     resetKataWorkspaceTestState();
@@ -126,7 +135,7 @@ describe("KataWorkspace", () => {
     expect(screen.getAllByText("Blocked follow-up").length).toBeGreaterThan(0);
     expect(screen.getByText("P0")).toBeTruthy();
 
-    await fireEvent.click(screen.getByRole("button", { name: /Blocked follow-up/ }));
+    await fireEvent.click(graphNodeWithText("Blocked follow-up"));
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
     });
@@ -161,6 +170,40 @@ describe("KataWorkspace", () => {
 
     expect(screen.getByRole("region", { name: "Reachable task graph" })).toBeTruthy();
     expect(screen.getAllByText("Related graph task").length).toBeGreaterThan(0);
+  });
+
+  it("keeps a graph node selection while the route prop is still stale", async () => {
+    const root = {
+      ...issue("issue-root", "Root graph task", "project-kata"),
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+    };
+    const blocked = issue("issue-blocked", "Blocked follow-up", "project-kata");
+    const { api } = createWorkspaceAPI([root, blocked]);
+    const onSelectedIssueChange = vi.fn();
+
+    render(KataWorkspace, {
+      props: {
+        api,
+        selectedIssueUID: root.uid,
+        onSelectedIssueChange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    });
+    await fireEvent.click(
+      within(screen.getByRole("region", { name: "Task detail" })).getByRole("button", {
+        name: "Open reachable graph",
+      }),
+    );
+
+    await fireEvent.click(graphNodeWithText("Blocked follow-up"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
+    });
+    expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-blocked");
   });
 
   it("opens system views without auto-selecting the first task", async () => {

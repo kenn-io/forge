@@ -58,6 +58,24 @@ describe("KataReachableGraph (browser)", () => {
     expect(container.querySelector(".svelte-flow__controls")).toBeTruthy();
     expect(container.querySelector(".svelte-flow__minimap")).toBeTruthy();
     expect(container.querySelector(".svelte-flow__background")).toBeTruthy();
+    expect(container.querySelector(".graph-node-list")).toBeNull();
+    const controlsButton = container.querySelector<HTMLElement>(".svelte-flow__controls-button");
+    const minimap = container.querySelector<SVGSVGElement>(".svelte-flow__minimap");
+    expect(controlsButton).toBeTruthy();
+    expect(minimap).toBeTruthy();
+    expect(getComputedStyle(controlsButton!).backgroundColor).not.toBe("rgb(255, 255, 255)");
+    expect(getComputedStyle(minimap!).backgroundColor).not.toBe("rgb(255, 255, 255)");
+    const visibleHandles = [...container.querySelectorAll<HTMLElement>(".svelte-flow__handle")].filter(
+      (handle) => getComputedStyle(handle).opacity !== "0",
+    );
+    expect(visibleHandles).toHaveLength(0);
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll(".svelte-flow__edge-path").length).toBeGreaterThan(0);
+    });
+    const edgePaths = [...container.querySelectorAll<SVGPathElement>(".svelte-flow__edge-path")];
+    expect(edgePaths.length).toBeGreaterThan(0);
+    expect(edgePaths.some((edge) => edge.getAttribute("marker-end")?.includes("type=arrowclosed"))).toBe(true);
+    expect(container.textContent).not.toContain("blocks ->");
 
     const flowNodes = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")];
     const linkedNode = flowNodes.find((node) => node.textContent?.includes("Linked browser task"));

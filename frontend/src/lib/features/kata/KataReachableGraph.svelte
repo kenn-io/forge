@@ -1,9 +1,18 @@
 <script lang="ts">
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
-  import { Background, BackgroundVariant, Controls, MiniMap, SvelteFlow } from "@xyflow/svelte";
+  import {
+    Background,
+    BackgroundVariant,
+    Controls,
+    MiniMap,
+    SvelteFlow,
+    type Node as SvelteFlowNode,
+    type NodeTypes,
+  } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
 
   import type { KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
+  import KataGraphTaskNode from "./KataGraphTaskNode.svelte";
   import { buildKataReachableGraph, type KataGraphNode } from "./kataReachableGraph.js";
 
   interface Props {
@@ -20,10 +29,31 @@
   let hideDone = $state(false);
   let graph = $derived(buildKataReachableGraph({ sourceUID, selectedUID, tasks, selectedDetail, hideDone }));
   let source = $derived(tasks.find((task) => task.uid === sourceUID));
+  const nodeTypes: NodeTypes = {
+    kataTask: KataGraphTaskNode,
+  };
 
   function selectNode(node: KataGraphNode): void {
     if (!node.data.selectable) return;
     onSelectIssue(node.id);
+  }
+
+  function minimapData(node: SvelteFlowNode): Partial<KataGraphNode["data"]> {
+    return node.data as Partial<KataGraphNode["data"]>;
+  }
+
+  function minimapNodeColor(node: SvelteFlowNode): string {
+    const data = minimapData(node);
+    if (data.status === "closed" && data.closedReason === "done") return "var(--text-muted)";
+    if (data.status === "uncached") return "var(--bg-surface-hover)";
+    if (data.isSource || data.isSelected) return "var(--accent-blue)";
+    return "var(--accent-green)";
+  }
+
+  function minimapNodeStrokeColor(node: SvelteFlowNode): string {
+    const data = minimapData(node);
+    if (data.isSource || data.isSelected) return "var(--accent-blue)";
+    return "var(--border-default)";
   }
 </script>
 
@@ -50,32 +80,18 @@
       <SvelteFlow
         nodes={graph.nodes}
         edges={graph.edges}
+        {nodeTypes}
         fitView
+        defaultMarkerColor={null}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={true}
         onnodeclick={({ node }) => selectNode(node as KataGraphNode)}
       >
         <Controls />
-        <MiniMap />
+        <MiniMap nodeColor={minimapNodeColor} nodeStrokeColor={minimapNodeStrokeColor} />
         <Background variant={BackgroundVariant.Dots} gap={14} size={1} />
       </SvelteFlow>
-    </div>
-    <div class="graph-node-list" aria-label="Reachable task nodes">
-      {#each graph.nodes as node (node.id)}
-        <button
-          type="button"
-          class={node.class}
-          disabled={!node.data.selectable}
-          onclick={() => selectNode(node)}
-        >
-          <span class="node-title">{node.data.title}</span>
-          <span class="node-meta">
-            {node.data.idLabel}
-            {#if node.data.priorityLabel}<span class="node-priority">{node.data.priorityLabel}</span>{/if}
-          </span>
-        </button>
-      {/each}
     </div>
   {/if}
 </section>
@@ -139,87 +155,80 @@
     font-size: var(--font-size-sm);
   }
 
-  .source-id,
-  .node-meta {
+  .source-id {
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
   }
 
   .graph-canvas {
+    position: relative;
     flex: 1 1 auto;
     min-height: 360px;
   }
 
-  .graph-node-list {
-    flex: 0 0 auto;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 10px 14px;
-    border-top: 1px solid var(--border-muted);
-    background: var(--bg-surface);
+  :global(.kata-graph-pane .svelte-flow__controls) {
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
   }
 
-  .graph-node-list :global(button) {
-    max-width: 240px;
+  :global(.kata-graph-pane .svelte-flow__controls-button) {
+    border: 1px solid var(--border-default);
+    border-width: 0 0 1px;
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  :global(.kata-graph-pane .svelte-flow__controls-button:last-child) {
+    border-bottom: 0;
+  }
+
+  :global(.kata-graph-pane .svelte-flow__controls-button:hover) {
+    background: var(--bg-hover);
+  }
+
+  :global(.kata-graph-pane .svelte-flow__controls-button svg) {
+    fill: currentColor;
+  }
+
+  :global(.kata-graph-pane .svelte-flow__minimap) {
     border: 1px solid var(--border-default);
     border-radius: 6px;
     background: var(--bg-primary);
-    color: var(--text-primary);
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    padding: 6px 8px;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .graph-node-list :global(button:disabled) {
-    cursor: default;
-    opacity: 0.62;
-  }
-
-  :global(.kata-graph-node) {
-    border: 1px solid var(--border-default);
-    border-radius: 6px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    padding: 8px 10px;
     box-shadow: var(--shadow-sm);
   }
 
-  :global(.kata-graph-node--closed) {
-    opacity: 0.62;
+  :global(.kata-graph-pane .svelte-flow__minimap-mask) {
+    fill: color-mix(in srgb, var(--bg-primary) 68%, transparent);
+    stroke: var(--accent-blue);
   }
 
-  :global(.kata-graph-node--source) {
-    border-color: var(--accent-blue);
+  :global(.kata-graph-pane .svelte-flow__minimap-node) {
+    fill: var(--bg-hover);
+    stroke: var(--border-default);
   }
 
-  :global(.kata-graph-node--selected) {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 30%, transparent);
+  :global(.kata-graph-node .svelte-flow__handle) {
+    opacity: 0;
+    pointer-events: none;
   }
 
-  :global(.kata-graph-node--uncached) {
-    border-style: dashed;
-    color: var(--text-muted);
+  :global(.kata-graph-edge .svelte-flow__edge-path) {
+    stroke-width: 1.8;
   }
 
-  .node-title {
-    display: block;
-    max-width: 220px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 650;
+  :global(.kata-graph-edge--blocks .svelte-flow__edge-path) {
+    stroke: var(--accent-blue);
   }
 
-  .node-priority {
-    margin-left: 6px;
-    color: var(--accent-blue);
-    font-weight: 700;
+  :global(.kata-graph-edge--parent .svelte-flow__edge-path) {
+    stroke: var(--text-secondary);
+  }
+
+  :global(.kata-graph-edge--related .svelte-flow__edge-path) {
+    stroke-dasharray: 6 4;
   }
 
   .graph-empty {

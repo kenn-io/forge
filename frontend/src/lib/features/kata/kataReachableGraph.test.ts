@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { MarkerType, Position } from "@xyflow/svelte";
 
 import type { KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
 import { buildKataReachableGraph } from "./kataReachableGraph.js";
@@ -113,6 +114,19 @@ describe("buildKataReachableGraph", () => {
       "parent:issue-root:issue-child",
       "related:issue-root:issue-related",
     ]);
+    expect(graph.edges.find((edge) => edge.id === "blocks:issue-root:issue-blocked")).toMatchObject({
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--accent-blue)" },
+      ariaLabel: "blocks relationship from issue-root to issue-blocked",
+    });
+    expect(graph.edges.find((edge) => edge.id === "parent:issue-root:issue-child")).toMatchObject({
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--text-secondary)" },
+    });
+    expect(graph.nodes.find((node) => node.id === root.uid)).toMatchObject({
+      position: { x: 0, y: 0 },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+    });
+    expect(graph.nodes.filter((node) => node.id !== root.uid).every((node) => node.position.x > 0)).toBe(true);
   });
 
   it("uses selected detail links when the source task is selected", () => {

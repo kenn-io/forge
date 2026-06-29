@@ -25,6 +25,7 @@ function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
     author: overrides.author ?? "middleman",
     priority: overrides.priority,
     blocks: overrides.blocks,
+    closed_reason: overrides.closed_reason,
     created_at: overrides.created_at ?? "2026-06-29T12:00:00Z",
     updated_at: overrides.updated_at ?? "2026-06-29T12:00:00Z",
   };
@@ -39,7 +40,14 @@ describe("KataReachableGraph (browser)", () => {
       priority: 0,
       blocks: [{ uid: "issue-linked", short_id: "linked" }],
     });
-    const linked = task({ uid: "issue-linked", short_id: "linked", title: "Linked browser task", priority: 1 });
+    const linked = task({
+      uid: "issue-linked",
+      short_id: "linked",
+      title: "Linked browser task",
+      priority: 1,
+      status: "closed",
+      closed_reason: "done",
+    });
     const onSelectIssue = vi.fn();
     const { container } = render(KataReachableGraph, {
       props: {
@@ -81,13 +89,21 @@ describe("KataReachableGraph (browser)", () => {
     expect(edgePaths.length).toBeGreaterThan(0);
     expect(edgePaths.some((edge) => edge.getAttribute("marker-end")?.includes("type=arrowclosed"))).toBe(true);
     expect(container.textContent).not.toContain("blocks ->");
+    expect(container.querySelector(".status-marker")).toBeNull();
 
     const flowNodes = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")];
     const linkedNode = flowNodes.find((node) => node.textContent?.includes("Linked browser task"));
+    const rootNode = flowNodes.find((node) => node.textContent?.includes("Root browser task"));
+    expect(rootNode).toBeTruthy();
     expect(linkedNode).toBeTruthy();
     const rect = linkedNode!.getBoundingClientRect();
     expect(rect.width).toBeGreaterThan(0);
     expect(rect.height).toBeGreaterThan(0);
+    const rootButtonStyle = getComputedStyle(rootNode!.querySelector<HTMLElement>(".graph-task-node")!);
+    const linkedNodeButton = linkedNode!.querySelector<HTMLElement>(".graph-task-node")!;
+    const linkedButtonStyle = getComputedStyle(linkedNodeButton);
+    expect(linkedNodeButton.classList.contains("graph-task-node--relation-blocks")).toBe(true);
+    expect(linkedButtonStyle.backgroundColor).not.toBe(rootButtonStyle.backgroundColor);
 
     linkedNode!.click();
 

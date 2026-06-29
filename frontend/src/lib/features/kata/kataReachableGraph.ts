@@ -13,10 +13,16 @@ export interface KataGraphNodeData extends Record<string, unknown> {
   isSource: boolean;
   isSelected: boolean;
   selectable: boolean;
+  adjacentRelation: KataGraphAdjacentRelation;
 }
 
+export type KataGraphAdjacentRelation = "blocks" | "blockedBy" | "child" | "parent" | "related" | null;
 export type KataGraphNode = Node<KataGraphNodeData, "kataTask">;
-export type KataGraphEdge = Edge;
+export type KataGraphEdge = Edge<KataGraphEdgeData>;
+
+interface KataGraphEdgeData extends Record<string, unknown> {
+  kind: GraphEdgeKind;
+}
 
 export interface BuildKataReachableGraphInput {
   sourceUID: string;
@@ -164,6 +170,7 @@ function makeEdge(source: string, target: string, kind: GraphEdgeKind): KataGrap
     target,
     type: "smoothstep",
     class: `kata-graph-edge kata-graph-edge--${kind}`,
+    data: { kind },
     markerEnd: {
       type: MarkerType.ArrowClosed,
       color: markerColor,
@@ -237,11 +244,30 @@ function nodeClass(task: KataTaskSummary | undefined, sourceUID: string, selecte
     .join(" ");
 }
 
+function graphNodeSortKey(id: string, task: KataTaskSummary | undefined): string {
+  if (!task) return `1:${id}`;
+  return `0:${task.project_name}:${task.short_id}:${task.title}:${task.uid}`;
+}
+
+function compareGraphNodeEntries(
+  [leftID, leftTask]: [string, KataTaskSummary | undefined],
+  [rightID, rightTask]: [string, KataTaskSummary | undefined],
+  sourceUID: string,
+): number {
+  if (leftID === sourceUID) return -1;
+  if (rightID === sourceUID) return 1;
+  return graphNodeSortKey(leftID, leftTask).localeCompare(graphNodeSortKey(rightID, rightTask), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
 function nodeData(
   id: string,
   task: KataTaskSummary | undefined,
   sourceUID: string,
   selectedUID: string | null,
+  adjacentRelation: KataGraphAdjacentRelation,
 ): KataGraphNodeData {
   if (!task) {
     const label = id.split(":").at(-1) ?? id;
@@ -255,21 +281,57 @@ function nodeData(
       isSource: false,
       isSelected: false,
       selectable: false,
+      adjacentRelation,
     };
   }
 
   return {
     label: task.title,
     title: task.title,
-    idLabel: task.qualified_id || task.short_id,
-    projectLabel: task.project_name,
+    idLabel: task.short_id,
+    projectLabel: "",
     status: task.status,
     closedReason: task.closed_reason,
     priorityLabel: priorityLabel(task.priority),
     isSource: task.uid === sourceUID,
     isSelected: task.uid === selectedUID,
     selectable: true,
+    adjacentRelation,
   };
+}
+
+function selectedAdjacentRelation(
+  edge: KataGraphEdge,
+  nodeID: string,
+  selectedUID: string | null,
+): KataGraphAdjacentRelation {
+  if (!selectedUID) return null;
+  if (edge.source !== selectedUID && edge.target !== selectedUID) return null;
+  if (nodeID !== edge.source && nodeID !== edge.target) return null;
+  if (nodeID === selectedUID) return null;
+
+  if (edge.data?.kind === "parent") {
+    return edge.source === selectedUID ? "child" : "parent";
+  }
+  if (edge.data?.kind === "blocks") {
+    return edge.source === selectedUID ? "blocks" : "blockedBy";
+  }
+  return "related";
+}
+
+function selectedAdjacentRelations(
+  edges: readonly KataGraphEdge[],
+  selectedUID: string | null,
+): Map<string, KataGraphAdjacentRelation> {
+  const relations = new Map<string, KataGraphAdjacentRelation>();
+  for (const edge of edges) {
+    if (edge.source === selectedUID) {
+      relations.set(edge.target, selectedAdjacentRelation(edge, edge.target, selectedUID));
+    } else if (edge.target === selectedUID) {
+      relations.set(edge.source, selectedAdjacentRelation(edge, edge.source, selectedUID));
+    }
+  }
+  return relations;
 }
 
 function layoutNode(
@@ -278,12 +340,13 @@ function layoutNode(
   position: { x: number; y: number },
   sourceUID: string,
   selectedUID: string | null,
+  adjacentRelation: KataGraphAdjacentRelation,
 ): KataGraphNode {
   return {
     id,
     type: "kataTask",
     position,
-    data: nodeData(id, task, sourceUID, selectedUID),
+    data: nodeData(id, task, sourceUID, selectedUID, adjacentRelation),
     class: nodeClass(task, sourceUID, selectedUID),
     draggable: false,
     selectable: task !== undefined,
@@ -438,21 +501,33 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   }
 
   const visibleIDs = new Set<string>();
-  const visibleNodeEntries = [...nodeTasks.entries()].filter(([id, task]) => {
-    if (task && id !== input.sourceUID && input.hideDone && isDone(task)) return false;
-    return true;
-  });
+  const visibleNodeEntries = [...nodeTasks.entries()]
+    .filter(([id, task]) => {
+      if (task && id !== input.sourceUID && input.hideDone && isDone(task)) return false;
+      return true;
+    })
+    .sort((left, right) => compareGraphNodeEntries(left, right, input.sourceUID));
   for (const [id] of visibleNodeEntries) {
     visibleIDs.add(id);
   }
-  const visibleEdges = [...edges.values()].filter((edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target));
+  const visibleEdges = [...edges.values()]
+    .filter((edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target))
+    .sort((left, right) => left.id.localeCompare(right.id, undefined, { numeric: true, sensitivity: "base" }));
   const positions = graphPositions(
     visibleNodeEntries.map(([id]) => id),
     visibleEdges,
     input.sourceUID,
   );
+  const adjacentRelations = selectedAdjacentRelations(visibleEdges, input.selectedUID);
   const nodes = visibleNodeEntries.map(([id, task]) =>
-    layoutNode(id, task, positions.get(id) ?? { x: 0, y: 0 }, input.sourceUID, input.selectedUID),
+    layoutNode(
+      id,
+      task,
+      positions.get(id) ?? { x: 0, y: 0 },
+      input.sourceUID,
+      input.selectedUID,
+      adjacentRelations.get(id) ?? null,
+    ),
   );
 
   return {

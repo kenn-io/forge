@@ -10,11 +10,6 @@
     targetPosition = Position.Left,
   }: NodeProps<KataGraphNode> & { data: KataGraphNodeData } = $props();
 
-  let statusLabel = $derived.by(() => {
-    if (data.status === "uncached") return "Uncached";
-    if (data.status !== "closed") return "Open";
-    return data.closedReason === "done" ? "Done" : "Closed";
-  });
   let tone = $derived.by(() => {
     if (data.status === "uncached") return "uncached";
     if (data.status === "closed" && data.closedReason === "done") return "done";
@@ -37,6 +32,8 @@
     `graph-task-node--${tone}`,
     data.isSource ? "graph-task-node--source" : "",
     data.isSelected || selected ? "graph-task-node--selected" : "",
+    data.adjacentRelation ? "graph-task-node--adjacent" : "",
+    data.adjacentRelation ? `graph-task-node--relation-${data.adjacentRelation}` : "",
   ]}
   aria-label={data.selectable ? `Select task ${data.title}` : `${data.title} is not cached`}
   disabled={!data.selectable}
@@ -50,7 +47,6 @@
   </div>
   <div class="node-meta-row">
     <span class="node-id" title={metaLabel}>{metaLabel}</span>
-    <span class={["status-marker", `status-marker--${tone}`]}>{statusLabel}</span>
   </div>
   <Handle
     class="graph-task-handle"
@@ -78,10 +74,10 @@
     gap: 7px;
     border: 1px solid var(--border-default);
     border-radius: 6px;
-    background: var(--bg-primary);
+    background: var(--node-status-bg, var(--bg-primary));
     color: var(--text-primary);
     padding: 9px 10px;
-    box-shadow: var(--shadow-sm);
+    box-shadow: inset 3px 0 0 var(--node-status-accent, var(--border-default)), var(--shadow-sm);
     text-align: left;
     font: inherit;
     cursor: pointer;
@@ -96,16 +92,57 @@
   }
 
   .graph-task-node--selected {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 30%, transparent);
+    box-shadow:
+      inset 3px 0 0 var(--node-status-accent, var(--border-default)),
+      0 0 0 2px color-mix(in srgb, var(--accent-blue) 30%, transparent);
+  }
+
+  .graph-task-node--open {
+    --node-status-accent: var(--accent-green);
+    --node-status-bg: color-mix(in srgb, var(--accent-green) 7%, var(--bg-primary));
+  }
+
+  .graph-task-node--closed {
+    --node-status-accent: var(--text-secondary);
+    --node-status-bg: color-mix(in srgb, var(--text-secondary) 8%, var(--bg-primary));
   }
 
   .graph-task-node--done {
+    --node-status-accent: var(--text-muted);
+    --node-status-bg: color-mix(in srgb, var(--text-muted) 10%, var(--bg-primary));
     opacity: 0.62;
   }
 
   .graph-task-node--uncached {
+    --node-status-accent: var(--border-default);
+    --node-status-bg: var(--bg-surface);
     border-style: dashed;
     color: var(--text-muted);
+  }
+
+  .graph-task-node--relation-blocks {
+    --node-status-accent: var(--accent-blue);
+    --node-status-bg: color-mix(in srgb, var(--accent-blue) 16%, var(--bg-primary));
+  }
+
+  .graph-task-node--relation-blockedBy {
+    --node-status-accent: var(--accent-red);
+    --node-status-bg: color-mix(in srgb, var(--accent-red) 16%, var(--bg-primary));
+  }
+
+  .graph-task-node--relation-child {
+    --node-status-accent: var(--accent-teal);
+    --node-status-bg: color-mix(in srgb, var(--accent-teal) 15%, var(--bg-primary));
+  }
+
+  .graph-task-node--relation-parent {
+    --node-status-accent: var(--accent-amber);
+    --node-status-bg: color-mix(in srgb, var(--accent-amber) 15%, var(--bg-primary));
+  }
+
+  .graph-task-node--relation-related {
+    --node-status-accent: var(--accent-purple);
+    --node-status-bg: color-mix(in srgb, var(--accent-purple) 13%, var(--bg-primary));
   }
 
   .node-title-row,
@@ -130,6 +167,7 @@
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
+    justify-content: flex-start;
   }
 
   .node-id {
@@ -139,8 +177,7 @@
     white-space: nowrap;
   }
 
-  .priority-marker,
-  .status-marker {
+  .priority-marker {
     flex: 0 0 auto;
     border-radius: 999px;
     font-size: var(--font-size-2xs);
@@ -152,21 +189,6 @@
     background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
     color: var(--accent-blue);
     padding: 3px 5px;
-  }
-
-  .status-marker {
-    border: 1px solid var(--border-default);
-    color: var(--text-secondary);
-    padding: 3px 5px;
-  }
-
-  .status-marker--open {
-    border-color: color-mix(in srgb, var(--accent-green) 35%, var(--border-default));
-    color: var(--accent-green);
-  }
-
-  .status-marker--done {
-    color: var(--text-muted);
   }
 
   :global(.graph-task-handle) {

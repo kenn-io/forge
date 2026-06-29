@@ -32,6 +32,10 @@
   const nodeTypes: NodeTypes = {
     kataTask: KataGraphTaskNode,
   };
+  const fitViewOptions = {
+    duration: 0,
+    padding: 0.12,
+  };
 
   function selectNode(node: KataGraphNode): void {
     if (!node.data.selectable) return;
@@ -81,6 +85,8 @@
         edges={graph.edges}
         {nodeTypes}
         fitView
+        {fitViewOptions}
+        autoPanOnSelection={false}
         defaultMarkerColor={null}
         nodesDraggable={false}
         nodesConnectable={false}

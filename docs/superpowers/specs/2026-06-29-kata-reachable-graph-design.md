@@ -22,15 +22,15 @@ node.
 The graph pane toolbar contains:
 
 - a back-to-list button;
-- the source task short id and title;
+- the source task title;
 - a `Hide done` toggle.
 
 Each graph node contains:
 
 - task title as the primary text;
-- short or qualified id as compact metadata;
-- project name when useful for disambiguation;
-- a status treatment;
+- short id as compact metadata, never the qualified id, so node subtitles stay
+  stable while graph-node selection loads task detail;
+- status treatment through node theming, not a visible status pill;
 - a priority marker such as `P0` or `P1` when priority is set.
 
 Open tasks use the normal active task tone. Closed tasks are muted. Closed tasks
@@ -38,6 +38,9 @@ with `closed_reason = "done"` are hidden when `Hide done` is enabled. Other
 closed tasks remain visible because they can still explain the shape of the
 reachable graph. The source task and currently selected detail task get distinct
 outlines so users can tell the graph root from the detail selection.
+Nodes adjacent to the currently selected task use relation-specific background
+accents: selected task blocks peer, peer blocks selected task, child, parent, and
+related each get distinct tones.
 
 Clicking a cached node calls the existing `selectIssue(uid)` flow. Disabled
 placeholder nodes represent uncached linked peers and cannot be selected.
@@ -97,8 +100,8 @@ graph action beside the workspace/detail actions.
 - `SvelteFlow` with `nodesDraggable={false}` and `nodesConnectable={false}`;
 - `fitView`, `Controls`, `MiniMap`, and `Background`;
 - a registered custom task node type that renders title, id label, status,
-  priority, project/id metadata, source and selected markers, and
-  cached/placeholder state directly inside the Svelte Flow canvas;
+  priority, source and selected markers, and cached/placeholder state directly
+  inside the Svelte Flow canvas;
 - a real full-node button inside the custom node so pointer users click the
   canvas node and keyboard users activate the same target with Enter/Space;
 - hidden `Handle` anchors inside the custom node so Svelte Flow can route edges
@@ -146,6 +149,8 @@ Add unit tests for the graph builder:
 - placeholder peer handling;
 - done filtering;
 - priority and status node metadata;
+- graph node subtitles use the short task id even when a qualified id is
+  available;
 - no ambiguous short-id random matching.
 
 Add Svelte tests for workspace integration:
@@ -156,6 +161,8 @@ Add Svelte tests for workspace integration:
 - clicking a cached graph node selects the task and updates the detail pane;
 - pressing Enter/Space on a focused graph task node selects the task;
 - selecting a detail-only linked node does not remove it from the graph;
+- adjacent graph nodes are themed by their relationship direction to the
+  selected task;
 - `Hide done` removes done nodes.
 - browser coverage verifies nonblank canvas nodes, hidden handles, native edge
   markers, themed controls/minimap, and the absence of a duplicate node-list

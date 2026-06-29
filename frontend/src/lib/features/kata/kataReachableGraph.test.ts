@@ -49,6 +49,10 @@ function detail(issue: KataTaskSummary, overrides: Partial<KataTaskDetail> = {})
   };
 }
 
+function positionsByID(graph: ReturnType<typeof buildKataReachableGraph>): Record<string, { x: number; y: number }> {
+  return Object.fromEntries(graph.nodes.map((node) => [node.id, node.position]));
+}
+
 describe("buildKataReachableGraph", () => {
   it("returns a source node with task title and priority metadata", () => {
     const source = task({ priority: 0, title: "Ship reachable graph" });
@@ -70,6 +74,27 @@ describe("buildKataReachableGraph", () => {
       selectable: true,
     });
     expect(graph.edges).toEqual([]);
+  });
+
+  it("keeps graph node subtitles stable at the short task id", () => {
+    const source = task({
+      short_id: "s2te",
+      qualified_id: "kenn-core#s2te",
+      project_name: "kenn-core",
+      title: "Decision: daemon IPC boundary",
+    });
+    const graph = buildKataReachableGraph({
+      sourceUID: source.uid,
+      selectedUID: source.uid,
+      tasks: [source],
+      selectedDetail: detail(source),
+      hideDone: false,
+    });
+
+    expect(graph.nodes[0]?.data).toMatchObject({
+      idLabel: "s2te",
+      projectLabel: "",
+    });
   });
 
   it("walks parent, child, blocks, blocked_by, and related relationships", () => {
@@ -127,6 +152,66 @@ describe("buildKataReachableGraph", () => {
       targetPosition: Position.Left,
     });
     expect(graph.nodes.filter((node) => node.id !== root.uid).every((node) => node.position.x > 0)).toBe(true);
+  });
+
+  it("marks nodes adjacent to the selected task by relationship direction", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      parent_short_id: "parent",
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+      related: [{ uid: "issue-related", short_id: "related" }],
+    });
+    const parent = task({ uid: "issue-parent", short_id: "parent", title: "Parent" });
+    const child = task({ uid: "issue-child", short_id: "child", title: "Child", parent_short_id: "root" });
+    const blocker = task({
+      uid: "issue-blocker",
+      short_id: "blocker",
+      title: "Blocker",
+      blocks: [{ uid: "issue-root", short_id: "root" }],
+    });
+    const blocked = task({ uid: "issue-blocked", short_id: "blocked", title: "Blocked" });
+    const related = task({ uid: "issue-related", short_id: "related", title: "Related" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, parent, child, blocker, blocked, related],
+      selectedDetail: detail(root),
+      hideDone: false,
+    });
+
+    expect(graph.nodes.find((node) => node.id === root.uid)?.data.adjacentRelation).toBeNull();
+    expect(graph.nodes.find((node) => node.id === parent.uid)?.data.adjacentRelation).toBe("parent");
+    expect(graph.nodes.find((node) => node.id === child.uid)?.data.adjacentRelation).toBe("child");
+    expect(graph.nodes.find((node) => node.id === blocker.uid)?.data.adjacentRelation).toBe("blockedBy");
+    expect(graph.nodes.find((node) => node.id === blocked.uid)?.data.adjacentRelation).toBe("blocks");
+    expect(graph.nodes.find((node) => node.id === related.uid)?.data.adjacentRelation).toBe("related");
+  });
+
+  it("keeps node positions stable when cached task order changes", () => {
+    const root = task({ uid: "issue-root", short_id: "root", title: "Root" });
+    const alpha = task({ uid: "issue-alpha", short_id: "alpha", title: "Alpha", parent_short_id: "root" });
+    const beta = task({ uid: "issue-beta", short_id: "beta", title: "Beta", parent_short_id: "root" });
+    const gamma = task({ uid: "issue-gamma", short_id: "gamma", title: "Gamma", parent_short_id: "root" });
+
+    const forward = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, alpha, beta, gamma],
+      selectedDetail: detail(root),
+      hideDone: false,
+    });
+    const reversed = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [gamma, beta, alpha, root],
+      selectedDetail: detail(root),
+      hideDone: false,
+    });
+
+    expect(positionsByID(reversed)).toEqual(positionsByID(forward));
   });
 
   it("uses selected detail links when the source task is selected", () => {

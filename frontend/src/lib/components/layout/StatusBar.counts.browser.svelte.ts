@@ -1,12 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
+import { render } from "vitest-browser-svelte";
 
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "../../../test/browserAppHarness.js";
-import { jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
+import {
+  createMockApiFetch,
+  jsonResponse,
+  type MockApiHandle,
+  type MockRouteOverride,
+} from "../../../test/mockApiFetch.js";
+import StatusBarTestHost from "./StatusBarTestHost.svelte";
 
 const WAIT = 10_000;
 
-let mounted: MountedBrowserApp | null = null;
+let mounted: (MountedBrowserApp | MountedStatusBar) | null = null;
+
+interface MountedStatusBar {
+  api: MockApiHandle;
+  unmount: () => void;
+}
 
 function repo(owner: string, name: string) {
   return {
@@ -175,6 +187,29 @@ function activityWithNotificationOnlyRows(): MockRouteOverride {
   };
 }
 
+async function mountStatusBar(path: string, overrides: MockRouteOverride[]): Promise<MountedStatusBar> {
+  const api = createMockApiFetch(overrides);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = api.fetch;
+
+  window.history.replaceState(null, "", path);
+  const { replaceUrl } = await import("../../stores/router.svelte.js");
+  replaceUrl(path);
+
+  const target = document.createElement("div");
+  document.body.appendChild(target);
+  const { unmount } = render(StatusBarTestHost, { target });
+
+  return {
+    api,
+    unmount: () => {
+      unmount();
+      target.remove();
+      globalThis.fetch = originalFetch;
+    },
+  };
+}
+
 describe("status bar counts", () => {
   vi.setConfig({ testTimeout: 30_000 });
 
@@ -218,8 +253,31 @@ describe("status bar counts", () => {
     }, WAIT);
     await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
 
-    const statusItems = Array.from(document.querySelectorAll(".status-left .status-item"));
-    expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["3 PRs", "2 issues", "3 repos"]);
+    await vi.waitFor(() => {
+      const statusItems = Array.from(document.querySelectorAll(".status-left .status-item"));
+      expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["3 PRs", "2 issues", "3 repos"]);
+    }, WAIT);
+  });
+
+  it("uses open activity threads for mobile activity counts", async () => {
+    mounted = await mountStatusBar("/m/activity?view=threaded&range=30d", [
+      pullsWithExtraOpenRows(),
+      issuesWithExtraOpenRows(),
+      activityWithNewRows(),
+    ]);
+
+    await vi.waitFor(() => {
+      const paths = mounted?.api.requests.map((req) => req.url.pathname) ?? [];
+      expect(paths).toContain("/api/v1/pulls");
+      expect(paths).toContain("/api/v1/issues");
+      expect(paths).toContain("/api/v1/activity");
+    }, WAIT);
+    await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
+
+    await vi.waitFor(() => {
+      const statusItems = Array.from(document.querySelectorAll(".status-left .status-item"));
+      expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["3 PRs", "2 issues", "3 repos"]);
+    }, WAIT);
   });
 
   it("uses notification subject state for activity-page counts", async () => {

@@ -136,7 +136,12 @@
     };
   });
 
-  const counts = $derived(getPage() === "activity" ? activityCounts : globalCounts);
+  function isActivityStatusSurface(): boolean {
+    const page = getPage();
+    return page === "activity" || page === "mobile-activity";
+  }
+
+  const counts = $derived(isActivityStatusSurface() ? activityCounts : globalCounts);
 
   let popoverOpen = $state(false);
 

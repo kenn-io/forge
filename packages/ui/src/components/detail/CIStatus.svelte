@@ -56,7 +56,6 @@
   }: Props = $props();
 
   const instanceId = ++_ciStatusInstanceCounter.value;
-  const SHOW_MORE_THRESHOLD = 8;
 
   const parsed = $derived(parseCIChecks(checksJSON));
   const parseError = $derived(parsed.error);
@@ -66,20 +65,6 @@
   const shouldRender = $derived(hasCheckBucket || isUnavailable);
 
   const pendingAnimated = $derived(!prefersReducedMotion());
-
-  const expandedSections = $state<Record<"passed" | "skipped", boolean>>({
-    passed: false,
-    skipped: false,
-  });
-
-  $effect(() => {
-    // Referencing prKey registers the dependency so this fires on PR
-    // navigation. Reset the per-PR expansion state so a fresh PR starts
-    // collapsed.
-    void prKey;
-    expandedSections.passed = false;
-    expandedSections.skipped = false;
-  });
 
   $effect(() => {
     if (bucketed.unknown.length > 0) {
@@ -98,17 +83,6 @@
       });
     }
   });
-
-  const passedVisible = $derived(
-    expandedSections.passed
-      ? bucketed.passed
-      : bucketed.passed.slice(0, SHOW_MORE_THRESHOLD),
-  );
-  const skippedVisible = $derived(
-    expandedSections.skipped
-      ? bucketed.skipped
-      : bucketed.skipped.slice(0, SHOW_MORE_THRESHOLD),
-  );
 
   function formatDuration(seconds: number | undefined): string {
     if (seconds === undefined || seconds < 0 || !Number.isFinite(seconds)) {
@@ -282,36 +256,10 @@
               {@render sectionBlock("unknown", "Unknown", "ci-section-heading--purple", bucketed.unknown)}
             {/if}
             {#if bucketed.passed.length > 0}
-              {@render sectionBlock("passed", "Passed", "ci-section-heading--green", passedVisible)}
-              {#if bucketed.passed.length > SHOW_MORE_THRESHOLD}
-                <button
-                  type="button"
-                  class="ci-show-toggle"
-                  onclick={() => { expandedSections.passed = !expandedSections.passed; }}
-                >
-                  {#if expandedSections.passed}
-                    Show fewer passed
-                  {:else}
-                    Show {bucketed.passed.length - SHOW_MORE_THRESHOLD} more passed
-                  {/if}
-                </button>
-              {/if}
+              {@render sectionBlock("passed", "Passed", "ci-section-heading--green", bucketed.passed)}
             {/if}
             {#if bucketed.skipped.length > 0}
-              {@render sectionBlock("skipped", "Skipped", "ci-section-heading--muted", skippedVisible)}
-              {#if bucketed.skipped.length > SHOW_MORE_THRESHOLD}
-                <button
-                  type="button"
-                  class="ci-show-toggle"
-                  onclick={() => { expandedSections.skipped = !expandedSections.skipped; }}
-                >
-                  {#if expandedSections.skipped}
-                    Show fewer skipped
-                  {:else}
-                    Show {bucketed.skipped.length - SHOW_MORE_THRESHOLD} more skipped
-                  {/if}
-                </button>
-              {/if}
+              {@render sectionBlock("skipped", "Skipped", "ci-section-heading--muted", bucketed.skipped)}
             {/if}
           </div>
         {/if}
@@ -469,23 +417,6 @@
     color: var(--text-muted);
     flex-shrink: 0;
     font-size: var(--font-size-sm);
-  }
-
-  .ci-show-toggle {
-    align-self: flex-start;
-    margin: 4px 12px 8px;
-    padding: 2px 8px;
-    background: transparent;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    font-size: var(--font-size-2xs);
-    cursor: pointer;
-  }
-
-  .ci-show-toggle:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
   }
 
   .loading-placeholder {

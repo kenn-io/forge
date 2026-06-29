@@ -248,7 +248,7 @@ test.describe("CI dropdown", () => {
     }
   });
 
-  test("dropdown shows summary header, five sections, show-N-more toggle", async ({ page }) => {
+  test("dropdown shows summary header, five sections, and all jobs", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
       // The payload below contains pending checks, which arm the
@@ -285,36 +285,10 @@ test.describe("CI dropdown", () => {
       await expect(headings.nth(3)).toContainText(/Passed \(12\)/);
       await expect(headings.nth(4)).toContainText(/Skipped \(2\)/);
 
-      // The route-load background sync can refetch the detail
-      // payload at any point in the first seconds of the page; the
-      // resulting remount collapses the show-more state. Re-apply
-      // the user action when that happens — the assertions inside
-      // still pin the expand/collapse behavior itself.
-      const showMore = panel.getByRole("button", {
-        name: /Show 4 more passed/i,
-      });
-      await expect(showMore).toBeVisible();
-      await expect(async () => {
-        if (await showMore.count()) {
-          await showMore.evaluate((button: HTMLElement) => button.click());
-        }
-        await expect(
-          panel.getByRole("button", {
-            name: /Show fewer passed/i,
-          }),
-        ).toBeVisible({ timeout: 1_000 });
-        await expect(panel.locator(".ci-section-passed .ci-row")).toHaveCount(12, { timeout: 1_000 });
-      }).toPass({ timeout: 15_000 });
-
-      const showFewer = panel.getByRole("button", {
-        name: /Show fewer passed/i,
-      });
-      await expect(async () => {
-        if (await showFewer.count()) {
-          await showFewer.evaluate((button: HTMLElement) => button.click());
-        }
-        await expect(panel.locator(".ci-section-passed .ci-row")).toHaveCount(8, { timeout: 1_000 });
-      }).toPass({ timeout: 15_000 });
+      await expect(panel.locator(".ci-section-passed .ci-row")).toHaveCount(12);
+      await expect(panel.locator(".ci-section-skipped .ci-row")).toHaveCount(2);
+      await expect(panel.getByRole("button", { name: /Show \d+ more/i })).toHaveCount(0);
+      await expect(panel.getByRole("button", { name: /Show fewer/i })).toHaveCount(0);
     } finally {
       await server.stop();
     }

@@ -295,7 +295,7 @@ describe("CIStatus", () => {
     expect(document.querySelector("[data-testid='ci-section-passed']")).not.toBeNull();
   });
 
-  it("Passed section shows first 8 + Show 1 more toggle when count > 8", async () => {
+  it("renders every passed check without a show-more toggle", () => {
     const checks = Array.from({ length: 9 }, (_, i) => mkCheck({ name: `p${i}` }));
     render(CIStatus, {
       props: {
@@ -304,17 +304,9 @@ describe("CIStatus", () => {
         checksJSON: JSON.stringify(checks),
       },
     });
-    expect(document.querySelectorAll(".ci-row")).toHaveLength(8);
-    const toggle = screen.getByRole("button", {
-      name: /Show 1 more passed/i,
-    });
-    await fireEvent.click(toggle);
     expect(document.querySelectorAll(".ci-row")).toHaveLength(9);
-    const collapseToggle = screen.getByRole("button", {
-      name: /Show fewer passed/i,
-    });
-    await fireEvent.click(collapseToggle);
-    expect(document.querySelectorAll(".ci-row")).toHaveLength(8);
+    expect(screen.queryByRole("button", { name: /Show \d+ more passed/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Show fewer passed/i })).toBeNull();
   });
 
   it("dropdown row uses bucket Lucide icon (not ASCII glyph)", () => {
@@ -330,7 +322,7 @@ describe("CIStatus", () => {
     expect(row.textContent).not.toContain("✗");
   });
 
-  it("expansion state resets when prKey changes", async () => {
+  it("keeps every passed check visible when prKey changes", async () => {
     const checks = Array.from({ length: 9 }, (_, i) => mkCheck({ name: `p${i}` }));
     const { rerender } = render(CIStatus, {
       props: {
@@ -340,7 +332,6 @@ describe("CIStatus", () => {
         checksJSON: JSON.stringify(checks),
       },
     });
-    await fireEvent.click(screen.getByRole("button", { name: /Show 1 more passed/i }));
     expect(document.querySelectorAll(".ci-row")).toHaveLength(9);
     await rerender({
       ...chipBaseProps,
@@ -348,7 +339,7 @@ describe("CIStatus", () => {
       expanded: true,
       checksJSON: JSON.stringify(checks),
     });
-    expect(document.querySelectorAll(".ci-row")).toHaveLength(8);
+    expect(document.querySelectorAll(".ci-row")).toHaveLength(9);
   });
 
   it("renders static circle for pending row under prefers-reduced-motion", () => {

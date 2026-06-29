@@ -965,6 +965,9 @@
             void selectIssue(issue.uid);
           }}
           onOpenGraph={openReachableGraph}
+          onRememberTasks={(issues) => {
+            store.rememberTasks(issues);
+          }}
         />
       {/key}
     {/if}

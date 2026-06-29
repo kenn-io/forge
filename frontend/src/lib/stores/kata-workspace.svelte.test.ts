@@ -566,6 +566,46 @@ describe("kata workspace store", () => {
     expect(store.cachedTasks.map((item) => item.uid).sort()).toEqual(["issue-child", "issue-parent"]);
   });
 
+  test("clears cached task summaries when bootstrap applies a new daemon view", async () => {
+    const first = {
+      ...issues[0]!,
+      uid: "issue-first-daemon",
+      short_id: "first-daemon",
+      qualified_id: "Finances#first-daemon",
+      title: "First daemon task",
+    };
+    const second = {
+      ...issues[1]!,
+      uid: "issue-second-daemon",
+      short_id: "second-daemon",
+      qualified_id: "Health#second-daemon",
+      title: "Second daemon task",
+    };
+    const api = createFakeKataTaskAPI();
+    api.mocks.issues
+      .mockResolvedValueOnce({
+        view: "today",
+        groups: [{ id: "today", title: "Today", issues: [first] }],
+        fetched_at: fetchedAt,
+      })
+      .mockResolvedValueOnce({
+        view: "today",
+        groups: [{ id: "today", title: "Today", issues: [second] }],
+        fetched_at: fetchedAt,
+      });
+    api.mocks.issue
+      .mockResolvedValueOnce({ ...detailFor(first.uid), issue: { ...first, body: "First body" } })
+      .mockResolvedValueOnce({ ...detailFor(second.uid), issue: { ...second, body: "Second body" } });
+    const store = createKataWorkspaceStore({ api });
+
+    await store.bootstrap();
+    expect(store.cachedTasks.map((item) => item.uid)).toContain(first.uid);
+
+    await store.bootstrap();
+
+    expect(store.cachedTasks.map((item) => item.uid)).toEqual([second.uid]);
+  });
+
   test("updates cached task summaries after a mutation refresh", async () => {
     const api = createFakeKataTaskAPI();
     const store = createKataWorkspaceStore({ api });

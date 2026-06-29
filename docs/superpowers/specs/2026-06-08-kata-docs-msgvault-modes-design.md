@@ -326,6 +326,14 @@ Kata frontend adaptation:
 - Replace direct daemon URL/localStorage bootstrap with calls to middleman's
   Kata daemon roster and proxy.
 - Use a middleman-owned selector header for proxied daemon requests.
+- The reachable-task graph is an alternate task-list pane, not detail content:
+  launch it from a row or task detail action, derive the REACHABLE graph from
+  the workspace's cached daemon summaries, and route cached node clicks through
+  the existing task selection/detail path
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte`,
+  `frontend/src/lib/features/kata/KataReachableGraph.svelte`,
+  `frontend/src/lib/features/kata/kataReachableGraph.ts`; detailed design:
+  `docs/superpowers/specs/2026-06-29-kata-reachable-graph-design.md`).
 - Keep isolated-daemon e2e harness safeguards.
 
 Docs frontend adaptation:

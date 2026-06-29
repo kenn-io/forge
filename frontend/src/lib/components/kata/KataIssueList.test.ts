@@ -246,6 +246,7 @@ describe("KataIssueList", () => {
     });
     const api = apiWithDetail(parent, [child]);
     const selected: string[] = [];
+    const onRememberTasks = vi.fn();
 
     render(KataIssueList, {
       props: {
@@ -253,6 +254,7 @@ describe("KataIssueList", () => {
         selectedIssueUID: null,
         loading: false,
         api,
+        onRememberTasks,
         onSelect: (issue: KataTaskSummary) => selected.push(issue.uid),
       },
     });
@@ -268,6 +270,8 @@ describe("KataIssueList", () => {
     expect(childRow).toBeTruthy();
     expect(parentRow.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("2 tasks")).toBeTruthy();
+    const remembered = onRememberTasks.mock.calls[0]?.[0] as readonly KataTaskSummary[] | undefined;
+    expect(remembered?.map((issue) => issue.uid)).toEqual([parent.uid, child.uid]);
 
     parentRow.focus();
     await fireEvent.keyDown(parentRow, { key: "j" });

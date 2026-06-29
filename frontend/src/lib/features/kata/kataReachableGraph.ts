@@ -29,6 +29,13 @@ export interface BuildKataReachableGraphInput {
 interface TaskIndexes {
   byUID: Map<string, KataTaskSummary>;
   byProjectShort: Map<string, KataTaskSummary[]>;
+  childrenByParent: Map<string, KataTaskSummary[]>;
+  reverseBlocksByUID: Map<string, KataTaskSummary[]>;
+  reverseBlocksByProjectShort: Map<string, KataTaskSummary[]>;
+  reverseBlockedByUID: Map<string, KataTaskSummary[]>;
+  reverseBlockedByProjectShort: Map<string, KataTaskSummary[]>;
+  reverseRelatedByUID: Map<string, KataTaskSummary[]>;
+  reverseRelatedByProjectShort: Map<string, KataTaskSummary[]>;
 }
 
 interface ResolvedPeer {
@@ -56,12 +63,70 @@ function priorityLabel(priority: number | undefined): string | null {
 function collectTasks(tasks: readonly KataTaskSummary[]): TaskIndexes {
   const byUID = new Map<string, KataTaskSummary>();
   const byProjectShort = new Map<string, KataTaskSummary[]>();
+  const childrenByParent = new Map<string, KataTaskSummary[]>();
+  const reverseBlocksByUID = new Map<string, KataTaskSummary[]>();
+  const reverseBlocksByProjectShort = new Map<string, KataTaskSummary[]>();
+  const reverseBlockedByUID = new Map<string, KataTaskSummary[]>();
+  const reverseBlockedByProjectShort = new Map<string, KataTaskSummary[]>();
+  const reverseRelatedByUID = new Map<string, KataTaskSummary[]>();
+  const reverseRelatedByProjectShort = new Map<string, KataTaskSummary[]>();
   for (const task of tasks) {
     byUID.set(task.uid, task);
     const key = taskKey(task.project_uid, task.short_id);
     byProjectShort.set(key, [...(byProjectShort.get(key) ?? []), task]);
+    if (task.parent_short_id) {
+      const parentKey = taskKey(task.project_uid, task.parent_short_id);
+      childrenByParent.set(parentKey, [...(childrenByParent.get(parentKey) ?? []), task]);
+    }
+    indexReversePeers(task, task.blocks ?? [], reverseBlocksByUID, reverseBlocksByProjectShort);
+    indexReversePeers(task, task.blocked_by ?? [], reverseBlockedByUID, reverseBlockedByProjectShort);
+    indexReversePeers(task, task.related ?? [], reverseRelatedByUID, reverseRelatedByProjectShort);
   }
-  return { byUID, byProjectShort };
+  return {
+    byUID,
+    byProjectShort,
+    childrenByParent,
+    reverseBlocksByUID,
+    reverseBlocksByProjectShort,
+    reverseBlockedByUID,
+    reverseBlockedByProjectShort,
+    reverseRelatedByUID,
+    reverseRelatedByProjectShort,
+  };
+}
+
+function indexReversePeers(
+  task: KataTaskSummary,
+  peers: readonly KataLinkPeer[],
+  byUID: Map<string, KataTaskSummary[]>,
+  byProjectShort: Map<string, KataTaskSummary[]>,
+): void {
+  for (const peer of peers) {
+    if (peer.uid) {
+      byUID.set(peer.uid, [...(byUID.get(peer.uid) ?? []), task]);
+    }
+    const key = taskKey(task.project_uid, peer.short_id);
+    byProjectShort.set(key, [...(byProjectShort.get(key) ?? []), task]);
+  }
+}
+
+function reversePeerMatches(
+  task: KataTaskSummary,
+  byUID: Map<string, KataTaskSummary[]>,
+  byProjectShort: Map<string, KataTaskSummary[]>,
+): KataTaskSummary[] {
+  const matches = new Map<string, KataTaskSummary>();
+  for (const candidate of byUID.get(task.uid) ?? []) {
+    if (candidate.uid !== task.uid && candidate.project_uid === task.project_uid) {
+      matches.set(candidate.uid, candidate);
+    }
+  }
+  for (const candidate of byProjectShort.get(taskKey(task.project_uid, task.short_id)) ?? []) {
+    if (candidate.uid !== task.uid && candidate.project_uid === task.project_uid) {
+      matches.set(candidate.uid, candidate);
+    }
+  }
+  return [...matches.values()];
 }
 
 function resolvePeer(peer: KataLinkPeer, projectUID: string, indexes: TaskIndexes): ResolvedPeer {
@@ -98,7 +163,9 @@ function makeEdge(source: string, target: string, kind: GraphEdgeKind): KataGrap
 
 function addEdge(edges: Map<string, KataGraphEdge>, source: string, target: string, kind: GraphEdgeKind): void {
   const next = makeEdge(source, target, kind);
-  edges.set(next.id, next);
+  if (!edges.has(next.id)) {
+    edges.set(next.id, next);
+  }
 }
 
 function detailEdges(
@@ -130,9 +197,18 @@ function includePeer(
   }
 }
 
-function peerReferencesTask(peer: KataLinkPeer, task: KataTaskSummary): boolean {
-  if (peer.uid && peer.uid === task.uid) return true;
-  return peer.short_id === task.short_id;
+function includeGraphNode(
+  id: string,
+  indexes: TaskIndexes,
+  queued: string[],
+  seen: Set<string>,
+  nodeTasks: Map<string, KataTaskSummary | undefined>,
+): void {
+  const task = indexes.byUID.get(id);
+  nodeTasks.set(id, task);
+  if (task && !seen.has(task.uid)) {
+    queued.push(task.uid);
+  }
 }
 
 function nodeClass(task: KataTaskSummary | undefined, sourceUID: string, selectedUID: string | null): string {
@@ -227,8 +303,7 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
       addEdge(edges, parent.id, task.uid, "parent");
     }
 
-    for (const child of input.tasks) {
-      if (child.project_uid !== task.project_uid || child.parent_short_id !== task.short_id) continue;
+    for (const child of indexes.childrenByParent.get(taskKey(task.project_uid, task.short_id)) ?? []) {
       includePeer(
         { id: child.uid, task: child, projectUID: child.project_uid, shortID: child.short_id },
         queued,
@@ -256,49 +331,54 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
       addEdge(edges, task.uid, resolved.id, "related");
     }
 
-    for (const candidate of input.tasks) {
-      if (candidate.uid === task.uid || candidate.project_uid !== task.project_uid) continue;
-      if ((candidate.blocks ?? []).some((peer) => peerReferencesTask(peer, task))) {
-        includePeer(
-          { id: candidate.uid, task: candidate, projectUID: candidate.project_uid, shortID: candidate.short_id },
-          queued,
-          seen,
-          nodeTasks,
-        );
-        addEdge(edges, candidate.uid, task.uid, "blocks");
-      }
-      if ((candidate.blocked_by ?? []).some((peer) => peerReferencesTask(peer, task))) {
-        includePeer(
-          { id: candidate.uid, task: candidate, projectUID: candidate.project_uid, shortID: candidate.short_id },
-          queued,
-          seen,
-          nodeTasks,
-        );
-        addEdge(edges, task.uid, candidate.uid, "blocks");
-      }
-      if ((candidate.related ?? []).some((peer) => peerReferencesTask(peer, task))) {
-        includePeer(
-          { id: candidate.uid, task: candidate, projectUID: candidate.project_uid, shortID: candidate.short_id },
-          queued,
-          seen,
-          nodeTasks,
-        );
-        addEdge(edges, candidate.uid, task.uid, "related");
+    for (const candidate of reversePeerMatches(task, indexes.reverseBlocksByUID, indexes.reverseBlocksByProjectShort)) {
+      includePeer(
+        { id: candidate.uid, task: candidate, projectUID: candidate.project_uid, shortID: candidate.short_id },
+        queued,
+        seen,
+        nodeTasks,
+      );
+      addEdge(edges, candidate.uid, task.uid, "blocks");
+    }
+    for (const candidate of reversePeerMatches(
+      task,
+      indexes.reverseBlockedByUID,
+      indexes.reverseBlockedByProjectShort,
+    )) {
+      includePeer(
+        { id: candidate.uid, task: candidate, projectUID: candidate.project_uid, shortID: candidate.short_id },
+        queued,
+        seen,
+        nodeTasks,
+      );
+      addEdge(edges, task.uid, candidate.uid, "blocks");
+    }
+    for (const candidate of reversePeerMatches(
+      task,
+      indexes.reverseRelatedByUID,
+      indexes.reverseRelatedByProjectShort,
+    )) {
+      includePeer(
+        { id: candidate.uid, task: candidate, projectUID: candidate.project_uid, shortID: candidate.short_id },
+        queued,
+        seen,
+        nodeTasks,
+      );
+      addEdge(edges, candidate.uid, task.uid, "related");
+    }
+
+    if (task.uid === source.uid) {
+      for (const detailEdge of detailEdges(input.selectedDetail, source.uid, indexes)) {
+        edges.set(detailEdge.id, detailEdge);
+        includeGraphNode(detailEdge.source, indexes, queued, seen, nodeTasks);
+        includeGraphNode(detailEdge.target, indexes, queued, seen, nodeTasks);
       }
     }
   }
 
-  for (const detailEdge of detailEdges(input.selectedDetail, source.uid, indexes)) {
-    edges.set(detailEdge.id, detailEdge);
-    const sourceTask = indexes.byUID.get(detailEdge.source);
-    const targetTask = indexes.byUID.get(detailEdge.target);
-    nodeTasks.set(detailEdge.source, sourceTask);
-    nodeTasks.set(detailEdge.target, targetTask);
-  }
-
   const visibleIDs = new Set<string>();
   const nodes = [...nodeTasks.entries()].flatMap(([id, task], index): KataGraphNode[] => {
-    if (task && input.hideDone && isDone(task)) return [];
+    if (task && id !== input.sourceUID && input.hideDone && isDone(task)) return [];
     visibleIDs.add(id);
     return [layoutNode(id, task, index, input.sourceUID, input.selectedUID)];
   });

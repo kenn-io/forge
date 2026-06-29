@@ -117,11 +117,17 @@ describe("buildKataReachableGraph", () => {
 
   it("uses selected detail links when the source task is selected", () => {
     const root = task({ uid: "issue-root", short_id: "root" });
-    const linked = task({ uid: "issue-linked", short_id: "linked", title: "Linked task" });
+    const linked = task({
+      uid: "issue-linked",
+      short_id: "linked",
+      title: "Linked task",
+      blocks: [{ uid: "issue-follow-up", short_id: "follow-up" }],
+    });
+    const followUp = task({ uid: "issue-follow-up", short_id: "follow-up", title: "Follow-up task" });
     const graph = buildKataReachableGraph({
       sourceUID: root.uid,
       selectedUID: root.uid,
-      tasks: [root, linked],
+      tasks: [root, linked, followUp],
       selectedDetail: detail(root, {
         links: [
           {
@@ -138,8 +144,11 @@ describe("buildKataReachableGraph", () => {
       hideDone: false,
     });
 
-    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["issue-linked", "issue-root"]);
-    expect(graph.edges.map((edge) => edge.id)).toEqual(["related:issue-root:issue-linked"]);
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["issue-follow-up", "issue-linked", "issue-root"]);
+    expect(graph.edges.map((edge) => edge.id).sort()).toEqual([
+      "blocks:issue-linked:issue-follow-up",
+      "related:issue-root:issue-linked",
+    ]);
   });
 
   it("filters done nodes without hiding other closed nodes", () => {
@@ -175,6 +184,35 @@ describe("buildKataReachableGraph", () => {
 
     expect(graph.nodes.map((node) => node.id).sort()).toEqual(["issue-root", "issue-wontfix"]);
     expect(graph.edges.map((edge) => edge.id)).toEqual(["blocks:issue-root:issue-wontfix"]);
+  });
+
+  it("keeps a done source visible when filtering done peers", () => {
+    const source = task({
+      uid: "issue-done-source",
+      short_id: "done-source",
+      title: "Done source",
+      status: "closed",
+      closed_reason: "done",
+      blocks: [{ uid: "issue-done-peer", short_id: "done-peer" }],
+    });
+    const donePeer = task({
+      uid: "issue-done-peer",
+      short_id: "done-peer",
+      title: "Done peer",
+      status: "closed",
+      closed_reason: "done",
+    });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: source.uid,
+      selectedUID: source.uid,
+      tasks: [source, donePeer],
+      selectedDetail: detail(source),
+      hideDone: true,
+    });
+
+    expect(graph.nodes.map((node) => node.id)).toEqual([source.uid]);
+    expect(graph.edges).toEqual([]);
   });
 
   it("does not resolve ambiguous short ids to a random cached task", () => {

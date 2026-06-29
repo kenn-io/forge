@@ -252,6 +252,7 @@ export class KataWorkspaceStore {
         this.connection = { status: "online" };
         return;
       }
+      this.clearTaskCache();
       this.projects = projects.projects;
       this.areas = deriveKataAreas(projects.projects);
       this.cacheView(view);
@@ -639,6 +640,10 @@ export class KataWorkspaceStore {
     const projects = await this.api.projects();
     this.projects = projects.projects;
     this.areas = deriveKataAreas(projects.projects);
+  }
+
+  private clearTaskCache(): void {
+    this.taskCache = new Map();
   }
 
   private cacheTasks(issues: readonly KataTaskSummary[]): void {

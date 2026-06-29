@@ -29,6 +29,7 @@
     api?: KataTaskAPI;
     onSelect: (issue: KataTaskSummary) => void;
     onOpenGraph?: ((issue: KataTaskSummary) => void) | undefined;
+    onRememberTasks?: ((issues: readonly KataTaskSummary[]) => void) | undefined;
   }
 
   let {
@@ -43,6 +44,7 @@
     api = undefined,
     onSelect,
     onOpenGraph = undefined,
+    onRememberTasks = undefined,
   }: Props = $props();
 
   const SORT_STORAGE_KEY = "middleman:kata:issue-sort/v1";
@@ -312,6 +314,7 @@
       try {
         const detail = await api.issue(uid);
         if (generation !== childLoadGeneration || !findIssueByUID(uid)) return;
+        onRememberTasks?.([detail.issue, ...(detail.children ?? [])]);
         childrenByUID = { ...childrenByUID, [uid]: detail.children ?? [] };
       } finally {
         if (generation === childLoadGeneration) {
@@ -1146,6 +1149,7 @@
     background: transparent;
     color: var(--text-muted);
     opacity: 0;
+    pointer-events: none;
     cursor: pointer;
   }
 
@@ -1153,6 +1157,7 @@
   .row-frame:focus-within .graph-action,
   .graph-action:focus-visible {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .graph-action:hover,

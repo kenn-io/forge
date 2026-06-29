@@ -1277,6 +1277,44 @@ test("kata workspace reads tasks through the configured external daemon", async 
   }
 });
 
+test("kata reachable graph renders and selects tasks through the configured external daemon", async ({ page }) => {
+  const backend = await startKataBackend({
+    links: [linkRow({ id: 1, project_id: issues[0]!.project_id, from: issues[0]!, to: issues[1]!, type: "related" })],
+  });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
+
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await detail.getByRole("button", { name: "Open reachable graph" }).click();
+
+    const graph = page.getByRole("region", { name: "Reachable task graph" });
+    await expect(graph).toBeVisible();
+    const graphNodes = graph.locator(".svelte-flow__node");
+    await expect(graphNodes.filter({ hasText: "Pay rent" })).toBeVisible();
+    const linkedNode = graphNodes.filter({ hasText: "Email Susan re: Q3" }).first();
+    await expect(linkedNode).toBeVisible();
+    const linkedBox = await linkedNode.boundingBox();
+    expect(linkedBox?.width ?? 0).toBeGreaterThan(0);
+    expect(linkedBox?.height ?? 0).toBeGreaterThan(0);
+
+    await linkedNode.click();
+
+    await expect(detail.getByRole("heading", { name: "Email Susan re: Q3" })).toBeVisible();
+    await expect(detail).toContainText("Confirm the Q3 project review agenda.");
+
+    await graph.getByRole("button", { name: "Back to task list" }).click();
+    await expect(page.getByLabel("Search tasks")).toBeVisible();
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata workspace initial load does not mutate the configured external daemon", async ({ page }) => {
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);

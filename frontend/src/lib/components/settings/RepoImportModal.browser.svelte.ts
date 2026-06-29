@@ -31,7 +31,7 @@ describe("RepoImportModal focus trap (browser)", () => {
     await expect.element(page.getByRole("dialog", { name: "Add repositories" })).toBeVisible();
 
     const close = requireElement<HTMLButtonElement>("button[aria-label='Close']");
-    const provider = controlByLabel<HTMLSelectElement>("Provider", "select");
+    const provider = controlByLabel<HTMLButtonElement>("Provider", ".select-dropdown-trigger");
     const host = controlByLabel<HTMLInputElement>("Host", "input");
     const pattern = controlByLabel<HTMLInputElement>("Repository pattern", "input");
     const cancel = page.getByRole("button", { name: "Cancel" }).element() as HTMLButtonElement;

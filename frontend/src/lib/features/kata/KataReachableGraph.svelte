@@ -77,7 +77,7 @@
     if (data.status === "closed" && data.closedReason === "done") return "var(--text-muted)";
     if (data.status === "uncached") return "var(--bg-surface-hover)";
     if (data.isSource || data.isSelected) return "var(--accent-blue)";
-    return "var(--accent-green)";
+    return "var(--bg-surface)";
   }
 
   function minimapNodeStrokeColor(node: SvelteFlowNode): string {

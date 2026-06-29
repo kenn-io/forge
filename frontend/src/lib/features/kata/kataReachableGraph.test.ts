@@ -220,6 +220,77 @@ describe("buildKataReachableGraph", () => {
       "blocks:issue-root:issue-blocked",
       "parent:issue-parent:issue-root",
     ]);
+    expect(graph.nodes.find((node) => node.id === blocked.uid)?.data.adjacentRelation).toBe("blocks");
+    expect(graph.nodes.find((node) => node.id === parent.uid)?.data.adjacentRelation).toBe("parent");
+  });
+
+  it("deduplicates inverse detail links against cached relationship edges", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+    });
+    const blocked = task({ uid: "issue-blocked", short_id: "blocked", title: "Blocked" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, blocked],
+      selectedDetail: detail(root, {
+        links: [
+          {
+            id: 1,
+            project_id: root.project_id,
+            from: { uid: blocked.uid, short_id: blocked.short_id },
+            to: { uid: root.uid, short_id: root.short_id },
+            type: "blocks",
+            author: "middleman",
+            created_at: "2026-06-29T12:00:00Z",
+          },
+        ],
+      }),
+      hideDone: false,
+    });
+
+    expect(graph.edges.map((edge) => edge.id)).toEqual(["blocks:issue-root:issue-blocked"]);
+    expect(graph.nodes.find((node) => node.id === blocked.uid)?.data.adjacentRelation).toBe("blocks");
+  });
+
+  it("deduplicates reciprocal detail-only links and keeps the first detail direction", () => {
+    const root = task({ uid: "issue-root", short_id: "root", title: "Root" });
+    const peer = task({ uid: "issue-peer", short_id: "peer", title: "Peer" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, peer],
+      selectedDetail: detail(root, {
+        links: [
+          {
+            id: 1,
+            project_id: root.project_id,
+            from: { uid: peer.uid, short_id: peer.short_id },
+            to: { uid: root.uid, short_id: root.short_id },
+            type: "related",
+            author: "middleman",
+            created_at: "2026-06-29T12:00:00Z",
+          },
+          {
+            id: 2,
+            project_id: root.project_id,
+            from: { uid: root.uid, short_id: root.short_id },
+            to: { uid: peer.uid, short_id: peer.short_id },
+            type: "related",
+            author: "middleman",
+            created_at: "2026-06-29T12:00:01Z",
+          },
+        ],
+      }),
+      hideDone: false,
+    });
+
+    expect(graph.edges.map((edge) => edge.id)).toEqual(["related:issue-peer:issue-root"]);
   });
 
   it("marks nodes adjacent to the selected task by relationship direction", () => {
@@ -499,6 +570,23 @@ describe("buildKataReachableGraph", () => {
     });
     expect(graph.nodes.some((node) => node.id === wrongCachedTask.uid)).toBe(false);
     expect(graph.missingRefs).toEqual([{ uid: "issue-real", projectUID: "project-kata", shortID: "dup" }]);
+  });
+
+  it("does not reverse-match uid-backed peers through cached short-id collisions", () => {
+    const root = task({ uid: "issue-root", short_id: "root", blocks: [{ uid: "issue-real", short_id: "dup" }] });
+    const wrongCachedTask = task({ uid: "issue-wrong", short_id: "dup", title: "Wrong cached task" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: wrongCachedTask.uid,
+      selectedUID: wrongCachedTask.uid,
+      tasks: [root, wrongCachedTask],
+      selectedDetail: detail(wrongCachedTask),
+      hideDone: false,
+    });
+
+    expect(graph.nodes.map((node) => node.id)).toEqual([wrongCachedTask.uid]);
+    expect(graph.edges).toEqual([]);
+    expect(graph.missingRefs).toEqual([]);
   });
 
   it("carries unresolved peer uids for background graph fetching", () => {

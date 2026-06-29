@@ -135,6 +135,7 @@ function indexReversePeers(
   for (const peer of peers) {
     if (peer.uid) {
       byUID.set(peer.uid, [...(byUID.get(peer.uid) ?? []), task]);
+      continue;
     }
     const key = taskKey(task.project_uid, peer.short_id);
     byProjectShort.set(key, [...(byProjectShort.get(key) ?? []), task]);
@@ -619,7 +620,9 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
 
     if (task.uid === source.uid) {
       for (const detailEdge of detailEdges(input.selectedDetail, source.uid, indexes, missingRefs)) {
-        edges.set(detailEdge.id, detailEdge);
+        const kind = detailEdge.data?.kind;
+        if (!kind) continue;
+        addEdge(edges, detailEdge.source, detailEdge.target, kind);
         includeGraphNode(detailEdge.source, indexes, queued, seen, nodeTasks, nextDepth);
         includeGraphNode(detailEdge.target, indexes, queued, seen, nodeTasks, nextDepth);
       }

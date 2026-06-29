@@ -96,9 +96,19 @@ Reachability is computed by walking cached relationships:
 - related edges from `related`;
 - detail edges from `KataTaskDetail.links` for the selected/source task.
 
-Reciprocal parent/child and blocks/blocked_by declarations between the same two
-tasks collapse to one edge. The graph should not render parallel inverse arrows
-for the same relationship kind.
+Reciprocal declarations between the same two tasks collapse to one edge by
+edge kind plus unordered node pair. This applies to summary-derived edges and
+source-detail `KataTaskDetail.links` edges for `parent`, `blocks`, and
+`related`. The graph should not render parallel inverse arrows for the same
+relationship kind.
+
+When duplicate inverse edges conflict, the first observed directed edge wins.
+Cached summary traversal is processed before source-detail links, and
+source-detail link order is preserved. This keeps the edge arrow,
+`ariaLabel`, and selected-node adjacent relation stable: a cached `blocks`
+edge from source to peer remains "source blocks peer" even if detail links also
+contain the inverse. Detail-only reciprocal links keep the first detail-link
+direction.
 
 Relationship matching prefers `uid`. When only `short_id` is available, the
 builder resolves it inside the same project. Ambiguous short ids do not select a
@@ -107,11 +117,19 @@ be displayed. The pure builder returns unresolved peer references alongside the
 nodes and edges so `KataWorkspaceStore` can populate missing cached data without
 making the graph component own daemon calls.
 
-The depth filter is applied during traversal, not after rendering. `1 edge`
-includes only nodes and edges directly connected to the source; `2 edges` and
-`3 edges` expand that many relationship hops; `Full` expands the reachable
-closure from the current cache/background loads. Missing refs outside the
-selected depth are not requested until the user widens the depth.
+The depth filter is applied during traversal, not after rendering. `Full` is
+the default unless a later persisted user preference explicitly changes it.
+`1 edge` includes only nodes and edges directly connected to the source; `2
+edges` and `3 edges` expand that many relationship hops; `Full` expands the
+reachable closure from the current cache/background loads. Missing refs outside
+the selected depth are not requested until the user widens the depth.
+
+Depth changes only affect the current graph render and newly reported missing
+refs. Narrowing the graph depth does not cancel a store-owned graph fetch
+already in flight, and a completed fetch may still enter the workspace cache
+even if the ref is no longer visible. Re-rendering at the narrower depth stops
+enqueueing newly hidden refs; widening depth later reports those refs again and
+lets the single store graph-load queue populate them.
 
 ## Component Plan
 
@@ -191,6 +209,9 @@ Add unit tests for the graph builder:
 - parent and child reachability;
 - blocks, blocked-by, and related reachability;
 - inverse parent/child and blocks/blocked_by declarations dedupe to one edge;
+- summary/detail reciprocal edges dedupe through the same edge path;
+- detail-only reciprocal edges keep the first detail-link direction;
+- UID-backed reverse edges do not fall back through cached short-id matches;
 - placeholder peer handling;
 - done filtering;
 - priority and status node metadata;
@@ -216,6 +237,8 @@ Add Svelte tests for workspace integration:
 - adjacent relation backgrounds do not overwrite status accents;
 - `Hide done` removes done nodes.
 - changing graph depth filters rendered nodes.
+- graph depth filters suppress out-of-depth missing refs until widening the
+  graph depth exposes them.
 - browser coverage verifies nonblank canvas nodes, hidden handles, native edge
   markers, themed controls/minimap, and the absence of a duplicate node-list
   fallback. It also covers both Enter and Space keyboard activation.

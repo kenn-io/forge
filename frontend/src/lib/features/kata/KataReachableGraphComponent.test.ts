@@ -147,6 +147,46 @@ describe("KataReachableGraph", () => {
     expect(screen.queryAllByText("Two edges")).toEqual([]);
   });
 
+  it("requests missing refs only when the selected graph depth exposes them", async () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root task",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+    });
+    const oneWithMissingPeer = {
+      ...one,
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    };
+    const onRequestMissingTasks = vi.fn();
+    const props = {
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one],
+      selectedDetail: null,
+      onBack: () => {},
+      onSelectIssue: () => {},
+      onRequestMissingTasks,
+    };
+    const { rerender } = render(KataReachableGraph, { props });
+
+    await fireEvent.change(screen.getByRole("combobox", { name: "Graph depth" }), { target: { value: "1" } });
+    await rerender({ ...props, tasks: [root, oneWithMissingPeer] });
+    expect(onRequestMissingTasks).not.toHaveBeenCalled();
+
+    await fireEvent.change(screen.getByRole("combobox", { name: "Graph depth" }), { target: { value: "2" } });
+    await vi.waitFor(() => {
+      expect(onRequestMissingTasks).toHaveBeenCalledWith([
+        { uid: "issue-two", projectUID: "project-kata", shortID: "two" },
+      ]);
+    });
+  });
+
   it("selects cached nodes and returns to the list", async () => {
     const root = task({ uid: "issue-root", short_id: "root", title: "Root task" });
     const onSelectIssue = vi.fn();

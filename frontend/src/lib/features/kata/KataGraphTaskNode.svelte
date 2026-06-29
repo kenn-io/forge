@@ -101,8 +101,8 @@
   }
 
   .graph-task-node--open {
-    --node-status-accent: var(--accent-green);
-    --node-status-bg: color-mix(in srgb, var(--accent-green) 7%, var(--bg-primary));
+    --node-status-accent: var(--border-default);
+    --node-status-bg: color-mix(in srgb, var(--text-secondary) 5%, var(--bg-primary));
   }
 
   .graph-task-node--closed {

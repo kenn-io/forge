@@ -84,7 +84,7 @@ The graph builder receives:
 
 - the source task uid;
 - cached task summaries;
-- the currently selected task detail, when available;
+- the graph source task detail, when available;
 - the done-filter flag;
 - the graph depth filter.
 
@@ -94,7 +94,7 @@ Reachability is computed by walking cached relationships:
 - child edges by matching another cached task's `parent_short_id`;
 - blocking edges from `blocks` and `blocked_by`;
 - related edges from `related`;
-- detail edges from `KataTaskDetail.links` for the selected/source task.
+- detail edges from `KataTaskDetail.links` for the graph source task.
 
 Reciprocal declarations between the same two tasks collapse to one edge by
 edge kind plus unordered node pair. This applies to summary-derived edges and
@@ -102,27 +102,48 @@ source-detail `KataTaskDetail.links` edges for `parent`, `blocks`, and
 `related`. The graph should not render parallel inverse arrows for the same
 relationship kind.
 
-When duplicate inverse edges conflict, the first observed directed edge wins.
-Cached summary traversal is processed before source-detail links, and
-source-detail link order is preserved. This keeps the edge arrow,
-`ariaLabel`, and selected-node adjacent relation stable: a cached `blocks`
-edge from source to peer remains "source blocks peer" even if detail links also
-contain the inverse. Detail-only reciprocal links keep the first detail-link
-direction.
+The canonical graph direction is `parent -> child` for parent links and
+`blocker -> blocked task` for blocking links. Kata detail `parent` links are
+normalized into that direction because detail links can arrive as
+child-to-parent pairs; summary `parent_short_id` and child matching already
+produce parent-to-child edges.
 
-Relationship matching prefers `uid`. When only `short_id` is available, the
-builder resolves it inside the same project. Ambiguous short ids do not select a
-random task; they render an uncached placeholder only when the peer id can still
-be displayed. The pure builder returns unresolved peer references alongside the
-nodes and edges so `KataWorkspaceStore` can populate missing cached data without
-making the graph component own daemon calls.
+When duplicate inverse edges conflict, parent and blocking links keep the first
+observed semantic direction after normalization. Cached summary traversal is
+processed before source-detail links, so a cached `blocks` edge from source to
+peer remains "source blocks peer" even if detail links also contain the inverse.
+Related links are associations rather than dependency edges: source-detail
+related links are normalized source-outward, and reverse cached related
+matches are rendered outward from the task being expanded. This prevents the
+same related pair from flipping direction when the daemon alternates which
+side of the pair supplied the relationship.
+
+Relationship matching prefers `uid`. When a relationship peer or expanded
+parent object carries a `uid`, that full id is the cache key and edge endpoint;
+the short id remains display/fallback data only. When only `short_id` is
+available, the builder resolves it inside the same project. Ambiguous short ids
+do not select a random task; they render an uncached placeholder only when the
+peer id can still be displayed. The pure builder returns unresolved peer
+references alongside the nodes and edges so `KataWorkspaceStore` can populate
+missing cached data without making the graph component own daemon calls.
+Normalizers preserve absent-vs-present relationship fields so sparse view rows
+do not erase richer parent/link data that was loaded from detail responses.
 
 The depth filter is applied during traversal, not after rendering. `Full` is
 the default unless a later persisted user preference explicitly changes it.
-`1 edge` includes only nodes and edges directly connected to the source; `2
-edges` and `3 edges` expand that many relationship hops; `Full` expands the
-reachable closure from the current cache/background loads. Missing refs outside
-the selected depth are not requested until the user widens the depth.
+`Full` expands the reachable closure from the source task and its source-detail
+links as they load, independent of the currently selected detail node. Source
+detail links always include both canonical edge endpoints, so a source task
+whose detail says it has a parent still renders the parent-to-source edge even
+though the canonical arrow points toward the source. Bounded
+depth views (`1 edge`, `2 edges`, `3 edges`)
+use the active selected cached task as their traversal root, falling back to
+the source when the active task is not locally cached, so changing the active
+task changes the bounded graph. Bounded traversal follows relationships
+declared on the task being expanded, while still drawing edges in canonical
+direction; it does not infer extra incoming edges by scanning unrelated cached
+rows that happen to point at the active task. Missing refs outside the selected
+depth are not requested until the user widens the depth.
 
 Depth changes only affect the current graph render and newly reported missing
 refs. Narrowing the graph depth does not cancel a store-owned graph fetch
@@ -151,6 +172,9 @@ graph action beside the workspace/detail actions.
 
 - `SvelteFlow` with `nodesDraggable={false}` and `nodesConnectable={false}`;
 - `fitView`, `Controls`, `MiniMap`, and `Background`;
+- the graph depth control uses the shared `SelectDropdown` combobox component
+  from `@middleman/ui`, not a native `<select>`, so the popup follows the app
+  theme and keyboard behavior;
 - a registered custom task node type that renders title, id label, status,
   priority, source and selected markers, and cached/placeholder state directly
   inside the Svelte Flow canvas;
@@ -166,7 +190,7 @@ graph action beside the workspace/detail actions.
 - native Svelte Flow edge markers (`MarkerType.ArrowClosed`) on `markerEnd` to
   show relationship direction, rather than text labels such as `blocks`;
 - relationship kind is communicated by the edge style contract and accessible
-  edge label: blocking edges use the primary accent, parent edges use secondary
+  edge label: blocking edges use the amber accent, parent edges use secondary
   text color, related edges are dashed, and each edge carries a kind-specific
   `ariaLabel`. Do not put text labels on every edge in the canvas.
 - node accessible labels include source/selected state, title, qualified id,
@@ -180,14 +204,20 @@ A pure `kataReachableGraph.ts` module builds nodes and edges. It performs the
 depth-limited reachability traversal, creates marker-backed edges, and assigns
 stable layered positions so tests can assert the graph without depending on
 browser layout.
+Layout is directed and based on the final visible edge set after reciprocal
+edge deduplication and done filtering. Incoming relationships can appear to the
+left of the active/source task and outgoing relationships to the right; cycles
+fall back to the stable task sort for deterministic placement.
 Nodes include explicit Svelte Flow width/height values so edge endpoints are
 based on stable bounds instead of shifting after custom node measurement.
 There is no duplicate card/button list below the canvas.
 
-Graph mode snapshots the source task detail when launched from detail so
-source-only `KataTaskDetail.links` remain in the graph after the user selects a
-different reachable node. The currently selected detail task still controls the
-right-hand task detail pane.
+Graph mode owns a source task detail snapshot. When launched from detail it
+uses the already selected source detail; when launched from an unselected list
+row it fetches the source detail in the background without changing the current
+detail selection. Once loaded, source-only `KataTaskDetail.links` remain in the
+full graph after the user selects a different reachable node. The currently
+selected detail task still controls the right-hand task detail pane.
 
 The `window.__middleman_kata_graph_debug` bridge is a test/debug affordance, not
 a supported product API. Tests should call `reset()` before assertions, and the
@@ -224,6 +254,8 @@ Add unit tests for the graph builder:
 - unresolved graph peer references are returned for background fetching.
 - UID-backed missing peers do not fall back to cached short-id matches.
 - graph depth filters prune traversal at 1, 2, and 3 edges.
+- bounded graph depth roots traversal at the active selected task while `Full`
+  remains source-rooted.
 
 Add Svelte tests for workspace integration:
 
@@ -239,9 +271,6 @@ Add Svelte tests for workspace integration:
   selected task;
 - adjacent relation backgrounds do not overwrite status accents;
 - `Hide done` removes done nodes.
-- changing graph depth filters rendered nodes.
-- graph depth filters suppress out-of-depth missing refs until widening the
-  graph depth exposes them.
 - browser coverage verifies nonblank canvas nodes, hidden handles, native edge
   markers, themed controls/minimap, and the absence of a duplicate node-list
   fallback. It also covers both Enter and Space keyboard activation.

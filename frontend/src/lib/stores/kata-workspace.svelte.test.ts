@@ -567,6 +567,83 @@ describe("kata workspace store", () => {
     expect(store.cachedTasks.map((item) => item.uid).sort()).toEqual(["issue-child", "issue-parent"]);
   });
 
+  test("keeps cached task array stable across equivalent view refreshes", async () => {
+    const visible = {
+      ...issues[0]!,
+      uid: "issue-stable-cache",
+      short_id: "stable-cache",
+      qualified_id: "Finances#stable-cache",
+      title: "Stable cached task",
+      blocks: [{ uid: "issue-peer", short_id: "peer" }],
+    };
+    const changed = { ...visible, title: "Changed cached task", revision: visible.revision + 1 };
+    const viewFor = (item: KataTaskSummary): KataTaskViewResponse => ({
+      view: "today",
+      groups: [
+        { id: "today", title: "Today", issues: [{ ...item, blocks: item.blocks ? [...item.blocks] : undefined }] },
+      ],
+      fetched_at: fetchedAt,
+    });
+    const api = createFakeKataTaskAPI();
+    api.mocks.issues
+      .mockResolvedValueOnce(viewFor(visible))
+      .mockResolvedValueOnce(viewFor(visible))
+      .mockResolvedValueOnce(viewFor(changed));
+    const store = createKataWorkspaceStore({ api });
+
+    await store.bootstrap("today", null, { selectFirst: false });
+    const initialCachedTasks = store.cachedTasks;
+
+    await store.openView("today", { selectFirst: false });
+
+    expect(store.cachedTasks).toBe(initialCachedTasks);
+
+    await store.openView("today", { selectFirst: false });
+
+    expect(store.cachedTasks).not.toBe(initialCachedTasks);
+    expect(store.cachedTasks.find((item) => item.uid === visible.uid)?.title).toBe("Changed cached task");
+  });
+
+  test("keeps cached parent uid refs across sparse view refreshes", async () => {
+    const parent = {
+      ...issues[0]!,
+      uid: "issue-cache-parent",
+      short_id: "cache-parent",
+      qualified_id: "Finances#cache-parent",
+      title: "Cache parent",
+    };
+    const child = {
+      ...issues[1]!,
+      uid: "issue-cache-child",
+      short_id: "cache-child",
+      qualified_id: "Finances#cache-child",
+      title: "Cache child",
+      parent: { uid: parent.uid, short_id: parent.short_id },
+      parent_short_id: parent.short_id,
+    };
+    const sparseChild = { ...child } as Record<string, unknown>;
+    delete sparseChild.parent;
+    delete sparseChild.parent_short_id;
+    const viewFor = (item: KataTaskSummary): KataTaskViewResponse => ({
+      view: "today",
+      groups: [{ id: "today", title: "Today", issues: [item] }],
+      fetched_at: fetchedAt,
+    });
+    const api = createFakeKataTaskAPI();
+    api.mocks.issues
+      .mockResolvedValueOnce(viewFor(child))
+      .mockResolvedValueOnce(viewFor(sparseChild as unknown as KataTaskSummary));
+    const store = createKataWorkspaceStore({ api });
+
+    await store.bootstrap("today", null, { selectFirst: false });
+    await store.openView("today", { selectFirst: false });
+
+    expect(store.cachedTasks.find((item) => item.uid === child.uid)).toMatchObject({
+      parent: { uid: parent.uid, short_id: parent.short_id },
+      parent_short_id: parent.short_id,
+    });
+  });
+
   test("clears cached task summaries when bootstrap applies a new daemon view", async () => {
     const first = {
       ...issues[0]!,

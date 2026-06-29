@@ -59,6 +59,10 @@ function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+function hasOwnField(value: JsonObject, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function stringArrayValue(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === "string");
@@ -230,8 +234,39 @@ function normalizeLabels(rawLabels: unknown, labelRows?: KataTaskLabel[]): strin
   return labelRows?.map((label) => label.label).filter(Boolean) ?? [];
 }
 
+function optionalLinkPeers(issue: JsonObject, key: "blocks" | "blocked_by" | "related"): KataLinkPeer[] | undefined {
+  if (!hasOwnField(issue, key)) return undefined;
+  return arrayValue(issue[key]).map(normalizeLinkPeer);
+}
+
+function parentRef(issue: JsonObject): { hasValue: boolean; value: KataLinkPeer | undefined } {
+  if (hasOwnField(issue, "parent")) {
+    return { hasValue: true, value: isObject(issue.parent) ? normalizeLinkPeer(issue.parent) : undefined };
+  }
+  return { hasValue: false, value: undefined };
+}
+
+function parentShortID(
+  issue: JsonObject,
+  parent: KataLinkPeer | undefined,
+): { hasValue: boolean; value: string | undefined } {
+  if (hasOwnField(issue, "parent_short_id")) {
+    return { hasValue: true, value: optionalString(issue.parent_short_id) };
+  }
+  if (hasOwnField(issue, "parent")) return { hasValue: true, value: parent?.short_id };
+  return { hasValue: false, value: undefined };
+}
+
 export function normalizeKataTaskSummary(raw: unknown, labelRows?: KataTaskLabel[]): KataTaskSummary {
   const issue = isObject(raw) ? raw : {};
+  const parent = parentRef(issue);
+  const parentShort = parentShortID(issue, parent.value);
+  const blocks = optionalLinkPeers(issue, "blocks");
+  const blockedBy = optionalLinkPeers(issue, "blocked_by");
+  const related = optionalLinkPeers(issue, "related");
+  const childCounts = isObject(issue.child_counts)
+    ? { open: numberValue(issue.child_counts.open), total: numberValue(issue.child_counts.total) }
+    : undefined;
   return {
     id: numberValue(issue.id),
     uid: stringValue(issue.uid),
@@ -249,13 +284,12 @@ export function normalizeKataTaskSummary(raw: unknown, labelRows?: KataTaskLabel
     author: stringValue(issue.author),
     priority: optionalNumber(issue.priority),
     labels: normalizeLabels(issue.labels, labelRows),
-    parent_short_id: optionalString(issue.parent_short_id),
-    blocks: arrayValue(issue.blocks).map(normalizeLinkPeer),
-    blocked_by: arrayValue(issue.blocked_by).map(normalizeLinkPeer),
-    related: arrayValue(issue.related).map(normalizeLinkPeer),
-    child_counts: isObject(issue.child_counts)
-      ? { open: numberValue(issue.child_counts.open), total: numberValue(issue.child_counts.total) }
-      : undefined,
+    ...(parent.hasValue ? { parent: parent.value } : {}),
+    ...(parentShort.hasValue ? { parent_short_id: parentShort.value } : {}),
+    ...(blocks !== undefined ? { blocks } : {}),
+    ...(blockedBy !== undefined ? { blocked_by: blockedBy } : {}),
+    ...(related !== undefined ? { related } : {}),
+    ...(hasOwnField(issue, "child_counts") ? { child_counts: childCounts } : {}),
     recurrence_id: optionalNumber(issue.recurrence_id),
     occurrence_key: optionalString(issue.occurrence_key),
     created_at: stringValue(issue.created_at),

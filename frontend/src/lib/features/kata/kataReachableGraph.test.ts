@@ -23,6 +23,7 @@ function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
     author: overrides.author ?? "middleman",
     priority: overrides.priority,
     labels: overrides.labels,
+    parent: overrides.parent,
     parent_short_id: overrides.parent_short_id,
     blocks: overrides.blocks,
     blocked_by: overrides.blocked_by,
@@ -128,7 +129,7 @@ describe("buildKataReachableGraph", () => {
     expect(graph.nodes.find((node) => node.id === peer.uid)?.data.projectLabel).toBe("Platform");
   });
 
-  it("walks parent, child, blocks, blocked_by, and related relationships", () => {
+  it("walks directed child, blocks, and related relationships", () => {
     const root = task({
       uid: "issue-root",
       short_id: "root",
@@ -157,32 +158,34 @@ describe("buildKataReachableGraph", () => {
 
     expect(graph.nodes.map((node) => node.id).sort()).toEqual([
       "issue-blocked",
-      "issue-blocker",
       "issue-child",
       "issue-parent",
       "issue-related",
       "issue-root",
     ]);
     expect(graph.edges.map((edge) => edge.id).sort()).toEqual([
-      "blocks:issue-blocker:issue-root",
       "blocks:issue-root:issue-blocked",
       "parent:issue-parent:issue-root",
       "parent:issue-root:issue-child",
       "related:issue-root:issue-related",
     ]);
     expect(graph.edges.find((edge) => edge.id === "blocks:issue-root:issue-blocked")).toMatchObject({
-      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--accent-blue)" },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--accent-amber)" },
       ariaLabel: "blocks relationship from issue-root to issue-blocked",
     });
     expect(graph.edges.find((edge) => edge.id === "parent:issue-root:issue-child")).toMatchObject({
       markerEnd: { type: MarkerType.ArrowClosed, color: "var(--text-secondary)" },
     });
+    const positions = positionsByID(graph);
     expect(graph.nodes.find((node) => node.id === root.uid)).toMatchObject({
-      position: { x: 0, y: 0 },
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
     });
-    expect(graph.nodes.filter((node) => node.id !== root.uid).every((node) => node.position.x > 0)).toBe(true);
+    expect(positions[parent.uid]!.x).toBeLessThan(positions[root.uid]!.x);
+    expect(positions[blocker.uid]).toBeUndefined();
+    expect(positions[child.uid]!.x).toBeGreaterThan(positions[root.uid]!.x);
+    expect(positions[blocked.uid]!.x).toBeGreaterThan(positions[root.uid]!.x);
+    expect(positions[related.uid]!.x).toBeGreaterThan(positions[root.uid]!.x);
   });
 
   it("deduplicates inverse parent and blocking edge declarations", () => {
@@ -257,11 +260,11 @@ describe("buildKataReachableGraph", () => {
     expect(graph.nodes.find((node) => node.id === blocked.uid)?.data.adjacentRelation).toBe("blocks");
   });
 
-  it("deduplicates reciprocal detail-only links and keeps the first detail direction", () => {
+  it("deduplicates reciprocal detail-only links with stable related direction", () => {
     const root = task({ uid: "issue-root", short_id: "root", title: "Root" });
     const peer = task({ uid: "issue-peer", short_id: "peer", title: "Peer" });
 
-    const graph = buildKataReachableGraph({
+    const graphFromPeerFirst = buildKataReachableGraph({
       sourceUID: root.uid,
       selectedUID: root.uid,
       tasks: [root, peer],
@@ -289,8 +292,123 @@ describe("buildKataReachableGraph", () => {
       }),
       hideDone: false,
     });
+    const graphFromRootFirst = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, peer],
+      selectedDetail: detail(root, {
+        links: [
+          {
+            id: 1,
+            project_id: root.project_id,
+            from: { uid: root.uid, short_id: root.short_id },
+            to: { uid: peer.uid, short_id: peer.short_id },
+            type: "related",
+            author: "middleman",
+            created_at: "2026-06-29T12:00:00Z",
+          },
+          {
+            id: 2,
+            project_id: root.project_id,
+            from: { uid: peer.uid, short_id: peer.short_id },
+            to: { uid: root.uid, short_id: root.short_id },
+            type: "related",
+            author: "middleman",
+            created_at: "2026-06-29T12:00:01Z",
+          },
+        ],
+      }),
+      hideDone: false,
+    });
 
-    expect(graph.edges.map((edge) => edge.id)).toEqual(["related:issue-peer:issue-root"]);
+    expect(graphFromPeerFirst.edges.map((edge) => edge.id)).toEqual(["related:issue-root:issue-peer"]);
+    expect(graphFromRootFirst.edges.map((edge) => edge.id)).toEqual(["related:issue-root:issue-peer"]);
+  });
+
+  it("normalizes detail parent links from child-to-parent into parent-to-child graph edges", () => {
+    const root = task({ uid: "issue-root", short_id: "root", title: "Root" });
+    const child = task({ uid: "issue-child", short_id: "child", title: "Child" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, child],
+      selectedDetail: detail(root, {
+        links: [
+          {
+            id: 1,
+            project_id: root.project_id,
+            from: { uid: child.uid, short_id: child.short_id },
+            to: { uid: root.uid, short_id: root.short_id },
+            type: "parent",
+            author: "middleman",
+            created_at: "2026-06-29T12:00:00Z",
+          },
+        ],
+      }),
+      hideDone: false,
+    });
+
+    expect(graph.edges.map((edge) => edge.id)).toEqual(["parent:issue-root:issue-child"]);
+    expect(graph.nodes.find((node) => node.id === child.uid)?.data.adjacentRelation).toBe("child");
+    expect(positionsByID(graph)[child.uid]!.x).toBeGreaterThan(positionsByID(graph)[root.uid]!.x);
+  });
+
+  it("keeps the parent visible when the source detail declares a parent link", () => {
+    const parent = task({ uid: "issue-parent", short_id: "parent", title: "Parent" });
+    const child = task({ uid: "issue-child", short_id: "child", title: "Child" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: child.uid,
+      selectedUID: child.uid,
+      tasks: [child, parent],
+      selectedDetail: detail(child, {
+        links: [
+          {
+            id: 1,
+            project_id: child.project_id,
+            from: { uid: child.uid, short_id: child.short_id },
+            to: { uid: parent.uid, short_id: parent.short_id },
+            type: "parent",
+            author: "middleman",
+            created_at: "2026-06-29T12:00:00Z",
+          },
+        ],
+      }),
+      hideDone: false,
+      depthLimit: "full",
+    });
+
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["issue-child", "issue-parent"]);
+    expect(graph.edges.map((edge) => edge.id)).toEqual(["parent:issue-parent:issue-child"]);
+    expect(graph.nodes.find((node) => node.id === parent.uid)?.data.adjacentRelation).toBe("parent");
+  });
+
+  it("uses parent uid refs before short-id parent matching", () => {
+    const source = task({ uid: "issue-source", short_id: "source", title: "Source" });
+    const parent = task({ uid: "issue-parent", short_id: "parent", title: "Parent" });
+    const sameShortID = task({ uid: "issue-wrong-parent", short_id: "parent", title: "Wrong parent" });
+    const child = task({
+      uid: "issue-child",
+      short_id: "child",
+      title: "Child",
+      parent: { uid: parent.uid, short_id: sameShortID.short_id },
+      parent_short_id: sameShortID.short_id,
+      related: [{ uid: source.uid, short_id: source.short_id }],
+    });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: parent.uid,
+      selectedUID: child.uid,
+      tasks: [source, child, sameShortID, parent],
+      selectedDetail: detail(source),
+      hideDone: false,
+      depthLimit: "full",
+    });
+
+    expect(graph.edges.map((edge) => edge.id).sort()).toContain("parent:issue-parent:issue-child");
+    expect(graph.edges.map((edge) => edge.id).sort()).not.toContain("parent:issue-wrong-parent:issue-child");
+    expect(graph.nodes.find((node) => node.id === parent.uid)?.data.isSource).toBe(true);
   });
 
   it("marks nodes adjacent to the selected task by relationship direction", () => {
@@ -324,7 +442,7 @@ describe("buildKataReachableGraph", () => {
     expect(graph.nodes.find((node) => node.id === root.uid)?.data.adjacentRelation).toBeNull();
     expect(graph.nodes.find((node) => node.id === parent.uid)?.data.adjacentRelation).toBe("parent");
     expect(graph.nodes.find((node) => node.id === child.uid)?.data.adjacentRelation).toBe("child");
-    expect(graph.nodes.find((node) => node.id === blocker.uid)?.data.adjacentRelation).toBe("blockedBy");
+    expect(graph.nodes.find((node) => node.id === blocker.uid)).toBeUndefined();
     expect(graph.nodes.find((node) => node.id === blocked.uid)?.data.adjacentRelation).toBe("blocks");
     expect(graph.nodes.find((node) => node.id === related.uid)?.data.adjacentRelation).toBe("related");
   });
@@ -468,6 +586,118 @@ describe("buildKataReachableGraph", () => {
       "blocks:issue-root:issue-one",
     ]);
     expect(full.nodes.map((node) => node.id).sort()).toEqual(["issue-one", "issue-root", "issue-three", "issue-two"]);
+  });
+
+  it("uses the selected task as the bounded depth root", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({
+      uid: "issue-two",
+      short_id: "two",
+      title: "Two edges",
+      blocks: [{ uid: "issue-three", short_id: "three" }],
+    });
+    const three = task({ uid: "issue-three", short_id: "three", title: "Three edges" });
+
+    const oneEdge = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: two.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "1",
+    });
+    const twoEdges = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: two.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "2",
+    });
+    const full = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: two.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "full",
+    });
+
+    expect(oneEdge.nodes.map((node) => node.id).sort()).toEqual(["issue-three", "issue-two"]);
+    expect(oneEdge.edges.map((edge) => edge.id).sort()).toEqual(["blocks:issue-two:issue-three"]);
+    expect(twoEdges.nodes.map((node) => node.id).sort()).toEqual(["issue-three", "issue-two"]);
+    expect(positionsByID(oneEdge)[one.uid]).toBeUndefined();
+    expect(positionsByID(oneEdge)[three.uid]!.x).toBeGreaterThan(positionsByID(oneEdge)[two.uid]!.x);
+    expect(positionsByID(full)[root.uid]!.x).toBe(0);
+  });
+
+  it("does not include inferred reverse edges in bounded depth", () => {
+    const selected = task({
+      uid: "issue-selected",
+      short_id: "selected",
+      title: "Selected",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({
+      uid: "issue-two",
+      short_id: "two",
+      title: "Two edges",
+      blocks: [{ uid: "issue-three", short_id: "three" }],
+    });
+    const three = task({ uid: "issue-three", short_id: "three", title: "Three edges" });
+    const parent = task({ uid: "issue-parent", short_id: "parent", title: "Parent" });
+    const childWithParent = task({
+      uid: selected.uid,
+      short_id: selected.short_id,
+      title: selected.title,
+      parent: { uid: parent.uid, short_id: parent.short_id },
+      parent_short_id: parent.short_id,
+      blocks: selected.blocks,
+    });
+    const incomingBlocker = task({
+      uid: "issue-incoming-blocker",
+      short_id: "incoming-blocker",
+      title: "Incoming blocker",
+      blocks: [{ uid: selected.uid, short_id: selected.short_id }],
+    });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: selected.uid,
+      selectedUID: selected.uid,
+      tasks: [childWithParent, parent, incomingBlocker, one, two, three],
+      selectedDetail: detail(childWithParent),
+      hideDone: false,
+      depthLimit: "2",
+    });
+
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual([
+      "issue-one",
+      "issue-parent",
+      "issue-selected",
+      "issue-two",
+    ]);
+    expect(graph.edges.map((edge) => edge.id).sort()).toEqual([
+      "blocks:issue-one:issue-two",
+      "blocks:issue-selected:issue-one",
+      "parent:issue-parent:issue-selected",
+    ]);
   });
 
   it("filters done nodes without hiding other closed nodes", () => {

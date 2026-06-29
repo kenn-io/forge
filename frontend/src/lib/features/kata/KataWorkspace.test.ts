@@ -225,6 +225,61 @@ describe("KataWorkspace", () => {
     expect(within(graph).getAllByText("Detail-only graph task").length).toBeGreaterThan(0);
   });
 
+  it("loads source detail links when opening a graph from an unselected list row", async () => {
+    const selected = issue("issue-selected", "Initially selected task", "project-kata");
+    const root = issue("issue-root", "Root graph task", "project-kata");
+    const related = issue("issue-related", "Detail-only graph task", "project-kata");
+    const { api } = createWorkspaceAPI([selected, root, related]);
+    const sourceDetail = deferred<KataTaskDetail>();
+    const sourceLink: KataTaskLink = {
+      id: 1,
+      project_id: root.project_id,
+      from: { uid: root.uid, short_id: root.short_id },
+      to: { uid: related.uid, short_id: related.short_id },
+      type: "related",
+      author: "fixture-user",
+      created_at: fetchedAt,
+    };
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+      if (uid === root.uid) return sourceDetail.promise;
+      return detail(uid, [selected, root, related]);
+    });
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Initially selected task" })).toBeTruthy();
+    });
+    const rootRow = screen.getByRole("button", { name: /Root graph task/ });
+    const rootFrame = rootRow.parentElement;
+    expect(rootFrame).toBeTruthy();
+    await fireEvent.click(within(rootFrame!).getByRole("button", { name: "Open reachable graph" }));
+
+    expect(screen.getByRole("region", { name: "Reachable task graph" })).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "Reachable task graph" })).queryByText("Detail-only graph task"),
+    ).toBeNull();
+
+    sourceDetail.resolve({ ...detail(root.uid, [selected, root, related]), links: [sourceLink] });
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByRole("region", { name: "Reachable task graph" })).getAllByText("Detail-only graph task")
+          .length,
+      ).toBeGreaterThan(0);
+    });
+
+    await fireEvent.click(graphNodeWithText("Detail-only graph task"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Detail-only graph task" })).toBeTruthy();
+    });
+    expect(
+      within(screen.getByRole("region", { name: "Reachable task graph" })).getAllByText("Detail-only graph task")
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
   it("fetches graph references that are not cached locally", async () => {
     const root = {
       ...issue("issue-root", "Root graph task", "project-kata"),

@@ -69,6 +69,7 @@ export interface KataTaskSummary {
   author: string;
   priority?: number | undefined;
   labels?: string[] | undefined;
+  parent?: KataLinkPeer | undefined;
   parent_short_id?: string | undefined;
   blocks?: KataLinkPeer[] | undefined;
   blocked_by?: KataLinkPeer[] | undefined;

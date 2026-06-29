@@ -106,6 +106,7 @@
   let listMode = $state<ListMode>("tasks");
   let graphSourceUID = $state<string | null>(null);
   let graphSourceDetail = $state.raw<KataTaskDetail | null>(null);
+  let graphSourceDetailRequestID = 0;
   const store = createKataWorkspaceStore({ api: untrack(() => api) });
   const actor = "middleman";
   let syncedRouteIssueUID = $state<string | null>(null);
@@ -391,6 +392,13 @@
       return;
     }
     void selectIssue(uid, false);
+  });
+
+  $effect(() => {
+    if (listMode !== "reachableGraph" || !graphSourceUID) return;
+    const selectedDetail = store.selectedIssue;
+    if (!selectedDetail || selectedDetail.issue.uid !== graphSourceUID) return;
+    graphSourceDetail = selectedDetail;
   });
 
   function currentRouteSnapshot(): KataRouteSnapshot {
@@ -716,9 +724,26 @@
     graphSourceUID = issue.uid;
     graphSourceDetail = store.selectedIssue?.issue.uid === issue.uid ? store.selectedIssue : null;
     listMode = "reachableGraph";
+    if (!graphSourceDetail) {
+      void loadGraphSourceDetail(issue.uid, ++graphSourceDetailRequestID);
+    }
+  }
+
+  async function loadGraphSourceDetail(uid: string, requestID: number): Promise<void> {
+    try {
+      const detail = await store.loadGraphSourceDetail(uid);
+      if (requestID !== graphSourceDetailRequestID) return;
+      if (listMode !== "reachableGraph" || graphSourceUID !== uid) return;
+      graphSourceDetail = detail;
+    } catch {
+      if (requestID !== graphSourceDetailRequestID) return;
+      if (listMode !== "reachableGraph" || graphSourceUID !== uid) return;
+      graphSourceDetail = null;
+    }
   }
 
   function closeReachableGraph(): void {
+    graphSourceDetailRequestID++;
     listMode = "tasks";
     graphSourceUID = null;
     graphSourceDetail = null;
@@ -958,7 +983,7 @@
         sourceUID={graphSourceUID}
         selectedUID={store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null}
         tasks={store.cachedTasks}
-        selectedDetail={graphSourceDetail ?? (store.selectedIssue?.issue.uid === graphSourceUID ? store.selectedIssue : null)}
+        selectedDetail={graphSourceDetail}
         onBack={closeReachableGraph}
         onSelectIssue={(uid) => {
           void selectIssue(uid);

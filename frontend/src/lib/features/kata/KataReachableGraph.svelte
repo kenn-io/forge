@@ -1,5 +1,6 @@
 <script lang="ts">
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
+  import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
   import {
     Background,
     BackgroundVariant,
@@ -54,6 +55,12 @@
   const nodeTypes: NodeTypes = {
     kataTask: KataGraphTaskNode,
   };
+  const depthOptions: SelectDropdownOption[] = [
+    { value: "full", label: "Full" },
+    { value: "1", label: "1 edge" },
+    { value: "2", label: "2 edges" },
+    { value: "3", label: "3 edges" },
+  ];
   const fitViewOptions = {
     duration: 0,
     padding: 0.12,
@@ -66,6 +73,10 @@
   function selectNode(node: KataGraphNode): void {
     if (!node.data.selectable) return;
     onSelectIssue(node.id);
+  }
+
+  function setDepthLimit(value: string): void {
+    depthLimit = value as KataGraphDepthLimit;
   }
 
   function minimapData(node: SvelteFlowNode): Partial<KataGraphNode["data"]> {
@@ -100,6 +111,12 @@
       hideDone,
       depthLimit,
       nodeIds: graph.nodes.map((node) => node.id),
+      edges: graph.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        kind: typeof edge.data?.kind === "string" ? edge.data.kind : null,
+      })),
       disabledNodeIds: graph.nodes.filter((node) => !node.data.selectable).map((node) => node.id),
       missingRefKeys: graph.missingRefs.map(missingRefKey),
       nodeCount: graph.nodes.length,
@@ -124,15 +141,16 @@
       <strong title={source?.qualified_id ?? sourceUID}>{source?.title ?? "Reachable graph"}</strong>
     </div>
     <div class="graph-controls">
-      <label class="depth-filter">
+      <div class="depth-filter">
         <span>Depth</span>
-        <select bind:value={depthLimit} aria-label="Graph depth">
-          <option value="full">Full</option>
-          <option value="1">1 edge</option>
-          <option value="2">2 edges</option>
-          <option value="3">3 edges</option>
-        </select>
-      </label>
+        <SelectDropdown
+          class="kata-graph-depth-select"
+          title="Graph depth"
+          value={depthLimit}
+          options={depthOptions}
+          onchange={setDepthLimit}
+        />
+      </div>
       <label class="hide-done">
         <input type="checkbox" bind:checked={hideDone} />
         <span>Hide done</span>
@@ -155,6 +173,8 @@
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={true}
+        edgesFocusable={false}
+        elevateEdgesOnSelect={false}
         onnodeclick={({ node }) => selectNode(node as KataGraphNode)}
       >
         <Controls />
@@ -217,16 +237,32 @@
   }
 
   .depth-filter {
-    padding: 0 4px 0 8px;
-  }
-
-  .depth-filter select {
-    min-height: 22px;
+    gap: 7px;
     border: 0;
     background: transparent;
+    padding: 0;
+    cursor: default;
+  }
+
+  .depth-filter:hover {
+    background: transparent;
+    color: var(--text-secondary);
+  }
+
+  :global(.kata-graph-depth-select) {
+    min-width: 104px;
+  }
+
+  :global(.kata-graph-depth-select .select-dropdown-trigger) {
+    height: 28px;
+    background: var(--bg-primary);
+    border-color: var(--border-default);
     color: var(--text-primary);
-    font: inherit;
-    font-size: var(--font-size-xs);
+  }
+
+  :global(.kata-graph-depth-select .select-dropdown-list) {
+    left: 0;
+    right: auto;
   }
 
   .graph-source {
@@ -305,7 +341,7 @@
   }
 
   :global(.kata-graph-edge--blocks .svelte-flow__edge-path) {
-    stroke: var(--accent-blue);
+    stroke: var(--accent-amber);
   }
 
   :global(.kata-graph-edge--parent .svelte-flow__edge-path) {

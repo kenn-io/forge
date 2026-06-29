@@ -223,12 +223,51 @@ function mergeCachedTaskSummary(previous: KataTaskSummary | undefined, next: Kat
   if (!previous) return next;
   return {
     ...next,
+    parent: hasOwnField(next, "parent") ? next.parent : previous.parent,
     parent_short_id: hasOwnField(next, "parent_short_id") ? next.parent_short_id : previous.parent_short_id,
     blocks: mergeKataPeerList(previous.blocks, next.blocks, hasOwnField(next, "blocks")),
     blocked_by: mergeKataPeerList(previous.blocked_by, next.blocked_by, hasOwnField(next, "blocked_by")),
     related: mergeKataPeerList(previous.related, next.related, hasOwnField(next, "related")),
     child_counts: hasOwnField(next, "child_counts") ? next.child_counts : previous.child_counts,
   };
+}
+
+function taskPeerListSignature(peers: KataTaskSummary["blocks"]): string {
+  return JSON.stringify((peers ?? []).map((peer) => [peer.uid ?? "", peer.short_id]));
+}
+
+function taskSummarySignature(task: KataTaskSummary): string {
+  return JSON.stringify([
+    task.id,
+    task.uid,
+    task.project_id,
+    task.project_uid,
+    task.project_name,
+    task.short_id,
+    task.qualified_id,
+    task.title,
+    task.body ?? null,
+    task.status,
+    task.revision,
+    task.created_at,
+    task.updated_at,
+    task.owner ?? null,
+    task.author ?? null,
+    task.priority ?? null,
+    JSON.stringify(task.metadata ?? {}),
+    JSON.stringify(task.labels ?? []),
+    task.recurrence_id ?? null,
+    task.occurrence_key ?? null,
+    task.parent ? [task.parent.uid, task.parent.short_id] : null,
+    task.parent_short_id ?? null,
+    taskPeerListSignature(task.blocks),
+    taskPeerListSignature(task.blocked_by),
+    taskPeerListSignature(task.related),
+    JSON.stringify(task.child_counts ?? null),
+    task.closed_reason ?? null,
+    task.closed_at ?? null,
+    task.deleted_at ?? null,
+  ]);
 }
 
 export function duplicateCandidatesFromError(error: unknown): KataDuplicateCandidateDisplay[] {
@@ -499,6 +538,17 @@ export class KataWorkspaceStore {
     }
   }
 
+  async loadGraphSourceDetail(uid: string, signal?: AbortSignal): Promise<KataTaskDetail> {
+    const detail = await this.api.issue(uid, signal ? { signal } : {});
+    this.cacheDetail(detail);
+    if (detail.etag) {
+      this.issueETags.set(detail.issue.uid, detail.etag);
+    } else {
+      this.issueETags.set(detail.issue.uid, `"rev-${detail.issue.revision}"`);
+    }
+    return detail;
+  }
+
   clearSelection(): void {
     this.detailRequestID++;
     this.abortPendingDetail();
@@ -724,9 +774,16 @@ export class KataWorkspaceStore {
   private cacheTasks(issues: readonly KataTaskSummary[]): void {
     if (issues.length === 0) return;
     const next = new Map(this.taskCache);
+    let changed = false;
     for (const issue of issues) {
-      next.set(issue.uid, mergeCachedTaskSummary(next.get(issue.uid), issue));
+      const previous = next.get(issue.uid);
+      const merged = mergeCachedTaskSummary(previous, issue);
+      if (!previous || taskSummarySignature(previous) !== taskSummarySignature(merged)) {
+        next.set(issue.uid, merged);
+        changed = true;
+      }
     }
+    if (!changed) return;
     this.taskCache = next;
     this.updateGraphDebugStore();
   }

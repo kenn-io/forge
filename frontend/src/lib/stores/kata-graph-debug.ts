@@ -29,6 +29,7 @@ export interface KataGraphDebugGraphSnapshot {
   hideDone: boolean;
   depthLimit: string;
   nodeIds: string[];
+  edges: Array<{ id: string; source: string; target: string; kind: string | null }>;
   disabledNodeIds: string[];
   missingRefKeys: string[];
   nodeCount: number;
@@ -75,6 +76,7 @@ function cloneSnapshot(): KataGraphDebugSnapshot {
       ? {
           ...latestGraph,
           nodeIds: [...latestGraph.nodeIds],
+          edges: latestGraph.edges.map((edge) => ({ ...edge })),
           disabledNodeIds: [...latestGraph.disabledNodeIds],
           missingRefKeys: [...latestGraph.missingRefKeys],
         }
@@ -83,28 +85,39 @@ function cloneSnapshot(): KataGraphDebugSnapshot {
   };
 }
 
+function installKataGraphDebugHook(): void {
+  if (typeof window === "undefined") return;
+  window.__middleman_kata_graph_debug = kataGraphDebug;
+}
+
 export function recordKataGraphDebugEvent(kind: KataGraphDebugEventKind, detail?: Record<string, unknown>): void {
+  installKataGraphDebugHook();
   events = [...events, { id: nextEventID++, at: now(), kind, detail }].slice(-maxEvents);
 }
 
 export function setKataGraphDebugGraph(snapshot: KataGraphDebugGraphSnapshot): void {
+  installKataGraphDebugHook();
   latestGraph = {
     ...snapshot,
     nodeIds: [...snapshot.nodeIds],
+    edges: snapshot.edges.map((edge) => ({ ...edge })),
     disabledNodeIds: [...snapshot.disabledNodeIds],
     missingRefKeys: [...snapshot.missingRefKeys],
   };
 }
 
 export function setKataGraphDebugStore(snapshot: KataGraphDebugStoreSnapshot): void {
+  installKataGraphDebugHook();
   store = { ...snapshot, queueKeys: [...snapshot.queueKeys] };
 }
 
 export function getKataGraphDebugSnapshot(): KataGraphDebugSnapshot {
+  installKataGraphDebugHook();
   return cloneSnapshot();
 }
 
 export function resetKataGraphDebug(): void {
+  installKataGraphDebugHook();
   nextEventID = 1;
   events = [];
   latestGraph = undefined;
@@ -116,6 +129,4 @@ export const kataGraphDebug: KataGraphDebugAPI = {
   reset: resetKataGraphDebug,
 };
 
-if (typeof window !== "undefined") {
-  window.__middleman_kata_graph_debug = kataGraphDebug;
-}
+installKataGraphDebugHook();

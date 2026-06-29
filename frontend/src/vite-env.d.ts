@@ -302,6 +302,7 @@ interface Window {
             hideDone: boolean;
             depthLimit: string;
             nodeIds: string[];
+            edges: Array<{ id: string; source: string; target: string; kind: string | null }>;
             disabledNodeIds: string[];
             missingRefKeys: string[];
             nodeCount: number;

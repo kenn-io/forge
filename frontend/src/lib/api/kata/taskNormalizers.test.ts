@@ -157,6 +157,39 @@ describe("kata task normalizers", () => {
     });
   });
 
+  test("derives parent short id from expanded parent refs", () => {
+    const response = normalizeKataTaskList({
+      issues: [
+        {
+          uid: "issue-child",
+          short_id: "child",
+          parent: { uid: "issue-parent", short_id: "parent" },
+        },
+      ],
+    });
+
+    expect(response.groups[0]!.issues[0]!.parent_short_id).toBe("parent");
+    expect(response.groups[0]!.issues[0]!.parent).toEqual({ uid: "issue-parent", short_id: "parent" });
+  });
+
+  test("keeps absent relationship fields absent for sparse issue rows", () => {
+    const sparse = normalizeKataTaskList({
+      issues: [{ uid: "issue-sparse", short_id: "sparse" }],
+    }).groups[0]!.issues[0]!;
+    const explicitEmpty = normalizeKataTaskList({
+      issues: [{ uid: "issue-empty", short_id: "empty", parent_short_id: null, blocks: [], child_counts: null }],
+    }).groups[0]!.issues[0]!;
+
+    expect(Object.prototype.hasOwnProperty.call(sparse, "parent")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(sparse, "parent_short_id")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(sparse, "blocks")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(sparse, "child_counts")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(explicitEmpty, "parent_short_id")).toBe(true);
+    expect(explicitEmpty.parent_short_id).toBeUndefined();
+    expect(explicitEmpty.blocks).toEqual([]);
+    expect(explicitEmpty.child_counts).toBeUndefined();
+  });
+
   test("falls back to empty metadata objects for absent, empty, and invalid metadata strings", () => {
     expect(normalizeKataTaskList({ issues: [{ metadata: "", labels: null }] }).groups[0]!.issues[0]!.metadata).toEqual(
       {},

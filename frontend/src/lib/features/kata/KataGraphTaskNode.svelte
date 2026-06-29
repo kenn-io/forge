@@ -95,9 +95,13 @@
   }
 
   .graph-task-node--selected {
+    border-color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 12%, var(--node-relation-bg, var(--node-status-bg, var(--bg-primary))));
     box-shadow:
       inset 3px 0 0 var(--node-status-accent, var(--border-default)),
-      0 0 0 2px color-mix(in srgb, var(--accent-blue) 30%, transparent);
+      0 0 0 2px color-mix(in srgb, var(--accent-blue) 82%, transparent),
+      0 0 0 5px color-mix(in srgb, var(--accent-blue) 18%, transparent),
+      var(--shadow-sm);
   }
 
   .graph-task-node--open {

@@ -154,6 +154,9 @@ graph action beside the workspace/detail actions.
 - a registered custom task node type that renders title, id label, status,
   priority, source and selected markers, and cached/placeholder state directly
   inside the Svelte Flow canvas;
+- selected task nodes use an accent border, visible ring, and subtle selection
+  tint so the active task is distinguishable from neutral open nodes,
+  relation-tinted adjacent nodes, and source-only nodes;
 - a real full-node button inside the custom node as the single activation
   target for keyboard users. Pointer activation is delegated to the Svelte Flow
   node click handler. Both paths call the same cached-node selection handler

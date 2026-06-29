@@ -99,9 +99,13 @@ describe("KataReachableGraph (browser)", () => {
     const rect = linkedNode!.getBoundingClientRect();
     expect(rect.width).toBeGreaterThan(0);
     expect(rect.height).toBeGreaterThan(0);
-    const rootButtonStyle = getComputedStyle(rootNode!.querySelector<HTMLElement>(".graph-task-node")!);
+    const rootNodeButton = rootNode!.querySelector<HTMLElement>(".graph-task-node")!;
+    const rootButtonStyle = getComputedStyle(rootNodeButton);
     const linkedNodeButton = linkedNode!.querySelector<HTMLElement>(".graph-task-node")!;
     const linkedButtonStyle = getComputedStyle(linkedNodeButton);
+    expect(rootNodeButton.classList.contains("graph-task-node--selected")).toBe(true);
+    expect(rootButtonStyle.borderColor).not.toBe(linkedButtonStyle.borderColor);
+    expect(rootButtonStyle.boxShadow).toContain("0px 0px 0px 5px");
     expect(linkedNodeButton.classList.contains("graph-task-node--relation-blocks")).toBe(true);
     expect(linkedButtonStyle.backgroundColor).not.toBe(rootButtonStyle.backgroundColor);
     expect(linkedButtonStyle.boxShadow).toContain("inset");

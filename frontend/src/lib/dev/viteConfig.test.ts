@@ -30,6 +30,8 @@ describe("vite config", () => {
     const includes = config.optimizeDeps?.include ?? [];
 
     expect(includes).toContain("@middleman/ui > shiki");
+    expect(includes).toContain("@lucide/svelte/icons/list-chevrons-down-up");
+    expect(includes).toContain("@lucide/svelte/icons/list-chevrons-up-down");
   });
 
   it("pins the dev server host to IPv4 loopback", () => {

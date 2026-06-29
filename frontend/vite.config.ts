@@ -390,6 +390,8 @@ const config = {
       "@lucide/svelte/icons/layout-panel-left",
       "@lucide/svelte/icons/layout-panel-top",
       "@lucide/svelte/icons/link",
+      "@lucide/svelte/icons/list-chevrons-down-up",
+      "@lucide/svelte/icons/list-chevrons-up-down",
       "@lucide/svelte/icons/loader-circle",
       "@lucide/svelte/icons/message-square",
       "@lucide/svelte/icons/message-square-reply",

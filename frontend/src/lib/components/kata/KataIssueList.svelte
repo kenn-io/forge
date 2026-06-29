@@ -3,6 +3,8 @@
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
+  import ListChevronsDownUpIcon from "@lucide/svelte/icons/list-chevrons-down-up";
+  import ListChevronsUpDownIcon from "@lucide/svelte/icons/list-chevrons-up-down";
   import { relativeTime, shortDate } from "../../api/dates.js";
   import type { KataTaskAPI, KataTaskSearchFilters, KataTaskSummary } from "../../api/kata/taskTypes.js";
   import type { KataCurrentView } from "../../stores/kata-workspace.svelte.js";
@@ -46,6 +48,7 @@
   let expanded: Record<string, boolean> = $state({});
   let childrenByUID: Record<string, KataTaskSummary[]> = $state({});
   let loadingChildren: Record<string, boolean> = $state({});
+  let bulkExpanding = $state(false);
   let tableBody: HTMLDivElement | null = $state(null);
   let childLoadGeneration = 0;
   let lastResetGeneration = $state<number | null>(null);
@@ -93,6 +96,17 @@
   // so keep its labeled region instead of dropping it to a bare list.
   let shouldFlatten = $derived(!isProjectScoped && sort.key === "updated" && visibleGroups.length > 1);
   let globalSortedIssues = $derived(shouldFlatten ? sortKataTasks(visibleGroups.flatMap((group) => group.issues), sort) : []);
+  let visibleRootIssues = $derived.by(() => {
+    if (isProjectScoped) return sortKataTasks(flatIssues, sort);
+    if (shouldFlatten) return globalSortedIssues;
+    return visibleGroups.flatMap((group) => sortKataTasks(group.issues, sort));
+  });
+  let knownExpandableIssues = $derived.by(() => collectKnownExpandableIssues(visibleRootIssues));
+  let hasExpandableVisibleRows = $derived(knownExpandableIssues.length > 0);
+  let allKnownExpandableRowsExpanded = $derived(
+    hasExpandableVisibleRows && knownExpandableIssues.every((issue) => expanded[issue.uid] === true),
+  );
+  let hasAnyExpandedRows = $derived(Object.values(expanded).some(Boolean));
 
   function loadSort(): KataTaskSort {
     if (typeof window === "undefined") return DEFAULT_KATA_TASK_SORT;
@@ -136,10 +150,8 @@
     return view.groups.reduce((sum, group) => sum + group.issues.length, 0);
   }
 
-  function totalVisibleIssues(): number {
-    if (isProjectScoped) return flatIssues.length;
-    if (shouldFlatten) return globalSortedIssues.length;
-    return visibleGroups.reduce((sum, group) => sum + group.issues.length, 0);
+  function totalFilteredIssues(): number {
+    return statusVisibleGroups.reduce((sum, group) => sum + group.issues.length, 0);
   }
 
   function isSelected(issue: KataTaskSummary): boolean {
@@ -194,6 +206,84 @@
 
   function topLevelIssues(issues: readonly KataTaskSummary[]): KataTaskSummary[] {
     return issues.filter((issue) => parentHierarchyKey(issue) === null);
+  }
+
+  function collectKnownExpandableIssues(issues: readonly KataTaskSummary[]): KataTaskSummary[] {
+    const expandable: KataTaskSummary[] = [];
+    const seen = new Set<string>();
+
+    const visit = (issue: KataTaskSummary) => {
+      if (seen.has(issue.uid)) return;
+      seen.add(issue.uid);
+      if (hasChildren(issue)) expandable.push(issue);
+      if (expanded[issue.uid] !== true) return;
+      for (const child of visibleChildren(issue)) visit(child);
+    };
+
+    for (const issue of issues) visit(issue);
+    return expandable;
+  }
+
+  async function loadChildren(issue: KataTaskSummary, generation: number): Promise<KataTaskSummary[]> {
+    if (!hasChildren(issue)) return [];
+    if (childrenByUID[issue.uid]) return visibleChildren(issue);
+    if (!api) return [];
+
+    loadingChildren = { ...loadingChildren, [issue.uid]: true };
+    try {
+      const detail = await api.issue(issue.uid);
+      if (generation !== childLoadGeneration || !findIssueByUID(issue.uid)) return [];
+      const children = detail.children ?? [];
+      childrenByUID = { ...childrenByUID, [issue.uid]: children };
+      return children.filter(issueMatchesStatusFilter);
+    } finally {
+      if (generation === childLoadGeneration) {
+        loadingChildren = { ...loadingChildren, [issue.uid]: false };
+      }
+    }
+  }
+
+  async function expandIssueTree(
+    issue: KataTaskSummary,
+    generation: number,
+    nextExpanded: Record<string, boolean>,
+    seen: Set<string>,
+  ) {
+    if (!hasChildren(issue) || seen.has(issue.uid)) return;
+    seen.add(issue.uid);
+    nextExpanded[issue.uid] = true;
+    expanded = { ...expanded, ...nextExpanded };
+
+    const children = await loadChildren(issue, generation);
+    if (generation !== childLoadGeneration) return;
+    for (const child of children) {
+      await expandIssueTree(child, generation, nextExpanded, seen);
+    }
+  }
+
+  async function expandAllVisible() {
+    if (bulkExpanding || allKnownExpandableRowsExpanded) return;
+    const generation = childLoadGeneration;
+    bulkExpanding = true;
+    const nextExpanded = { ...expanded };
+    const seen = new Set<string>();
+    try {
+      for (const issue of visibleRootIssues) {
+        if (generation !== childLoadGeneration) return;
+        await expandIssueTree(issue, generation, nextExpanded, seen);
+      }
+    } finally {
+      if (generation === childLoadGeneration) bulkExpanding = false;
+    }
+  }
+
+  function collapseAllVisible() {
+    if (!hasAnyExpandedRows && !bulkExpanding) return;
+    childLoadGeneration += 1;
+    expanded = {};
+    loadingChildren = {};
+    bulkExpanding = false;
+    cancelPendingKeyboardSelect();
   }
 
   async function toggleExpand(issue: KataTaskSummary, event: MouseEvent | KeyboardEvent) {
@@ -397,6 +487,7 @@
     expanded = {};
     childrenByUID = {};
     loadingChildren = {};
+    bulkExpanding = false;
   });
 
   // A pending keyboard selection dies the moment the workspace starts
@@ -417,9 +508,34 @@
 
 <main class="issue-list" aria-label="Issues">
   <div class="pane-header">
-    <div class="heading">
-      <h2>{viewTitle(currentView)}</h2>
-      <span class="count">{totalVisibleIssues()} {totalVisibleIssues() === 1 ? "task" : "tasks"}</span>
+    <div class="heading-row">
+      <div class="heading">
+        <h2>{viewTitle(currentView)}</h2>
+        <span class="count">{totalFilteredIssues()} {totalFilteredIssues() === 1 ? "task" : "tasks"}</span>
+      </div>
+      {#if hasExpandableVisibleRows || hasAnyExpandedRows || bulkExpanding}
+        <div class="tree-actions" aria-label="Task tree controls">
+          <button
+            class="tree-action"
+            type="button"
+            disabled={bulkExpanding || allKnownExpandableRowsExpanded}
+            aria-busy={bulkExpanding ? "true" : undefined}
+            onclick={() => void expandAllVisible()}
+          >
+            <ListChevronsUpDownIcon size={13} strokeWidth={2} />
+            <span>{bulkExpanding ? "Expanding" : "Expand all"}</span>
+          </button>
+          <button
+            class="tree-action"
+            type="button"
+            disabled={!hasAnyExpandedRows}
+            onclick={collapseAllVisible}
+          >
+            <ListChevronsDownUpIcon size={13} strokeWidth={2} />
+            <span>Collapse all</span>
+          </button>
+        </div>
+      {/if}
     </div>
     {#if loading}
       <span class="sr-only" aria-live="polite">Loading snapshot</span>
@@ -510,7 +626,7 @@
         <span class="col col-tags col-static">Tags</span>
       </div>
 
-      {#if totalVisibleIssues() === 0}
+      {#if visibleRootIssues.length === 0}
         <div class="empty">No tasks</div>
       {/if}
 
@@ -629,7 +745,6 @@
     position: relative;
     flex-shrink: 0;
     padding: 10px 16px 8px;
-    padding-right: 96px;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border-default);
     display: flex;
@@ -637,10 +752,19 @@
     gap: 2px;
   }
 
+  .heading-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+  }
+
   .heading {
     display: flex;
     align-items: baseline;
     gap: 10px;
+    min-width: 0;
   }
 
   .pane-header h2 {
@@ -654,6 +778,41 @@
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
+  }
+
+  .tree-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .tree-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .tree-action:hover:not(:disabled),
+  .tree-action:focus-visible {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  .tree-action:disabled {
+    cursor: default;
+    opacity: 0.45;
   }
 
   .sr-only {

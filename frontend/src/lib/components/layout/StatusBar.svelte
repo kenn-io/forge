@@ -39,10 +39,17 @@
     return `synced ${Math.floor(mins / 60)}h ago`;
   }
 
+  const openPulls = $derived(pulls.getPulls().filter((pr) => pr.State === "open"));
+  const openIssues = $derived(issues.getIssues().filter((issue) => issue.State === "open"));
+
+  function repoKey(item: { repo: { provider: string; platform_host: string; repo_path: string } }): string {
+    return `${item.repo.provider}|${item.repo.platform_host}/${item.repo.repo_path}`;
+  }
+
   function repoCount(): number {
     const repos = new Set<string>();
-    for (const pr of pulls.getPulls()) repos.add(`${pr.repo_owner}/${pr.repo_name}`);
-    for (const issue of issues.getIssues()) repos.add(`${issue.repo_owner}/${issue.repo_name}`);
+    for (const pr of openPulls) repos.add(repoKey(pr));
+    for (const issue of openIssues) repos.add(repoKey(issue));
     return repos.size;
   }
 
@@ -65,9 +72,9 @@
 
 <footer class="status-bar">
   <div class="status-left">
-    <span class="status-item">{pulls.getPulls().length} PRs</span>
+    <span class="status-item">{openPulls.length} PRs</span>
     <span class="status-sep">&middot;</span>
-    <span class="status-item">{issues.getIssues().length} issues</span>
+    <span class="status-item">{openIssues.length} issues</span>
     <span class="status-sep">&middot;</span>
     <span class="status-item">{repoCount()} repos</span>
   </div>

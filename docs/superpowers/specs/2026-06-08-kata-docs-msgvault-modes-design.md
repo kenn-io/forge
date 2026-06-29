@@ -310,6 +310,12 @@ Header/navigation changes:
 Kata frontend adaptation:
 
 - Keep the existing task workspace behavior and daemon switcher semantics.
+- Treat task lists as trees: rows with a known parent stay out of the
+  top-level projection until their ancestor chain is expanded, and recursive row
+  rendering must support nested subtasks beyond one level
+  (`frontend/src/lib/components/kata/KataIssueList.svelte::topLevelIssues`,
+  `frontend/src/lib/components/kata/KataIssueList.svelte::row`,
+  `frontend/src/lib/stores/kata-workspace.svelte.ts::selectableViewIssues`).
 - Replace direct daemon URL/localStorage bootstrap with calls to middleman's
   Kata daemon roster and proxy.
 - Use a middleman-owned selector header for proxied daemon requests.

@@ -1289,10 +1289,17 @@ test("kata reachable graph renders and selects tasks through the configured exte
 
     const detail = page.getByRole("region", { name: "Task detail" });
     await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await page.evaluate(() => window.__middleman_kata_graph_debug?.reset());
     await detail.getByRole("button", { name: "Open reachable graph" }).click();
 
     const graph = page.getByRole("region", { name: "Reachable task graph" });
     await expect(graph).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.nodeCount ?? 0))
+      .toBeGreaterThan(1);
+    const debugBeforeSelection = await page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot());
+    expect(debugBeforeSelection?.latestGraph?.sourceUID).toBe("issue-rent");
+    expect(debugBeforeSelection?.latestGraph?.nodeIds).toEqual(expect.arrayContaining(["issue-rent", "issue-q3"]));
     const graphNodes = graph.locator(".svelte-flow__node");
     await expect(graphNodes.filter({ hasText: "Pay rent" })).toBeVisible();
     const linkedNode = graphNodes.filter({ hasText: "Email Susan re: Q3" }).first();
@@ -1308,6 +1315,13 @@ test("kata reachable graph renders and selects tasks through the configured exte
     await expect(graph).toBeVisible();
     await expect(graphNodes.filter({ hasText: "Pay rent" })).toBeVisible();
     await expect(linkedNode).toBeVisible();
+    const debugAfterSelection = await page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot());
+    const eventKinds = debugAfterSelection?.events.map((event) => event.kind) ?? [];
+    expect(debugAfterSelection?.latestGraph?.selectedUID).toBe("issue-q3");
+    expect(debugAfterSelection?.latestGraph?.nodeIds).toEqual(expect.arrayContaining(["issue-rent", "issue-q3"]));
+    expect(eventKinds).toContain("selection-start");
+    expect(eventKinds).toContain("detail-load-start");
+    expect(eventKinds).toContain("detail-load-complete");
     const linkedBoxAfterSelection = await linkedNode.boundingBox();
     expect(Math.abs((linkedBoxAfterSelection?.x ?? 0) - (linkedBox?.x ?? 0))).toBeLessThanOrEqual(1);
     expect(Math.abs((linkedBoxAfterSelection?.y ?? 0) - (linkedBox?.y ?? 0))).toBeLessThanOrEqual(1);

@@ -79,6 +79,13 @@ real runtime path plus a component or Vitest browser test for presentation. Do
 not require a duplicate full-stack browser test when it would only replay data
 that is already proven at those two boundaries.
 
+Kata reachable-graph tests can use `window.__middleman_kata_graph_debug` in
+browser/e2e runs, or `kata-graph-debug.ts` directly in unit tests, to inspect
+recent graph/store events and the latest rendered node IDs. Prefer this bridge
+when debugging or asserting graph refresh ordering, missing-ref population,
+selection detail refreshes, or node/edge stability; it avoids brittle visual
+polling for state that the app already owns in JavaScript.
+
 ## Huma API Contract
 
 Every public operation in `/api/v1/openapi.json` must have explicit OpenAPI

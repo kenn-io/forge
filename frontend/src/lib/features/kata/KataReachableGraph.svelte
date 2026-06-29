@@ -12,6 +12,10 @@
   import "@xyflow/svelte/dist/style.css";
 
   import type { KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
+  import {
+    recordKataGraphDebugEvent,
+    setKataGraphDebugGraph,
+  } from "../../stores/kata-graph-debug.js";
   import KataGraphTaskNode from "./KataGraphTaskNode.svelte";
   import { buildKataReachableGraph, type KataGraphMissingRef, type KataGraphNode } from "./kataReachableGraph.js";
 
@@ -46,6 +50,10 @@
     padding: 0.12,
   };
 
+  function missingRefKey(ref: KataGraphMissingRef): string {
+    return ref.uid ? `uid:${ref.uid}` : `short:${ref.projectUID}:${ref.shortID}`;
+  }
+
   function selectNode(node: KataGraphNode): void {
     if (!node.data.selectable) return;
     onSelectIssue(node.id);
@@ -72,7 +80,23 @@
   $effect(() => {
     const refs = graph.missingRefs;
     if (refs.length === 0) return;
+    recordKataGraphDebugEvent("graph-missing-refs", { keys: refs.map(missingRefKey) });
     onRequestMissingTasks?.(refs);
+  });
+
+  $effect(() => {
+    const snapshot = {
+      sourceUID,
+      selectedUID,
+      hideDone,
+      nodeIds: graph.nodes.map((node) => node.id),
+      disabledNodeIds: graph.nodes.filter((node) => !node.data.selectable).map((node) => node.id),
+      missingRefKeys: graph.missingRefs.map(missingRefKey),
+      nodeCount: graph.nodes.length,
+      edgeCount: graph.edges.length,
+    };
+    setKataGraphDebugGraph(snapshot);
+    recordKataGraphDebugEvent("graph-render", snapshot);
   });
 </script>
 

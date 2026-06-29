@@ -21,6 +21,7 @@ import type {
   KataTaskViewResponse,
 } from "../api/kata/taskTypes.js";
 import { buildKataTaskView } from "../api/kata/taskViewBuilder.js";
+import { getKataGraphDebugSnapshot, resetKataGraphDebug } from "./kata-graph-debug.js";
 import { createKataWorkspaceStore, deriveKataAreas, duplicateCandidatesFromError } from "./kata-workspace.svelte.js";
 
 function deferred<T>() {
@@ -927,6 +928,7 @@ describe("kata workspace store", () => {
   });
 
   test("coalesces graph task population into one refresh loop per missing issue", async () => {
+    resetKataGraphDebug();
     const api = createFakeKataTaskAPI();
     const linked = issue("issue-linked-graph", "Linked graph task", "project-kata");
     const pendingDetail = deferred<KataTaskDetail>();
@@ -951,9 +953,17 @@ describe("kata workspace store", () => {
     await second;
 
     expect(store.cachedTasks.find((task) => task.uid === linked.uid)?.title).toBe("Linked graph task");
+    const debug = getKataGraphDebugSnapshot();
+    const eventKinds = debug.events.map((event) => event.kind);
+    expect(eventKinds.filter((kind) => kind === "graph-load-start")).toHaveLength(1);
+    expect(eventKinds).toContain("graph-load-drain-join");
+    expect(eventKinds).toContain("graph-load-complete");
+    expect(debug.store?.queueKeys).toEqual([]);
+    expect(debug.store?.graphLoadActive).toBe(false);
   });
 
   test("pauses graph population while a user selection refresh is active", async () => {
+    resetKataGraphDebug();
     const api = createFakeKataTaskAPI();
     const linked = issue("issue-linked-graph", "Linked graph task", "project-kata");
     const pendingDetail = deferred<KataTaskDetail>();
@@ -985,6 +995,13 @@ describe("kata workspace store", () => {
     expect(graphSignals[0]?.aborted).toBe(true);
     expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
     await graphLoad;
+
+    const debug = getKataGraphDebugSnapshot();
+    const eventKinds = debug.events.map((event) => event.kind);
+    expect(eventKinds).toContain("graph-load-abort");
+    expect(eventKinds).toContain("graph-load-paused");
+    expect(eventKinds).toContain("detail-load-start");
+    expect(eventKinds).toContain("detail-load-complete");
 
     pendingDetail.resolve({
       ...detailFor("issue-email-susan"),

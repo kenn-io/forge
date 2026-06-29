@@ -25,6 +25,7 @@ import type {
   KataTaskViewResponse,
 } from "../api/kata/taskTypes.js";
 import { createULID } from "../api/ulid.js";
+import { recordKataGraphDebugEvent, setKataGraphDebugStore } from "./kata-graph-debug.js";
 
 export interface KataConnectionState {
   status: "offline" | "connecting" | "online" | "error";
@@ -192,6 +193,16 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function graphTaskRefKey(ref: KataGraphTaskRef): string {
   return ref.uid ? `uid:${ref.uid}` : `short:${ref.projectUID}:${ref.shortID}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof DOMException !== "undefined" && error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
 }
 
 function mergeKataPeerList(
@@ -471,6 +482,7 @@ export class KataWorkspaceStore {
   async selectIssue(uid: string): Promise<boolean> {
     this.pendingSelectionUID = uid;
     const requestID = ++this.detailRequestID;
+    this.observeGraphStore("selection-start", { uid, detailRequestID: requestID });
     try {
       return await this.loadSelectedIssue(uid, undefined, requestID);
     } catch (error) {
@@ -600,11 +612,15 @@ export class KataWorkspaceStore {
   }
 
   async loadGraphTaskRefs(refs: readonly KataGraphTaskRef[]): Promise<void> {
+    const requestedKeys = refs.map(graphTaskRefKey);
+    const queuedKeys: string[] = [];
     for (const ref of refs) {
       const key = graphTaskRefKey(ref);
       if (this.hasCachedGraphTaskRef(ref)) continue;
       this.graphTaskLoadQueue.set(key, ref);
+      queuedKeys.push(key);
     }
+    this.observeGraphStore("graph-load-enqueue", { requestedKeys, queuedKeys });
     await this.startGraphTaskLoadDrain();
   }
 
@@ -620,11 +636,17 @@ export class KataWorkspaceStore {
   // running ties up the daemon and its late rejection would surface a
   // stale error for a navigation the user already left.
   private abortPendingDetail(): void {
+    if (this.detailAbort) {
+      this.observeGraphStore("detail-load-abort", { selectedIssueUID: this.selectedIssue?.issue.uid ?? null });
+    }
     this.detailAbort?.abort();
     this.detailAbort = null;
   }
 
   private abortGraphTaskLoad(): void {
+    if (this.graphTaskLoadAbort) {
+      this.observeGraphStore("graph-load-abort");
+    }
     this.graphTaskLoadAbort?.abort();
     this.graphTaskLoadAbort = null;
   }
@@ -700,6 +722,7 @@ export class KataWorkspaceStore {
       next.set(issue.uid, mergeCachedTaskSummary(next.get(issue.uid), issue));
     }
     this.taskCache = next;
+    this.updateGraphDebugStore();
   }
 
   private cacheView(view: Pick<KataTaskViewResponse, "groups">): void {
@@ -756,37 +779,79 @@ export class KataWorkspaceStore {
 
   private async startGraphTaskLoadDrain(): Promise<void> {
     if (this.graphTaskLoadPromise) {
+      this.observeGraphStore("graph-load-drain-join");
       await this.graphTaskLoadPromise;
+      if (this.graphTaskLoadQueue.size > 0 && !this.isIssueRefreshActive()) {
+        await this.startGraphTaskLoadDrain();
+      }
       return;
     }
-    if (this.isIssueRefreshActive()) return;
-    this.graphTaskLoadPromise = this.drainGraphTaskLoadQueue();
+    if (this.isIssueRefreshActive()) {
+      if (this.graphTaskLoadQueue.size > 0) this.observeGraphStore("graph-load-paused");
+      return;
+    }
+    if (this.graphTaskLoadQueue.size === 0) {
+      this.updateGraphDebugStore();
+      return;
+    }
+    this.graphTaskLoadPromise = Promise.resolve().then(() => this.drainGraphTaskLoadQueue());
+    this.observeGraphStore("graph-load-drain-start");
     try {
       await this.graphTaskLoadPromise;
     } finally {
       this.graphTaskLoadPromise = null;
+      this.observeGraphStore("graph-load-drain-end");
+      if (this.graphTaskLoadQueue.size > 0 && !this.isIssueRefreshActive()) {
+        void this.startGraphTaskLoadDrain();
+      }
     }
   }
 
   private async drainGraphTaskLoadQueue(): Promise<void> {
     for (;;) {
-      if (this.isIssueRefreshActive()) return;
+      if (this.isIssueRefreshActive()) {
+        this.observeGraphStore("graph-load-paused");
+        return;
+      }
       const next = this.graphTaskLoadQueue.entries().next();
       if (next.done) return;
       const [key, ref] = next.value;
       this.graphTaskLoadQueue.delete(key);
       if (this.hasCachedGraphTaskRef(ref)) continue;
       try {
+        this.observeGraphStore("graph-load-start", { key });
         await this.loadGraphTaskRef(ref);
-      } catch {
-        if (this.isIssueRefreshActive() && !this.hasCachedGraphTaskRef(ref)) {
+        this.observeGraphStore("graph-load-complete", { key });
+      } catch (error) {
+        if ((this.isIssueRefreshActive() || isAbortError(error)) && !this.hasCachedGraphTaskRef(ref)) {
           this.graphTaskLoadQueue.set(key, ref);
+          this.observeGraphStore("graph-load-paused", { key });
           return;
         }
+        this.observeGraphStore("graph-load-error", { key, message: errorMessage(error) });
         // Background graph expansion should not replace the workspace's
         // normal request-error surface. The unresolved node remains visible.
       }
     }
+  }
+
+  private updateGraphDebugStore(): void {
+    setKataGraphDebugStore({
+      queueKeys: [...this.graphTaskLoadQueue.keys()],
+      graphLoadActive: this.graphTaskLoadPromise !== null,
+      issueRefreshActive: this.isIssueRefreshActive(),
+      pendingSelectionUID: this.pendingSelectionUID,
+      selectedIssueUID: this.selectedIssue?.issue.uid ?? null,
+      cachedTaskCount: this.taskCache.size,
+    });
+  }
+
+  private observeGraphStore(
+    kind: Parameters<typeof recordKataGraphDebugEvent>[0],
+    detail?: Record<string, unknown>,
+  ): void {
+    this.updateGraphDebugStore();
+    recordKataGraphDebugEvent(kind, detail);
   }
 
   private applyTrivialMetadataEvent(event: KataTaskEvent): void {
@@ -1006,6 +1071,7 @@ export class KataWorkspaceStore {
         this.selectedRecurrences = [];
         this.pendingSelectionUID = null;
         void this.startGraphTaskLoadDrain();
+        this.updateGraphDebugStore();
         return true;
       }
       return false;
@@ -1013,6 +1079,7 @@ export class KataWorkspaceStore {
 
     const abort = new AbortController();
     this.detailAbort = abort;
+    this.observeGraphStore("detail-load-start", { uid, detailRequestID });
     let detail: KataTaskDetail;
     let events: KataTaskEventsResponse;
     try {
@@ -1023,14 +1090,23 @@ export class KataWorkspaceStore {
     } catch (error) {
       // Aborted means superseded: a newer selection owns the pane now, so
       // this failure must not surface as a user-facing error.
-      if (abort.signal.aborted) return false;
+      if (abort.signal.aborted) {
+        this.observeGraphStore("detail-load-abort", { uid, detailRequestID });
+        return false;
+      }
       throw error;
     } finally {
       if (this.detailAbort === abort) this.detailAbort = null;
       void this.startGraphTaskLoadDrain();
     }
-    if (viewRequestID !== undefined && viewRequestID !== this.viewRequestID) return false;
-    if (detailRequestID !== this.detailRequestID) return false;
+    if (viewRequestID !== undefined && viewRequestID !== this.viewRequestID) {
+      this.observeGraphStore("detail-load-stale", { uid, detailRequestID, viewRequestID });
+      return false;
+    }
+    if (detailRequestID !== this.detailRequestID) {
+      this.observeGraphStore("detail-load-stale", { uid, detailRequestID });
+      return false;
+    }
     this.cacheDetail(detail);
     this.selectedIssue = detail;
     if (detail.etag) {
@@ -1041,6 +1117,7 @@ export class KataWorkspaceStore {
     this.selectedEvents = events.events;
     this.selectedRecurrences = [];
     this.pendingSelectionUID = null;
+    this.observeGraphStore("detail-load-complete", { uid, detailRequestID });
     void this.startGraphTaskLoadDrain();
     void this.loadSelectedRecurrences(detail.issue.project_id, detailRequestID);
     return true;

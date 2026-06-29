@@ -29,13 +29,14 @@ function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
   };
 }
 
-function graphNodeWithText(text: string): HTMLElement {
-  const node = screen
+function graphNodeButtonWithText(text: string): HTMLButtonElement {
+  const button = screen
     .getAllByText(text)
     .find((element) => element.closest(".svelte-flow__node"))
-    ?.closest(".svelte-flow__node");
-  expect(node).toBeTruthy();
-  return node as HTMLElement;
+    ?.closest(".svelte-flow__node")
+    ?.querySelector<HTMLButtonElement>("button.graph-task-node");
+  expect(button).toBeTruthy();
+  return button!;
 }
 
 describe("KataReachableGraph", () => {
@@ -129,7 +130,11 @@ describe("KataReachableGraph", () => {
       },
     });
 
-    await fireEvent.click(graphNodeWithText("Root task"));
+    await fireEvent.click(graphNodeButtonWithText("Root task"));
+    expect(onSelectIssue).toHaveBeenCalledWith("issue-root");
+
+    onSelectIssue.mockClear();
+    await fireEvent.keyDown(graphNodeButtonWithText("Root task"), { key: "Enter" });
     expect(onSelectIssue).toHaveBeenCalledWith("issue-root");
     await fireEvent.click(screen.getByRole("button", { name: "Back to task list" }));
     expect(onBack).toHaveBeenCalled();

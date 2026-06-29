@@ -4,6 +4,7 @@ import { render } from "vitest-browser-svelte";
 
 import "../../../app.css";
 
+import { pressKey } from "../../../test/browserAppHarness.js";
 import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
 import KataReachableGraph from "./KataReachableGraph.svelte";
 
@@ -85,6 +86,16 @@ describe("KataReachableGraph (browser)", () => {
     expect(rect.height).toBeGreaterThan(0);
 
     linkedNode!.click();
+
+    expect(onSelectIssue).toHaveBeenCalledWith(linked.uid);
+
+    onSelectIssue.mockClear();
+    const linkedButton = [...container.querySelectorAll<HTMLButtonElement>(".graph-task-node")].find((node) =>
+      node.textContent?.includes("Linked browser task"),
+    );
+    expect(linkedButton).toBeTruthy();
+    linkedButton!.focus();
+    pressKey("Enter", {}, linkedButton!);
 
     expect(onSelectIssue).toHaveBeenCalledWith(linked.uid);
   });

@@ -97,12 +97,18 @@ graph action beside the workspace/detail actions.
 - `SvelteFlow` with `nodesDraggable={false}` and `nodesConnectable={false}`;
 - `fitView`, `Controls`, `MiniMap`, and `Background`;
 - a registered custom task node type that renders title, id label, status,
-  priority, source and selected markers, and cached/placeholder state directly
-  inside the Svelte Flow canvas;
+  priority, project/id metadata, source and selected markers, and
+  cached/placeholder state directly inside the Svelte Flow canvas;
+- a real full-node button inside the custom node so pointer users click the
+  canvas node and keyboard users activate the same target with Enter/Space;
 - hidden `Handle` anchors inside the custom node so Svelte Flow can route edges
   without showing connection handles as visible UI;
 - native Svelte Flow edge markers (`MarkerType.ArrowClosed`) on `markerEnd` to
   show relationship direction, rather than text labels such as `blocks`;
+- relationship kind is communicated by the edge style contract and accessible
+  edge label: blocking edges use the primary accent, parent edges use secondary
+  text color, related edges are dashed, and each edge carries a kind-specific
+  `ariaLabel`. Do not put text labels on every edge in the canvas.
 - themed `Controls` and `MiniMap` chrome; MiniMap node colors come from the
   documented `nodeColor`/`nodeStrokeColor` callbacks;
 - `onnodeclick` to select cached nodes.
@@ -110,8 +116,15 @@ graph action beside the workspace/detail actions.
 A pure `kataReachableGraph.ts` module builds nodes and edges. It performs the
 reachability traversal, creates marker-backed edges, and assigns stable layered
 positions so tests can assert the graph without depending on browser layout.
+Nodes include explicit Svelte Flow width/height values so edge endpoints are
+based on stable bounds instead of shifting after custom node measurement.
 There is no duplicate card/button list below the canvas; the Svelte Flow node
 wrappers are the authoritative click targets.
+
+Graph mode snapshots the source task detail when launched from detail so
+source-only `KataTaskDetail.links` remain in the graph after the user selects a
+different reachable node. The currently selected detail task still controls the
+right-hand task detail pane.
 
 ## Error And Empty States
 
@@ -141,6 +154,8 @@ Add Svelte tests for workspace integration:
 - clicking back restores the task list;
 - graph nodes display task titles and priority markers;
 - clicking a cached graph node selects the task and updates the detail pane;
+- pressing Enter/Space on a focused graph task node selects the task;
+- selecting a detail-only linked node does not remove it from the graph;
 - `Hide done` removes done nodes.
 - browser coverage verifies nonblank canvas nodes, hidden handles, native edge
   markers, themed controls/minimap, and the absence of a duplicate node-list

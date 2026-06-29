@@ -18,6 +18,7 @@
     KataProjectSummary,
     KataRecurrence,
     KataTaskAPI,
+    KataTaskDetail,
     KataTaskEditPatch,
     KataTaskSearchFilters,
     KataTaskSummary,
@@ -104,6 +105,7 @@
   let workspaceTargetRequestID = 0;
   let listMode = $state<ListMode>("tasks");
   let graphSourceUID = $state<string | null>(null);
+  let graphSourceDetail = $state.raw<KataTaskDetail | null>(null);
   const store = createKataWorkspaceStore({ api: untrack(() => api) });
   const actor = "middleman";
   let syncedRouteIssueUID = $state<string | null>(null);
@@ -712,12 +714,14 @@
   function openReachableGraph(issue: KataTaskSummary): void {
     store.rememberTasks([issue]);
     graphSourceUID = issue.uid;
+    graphSourceDetail = store.selectedIssue?.issue.uid === issue.uid ? store.selectedIssue : null;
     listMode = "reachableGraph";
   }
 
   function closeReachableGraph(): void {
     listMode = "tasks";
     graphSourceUID = null;
+    graphSourceDetail = null;
   }
 
   async function moveSelectedIssue(toProjectUID: string | null): Promise<void> {
@@ -950,7 +954,7 @@
         sourceUID={graphSourceUID}
         selectedUID={store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null}
         tasks={store.cachedTasks}
-        selectedDetail={store.selectedIssue}
+        selectedDetail={graphSourceDetail ?? (store.selectedIssue?.issue.uid === graphSourceUID ? store.selectedIssue : null)}
         onBack={closeReachableGraph}
         onSelectIssue={(uid) => {
           void selectIssue(uid);

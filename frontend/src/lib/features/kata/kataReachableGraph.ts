@@ -48,7 +48,9 @@ interface ResolvedPeer {
 type GraphEdgeKind = "parent" | "blocks" | "related";
 
 const KATA_GRAPH_X_SPACING = 320;
-const KATA_GRAPH_Y_SPACING = 92;
+const KATA_GRAPH_Y_SPACING = 108;
+const KATA_GRAPH_NODE_WIDTH = 250;
+const KATA_GRAPH_NODE_HEIGHT = 74;
 
 function taskKey(projectUID: string, shortID: string): string {
   return `${projectUID}:${shortID}`;
@@ -287,6 +289,8 @@ function layoutNode(
     selectable: task !== undefined,
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
+    width: KATA_GRAPH_NODE_WIDTH,
+    height: KATA_GRAPH_NODE_HEIGHT,
   };
 }
 

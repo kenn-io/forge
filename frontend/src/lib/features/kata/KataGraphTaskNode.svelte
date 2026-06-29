@@ -21,15 +21,26 @@
     if (data.status === "closed") return "closed";
     return "open";
   });
+  let metaLabel = $derived(data.projectLabel ? `${data.projectLabel} / ${data.idLabel}` : data.idLabel);
+
+  function activateFromKeyboard(event: KeyboardEvent): void {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    (event.currentTarget as HTMLButtonElement).click();
+  }
 </script>
 
-<div
+<button
+  type="button"
   class={[
     "graph-task-node",
     `graph-task-node--${tone}`,
     data.isSource ? "graph-task-node--source" : "",
     data.isSelected || selected ? "graph-task-node--selected" : "",
   ]}
+  aria-label={data.selectable ? `Select task ${data.title}` : `${data.title} is not cached`}
+  disabled={!data.selectable}
+  onkeydown={activateFromKeyboard}
 >
   <div class="node-title-row">
     <strong title={data.title}>{data.title}</strong>
@@ -38,7 +49,7 @@
     {/if}
   </div>
   <div class="node-meta-row">
-    <span class="node-id">{data.idLabel}</span>
+    <span class="node-id" title={metaLabel}>{metaLabel}</span>
     <span class={["status-marker", `status-marker--${tone}`]}>{statusLabel}</span>
   </div>
   <Handle
@@ -55,12 +66,12 @@
     isConnectable={false}
     aria-hidden="true"
   />
-</div>
+</button>
 
 <style>
   .graph-task-node {
-    width: 220px;
-    min-height: 58px;
+    width: 100%;
+    height: 100%;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -71,6 +82,13 @@
     color: var(--text-primary);
     padding: 9px 10px;
     box-shadow: var(--shadow-sm);
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .graph-task-node:disabled {
+    cursor: default;
   }
 
   .graph-task-node--source {

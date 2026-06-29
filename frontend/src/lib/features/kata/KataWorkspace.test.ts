@@ -2,7 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { KataTaskAPIError } from "../../api/kata/taskClient.js";
-import type { KataTaskDetail, KataTaskSearchFilters, KataTaskSearchResponse } from "../../api/kata/taskTypes.js";
+import type {
+  KataTaskDetail,
+  KataTaskLink,
+  KataTaskSearchFilters,
+  KataTaskSearchResponse,
+} from "../../api/kata/taskTypes.js";
 import type { KataWorkspaceTarget } from "../../api/kata/workspaces.js";
 import {
   getActiveKataDaemon,
@@ -170,6 +175,47 @@ describe("KataWorkspace", () => {
 
     expect(screen.getByRole("region", { name: "Reachable task graph" })).toBeTruthy();
     expect(screen.getAllByText("Related graph task").length).toBeGreaterThan(0);
+  });
+
+  it("keeps source detail links in the graph after selecting a linked node", async () => {
+    const root = issue("issue-root", "Root graph task", "project-kata");
+    const related = issue("issue-related", "Detail-only graph task", "project-kata");
+    const { api } = createWorkspaceAPI([root, related]);
+    const sourceLink: KataTaskLink = {
+      id: 1,
+      project_id: root.project_id,
+      from: { uid: root.uid, short_id: root.short_id },
+      to: { uid: related.uid, short_id: related.short_id },
+      type: "related",
+      author: "fixture-user",
+      created_at: fetchedAt,
+    };
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+      if (uid === root.uid) {
+        const rootDetail = detail(root.uid, [root, related]);
+        return { ...rootDetail, links: [sourceLink] };
+      }
+      return detail(uid, [root, related]);
+    });
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: root.uid } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    });
+    await fireEvent.click(
+      within(screen.getByRole("region", { name: "Task detail" })).getByRole("button", {
+        name: "Open reachable graph",
+      }),
+    );
+
+    expect(screen.getAllByText("Detail-only graph task").length).toBeGreaterThan(0);
+    await fireEvent.click(graphNodeWithText("Detail-only graph task"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Detail-only graph task" })).toBeTruthy();
+    });
+    expect(screen.getAllByText("Detail-only graph task").length).toBeGreaterThan(0);
   });
 
   it("keeps a graph node selection while the route prop is still stale", async () => {

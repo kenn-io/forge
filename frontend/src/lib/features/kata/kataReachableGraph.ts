@@ -209,11 +209,20 @@ function makeEdge(source: string, target: string, kind: GraphEdgeKind): KataGrap
   };
 }
 
+function edgePairID(source: string, target: string, kind: GraphEdgeKind): string {
+  return [source, target].sort((left, right) => left.localeCompare(right)).join(`:${kind}:`);
+}
+
 function addEdge(edges: Map<string, KataGraphEdge>, source: string, target: string, kind: GraphEdgeKind): void {
   const next = makeEdge(source, target, kind);
-  if (!edges.has(next.id)) {
-    edges.set(next.id, next);
+  if (edges.has(next.id)) return;
+  const nextPairID = edgePairID(source, target, kind);
+  for (const edge of edges.values()) {
+    if (edge.data?.kind === kind && edgePairID(edge.source, edge.target, kind) === nextPairID) {
+      return;
+    }
   }
+  edges.set(next.id, next);
 }
 
 function detailEdges(

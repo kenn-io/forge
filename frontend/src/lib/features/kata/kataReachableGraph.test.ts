@@ -185,6 +185,43 @@ describe("buildKataReachableGraph", () => {
     expect(graph.nodes.filter((node) => node.id !== root.uid).every((node) => node.position.x > 0)).toBe(true);
   });
 
+  it("deduplicates inverse parent and blocking edge declarations", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      parent_short_id: "parent",
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+      blocked_by: [{ uid: "issue-blocked", short_id: "blocked" }],
+    });
+    const parent = task({
+      uid: "issue-parent",
+      short_id: "parent",
+      title: "Parent",
+      parent_short_id: "root",
+    });
+    const blocked = task({
+      uid: "issue-blocked",
+      short_id: "blocked",
+      title: "Blocked",
+      blocks: [{ uid: "issue-root", short_id: "root" }],
+      blocked_by: [{ uid: "issue-root", short_id: "root" }],
+    });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, parent, blocked],
+      selectedDetail: detail(root),
+      hideDone: false,
+    });
+
+    expect(graph.edges.map((edge) => edge.id).sort()).toEqual([
+      "blocks:issue-root:issue-blocked",
+      "parent:issue-parent:issue-root",
+    ]);
+  });
+
   it("marks nodes adjacent to the selected task by relationship direction", () => {
     const root = task({
       uid: "issue-root",
@@ -233,7 +270,6 @@ describe("buildKataReachableGraph", () => {
       uid: "issue-peer",
       short_id: "peer",
       title: "Peer",
-      blocks: [{ uid: "issue-root", short_id: "root" }],
     });
 
     const graph = buildKataReachableGraph({
@@ -244,7 +280,7 @@ describe("buildKataReachableGraph", () => {
       hideDone: false,
     });
 
-    expect(graph.nodes.find((node) => node.id === peer.uid)?.data.adjacentRelation).toBe("blockedBy");
+    expect(graph.nodes.find((node) => node.id === peer.uid)?.data.adjacentRelation).toBe("blocks");
   });
 
   it("keeps node positions stable when cached task order changes", () => {

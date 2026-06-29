@@ -96,6 +96,10 @@ Reachability is computed by walking cached relationships:
 - related edges from `related`;
 - detail edges from `KataTaskDetail.links` for the selected/source task.
 
+Reciprocal parent/child and blocks/blocked_by declarations between the same two
+tasks collapse to one edge. The graph should not render parallel inverse arrows
+for the same relationship kind.
+
 Relationship matching prefers `uid`. When only `short_id` is available, the
 builder resolves it inside the same project. Ambiguous short ids do not select a
 random task; they render an uncached placeholder only when the peer id can still
@@ -186,6 +190,7 @@ Add unit tests for the graph builder:
 - source-only graph;
 - parent and child reachability;
 - blocks, blocked-by, and related reachability;
+- inverse parent/child and blocks/blocked_by declarations dedupe to one edge;
 - placeholder peer handling;
 - done filtering;
 - priority and status node metadata;

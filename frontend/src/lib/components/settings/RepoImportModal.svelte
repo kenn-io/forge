@@ -179,6 +179,14 @@
     if (!submitting) onClose();
   }
 
+  function compareDocumentOrder(left: HTMLElement, right: HTMLElement): number {
+    if (left === right) return 0;
+    const position = left.compareDocumentPosition(right);
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+    return 0;
+  }
+
   function handleKeydown(event: KeyboardEvent): void {
     if (event.key === "Escape") {
       closeIfAllowed();
@@ -193,18 +201,14 @@
       modal.querySelectorAll<HTMLElement>(
         "button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])",
       ),
-    );
+    ).sort(compareDocumentOrder);
     if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (!first || !last) return;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    const currentIndex = focusable.findIndex((el) => el === document.activeElement);
+    const nextIndex = event.shiftKey
+      ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
+      : (currentIndex < 0 || currentIndex === focusable.length - 1 ? 0 : currentIndex + 1);
+    focusable[nextIndex]?.focus();
+    event.preventDefault();
   }
 </script>
 

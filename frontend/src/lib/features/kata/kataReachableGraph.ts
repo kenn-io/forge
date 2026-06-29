@@ -3,6 +3,7 @@ import type { Edge, Node } from "@xyflow/svelte";
 import type { KataLinkPeer, KataTaskDetail, KataTaskLink, KataTaskSummary } from "../../api/kata/taskTypes.js";
 
 export interface KataGraphNodeData extends Record<string, unknown> {
+  label: string;
   title: string;
   idLabel: string;
   projectLabel: string;
@@ -155,6 +156,7 @@ function nodeData(
   if (!task) {
     const label = id.split(":").at(-1) ?? id;
     return {
+      label,
       title: label,
       idLabel: label,
       projectLabel: "",
@@ -167,6 +169,7 @@ function nodeData(
   }
 
   return {
+    label: task.title,
     title: task.title,
     idLabel: task.qualified_id || task.short_id,
     projectLabel: task.project_name,

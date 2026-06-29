@@ -26,6 +26,8 @@ The likely reason PR/issue agents behave well today is incidental but useful: wo
 - Create `internal/workspace/agent_context.go`: build a provider-neutral `AgentContext` from a persisted workspace summary plus optional live task details.
 - Create `internal/workspace/agent_context_test.go`: unit-test context rendering and prompt-injection boundaries.
 - Modify `internal/workspace/manager.go`: render the canonical generated context file after the worktree exists and before the base tmux session starts.
+- Modify `internal/workspace/gitignore.go`: ensure generated workspace context files are ignored by Git, appending a narrow middleman block to the worktree `.gitignore` only when the repo does not already ignore the generated paths.
+- Create `internal/workspace/gitignore_test.go`: unit-test ignore detection and `.gitignore` updates for generated context paths without shelling out to a real provider.
 - Modify `internal/server/huma_routes.go`: render target-specific context just in time before launching workspace runtime agent sessions.
 - Modify `internal/server/kata_workspace.go`: expose a small server-side helper for resolving live Kata task details when available, falling back to stored metadata.
 - Modify `internal/db/types.go` only if the context builder needs an explicit persisted timestamp or source version; otherwise keep DB schema unchanged.
@@ -51,6 +53,12 @@ marker. If a repo-owned `CLAUDE.md` already exists, the Claude path must fall ba
 safe supported mechanism discovered in Task 1, such as a generated local companion file
 or launch-time context argument. If no safe mechanism exists, keep only
 `.middleman/agent-context.md` and surface a warning rather than clobbering the repo file.
+All generated guidance files must be ignored by Git before they are written. The
+writer may add ignore entries for `.middleman/`, `AGENTS.local.md`, and
+`CLAUDE.local.md`; it must not add a blanket `/CLAUDE.md` or `/AGENTS.md` ignore entry
+because those names are legitimate repo-owned instruction files. If Claude only reads a
+root `CLAUDE.md`, prefer a launch argument or ignored companion file instead of
+creating a trackable root file.
 
 Generated guidance must identify the worktree's source, not teach provider-specific
 fetch workflows. The useful prompt is concise source identity such as "this is a
@@ -87,10 +95,10 @@ Use this decision rule:
 
 ```text
 Always generate .middleman/agent-context.md as the canonical workspace context.
-If Claude reads a generated CLAUDE.md and no repo-owned CLAUDE.md exists:
-  generate CLAUDE.md just in time when target_key is claude.
-If a repo-owned CLAUDE.md exists:
-  do not overwrite it; use a proved Claude-supported companion file or launch argument.
+If Claude reads CLAUDE.local.md:
+  generate CLAUDE.local.md just in time when target_key is claude.
+If Claude only reads root CLAUDE.md:
+  do not generate root CLAUDE.md by default; use a launch argument or warning instead.
 If Codex supports AGENTS.local.md:
   generate AGENTS.local.md just in time when target_key is codex.
 If no safe launch-time mechanism exists for an agent:
@@ -276,7 +284,154 @@ go test ./internal/workspace -run TestBuildAgentContext -shuffle=on
 
 Expected: pass.
 
-## Task 3: Write Canonical Context During Setup
+## Task 3: Ensure Generated Context Files Are Gitignored
+
+**Files:**
+- Create: `internal/workspace/gitignore.go`
+- Create: `internal/workspace/gitignore_test.go`
+
+- [ ] **Step 1: Write failing ignore tests**
+
+Add tests that exercise a real temporary Git repository so `git check-ignore`
+behavior matches Git, not a hand-rolled parser:
+
+```go
+func TestEnsureGeneratedContextFilesIgnoredAppendsMissingEntries(t *testing.T) {
+	t.Parallel()
+
+	worktree := initWorkspaceGitRepo(t)
+	require.NoError(t, os.WriteFile(filepath.Join(worktree, ".gitignore"), []byte("dist/\n"), 0o644))
+
+	changed, err := EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
+		".middleman/agent-context.md",
+		"AGENTS.local.md",
+		"CLAUDE.local.md",
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	content, err := os.ReadFile(filepath.Join(worktree, ".gitignore"))
+	require.NoError(t, err)
+	text := string(content)
+	assert.Contains(t, text, "dist/\n")
+	assert.Contains(t, text, "# middleman generated agent context")
+	assert.Contains(t, text, "/.middleman/")
+	assert.Contains(t, text, "/AGENTS.local.md")
+	assert.Contains(t, text, "/CLAUDE.local.md")
+	assert.NotContains(t, text, "/CLAUDE.md")
+	assert.NotContains(t, text, "/AGENTS.md")
+	assertGitIgnored(t, worktree, ".middleman/agent-context.md")
+	assertGitIgnored(t, worktree, "AGENTS.local.md")
+	assertGitIgnored(t, worktree, "CLAUDE.local.md")
+}
+
+func TestEnsureGeneratedContextFilesIgnoredLeavesExistingIgnoresAlone(t *testing.T) {
+	t.Parallel()
+
+	worktree := initWorkspaceGitRepo(t)
+	initial := "/.middleman/\n/AGENTS.local.md\n/CLAUDE.local.md\n"
+	require.NoError(t, os.WriteFile(filepath.Join(worktree, ".gitignore"), []byte(initial), 0o644))
+
+	changed, err := EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
+		".middleman/agent-context.md",
+		"AGENTS.local.md",
+		"CLAUDE.local.md",
+	})
+	require.NoError(t, err)
+	require.False(t, changed)
+
+	content, err := os.ReadFile(filepath.Join(worktree, ".gitignore"))
+	require.NoError(t, err)
+	assert.Equal(t, initial, string(content))
+}
+```
+
+Use these helpers in the same test file:
+
+```go
+func initWorkspaceGitRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	runWorkspaceTestGit(t, dir, "init", "--initial-branch=main")
+	runWorkspaceTestGit(t, dir, "config", "user.email", "test@example.test")
+	runWorkspaceTestGit(t, dir, "config", "user.name", "Test User")
+	return dir
+}
+
+func assertGitIgnored(t *testing.T, dir, rel string) {
+	t.Helper()
+	runWorkspaceTestGit(t, dir, "check-ignore", "--quiet", "--", rel)
+}
+```
+
+- [ ] **Step 2: Run red**
+
+Run:
+
+```bash
+go test ./internal/workspace -run TestEnsureGeneratedContextFilesIgnored -shuffle=on
+```
+
+Expected: fail because `EnsureGeneratedContextFilesIgnored` does not exist.
+
+- [ ] **Step 3: Implement the ignore helper**
+
+Create `internal/workspace/gitignore.go` with this public package helper:
+
+```go
+var generatedContextIgnorePatterns = []string{
+	"/.middleman/",
+	"/AGENTS.local.md",
+	"/CLAUDE.local.md",
+}
+
+func EnsureGeneratedContextFilesIgnored(
+	ctx context.Context,
+	worktreePath string,
+	generatedRelPaths []string,
+) (bool, error) {
+	missing := make([]string, 0, len(generatedRelPaths))
+	for _, rel := range generatedRelPaths {
+		if rel == "AGENTS.md" || rel == "CLAUDE.md" {
+			return false, fmt.Errorf("refusing to add root instruction file to generated ignore list: %s", rel)
+		}
+		_, err := gitCombinedOutput(ctx, worktreePath, "check-ignore", "--quiet", "--", rel)
+		if err != nil {
+			missing = append(missing, rel)
+		}
+	}
+	if len(missing) == 0 {
+		return false, nil
+	}
+
+	gitignorePath := filepath.Join(worktreePath, ".gitignore")
+	block := "\n# middleman generated agent context\n" + strings.Join(generatedContextIgnorePatterns, "\n") + "\n"
+	f, err := os.OpenFile(gitignorePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(block); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+```
+
+Preserve the guard that rejects root `AGENTS.md` and `CLAUDE.md`; generated
+root instruction filenames are not safe to gitignore globally.
+
+- [ ] **Step 4: Run green**
+
+Run:
+
+```bash
+go test ./internal/workspace -run TestEnsureGeneratedContextFilesIgnored -shuffle=on
+```
+
+Expected: pass.
+
+## Task 4: Write Canonical Context During Setup
 
 **Files:**
 - Modify: `internal/workspace/manager.go`
@@ -285,7 +440,7 @@ Expected: pass.
 
 - [ ] **Step 1: Write failing setup tests**
 
-Add tests that create a ready worktree for each owner type in a fixture repository without repo-owned agent files, then assert canonical context exists after `Setup` succeeds:
+Add tests that create a ready worktree for each owner type in a fixture repository without repo-owned agent files, then assert canonical context exists after `Setup` succeeds and the generated context path is ignored:
 
 ```go
 assert.FileExists(filepath.Join(ws.WorktreePath, ".middleman", "agent-context.md"))
@@ -293,6 +448,7 @@ content, err := os.ReadFile(filepath.Join(ws.WorktreePath, ".middleman", "agent-
 require.NoError(err)
 assert.Contains(string(content), "Source kind: Kata task")
 assert.Contains(string(content), "Kata daemon:")
+assertGitIgnored(t, ws.WorktreePath, ".middleman/agent-context.md")
 assert.NoFileExists(filepath.Join(ws.WorktreePath, "CLAUDE.md"))
 assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.local.md"))
 ```
@@ -309,7 +465,18 @@ Expected: fail because setup does not write canonical context.
 
 - [ ] **Step 3: Implement setup-time write**
 
-After `addWorktree` or `reuseExistingWorkspaceWorktree` succeeds and before `newTerminalSession`, load the workspace summary from DB, build `AgentContext`, and write the canonical file atomically:
+After `addWorktree` or `reuseExistingWorkspaceWorktree` succeeds and before `newTerminalSession`, load the workspace summary from DB, build `AgentContext`, ensure the generated file is ignored, and write the canonical file atomically:
+
+```go
+_, err := EnsureGeneratedContextFilesIgnored(ctx, ws.WorktreePath, []string{
+	".middleman/agent-context.md",
+})
+if err != nil {
+	return err
+}
+```
+
+Write:
 
 ```text
 worktree/.middleman/agent-context.md
@@ -319,7 +486,7 @@ Use `os.MkdirAll`, write to a temp file in the target directory, `fsync` if the 
 
 - [ ] **Step 4: Keep setup failure behavior explicit**
 
-If canonical context write fails, fail workspace setup before marking the workspace ready. A ready workspace whose agents lack the canonical generated context is worse than an actionable setup error.
+If ignore setup or canonical context write fails, fail workspace setup before marking the workspace ready. A ready workspace whose agents lack ignored canonical generated context is worse than an actionable setup error.
 
 - [ ] **Step 5: Run green**
 
@@ -331,7 +498,7 @@ go test ./internal/workspace -run 'Test.*AgentContext.*Setup|Test.*Kata.*Setup' 
 
 Expected: pass.
 
-## Task 4: Render Target-Specific Context Before Launching Agents
+## Task 5: Render Target-Specific Context Before Launching Agents
 
 **Files:**
 - Modify: `internal/server/huma_routes.go`
@@ -348,7 +515,8 @@ Use a fake runtime manager or fake agent command that records the file content i
 assert.Contains(recordedContext, "Source kind: Kata task")
 assert.Contains(recordedContext, "Issue UID: issue-kata-1")
 assert.FileExists(filepath.Join(ws.WorktreePath, ".middleman", "agent-context.md"))
-assert.FileExists(filepath.Join(ws.WorktreePath, "CLAUDE.md")) // only after launching target_key "claude" when safe
+assert.FileExists(filepath.Join(ws.WorktreePath, "CLAUDE.local.md")) // only after launching target_key "claude" when Task 1 proves support
+assertGitIgnored(t, ws.WorktreePath, "CLAUDE.local.md")
 assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.local.md"))
 ```
 
@@ -405,7 +573,28 @@ err := s.workspaces.PrepareAgentLaunchContext(ctx, workspace.PrepareAgentLaunchC
 })
 ```
 
-Only run this for `LaunchTargetAgent` targets. Plain shell and host/project worktree runtime sessions should not be changed by this task. The Claude branch may create generated `CLAUDE.md` just in time, but only when the path is absent or already carries the middleman generated marker.
+Only run this for `LaunchTargetAgent` targets. Plain shell and host/project worktree runtime sessions should not be changed by this task. The Claude branch may create `CLAUDE.local.md` just in time only if Task 1 proves Claude reads it; otherwise it should use a launch argument or surface a warning rather than writing root `CLAUDE.md`.
+
+Inside `PrepareAgentLaunchContext`, call the ignore helper before writing the selected
+target's `.local.md` file. In this snippet, `claudeLocalSupported` is the persisted or
+constant result from the Task 1 probe that proves the installed Claude target reads
+`CLAUDE.local.md`:
+
+```go
+generatedRelPaths := []string{".middleman/agent-context.md"}
+if targetKey == "codex" {
+	generatedRelPaths = append(generatedRelPaths, "AGENTS.local.md")
+}
+if targetKey == "claude" && claudeLocalSupported {
+	generatedRelPaths = append(generatedRelPaths, "CLAUDE.local.md")
+}
+_, err := EnsureGeneratedContextFilesIgnored(ctx, worktree.Path, generatedRelPaths)
+if err != nil {
+	return err
+}
+```
+
+Do not call `EnsureGeneratedContextFilesIgnored` with `CLAUDE.md` or `AGENTS.md`.
 
 - [ ] **Step 4: Fetch live Kata detail opportunistically**
 
@@ -427,7 +616,7 @@ go test ./internal/server -run 'Test.*WorkspaceRuntime.*AgentContext' -shuffle=o
 
 Expected: pass.
 
-## Task 5: Protect Against Prompt Injection And Dirty Worktrees
+## Task 6: Protect Against Prompt Injection And Dirty Worktrees
 
 **Files:**
 - Modify: `internal/workspace/agent_context.go`
@@ -455,7 +644,7 @@ Every generated file should start with:
 
 - [ ] **Step 3: Avoid overwriting user-owned files**
 
-If `AGENTS.local.md`, `CLAUDE.local.md`, or `CLAUDE.md` already exists and does not contain the generated marker, do not overwrite it. Write only `.middleman/agent-context.md` and add a warning event to the workspace setup or launch result.
+If `AGENTS.local.md` or `CLAUDE.local.md` already exists and does not contain the generated marker, do not overwrite it. Never overwrite root `AGENTS.md` or `CLAUDE.md`. Write only `.middleman/agent-context.md` and add a warning event to the workspace setup or launch result.
 
 - [ ] **Step 4: Document the behavior**
 
@@ -466,9 +655,11 @@ Add to `context/workspace-apis.md`:
 
 Workspace setup writes the canonical generated context file at
 `.middleman/agent-context.md`. Agent-specific files are generated just in time
-when the user launches that target, such as a safe generated `CLAUDE.md` for the
-Claude target. Middleman never overwrites checked-in or user-owned `AGENTS.md`
-or `CLAUDE.md`.
+when the user launches that target, such as a safe generated `CLAUDE.local.md`
+for the Claude target if Task 1 proves Claude reads it. Middleman ensures
+generated `.middleman/`, `AGENTS.local.md`, and `CLAUDE.local.md` paths are
+ignored by Git before writing them. Middleman never overwrites checked-in or
+user-owned `AGENTS.md` or `CLAUDE.md`.
 ```
 
 - [ ] **Step 5: Run focused tests**
@@ -481,7 +672,7 @@ go test ./internal/workspace ./internal/server -run 'AgentContext|WorkspaceRunti
 
 Expected: pass.
 
-## Task 6: Verify End To End
+## Task 7: Verify End To End
 
 **Files:**
 - Modify only tests if gaps are found.
@@ -536,6 +727,6 @@ Expected: the agent identifies `pull request`, `provider issue`, or `Kata task` 
 
 ## Open Decisions
 
-- The exact agent-specific filenames depend on Task 1. Do not rely on `AGENTS.local.md`, `CLAUDE.local.md`, or generated `CLAUDE.md` until a probe proves the current installed agents read them and the writer can avoid clobbering repo-owned files.
+- The exact agent-specific filenames depend on Task 1. Do not rely on `AGENTS.local.md` or `CLAUDE.local.md` until a probe proves the current installed agents read them. Avoid generated root `CLAUDE.md` or `AGENTS.md` because they cannot be safely gitignored without blocking legitimate repo-owned instruction files.
 - The first implementation should avoid API changes. Add a visible context status only if setup warnings prove users need to see when agent-specific files were skipped.
 - Do not force arbitrary project worktree sessions through this model yet; keep scope to middleman-owned workspaces for PRs, provider issues, and Kata tasks.

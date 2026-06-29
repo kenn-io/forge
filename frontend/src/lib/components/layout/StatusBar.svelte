@@ -84,6 +84,13 @@
     return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
   }
 
+  function activityLifecycleState(item: ActivityItem): string {
+    if (item.activity_type === "notification") {
+      return item.subject_state || item.item_state;
+    }
+    return item.item_state;
+  }
+
   const globalCounts = $derived.by((): StatusCounts => {
     const repos = new Set<string>();
     for (const pr of openPulls) repos.add(repoKey(pr));
@@ -107,10 +114,11 @@
       if (itemFilter === "prs" && item.item_type !== "pr") continue;
       if (itemFilter === "issues" && item.item_type !== "issue") continue;
 
+      const lifecycleState = activityLifecycleState(item);
       const isOpenPullRequest = item.item_type === "pr"
-        && item.item_state === "open";
+        && lifecycleState === "open";
       const isOpenIssue = item.item_type === "issue"
-        && item.item_state === "open";
+        && lifecycleState === "open";
 
       if (isOpenPullRequest) {
         pullRequests.add(activityItemKey(item));

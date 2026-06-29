@@ -24,17 +24,17 @@ CI runs the live GraphQL validation as a separate Go test step using the workflo
 
 ## CI path-gated test jobs
 
-CI uses top-level workflow `paths` filters, not in-workflow changed-file
-detector jobs. `.github/workflows/ci-go-tests.yml` owns Go unit/integration
-and race tests for backend/runtime inputs: Go files, Go modules, migrations,
-generated API client inputs, embedded web assets, and integration fixtures.
-`.github/workflows/ci-pty-windows.yml` owns the Windows PTY lane and includes
-both Go inputs and Rust workspace inputs. `.github/workflows/ci.yml` owns
-frontend, browser, build, and full-stack e2e lanes and runs for either
-backend/runtime inputs or frontend/e2e harness inputs, because backend/API
-behavior can affect the SPA contract even when no TypeScript files moved.
-Manual `workflow_dispatch` remains available on each workflow for a forced
-test pass.
+The CI workflow classifies changed paths once in `.github/workflows/ci.yml::detect_changes`
+and uses that result to gate expensive test jobs. Keep the path buckets
+runtime-oriented rather than extension-only: the backend bucket includes Go
+files, Go modules, migrations, generated API client inputs, embedded web
+assets, and integration fixtures; the Rust bucket includes root Cargo manifests
+and the Rust workspace; the e2e bucket includes Playwright config, e2e tests,
+scripts, and integration fixtures. Frontend unit, browser, and Playwright e2e
+jobs run when either frontend paths change or backend paths change, because
+backend/API behavior can affect the SPA contract even when no TypeScript files
+moved. Manual `workflow_dispatch` forces all buckets on so maintainers can
+request a full test pass.
 
 ## Provider work
 

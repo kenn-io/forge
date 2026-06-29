@@ -98,6 +98,71 @@ describe("KataWorkspace", () => {
     });
   });
 
+  it("opens a reachable graph from the task list and keeps task selection active", async () => {
+    const root = {
+      ...issue("issue-root", "Root graph task", "project-kata"),
+      priority: 0,
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+    };
+    const blocked = {
+      ...issue("issue-blocked", "Blocked follow-up", "project-kata"),
+      priority: 2,
+    };
+    const { api } = createWorkspaceAPI([root, blocked]);
+
+    render(KataWorkspace, { props: { api } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Root graph task/ })).toBeTruthy();
+    });
+    const rootRow = screen.getByRole("button", { name: /Root graph task/ });
+    const rootFrame = rootRow.parentElement;
+    expect(rootFrame).toBeTruthy();
+    await fireEvent.click(within(rootFrame!).getByRole("button", { name: "Open reachable graph" }));
+
+    expect(screen.getByRole("region", { name: "Reachable task graph" })).toBeTruthy();
+    expect(screen.queryByLabelText("Search tasks")).toBeNull();
+    expect(screen.getAllByText("Root graph task").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Blocked follow-up").length).toBeGreaterThan(0);
+    expect(screen.getByText("P0")).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: /Blocked follow-up/ }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
+    });
+    expect(api.issue).toHaveBeenCalledWith(
+      "issue-blocked",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: "Back to task list" }));
+    expect(screen.getByLabelText("Search tasks")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Reachable task graph" })).toBeNull();
+  });
+
+  it("opens a reachable graph from the task detail toolbar", async () => {
+    const root = {
+      ...issue("issue-root", "Root graph task", "project-kata"),
+      related: [{ uid: "issue-related", short_id: "related" }],
+    };
+    const related = issue("issue-related", "Related graph task", "project-kata");
+    const { api } = createWorkspaceAPI([root, related]);
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: root.uid } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    });
+    await fireEvent.click(
+      within(screen.getByRole("region", { name: "Task detail" })).getByRole("button", {
+        name: "Open reachable graph",
+      }),
+    );
+
+    expect(screen.getByRole("region", { name: "Reachable task graph" })).toBeTruthy();
+    expect(screen.getAllByText("Related graph task").length).toBeGreaterThan(0);
+  });
+
   it("opens system views without auto-selecting the first task", async () => {
     const rows = initialIssues.map((item) => (item.uid === "issue-pay-rent" ? { ...item, project_name: "" } : item));
     const { api } = createWorkspaceAPI(rows);

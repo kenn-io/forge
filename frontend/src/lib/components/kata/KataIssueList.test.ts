@@ -117,7 +117,10 @@ describe("KataIssueList", () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Open reachable graph for Pay rent" }));
+    const row = screen.getByRole("button", { name: /Pay rent/ });
+    const frame = row.parentElement;
+    expect(frame).toBeTruthy();
+    await fireEvent.click(within(frame!).getByRole("button", { name: "Open reachable graph" }));
 
     expect(onOpenGraph).toHaveBeenCalledWith(baseIssues[0]);
     expect(onSelect).not.toHaveBeenCalled();

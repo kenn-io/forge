@@ -40,6 +40,7 @@
   import { navigate } from "../../stores/router.svelte.js";
   import { createKataWorkspaceStore } from "../../stores/kata-workspace.svelte.js";
   import KataDaemonSwitcher from "./KataDaemonSwitcher.svelte";
+  import KataReachableGraph from "./KataReachableGraph.svelte";
   import KataRecurrenceDialogs from "./KataRecurrenceDialogs.svelte";
   import KataSearchPanel from "./KataSearchPanel.svelte";
   import { createKataEventStreamController } from "./kataEventStreamController.js";
@@ -71,6 +72,7 @@
 
   type SplitOrientation = "vertical" | "horizontal";
   type FailureSurface = "request" | "daemon" | "none";
+  type ListMode = "tasks" | "reachableGraph";
 
   let {
     api = undefined,
@@ -100,6 +102,8 @@
   let workspaceActionBusy = $state(false);
   let workspaceTargetKey: string | null = null;
   let workspaceTargetRequestID = 0;
+  let listMode = $state<ListMode>("tasks");
+  let graphSourceUID = $state<string | null>(null);
   const store = createKataWorkspaceStore({ api: untrack(() => api) });
   const actor = "middleman";
   let syncedRouteIssueUID = $state<string | null>(null);
@@ -327,6 +331,7 @@
     issueUID: string | null,
   ): Promise<void> {
     const generation = beginNavigation();
+    closeReachableGraph();
     store.invalidatePendingLoads();
     resetDetailDrafts();
     store.resetSearchFilters();
@@ -529,6 +534,7 @@
   async function updateSearchFilters(filters: Partial<KataTaskSearchFilters>): Promise<void> {
     const generation = beginNavigation();
     const nextStatus = filters.status ?? store.searchFilters.status;
+    closeReachableGraph();
     resetDetailDrafts();
     // Same rationale as openRoutedProjectScope: a pending detail load is
     // abandoned by the filter reload, so drop it before awaiting.
@@ -553,6 +559,7 @@
 
   async function openRoutedSystemView(viewName: KataTaskViewName): Promise<void> {
     const generation = beginNavigation();
+    closeReachableGraph();
     resetDetailDrafts();
     store.resetSearchFilters();
     // Clear (and thereby abort) the abandoned selection before awaiting
@@ -574,6 +581,7 @@
 
   async function openRoutedProjectScope(projectUID: string): Promise<void> {
     const generation = beginNavigation();
+    closeReachableGraph();
     resetDetailDrafts();
     // Scope changes keep a completed selection but abandon an in-flight
     // one (the scoped reload re-selects from selectedIssue, which a
@@ -606,6 +614,7 @@
 
   async function submitQuickCapture(title: string): Promise<void> {
     await runViewTaskOrThrow(async () => {
+      closeReachableGraph();
       resetDetailDrafts();
       await store.captureIssue(actor, { title });
     });
@@ -621,6 +630,7 @@
     const previousFilters = store.searchFilters;
     const previousIssueUID = store.selectedIssue?.issue.uid ?? null;
     switchingDaemon = true;
+    closeReachableGraph();
     resetDetailDrafts();
     resetIssueExpansion();
     // The switch abandons any in-flight detail load (only a completed
@@ -684,6 +694,17 @@
       syncedRouteIssueUID = uid;
     }
     if (notify) onSelectedIssueChange?.(uid);
+  }
+
+  function openReachableGraph(issue: KataTaskSummary): void {
+    store.rememberTasks([issue]);
+    graphSourceUID = issue.uid;
+    listMode = "reachableGraph";
+  }
+
+  function closeReachableGraph(): void {
+    listMode = "tasks";
+    graphSourceUID = null;
   }
 
   async function moveSelectedIssue(toProjectUID: string | null): Promise<void> {
@@ -911,28 +932,42 @@
 
 {#snippet listPane()}
   <div class="list-column kata-list">
-    <KataSearchPanel
-      filters={store.searchFilters}
-      projects={store.projects}
-      duplicateCandidates={store.duplicateCandidates}
-      onChange={updateSearchFilters}
-    />
-    {#key `${activeKataDaemonId ?? ""}:${listResetGeneration}`}
-      <KataIssueList
-        currentView={store.currentView}
-        scopeLabel={listTitle()}
-        scopedProjectName={selectedProjectName()}
-        selectedIssueUID={store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null}
-        loading={viewLoading}
-        statusFilter={listStatusFilter}
-        resetGeneration={listResetGeneration}
-        navigationGeneration={navigationEpoch}
-        api={store.api}
-        onSelect={(issue) => {
-          void selectIssue(issue.uid);
+    {#if listMode === "reachableGraph" && graphSourceUID}
+      <KataReachableGraph
+        sourceUID={graphSourceUID}
+        selectedUID={store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null}
+        tasks={store.cachedTasks}
+        selectedDetail={store.selectedIssue}
+        onBack={closeReachableGraph}
+        onSelectIssue={(uid) => {
+          void selectIssue(uid);
         }}
       />
-    {/key}
+    {:else}
+      <KataSearchPanel
+        filters={store.searchFilters}
+        projects={store.projects}
+        duplicateCandidates={store.duplicateCandidates}
+        onChange={updateSearchFilters}
+      />
+      {#key `${activeKataDaemonId ?? ""}:${listResetGeneration}`}
+        <KataIssueList
+          currentView={store.currentView}
+          scopeLabel={listTitle()}
+          scopedProjectName={selectedProjectName()}
+          selectedIssueUID={store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null}
+          loading={viewLoading}
+          statusFilter={listStatusFilter}
+          resetGeneration={listResetGeneration}
+          navigationGeneration={navigationEpoch}
+          api={store.api}
+          onSelect={(issue) => {
+            void selectIssue(issue.uid);
+          }}
+          onOpenGraph={openReachableGraph}
+        />
+      {/key}
+    {/if}
   </div>
 {/snippet}
 
@@ -980,6 +1015,7 @@
       onSelectIssue={(uid) => {
         void selectIssue(uid);
       }}
+      onOpenGraph={openReachableGraph}
       workspaceAction={selectedWorkspaceAction()}
     />
   {:else}

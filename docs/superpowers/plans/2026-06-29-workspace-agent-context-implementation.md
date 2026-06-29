@@ -52,6 +52,14 @@ safe supported mechanism discovered in Task 1, such as a generated local compani
 or launch-time context argument. If no safe mechanism exists, keep only
 `.middleman/agent-context.md` and surface a warning rather than clobbering the repo file.
 
+Generated guidance must identify the worktree's source, not teach provider-specific
+fetch workflows. The useful prompt is concise source identity such as "this is a
+worktree for fixing GitLab issue #888 in gitlab.example.test/acme/widget", plus the
+source URL and any known associated pull or merge request. Do not embed long
+instructions about how to call `gh`, `glab`, provider REST APIs, or Kata commands;
+middleman should resolve the stable workspace facts it already knows and let the agent
+decide whether it needs to inspect the forge further.
+
 ## Task 1: Prove Agent File Semantics
 
 **Files:**
@@ -161,6 +169,36 @@ func TestBuildAgentContext(t *testing.T) {
 			want: []string{"Source kind: Kata task", "Kata daemon: home", "KAT-12"},
 		},
 	}
+}
+```
+
+Add a rendering test that proves source identity is enough without provider-fetch
+guidance:
+
+```go
+func TestRenderAgentContextUsesConciseSourceIdentity(t *testing.T) {
+	t.Parallel()
+
+	rendered := RenderAgentContext(AgentContext{
+		SourceKind:   AgentSourceKindProviderIssue,
+		Provider:     "gitlab",
+		PlatformHost: "gitlab.example.test",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemNumber:   888,
+		Title:        "Fix refresh timeout",
+		URL:          "https://gitlab.example.test/acme/widget/-/issues/888",
+	})
+
+	assert.Contains(t, rendered, "Repository: gitlab.example.test/acme/widget")
+	assert.Contains(t, rendered, "Source kind: provider issue")
+	assert.Contains(t, rendered, "Issue: #888")
+	assert.Contains(t, rendered, "Fix refresh timeout")
+	assert.Contains(t, rendered, "https://gitlab.example.test/acme/widget/-/issues/888")
+	assert.NotContains(t, rendered, "gh issue view")
+	assert.NotContains(t, rendered, "glab issue view")
+	assert.NotContains(t, rendered, "curl")
+	assert.NotContains(t, rendered, "REST API")
 }
 ```
 

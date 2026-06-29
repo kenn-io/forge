@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mockRefreshSyncStatus = vi.fn();
 
-vi.mock("@middleman/ui", () => ({
+vi.mock("@middleman/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@middleman/ui")>()),
   getStores: () => ({
     sync: {
       refreshSyncStatus: mockRefreshSyncStatus,

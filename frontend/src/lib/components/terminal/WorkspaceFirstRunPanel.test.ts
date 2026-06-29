@@ -295,10 +295,8 @@ describe("WorkspaceFirstRunPanel", () => {
         name: /Connect a GitHub repository/i,
       }),
     );
-    const repoSelect = await screen.findByLabelText("GitHub repository");
-    await fireEvent.change(repoSelect, {
-      target: { value: "octo/two" },
-    });
+    await fireEvent.click(await screen.findByRole("combobox", { name: /GitHub repository/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "octo/two" }));
     await fireEvent.input(screen.getByLabelText("Destination path"), {
       target: { value: "/tmp/two" },
     });

@@ -4,7 +4,7 @@
   import FlagIcon from "@lucide/svelte/icons/flag";
   import UserIcon from "@lucide/svelte/icons/user-round";
   import XIcon from "@lucide/svelte/icons/x";
-  import { ActionButton, Chip } from "@middleman/ui";
+  import { ActionButton, Chip, SelectDropdown } from "@middleman/ui";
   import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
   import DatePicker from "../shared/DatePicker.svelte";
   import TypeaheadTrigger, { type TypeaheadOption } from "../shared/TypeaheadTrigger.svelte";
@@ -247,23 +247,20 @@
   </div>
 
   {#if activeProperty === "priority"}
-    <label class="property-pill property-pill--editing">
+    <div class="property-pill property-pill--editing property-pill--select" role="group" aria-label="Edit priority">
       <FlagIcon size={13} strokeWidth={1.8} />
       <span>Priority</span>
-      <select
-        aria-label="Priority"
+      <SelectDropdown
+        title="Priority"
         value={issue.issue.priority === undefined || issue.issue.priority === null
           ? ""
           : String(issue.issue.priority)}
-        onchange={(event) => {
-          void updatePriority(event.currentTarget.value);
+        options={priorityOptions}
+        onchange={(value) => {
+          void updatePriority(value);
         }}
-      >
-        {#each priorityOptions as option (option.value)}
-          <option value={option.value}>{option.label}</option>
-        {/each}
-      </select>
-    </label>
+      />
+    </div>
   {:else}
     <button type="button" class="property-pill" aria-label="Edit priority" onclick={() => openProperty("priority")}>
       <FlagIcon size={13} strokeWidth={1.8} />
@@ -420,15 +417,21 @@
     background: var(--bg-surface-hover);
   }
 
-  .property-pill select {
-    min-height: 22px;
-    min-width: 0;
-    border: 0;
-    border-radius: 4px;
+  .property-pill--select :global(.select-dropdown) {
+    min-width: 104px;
+  }
+
+  .property-pill--select :global(.select-dropdown-trigger) {
+    height: 22px;
+    border-color: transparent;
     background: transparent;
     color: var(--text-primary);
-    font: inherit;
-    font-size: var(--font-size-sm);
+  }
+
+  .property-pill--select :global(.select-dropdown-trigger:hover:not(:disabled)),
+  .property-pill--select :global(.select-dropdown-trigger[aria-expanded="true"]) {
+    border-color: var(--border-default);
+    background: var(--bg-inset);
   }
 
   .detail-properties {

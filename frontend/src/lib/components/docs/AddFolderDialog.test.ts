@@ -80,7 +80,8 @@ describe("AddFolderDialog", () => {
     renderDialog({ api });
     await waitFor(() => screen.getByText("Documents"));
 
-    await fireEvent.change(screen.getByLabelText("Daemon"), { target: { value: "work" } });
+    await fireEvent.click(screen.getByRole("combobox", { name: /Daemon/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "work" }));
     const input = screen.getByPlaceholderText("~/Notes") as HTMLInputElement;
     await fireEvent.input(input, { target: { value: "/mock/shared-notes" } });
     await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
@@ -111,7 +112,8 @@ describe("AddFolderDialog", () => {
     renderDialog({ api });
     await waitFor(() => screen.getByText("Documents"));
 
-    await fireEvent.change(screen.getByLabelText("Daemon"), { target: { value: "work" } });
+    await fireEvent.click(screen.getByRole("combobox", { name: /Daemon/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "work" }));
     setKataDaemonRoster(["home"], "home");
     const input = screen.getByPlaceholderText("~/Notes") as HTMLInputElement;
     await fireEvent.input(input, { target: { value: "/mock/shared-notes" } });

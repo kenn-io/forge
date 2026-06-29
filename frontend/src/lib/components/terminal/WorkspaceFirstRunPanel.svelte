@@ -14,6 +14,7 @@
     loadSnapshotHosts,
     type HostSummary,
   } from "../../api/fleet-snapshot.ts";
+  import { SelectDropdown } from "@middleman/ui";
   import {
     emitWorkspaceCommand,
     getWorkspaceData,
@@ -152,6 +153,12 @@
     githubRepos.find(
       (repo) => repo.name_with_owner === selectedGithubRepo,
     ),
+  );
+  const githubRepoOptions = $derived(
+    filteredRepos.map((repo) => ({
+      value: repo.name_with_owner,
+      label: repo.name_with_owner,
+    })),
   );
 
   function isDisabled(definition: ActionDefinition): boolean {
@@ -472,16 +479,13 @@
             </label>
             <label class="first-run-field">
               <span>GitHub repository</span>
-              <select
-                bind:value={selectedGithubRepo}
+              <SelectDropdown
+                title="GitHub repository"
+                value={selectedGithubRepo}
+                options={githubRepoOptions}
+                onchange={(value) => { selectedGithubRepo = value; }}
                 disabled={inFlight}
-              >
-                {#each filteredRepos as repo (repo.name_with_owner)}
-                  <option value={repo.name_with_owner}>
-                    {repo.name_with_owner}
-                  </option>
-                {/each}
-              </select>
+              />
             </label>
             <label class="first-run-field">
               <span>Destination path</span>
@@ -666,8 +670,7 @@
     font-weight: 600;
   }
 
-  .first-run-field input,
-  .first-run-field select {
+  .first-run-field input {
     box-sizing: border-box;
     width: 100%;
     border: 1px solid var(--border-default);
@@ -679,9 +682,19 @@
     padding: 8px 10px;
   }
 
-  .first-run-field input:disabled,
-  .first-run-field select:disabled {
+  .first-run-field input:disabled {
     opacity: 0.6;
+  }
+
+  .first-run-field :global(.select-dropdown) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .first-run-field :global(.select-dropdown-trigger) {
+    height: 36px;
+    font-size: var(--font-size-sm);
+    font-weight: 400;
   }
 
   .first-run-form__buttons {

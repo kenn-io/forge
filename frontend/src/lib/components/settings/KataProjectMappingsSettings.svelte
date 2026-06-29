@@ -2,7 +2,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import { ActionButton } from "@middleman/ui";
+  import { ActionButton, SelectDropdown } from "@middleman/ui";
   import type {
     ConfigRepo,
     KataProjectRepoMapping,
@@ -51,6 +51,9 @@
       .sort((left, right) => left.label.localeCompare(right.label)),
   );
   const repoOptionsByKey = $derived.by(() => new Map(repoOptions.map((option) => [option.key, option])));
+  const repoSelectOptions = $derived(
+    repoOptions.map((option) => ({ value: option.key, label: option.label })),
+  );
   const pendingMappings = $derived(buildPendingMappings());
   const isDirty = $derived(
     JSON.stringify(pendingMappings) !== JSON.stringify(currentMappings),
@@ -234,15 +237,13 @@
                   />
                 </td>
                 <td>
-                  <select
-                    bind:value={draft.repoKey}
+                  <SelectDropdown
+                    title={`Kata project ${label} repository`}
+                    value={draft.repoKey}
+                    options={repoSelectOptions}
+                    onchange={(value) => { draft.repoKey = value; }}
                     disabled={embedded || saving}
-                    aria-label={`Kata project ${label} repository`}
-                  >
-                    {#each repoOptions as option (option.key)}
-                      <option value={option.key}>{option.label}</option>
-                    {/each}
-                  </select>
+                  />
                 </td>
                 <td class="action-cell">
                   <ActionButton
@@ -365,8 +366,7 @@
     background: var(--bg-inset);
   }
 
-  .mapping-table input,
-  .mapping-table select {
+  .mapping-table input {
     width: 100%;
     min-height: 30px;
     padding: 4px 8px;
@@ -378,10 +378,20 @@
     font-weight: 400;
   }
 
-  .mapping-table input:disabled,
-  .mapping-table select:disabled {
+  .mapping-table input:disabled {
     color: var(--text-muted);
     background: var(--bg-inset);
+  }
+
+  .mapping-table :global(.select-dropdown) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .mapping-table :global(.select-dropdown-trigger) {
+    height: 30px;
+    font-size: var(--font-size-sm);
+    font-weight: 400;
   }
 
   .daemon-col {

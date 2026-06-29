@@ -4410,7 +4410,8 @@ test("kata detail properties mutate through the configured external daemon", asy
     expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.owner).toBeUndefined();
 
     await detail.getByRole("button", { name: "Edit priority" }).click();
-    await detail.getByLabel("Priority", { exact: true }).selectOption("2");
+    await detail.getByRole("combobox", { name: /Priority/ }).click();
+    await detail.getByRole("option", { name: "P2" }).click();
     await expect(detail.getByRole("button", { name: "Edit priority" })).toContainText("P2");
     await expect
       .poll(() => backend.state.seenPaths)

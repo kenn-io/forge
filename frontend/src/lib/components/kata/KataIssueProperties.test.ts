@@ -161,9 +161,8 @@ describe("KataIssueProperties", () => {
     expect(onPatchMetadata).toHaveBeenCalledWith("issue-1", { deadline_on: "2026-06-08" });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit priority" }));
-    await fireEvent.change(screen.getByLabelText("Priority"), {
-      target: { value: "1" },
-    });
+    await fireEvent.click(screen.getByRole("combobox", { name: /Priority/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "P1" }));
 
     expect(onSetPriority).toHaveBeenCalledWith("issue-1", 1);
   });
@@ -282,7 +281,8 @@ describe("KataIssueProperties", () => {
     renderProperties({ issue: makeIssue({ priority: 2 }), onSetPriority });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit priority" }));
-    await fireEvent.change(screen.getByLabelText("Priority"), { target: { value: "" } });
+    await fireEvent.click(screen.getByRole("combobox", { name: /Priority/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "No priority" }));
 
     expect(onSetPriority).toHaveBeenCalledWith("issue-1", null);
   });

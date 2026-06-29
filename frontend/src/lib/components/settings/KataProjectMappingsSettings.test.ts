@@ -81,6 +81,7 @@ describe("KataProjectMappingsSettings", () => {
       target: { value: "project-kata" },
     });
 
+    await fireEvent.click(screen.getByRole("combobox", { name: /repository/ }));
     expect(screen.getByRole("option", { name: "github / github.com / kenn-io/middleman" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "github / github.com / kenn-io/*" })).toBeNull();
 

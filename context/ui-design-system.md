@@ -146,7 +146,7 @@ Intent:
 - avoid mixing browser-native select styling with custom app dropdowns
 - keep selection affordances consistent across detail headers, filters, and compact command surfaces
 
-Do not add new native `<select>` controls for visible app UI unless there is a platform-specific accessibility need that cannot be met by `SelectDropdown`.
+Do not add new native `<select>` controls for visible app UI unless there is a platform-specific accessibility need that cannot be met by `SelectDropdown`. This is enforced by `frontend/src/no-native-select.test.ts`, which scans the component source trees and fails when a native `<select>` element is reintroduced.
 
 ### Overlays
 

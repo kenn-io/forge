@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
+  import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
   import type { Settings } from "@middleman/ui/api/types";
   import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import { bulkAddRepos, previewRepos, type RepoPreviewRow } from "../../api/settings.js";
@@ -24,6 +25,11 @@
   }
 
   let { open, onClose, onImported }: Props = $props();
+
+  const providerOptions: SelectDropdownOption[] = repoImportProviders.map((option) => ({
+    value: option.id,
+    label: option.label,
+  }));
 
   let patternInput = $state("");
   let provider = $state("github");
@@ -226,14 +232,13 @@
       <div class="preview-form">
         <label class="provider-field">
           <span>Provider</span>
-          <select
+          <SelectDropdown
+            class="provider-select"
+            title="Provider"
             value={provider}
-            onchange={(event) => handleProviderChange(event.currentTarget.value)}
-          >
-            {#each repoImportProviders as option (option.id)}
-              <option value={option.id}>{option.label}</option>
-            {/each}
-          </select>
+            options={providerOptions}
+            onchange={handleProviderChange}
+          />
         </label>
         <label class="host-field">
           <span>Host</span>
@@ -308,7 +313,9 @@
   label { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: var(--font-size-sm); color: var(--text-secondary); }
   .provider-field { flex: 0 0 120px; }
   .host-field { flex: 0 0 190px; }
-  input, select { font-size: var(--font-size-md); padding: 7px 10px; color: var(--text-primary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
+  input { font-size: var(--font-size-md); padding: 7px 10px; color: var(--text-primary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
+  .provider-field :global(.provider-select) { width: 100%; min-width: 0; }
+  .provider-field :global(.select-dropdown-trigger) { height: 34px; font-size: var(--font-size-md); font-weight: 400; }
   .preview-btn, .submit-btn { padding: 7px 14px; font-size: var(--font-size-md); font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
   .secondary-btn { padding: 7px 14px; font-size: var(--font-size-md); color: var(--text-secondary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }

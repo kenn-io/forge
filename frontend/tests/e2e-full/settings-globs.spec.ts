@@ -430,7 +430,8 @@ test("repository import previews and adds Forgejo and Gitea repositories through
   await page.getByRole("button", { name: "Add repositories…" }).click();
   const dialog = page.getByRole("dialog", { name: "Add repositories" });
 
-  await dialog.getByLabel("Provider").selectOption("forgejo");
+  await dialog.getByRole("combobox", { name: /Provider/ }).click();
+  await dialog.getByRole("option", { name: "Forgejo" }).click();
   await expect(dialog.getByLabel("Host")).toHaveValue("codeberg.org");
   await dialog.getByLabel("Repository pattern").fill("team/subgroup/service-*");
   await dialog.getByRole("button", { name: "Preview" }).click();
@@ -484,7 +485,8 @@ test("repository import previews and adds Forgejo and Gitea repositories through
   const giteaDialog = page.getByRole("dialog", {
     name: "Add repositories",
   });
-  await giteaDialog.getByLabel("Provider").selectOption("gitea");
+  await giteaDialog.getByRole("combobox", { name: /Provider/ }).click();
+  await giteaDialog.getByRole("option", { name: "Gitea" }).click();
   await expect(giteaDialog.getByLabel("Host")).toHaveValue("gitea.com");
   await giteaDialog.getByLabel("Repository pattern").fill("gitea-team/*");
   await giteaDialog.getByRole("button", { name: "Preview" }).click();

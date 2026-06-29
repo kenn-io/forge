@@ -3,6 +3,7 @@
   import FolderIcon from "@lucide/svelte/icons/folder";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+  import { SelectDropdown } from "@middleman/ui";
   import Modal from "./DocsModal.svelte";
   import type { DocsAPI } from "../../api/docs/api";
   import type { BrowseEntry, DocsAPIError, Folder } from "../../api/docs/types";
@@ -34,6 +35,10 @@
   let daemon = $state("");
   let showAdvanced = $state(false);
   let daemonRoster = $derived(getKataDaemonRoster());
+  let daemonOptions = $derived([
+    { value: "", label: "Follow active daemon" },
+    ...daemonRoster.map((daemonID) => ({ value: daemonID, label: daemonID })),
+  ]);
 
   let browsePath = $state("");
   let entries = $state<BrowseEntry[]>([]);
@@ -169,12 +174,13 @@
     {#if daemonRoster.length > 1}
       <label class="modal-field">
         <span>Daemon</span>
-        <select aria-label="Daemon" bind:value={daemon} disabled={saving}>
-          <option value="">Follow active daemon</option>
-          {#each daemonRoster as id (id)}
-            <option value={id}>{id}</option>
-          {/each}
-        </select>
+        <SelectDropdown
+          title="Daemon"
+          value={daemon}
+          options={daemonOptions}
+          onchange={(value) => { daemon = value; }}
+          disabled={saving}
+        />
       </label>
     {/if}
 
@@ -336,8 +342,7 @@
     letter-spacing: 0.05em;
   }
 
-  .modal-field input,
-  .modal-field select {
+  .modal-field input {
     width: 100%;
     padding: 6px 8px;
     border: 1px solid var(--border-default);
@@ -347,10 +352,20 @@
     font-size: var(--font-size-sm);
   }
 
-  .modal-field input:focus,
-  .modal-field select:focus {
+  .modal-field input:focus {
     outline: none;
     border-color: var(--border-focus);
+  }
+
+  .modal-field :global(.select-dropdown) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .modal-field :global(.select-dropdown-trigger) {
+    height: 32px;
+    font-size: var(--font-size-sm);
+    font-weight: 400;
   }
 
   .picker {

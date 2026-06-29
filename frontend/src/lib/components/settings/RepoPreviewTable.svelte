@@ -1,6 +1,14 @@
 <script lang="ts">
+  import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
   import type { RepoImportRow, SortState, StatusFilter } from "./repoImportSelection.js";
   import { rowKey } from "./repoImportSelection.js";
+
+  const statusFilterOptions: SelectDropdownOption[] = [
+    { value: "all", label: "All rows" },
+    { value: "selected", label: "Selected" },
+    { value: "unselected", label: "Unselected" },
+    { value: "already-added", label: "Already added" },
+  ];
 
   interface Props {
     rows: RepoImportRow[];
@@ -67,16 +75,12 @@
     value={filterText}
     oninput={(event) => onFilterText(event.currentTarget.value)}
   />
-  <select
-    aria-label="Repository selection filter"
+  <SelectDropdown
+    title="Repository status filter"
     value={statusFilter}
-    onchange={(event) => onStatusFilter(event.currentTarget.value as StatusFilter)}
-  >
-    <option value="all">All rows</option>
-    <option value="selected">Selected</option>
-    <option value="unselected">Unselected</option>
-    <option value="already-added">Already added</option>
-  </select>
+    options={statusFilterOptions}
+    onchange={(value) => onStatusFilter(value as StatusFilter)}
+  />
   <label class="toggle-filter">
     <input
       type="checkbox"
@@ -141,7 +145,6 @@
 <style>
   .repo-preview-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .filter-input { flex: 1; min-width: 220px; font-size: var(--font-size-md); padding: 6px 10px; background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
-  select { font-size: var(--font-size-md); padding: 6px 8px; background: var(--bg-inset); color: var(--text-primary); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   .toggle-filter { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; }
   .toggle-filter input { margin: 0; }
   .shortcut-btn, .sort-btn { font-size: var(--font-size-sm); color: var(--accent-blue); }

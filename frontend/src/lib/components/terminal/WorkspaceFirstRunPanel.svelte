@@ -149,10 +149,14 @@
       repo.name_with_owner.toLowerCase().includes(query),
     );
   });
+  // Resolve against the filtered list with the same fallback SelectDropdown
+  // uses to render (selected value, else first option). This keeps the cloned
+  // repo identical to the one shown: if a filter hides the current selection,
+  // both the dropdown and submit fall back to the first visible repo instead of
+  // cloning a stale, no-longer-visible selection.
   const chosenGithubRepo = $derived(
-    githubRepos.find(
-      (repo) => repo.name_with_owner === selectedGithubRepo,
-    ),
+    filteredRepos.find((repo) => repo.name_with_owner === selectedGithubRepo) ??
+      filteredRepos[0],
   );
   const githubRepoOptions = $derived(
     filteredRepos.map((repo) => ({
@@ -516,7 +520,7 @@
               </button>
               <button
                 type="submit"
-                disabled={inFlight || !selectedGithubRepo}
+                disabled={inFlight || !chosenGithubRepo}
               >
                 {inFlight ? "Cloning..." : "Clone repository"}
               </button>

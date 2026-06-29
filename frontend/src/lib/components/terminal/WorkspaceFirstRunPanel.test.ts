@@ -307,6 +307,44 @@ describe("WorkspaceFirstRunPanel", () => {
     });
   });
 
+  it("clones the repository shown after a filter hides the default selection", async () => {
+    mocks.listUserRepositories.mockResolvedValue([
+      {
+        name_with_owner: "octo/one",
+        ssh_url: "git@github.com:octo/one.git",
+        default_branch: "main",
+      },
+      {
+        name_with_owner: "octo/two",
+        ssh_url: "git@github.com:octo/two.git",
+        default_branch: "trunk",
+      },
+    ]);
+    mocks.cloneProject.mockResolvedValue(project("prj_filtered"));
+    setupConfig({ ghAuthed: true });
+    render(WorkspaceFirstRunPanel);
+
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: /Connect a GitHub repository/i,
+      }),
+    );
+    // The first repo (octo/one) is selected by default. Filtering to the other
+    // repo hides that selection; without an explicit pick, submit must clone
+    // the repo now shown (octo/two), not the stale default.
+    await fireEvent.input(await screen.findByLabelText("Filter repositories"), {
+      target: { value: "two" },
+    });
+    await fireEvent.input(screen.getByLabelText("Destination path"), {
+      target: { value: "/tmp/two" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Clone repository" }));
+
+    await waitFor(() => {
+      expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/two.git", "/tmp/two", "");
+    });
+  });
+
   it("surfaces host callback failures after registration", async () => {
     mocks.registerExistingProject.mockResolvedValue(project("prj_existing"));
     setupConfig({

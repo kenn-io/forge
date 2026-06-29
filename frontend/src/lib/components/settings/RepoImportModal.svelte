@@ -205,7 +205,7 @@
     if (!(modal instanceof HTMLElement)) return;
     const focusable = Array.from(
       modal.querySelectorAll<HTMLElement>(
-        "button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])",
+        "button:not(:disabled):not([tabindex='-1']), input:not(:disabled), [tabindex]:not([tabindex='-1'])",
       ),
     ).sort(compareDocumentOrder);
     if (focusable.length === 0) return;

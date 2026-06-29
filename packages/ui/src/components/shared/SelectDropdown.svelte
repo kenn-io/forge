@@ -38,6 +38,11 @@
   const dropdownID = allocateSelectDropdownID();
   const listboxID = `${dropdownID}-listbox`;
 
+  // Unlike a native select element, an unmatched `value` does not render blank:
+  // it falls back to the first option. Callers that feed `options` from a
+  // filtered or async list must keep `value` consistent with the visible
+  // options (or derive anything used for submission with the same fallback),
+  // otherwise the trigger can show one option while submit acts on a stale value.
   const selectedOption = $derived(
     options.find((option) => option.value === value) ?? options[0],
   );

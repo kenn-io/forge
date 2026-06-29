@@ -35,12 +35,14 @@ The likely reason PR/issue agents behave well today is incidental but useful: wo
 
 ## Design Decision: Just-In-Time Agent Files
 
-Generate agent-specific files only when the user launches that agent. For example,
-clicking the Claude launch target may create or refresh a generated `CLAUDE.md`
-immediately before `s.runtime.Launch` runs, but opening the workspace or launching
-Codex should not create Claude-specific files. This keeps idle workspaces quieter,
-avoids surprising users with files for tools they did not run, and lets the launch
-target decide which file shape is useful.
+Generate agent-specific files only when the user launches that agent, and regenerate
+them on every launch from the launcher menu. For example, clicking the Claude launch
+target creates or refreshes generated Claude context immediately before
+`s.runtime.Launch` runs, but opening the workspace or launching Codex does not create
+Claude-specific files. Regenerating at launch time lets middleman enrich context after
+workspace state changes, such as an issue-backed workspace gaining an associated pull
+request. This keeps idle workspaces quieter, avoids surprising users with files for
+tools they did not run, and lets the launch target decide which file shape is useful.
 
 The writer must still protect repo-owned instructions. A root `CLAUDE.md` or
 `AGENTS.md` may already be checked in, as this repository does. Middleman may only
@@ -103,6 +105,7 @@ Add table-driven tests for PR, provider issue, and Kata task context:
 
 ```go
 ptr := func(s string) *string { return &s }
+ptrInt := func(n int) *int { return &n }
 
 func TestBuildAgentContext(t *testing.T) {
 	t.Parallel()
@@ -129,6 +132,21 @@ func TestBuildAgentContext(t *testing.T) {
 				ItemNumber: 7, IssueTitle: ptr("Add retry controls"),
 			},
 			want: []string{"Source kind: provider issue", "Issue: #7", "Add retry controls"},
+		},
+		{
+			name: "provider issue with associated pull request",
+			ws: WorkspaceSummary{
+				ID: "ws-issue-pr", Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
+				ItemNumber: 7, IssueTitle: ptr("Add retry controls"),
+				AssociatedPRNumber: ptrInt(42), MRTitle: ptr("Implement retry controls"),
+			},
+			want: []string{
+				"Source kind: provider issue",
+				"Issue: #7",
+				"Associated PR: #42",
+				"Implement retry controls",
+			},
 		},
 		{
 			name: "kata task",
@@ -172,7 +190,14 @@ type AgentContext struct {
 	ItemNumber   int
 	Title        string
 	URL          string
+	AssociatedPR *AgentAssociatedPRContext
 	Kata         *AgentKataContext
+}
+
+type AgentAssociatedPRContext struct {
+	Number int
+	Title  string
+	URL    string
 }
 
 type AgentKataContext struct {
@@ -289,6 +314,23 @@ assert.FileExists(filepath.Join(ws.WorktreePath, "CLAUDE.md")) // only after lau
 assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.local.md"))
 ```
 
+Add a state-change test for an issue-backed workspace that later gains an associated
+pull request:
+
+```go
+writeGeneratedContext(t, ws.WorktreePath, "Issue: #7\n")
+changed, err := s.db.SetWorkspaceAssociatedPRNumberIfNull(ctx, ws.ID, 42)
+require.NoError(err)
+require.True(changed)
+_, err := launchWorkspaceAgent(ctx, ws.ID, "claude")
+require.NoError(err)
+content, err := os.ReadFile(filepath.Join(ws.WorktreePath, ".middleman", "agent-context.md"))
+require.NoError(err)
+assert.Contains(string(content), "Source kind: provider issue")
+assert.Contains(string(content), "Issue: #7")
+assert.Contains(string(content), "Associated PR: #42")
+```
+
 Add a separate test with a pre-existing unmarked `CLAUDE.md`:
 
 ```go
@@ -312,7 +354,11 @@ Expected: fail because launch does not refresh canonical context or generate tar
 
 - [ ] **Step 3: Implement launch-time refresh**
 
-In `launchWorkspaceRuntimeSession`, after `getReadyRuntimeWorkspace` and before `s.runtime.Launch`, inspect the selected launch target. For `LaunchTargetAgent`, call a workspace manager method that refreshes the canonical file and writes only the selected target's safe companion files:
+In `launchWorkspaceRuntimeSession`, after `getReadyRuntimeWorkspace` and before
+`s.runtime.Launch`, inspect the selected launch target. For `LaunchTargetAgent`, call
+a workspace manager method on every launcher-menu launch. The method must re-read the
+latest workspace summary and owner metadata, refresh the canonical file, and write only
+the selected target's safe companion files:
 
 ```go
 err := s.workspaces.PrepareAgentLaunchContext(ctx, workspace.PrepareAgentLaunchContextOptions{

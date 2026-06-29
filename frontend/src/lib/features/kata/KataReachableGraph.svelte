@@ -14,10 +14,16 @@
   import type { KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
   import {
     recordKataGraphDebugEvent,
+    resetKataGraphDebug,
     setKataGraphDebugGraph,
   } from "../../stores/kata-graph-debug.js";
   import KataGraphTaskNode from "./KataGraphTaskNode.svelte";
-  import { buildKataReachableGraph, type KataGraphMissingRef, type KataGraphNode } from "./kataReachableGraph.js";
+  import {
+    buildKataReachableGraph,
+    type KataGraphDepthLimit,
+    type KataGraphMissingRef,
+    type KataGraphNode,
+  } from "./kataReachableGraph.js";
 
   interface Props {
     sourceUID: string;
@@ -40,7 +46,10 @@
   }: Props = $props();
 
   let hideDone = $state(false);
-  let graph = $derived(buildKataReachableGraph({ sourceUID, selectedUID, tasks, selectedDetail, hideDone }));
+  let depthLimit = $state<KataGraphDepthLimit>("full");
+  let graph = $derived(
+    buildKataReachableGraph({ sourceUID, selectedUID, tasks, selectedDetail, hideDone, depthLimit }),
+  );
   let source = $derived(tasks.find((task) => task.uid === sourceUID));
   const nodeTypes: NodeTypes = {
     kataTask: KataGraphTaskNode,
@@ -89,6 +98,7 @@
       sourceUID,
       selectedUID,
       hideDone,
+      depthLimit,
       nodeIds: graph.nodes.map((node) => node.id),
       disabledNodeIds: graph.nodes.filter((node) => !node.data.selectable).map((node) => node.id),
       missingRefKeys: graph.missingRefs.map(missingRefKey),
@@ -97,6 +107,10 @@
     };
     setKataGraphDebugGraph(snapshot);
     recordKataGraphDebugEvent("graph-render", snapshot);
+  });
+
+  $effect(() => {
+    return () => resetKataGraphDebug();
   });
 </script>
 
@@ -109,10 +123,21 @@
     <div class="graph-source">
       <strong title={source?.qualified_id ?? sourceUID}>{source?.title ?? "Reachable graph"}</strong>
     </div>
-    <label class="hide-done">
-      <input type="checkbox" bind:checked={hideDone} />
-      <span>Hide done</span>
-    </label>
+    <div class="graph-controls">
+      <label class="depth-filter">
+        <span>Depth</span>
+        <select bind:value={depthLimit} aria-label="Graph depth">
+          <option value="full">Full</option>
+          <option value="1">1 edge</option>
+          <option value="2">2 edges</option>
+          <option value="3">3 edges</option>
+        </select>
+      </label>
+      <label class="hide-done">
+        <input type="checkbox" bind:checked={hideDone} />
+        <span>Hide done</span>
+      </label>
+    </div>
   </header>
 
   {#if graph.nodes.length === 0}
@@ -162,6 +187,7 @@
   }
 
   .toolbar-button,
+  .depth-filter,
   .hide-done {
     min-height: 28px;
     display: inline-flex;
@@ -178,9 +204,29 @@
   }
 
   .toolbar-button:hover,
+  .depth-filter:hover,
   .hide-done:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
+  }
+
+  .graph-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .depth-filter {
+    padding: 0 4px 0 8px;
+  }
+
+  .depth-filter select {
+    min-height: 22px;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-xs);
   }
 
   .graph-source {

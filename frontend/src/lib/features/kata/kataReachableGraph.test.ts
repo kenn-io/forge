@@ -307,6 +307,62 @@ describe("buildKataReachableGraph", () => {
     ]);
   });
 
+  it("limits traversal by edge depth", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({
+      uid: "issue-two",
+      short_id: "two",
+      title: "Two edges",
+      blocks: [{ uid: "issue-three", short_id: "three" }],
+    });
+    const three = task({ uid: "issue-three", short_id: "three", title: "Three edges" });
+
+    const oneEdge = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "1",
+    });
+    const twoEdges = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "2",
+    });
+    const full = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "full",
+    });
+
+    expect(oneEdge.nodes.map((node) => node.id).sort()).toEqual(["issue-one", "issue-root"]);
+    expect(oneEdge.edges.map((edge) => edge.id)).toEqual(["blocks:issue-root:issue-one"]);
+    expect(twoEdges.nodes.map((node) => node.id).sort()).toEqual(["issue-one", "issue-root", "issue-two"]);
+    expect(twoEdges.edges.map((edge) => edge.id).sort()).toEqual([
+      "blocks:issue-one:issue-two",
+      "blocks:issue-root:issue-one",
+    ]);
+    expect(full.nodes.map((node) => node.id).sort()).toEqual(["issue-one", "issue-root", "issue-three", "issue-two"]);
+  });
+
   it("filters done nodes without hiding other closed nodes", () => {
     const root = task({
       uid: "issue-root",
@@ -386,6 +442,27 @@ describe("buildKataReachableGraph", () => {
     expect(graph.nodes.map((node) => node.id)).toEqual(["issue-root", "uncached:project-kata:dup"]);
     expect(graph.nodes[1]?.data).toMatchObject({ title: "dup", selectable: false });
     expect(graph.missingRefs).toEqual([{ uid: undefined, projectUID: "project-kata", shortID: "dup" }]);
+  });
+
+  it("treats present peer uids as authoritative over cached short-id matches", () => {
+    const root = task({ uid: "issue-root", short_id: "root", blocks: [{ uid: "issue-real", short_id: "dup" }] });
+    const wrongCachedTask = task({ uid: "issue-wrong", short_id: "dup", title: "Wrong cached task" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, wrongCachedTask],
+      selectedDetail: detail(root),
+      hideDone: false,
+    });
+
+    expect(graph.nodes.map((node) => node.id)).toEqual(["issue-root", "issue-real"]);
+    expect(graph.nodes.find((node) => node.id === "issue-real")?.data).toMatchObject({
+      title: "dup",
+      selectable: false,
+    });
+    expect(graph.nodes.some((node) => node.id === wrongCachedTask.uid)).toBe(false);
+    expect(graph.missingRefs).toEqual([{ uid: "issue-real", projectUID: "project-kata", shortID: "dup" }]);
   });
 
   it("carries unresolved peer uids for background graph fetching", () => {

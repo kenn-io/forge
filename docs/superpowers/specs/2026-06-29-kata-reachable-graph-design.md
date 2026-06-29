@@ -23,6 +23,7 @@ The graph pane toolbar contains:
 
 - a back-to-list button;
 - the source task title;
+- a depth filter with `Full`, `1 edge`, `2 edges`, and `3 edges` options;
 - a `Hide done` toggle.
 
 Each graph node contains:
@@ -60,11 +61,14 @@ store and must pause/abort while a user-driven task detail selection is active;
 there should not be a graph-side issue refresh competing with the selected-task
 detail refresh. UID-backed placeholders use the final task uid as their Svelte
 Flow node id so the node updates in place when cached data arrives.
+When a relationship peer includes `uid`, that uid is authoritative: missing
+UID-backed peers render and fetch by uid, and the builder must not attach the
+edge to another cached task just because the short id matches.
 
 ## Data Model
 
-The graph uses a local frontend cache rather than recursively fetching from the
-Kata daemon.
+The graph uses a local frontend cache plus queued background population for
+visible missing references. The component itself does not call the Kata daemon.
 
 `KataWorkspaceStore` keeps a `Map<string, KataTaskSummary>` keyed by `uid`. The
 cache is populated from:
@@ -81,7 +85,8 @@ The graph builder receives:
 - the source task uid;
 - cached task summaries;
 - the currently selected task detail, when available;
-- the done-filter flag.
+- the done-filter flag;
+- the graph depth filter.
 
 Reachability is computed by walking cached relationships:
 
@@ -97,6 +102,12 @@ random task; they render an uncached placeholder only when the peer id can still
 be displayed. The pure builder returns unresolved peer references alongside the
 nodes and edges so `KataWorkspaceStore` can populate missing cached data without
 making the graph component own daemon calls.
+
+The depth filter is applied during traversal, not after rendering. `1 edge`
+includes only nodes and edges directly connected to the source; `2 edges` and
+`3 edges` expand that many relationship hops; `Full` expands the reachable
+closure from the current cache/background loads. Missing refs outside the
+selected depth are not requested until the user widens the depth.
 
 ## Component Plan
 
@@ -122,9 +133,9 @@ graph action beside the workspace/detail actions.
   priority, source and selected markers, and cached/placeholder state directly
   inside the Svelte Flow canvas;
 - a real full-node button inside the custom node as the single activation
-  target. Pointer activation bubbles through the Svelte Flow node click handler,
-  and keyboard activation on the button sends Enter/Space through the same
-  selection path exactly once;
+  target for keyboard users. Pointer activation is delegated to the Svelte Flow
+  node click handler. Both paths call the same cached-node selection handler
+  exactly once;
 - hidden `Handle` anchors inside the custom node so Svelte Flow can route edges
   without showing connection handles as visible UI;
 - native Svelte Flow edge markers (`MarkerType.ArrowClosed`) on `markerEnd` to
@@ -138,20 +149,25 @@ graph action beside the workspace/detail actions.
   subtitle is not the only disambiguator;
 - themed `Controls` and `MiniMap` chrome; MiniMap node colors come from the
   documented `nodeColor`/`nodeStrokeColor` callbacks;
-- `onnodeclick` to select cached nodes.
+- `onnodeclick` to select cached nodes for pointer activation.
 
 A pure `kataReachableGraph.ts` module builds nodes and edges. It performs the
-reachability traversal, creates marker-backed edges, and assigns stable layered
-positions so tests can assert the graph without depending on browser layout.
+depth-limited reachability traversal, creates marker-backed edges, and assigns
+stable layered positions so tests can assert the graph without depending on
+browser layout.
 Nodes include explicit Svelte Flow width/height values so edge endpoints are
 based on stable bounds instead of shifting after custom node measurement.
-There is no duplicate card/button list below the canvas; the Svelte Flow node
-wrappers are the authoritative click targets.
+There is no duplicate card/button list below the canvas.
 
 Graph mode snapshots the source task detail when launched from detail so
 source-only `KataTaskDetail.links` remain in the graph after the user selects a
 different reachable node. The currently selected detail task still controls the
 right-hand task detail pane.
+
+The `window.__middleman_kata_graph_debug` bridge is a test/debug affordance, not
+a supported product API. Tests should call `reset()` before assertions, and the
+graph component clears the bridge on unmount so stale node/event snapshots do not
+leak across graph sessions.
 
 ## Error And Empty States
 
@@ -177,6 +193,8 @@ Add unit tests for the graph builder:
   available;
 - no ambiguous short-id random matching.
 - unresolved graph peer references are returned for background fetching.
+- UID-backed missing peers do not fall back to cached short-id matches.
+- graph depth filters prune traversal at 1, 2, and 3 edges.
 
 Add Svelte tests for workspace integration:
 
@@ -192,9 +210,14 @@ Add Svelte tests for workspace integration:
   selected task;
 - adjacent relation backgrounds do not overwrite status accents;
 - `Hide done` removes done nodes.
+- changing graph depth filters rendered nodes.
 - browser coverage verifies nonblank canvas nodes, hidden handles, native edge
   markers, themed controls/minimap, and the absence of a duplicate node-list
   fallback. It also covers both Enter and Space keyboard activation.
+- full-stack e2e coverage opens graph mode from the workspace, selects a cached
+  graph node, confirms detail selection changes, verifies the source graph
+  remains visible/stable after selection, exercises uncached UID-backed graph
+  population through the real proxy path, and returns to the task list.
 
 ## Dependencies
 

@@ -84,7 +84,9 @@ browser/e2e runs, or `kata-graph-debug.ts` directly in unit tests, to inspect
 recent graph/store events and the latest rendered node IDs. Prefer this bridge
 when debugging or asserting graph refresh ordering, missing-ref population,
 selection detail refreshes, or node/edge stability; it avoids brittle visual
-polling for state that the app already owns in JavaScript.
+polling for state that the app already owns in JavaScript. Browser/e2e tests
+should call `reset()` before assertions, and the graph component clears the
+bridge on unmount so assertions do not read stale graph sessions.
 
 ## Huma API Contract
 
@@ -251,14 +253,14 @@ scope.
 
 Bug classes wire-level catches:
 
-| Bug class | Why the wire matters |
-|-----------|----------------------|
-| Time serialization (`Z` vs `+00:00`) | Response bytes, not `time.Time` before marshaling. |
-| Error missing from OpenAPI doc | Generated client surfaces unknown status variants. |
-| Header rewritten or stripped by middleware | `resp.Header`, not `w.Header()` inside the handler. |
-| Status overridden by middleware | `resp.StatusCode`, not the handler return. |
+| Bug class                                     | Why the wire matters                                 |
+| --------------------------------------------- | ---------------------------------------------------- |
+| Time serialization (`Z` vs `+00:00`)          | Response bytes, not `time.Time` before marshaling.   |
+| Error missing from OpenAPI doc                | Generated client surfaces unknown status variants.   |
+| Header rewritten or stripped by middleware    | `resp.Header`, not `w.Header()` inside the handler.  |
+| Status overridden by middleware               | `resp.StatusCode`, not the handler return.           |
 | Mutation guard short-circuits before dispatch | Only `srv.ServeHTTP` runs the full middleware chain. |
-| SSE `Content-Type` / `Cache-Control` drift | Real-socket read; the recorder is buffered. |
+| SSE `Content-Type` / `Cache-Control` drift    | Real-socket read; the recorder is buffered.          |
 
 Worked examples: `internal/server/e2etest/sse_contract_test.go` pins SSE
 headers and the first cached `sync_status` frame;

@@ -199,29 +199,35 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isAbortError(error: unknown): boolean {
-  return typeof DOMException !== "undefined" && error instanceof DOMException
-    ? error.name === "AbortError"
-    : error instanceof Error && error.name === "AbortError";
+class GraphTaskLoadInterrupted extends Error {
+  constructor() {
+    super("Graph task load interrupted");
+    this.name = "GraphTaskLoadInterrupted";
+  }
 }
 
 function mergeKataPeerList(
   previous: KataTaskSummary["blocks"],
   next: KataTaskSummary["blocks"],
+  hasNext: boolean,
 ): KataTaskSummary["blocks"] {
-  if (next && next.length > 0) return next;
+  if (hasNext) return next;
   return previous && previous.length > 0 ? [...previous] : next;
+}
+
+function hasOwnField<T extends object>(value: T, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function mergeCachedTaskSummary(previous: KataTaskSummary | undefined, next: KataTaskSummary): KataTaskSummary {
   if (!previous) return next;
   return {
     ...next,
-    parent_short_id: next.parent_short_id ?? previous.parent_short_id,
-    blocks: mergeKataPeerList(previous.blocks, next.blocks),
-    blocked_by: mergeKataPeerList(previous.blocked_by, next.blocked_by),
-    related: mergeKataPeerList(previous.related, next.related),
-    child_counts: next.child_counts ?? previous.child_counts,
+    parent_short_id: hasOwnField(next, "parent_short_id") ? next.parent_short_id : previous.parent_short_id,
+    blocks: mergeKataPeerList(previous.blocks, next.blocks, hasOwnField(next, "blocks")),
+    blocked_by: mergeKataPeerList(previous.blocked_by, next.blocked_by, hasOwnField(next, "blocked_by")),
+    related: mergeKataPeerList(previous.related, next.related, hasOwnField(next, "related")),
+    child_counts: hasOwnField(next, "child_counts") ? next.child_counts : previous.child_counts,
   };
 }
 
@@ -735,6 +741,7 @@ export class KataWorkspaceStore {
 
   private hasCachedGraphTaskRef(ref: KataGraphTaskRef): boolean {
     if (ref.uid && this.taskCache.has(ref.uid)) return true;
+    if (ref.uid) return false;
     for (const issue of this.taskCache.values()) {
       if (issue.project_uid === ref.projectUID && issue.short_id === ref.shortID) return true;
     }
@@ -748,6 +755,9 @@ export class KataWorkspaceStore {
       let detail: KataTaskDetail;
       try {
         detail = await this.api.issue(ref.uid, { signal: abort.signal });
+      } catch (error) {
+        if (abort.signal.aborted) throw new GraphTaskLoadInterrupted();
+        throw error;
       } finally {
         if (this.graphTaskLoadAbort === abort) this.graphTaskLoadAbort = null;
       }
@@ -823,7 +833,10 @@ export class KataWorkspaceStore {
         await this.loadGraphTaskRef(ref);
         this.observeGraphStore("graph-load-complete", { key });
       } catch (error) {
-        if ((this.isIssueRefreshActive() || isAbortError(error)) && !this.hasCachedGraphTaskRef(ref)) {
+        if (
+          (this.isIssueRefreshActive() || error instanceof GraphTaskLoadInterrupted) &&
+          !this.hasCachedGraphTaskRef(ref)
+        ) {
           this.graphTaskLoadQueue.set(key, ref);
           this.observeGraphStore("graph-load-paused", { key });
           return;

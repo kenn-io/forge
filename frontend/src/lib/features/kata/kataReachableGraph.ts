@@ -19,6 +19,7 @@ export interface KataGraphNodeData extends Record<string, unknown> {
 }
 
 export type KataGraphAdjacentRelation = "blocks" | "blockedBy" | "child" | "parent" | "related" | null;
+export type KataGraphDepthLimit = "full" | "1" | "2" | "3";
 export type KataGraphNode = Node<KataGraphNodeData, "kataTask">;
 export type KataGraphEdge = Edge<KataGraphEdgeData>;
 
@@ -38,6 +39,7 @@ export interface BuildKataReachableGraphInput {
   tasks: readonly KataTaskSummary[];
   selectedDetail?: KataTaskDetail | null | undefined;
   hideDone: boolean;
+  depthLimit?: KataGraphDepthLimit | undefined;
 }
 
 interface TaskIndexes {
@@ -60,6 +62,11 @@ interface ResolvedPeer {
   shortID: string;
 }
 
+interface QueuedGraphTask {
+  uid: string;
+  depth: number;
+}
+
 type GraphEdgeKind = "parent" | "blocks" | "related";
 
 const KATA_GRAPH_X_SPACING = 320;
@@ -78,6 +85,10 @@ function isDone(issue: KataTaskSummary): boolean {
 function priorityLabel(priority: number | undefined): string | null {
   if (priority === undefined) return null;
   return `P${priority}`;
+}
+
+function maxTraversalDepth(limit: KataGraphDepthLimit | undefined): number {
+  return limit === undefined || limit === "full" ? Number.POSITIVE_INFINITY : Number(limit);
 }
 
 function collectTasks(tasks: readonly KataTaskSummary[]): TaskIndexes {
@@ -155,6 +166,12 @@ function resolvePeer(peer: KataLinkPeer, projectUID: string, indexes: TaskIndexe
     if (byUID) {
       return { id: byUID.uid, task: byUID, projectUID: byUID.project_uid, shortID: byUID.short_id };
     }
+    return {
+      id: peer.uid,
+      uid: peer.uid,
+      projectUID,
+      shortID: peer.short_id,
+    };
   }
 
   const matches = indexes.byProjectShort.get(taskKey(projectUID, peer.short_id)) ?? [];
@@ -231,14 +248,15 @@ function rememberMissingRef(peer: ResolvedPeer, missingRefs: Map<string, KataGra
 
 function includePeer(
   peer: ResolvedPeer,
-  queued: string[],
+  queued: QueuedGraphTask[],
   seen: Set<string>,
   nodeTasks: Map<string, KataTaskSummary | undefined>,
   missingRefs: Map<string, KataGraphMissingRef>,
+  depth: number,
 ): void {
   nodeTasks.set(peer.id, peer.task);
   if (peer.task && !seen.has(peer.task.uid)) {
-    queued.push(peer.task.uid);
+    queued.push({ uid: peer.task.uid, depth });
   } else {
     rememberMissingRef(peer, missingRefs);
   }
@@ -247,14 +265,15 @@ function includePeer(
 function includeGraphNode(
   id: string,
   indexes: TaskIndexes,
-  queued: string[],
+  queued: QueuedGraphTask[],
   seen: Set<string>,
   nodeTasks: Map<string, KataTaskSummary | undefined>,
+  depth: number,
 ): void {
   const task = indexes.byUID.get(id);
   nodeTasks.set(id, task);
   if (task && !seen.has(task.uid)) {
-    queued.push(task.uid);
+    queued.push({ uid: task.uid, depth });
   }
 }
 
@@ -494,23 +513,26 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   const source = indexes.byUID.get(input.sourceUID);
   if (!source) return { nodes: [], edges: [], missingRefs: [] };
 
-  const queued = [source.uid];
+  const depthLimit = maxTraversalDepth(input.depthLimit);
+  const queued: QueuedGraphTask[] = [{ uid: source.uid, depth: 0 }];
   const seen = new Set<string>();
   const nodeTasks = new Map<string, KataTaskSummary | undefined>([[source.uid, source]]);
   const edges = new Map<string, KataGraphEdge>();
   const missingRefs = new Map<string, KataGraphMissingRef>();
 
   while (queued.length > 0) {
-    const uid = queued.shift()!;
+    const { uid, depth } = queued.shift()!;
     if (seen.has(uid)) continue;
     seen.add(uid);
+    if (depth >= depthLimit) continue;
+    const nextDepth = depth + 1;
 
     const task = indexes.byUID.get(uid);
     if (!task) continue;
 
     if (task.parent_short_id) {
       const parent = resolvePeer({ uid: "", short_id: task.parent_short_id }, task.project_uid, indexes);
-      includePeer(parent, queued, seen, nodeTasks, missingRefs);
+      includePeer(parent, queued, seen, nodeTasks, missingRefs, nextDepth);
       addEdge(edges, parent.id, task.uid, "parent");
     }
 
@@ -521,25 +543,26 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
         seen,
         nodeTasks,
         missingRefs,
+        nextDepth,
       );
       addEdge(edges, task.uid, child.uid, "parent");
     }
 
     for (const peer of task.blocks ?? []) {
       const resolved = resolvePeer(peer, task.project_uid, indexes);
-      includePeer(resolved, queued, seen, nodeTasks, missingRefs);
+      includePeer(resolved, queued, seen, nodeTasks, missingRefs, nextDepth);
       addEdge(edges, task.uid, resolved.id, "blocks");
     }
 
     for (const peer of task.blocked_by ?? []) {
       const resolved = resolvePeer(peer, task.project_uid, indexes);
-      includePeer(resolved, queued, seen, nodeTasks, missingRefs);
+      includePeer(resolved, queued, seen, nodeTasks, missingRefs, nextDepth);
       addEdge(edges, resolved.id, task.uid, "blocks");
     }
 
     for (const peer of task.related ?? []) {
       const resolved = resolvePeer(peer, task.project_uid, indexes);
-      includePeer(resolved, queued, seen, nodeTasks, missingRefs);
+      includePeer(resolved, queued, seen, nodeTasks, missingRefs, nextDepth);
       addEdge(edges, task.uid, resolved.id, "related");
     }
 
@@ -550,6 +573,7 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
         seen,
         nodeTasks,
         missingRefs,
+        nextDepth,
       );
       addEdge(edges, candidate.uid, task.uid, "blocks");
     }
@@ -564,6 +588,7 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
         seen,
         nodeTasks,
         missingRefs,
+        nextDepth,
       );
       addEdge(edges, task.uid, candidate.uid, "blocks");
     }
@@ -578,6 +603,7 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
         seen,
         nodeTasks,
         missingRefs,
+        nextDepth,
       );
       addEdge(edges, candidate.uid, task.uid, "related");
     }
@@ -585,8 +611,8 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
     if (task.uid === source.uid) {
       for (const detailEdge of detailEdges(input.selectedDetail, source.uid, indexes, missingRefs)) {
         edges.set(detailEdge.id, detailEdge);
-        includeGraphNode(detailEdge.source, indexes, queued, seen, nodeTasks);
-        includeGraphNode(detailEdge.target, indexes, queued, seen, nodeTasks);
+        includeGraphNode(detailEdge.source, indexes, queued, seen, nodeTasks, nextDepth);
+        includeGraphNode(detailEdge.target, indexes, queued, seen, nodeTasks, nextDepth);
       }
     }
   }

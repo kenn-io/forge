@@ -116,6 +116,37 @@ describe("KataReachableGraph", () => {
     expect(screen.queryAllByText("Done task")).toEqual([]);
   });
 
+  it("filters rendered nodes by edge depth", async () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root task",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({ uid: "issue-two", short_id: "two", title: "Two edges" });
+    render(KataReachableGraph, {
+      props: {
+        sourceUID: root.uid,
+        selectedUID: root.uid,
+        tasks: [root, one, two],
+        selectedDetail: null,
+        onBack: () => {},
+        onSelectIssue: () => {},
+      },
+    });
+
+    expect(screen.getAllByText("Two edges").length).toBeGreaterThan(0);
+    await fireEvent.change(screen.getByRole("combobox", { name: "Graph depth" }), { target: { value: "1" } });
+    expect(screen.getAllByText("One edge").length).toBeGreaterThan(0);
+    expect(screen.queryAllByText("Two edges")).toEqual([]);
+  });
+
   it("selects cached nodes and returns to the list", async () => {
     const root = task({ uid: "issue-root", short_id: "root", title: "Root task" });
     const onSelectIssue = vi.fn();

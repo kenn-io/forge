@@ -27,6 +27,7 @@ export interface KataGraphDebugGraphSnapshot {
   sourceUID: string;
   selectedUID: string | null;
   hideDone: boolean;
+  depthLimit: string;
   nodeIds: string[];
   disabledNodeIds: string[];
   missingRefKeys: string[];

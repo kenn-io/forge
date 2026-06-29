@@ -1335,6 +1335,72 @@ test("kata reachable graph renders and selects tasks through the configured exte
   }
 });
 
+test("kata reachable graph populates uncached refs after selection aborts the graph load", async ({ page }) => {
+  let releaseHiddenDetail = () => {};
+  const hiddenDetailBarrier = new Promise<void>((resolve) => {
+    releaseHiddenDetail = resolve;
+  });
+  const hidden = issueSummary({
+    id: 33,
+    uid: "issue-hidden-link",
+    project_id: 2,
+    project_uid: "project-kata",
+    project_name: "Kata",
+    short_id: "kat-hidden",
+    qualified_id: "Kata#kat-hidden",
+    title: "Hidden linked task",
+    body: "This task is fetched only after the graph asks for it.",
+    status: "closed",
+    labels: ["work"],
+  });
+  const backend = await startKataBackend({
+    issues: [issues[0]!, hidden],
+    links: [linkRow({ id: 1, project_id: issues[0]!.project_id, from: issues[0]!, to: hidden, type: "related" })],
+    issueDetailGates: new Map([["issue-hidden-link", { barrier: hiddenDetailBarrier }]]),
+  });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
+
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await page.evaluate(() => window.__middleman_kata_graph_debug?.reset());
+    await detail.getByRole("button", { name: "Open reachable graph" }).click();
+
+    const graph = page.getByRole("region", { name: "Reachable task graph" });
+    await expect(graph).toBeVisible();
+    await expect(graph.locator(".svelte-flow__node", { hasText: "kat-hidden" })).toBeVisible();
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/issues/issue-hidden-link");
+
+    await graph.locator(".svelte-flow__node", { hasText: "Pay rent" }).click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            window.__middleman_kata_graph_debug
+              ?.snapshot()
+              .events.some((event) => event.kind === "graph-load-paused") ?? false,
+        ),
+      )
+      .toBe(true);
+
+    releaseHiddenDetail();
+    await expect
+      .poll(() => backend.state.seenPaths.filter((path) => path === "GET /api/v1/issues/issue-hidden-link").length)
+      .toBeGreaterThanOrEqual(2);
+    await expect(graph.getByRole("button", { name: /Hidden linked task/ })).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.nodeIds ?? []))
+      .toContain("issue-hidden-link");
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata workspace initial load does not mutate the configured external daemon", async ({ page }) => {
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);

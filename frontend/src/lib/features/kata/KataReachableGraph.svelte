@@ -13,7 +13,7 @@
 
   import type { KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
   import KataGraphTaskNode from "./KataGraphTaskNode.svelte";
-  import { buildKataReachableGraph, type KataGraphNode } from "./kataReachableGraph.js";
+  import { buildKataReachableGraph, type KataGraphMissingRef, type KataGraphNode } from "./kataReachableGraph.js";
 
   interface Props {
     sourceUID: string;
@@ -22,9 +22,18 @@
     selectedDetail?: KataTaskDetail | null | undefined;
     onBack: () => void;
     onSelectIssue: (uid: string) => void;
+    onRequestMissingTasks?: ((refs: readonly KataGraphMissingRef[]) => void) | undefined;
   }
 
-  let { sourceUID, selectedUID, tasks, selectedDetail = null, onBack, onSelectIssue }: Props = $props();
+  let {
+    sourceUID,
+    selectedUID,
+    tasks,
+    selectedDetail = null,
+    onBack,
+    onSelectIssue,
+    onRequestMissingTasks = undefined,
+  }: Props = $props();
 
   let hideDone = $state(false);
   let graph = $derived(buildKataReachableGraph({ sourceUID, selectedUID, tasks, selectedDetail, hideDone }));
@@ -59,6 +68,12 @@
     if (data.isSource || data.isSelected) return "var(--accent-blue)";
     return "var(--border-default)";
   }
+
+  $effect(() => {
+    const refs = graph.missingRefs;
+    if (refs.length === 0) return;
+    onRequestMissingTasks?.(refs);
+  });
 </script>
 
 <section class="kata-graph-pane" aria-label="Reachable task graph">
@@ -68,7 +83,7 @@
       <span>Tasks</span>
     </button>
     <div class="graph-source">
-      <strong>{source?.title ?? "Reachable graph"}</strong>
+      <strong title={source?.qualified_id ?? sourceUID}>{source?.title ?? "Reachable graph"}</strong>
     </div>
     <label class="hide-done">
       <input type="checkbox" bind:checked={hideDone} />

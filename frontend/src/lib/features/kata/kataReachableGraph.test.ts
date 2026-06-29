@@ -94,7 +94,38 @@ describe("buildKataReachableGraph", () => {
     expect(graph.nodes[0]?.data).toMatchObject({
       idLabel: "s2te",
       projectLabel: "",
+      qualifiedLabel: "kenn-core#s2te",
+      accessibleLabel: "Source task, selected, Decision: daemon IPC boundary, kenn-core#s2te, open",
     });
+  });
+
+  it("adds project subtitles when visible nodes need cross-project disambiguation", () => {
+    const source = task({
+      uid: "issue-source",
+      short_id: "same",
+      qualified_id: "Core#same",
+      project_uid: "project-core",
+      project_name: "Core",
+      related: [{ uid: "issue-peer", short_id: "same" }],
+    });
+    const peer = task({
+      uid: "issue-peer",
+      short_id: "same",
+      qualified_id: "Platform#same",
+      project_uid: "project-platform",
+      project_name: "Platform",
+    });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: source.uid,
+      selectedUID: source.uid,
+      tasks: [source, peer],
+      selectedDetail: detail(source),
+      hideDone: false,
+    });
+
+    expect(graph.nodes.find((node) => node.id === source.uid)?.data.projectLabel).toBe("Core");
+    expect(graph.nodes.find((node) => node.id === peer.uid)?.data.projectLabel).toBe("Platform");
   });
 
   it("walks parent, child, blocks, blocked_by, and related relationships", () => {
@@ -188,6 +219,32 @@ describe("buildKataReachableGraph", () => {
     expect(graph.nodes.find((node) => node.id === blocker.uid)?.data.adjacentRelation).toBe("blockedBy");
     expect(graph.nodes.find((node) => node.id === blocked.uid)?.data.adjacentRelation).toBe("blocks");
     expect(graph.nodes.find((node) => node.id === related.uid)?.data.adjacentRelation).toBe("related");
+  });
+
+  it("uses deterministic precedence when adjacent nodes have multiple relationships", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-peer", short_id: "peer" }],
+      related: [{ uid: "issue-peer", short_id: "peer" }],
+    });
+    const peer = task({
+      uid: "issue-peer",
+      short_id: "peer",
+      title: "Peer",
+      blocks: [{ uid: "issue-root", short_id: "root" }],
+    });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, peer],
+      selectedDetail: detail(root),
+      hideDone: false,
+    });
+
+    expect(graph.nodes.find((node) => node.id === peer.uid)?.data.adjacentRelation).toBe("blockedBy");
   });
 
   it("keeps node positions stable when cached task order changes", () => {
@@ -328,5 +385,35 @@ describe("buildKataReachableGraph", () => {
 
     expect(graph.nodes.map((node) => node.id)).toEqual(["issue-root", "uncached:project-kata:dup"]);
     expect(graph.nodes[1]?.data).toMatchObject({ title: "dup", selectable: false });
+    expect(graph.missingRefs).toEqual([{ uid: undefined, projectUID: "project-kata", shortID: "dup" }]);
+  });
+
+  it("carries unresolved peer uids for background graph fetching", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      blocks: [{ uid: "issue-missing", short_id: "missing" }],
+    });
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root],
+      selectedDetail: detail(root),
+      hideDone: false,
+    });
+
+    expect(graph.nodes.map((node) => node.id)).toEqual(["issue-root", "issue-missing"]);
+    expect(graph.missingRefs).toEqual([{ uid: "issue-missing", projectUID: "project-kata", shortID: "missing" }]);
+
+    const populated = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, task({ uid: "issue-missing", short_id: "missing", title: "Fetched task" })],
+      selectedDetail: detail(root),
+      hideDone: false,
+    });
+
+    expect(populated.nodes.map((node) => node.id)).toEqual(["issue-root", "issue-missing"]);
+    expect(populated.nodes.find((node) => node.id === "issue-missing")?.data.title).toBe("Fetched task");
   });
 });

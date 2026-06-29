@@ -104,6 +104,7 @@ describe("KataReachableGraph (browser)", () => {
     const linkedButtonStyle = getComputedStyle(linkedNodeButton);
     expect(linkedNodeButton.classList.contains("graph-task-node--relation-blocks")).toBe(true);
     expect(linkedButtonStyle.backgroundColor).not.toBe(rootButtonStyle.backgroundColor);
+    expect(linkedButtonStyle.boxShadow).toContain("inset");
 
     linkedNode!.click();
 
@@ -117,6 +118,12 @@ describe("KataReachableGraph (browser)", () => {
     linkedButton!.focus();
     pressKey("Enter", {}, linkedButton!);
 
+    expect(onSelectIssue).toHaveBeenCalledWith(linked.uid);
+
+    onSelectIssue.mockClear();
+    pressKey(" ", {}, linkedButton!);
+
+    expect(onSelectIssue).toHaveBeenCalledTimes(1);
     expect(onSelectIssue).toHaveBeenCalledWith(linked.uid);
   });
 });

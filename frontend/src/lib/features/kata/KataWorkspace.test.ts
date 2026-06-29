@@ -57,6 +57,12 @@ function graphNodeWithText(text: string): HTMLElement {
   return node as HTMLElement;
 }
 
+function graphNodeButtonWithText(text: string): HTMLButtonElement {
+  const button = graphNodeWithText(text).querySelector<HTMLButtonElement>("button.graph-task-node");
+  expect(button).toBeTruthy();
+  return button!;
+}
+
 describe("KataWorkspace", () => {
   beforeEach(() => {
     resetKataWorkspaceTestState();
@@ -215,7 +221,50 @@ describe("KataWorkspace", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Detail-only graph task" })).toBeTruthy();
     });
-    expect(screen.getAllByText("Detail-only graph task").length).toBeGreaterThan(0);
+    const graph = screen.getByRole("region", { name: "Reachable task graph" });
+    expect(within(graph).getAllByText("Detail-only graph task").length).toBeGreaterThan(0);
+  });
+
+  it("fetches graph references that are not cached locally", async () => {
+    const root = {
+      ...issue("issue-root", "Root graph task", "project-kata"),
+      blocks: [{ uid: "issue-linked", short_id: "linked" }],
+    };
+    const linked = {
+      ...issue("issue-linked", "Fetched linked task", "project-kata"),
+      priority: 1,
+    };
+    const { api } = createWorkspaceAPI([root]);
+    const linkedDetail = deferred<KataTaskDetail>();
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+      if (uid === root.uid) return detail(root.uid, [root]);
+      if (uid === linked.uid) return linkedDetail.promise;
+      return detail(uid, [root, linked]);
+    });
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: root.uid } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    });
+    await fireEvent.click(
+      within(screen.getByRole("region", { name: "Task detail" })).getByRole("button", {
+        name: "Open reachable graph",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(api.issue).toHaveBeenCalledWith(
+        "issue-linked",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+      expect(graphNodeButtonWithText("linked").disabled).toBe(true);
+    });
+
+    linkedDetail.resolve(detail(linked.uid, [root, linked]));
+    await waitFor(() => {
+      expect(graphNodeButtonWithText("Fetched linked task").disabled).toBe(false);
+    });
   });
 
   it("keeps a graph node selection while the route prop is still stale", async () => {

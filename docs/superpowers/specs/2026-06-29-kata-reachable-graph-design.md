@@ -29,7 +29,9 @@ Each graph node contains:
 
 - task title as the primary text;
 - short id as compact metadata, never the qualified id, so node subtitles stay
-  stable while graph-node selection loads task detail;
+  stable while graph-node selection loads task detail. The qualified id remains
+  available through tooltip/accessibility metadata for disambiguation across
+  duplicate titles or cross-project graphs;
 - status treatment through node theming, not a visible status pill;
 - a priority marker such as `P0` or `P1` when priority is set.
 
@@ -40,10 +42,24 @@ reachable graph. The source task and currently selected detail task get distinct
 outlines so users can tell the graph root from the detail selection.
 Nodes adjacent to the currently selected task use relation-specific background
 accents: selected task blocks peer, peer blocks selected task, child, parent, and
-related each get distinct tones.
+related each get distinct tones. Status and relation styling are layered:
+status owns the left accent and done opacity, relation owns only the adjacent
+background tint. When several relationships connect the selected task to the
+same peer, the single adjacent tint uses this priority: peer blocks selected,
+selected blocks peer, parent, child, related.
 
 Clicking a cached node calls the existing `selectIssue(uid)` flow. Disabled
-placeholder nodes represent uncached linked peers and cannot be selected.
+placeholder nodes represent uncached linked peers and cannot be selected. If a
+placeholder came from a link that included a peer uid, graph mode schedules a
+background detail fetch for that uid and replaces the placeholder once the
+workspace cache receives the task. If only a short id is known, graph mode may
+search exactly within the peer project and cache exact matches. Background graph
+population failures do not replace the normal detail/request error surface; the
+placeholder remains visible. Graph population is queued through the workspace
+store and must pause/abort while a user-driven task detail selection is active;
+there should not be a graph-side issue refresh competing with the selected-task
+detail refresh. UID-backed placeholders use the final task uid as their Svelte
+Flow node id so the node updates in place when cached data arrives.
 
 ## Data Model
 
@@ -56,6 +72,7 @@ cache is populated from:
 - current view and search results;
 - selected task detail;
 - selected detail children;
+- graph-triggered background loads for uncached relationship references;
 - child rows loaded by list expansion;
 - task mutation responses and event-driven refreshes.
 
@@ -77,7 +94,9 @@ Reachability is computed by walking cached relationships:
 Relationship matching prefers `uid`. When only `short_id` is available, the
 builder resolves it inside the same project. Ambiguous short ids do not select a
 random task; they render an uncached placeholder only when the peer id can still
-be displayed.
+be displayed. The pure builder returns unresolved peer references alongside the
+nodes and edges so `KataWorkspaceStore` can populate missing cached data without
+making the graph component own daemon calls.
 
 ## Component Plan
 
@@ -102,8 +121,10 @@ graph action beside the workspace/detail actions.
 - a registered custom task node type that renders title, id label, status,
   priority, source and selected markers, and cached/placeholder state directly
   inside the Svelte Flow canvas;
-- a real full-node button inside the custom node so pointer users click the
-  canvas node and keyboard users activate the same target with Enter/Space;
+- a real full-node button inside the custom node as the single activation
+  target. Pointer activation bubbles through the Svelte Flow node click handler,
+  and keyboard activation on the button sends Enter/Space through the same
+  selection path exactly once;
 - hidden `Handle` anchors inside the custom node so Svelte Flow can route edges
   without showing connection handles as visible UI;
 - native Svelte Flow edge markers (`MarkerType.ArrowClosed`) on `markerEnd` to
@@ -112,6 +133,9 @@ graph action beside the workspace/detail actions.
   edge label: blocking edges use the primary accent, parent edges use secondary
   text color, related edges are dashed, and each edge carries a kind-specific
   `ariaLabel`. Do not put text labels on every edge in the canvas.
+- node accessible labels include source/selected state, title, qualified id,
+  cached status, and adjacent relationship state so the visible short-id
+  subtitle is not the only disambiguator;
 - themed `Controls` and `MiniMap` chrome; MiniMap node colors come from the
   documented `nodeColor`/`nodeStrokeColor` callbacks;
 - `onnodeclick` to select cached nodes.
@@ -152,6 +176,7 @@ Add unit tests for the graph builder:
 - graph node subtitles use the short task id even when a qualified id is
   available;
 - no ambiguous short-id random matching.
+- unresolved graph peer references are returned for background fetching.
 
 Add Svelte tests for workspace integration:
 
@@ -161,12 +186,15 @@ Add Svelte tests for workspace integration:
 - clicking a cached graph node selects the task and updates the detail pane;
 - pressing Enter/Space on a focused graph task node selects the task;
 - selecting a detail-only linked node does not remove it from the graph;
+- uncached graph references with peer uids trigger background detail fetches and
+  replace disabled placeholders once cached;
 - adjacent graph nodes are themed by their relationship direction to the
   selected task;
+- adjacent relation backgrounds do not overwrite status accents;
 - `Hide done` removes done nodes.
 - browser coverage verifies nonblank canvas nodes, hidden handles, native edge
   markers, themed controls/minimap, and the absence of a duplicate node-list
-  fallback.
+  fallback. It also covers both Enter and Space keyboard activation.
 
 ## Dependencies
 

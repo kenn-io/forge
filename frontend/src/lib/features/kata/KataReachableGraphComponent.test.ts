@@ -84,6 +84,7 @@ describe("KataReachableGraph", () => {
     expect(screen.getByRole("region", { name: "Reachable task graph" })).toBeTruthy();
     expect(screen.getAllByText("Root task").length).toBeGreaterThan(0);
     expect(screen.getByText("P0")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Source task, selected, Root task, Kata#root, open/ })).toBeTruthy();
   });
 
   it("filters done nodes", async () => {
@@ -135,6 +136,11 @@ describe("KataReachableGraph", () => {
 
     onSelectIssue.mockClear();
     await fireEvent.keyDown(graphNodeButtonWithText("Root task"), { key: "Enter" });
+    expect(onSelectIssue).toHaveBeenCalledWith("issue-root");
+
+    onSelectIssue.mockClear();
+    await fireEvent.keyDown(graphNodeButtonWithText("Root task"), { key: " " });
+    expect(onSelectIssue).toHaveBeenCalledTimes(1);
     expect(onSelectIssue).toHaveBeenCalledWith("issue-root");
     await fireEvent.click(screen.getByRole("button", { name: "Back to task list" }));
     expect(onBack).toHaveBeenCalled();

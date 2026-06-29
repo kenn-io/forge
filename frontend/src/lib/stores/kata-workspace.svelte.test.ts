@@ -926,6 +926,72 @@ describe("kata workspace store", () => {
     expect(store.pendingSelectionUID).toBeNull();
   });
 
+  test("coalesces graph task population into one refresh loop per missing issue", async () => {
+    const api = createFakeKataTaskAPI();
+    const linked = issue("issue-linked-graph", "Linked graph task", "project-kata");
+    const pendingDetail = deferred<KataTaskDetail>();
+    api.mocks.issue.mockImplementation(async (uid: string) => {
+      if (uid === linked.uid) return pendingDetail.promise;
+      return detailFor(uid);
+    });
+    const store = createKataWorkspaceStore({ api });
+    const ref = { uid: linked.uid, projectUID: linked.project_uid, shortID: linked.short_id };
+
+    const first = store.loadGraphTaskRefs([ref]);
+    const second = store.loadGraphTaskRefs([ref]);
+
+    await Promise.resolve();
+    expect(api.mocks.issue.mock.calls.filter(([uid]) => uid === linked.uid)).toHaveLength(1);
+
+    pendingDetail.resolve({
+      ...detailFor("issue-email-susan"),
+      issue: { ...linked, body: "Linked graph task body" },
+    });
+    await first;
+    await second;
+
+    expect(store.cachedTasks.find((task) => task.uid === linked.uid)?.title).toBe("Linked graph task");
+  });
+
+  test("pauses graph population while a user selection refresh is active", async () => {
+    const api = createFakeKataTaskAPI();
+    const linked = issue("issue-linked-graph", "Linked graph task", "project-kata");
+    const pendingDetail = deferred<KataTaskDetail>();
+    const graphSignals: (AbortSignal | undefined)[] = [];
+    api.mocks.issue.mockImplementation(async (uid: string, opts?: { signal?: AbortSignal }) => {
+      if (uid === linked.uid) {
+        graphSignals.push(opts?.signal);
+        if (graphSignals.length === 1) {
+          return new Promise<KataTaskDetail>((_resolve, reject) => {
+            opts?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+              once: true,
+            });
+          });
+        }
+        return pendingDetail.promise;
+      }
+      return detailFor(uid);
+    });
+    const store = createKataWorkspaceStore({ api });
+    const graphLoad = store.loadGraphTaskRefs([
+      { uid: linked.uid, projectUID: linked.project_uid, shortID: linked.short_id },
+    ]);
+
+    await Promise.resolve();
+    expect(graphSignals).toHaveLength(1);
+
+    await expect(store.selectIssue("issue-pay-rent")).resolves.toBe(true);
+
+    expect(graphSignals[0]?.aborted).toBe(true);
+    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
+    await graphLoad;
+
+    pendingDetail.resolve({
+      ...detailFor("issue-email-susan"),
+      issue: { ...linked, body: "Linked graph task body" },
+    });
+  });
+
   test("clearing the selection aborts the in-flight detail load", async () => {
     const { api, signals } = apiWithHangingIssueDetail();
     const store = createKataWorkspaceStore({ api });

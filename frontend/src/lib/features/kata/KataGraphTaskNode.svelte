@@ -35,7 +35,10 @@
     data.adjacentRelation ? "graph-task-node--adjacent" : "",
     data.adjacentRelation ? `graph-task-node--relation-${data.adjacentRelation}` : "",
   ]}
-  aria-label={data.selectable ? `Select task ${data.title}` : `${data.title} is not cached`}
+  aria-label={data.accessibleLabel}
+  title={data.qualifiedLabel}
+  aria-current={data.isSource ? "true" : undefined}
+  aria-pressed={data.isSelected || selected}
   disabled={!data.selectable}
   onkeydown={activateFromKeyboard}
 >
@@ -74,7 +77,7 @@
     gap: 7px;
     border: 1px solid var(--border-default);
     border-radius: 6px;
-    background: var(--node-status-bg, var(--bg-primary));
+    background: var(--node-relation-bg, var(--node-status-bg, var(--bg-primary)));
     color: var(--text-primary);
     padding: 9px 10px;
     box-shadow: inset 3px 0 0 var(--node-status-accent, var(--border-default)), var(--shadow-sm);
@@ -121,28 +124,23 @@
   }
 
   .graph-task-node--relation-blocks {
-    --node-status-accent: var(--accent-blue);
-    --node-status-bg: color-mix(in srgb, var(--accent-blue) 16%, var(--bg-primary));
+    --node-relation-bg: color-mix(in srgb, var(--accent-blue) 16%, var(--node-status-bg, var(--bg-primary)));
   }
 
   .graph-task-node--relation-blockedBy {
-    --node-status-accent: var(--accent-red);
-    --node-status-bg: color-mix(in srgb, var(--accent-red) 16%, var(--bg-primary));
+    --node-relation-bg: color-mix(in srgb, var(--accent-red) 16%, var(--node-status-bg, var(--bg-primary)));
   }
 
   .graph-task-node--relation-child {
-    --node-status-accent: var(--accent-teal);
-    --node-status-bg: color-mix(in srgb, var(--accent-teal) 15%, var(--bg-primary));
+    --node-relation-bg: color-mix(in srgb, var(--accent-teal) 15%, var(--node-status-bg, var(--bg-primary)));
   }
 
   .graph-task-node--relation-parent {
-    --node-status-accent: var(--accent-amber);
-    --node-status-bg: color-mix(in srgb, var(--accent-amber) 15%, var(--bg-primary));
+    --node-relation-bg: color-mix(in srgb, var(--accent-amber) 15%, var(--node-status-bg, var(--bg-primary)));
   }
 
   .graph-task-node--relation-related {
-    --node-status-accent: var(--accent-purple);
-    --node-status-bg: color-mix(in srgb, var(--accent-purple) 13%, var(--bg-primary));
+    --node-relation-bg: color-mix(in srgb, var(--accent-purple) 13%, var(--node-status-bg, var(--bg-primary)));
   }
 
   .node-title-row,

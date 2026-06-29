@@ -1305,6 +1305,12 @@ test("kata reachable graph renders and selects tasks through the configured exte
 
     await expect(detail.getByRole("heading", { name: "Email Susan re: Q3" })).toBeVisible();
     await expect(detail).toContainText("Confirm the Q3 project review agenda.");
+    await expect(graph).toBeVisible();
+    await expect(graphNodes.filter({ hasText: "Pay rent" })).toBeVisible();
+    await expect(linkedNode).toBeVisible();
+    const linkedBoxAfterSelection = await linkedNode.boundingBox();
+    expect(Math.abs((linkedBoxAfterSelection?.x ?? 0) - (linkedBox?.x ?? 0))).toBeLessThanOrEqual(1);
+    expect(Math.abs((linkedBoxAfterSelection?.y ?? 0) - (linkedBox?.y ?? 0))).toBeLessThanOrEqual(1);
 
     await graph.getByRole("button", { name: "Back to task list" }).click();
     await expect(page.getByLabel("Search tasks")).toBeVisible();

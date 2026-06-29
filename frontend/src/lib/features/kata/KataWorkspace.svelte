@@ -39,7 +39,7 @@
     setKataDaemonRoster,
   } from "../../stores/active-kata-daemon.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
-  import { createKataWorkspaceStore } from "../../stores/kata-workspace.svelte.js";
+  import { createKataWorkspaceStore, type KataGraphTaskRef } from "../../stores/kata-workspace.svelte.js";
   import KataDaemonSwitcher from "./KataDaemonSwitcher.svelte";
   import KataReachableGraph from "./KataReachableGraph.svelte";
   import KataRecurrenceDialogs from "./KataRecurrenceDialogs.svelte";
@@ -724,6 +724,10 @@
     graphSourceDetail = null;
   }
 
+  function requestMissingGraphTasks(refs: readonly KataGraphTaskRef[]): void {
+    void store.loadGraphTaskRefs(refs);
+  }
+
   async function moveSelectedIssue(toProjectUID: string | null): Promise<void> {
     const selected = store.selectedIssue?.issue;
     if (!selected || !toProjectUID) return;
@@ -959,6 +963,7 @@
         onSelectIssue={(uid) => {
           void selectIssue(uid);
         }}
+        onRequestMissingTasks={requestMissingGraphTasks}
       />
     {:else}
       <KataSearchPanel

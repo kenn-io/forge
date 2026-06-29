@@ -25,6 +25,13 @@ Interactive surfaces must agree on which item is selected.
   `{ owner, name, number }`-style shapes.
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
+- When a background refresh replaces the selected item's backing object but
+  the stable item identity is unchanged, preserve already-resolved action
+  affordances instead of treating the refresh as item A -> B. Key invalidation
+  on stable route/domain identity, not object reference; the Kata workspace
+  action target is the reference case
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte:158`,
+  `frontend/src/lib/features/kata/KataWorkspace.test.ts:473`).
 
 Responsive layout changes must not change route identity.
 

@@ -87,6 +87,18 @@ All workspace API timestamps are emitted as UTC RFC3339 strings. Keep timestamp
 normalization in the DB/server boundary; the Svelte UI can present local time
 where needed.
 
+## Agent Launch Context
+
+Workspace runtime agent launches currently execute the configured launch target
+in the worktree without writing generated `AGENTS.local.md`, `CLAUDE.local.md`,
+or an injected task prompt first (`internal/server/huma_routes.go::launchWorkspaceRuntimeSession`,
+`internal/workspace/localruntime/manager.go::Launch`). Agents infer PR/issue
+context from the worktree path, branch name, repository instructions, and UI
+metadata; Kata task identity is persisted on the workspace but is not yet
+projected into local agent instruction files. A planned generated context path
+lives in
+`docs/superpowers/plans/2026-06-29-workspace-agent-context-implementation.md`.
+
 ## Diff Scopes
 
 Workspace diffs compare against local `HEAD`, the pushed branch, or a merge

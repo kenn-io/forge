@@ -32,7 +32,7 @@ The first workspace-focused implementation is successful when:
 - The composer supports `@` file autocomplete scoped to the session root and `/` autocomplete for ACP slash commands plus configured middleman skills.
 - Transcript events persist and reload after browser refresh or workspace navigation.
 - Pending permission prompts persist and can be resolved after browser refresh.
-- Session titles, metadata, available commands, and configuration options update from ACP notifications without browser polling.
+- Session titles, metadata, available commands, and configuration options update from ACP session setup responses or notifications without browser polling.
 - Cancelling an active turn sends `session/cancel` and leaves the session in a clear idle, cancelled, or errored state; closing a session uses `session/close` when the agent advertises it.
 - Filesystem access outside the allowed root is rejected and covered by tests.
 - Existing tmux, shell, and terminal-backed runtime sessions continue to work unchanged.
@@ -40,9 +40,9 @@ The first workspace-focused implementation is successful when:
 
 ## ACP Protocol Model
 
-Middleman acts as an ACP client. The server launches an ACP-compatible agent process on demand and speaks newline-delimited UTF-8 JSON-RPC over the process stdin/stdout transport. Agent stderr is captured for diagnostics and never parsed as ACP protocol data.
+Middleman acts as an ACP client. The server launches an ACP-compatible agent process on demand and speaks UTF-8 JSON-RPC over the process stdin/stdout transport. The write path sends newline-delimited JSON-RPC as ACP specifies. The read path should accept newline-delimited messages and complete JSON values that arrive without a trailing newline; `codex-acp` 0.16.0 accepts newline-delimited input but returns initialize responses without a newline terminator in local validation. Agent stderr is captured for diagnostics and never parsed as ACP protocol data.
 
-Each agent connection starts with `initialize`, where middleman advertises client capabilities such as filesystem access and terminal support. The agent response supplies protocol version, agent metadata, supported prompt capabilities, session capabilities such as list, resume, close, delete, and additional directories, MCP transport capabilities, authentication methods, session configuration support, and slash-command support.
+Each agent connection starts with `initialize`, where middleman advertises client capabilities such as filesystem access and terminal support. The agent response supplies protocol version, agent metadata, supported prompt capabilities, top-level `loadSession` support, session capabilities such as list, resume, close, delete, and additional directories, MCP transport capabilities, and authentication methods.
 
 Workspace chat creates an ACP session with `session/new` using:
 
@@ -56,6 +56,8 @@ The browser never owns workspace `cwd`. For workspace sessions, `workspace_id` i
 Ambient sessions may include `cwd`, but only when it is absent or contained within an explicitly configured ambient allowed root. If an ambient `cwd` is outside the allowed root set, session creation fails before launching an agent or advertising filesystem capability.
 
 Middleman has two layers of session history. Middleman-native history is the persisted `acp_sessions` and `acp_events` tables used by the browser. ACP agent-native history is available only when the agent advertises `sessionCapabilities.list`, legacy `loadSession`, `sessionCapabilities.resume`, or `sessionCapabilities.delete`. The first slice should not depend on agent-native history, but the design keeps a narrow adapter so later work can call `session/list` for external history discovery, `session/load` when full replay is wanted, `session/resume` when middleman already has the transcript, and `session/delete` only for an explicit user history-removal action.
+
+Session-level configuration and slash commands are discovered after session setup, not through a dedicated initialize capability. Agents may return initial `configOptions` from `session/new`, `session/load`, or `session/resume`, and may later send `config_option_update` notifications with the full current option list. Agents may send `available_commands_update` notifications at any point after session creation. Local validation against `codex-acp` 0.16.0 showed `session/new` returning model and reasoning-effort config options, while initialize advertised no separate config-option or slash-command capability.
 
 User turns use `session/prompt` with text blocks and optional resource blocks. During a turn, the agent streams `session/update` notifications for user message replay, assistant message chunks, plans, thoughts, tool calls, session info updates, available slash commands, config-option updates, and mode changes. Cancellation uses `session/cancel` for the active turn. Session teardown uses `session/close` when supported so the agent can cancel in-flight work and release resources without middleman killing the whole ACP process.
 
@@ -161,7 +163,7 @@ First-slice event kinds:
 
 - `session_status`: payload has `status`, optional `reason`, and optional `error`.
 - `session_info`: payload has optional `title`, optional `updated_at`, and redacted `_meta` from `session_info_update`.
-- `session_config_options`: payload has the complete current config-option list after session creation, `session/set_config_option`, or `config_option_update`.
+- `session_config_options`: payload has the complete current config-option list after session creation returns `configOptions`, `session/set_config_option`, or `config_option_update`.
 - `available_commands`: payload has the complete current slash-command list from `available_commands_update`.
 - `user_message`: payload has `content` blocks.
 - `assistant_message_chunk`: payload has `message_id`, `content`, and `append`.
@@ -346,7 +348,7 @@ Implementation should land in reviewable slices:
 
 1. Add ACP agent configuration types and fake-agent test fixtures without user-visible UI.
 2. Add `internal/acp` transport with initialize handshake, stderr capture bounds, and fake-agent tests.
-3. Add database migrations, query helpers, capability snapshots, session metadata, command/config state, latest tool-call state, and session manager state transitions.
+3. Add database migrations, query helpers, capability snapshots, session metadata, initial and updated command/config state, latest tool-call state, and session manager state transitions.
 4. Add Huma API routes for agents, sessions, prompt, cancel, close, permissions, config options, commands, and SSE; regenerate API artifacts with `make api-generate`.
 5. Add prompt streaming through the fake ACP agent and full-stack API plus SQLite e2e coverage.
 6. Add ACP plan capture as durable process indicators with snapshot events, aggregate state, and tests for status normalization.

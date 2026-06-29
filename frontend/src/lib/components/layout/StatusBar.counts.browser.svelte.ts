@@ -210,6 +210,10 @@ async function mountStatusBar(path: string, overrides: MockRouteOverride[]): Pro
   };
 }
 
+function statusItemTexts(): (string | undefined)[] {
+  return Array.from(document.querySelectorAll(".status-left .status-item")).map((item) => item.textContent?.trim());
+}
+
 describe("status bar counts", () => {
   vi.setConfig({ testTimeout: 30_000 });
 
@@ -236,8 +240,9 @@ describe("status bar counts", () => {
     }, WAIT);
     await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
 
-    const statusItems = Array.from(document.querySelectorAll(".status-left .status-item"));
-    expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["2 PRs", "1 issues", "1 repos"]);
+    await vi.waitFor(() => {
+      expect(statusItemTexts()).toEqual(["2 PRs", "1 issues", "1 repos"]);
+    }, WAIT);
   });
 
   it("uses open activity threads for activity-page counts", async () => {
@@ -254,8 +259,7 @@ describe("status bar counts", () => {
     await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
 
     await vi.waitFor(() => {
-      const statusItems = Array.from(document.querySelectorAll(".status-left .status-item"));
-      expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["3 PRs", "2 issues", "3 repos"]);
+      expect(statusItemTexts()).toEqual(["3 PRs", "2 issues", "3 repos"]);
     }, WAIT);
   });
 
@@ -275,8 +279,7 @@ describe("status bar counts", () => {
     await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
 
     await vi.waitFor(() => {
-      const statusItems = Array.from(document.querySelectorAll(".status-left .status-item"));
-      expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["3 PRs", "2 issues", "3 repos"]);
+      expect(statusItemTexts()).toEqual(["3 PRs", "2 issues", "3 repos"]);
     }, WAIT);
   });
 
@@ -291,7 +294,8 @@ describe("status bar counts", () => {
     }, WAIT);
     await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
 
-    const statusItems = Array.from(document.querySelectorAll(".status-left .status-item"));
-    expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["1 PRs", "1 issues", "1 repos"]);
+    await vi.waitFor(() => {
+      expect(statusItemTexts()).toEqual(["1 PRs", "1 issues", "1 repos"]);
+    }, WAIT);
   });
 });

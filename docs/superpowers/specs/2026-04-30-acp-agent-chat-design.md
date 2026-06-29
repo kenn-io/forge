@@ -29,10 +29,11 @@ The first workspace-focused implementation is successful when:
 - User and assistant chat text renders as sanitized GitHub Flavored Markdown, including table support.
 - Successive tool calls are grouped by default so busy agent activity stays scannable.
 - ACP plan/task-list updates are captured as durable process indicators that can be rendered outside the chat transcript.
-- The composer supports `@` file autocomplete scoped to the session root and `/` skill autocomplete from the configured skill catalog.
+- The composer supports `@` file autocomplete scoped to the session root and `/` autocomplete for ACP slash commands plus configured middleman skills.
 - Transcript events persist and reload after browser refresh or workspace navigation.
 - Pending permission prompts persist and can be resolved after browser refresh.
-- Cancelling an active turn sends `session/cancel` and leaves the session in a clear idle, cancelled, or errored state.
+- Session titles, metadata, available commands, and configuration options update from ACP notifications without browser polling.
+- Cancelling an active turn sends `session/cancel` and leaves the session in a clear idle, cancelled, or errored state; closing a session uses `session/close` when the agent advertises it.
 - Filesystem access outside the allowed root is rejected and covered by tests.
 - Existing tmux, shell, and terminal-backed runtime sessions continue to work unchanged.
 - Full-stack e2e coverage exercises the HTTP API, SQLite persistence, fake ACP agent, and event stream.
@@ -41,28 +42,36 @@ The first workspace-focused implementation is successful when:
 
 Middleman acts as an ACP client. The server launches an ACP-compatible agent process on demand and speaks newline-delimited UTF-8 JSON-RPC over the process stdin/stdout transport. Agent stderr is captured for diagnostics and never parsed as ACP protocol data.
 
-Each agent connection starts with `initialize`, where middleman advertises client capabilities such as filesystem access and terminal support. The agent response supplies protocol version, agent metadata, supported prompt capabilities, session loading support, MCP transport capabilities, and authentication methods.
+Each agent connection starts with `initialize`, where middleman advertises client capabilities such as filesystem access and terminal support. The agent response supplies protocol version, agent metadata, supported prompt capabilities, session capabilities such as list, resume, close, delete, and additional directories, MCP transport capabilities, authentication methods, session configuration support, and slash-command support.
 
 Workspace chat creates an ACP session with `session/new` using:
 
 - `cwd`: the workspace `worktree_path`.
-- `additionalDirectories`: an empty list in the first slice.
 - `mcpServers`: an empty list in the first slice.
+
+The first workspace slice does not request additional roots. Middleman only sends `additionalDirectories` when the agent advertises `sessionCapabilities.additionalDirectories`; when it does send the field for new, loaded, or resumed sessions, the value is the complete intended additional-root list rather than a patch.
 
 The browser never owns workspace `cwd`. For workspace sessions, `workspace_id` is the authority and the server resolves `cwd` from the persisted ready workspace. If a request body includes `cwd` with `workspace_id`, the server rejects the request unless it exactly matches the canonical workspace worktree path after cleaning symlinks and path separators.
 
 Ambient sessions may include `cwd`, but only when it is absent or contained within an explicitly configured ambient allowed root. If an ambient `cwd` is outside the allowed root set, session creation fails before launching an agent or advertising filesystem capability.
 
-Loaded or resumed conversations can later use `session/load`, `session/resume`, or `session/fork` if the selected agent supports them. User turns use `session/prompt` with text blocks and optional resource blocks. During a turn, the agent streams `session/update` notifications for user message replay, assistant message chunks, plans, thoughts, tool calls, and mode changes. Cancellation uses `session/cancel`.
+Middleman has two layers of session history. Middleman-native history is the persisted `acp_sessions` and `acp_events` tables used by the browser. ACP agent-native history is available only when the agent advertises `sessionCapabilities.list`, legacy `loadSession`, `sessionCapabilities.resume`, or `sessionCapabilities.delete`. The first slice should not depend on agent-native history, but the design keeps a narrow adapter so later work can call `session/list` for external history discovery, `session/load` when full replay is wanted, `session/resume` when middleman already has the transcript, and `session/delete` only for an explicit user history-removal action.
+
+User turns use `session/prompt` with text blocks and optional resource blocks. During a turn, the agent streams `session/update` notifications for user message replay, assistant message chunks, plans, thoughts, tool calls, session info updates, available slash commands, config-option updates, and mode changes. Cancellation uses `session/cancel` for the active turn. Session teardown uses `session/close` when supported so the agent can cancel in-flight work and release resources without middleman killing the whole ACP process.
 
 Plan updates are especially important. ACP sends task-list style updates with `sessionUpdate: "plan"` and `entries` containing `content`, `priority`, and `status`. Middleman treats these as structured process state, not prose. The latest plan for a session is usable as an activity/progress indicator in workspace mode, ambient sidebar mode, tab chrome, and future session lists.
 
 Relevant ACP documentation:
 
-- https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/transports.mdx
-- https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/initialization.mdx
-- https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/prompt-turn.mdx
-- https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/tool-calls.mdx
+- https://agentclientprotocol.com/protocol/v1/transports
+- https://agentclientprotocol.com/protocol/v1/initialization
+- https://agentclientprotocol.com/protocol/v1/session-setup
+- https://agentclientprotocol.com/protocol/v1/session-list
+- https://agentclientprotocol.com/protocol/v1/session-delete
+- https://agentclientprotocol.com/protocol/v1/prompt-turn
+- https://agentclientprotocol.com/protocol/v1/tool-calls
+- https://agentclientprotocol.com/protocol/v1/session-config-options
+- https://agentclientprotocol.com/protocol/v1/slash-commands
 
 ## Backend Architecture
 
@@ -70,7 +79,7 @@ Add an `internal/acp` package with three focused responsibilities.
 
 `transport` owns one launched agent process. It starts the configured command, sends JSON-RPC requests, maps response IDs back to callers, routes notifications, handles agent-to-client requests, records stderr diagnostics, and shuts down the process when no sessions need it.
 
-`manager` owns middleman ACP sessions. It creates sessions, binds them to a transport, stores live status, appends normalized transcript events, broadcasts updates to subscribers, and exposes prompt and cancel operations to HTTP handlers. A session has a middleman session ID, optional workspace ID, selected agent key, ACP agent session ID, cwd, status, timestamps, and last error.
+`manager` owns middleman ACP sessions. It creates sessions, binds them to a transport, stores live status, appends normalized transcript events, broadcasts updates to subscribers, and exposes prompt, cancel, close, permission, and configuration operations to HTTP handlers. A session has a middleman session ID, optional workspace ID, selected agent key, ACP agent session ID, cwd, status, title, agent metadata, timestamps, and last error.
 
 `clientcaps` implements the client-side ACP methods middleman chooses to advertise. Filesystem reads and writes are scoped to allowed roots. For workspace sessions, the only allowed root is the workspace worktree path. For ambient sessions, allowed roots must come from explicit server configuration or a future user-selected root; an ambient session with no allowed root advertises no write capability.
 
@@ -78,7 +87,7 @@ Allowed-root checks happen on canonical absolute paths after resolving symlinks 
 
 Terminal callbacks use short-lived, non-interactive command execution in the session cwd for the first slice. They do not attach to the existing browser terminal pane. Long-running interactive terminals remain the job of the existing local runtime. This keeps ACP terminal callbacks predictable and avoids mixing structured chat events with raw PTY streams.
 
-Permission requests from the agent are normalized into pending permission events and sent to the UI. The manager pauses the JSON-RPC response until the user selects one of the ACP-provided options or cancels the turn.
+Permission requests from the agent are normalized into pending permission events and sent to the UI. The request's `toolCall` payload follows the same patch/upsert shape as tool-call updates, so the manager must merge it into the current tool-call state before rendering or persisting the permission prompt. The manager pauses the JSON-RPC response until the user selects one of the ACP-provided options or cancels the turn.
 
 ## Server API
 
@@ -92,10 +101,13 @@ New routes:
 - `GET /api/v1/acp/sessions/{id}`: return session metadata and transcript.
 - `POST /api/v1/acp/sessions/{id}/prompt`: send a user prompt.
 - `POST /api/v1/acp/sessions/{id}/cancel`: cancel the active prompt turn.
+- `POST /api/v1/acp/sessions/{id}/close`: close the active ACP session and release agent resources when supported.
 - `POST /api/v1/acp/sessions/{id}/permissions/{request_id}`: resolve a pending ACP permission request.
+- `POST /api/v1/acp/sessions/{id}/config-options/{config_id}`: set a session configuration option and return the complete current option list.
 - `GET /api/v1/acp/sessions/{id}/events`: stream normalized session events.
 - `GET /api/v1/acp/context/files`: search mentionable files for a workspace or ambient root. Query parameters include `workspace_id`, ambient-only `cwd`, and `q`.
-- `GET /api/v1/acp/skills`: list configured skills available to the selected agent profile. Query parameters include optional `agent_key` and `q`.
+- `GET /api/v1/acp/skills`: list middleman-configured skills available to the selected agent profile. Query parameters include optional `agent_key` and `q`.
+- `GET /api/v1/acp/sessions/{id}/commands`: list the latest ACP-advertised slash commands for the session.
 
 Use SSE for the first browser streaming path because the app already has SSE infrastructure and prompt, cancel, and permission actions can remain ordinary POST requests. The event payloads are middleman types, not raw ACP messages. If interactive bidirectional needs grow, the same normalized event model can move behind a WebSocket later.
 
@@ -105,6 +117,8 @@ File suggestion APIs use the same allowed-root policy as ACP filesystem capabili
 
 Skill suggestion APIs do not execute skills. They return metadata only: name, description, source, and optional tags. The first slice uses configured local skill manifests or agent-profile skill lists; it does not crawl arbitrary directories from browser input.
 
+ACP slash commands are separate from middleman skills. The agent may advertise slash commands dynamically with `available_commands_update`, and the composer should merge those commands into `/` suggestions with a different source marker. Selecting an ACP slash command inserts the command text into the prompt; selecting a middleman skill inserts structured skill metadata that middleman resolves server-side.
+
 ## Data Model
 
 Persist session metadata and transcript events so the UI can survive refreshes and workspace navigation.
@@ -112,9 +126,12 @@ Persist session metadata and transcript events so the UI can survive refreshes a
 Add tables conceptually shaped as:
 
 - `acp_agents`: optional persisted agent metadata discovered from `initialize`, keyed by configured agent key.
-- `acp_sessions`: middleman session ID, ACP agent session ID, agent key, nullable workspace ID, cwd, status, title, created/updated timestamps, and last error.
+- `acp_agent_capabilities`: latest capability snapshot from `initialize`, keyed by configured agent key and protocol version.
+- `acp_sessions`: middleman session ID, ACP agent session ID, agent key, nullable workspace ID, cwd, additional directories, status, title, agent metadata, config-option state, created/updated timestamps, and last error.
 - `acp_events`: session ID, monotonic sequence, event kind, role, JSON payload, created timestamp.
 - `acp_permission_requests`: session ID, request ID, tool call payload, option payloads, status, selected option, created/resolved timestamps.
+- `acp_session_commands`: latest ACP-advertised slash commands for a session.
+- `acp_tool_calls`: latest normalized tool-call state per session and `toolCallId`, including redacted content and locations for replay without reprocessing every patch event.
 
 The transcript event table stores normalized UI events rather than protocol messages. Raw ACP payloads can be included in a nested diagnostic field for unknown event kinds, but the primary renderer should rely on stable middleman event kinds.
 
@@ -143,17 +160,21 @@ Initial `GET /api/v1/acp/sessions/{id}` returns session metadata and the full re
 First-slice event kinds:
 
 - `session_status`: payload has `status`, optional `reason`, and optional `error`.
+- `session_info`: payload has optional `title`, optional `updated_at`, and redacted `_meta` from `session_info_update`.
+- `session_config_options`: payload has the complete current config-option list after session creation, `session/set_config_option`, or `config_option_update`.
+- `available_commands`: payload has the complete current slash-command list from `available_commands_update`.
 - `user_message`: payload has `content` blocks.
 - `assistant_message_chunk`: payload has `message_id`, `content`, and `append`.
 - `process_plan_snapshot`: payload has `plan_id`, `entries`, and `source: "acp_plan"`. Each entry has stable `entry_id`, `content`, normalized `status`, optional `priority`, and original ACP fields.
 - `process_plan_delta`: payload has `plan_id`, changed `entries`, and previous/current aggregate counts. The first slice may synthesize deltas by comparing consecutive ACP plan snapshots.
-- `tool_call`: payload has `tool_call_id`, `title`, `status`, optional `kind`, redacted `summary`, optional `locations`, and optional redacted content summary.
+- `tool_call`: payload has `tool_call_id`, merged patch state, `title`, `status`, optional `kind`, redacted `summary`, optional `locations`, and optional redacted content summary.
+- `tool_call_content_chunk`: payload has `tool_call_id` and one redacted content item. This is a compatibility event for ACP v2 draft agents; v1 agents still use replacement `content` arrays on `tool_call_update`.
 - `permission_request`: payload has `request_id`, `tool_call`, `options`, and `status`.
 - `permission_resolution`: payload has `request_id`, `outcome`, and optional `option_id`.
 - `error`: payload has `message`, optional `code`, and optional redacted diagnostics.
 - `unknown`: payload has `acp_type` and a redacted diagnostic summary.
 
-Status transitions are explicit: `starting`, `idle`, `running`, `waiting_for_permission`, `cancelling`, `cancelled`, `errored`, and `closed`. The manager allows one active prompt per session. A second prompt request while a turn is active returns a conflict response rather than queueing. Duplicate cancel requests are idempotent while the session is `running`, `waiting_for_permission`, or `cancelling`.
+Status transitions are explicit: `starting`, `idle`, `running`, `waiting_for_permission`, `cancelling`, `cancelled`, `closing`, `closed`, and `errored`. The manager allows one active prompt per session. A second prompt request while a turn is active returns a conflict response rather than queueing. Duplicate cancel requests are idempotent while the session is `running`, `waiting_for_permission`, or `cancelling`. Duplicate close requests are idempotent once the session is `closing` or `closed`.
 
 Only one permission request may be active for a session in the first slice. If an agent sends another permission request before the first resolves, the manager returns an error to the agent and appends an `error` event.
 
@@ -198,7 +219,9 @@ Tool calls are secondary process evidence. They can update activity text and run
 
 ## Tool Call Grouping
 
-ACP emits `tool_call` and `tool_call_update` notifications per `toolCallId`. Middleman persists normalized tool-call events individually so status updates, locations, and redacted content summaries remain inspectable.
+ACP v1 emits `tool_call` creation notifications and `tool_call_update` patch notifications per `toolCallId`. Some agents already send only `tool_call_update`, and the ACP v2 draft proposes making that the single upsert notification. Middleman therefore treats both v1 event names as the same normalized upsert path: if a `toolCallId` has not been seen, create a default row; otherwise patch the existing row.
+
+Patch semantics matter. Omitted fields leave existing values unchanged, concrete fields replace previous values, and a `null` field clears the value when the protocol version supports explicit clears. For collection fields such as content and locations, replacement updates replace the whole array. If a v2-capable agent sends `tool_call_content_chunk`, middleman appends the single chunk item in receive order unless a later replacement update clears or replaces the content. Middleman persists normalized tool-call events individually and stores the latest merged state so status updates, locations, and redacted content summaries remain inspectable.
 
 The frontend groups successive tool calls as a presentation rule. A group is a contiguous run of tool-call display items within one prompt turn, uninterrupted by user messages, assistant message chunks, process plan snapshots, permission prompts, or errors. Updates for an existing `toolCallId` update that tool's row inside its original group instead of creating a new display row.
 
@@ -246,6 +269,7 @@ The component tree should be:
 - `AgentToolCallGroup.svelte`: groups successive tool calls, showing the first two and last two by default with an expand control.
 - `AgentToolCall.svelte`: renders one tool call summary and result inside a group.
 - `AgentPermissionPrompt.svelte`: renders ACP permission options and posts the selected outcome.
+- `AgentSessionConfigControls.svelte`: renders ACP session configuration options in agent-provided order and posts option changes.
 - `AgentComposer.svelte`: sends prompts and exposes cancel while a turn is running.
 - `AgentMentionMenu.svelte`: renders `@` file suggestions and `/` skill suggestions for the composer.
 
@@ -254,7 +278,7 @@ The component must avoid workspace-specific UI assumptions. It can render compac
 `AgentComposer.svelte` supports two mention modes:
 
 - `@`: opens file autocomplete after the user types `@` and filters by the current token. Selecting a file inserts a compact mention chip and stores the file URI plus path metadata separately from the visible text. On submit, selected files are sent as ACP resource content blocks or resource references according to the selected agent's prompt capabilities. The visible text still contains the mention label so the transcript remains readable.
-- `/`: opens skill autocomplete when typed at the start of the composer or after whitespace. Selecting a skill inserts a skill chip and adds a structured skill mention to the outgoing prompt metadata. The backend resolves the selected skill against the configured catalog and includes the skill name and description in the prompt context; loading full skill instructions is a later extension unless the configured skill provider explicitly marks the skill as safe to embed.
+- `/`: opens command autocomplete when typed at the start of the composer or after whitespace. Suggestions include ACP-advertised slash commands and middleman-configured skills. Selecting an ACP command inserts command text that the agent receives as a normal prompt string. Selecting a middleman skill inserts a skill chip and adds a structured skill mention to the outgoing prompt metadata. The backend resolves the selected skill against the configured catalog and includes the skill name and description in the prompt context; loading full skill instructions is a later extension unless the configured skill provider explicitly marks the skill as safe to embed.
 
 Autocomplete menus are keyboard-first: arrow keys move selection, Enter accepts, Escape closes, and Tab accepts when a menu is open. Suggestions are debounced, cancel stale requests, and preserve typed text if the menu closes without selection.
 
@@ -304,13 +328,15 @@ The manager enforces lifecycle bounds:
 - SSE subscribers are removed promptly on disconnect and do not keep sessions alive forever.
 - stderr capture is bounded per process.
 - command execution for ACP terminal callbacks has a timeout and output limit.
-- workspace teardown cancels active workspace-bound ACP sessions and closes their agent processes.
+- workspace teardown cancels active workspace-bound prompt turns, calls `session/close` for supported agents, and closes the agent process only after the ACP close path has completed or timed out.
 
 ## Error Handling
 
 Initialization failures produce a disabled agent entry with the command error and captured stderr summary. Session creation failures return a structured API error and show an inline chat error. Prompt failures append an error event to the transcript and move the session back to idle unless the transport died. Transport death marks active sessions as errored and closes their streams.
 
 Cancellation is best-effort. The UI immediately shows a cancelling state, sends `session/cancel`, and then waits for the original prompt result. If the agent exits or returns an error during cancellation, the session records a cancelled or errored stop reason based on the observable outcome.
+
+Close is separate from cancel. Closing a session should call `session/close` when the agent advertises `sessionCapabilities.close`; otherwise middleman marks the local session closed and tears down its transport when no other sessions need it. A successful close records `closed`, keeps the retained transcript for reload, and prevents new prompt turns for that middleman session.
 
 Permission requests time out only if the browser disconnects and the session is explicitly cancelled. A refresh should reload the pending permission prompt from persisted state.
 
@@ -320,16 +346,19 @@ Implementation should land in reviewable slices:
 
 1. Add ACP agent configuration types and fake-agent test fixtures without user-visible UI.
 2. Add `internal/acp` transport with initialize handshake, stderr capture bounds, and fake-agent tests.
-3. Add database migrations, query helpers, and session manager state transitions.
-4. Add Huma API routes for agents, sessions, prompt, cancel, permissions, and SSE; regenerate API artifacts with `make api-generate`.
+3. Add database migrations, query helpers, capability snapshots, session metadata, command/config state, latest tool-call state, and session manager state transitions.
+4. Add Huma API routes for agents, sessions, prompt, cancel, close, permissions, config options, commands, and SSE; regenerate API artifacts with `make api-generate`.
 5. Add prompt streaming through the fake ACP agent and full-stack API plus SQLite e2e coverage.
 6. Add ACP plan capture as durable process indicators with snapshot events, aggregate state, and tests for status normalization.
-7. Add filesystem and terminal client capability handlers with allowed-root, timeout, truncation, and redaction tests.
-8. Add file and skill suggestion APIs for `@` and `/` composer autocomplete with allowed-root and configured-catalog tests.
-9. Add permission request persistence and browser refresh recovery.
-10. Add the detachable Svelte chat components, sanitized GFM message rendering, process indicator rendering, grouped tool-call rendering, composer autocomplete, and store with mocked API tests.
-11. Mount the chat surface in workspaces mode without changing existing terminal session behavior.
-12. Add final full-stack e2e coverage for workspace chat creation, prompt streaming, process plan indicators, file mention submission, skill mention submission, cancellation, permission resolution, transcript reload, and root rejection.
+7. Add ACP session info, config-option, and available-command event handling with persistence and API exposure.
+8. Add tool-call upsert handling that accepts v1 `tool_call`, v1 `tool_call_update`, permission-request tool-call payloads, and v2 draft `tool_call_content_chunk`.
+9. Add filesystem and terminal client capability handlers with allowed-root, timeout, truncation, and redaction tests.
+10. Add file, skill, and slash-command suggestion APIs for `@` and `/` composer autocomplete with allowed-root and configured-catalog tests.
+11. Add permission request persistence and browser refresh recovery.
+12. Add cancel and close paths, including `session/close` capability detection and local fallback behavior.
+13. Add the detachable Svelte chat components, sanitized GFM message rendering, process indicator rendering, grouped tool-call rendering, config controls, composer autocomplete, and store with mocked API tests.
+14. Mount the chat surface in workspaces mode without changing existing terminal session behavior.
+15. Add final full-stack e2e coverage for workspace chat creation, prompt streaming, process plan indicators, command/config updates, file mention submission, slash-command submission, skill mention submission, cancellation, close, permission resolution, transcript reload, and root rejection.
 
 ## Testing
 
@@ -339,7 +368,10 @@ Backend tests should include a fake ACP agent process that speaks newline-delimi
 - session creation with workspace cwd.
 - prompt streaming into normalized transcript events.
 - tool call create/update notifications remain persisted as individual events with status updates tied to `toolCallId`.
+- tool call updates can create rows without a prior create notification, merge patches without clearing omitted fields, clear fields when `null` is supported, and append v2 draft content chunks in order.
 - ACP plan updates persisted as process indicator snapshots with aggregate progress counts.
+- session info, config-option, and available-command updates persisted and replayed.
+- session close calls `session/close` when supported and falls back to local closure when unsupported.
 - cancellation forwarding.
 - permission request pause and resolution.
 - filesystem requests rejected outside the allowed root.
@@ -357,8 +389,9 @@ Frontend tests should cover:
 - compact process indicators update when plan task statuses change.
 - composer disables send and exposes cancel during an active turn.
 - `@` autocomplete searches files, inserts mention chips, and includes selected resources on submit.
-- `/` autocomplete searches skills, inserts skill chips, and includes selected skill metadata on submit.
+- `/` autocomplete searches ACP slash commands and middleman skills, inserts command text or skill chips, and includes selected skill metadata on submit.
 - permission option clicks call the API and update local pending state.
+- session config controls render options in agent-provided order and refresh when option updates arrive.
 - workspace mode mounts the chat surface without coupling it to terminal tabs.
 
 End-to-end tests should exercise the full stack with a fake ACP agent, real SQLite, and the generated Go API client where practical. Go tests run with `-shuffle=on`; frontend commands use Bun.

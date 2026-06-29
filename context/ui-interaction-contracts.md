@@ -99,6 +99,10 @@ shortcuts while it is open.
   their `when` predicate no longer matches the active modal state.
 - Outside-click, focus-leave, and Escape close paths should converge on the same
   cleanup so stale frames, listeners, and highlighted rows are not left behind.
+- Custom focus traps must cycle controls in rendered DOM order. If the trap
+  builds the focusable list from a mixed selector list (`button, input, select,
+  ...`), normalize the result by document position before wrapping Tab /
+  Shift+Tab so selector-engine grouping cannot change keyboard order.
 
 ## Palette Persistence
 

@@ -4,7 +4,7 @@
 
 **Goal:** Give agents launched from middleman workspaces explicit, source-aware task context for PRs, provider issues, and Kata tasks.
 
-**Architecture:** Current workspace launch does not generate `AGENTS.local.md` or `CLAUDE.local.md`; agent sessions are launched in the worktree with generic configured commands, while source identity comes from branch/path naming, persisted workspace metadata, and the UI. Add a neutral workspace-agent-context model in Go, render it to generated worktree-local context files during workspace setup and before agent launch, and make Kata tasks feed the same model without treating them as provider issues.
+**Architecture:** Current workspace launch does not generate `AGENTS.local.md` or `CLAUDE.local.md`; agent sessions are launched in the worktree with generic configured commands, while source identity comes from branch/path naming, persisted workspace metadata, and the UI. Add a neutral workspace-agent-context model in Go, write a canonical `.middleman/agent-context.md` file for every workspace, and generate target-specific instruction files just in time when the user launches that target. Kata tasks feed the same model without treating them as provider issues.
 
 **Tech Stack:** Go, SQLite-backed workspace metadata, Huma handlers, tmux/ptyowner runtime launching, Svelte 5/TypeScript for any visible status, generated OpenAPI artifacts when API shapes change.
 
@@ -25,13 +25,30 @@ The likely reason PR/issue agents behave well today is incidental but useful: wo
 
 - Create `internal/workspace/agent_context.go`: build a provider-neutral `AgentContext` from a persisted workspace summary plus optional live task details.
 - Create `internal/workspace/agent_context_test.go`: unit-test context rendering and prompt-injection boundaries.
-- Modify `internal/workspace/manager.go`: render generated context files after the worktree exists and before the base tmux session starts.
-- Modify `internal/server/huma_routes.go`: refresh generated context before launching workspace runtime agent sessions.
+- Modify `internal/workspace/manager.go`: render the canonical generated context file after the worktree exists and before the base tmux session starts.
+- Modify `internal/server/huma_routes.go`: render target-specific context just in time before launching workspace runtime agent sessions.
 - Modify `internal/server/kata_workspace.go`: expose a small server-side helper for resolving live Kata task details when available, falling back to stored metadata.
 - Modify `internal/db/types.go` only if the context builder needs an explicit persisted timestamp or source version; otherwise keep DB schema unchanged.
 - Modify `context/workspace-apis.md`: document generated context files as part of workspace setup, including file ownership and non-goals.
 - Modify tests under `internal/server/` if launch-time refresh behavior is wired through server handlers.
 - Regenerate API artifacts only if a visible API field is added for context status; the base plan avoids API shape changes.
+
+## Design Decision: Just-In-Time Agent Files
+
+Generate agent-specific files only when the user launches that agent. For example,
+clicking the Claude launch target may create or refresh a generated `CLAUDE.md`
+immediately before `s.runtime.Launch` runs, but opening the workspace or launching
+Codex should not create Claude-specific files. This keeps idle workspaces quieter,
+avoids surprising users with files for tools they did not run, and lets the launch
+target decide which file shape is useful.
+
+The writer must still protect repo-owned instructions. A root `CLAUDE.md` or
+`AGENTS.md` may already be checked in, as this repository does. Middleman may only
+overwrite a target-specific file when the existing file carries the middleman generated
+marker. If a repo-owned `CLAUDE.md` already exists, the Claude path must fall back to a
+safe supported mechanism discovered in Task 1, such as a generated local companion file
+or launch-time context argument. If no safe mechanism exists, keep only
+`.middleman/agent-context.md` and surface a warning rather than clobbering the repo file.
 
 ## Task 1: Prove Agent File Semantics
 
@@ -59,17 +76,20 @@ For Codex and Claude, ask a harmless question that requires reporting which inst
 Use this decision rule:
 
 ```text
-If Codex reads AGENTS.local.md and Claude reads CLAUDE.local.md:
-  generate AGENTS.local.md and CLAUDE.local.md.
-If either local filename is unsupported:
-  generate .middleman/agent-context.md and pass it through that agent's supported launch-time context mechanism.
+Always generate .middleman/agent-context.md as the canonical workspace context.
+If Claude reads a generated CLAUDE.md and no repo-owned CLAUDE.md exists:
+  generate CLAUDE.md just in time when target_key is claude.
+If a repo-owned CLAUDE.md exists:
+  do not overwrite it; use a proved Claude-supported companion file or launch argument.
+If Codex supports AGENTS.local.md:
+  generate AGENTS.local.md just in time when target_key is codex.
 If no safe launch-time mechanism exists for an agent:
   keep .middleman/agent-context.md and show a launch warning instead of pretending the agent will read it.
 ```
 
 - [ ] **Step 3: Preserve tracked project instructions**
 
-Do not overwrite checked-in `AGENTS.md` or `CLAUDE.md`. Generated files must be untracked local files or files under `.middleman/`.
+Do not overwrite checked-in `AGENTS.md` or `CLAUDE.md`. Generated target-specific files must be absent or already marked as middleman-generated before middleman writes them.
 
 ## Task 2: Add A Neutral Agent Context Model
 
@@ -193,7 +213,7 @@ go test ./internal/workspace -run TestBuildAgentContext -shuffle=on
 
 Expected: pass.
 
-## Task 3: Write Generated Context Files During Setup
+## Task 3: Write Canonical Context During Setup
 
 **Files:**
 - Modify: `internal/workspace/manager.go`
@@ -202,7 +222,7 @@ Expected: pass.
 
 - [ ] **Step 1: Write failing setup tests**
 
-Add tests that create a ready worktree for each owner type and assert generated context exists after `Setup` succeeds:
+Add tests that create a ready worktree for each owner type in a fixture repository without repo-owned agent files, then assert canonical context exists after `Setup` succeeds:
 
 ```go
 assert.FileExists(filepath.Join(ws.WorktreePath, ".middleman", "agent-context.md"))
@@ -210,6 +230,8 @@ content, err := os.ReadFile(filepath.Join(ws.WorktreePath, ".middleman", "agent-
 require.NoError(err)
 assert.Contains(string(content), "Source kind: Kata task")
 assert.Contains(string(content), "Kata daemon:")
+assert.NoFileExists(filepath.Join(ws.WorktreePath, "CLAUDE.md"))
+assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.local.md"))
 ```
 
 - [ ] **Step 2: Run red**
@@ -220,23 +242,21 @@ Run:
 go test ./internal/workspace -run 'Test.*AgentContext.*Setup|Test.*Kata.*Setup' -shuffle=on
 ```
 
-Expected: fail because setup does not write context files.
+Expected: fail because setup does not write canonical context.
 
 - [ ] **Step 3: Implement setup-time write**
 
-After `addWorktree` or `reuseExistingWorkspaceWorktree` succeeds and before `newTerminalSession`, load the workspace summary from DB, build `AgentContext`, and write generated files atomically:
+After `addWorktree` or `reuseExistingWorkspaceWorktree` succeeds and before `newTerminalSession`, load the workspace summary from DB, build `AgentContext`, and write the canonical file atomically:
 
 ```text
 worktree/.middleman/agent-context.md
-worktree/AGENTS.local.md      only if Task 1 proved supported
-worktree/CLAUDE.local.md      only if Task 1 proved supported
 ```
 
 Use `os.MkdirAll`, write to a temp file in the target directory, `fsync` if the codebase already has a helper for it, then `os.Rename`. File mode should be `0644`; directories should be `0755`.
 
 - [ ] **Step 4: Keep setup failure behavior explicit**
 
-If context write fails, fail workspace setup before marking the workspace ready. A ready workspace whose agents lack intended context is worse than an actionable setup error.
+If canonical context write fails, fail workspace setup before marking the workspace ready. A ready workspace whose agents lack the canonical generated context is worse than an actionable setup error.
 
 - [ ] **Step 5: Run green**
 
@@ -248,7 +268,7 @@ go test ./internal/workspace -run 'Test.*AgentContext.*Setup|Test.*Kata.*Setup' 
 
 Expected: pass.
 
-## Task 4: Refresh Context Before Launching Agents
+## Task 4: Render Target-Specific Context Before Launching Agents
 
 **Files:**
 - Modify: `internal/server/huma_routes.go`
@@ -257,13 +277,27 @@ Expected: pass.
 
 - [ ] **Step 1: Write failing launch tests**
 
-Add a server-level test for `POST /api/v1/workspaces/{id}/runtime/sessions` where a stale generated file is replaced before launching `codex` or `claude`.
+Add server-level tests for `POST /api/v1/workspaces/{id}/runtime/sessions` where a stale canonical file is replaced before launching any agent and target-specific files are generated only for the clicked target.
 
 Use a fake runtime manager or fake agent command that records the file content it sees. Assert:
 
 ```go
 assert.Contains(recordedContext, "Source kind: Kata task")
 assert.Contains(recordedContext, "Issue UID: issue-kata-1")
+assert.FileExists(filepath.Join(ws.WorktreePath, ".middleman", "agent-context.md"))
+assert.FileExists(filepath.Join(ws.WorktreePath, "CLAUDE.md")) // only after launching target_key "claude" when safe
+assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.local.md"))
+```
+
+Add a separate test with a pre-existing unmarked `CLAUDE.md`:
+
+```go
+require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "CLAUDE.md"), []byte("# Repo instructions\n"), 0o644))
+_, err := launchWorkspaceAgent(ctx, ws.ID, "claude")
+require.NoError(err)
+content, err := os.ReadFile(filepath.Join(ws.WorktreePath, "CLAUDE.md"))
+require.NoError(err)
+assert.Equal("# Repo instructions\n", string(content))
 ```
 
 - [ ] **Step 2: Run red**
@@ -274,17 +308,20 @@ Run:
 go test ./internal/server -run 'Test.*WorkspaceRuntime.*AgentContext' -shuffle=on
 ```
 
-Expected: fail because launch does not refresh generated context.
+Expected: fail because launch does not refresh canonical context or generate target-specific files.
 
 - [ ] **Step 3: Implement launch-time refresh**
 
-In `launchWorkspaceRuntimeSession`, after `getReadyRuntimeWorkspace` and before `s.runtime.Launch`, call a workspace manager method such as:
+In `launchWorkspaceRuntimeSession`, after `getReadyRuntimeWorkspace` and before `s.runtime.Launch`, inspect the selected launch target. For `LaunchTargetAgent`, call a workspace manager method that refreshes the canonical file and writes only the selected target's safe companion files:
 
 ```go
-err := s.workspaces.RefreshAgentContext(ctx, summary.ID)
+err := s.workspaces.PrepareAgentLaunchContext(ctx, workspace.PrepareAgentLaunchContextOptions{
+	WorkspaceID: summary.ID,
+	TargetKey:   targetKey,
+})
 ```
 
-Only run this for `LaunchTargetAgent` targets. Plain shell and host/project worktree runtime sessions should not be changed by this task.
+Only run this for `LaunchTargetAgent` targets. Plain shell and host/project worktree runtime sessions should not be changed by this task. The Claude branch may create generated `CLAUDE.md` just in time, but only when the path is absent or already carries the middleman generated marker.
 
 - [ ] **Step 4: Fetch live Kata detail opportunistically**
 
@@ -334,7 +371,7 @@ Every generated file should start with:
 
 - [ ] **Step 3: Avoid overwriting user-owned files**
 
-If `AGENTS.local.md` or `CLAUDE.local.md` already exists and does not contain the generated marker, do not overwrite it. Write only `.middleman/agent-context.md` and add a warning event to the workspace setup log.
+If `AGENTS.local.md`, `CLAUDE.local.md`, or `CLAUDE.md` already exists and does not contain the generated marker, do not overwrite it. Write only `.middleman/agent-context.md` and add a warning event to the workspace setup or launch result.
 
 - [ ] **Step 4: Document the behavior**
 
@@ -343,10 +380,11 @@ Add to `context/workspace-apis.md`:
 ```markdown
 ## Agent Context Files
 
-Workspace setup writes generated local context files for agent sessions. The
-canonical file is `.middleman/agent-context.md`; agent-specific local files are
-generated only when the target agent is known to read them. Middleman never
-overwrites checked-in `AGENTS.md` or `CLAUDE.md`.
+Workspace setup writes the canonical generated context file at
+`.middleman/agent-context.md`. Agent-specific files are generated just in time
+when the user launches that target, such as a safe generated `CLAUDE.md` for the
+Claude target. Middleman never overwrites checked-in or user-owned `AGENTS.md`
+or `CLAUDE.md`.
 ```
 
 - [ ] **Step 5: Run focused tests**
@@ -414,6 +452,6 @@ Expected: the agent identifies `pull request`, `provider issue`, or `Kata task` 
 
 ## Open Decisions
 
-- The exact agent-specific filenames depend on Task 1. Do not rely on `AGENTS.local.md` or `CLAUDE.local.md` until a probe proves the current installed agents read them.
+- The exact agent-specific filenames depend on Task 1. Do not rely on `AGENTS.local.md`, `CLAUDE.local.md`, or generated `CLAUDE.md` until a probe proves the current installed agents read them and the writer can avoid clobbering repo-owned files.
 - The first implementation should avoid API changes. Add a visible context status only if setup warnings prove users need to see when agent-specific files were skipped.
 - Do not force arbitrary project worktree sessions through this model yet; keep scope to middleman-owned workspaces for PRs, provider issues, and Kata tasks.

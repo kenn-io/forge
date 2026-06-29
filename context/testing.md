@@ -22,6 +22,16 @@ When changing structs, fields, aliases, fragments, pagination arguments, or nest
 
 CI runs the live GraphQL validation as a separate Go test step using the workflow `GITHUB_TOKEN` only in trusted contexts, such as pushes to `main`, manual `workflow_dispatch` runs, and same-repository pull requests. The general pull request Go test step does not receive a GitHub token.
 
+## CI path-gated test jobs
+
+The CI workflow classifies changed paths once in `.github/workflows/ci.yml::detect_changes`
+and uses that result to gate expensive test jobs. Go unit/integration, race,
+and Windows PTY test jobs run only when Go source or module inputs change.
+Frontend unit, browser, and Playwright e2e jobs run when either frontend paths
+change or Go paths change, because backend and API behavior can affect the SPA
+contract even when no TypeScript files moved. Manual `workflow_dispatch` runs
+force both classes on so maintainers can request a full test pass.
+
 ## Provider work
 
 When adding or changing a provider, pick tests at the boundary where users would

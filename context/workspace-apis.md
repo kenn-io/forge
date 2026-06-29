@@ -89,15 +89,25 @@ where needed.
 
 ## Agent Launch Context
 
-Workspace runtime agent launches currently execute the configured launch target
-in the worktree without writing generated `AGENTS.local.md`, `CLAUDE.local.md`,
-or an injected task prompt first (`internal/server/huma_routes.go::launchWorkspaceRuntimeSession`,
-`internal/workspace/localruntime/manager.go::Launch`). Agents infer PR/issue
-context from the worktree path, branch name, repository instructions, and UI
-metadata; Kata task identity is persisted on the workspace but is not yet
-projected into local agent instruction files. A planned generated context path
-lives in
-`docs/superpowers/plans/2026-06-29-workspace-agent-context-implementation.md`.
+Workspace setup writes the canonical generated context file at
+`.middleman/agent-context.md`. The file identifies the workspace source item as
+a pull request, provider issue, or Kata task; includes the repo, branch, source
+URL, and known associated PR number; and quotes source-system text so task data
+is not presented as higher-priority agent instructions.
+
+Before writing generated context files, middleman adds exact local ignore rules
+to the worktree's Git-private exclude file (`git rev-parse --git-path
+info/exclude`). It does not edit tracked `.gitignore` files for this. Generated
+paths include `.middleman/`, `AGENTS.local.md`, and `CLAUDE.local.md`; middleman
+never ignores or overwrites root `AGENTS.md` or `CLAUDE.md` because those are
+legitimate repo-owned instruction files.
+
+Agent-specific companion files are generated just in time when the user launches
+that target. The Codex target may create `AGENTS.local.md`; the Claude target
+may create `CLAUDE.local.md`. If either `.local.md` file already exists,
+middleman leaves it untouched and refreshes only `.middleman/agent-context.md`.
+Companion files are stable pointers to the canonical context so launch-time
+refresh updates the source facts without overwriting user-owned local files.
 
 ## Diff Scopes
 

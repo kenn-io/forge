@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
@@ -101,6 +103,13 @@ func seedReadyWorkspaceForRuntimeTokenTest(
 	worktreePath string,
 ) {
 	t.Helper()
+	require.NoError(t, os.MkdirAll(worktreePath, 0o755))
+	runTokenRuntimeTestGit(t, worktreePath, "init", "--initial-branch=main")
+	runTokenRuntimeTestGit(t, worktreePath, "config", "user.email", "test@example.test")
+	runTokenRuntimeTestGit(t, worktreePath, "config", "user.name", "Test User")
+	require.NoError(t, os.WriteFile(filepath.Join(worktreePath, "README.md"), []byte("# Test\n"), 0o644))
+	runTokenRuntimeTestGit(t, worktreePath, "add", "README.md")
+	runTokenRuntimeTestGit(t, worktreePath, "commit", "-m", "initial")
 	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
 		ID:              "ws-runtime-token",
 		Platform:        string(platform.KindGitHub),
@@ -115,4 +124,10 @@ func seedReadyWorkspaceForRuntimeTokenTest(
 		Status:          "ready",
 		CreatedAt:       time.Now().UTC().Truncate(time.Second),
 	}))
+}
+
+func runTokenRuntimeTestGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }

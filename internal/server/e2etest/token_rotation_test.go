@@ -965,6 +965,13 @@ func waitForTokenRotationConfigEvent(
 func seedReadyRuntimeWorkspace(t *testing.T, database *db.DB, worktreePath string) {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Second)
+	require.NoError(t, os.MkdirAll(worktreePath, 0o755))
+	runSettingsGit(t, worktreePath, "init", "--initial-branch=main")
+	runSettingsGit(t, worktreePath, "config", "user.email", "test@example.test")
+	runSettingsGit(t, worktreePath, "config", "user.name", "Test User")
+	require.NoError(t, os.WriteFile(filepath.Join(worktreePath, "README.md"), []byte("# Test\n"), 0o644))
+	runSettingsGit(t, worktreePath, "add", "README.md")
+	runSettingsGit(t, worktreePath, "commit", "-m", "initial")
 	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
 		ID:              "ws-token-runtime",
 		Platform:        string(platform.KindGitHub),

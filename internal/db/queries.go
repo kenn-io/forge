@@ -5030,6 +5030,10 @@ const workspaceSummaryColumns = `
 	    WHEN w.item_type = 'issue' THEN i.state
 	    ELSE m.state
 	END,
+	CASE
+	    WHEN w.item_type = 'issue' THEN i.url
+	    ELSE m.url
+	END,
 	m.is_draft, m.ci_status,
 	m.review_decision, m.additions, m.deletions,
 	m.comment_count, m.mergeable_state,
@@ -5068,7 +5072,8 @@ func scanWorkspaceSummary(
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,
 		&s.ErrorMessage, &s.CreatedAt, &kataMetadataJSON,
-		&s.MRTitle, &s.MRState, &s.MRIsDraft, &s.MRCIStatus,
+		&s.SourceTitle, &s.SourceState, &s.SourceURL,
+		&s.MRIsDraft, &s.MRCIStatus,
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
 		&s.MRCommentCount, &s.MRMergeableState,
 		&itemLastActivityAt,
@@ -5077,6 +5082,8 @@ func scanWorkspaceSummary(
 		return nil, err
 	}
 	s.CreatedAt = s.CreatedAt.UTC()
+	s.MRTitle = s.SourceTitle
+	s.MRState = s.SourceState
 	if s.ItemKey == "" && s.ItemType != WorkspaceItemTypeKataTask {
 		s.ItemKey = strconv.Itoa(s.ItemNumber)
 	}

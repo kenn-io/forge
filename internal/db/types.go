@@ -679,9 +679,12 @@ type Workspace struct {
 	KataMetadata    *WorkspaceKataMetadata
 }
 
-// WorkspaceSummary extends Workspace with joined MR metadata.
+// WorkspaceSummary extends Workspace with joined source-item metadata.
 type WorkspaceSummary struct {
 	Workspace
+	SourceTitle        *string
+	SourceState        *string
+	SourceURL          *string
 	MRTitle            *string
 	MRState            *string
 	MRIsDraft          *bool

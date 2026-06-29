@@ -650,6 +650,15 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 		t, localRepo, "rev-parse", "refs/remotes/origin/feature/thing",
 	)))
 	assert.Equal(sourceSHA, headSHA)
+
+	contextPath := filepath.Join(ws.WorktreePath, canonicalAgentContextRelPath)
+	contextContent, err := os.ReadFile(contextPath)
+	require.NoError(err)
+	assert.Contains(string(contextContent), "Source kind: pull request")
+	assert.Contains(string(contextContent), "PR: #42")
+	assertGitIgnored(t, ws.WorktreePath, canonicalAgentContextRelPath)
+	status := strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "status", "--porcelain")))
+	assert.Empty(status)
 }
 
 func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {

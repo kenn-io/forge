@@ -6384,6 +6384,14 @@ func (s *Server) launchWorkspaceRuntimeSession(
 	if targetKey == "" {
 		return nil, problemValidation("body.target_key", "target_key is required")
 	}
+	if workspaceRuntimeTargetIsAgent(s.runtime, targetKey) {
+		if err := s.workspaces.PrepareAgentLaunchContext(ctx, workspace.PrepareAgentLaunchContextOptions{
+			WorkspaceID: summary.ID,
+			TargetKey:   targetKey,
+		}); err != nil {
+			return nil, problemInternal("prepare agent context: " + err.Error())
+		}
+	}
 
 	session, err := s.runtime.Launch(
 		ctx, summary.ID, summary.WorktreePath, targetKey,
@@ -6407,6 +6415,18 @@ func (s *Server) launchWorkspaceRuntimeSession(
 	}
 	s.forgetRecordedRuntimeSessionIfExited(ctx, session)
 	return &workspaceRuntimeSessionOutput{Body: session}, nil
+}
+
+func workspaceRuntimeTargetIsAgent(runtime *localruntime.Manager, targetKey string) bool {
+	if runtime == nil {
+		return false
+	}
+	for _, target := range runtime.LaunchTargets() {
+		if target.Key == targetKey {
+			return target.Kind == localruntime.LaunchTargetAgent && target.Available
+		}
+	}
+	return false
 }
 
 func (s *Server) forgetRecordedRuntimeSessionIfExited(

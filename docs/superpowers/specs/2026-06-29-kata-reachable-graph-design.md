@@ -95,7 +95,7 @@ graph action beside the workspace/detail actions.
 `KataReachableGraph.svelte` renders the alternate pane with `@xyflow/svelte`:
 
 - `SvelteFlow` with `nodesDraggable={false}` and `nodesConnectable={false}`;
-- `fitView`, `Controls`, and `Background`;
+- `fitView`, `Controls`, `MiniMap`, and `Background`;
 - custom node data with title, id label, project label, status, priority, source
   and selected markers, and cached/placeholder state;
 - `onnodeclick` to select cached nodes.

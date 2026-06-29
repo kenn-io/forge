@@ -47,12 +47,15 @@ request. This keeps idle workspaces quieter, avoids surprising users with files 
 tools they did not run, and lets the launch target decide which file shape is useful.
 
 The writer must still protect repo-owned instructions. A root `CLAUDE.md` or
-`AGENTS.md` may already be checked in, as this repository does. Middleman may only
-overwrite a target-specific file when the existing file carries the middleman generated
-marker. If a repo-owned `CLAUDE.md` already exists, the Claude path must fall back to a
-safe supported mechanism discovered in Task 1, such as a generated local companion file
-or launch-time context argument. If no safe mechanism exists, keep only
-`.middleman/agent-context.md` and surface a warning rather than clobbering the repo file.
+`AGENTS.md` may already be checked in, as this repository does. A root-level
+`AGENTS.local.md` or `CLAUDE.local.md` may also already exist because a user, Git hook,
+or another tool created it. If a target-specific local file already exists, middleman
+must not overwrite, merge, truncate, or marker-check-rewrite it; skip that companion
+file and continue with only the refreshed canonical `.middleman/agent-context.md`. If a
+repo-owned `CLAUDE.md` already exists, the Claude path must fall back to a safe supported
+mechanism discovered in Task 1, such as a launch-time context argument. If no safe
+mechanism exists, keep only `.middleman/agent-context.md` and surface a warning rather
+than clobbering the repo file.
 All generated guidance files must be ignored by Git before they are written. The
 writer may add ignore entries for `.middleman/`, `AGENTS.local.md`, and
 `CLAUDE.local.md`; it must not add a blanket `/CLAUDE.md` or `/AGENTS.md` ignore entry
@@ -96,18 +99,20 @@ Use this decision rule:
 ```text
 Always generate .middleman/agent-context.md as the canonical workspace context.
 If Claude reads CLAUDE.local.md:
-  generate CLAUDE.local.md just in time when target_key is claude.
+  generate CLAUDE.local.md just in time when target_key is claude only when the file is absent.
 If Claude only reads root CLAUDE.md:
   do not generate root CLAUDE.md by default; use a launch argument or warning instead.
 If Codex supports AGENTS.local.md:
-  generate AGENTS.local.md just in time when target_key is codex.
+  generate AGENTS.local.md just in time when target_key is codex only when the file is absent.
 If no safe launch-time mechanism exists for an agent:
   keep .middleman/agent-context.md and show a launch warning instead of pretending the agent will read it.
 ```
 
 - [ ] **Step 3: Preserve tracked project instructions**
 
-Do not overwrite checked-in `AGENTS.md` or `CLAUDE.md`. Generated target-specific files must be absent or already marked as middleman-generated before middleman writes them.
+Do not overwrite checked-in `AGENTS.md` or `CLAUDE.md`. Do not overwrite an existing
+`AGENTS.local.md` or `CLAUDE.local.md` either, even when it looks generated. The only
+safe write path for target-specific `.local.md` files is "file absent, create file".
 
 ## Task 2: Add A Neutral Agent Context Model
 
@@ -548,6 +553,25 @@ require.NoError(err)
 assert.Equal("# Repo instructions\n", string(content))
 ```
 
+Add separate tests for pre-existing `.local.md` files created outside middleman:
+
+```go
+require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "CLAUDE.local.md"), []byte("# Hook context\n"), 0o644))
+_, err := launchWorkspaceAgent(ctx, ws.ID, "claude")
+require.NoError(err)
+content, err := os.ReadFile(filepath.Join(ws.WorktreePath, "CLAUDE.local.md"))
+require.NoError(err)
+assert.Equal("# Hook context\n", string(content))
+canonical, err := os.ReadFile(filepath.Join(ws.WorktreePath, ".middleman", "agent-context.md"))
+require.NoError(err)
+assert.Contains(string(canonical), "Source kind:")
+```
+
+Repeat the same shape for `AGENTS.local.md` when launching the Codex target. Expected:
+middleman refreshes `.middleman/agent-context.md`, does not overwrite the existing
+`.local.md`, does not append ignore rules for that existing `.local.md`, and does not
+emit a setup or launch warning for skipping it.
+
 - [ ] **Step 2: Run red**
 
 Run:
@@ -575,17 +599,19 @@ err := s.workspaces.PrepareAgentLaunchContext(ctx, workspace.PrepareAgentLaunchC
 
 Only run this for `LaunchTargetAgent` targets. Plain shell and host/project worktree runtime sessions should not be changed by this task. The Claude branch may create `CLAUDE.local.md` just in time only if Task 1 proves Claude reads it; otherwise it should use a launch argument or surface a warning rather than writing root `CLAUDE.md`.
 
-Inside `PrepareAgentLaunchContext`, call the ignore helper before writing the selected
-target's `.local.md` file. In this snippet, `claudeLocalSupported` is the persisted or
-constant result from the Task 1 probe that proves the installed Claude target reads
-`CLAUDE.local.md`:
+Inside `PrepareAgentLaunchContext`, call the ignore helper before writing canonical
+context and before creating any selected target `.local.md` file. In this snippet,
+`claudeLocalSupported` is the persisted or constant result from the Task 1 probe that
+proves the installed Claude target reads `CLAUDE.local.md`:
 
 ```go
 generatedRelPaths := []string{".middleman/agent-context.md"}
-if targetKey == "codex" {
+writeCodexLocal := targetKey == "codex" && !fileExists(filepath.Join(worktree.Path, "AGENTS.local.md"))
+writeClaudeLocal := targetKey == "claude" && claudeLocalSupported && !fileExists(filepath.Join(worktree.Path, "CLAUDE.local.md"))
+if writeCodexLocal {
 	generatedRelPaths = append(generatedRelPaths, "AGENTS.local.md")
 }
-if targetKey == "claude" && claudeLocalSupported {
+if writeClaudeLocal {
 	generatedRelPaths = append(generatedRelPaths, "CLAUDE.local.md")
 }
 _, err := EnsureGeneratedContextFilesIgnored(ctx, worktree.Path, generatedRelPaths)
@@ -594,7 +620,20 @@ if err != nil {
 }
 ```
 
-Do not call `EnsureGeneratedContextFilesIgnored` with `CLAUDE.md` or `AGENTS.md`.
+Use this local helper or equivalent `os.Stat` branch:
+
+```go
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+```
+
+Only write `AGENTS.local.md` when `writeCodexLocal` is true. Only write
+`CLAUDE.local.md` when `writeClaudeLocal` is true. If either file already exists, do
+nothing to that file: no overwrite, no append, no merge, no marker validation, and no
+warning. Do not call `EnsureGeneratedContextFilesIgnored` with `CLAUDE.md`,
+`AGENTS.md`, or an existing `.local.md` file that middleman is skipping.
 
 - [ ] **Step 4: Fetch live Kata detail opportunistically**
 
@@ -644,7 +683,9 @@ Every generated file should start with:
 
 - [ ] **Step 3: Avoid overwriting user-owned files**
 
-If `AGENTS.local.md` or `CLAUDE.local.md` already exists and does not contain the generated marker, do not overwrite it. Never overwrite root `AGENTS.md` or `CLAUDE.md`. Write only `.middleman/agent-context.md` and add a warning event to the workspace setup or launch result.
+If `AGENTS.local.md` or `CLAUDE.local.md` already exists, do nothing to that file even
+if it contains the middleman generated marker. Never overwrite root `AGENTS.md` or
+`CLAUDE.md`. Continue writing only `.middleman/agent-context.md`.
 
 - [ ] **Step 4: Document the behavior**
 
@@ -657,9 +698,11 @@ Workspace setup writes the canonical generated context file at
 `.middleman/agent-context.md`. Agent-specific files are generated just in time
 when the user launches that target, such as a safe generated `CLAUDE.local.md`
 for the Claude target if Task 1 proves Claude reads it. Middleman ensures
-generated `.middleman/`, `AGENTS.local.md`, and `CLAUDE.local.md` paths are
-ignored by Git before writing them. Middleman never overwrites checked-in or
-user-owned `AGENTS.md` or `CLAUDE.md`.
+generated `.middleman/`, `AGENTS.local.md`, and `CLAUDE.local.md` paths are ignored by
+Git before writing files middleman creates. If `AGENTS.local.md` or `CLAUDE.local.md`
+already exists, middleman leaves it untouched and refreshes only
+`.middleman/agent-context.md`. Middleman never overwrites checked-in or user-owned
+`AGENTS.md` or `CLAUDE.md`.
 ```
 
 - [ ] **Step 5: Run focused tests**

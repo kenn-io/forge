@@ -3,7 +3,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use chrono::{DateTime, Utc};
 use portable_pty::{ChildKiller, CommandBuilder, PtySize, native_pty_system};
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;

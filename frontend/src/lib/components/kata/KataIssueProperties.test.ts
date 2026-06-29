@@ -95,24 +95,30 @@ describe("KataIssueProperties", () => {
 
     expect(onAddLabel).toHaveBeenCalledWith("issue-1", "blocked");
 
+    await fireEvent.click(screen.getByRole("button", { name: "Edit labels" }));
     await fireEvent.click(screen.getByRole("button", { name: "Remove label review" }));
 
     expect(onRemoveLabel).toHaveBeenCalledWith("issue-1", "review");
   });
 
-  it("keeps label text passive and removes labels only from a dedicated button", async () => {
+  it("keeps labels passive until label editing is enabled", async () => {
     const onRemoveLabel = vi.fn();
     renderProperties({ onRemoveLabel });
 
     const labels = screen.getByRole("list", { name: "Labels" });
     const labelText = within(labels).getByText("review");
     expect(labelText.closest("button")).toBeNull();
+    expect(within(labels).queryByRole("button", { name: "Remove label review" })).toBeNull();
 
     await fireEvent.click(labelText);
     expect(onRemoveLabel).not.toHaveBeenCalled();
 
+    await fireEvent.click(screen.getByRole("button", { name: "Edit labels" }));
     await fireEvent.click(within(labels).getByRole("button", { name: "Remove label review" }));
     expect(onRemoveLabel).toHaveBeenCalledWith("issue-1", "review");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Done editing labels" }));
+    expect(within(labels).queryByRole("button", { name: "Remove label review" })).toBeNull();
   });
 
   it("keeps the label draft visible when label creation fails", async () => {

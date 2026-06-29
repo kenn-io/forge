@@ -46,6 +46,7 @@
   let scheduledDraft = $state("");
   let dueDraft = $state("");
   let addingLabel = $state(false);
+  let editingLabels = $state(false);
   let labelDraft = $state("");
   let trackedUID = $state<string | null>(null);
 
@@ -56,6 +57,7 @@
     scheduledDraft = "";
     dueDraft = "";
     addingLabel = false;
+    editingLabels = false;
     labelDraft = "";
   });
 
@@ -150,6 +152,14 @@
     }
     const ok = await onAddLabel(uid(), label);
     if (ok) {
+      labelDraft = "";
+      addingLabel = false;
+    }
+  }
+
+  function toggleLabelEditing(): void {
+    editingLabels = !editingLabels;
+    if (!editingLabels) {
       labelDraft = "";
       addingLabel = false;
     }
@@ -278,17 +288,19 @@
               <Chip size="sm" tone="muted" uppercase={false} class="kata-label-chip">
                 {label.label}
               </Chip>
-              <button
-                type="button"
-                class="label-remove"
-                aria-label={`Remove label ${label.label}`}
-                title={`Remove label ${label.label}`}
-                onclick={() => {
-                  void onRemoveLabel(uid(), label.label);
-                }}
-              >
-                <XIcon size={11} strokeWidth={2.2} aria-hidden="true" />
-              </button>
+              {#if editingLabels}
+                <button
+                  type="button"
+                  class="label-remove"
+                  aria-label={`Remove label ${label.label}`}
+                  title={`Remove label ${label.label}`}
+                  onclick={() => {
+                    void onRemoveLabel(uid(), label.label);
+                  }}
+                >
+                  <XIcon size={11} strokeWidth={2.2} aria-hidden="true" />
+                </button>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -309,7 +321,18 @@
       }}
     />
   {:else}
-    <ActionButton size="sm" surface="outline" label="Add label" onclick={() => { addingLabel = true; }} />
+    <div class="label-actions">
+      <ActionButton size="sm" surface="outline" label="Add label" onclick={() => { addingLabel = true; }} />
+      {#if issue.labels.length > 0}
+        <ActionButton
+          size="sm"
+          surface="outline"
+          label={editingLabels ? "Done" : "Edit labels"}
+          ariaLabel={editingLabels ? "Done editing labels" : undefined}
+          onclick={toggleLabelEditing}
+        />
+      {/if}
+    </div>
   {/if}
 </section>
 
@@ -479,6 +502,12 @@
 
   .label-editor {
     margin: 0 0 22px;
+  }
+
+  .label-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .label-input {

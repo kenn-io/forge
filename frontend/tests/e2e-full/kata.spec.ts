@@ -4248,7 +4248,7 @@ test("kata detail comments and labels mutate through the configured external dae
 
     const detail = page.getByRole("region", { name: "Task detail" });
     await expect(detail).toContainText("Verify amount against the lease.");
-    await expect(detail.getByRole("button", { name: "Remove label home" })).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Remove label home" })).toHaveCount(0);
 
     const composer = detail.getByRole("textbox", { name: "Comment" });
     await composer.fill("see #");
@@ -4272,9 +4272,10 @@ test("kata detail comments and labels mutate through the configured external dae
     await detail.getByRole("button", { name: "Add label" }).click();
     await detail.getByLabel("New label").fill("urgent");
     await detail.getByLabel("New label").press("Enter");
-    await expect(detail.getByRole("button", { name: "Remove label urgent" })).toBeVisible();
     await expect.poll(() => backend.state.seenPaths).toContain("POST /api/v1/projects/1/issues/issue-rent/labels");
 
+    await detail.getByRole("button", { name: "Edit labels" }).click();
+    await expect(detail.getByRole("button", { name: "Remove label urgent" })).toBeVisible();
     await detail.getByRole("button", { name: "Remove label home" }).click();
     await expect(detail.getByRole("button", { name: "Remove label home" })).toHaveCount(0);
     await expect

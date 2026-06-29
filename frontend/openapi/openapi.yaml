@@ -342,6 +342,29 @@ components:
       required:
         - repos
       type: object
+    CICheck:
+      additionalProperties: false
+      properties:
+        app:
+          type: string
+        conclusion:
+          type: string
+        duration_seconds:
+          format: int64
+          type: integer
+        name:
+          type: string
+        status:
+          type: string
+        url:
+          type: string
+      required:
+        - name
+        - status
+        - conclusion
+        - url
+        - app
+      type: object
     Capabilities:
       additionalProperties: false
       properties:
@@ -2906,6 +2929,12 @@ components:
           format: uri
           readOnly: true
           type: string
+        checks:
+          items:
+            $ref: "#/components/schemas/CICheck"
+          type:
+            - array
+            - "null"
         detail_fetched_at:
           type: string
         detail_loaded:
@@ -4650,6 +4679,19 @@ components:
         name:
           type: string
         path:
+          type: string
+        prAdditions:
+          format: int64
+          type: integer
+        prCommentCount:
+          format: int64
+          type: integer
+        prDeletions:
+          format: int64
+          type: integer
+        prMergeable:
+          type: string
+        prReviewDecision:
           type: string
         prState:
           type: string
@@ -6823,6 +6865,19 @@ components:
         name:
           type: string
         path:
+          type: string
+        prAdditions:
+          format: int64
+          type: integer
+        prCommentCount:
+          format: int64
+          type: integer
+        prDeletions:
+          format: int64
+          type: integer
+        prMergeable:
+          type: string
+        prReviewDecision:
           type: string
         prState:
           type: string

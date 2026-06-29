@@ -189,6 +189,67 @@ func TestBuildEnrichedCarriesFullWorktreeFields(t *testing.T) {
 	assert.Equal("success", w.ChecksDetail[0].Conclusion, "check conclusion must be lowercased")
 }
 
+// TestBuildEnrichedCarriesPREnrichment proves the linked PR's review decision,
+// mergeability, platform-reported diff size, and comment count thread through
+// from the raw worktree onto the enriched, client-facing WorktreeSummary —
+// without this copy the enrichment is stranded at the raw layer and the
+// /snapshot consumer reads nothing.
+func TestBuildEnrichedCarriesPREnrichment(t *testing.T) {
+	reviewDecision := "CHANGES_REQUESTED"
+	mergeable := "DIRTY"
+	additions := 40
+	deletions := 9
+	comments := 4
+	raw := RawSnapshot{
+		Host: RawHost{Hostname: "studio", Platform: "linux"},
+		Worktrees: []RawWorktree{{
+			HostKey: "studio", ScopedKey: "worktree:/a", ProjectKey: "repo:/a", Path: "/a",
+			PRReviewDecision: &reviewDecision,
+			PRMergeable:      &mergeable,
+			PRAdditions:      &additions,
+			PRDeletions:      &deletions,
+			PRCommentCount:   &comments,
+		}},
+	}
+	require := require.New(t)
+	assert := assert.New(t)
+	got := BuildEnriched(raw, "studio", nil, RealCapabilityPolicy{}, DefaultIdentity())
+	require.Len(got.Worktrees, 1)
+	w := got.Worktrees[0]
+	require.NotNil(w.PRReviewDecision)
+	assert.Equal("changes_requested", *w.PRReviewDecision, "review decision must be lowercased")
+	require.NotNil(w.PRMergeable)
+	assert.Equal("dirty", *w.PRMergeable, "mergeable state must be lowercased")
+	require.NotNil(w.PRAdditions)
+	assert.Equal(40, *w.PRAdditions)
+	require.NotNil(w.PRDeletions)
+	assert.Equal(9, *w.PRDeletions)
+	require.NotNil(w.PRCommentCount)
+	assert.Equal(4, *w.PRCommentCount)
+}
+
+// TestBuildEnrichedOmitsAbsentPREnrichment proves an unenriched worktree (no
+// linked PR detail) carries no enrichment pointers, so the omitempty JSON tags
+// drop the fields rather than emitting misleading zero/empty values.
+func TestBuildEnrichedOmitsAbsentPREnrichment(t *testing.T) {
+	raw := RawSnapshot{
+		Host: RawHost{Hostname: "studio", Platform: "linux"},
+		Worktrees: []RawWorktree{{
+			HostKey: "studio", ScopedKey: "worktree:/a", ProjectKey: "repo:/a", Path: "/a",
+		}},
+	}
+	require := require.New(t)
+	assert := assert.New(t)
+	got := BuildEnriched(raw, "studio", nil, RealCapabilityPolicy{}, DefaultIdentity())
+	require.Len(got.Worktrees, 1)
+	w := got.Worktrees[0]
+	assert.Nil(w.PRReviewDecision)
+	assert.Nil(w.PRMergeable)
+	assert.Nil(w.PRAdditions)
+	assert.Nil(w.PRDeletions)
+	assert.Nil(w.PRCommentCount)
+}
+
 func TestBuildEnrichedSessionRuntimeKindAndFields(t *testing.T) {
 	cpu := 12.5
 	rss := 256

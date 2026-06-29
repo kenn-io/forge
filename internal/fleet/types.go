@@ -288,22 +288,34 @@ type WorktreeSummary struct {
 	// RegistryID is the producer's local registry id (see RawWorktree.RegistryID):
 	// the id a client mutates the worktree by. Empty for a synthesized primary
 	// root worktree or a workspace-only overlay.
-	RegistryID         string        `json:"registryID,omitempty"`
-	Name               string        `json:"name"`
-	Path               string        `json:"path"`
-	Branch             string        `json:"branch"`
-	IsPrimary          bool          `json:"isPrimary,omitempty"`
-	IsHidden           bool          `json:"isHidden,omitempty"`
-	IsStale            bool          `json:"isStale,omitempty"`
-	DiffAdded          *int          `json:"diffAdded,omitempty"`
-	DiffRemoved        *int          `json:"diffRemoved,omitempty"`
-	SyncAhead          *int          `json:"syncAhead,omitempty"`
-	SyncBehind         *int          `json:"syncBehind,omitempty"`
-	LinkedPRNumber     *int          `json:"linkedPRNumber,omitempty"`
-	PRState            *string       `json:"prState,omitempty"`
-	PRURL              *string       `json:"prURL,omitempty"`
-	PRTitle            *string       `json:"prTitle,omitempty"`
-	PRUpdatedAt        *string       `json:"prUpdatedAt,omitempty"`
+	RegistryID     string  `json:"registryID,omitempty"`
+	Name           string  `json:"name"`
+	Path           string  `json:"path"`
+	Branch         string  `json:"branch"`
+	IsPrimary      bool    `json:"isPrimary,omitempty"`
+	IsHidden       bool    `json:"isHidden,omitempty"`
+	IsStale        bool    `json:"isStale,omitempty"`
+	DiffAdded      *int    `json:"diffAdded,omitempty"`
+	DiffRemoved    *int    `json:"diffRemoved,omitempty"`
+	SyncAhead      *int    `json:"syncAhead,omitempty"`
+	SyncBehind     *int    `json:"syncBehind,omitempty"`
+	LinkedPRNumber *int    `json:"linkedPRNumber,omitempty"`
+	PRState        *string `json:"prState,omitempty"`
+	PRURL          *string `json:"prURL,omitempty"`
+	PRTitle        *string `json:"prTitle,omitempty"`
+	PRUpdatedAt    *string `json:"prUpdatedAt,omitempty"`
+	// Pull-request enrichment carried through from the linked merge request's
+	// cached metadata (see RawWorktree). PRReviewDecision and PRMergeable are
+	// the platform's lowercase vocabularies; PRAdditions/PRDeletions are the
+	// merge request's own platform-reported diff size, distinct from
+	// DiffAdded/DiffRemoved (the live working-tree stats). All are omitted when
+	// zero/empty so an unenriched or undetailed worktree carries no misleading
+	// review state or "+0 -0".
+	PRReviewDecision   *string       `json:"prReviewDecision,omitempty"`
+	PRMergeable        *string       `json:"prMergeable,omitempty"`
+	PRAdditions        *int          `json:"prAdditions,omitempty"`
+	PRDeletions        *int          `json:"prDeletions,omitempty"`
+	PRCommentCount     *int          `json:"prCommentCount,omitempty"`
 	ChecksStatus       *string       `json:"checksStatus,omitempty"`
 	ChecksDetail       []CheckDetail `json:"checksDetail,omitempty"`
 	LastPolledAt       *string       `json:"lastPolledAt,omitempty"`

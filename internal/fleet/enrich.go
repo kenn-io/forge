@@ -276,6 +276,15 @@ func buildWorktree(wt RawWorktree, identity Identity) WorktreeSummary {
 	}
 	w.PRState = lowerPtr(wt.PRState)
 	w.ChecksStatus = lowerPtr(wt.ChecksStatus)
+	// PRReviewDecision and PRMergeable are provider enum vocabularies, lowercased
+	// like PRState/ChecksStatus so a peer's casing can't leak through. The diff
+	// size and comment count pass straight through; the raw producer already
+	// omitted zero/empty values so an undetailed PR carries no misleading state.
+	w.PRReviewDecision = lowerPtr(wt.PRReviewDecision)
+	w.PRMergeable = lowerPtr(wt.PRMergeable)
+	w.PRAdditions = wt.PRAdditions
+	w.PRDeletions = wt.PRDeletions
+	w.PRCommentCount = wt.PRCommentCount
 	return w
 }
 

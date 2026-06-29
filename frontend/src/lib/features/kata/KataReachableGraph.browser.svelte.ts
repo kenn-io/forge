@@ -55,6 +55,9 @@ describe("KataReachableGraph (browser)", () => {
     await vi.waitFor(() => {
       expect(container.querySelectorAll(".svelte-flow__node").length).toBeGreaterThanOrEqual(2);
     });
+    expect(container.querySelector(".svelte-flow__controls")).toBeTruthy();
+    expect(container.querySelector(".svelte-flow__minimap")).toBeTruthy();
+    expect(container.querySelector(".svelte-flow__background")).toBeTruthy();
 
     const flowNodes = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")];
     const linkedNode = flowNodes.find((node) => node.textContent?.includes("Linked browser task"));

@@ -1,6 +1,6 @@
 <script lang="ts">
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
-  import { Background, BackgroundVariant, Controls, SvelteFlow } from "@xyflow/svelte";
+  import { Background, BackgroundVariant, Controls, MiniMap, SvelteFlow } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
 
   import type { KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
@@ -57,6 +57,7 @@
         onnodeclick={({ node }) => selectNode(node as KataGraphNode)}
       >
         <Controls />
+        <MiniMap />
         <Background variant={BackgroundVariant.Dots} gap={14} size={1} />
       </SvelteFlow>
     </div>

@@ -82,9 +82,8 @@
         }
       }
     }
-    const allIssues = groups.flatMap((group) => group.issues);
     return groups
-      .map((group) => ({ ...group, issues: topLevelIssues(group.issues, allIssues) }))
+      .map((group) => ({ ...group, issues: topLevelIssues(group.issues) }))
       .filter((group) => group.issues.length > 0);
   });
 
@@ -168,7 +167,13 @@
   }
 
   function parentHierarchyKey(issue: KataTaskSummary): string | null {
-    return issue.parent_short_id ? `${issue.project_uid}:${issue.parent_short_id}` : null;
+    if (issue.parent_short_id) return `${issue.project_uid}:${issue.parent_short_id}`;
+    for (const [parentUID, children] of Object.entries(childrenByUID)) {
+      if (!children.some((child) => child.uid === issue.uid)) continue;
+      const parent = findIssueByUID(parentUID);
+      if (parent) return issueHierarchyKey(parent);
+    }
+    return null;
   }
 
   function issueMatchesStatusFilter(issue: KataTaskSummary): boolean {
@@ -187,15 +192,8 @@
       .filter((group) => group.issues.length > 0);
   }
 
-  function topLevelIssues(
-    issues: readonly KataTaskSummary[],
-    allIssues: readonly KataTaskSummary[] = issues,
-  ): KataTaskSummary[] {
-    const visibleKeys = new Set(allIssues.map(issueHierarchyKey));
-    return issues.filter((issue) => {
-      const parentKey = parentHierarchyKey(issue);
-      return parentKey === null || !visibleKeys.has(parentKey);
-    });
+  function topLevelIssues(issues: readonly KataTaskSummary[]): KataTaskSummary[] {
+    return issues.filter((issue) => parentHierarchyKey(issue) === null);
   }
 
   async function toggleExpand(issue: KataTaskSummary, event: MouseEvent | KeyboardEvent) {
@@ -541,17 +539,19 @@
   </div>
 </main>
 
-{#snippet row(issue: KataTaskSummary)}
+{#snippet row(issue: KataTaskSummary, depth = 0)}
   {@const priority = priorityLabel(issue.priority)}
   {@const labels = issue.labels?.join(" · ") ?? ""}
   {@const expandable = hasChildren(issue)}
   {@const isExpanded = expanded[issue.uid] === true}
   <button
     class="row issue-row"
+    class:row--child={depth > 0}
     class:selected={isSelected(issue)}
     aria-current={isSelected(issue) ? "true" : undefined}
     aria-expanded={expandable ? isExpanded : undefined}
     data-uid={issue.uid}
+    style:--task-depth={String(depth)}
     onclick={() => selectNow(issue)}
   >
     <span class="cell cell-id"><span class="id-badge">{displayId(issue)}</span></span>
@@ -599,47 +599,12 @@
 
   {#if isExpanded}
     {#if loadingChildren[issue.uid]}
-      <div class="children-status">Loading subtasks…</div>
+      <div class="children-status" style:--task-depth={String(depth + 1)}>Loading subtasks…</div>
     {:else if visibleChildren(issue).length === 0}
-      <div class="children-status">No subtasks.</div>
+      <div class="children-status" style:--task-depth={String(depth + 1)}>No subtasks.</div>
     {:else}
       {#each visibleChildren(issue) as child (child.uid)}
-        {@const childPriority = priorityLabel(child.priority)}
-        {@const childLabels = child.labels?.join(" · ") ?? ""}
-        <button
-          class="row issue-row row--child"
-          class:selected={isSelected(child)}
-          aria-current={isSelected(child) ? "true" : undefined}
-          data-uid={child.uid}
-          onclick={() => selectNow(child)}
-        >
-          <span class="cell cell-id"><span class="id-badge">{displayId(child)}</span></span>
-          <span class="cell cell-title">
-            <span class="chevron chevron--placeholder" aria-hidden="true"></span>
-            <span class="title-text">{child.title}</span>
-          </span>
-          <span class="cell cell-updated" title={child.updated_at}>
-            {relativeTime(child.updated_at)}
-          </span>
-          <span class="cell cell-priority">
-            {#if childPriority}
-              <span class={`pri-pill priority-${child.priority}`}>{childPriority}</span>
-            {/if}
-          </span>
-          <span class="cell cell-due" title={child.metadata.deadline_on ?? ""}>
-            {#if child.metadata.deadline_on}{shortDate(child.metadata.deadline_on)}{/if}
-          </span>
-          <span class="cell cell-owner">{child.owner ?? ""}</span>
-          <span class="cell cell-tags" title={childLabels}>
-            {#if childLabels}{childLabels}{/if}
-          </span>
-          <span class="sr-keywords">
-            <span>project: {child.project_name}</span>
-            {#if child.metadata.deadline_on}<span> · Due {shortDate(child.metadata.deadline_on)}</span>{/if}
-            {#if child.owner}<span> · owner: {child.owner}</span>{/if}
-            {#if child.priority !== undefined}<span> · priority: {child.priority}</span>{/if}
-          </span>
-        </button>
+        {@render row(child, depth + 1)}
       {/each}
     {/if}
   {/if}
@@ -1026,11 +991,11 @@
   }
 
   .row--child .cell-title {
-    padding-left: 18px;
+    padding-left: calc(var(--task-depth, 1) * 18px);
   }
 
   .children-status {
-    padding: 4px 14px 4px 32px;
+    padding: 4px 14px 4px calc(14px + (var(--task-depth, 1) * 18px));
     color: var(--text-muted);
     font-size: var(--font-size-2xs);
     font-style: italic;

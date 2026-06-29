@@ -900,6 +900,28 @@ describe("kata workspace store", () => {
     expect(store.selectedIssue?.issue.uid).toBe("issue-parent");
   });
 
+  test("search-backed views do not select child-only rows as visible", async () => {
+    const child = {
+      ...issue("issue-child", "Child task", "project-kata"),
+      short_id: "child",
+      qualified_id: "Kata#child",
+      parent_short_id: "parent",
+    };
+    const api = createFakeKataTaskAPI();
+    api.mocks.search.mockResolvedValueOnce({
+      filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "child" },
+      issues: [child],
+      fetched_at: fetchedAt,
+    });
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap();
+
+    await store.updateSearchFilters({ query: "child" });
+
+    expect(store.currentView.groups.flatMap((group) => group.issues).map((item) => item.uid)).toEqual(["issue-child"]);
+    expect(store.selectedIssue).toBeNull();
+  });
+
   test("system view navigation keeps the selected project scope", async () => {
     const store = createKataWorkspaceStore({ api: createFakeKataTaskAPI() });
     await store.bootstrap();

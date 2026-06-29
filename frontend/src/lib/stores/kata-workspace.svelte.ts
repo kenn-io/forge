@@ -73,25 +73,16 @@ function groupSearchIssues(issues: KataTaskSummary[]): KataTaskViewResponse["gro
   return issues.length > 0 ? [{ id: "search-results", title: "Results", issues }] : [];
 }
 
-function issueHierarchyKey(issue: KataTaskSummary): string {
-  return `${issue.project_uid}:${issue.short_id}`;
-}
-
 function parentHierarchyKey(issue: KataTaskSummary): string | null {
   return issue.parent_short_id ? `${issue.project_uid}:${issue.parent_short_id}` : null;
 }
 
-function topLevelIssues(issues: readonly KataTaskSummary[], allIssues: readonly KataTaskSummary[]): KataTaskSummary[] {
-  const visibleKeys = new Set(allIssues.map(issueHierarchyKey));
-  return issues.filter((issue) => {
-    const parentKey = parentHierarchyKey(issue);
-    return parentKey === null || !visibleKeys.has(parentKey);
-  });
+function topLevelIssues(issues: readonly KataTaskSummary[]): KataTaskSummary[] {
+  return issues.filter((issue) => parentHierarchyKey(issue) === null);
 }
 
 function selectableViewIssues(groups: KataTaskViewResponse["groups"]): KataTaskSummary[] {
-  const allIssues = groups.flatMap((group) => group.issues);
-  return groups.flatMap((group) => topLevelIssues(group.issues, allIssues));
+  return groups.flatMap((group) => topLevelIssues(group.issues));
 }
 
 function projectArea(project: KataProjectSummary): string {

@@ -260,6 +260,98 @@ describe("KataIssueList", () => {
     expect(screen.queryByRole("button", { name: /Child task/ })).toBeNull();
   });
 
+  it("does not show an expanded child again as a flat row", async () => {
+    const parent = task({
+      uid: "issue-parent",
+      short_id: "parent",
+      qualified_id: "Finances#parent",
+      title: "Parent task",
+      child_counts: { open: 1, total: 1 },
+    });
+    const child = task({
+      uid: "issue-child",
+      short_id: "child",
+      qualified_id: "Finances#child",
+      title: "Child task",
+      parent_short_id: parent.short_id,
+    });
+    const api = apiWithDetail(parent, [child]);
+
+    render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([parent, child]),
+        selectedIssueUID: null,
+        loading: false,
+        api,
+        onSelect: () => {},
+      },
+    });
+
+    expect(screen.queryByRole("button", { name: /Child task/ })).toBeNull();
+
+    const parentRow = screen.getByRole("button", { name: /Parent task/ });
+    await fireEvent.keyDown(parentRow, { key: "ArrowRight" });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: /Child task/ })).toHaveLength(1);
+    });
+    expect(screen.getByRole("button", { name: /Child task/ }).classList.contains("row--child")).toBe(true);
+  });
+
+  it("expands nested child rows beyond one level", async () => {
+    const parent = task({
+      uid: "issue-parent",
+      short_id: "parent",
+      qualified_id: "Finances#parent",
+      title: "Parent task",
+      child_counts: { open: 1, total: 1 },
+    });
+    const child = task({
+      uid: "issue-child",
+      short_id: "child",
+      qualified_id: "Finances#child",
+      title: "Child task",
+      child_counts: { open: 1, total: 1 },
+      parent_short_id: parent.short_id,
+    });
+    const grandchild = task({
+      uid: "issue-grandchild",
+      short_id: "grandchild",
+      qualified_id: "Finances#grandchild",
+      title: "Grandchild task",
+      parent_short_id: child.short_id,
+    });
+    const api = {
+      issue: vi.fn(async (uid: string) => {
+        if (uid === parent.uid) return apiDetail(parent, [child]);
+        return apiDetail(child, [grandchild]);
+      }),
+    } as unknown as KataTaskAPI;
+
+    render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([parent]),
+        selectedIssueUID: null,
+        loading: false,
+        api,
+        onSelect: () => {},
+      },
+    });
+
+    const parentRow = screen.getByRole("button", { name: /Parent task/ });
+    await fireEvent.keyDown(parentRow, { key: "ArrowRight" });
+
+    const childRow = await screen.findByRole("button", { name: /Child task/ });
+    expect(childRow.getAttribute("aria-expanded")).toBe("false");
+
+    await fireEvent.keyDown(childRow, { key: "ArrowRight" });
+
+    const grandchildRow = await screen.findByRole("button", { name: /Grandchild task/ });
+    expect(grandchildRow.classList.contains("row--child")).toBe(true);
+    expect(api.issue).toHaveBeenCalledWith(parent.uid);
+    expect(api.issue).toHaveBeenCalledWith(child.uid);
+  });
+
   it("j and k move focus and selection through rows", async () => {
     const selected: string[] = [];
     render(KataIssueList, {

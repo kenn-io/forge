@@ -1,10 +1,12 @@
 <script lang="ts">
   import { getStores } from "@middleman/ui";
+  import type { ActivityItem } from "@middleman/ui/api/types";
   import BudgetBars from "./BudgetBars.svelte";
   import BudgetPopover from "./BudgetPopover.svelte";
   import { client } from "../../api/runtime.js";
+  import { getPage } from "../../stores/router.svelte.ts";
 
-  const { pulls, issues, sync } = getStores();
+  const { activity, pulls, issues, sync } = getStores();
 
   let appVersion = $state("");
 
@@ -42,16 +44,93 @@
   const openPulls = $derived(pulls.getPulls().filter((pr) => pr.State === "open"));
   const openIssues = $derived(issues.getIssues().filter((issue) => issue.State === "open"));
 
-  function repoKey(item: { repo: { provider: string; platform_host: string; repo_path: string } }): string {
-    return `${item.repo.provider}|${item.repo.platform_host}/${item.repo.repo_path}`;
+  interface RepoBackedItem {
+    repo?: {
+      provider?: string | undefined;
+      platform_host?: string | undefined;
+      repo_path?: string | undefined;
+      owner?: string | undefined;
+      name?: string | undefined;
+    } | undefined;
+    platform_host?: string | undefined;
+    repo_owner?: string | undefined;
+    repo_name?: string | undefined;
   }
 
-  function repoCount(): number {
+  interface StatusCounts {
+    pullRequests: number;
+    issues: number;
+    repos: number;
+  }
+
+  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
+
+  function repoKey(item: RepoBackedItem): string {
+    const provider = item.repo?.provider ?? "";
+    const platformHost = item.repo?.platform_host ?? item.platform_host ?? "";
+    const repoPath = item.repo?.repo_path
+      ?? [item.repo?.owner ?? item.repo_owner, item.repo?.name ?? item.repo_name]
+        .filter(Boolean)
+        .join("/");
+    return `${provider}|${platformHost}/${repoPath}`;
+  }
+
+  function activityItemKey(item: ActivityItem): string {
+    return `${repoKey(item)}|${item.item_type}|${item.item_number}`;
+  }
+
+  function isBot(author: string): boolean {
+    const lower = author.toLowerCase();
+    return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+  }
+
+  const globalCounts = $derived.by((): StatusCounts => {
     const repos = new Set<string>();
     for (const pr of openPulls) repos.add(repoKey(pr));
     for (const issue of openIssues) repos.add(repoKey(issue));
-    return repos.size;
-  }
+    return {
+      pullRequests: openPulls.length,
+      issues: openIssues.length,
+      repos: repos.size,
+    };
+  });
+
+  const activityCounts = $derived.by((): StatusCounts => {
+    const pullRequests = new Set<string>();
+    const issueKeys = new Set<string>();
+    const repos = new Set<string>();
+    const itemFilter = activity.getItemFilter();
+    const hideBots = activity.getHideBots();
+
+    for (const item of activity.getActivityItems()) {
+      if (hideBots && isBot(item.author)) continue;
+      if (itemFilter === "prs" && item.item_type !== "pr") continue;
+      if (itemFilter === "issues" && item.item_type !== "issue") continue;
+
+      const isNewOpenPullRequest = item.activity_type === "new_pr"
+        && item.item_type === "pr"
+        && item.item_state === "open";
+      const isNewOpenIssue = item.activity_type === "new_issue"
+        && item.item_type === "issue"
+        && item.item_state === "open";
+
+      if (isNewOpenPullRequest) {
+        pullRequests.add(activityItemKey(item));
+        repos.add(repoKey(item));
+      } else if (isNewOpenIssue) {
+        issueKeys.add(activityItemKey(item));
+        repos.add(repoKey(item));
+      }
+    }
+
+    return {
+      pullRequests: pullRequests.size,
+      issues: issueKeys.size,
+      repos: repos.size,
+    };
+  });
+
+  const counts = $derived(getPage() === "activity" ? activityCounts : globalCounts);
 
   let popoverOpen = $state(false);
 
@@ -72,11 +151,11 @@
 
 <footer class="status-bar">
   <div class="status-left">
-    <span class="status-item">{openPulls.length} PRs</span>
+    <span class="status-item">{counts.pullRequests} PRs</span>
     <span class="status-sep">&middot;</span>
-    <span class="status-item">{openIssues.length} issues</span>
+    <span class="status-item">{counts.issues} issues</span>
     <span class="status-sep">&middot;</span>
-    <span class="status-item">{repoCount()} repos</span>
+    <span class="status-item">{counts.repos} repos</span>
   </div>
   <div class="status-right">
     {#if hasHosts}

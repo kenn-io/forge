@@ -63,6 +63,73 @@ function issuesWithClosedRows(): MockRouteOverride {
   };
 }
 
+function activityItem(
+  id: string,
+  number: number,
+  activityType: "new_pr" | "new_issue" | "comment",
+  itemType: "pr" | "issue",
+  state: "open" | "closed" | "merged",
+  owner = "acme",
+  name = "widgets",
+) {
+  return {
+    id,
+    cursor: id,
+    repo: repo(owner, name),
+    repo_owner: owner,
+    repo_name: name,
+    platform_host: "github.com",
+    item_type: itemType,
+    item_number: number,
+    item_title: `${itemType} ${number}`,
+    item_url: `https://github.com/${owner}/${name}/${itemType === "pr" ? "pull" : "issues"}/${number}`,
+    item_state: state,
+    activity_type: activityType,
+    activity_url: "",
+    author: "octo",
+    author_name: "Octo",
+    body_preview: "",
+    branch_name: "main",
+    created_at: "2026-03-30T14:00:00Z",
+  };
+}
+
+function pullsWithExtraOpenRows(): MockRouteOverride {
+  return (req) => {
+    if (req.method !== "GET" || req.url.pathname !== "/api/v1/pulls") return null;
+    return jsonResponse([
+      pr(1, "open"),
+      pr(2, "open"),
+      pr(3, "open", "acme", "quiet-open"),
+      pr(4, "open", "acme", "older-open"),
+    ]);
+  };
+}
+
+function issuesWithExtraOpenRows(): MockRouteOverride {
+  return (req) => {
+    if (req.method !== "GET" || req.url.pathname !== "/api/v1/issues") return null;
+    return jsonResponse([issue(1, "open"), issue(2, "open", "acme", "quiet-issues")]);
+  };
+}
+
+function activityWithNewRows(): MockRouteOverride {
+  return (req) => {
+    if (req.method !== "GET" || req.url.pathname !== "/api/v1/activity") return null;
+    return jsonResponse({
+      capped: false,
+      items: [
+        activityItem("pr-1-new", 1, "new_pr", "pr", "open"),
+        activityItem("pr-1-comment", 1, "comment", "pr", "open"),
+        activityItem("pr-2-new", 2, "new_pr", "pr", "open"),
+        activityItem("pr-3-comment", 3, "comment", "pr", "open", "acme", "quiet-open"),
+        activityItem("issue-1-new", 1, "new_issue", "issue", "open"),
+        activityItem("issue-2-comment", 2, "comment", "issue", "open", "acme", "quiet-issues"),
+      ],
+    });
+  };
+}
+
 describe("status bar counts", () => {
   vi.setConfig({ testTimeout: 30_000 });
 
@@ -78,7 +145,7 @@ describe("status bar counts", () => {
   });
 
   it("counts only open PRs when the loaded pull cache includes closed and merged rows", async () => {
-    mounted = await mountBrowserApp("/?view=threaded&range=30d", {
+    mounted = await mountBrowserApp("/repos", {
       overrides: [pullsWithClosedAndMergedRows(), issuesWithClosedRows()],
     });
 
@@ -86,6 +153,23 @@ describe("status bar counts", () => {
       const paths = mounted?.api.requests.map((req) => req.url.pathname) ?? [];
       expect(paths).toContain("/api/v1/pulls");
       expect(paths).toContain("/api/v1/issues");
+    }, WAIT);
+    await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
+
+    const statusItems = Array.from(document.querySelectorAll(".status-left .status-item"));
+    expect(statusItems.map((item) => item.textContent?.trim())).toEqual(["2 PRs", "1 issues", "1 repos"]);
+  });
+
+  it("uses new open activity rows for activity-page counts", async () => {
+    mounted = await mountBrowserApp("/?view=threaded&range=30d", {
+      overrides: [pullsWithExtraOpenRows(), issuesWithExtraOpenRows(), activityWithNewRows()],
+    });
+
+    await vi.waitFor(() => {
+      const paths = mounted?.api.requests.map((req) => req.url.pathname) ?? [];
+      expect(paths).toContain("/api/v1/pulls");
+      expect(paths).toContain("/api/v1/issues");
+      expect(paths).toContain("/api/v1/activity");
     }, WAIT);
     await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
 

@@ -190,6 +190,15 @@ describe("KataIssueDetail", () => {
     expect(onMoveIssue).toHaveBeenCalledWith("project-2");
   });
 
+  it("opens the reachable graph for the selected task", async () => {
+    const onOpenGraph = vi.fn();
+    renderDetail({ onOpenGraph });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Open reachable graph" }));
+
+    expect(onOpenGraph).toHaveBeenCalledWith(expect.objectContaining({ uid: "issue-1" }));
+  });
+
   it("falls back to project UID when the issue omits project name", () => {
     renderDetail({
       issue: makeIssue({

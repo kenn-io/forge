@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NetworkIcon from "@lucide/svelte/icons/network";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
 
@@ -63,6 +64,7 @@
     onReopenIssue: () => void | Promise<void>;
     onDeleteIssue: () => boolean | Promise<boolean>;
     onSelectIssue: (uid: string) => void | Promise<void>;
+    onOpenGraph?: ((issue: KataTaskDetail["issue"]) => void) | undefined;
     workspaceAction?: WorkspaceAction | undefined;
   }
 
@@ -98,6 +100,7 @@
     onReopenIssue,
     onDeleteIssue,
     onSelectIssue,
+    onOpenGraph = undefined,
     workspaceAction = undefined,
   }: Props = $props();
 
@@ -266,6 +269,17 @@
           }}
         >
           {workspaceAction.busy ? "Working..." : workspaceAction.label}
+        </button>
+      {/if}
+      {#if onOpenGraph}
+        <button
+          type="button"
+          class="icon-detail-action"
+          aria-label="Open reachable graph"
+          title="Open reachable graph"
+          onclick={() => onOpenGraph?.(issue.issue)}
+        >
+          <NetworkIcon size={14} strokeWidth={1.9} aria-hidden="true" />
         </button>
       {/if}
       <KataIssueOverflowMenu
@@ -481,6 +495,25 @@
   .workspace-action:disabled {
     cursor: default;
     opacity: 0.65;
+  }
+
+  .icon-detail-action {
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .icon-detail-action:hover {
+    background: var(--bg-hover);
+    color: var(--accent-blue);
   }
 
   .title-button {

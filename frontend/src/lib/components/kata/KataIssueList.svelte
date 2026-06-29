@@ -5,6 +5,7 @@
   import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
   import ListChevronsDownUpIcon from "@lucide/svelte/icons/list-chevrons-down-up";
   import ListChevronsUpDownIcon from "@lucide/svelte/icons/list-chevrons-up-down";
+  import NetworkIcon from "@lucide/svelte/icons/network";
   import { relativeTime, shortDate } from "../../api/dates.js";
   import type { KataTaskAPI, KataTaskSearchFilters, KataTaskSummary } from "../../api/kata/taskTypes.js";
   import type { KataCurrentView } from "../../stores/kata-workspace.svelte.js";
@@ -27,6 +28,7 @@
     navigationGeneration?: number;
     api?: KataTaskAPI;
     onSelect: (issue: KataTaskSummary) => void;
+    onOpenGraph?: ((issue: KataTaskSummary) => void) | undefined;
   }
 
   let {
@@ -40,6 +42,7 @@
     navigationGeneration = 0,
     api = undefined,
     onSelect,
+    onOpenGraph = undefined,
   }: Props = $props();
 
   const SORT_STORAGE_KEY = "middleman:kata:issue-sort/v1";
@@ -358,6 +361,12 @@
   function selectNow(issue: KataTaskSummary) {
     cancelPendingKeyboardSelect();
     onSelect(issue);
+  }
+
+  function openGraph(issue: KataTaskSummary, event: MouseEvent | KeyboardEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    onOpenGraph?.(issue);
   }
 
   function restartKeyboardSelectTimer() {
@@ -701,6 +710,22 @@
         <span class="chevron chevron--placeholder" aria-hidden="true"></span>
       {/if}
       <span class="title-text">{issue.title}</span>
+      {#if onOpenGraph}
+        <span
+          role="button"
+          tabindex="0"
+          class="graph-action"
+          aria-label={`Open reachable graph for ${issue.title}`}
+          title="Open reachable graph"
+          onclick={(event) => openGraph(issue, event)}
+          onkeydown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            openGraph(issue, event);
+          }}
+        >
+          <NetworkIcon size={13} strokeWidth={1.9} aria-hidden="true" />
+        </span>
+      {/if}
     </span>
     <span class="cell cell-updated" title={issue.updated_at}>
       {relativeTime(issue.updated_at)}
@@ -1100,6 +1125,32 @@
 
   .chevron--placeholder {
     pointer-events: none;
+  }
+
+  .graph-action {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .row:hover .graph-action,
+  .row:focus-visible .graph-action,
+  .graph-action:focus-visible {
+    opacity: 1;
+  }
+
+  .graph-action:hover,
+  .graph-action:focus-visible {
+    background: var(--bg-inset);
+    color: var(--accent-blue);
+    outline: none;
   }
 
   .cell-priority {

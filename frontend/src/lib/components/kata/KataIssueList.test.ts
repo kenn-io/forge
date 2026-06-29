@@ -104,6 +104,25 @@ describe("KataIssueList", () => {
     expect(within(row).getByText("fixture-user")).toBeTruthy();
   });
 
+  it("opens a graph from a row action without selecting the task", async () => {
+    const onSelect = vi.fn();
+    const onOpenGraph = vi.fn();
+    render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: null,
+        loading: false,
+        onSelect,
+        onOpenGraph,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Open reachable graph for Pay rent" }));
+
+    expect(onOpenGraph).toHaveBeenCalledWith(baseIssues[0]);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("keeps snapshot loading out of the visual layout", () => {
     render(KataIssueList, {
       props: {

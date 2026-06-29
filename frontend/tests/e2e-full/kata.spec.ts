@@ -2921,7 +2921,7 @@ test("kata parent row expands children loaded from detail", async ({ page }) => 
     const parentRow = page.getByRole("button", { name: /Parent task/ });
     await expect(parentRow).toBeVisible();
     await expect(page.getByRole("button", { name: /Child task/ })).toHaveCount(0);
-    await expect(page.getByText("1 task")).toBeVisible();
+    await expect(page.getByText("2 tasks")).toBeVisible();
 
     await parentRow.press("ArrowRight");
 

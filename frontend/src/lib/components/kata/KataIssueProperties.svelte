@@ -284,20 +284,23 @@
       <dd>
         <ul class="label-list" aria-label="Labels">
           {#each issue.labels as label (label.label)}
-            <li class={["label-token", editingLabels && "label-token--editing"]}>
+            <li class="label-token">
               {#if editingLabels}
-                <span class="label-token-name">{label.label}</span>
-                <button
-                  type="button"
-                  class="label-remove"
-                  aria-label={`Remove label ${label.label}`}
+                <Chip
+                  size="sm"
+                  tone="muted"
+                  uppercase={false}
+                  interactive
+                  class="kata-label-chip"
+                  ariaLabel={`Remove label ${label.label}`}
                   title={`Remove label ${label.label}`}
                   onclick={() => {
                     void onRemoveLabel(uid(), label.label);
                   }}
                 >
+                  {label.label}
                   <XIcon size={11} strokeWidth={2.2} aria-hidden="true" />
-                </button>
+                </Chip>
               {:else}
                 <Chip size="sm" tone="muted" uppercase={false} class="kata-label-chip">
                   {label.label}
@@ -471,55 +474,8 @@
     min-width: 0;
   }
 
-  .label-token--editing {
-    overflow: hidden;
-    border: 1px solid var(--border-default);
-    border-radius: 999px;
-    background: var(--bg-inset);
-    color: var(--text-muted);
-  }
-
   .label-token :global(.kata-label-chip) {
     max-width: min(220px, 100%);
-  }
-
-  .label-token-name {
-    max-width: min(220px, 100%);
-    min-height: 18px;
-    display: inline-flex;
-    align-items: center;
-    padding: 0 7px;
-    font-size: var(--font-size-2xs);
-    font-weight: 600;
-    line-height: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .label-remove {
-    width: 19px;
-    height: 18px;
-    border: 0;
-    border-left: 1px solid var(--border-default);
-    background: transparent;
-    color: inherit;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    padding: 0;
-    cursor: pointer;
-  }
-
-  .label-remove:hover {
-    background: color-mix(in srgb, var(--accent-red) 10%, var(--bg-surface-hover));
-    color: var(--text-primary);
-  }
-
-  .label-remove:focus-visible {
-    outline: 2px solid var(--accent-blue);
-    outline-offset: 2px;
   }
 
   .label-editor {

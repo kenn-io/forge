@@ -115,7 +115,9 @@ describe("KataIssueProperties", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit labels" }));
     const removeButton = within(labels).getByRole("button", { name: "Remove label review" });
-    expect(removeButton.closest(".label-token--editing")).not.toBeNull();
+    expect(removeButton.classList.contains("chip")).toBe(true);
+    expect(removeButton.classList.contains("kata-label-chip")).toBe(true);
+    expect(removeButton.textContent).toContain("review");
     await fireEvent.click(removeButton);
     expect(onRemoveLabel).toHaveBeenCalledWith("issue-1", "review");
 

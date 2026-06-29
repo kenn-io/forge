@@ -224,6 +224,8 @@ export class KataWorkspaceStore {
   searchFilters = $state.raw<KataTaskSearchFilters>(defaultKataTaskSearchFilters());
   duplicateCandidates = $state.raw<KataDuplicateCandidateDisplay[]>([]);
   pendingSelectionUID = $state<string | null>(null);
+  private taskCache = $state.raw<Map<string, KataTaskSummary>>(new Map());
+  cachedTasks = $derived([...this.taskCache.values()]);
 
   private viewRequestID = 0;
   private detailRequestID = 0;
@@ -252,6 +254,7 @@ export class KataWorkspaceStore {
       }
       this.projects = projects.projects;
       this.areas = deriveKataAreas(projects.projects);
+      this.cacheView(view);
       this.currentView = {
         name: view.view,
         groups: view.groups,
@@ -282,6 +285,7 @@ export class KataWorkspaceStore {
     const requestID = ++this.viewRequestID;
     const view = await this.api.issues({ view: viewName, ...scopedIssueQuery(this.searchFilters) });
     if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
+    this.cacheView(view);
     this.currentView = {
       name: view.view,
       groups: view.groups,
@@ -321,6 +325,7 @@ export class KataWorkspaceStore {
       const results = await this.api.search(this.searchFilters);
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
       this.duplicateCandidates = [];
+      this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
       this.currentView = {
         name: isProjectBacklogScope(this.searchFilters) ? "all" : this.currentView.name,
@@ -352,6 +357,7 @@ export class KataWorkspaceStore {
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
       this.searchFilters = nextFilters;
       this.duplicateCandidates = [];
+      this.cacheView(view);
       this.currentView = {
         name: view.view,
         groups: view.groups,
@@ -374,6 +380,7 @@ export class KataWorkspaceStore {
       }
       this.searchFilters = nextFilters;
       this.duplicateCandidates = [];
+      this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
       this.currentView = {
         name: isProjectBacklogScope(nextFilters) ? "all" : this.currentView.name,
@@ -411,6 +418,7 @@ export class KataWorkspaceStore {
     this.duplicateCandidates = [];
     const view = await this.api.issues({ view: "inbox" });
     if (requestID !== this.viewRequestID) return;
+    this.cacheView(view);
     this.currentView = {
       name: "inbox",
       groups: view.groups,
@@ -553,6 +561,10 @@ export class KataWorkspaceStore {
     this.duplicateCandidates = [];
   }
 
+  rememberTasks(issues: readonly KataTaskSummary[]): void {
+    this.cacheTasks(issues);
+  }
+
   invalidatePendingLoads(): void {
     this.viewRequestID++;
     this.detailRequestID++;
@@ -629,6 +641,23 @@ export class KataWorkspaceStore {
     this.areas = deriveKataAreas(projects.projects);
   }
 
+  private cacheTasks(issues: readonly KataTaskSummary[]): void {
+    if (issues.length === 0) return;
+    const next = new Map(this.taskCache);
+    for (const issue of issues) {
+      next.set(issue.uid, issue);
+    }
+    this.taskCache = next;
+  }
+
+  private cacheView(view: Pick<KataTaskViewResponse, "groups">): void {
+    this.cacheTasks(view.groups.flatMap((group) => group.issues));
+  }
+
+  private cacheDetail(detail: KataTaskDetail): void {
+    this.cacheTasks([detail.issue, ...(detail.children ?? [])]);
+  }
+
   private applyTrivialMetadataEvent(event: KataTaskEvent): void {
     if (event.type !== "issue.metadata_updated") return;
     if (!event.issue_uid) return;
@@ -670,6 +699,7 @@ export class KataWorkspaceStore {
         ),
       })),
     };
+    this.cacheView(this.currentView);
 
     if (this.selectedIssue?.issue.uid !== event.issue_uid) return;
     if (!canApplyToRevision(this.selectedIssue.issue.revision)) return;
@@ -681,6 +711,7 @@ export class KataWorkspaceStore {
         revision: revisionNew ?? this.selectedIssue.issue.revision,
       },
     };
+    this.cacheDetail(this.selectedIssue);
     if (revisionNew !== undefined) {
       this.issueETags.set(event.issue_uid, `"rev-${revisionNew}"`);
     }
@@ -751,6 +782,9 @@ export class KataWorkspaceStore {
     if (typeof result !== "object" || result === null || !("issue" in result)) return;
     const issue = (result as KataTaskMutationResponse).issue;
     const etag = (result as KataTaskMutationResponse).etag;
+    if (issue?.uid) {
+      this.cacheTasks([issue]);
+    }
     if (issue?.uid && etag) {
       this.issueETags.set(issue.uid, etag);
     }
@@ -776,6 +810,7 @@ export class KataWorkspaceStore {
       }
       if (requestID !== this.viewRequestID) return false;
       this.duplicateCandidates = [];
+      this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
       nextView = {
         name: isProjectBacklogScope(this.searchFilters) ? "all" : this.currentView.name,
@@ -795,6 +830,7 @@ export class KataWorkspaceStore {
       }
       if (requestID !== this.viewRequestID) return false;
       this.duplicateCandidates = [];
+      this.cacheView(view);
       nextView = {
         name: view.view,
         groups: view.groups,
@@ -861,6 +897,7 @@ export class KataWorkspaceStore {
     }
     if (viewRequestID !== undefined && viewRequestID !== this.viewRequestID) return false;
     if (detailRequestID !== this.detailRequestID) return false;
+    this.cacheDetail(detail);
     this.selectedIssue = detail;
     if (detail.etag) {
       this.issueETags.set(detail.issue.uid, detail.etag);

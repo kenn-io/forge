@@ -528,6 +528,67 @@ describe("kata workspace store", () => {
     expect(store.selectedIssue?.issue.uid).toBe(parent.uid);
   });
 
+  test("caches tasks from bootstrap views and selected detail children", async () => {
+    const parent = {
+      ...issues[0]!,
+      uid: "issue-parent",
+      short_id: "parent",
+      qualified_id: "Finances#parent",
+      title: "Parent task",
+      child_counts: { open: 1, total: 1 },
+    };
+    const child = {
+      ...issues[1]!,
+      uid: "issue-child",
+      short_id: "child",
+      qualified_id: "Finances#child",
+      project_id: parent.project_id,
+      project_uid: parent.project_uid,
+      project_name: parent.project_name,
+      title: "Child task",
+      parent_short_id: parent.short_id,
+    };
+    const api = createFakeKataTaskAPI();
+    api.mocks.issues.mockResolvedValueOnce({
+      view: "today",
+      groups: [{ id: "today", title: "Today", issues: [parent] }],
+      fetched_at: fetchedAt,
+    });
+    api.mocks.issue.mockResolvedValueOnce({
+      ...detailFor(parent.uid),
+      issue: { ...parent, body: "Parent body" },
+      children: [child],
+    });
+    const store = createKataWorkspaceStore({ api });
+
+    await store.bootstrap("today", parent.uid);
+
+    expect(store.cachedTasks.map((item) => item.uid).sort()).toEqual(["issue-child", "issue-parent"]);
+  });
+
+  test("updates cached task summaries after a mutation refresh", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap();
+    const selected = store.selectedIssue?.issue;
+    if (!selected) throw new Error("expected selected issue");
+    const updated = { ...selected, priority: 0, revision: selected.revision + 1 };
+    api.mocks.setPriority.mockResolvedValueOnce({ changed: true, issue: updated, etag: '"rev-2"' });
+    api.mocks.issues.mockResolvedValueOnce({
+      view: store.currentView.name,
+      groups: [{ id: "today", title: "Today", issues: [updated] }],
+      fetched_at: fetchedAt,
+    });
+    api.mocks.issue.mockResolvedValueOnce({
+      ...detailFor(updated.uid),
+      issue: { ...updated, body: "Updated body" },
+    });
+
+    await store.setPriority(selected.uid, "middleman", 0);
+
+    expect(store.cachedTasks.find((item) => item.uid === selected.uid)?.priority).toBe(0);
+  });
+
   test("does not let an already stale guarded view load cancel the active view", async () => {
     const api = createFakeKataTaskAPI();
     const store = createKataWorkspaceStore({ api });

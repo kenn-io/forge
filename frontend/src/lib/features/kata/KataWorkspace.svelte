@@ -170,7 +170,6 @@
     if (!selected || !daemonID) {
       workspaceTargetKey = null;
       workspaceTarget = null;
-      requestError = null;
       return;
     }
 
@@ -403,6 +402,7 @@
       syncedRouteIssueUID = uid;
       return;
     }
+    syncedRouteIssueUID = uid;
     void selectIssue(uid, false);
   });
 
@@ -734,7 +734,12 @@
       if (awaitingSelectedIssueRouteUID === uid) {
         awaitingSelectedIssueRouteUID = null;
       }
-      if (!notify && selectedIssueUID === uid && isCurrentNavigation(generation) && lastTaskError !== null) {
+      if (
+        !notify &&
+        selectedIssueUID === uid &&
+        syncedRouteIssueUID === uid &&
+        lastTaskError !== null
+      ) {
         store.clearSelection();
         syncedRouteIssueUID = uid;
       }

@@ -484,7 +484,7 @@ describe("KataWorkspace", () => {
     await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
 
     await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toContain("detail failed");
+      expect(screen.getByText("detail failed").getAttribute("role")).toBe("alert");
       expect(screen.getByText("Select a task")).toBeTruthy();
     });
     expect(screen.queryByRole("heading", { name: "Root graph task" })).toBeNull();

@@ -104,7 +104,7 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 ### Build and run
 
 ```sh
-git clone https://github.com/wesm/middleman.git
+git clone https://github.com/kenn-io/middleman.git
 cd middleman
 make build
 ```

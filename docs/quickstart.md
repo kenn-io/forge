@@ -9,7 +9,7 @@
 ## Build
 
 ```sh
-git clone https://github.com/wesm/middleman.git
+git clone https://github.com/kenn-io/middleman.git
 cd middleman
 make build
 ```

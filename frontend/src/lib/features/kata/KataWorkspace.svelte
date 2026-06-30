@@ -398,10 +398,7 @@
       return;
     }
     if (uid === syncedRouteIssueUID) return;
-    if (store.pendingSelectionUID === uid) {
-      syncedRouteIssueUID = uid;
-      return;
-    }
+    if (store.pendingSelectionUID === uid) return;
     if (store.selectedIssue?.issue.uid === uid && store.pendingSelectionUID !== uid) {
       syncedRouteIssueUID = uid;
       return;
@@ -736,6 +733,10 @@
     if (!ok || !isCurrentNavigation(generation)) {
       if (awaitingSelectedIssueRouteUID === uid) {
         awaitingSelectedIssueRouteUID = null;
+      }
+      if (!notify && selectedIssueUID === uid && isCurrentNavigation(generation) && lastTaskError !== null) {
+        store.clearSelection();
+        syncedRouteIssueUID = uid;
       }
       return;
     }

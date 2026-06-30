@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from "@middleman/ui";
   import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
+  import { localDateTimeLabel, timeAgo } from "@middleman/ui/utils/time";
 
   import type {
     KataTaskAPI,
@@ -229,7 +230,12 @@
     <div class="comment-list">
       {#each sortedComments as comment (comment.id)}
         <article class="comment">
-          <div class="comment-meta">{comment.author}</div>
+          <div class="comment-meta">
+            <span>{comment.author}</span>
+            <time datetime={comment.created_at} title={localDateTimeLabel(comment.created_at)}>
+              {timeAgo(comment.created_at)}
+            </time>
+          </div>
           <div class="comment-body markdown-body">
             {#await renderMarkdown(comment.body)}
               {@html renderMarkdownSync(comment.body)}
@@ -407,9 +413,18 @@
   }
 
   .comment-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     margin-bottom: 4px;
+  }
+
+  .comment-meta time {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .comment-body :global(p) {

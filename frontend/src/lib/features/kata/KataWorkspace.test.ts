@@ -439,6 +439,54 @@ describe("KataWorkspace", () => {
     });
   });
 
+  it("clears stale detail when a routed graph node selection fails", async () => {
+    const root = {
+      ...issue("issue-root", "Root graph task", "project-kata"),
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+    };
+    const blocked = issue("issue-blocked", "Blocked follow-up", "project-kata");
+    const { api } = createWorkspaceAPI([root, blocked]);
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+      if (uid === blocked.uid) {
+        throw new KataTaskAPIError({
+          status: 500,
+          code: "internal",
+          message: "detail failed",
+          headers: new Headers(),
+        });
+      }
+      return detail(uid, [root, blocked]);
+    });
+    const onSelectedIssueChange = vi.fn();
+
+    const { rerender } = render(KataWorkspace, {
+      props: {
+        api,
+        selectedIssueUID: root.uid,
+        onSelectedIssueChange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    });
+    await fireEvent.click(
+      within(screen.getByRole("region", { name: "Task detail" })).getByRole("button", {
+        name: "Open reachable graph",
+      }),
+    );
+
+    await fireEvent.click(graphNodeWithText("Blocked follow-up"));
+    await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain("detail failed");
+      expect(screen.getByText("Select a task")).toBeTruthy();
+    });
+    expect(screen.queryByRole("heading", { name: "Root graph task" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Blocked follow-up" })).toBeNull();
+  });
+
   it("lets route back cancel a pending graph node selection", async () => {
     const root = {
       ...issue("issue-root", "Root graph task", "project-kata"),

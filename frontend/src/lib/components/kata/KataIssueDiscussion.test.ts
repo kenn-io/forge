@@ -138,6 +138,7 @@ function searchTask(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
 describe("KataIssueDiscussion", () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   it("submits comments and related links for the selected issue", async () => {
@@ -173,6 +174,8 @@ describe("KataIssueDiscussion", () => {
   });
 
   it("renders linked task state and event history", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T13:30:00Z"));
     const onSelectIssue = vi.fn();
 
     render(KataIssueDiscussion, {
@@ -189,6 +192,7 @@ describe("KataIssueDiscussion", () => {
     });
 
     expect(screen.getByText("First comment")).toBeTruthy();
+    expect(screen.getByText("1h ago")).toBeTruthy();
     expect(screen.getByText("commented")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Linked task/ })).toBeTruthy();
 

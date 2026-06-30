@@ -148,7 +148,11 @@ blocks `B`, `B` blocks `C`, and `A` also blocks `C`, the direct `A -> C`
 blocking edge is omitted from the edge set handed to compact/ELK layout. The
 full relationship set is still rendered and still drives selected-node
 adjacency/highlighting, so selecting `A` still marks `C` as blocked by `A` and
-the redundant direct edge can still be drawn over the reduced layout.
+the redundant direct edge can still be drawn over the reduced layout. Pruning is
+directed, cycle-safe, same-kind `blocks` only, and never uses parent or related
+edges as alternate paths. In bounded-depth views with `Show context`, layout
+uses the source-rooted context closure and its pruned edge set, so selecting a
+different task can change active highlighting without changing node positions.
 
 Relationship matching prefers `uid`. When a relationship peer or expanded
 parent object carries a `uid`, that full id is the cache key and edge endpoint;
@@ -177,13 +181,20 @@ direction; it does not infer extra incoming edges by scanning unrelated cached
 rows that happen to point at the active task except for the explicit parent
 reverse indexes listed below. Missing refs outside the selected depth are not
 requested until the user widens the depth.
-When `Show context` is enabled for a bounded depth, the full reachable closure
-remains in the graph but nodes outside the bounded traversal are faded. Edges
-outside the bounded traversal render as muted static context edges with lower
-edge z-index than active bounded-depth edges. Context edges must not use whole
-edge alpha over active edges, because overplotting makes the active edge
-semantics harder to read. The Svelte Flow node pane must be positioned above the
-edge pane so edges never paint on top of task cards.
+When `Show context` is enabled for a bounded depth, the source-rooted cached
+reachable closure remains in the graph but nodes outside the active selected
+task's bounded traversal are faded. The source-rooted closure is cache-only for
+fetch scheduling: missing refs discovered only through out-of-depth context are
+rendered if known as placeholders but are not requested until the user widens
+the depth enough to make them active. `Hide done` applies after context
+expansion and removes done context nodes except for the source and active
+traversal root; edges whose endpoint is hidden are dropped. Edges outside the
+bounded traversal render as muted static context edges with lower edge z-index
+than active bounded-depth edges. Context edges must not use whole edge alpha
+over active edges, because overplotting makes the active edge semantics harder
+to read. The Svelte Flow node pane must be positioned above the edge pane so
+edges never paint on top of task cards. `Show context` defaults on for each
+graph component session and is not persisted.
 
 Traversal sources by relationship kind:
 
@@ -193,9 +204,12 @@ Traversal sources by relationship kind:
 | `blocks` | Declared `blocks` and `blocked_by` on expanded task; source-detail blocks links | Declared `blocks` and `blocked_by` on expanded task; source-detail blocks links only when expanding the source |
 | `related` | Declared `related` on expanded task; source-detail related links normalized source-outward | Declared `related` on expanded task; source-detail related links only when expanding the source |
 
-The graph source is always present in `Full`. In bounded depth modes, the graph
-is selected-task anchored: the original source remains visible only when it is
-inside the selected task's bounded closure or is the bounded fallback root.
+The graph source is always present in `Full`. In bounded depth modes without
+`Show context`, the graph is selected-task anchored: the original source remains
+visible only when it is inside the selected task's bounded closure or is the
+bounded fallback root. In bounded depth modes with `Show context`, the visible
+closure and layout remain source-rooted while the active/faded classification is
+computed from the selected task's bounded traversal.
 
 Depth changes only affect the current graph render and newly reported missing
 refs. Narrowing the graph depth does not cancel a store-owned graph fetch
@@ -272,7 +286,10 @@ each node.
 options and a separate graph direction toggle. The split presentation still
 provides the default direction, but the user can override the graph itself
 between left-to-right and top-to-bottom without changing the workspace pane
-layout. `ELK` delegates node placement to `elkjs` using the active graph
+layout. The override is per mounted graph session: it starts from the current
+workspace split direction, survives source task selection changes while the
+graph pane remains open, and resets when the graph pane is closed/remounted.
+`ELK` delegates node placement to `elkjs` using the active graph
 direction, based on the final visible edge set after reciprocal edge
 deduplication and done filtering. ELK layout is asynchronous, so the graph renders compact
 positions until ELK returns, then stores only ELK coordinates if the graph
@@ -330,8 +347,11 @@ Add unit tests for the graph builder:
 - unresolved graph peer references are returned for background fetching.
 - UID-backed missing peers do not fall back to cached short-id matches.
 - graph depth filters prune traversal at 1, 2, and 3 edges.
-- bounded graph depth roots traversal at the active selected task while `Full`
+- bounded graph depth roots active traversal at the selected task while `Full`
   remains source-rooted.
+- bounded-depth `Show context` keeps the visible closure and layout stable when
+  graph-node selection changes, while moving the active/faded classification to
+  the selected task's bounded traversal.
 
 Add Svelte tests for workspace integration:
 
@@ -357,6 +377,11 @@ Add Svelte tests for workspace integration:
   graph node, confirms detail selection changes, verifies the source graph
   remains visible/stable after selection, exercises uncached UID-backed graph
   population through the real proxy path, and returns to the task list.
+- full-stack e2e coverage switches bounded depth with `Show context` through
+  the real workspace graph path, verifies context nodes remain visible without
+  scheduling out-of-depth missing refs, and verifies rendered edge count can stay
+  larger than layout edge count when transitive block edges are elided only for
+  layout.
 - full-stack e2e coverage stalls a clicked graph-node detail request, verifies
   the URL changes immediately, verifies same-UID route catch-up does not abort or
   duplicate that request, uses browser Back to restore the previous issue, and

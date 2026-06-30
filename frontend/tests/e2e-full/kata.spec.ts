@@ -212,6 +212,9 @@ function issueSummary(input: {
   parent_short_id?: string | undefined;
   child_counts?: { open: number; total: number } | undefined;
   metadata?: Record<string, unknown> | undefined;
+  blocks?: Array<{ uid?: string | undefined; short_id: string }> | undefined;
+  blocked_by?: Array<{ uid?: string | undefined; short_id: string }> | undefined;
+  related?: Array<{ uid?: string | undefined; short_id: string }> | undefined;
 }) {
   return {
     ...input,
@@ -1278,9 +1281,30 @@ test("kata workspace reads tasks through the configured external daemon", async 
 });
 
 test("kata reachable graph renders and selects tasks through the configured external daemon", async ({ page }) => {
-  const backend = await startKataBackend({
-    links: [linkRow({ id: 1, project_id: issues[0]!.project_id, from: issues[0]!, to: issues[1]!, type: "related" })],
+  const followUp = issueSummary({
+    id: 33,
+    uid: "issue-follow-up",
+    project_id: 2,
+    project_uid: "project-kata",
+    project_name: "Kata",
+    short_id: "kat-8",
+    qualified_id: "Kata#kat-8",
+    title: "Review Q3 notes",
+    body: "Read the agenda notes after the Q3 email is sent.",
+    labels: ["work"],
   });
+  const graphRoot = {
+    ...issues[0]!,
+    blocks: [
+      { uid: issues[1]!.uid, short_id: issues[1]!.short_id },
+      { uid: followUp.uid, short_id: followUp.short_id },
+    ],
+  };
+  const graphQ3 = {
+    ...issues[1]!,
+    blocks: [{ uid: followUp.uid, short_id: followUp.short_id }],
+  };
+  const backend = await startKataBackend({ issues: [graphRoot, graphQ3, followUp] });
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
 
@@ -1300,7 +1324,39 @@ test("kata reachable graph renders and selects tasks through the configured exte
     const debugBeforeSelection = await page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot());
     expect(debugBeforeSelection?.latestGraph?.sourceUID).toBe("issue-rent");
     expect(debugBeforeSelection?.latestGraph?.layoutDirection).toBe("TB");
-    expect(debugBeforeSelection?.latestGraph?.nodeIds).toEqual(expect.arrayContaining(["issue-rent", "issue-q3"]));
+    expect(debugBeforeSelection?.latestGraph?.nodeIds).toEqual(
+      expect.arrayContaining(["issue-rent", "issue-q3", "issue-follow-up"]),
+    );
+    expect(debugBeforeSelection?.latestGraph?.edgeCount).toBe(3);
+    expect(debugBeforeSelection?.latestGraph?.layoutEdgeCount).toBe(2);
+    await graph.getByRole("combobox", { name: "Graph depth: Full" }).click();
+    await page.getByRole("option", { name: "1 edge" }).click();
+    await expect(graph.getByRole("checkbox", { name: "Show context" })).toBeEnabled();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const latest = window.__middleman_kata_graph_debug?.snapshot().latestGraph;
+          return latest
+            ? {
+                depthLimit: latest.depthLimit,
+                nodeIds: latest.nodeIds,
+                edgeCount: latest.edgeCount,
+                layoutEdgeCount: latest.layoutEdgeCount,
+              }
+            : null;
+        }),
+      )
+      .toMatchObject({
+        depthLimit: "1",
+        nodeIds: expect.arrayContaining(["issue-rent", "issue-q3", "issue-follow-up"]),
+        edgeCount: 3,
+        layoutEdgeCount: 2,
+      });
+    await graph.getByRole("combobox", { name: "Graph depth: 1 edge" }).click();
+    await page.getByRole("option", { name: "Full" }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.depthLimit))
+      .toBe("full");
     const graphNodes = graph.locator(".svelte-flow__node");
     await expect(graphNodes.filter({ hasText: "Pay rent" })).toBeVisible();
     const linkedNode = graphNodes.filter({ hasText: "Email Susan re: Q3" }).first();
@@ -1347,6 +1403,11 @@ test("kata reachable graph renders and selects tasks through the configured exte
     await expect
       .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection))
       .toBe("LR");
+    await graph.getByRole("button", { name: "Graph direction: left-right. Switch to top-bottom" }).click();
+    await expect(graph).toHaveAttribute("data-layout-direction", "TB");
+    await expect
+      .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection))
+      .toBe("TB");
     const toolbarMetrics = await page.evaluate(() => {
       const toolbar = document.querySelector<HTMLElement>(".graph-toolbar");
       const hideDone = document.querySelector<HTMLElement>(".hide-done");

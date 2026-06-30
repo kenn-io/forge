@@ -674,15 +674,22 @@ function hasAlternateBlockPath(
   target: string,
   excludedEdgeID: string,
   outgoing: ReadonlyMap<string, readonly KataGraphEdge[]>,
+  depthContext: boolean,
 ): boolean {
-  const queued = [...(outgoing.get(source) ?? [])].filter((edge) => edge.id !== excludedEdgeID);
+  const queued = [...(outgoing.get(source) ?? [])].filter(
+    (edge) => edge.id !== excludedEdgeID && Boolean(edge.data?.isDepthContext) === depthContext,
+  );
   const seen = new Set<string>([source]);
   while (queued.length > 0) {
     const edge = queued.shift()!;
     if (edge.target === target) return true;
     if (seen.has(edge.target)) continue;
     seen.add(edge.target);
-    queued.push(...(outgoing.get(edge.target) ?? []).filter((next) => next.id !== excludedEdgeID));
+    queued.push(
+      ...(outgoing.get(edge.target) ?? []).filter(
+        (next) => next.id !== excludedEdgeID && Boolean(next.data?.isDepthContext) === depthContext,
+      ),
+    );
   }
   return false;
 }
@@ -695,8 +702,18 @@ function pruneTransitiveBlockEdges(edges: readonly KataGraphEdge[]): KataGraphEd
   }
   return edges.filter((edge) => {
     if (edge.data?.kind !== "blocks") return true;
-    return !hasAlternateBlockPath(edge.source, edge.target, edge.id, outgoing);
+    return !hasAlternateBlockPath(edge.source, edge.target, edge.id, outgoing, Boolean(edge.data?.isDepthContext));
   });
+}
+
+function sortedMissingRefs(refs: Iterable<KataGraphMissingRef>): KataGraphMissingRef[] {
+  return [...refs].sort((left, right) =>
+    `${left.projectUID}:${left.shortID}:${left.uid ?? ""}`.localeCompare(
+      `${right.projectUID}:${right.shortID}:${right.uid ?? ""}`,
+      undefined,
+      { numeric: true, sensitivity: "base" },
+    ),
+  );
 }
 
 export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
@@ -712,11 +729,11 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   const layoutDirection = input.layoutDirection ?? "LR";
   const depthLimit = maxTraversalDepth(input.depthLimit);
   const selectedTask = input.selectedUID ? indexes.byUID.get(input.selectedUID) : undefined;
-  const traversalRoot = hasBoundedDepth(input.depthLimit) && selectedTask ? selectedTask : source;
-  const activeGraph = collectReachableGraph(input, indexes, source, traversalRoot, depthLimit);
+  const activeTraversalRoot = hasBoundedDepth(input.depthLimit) && selectedTask ? selectedTask : source;
+  const activeGraph = collectReachableGraph(input, indexes, source, activeTraversalRoot, depthLimit);
   const showDepthContext = Boolean(hasBoundedDepth(input.depthLimit) && input.showDepthContext);
   const graph = showDepthContext
-    ? collectReachableGraph(input, indexes, source, traversalRoot, Number.POSITIVE_INFINITY)
+    ? collectReachableGraph(input, indexes, source, source, Number.POSITIVE_INFINITY)
     : activeGraph;
   const activeIDs = new Set(activeGraph.nodeTasks.keys());
   const activeEdgeIDs = new Set(activeGraph.edges.keys());
@@ -724,7 +741,9 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   const visibleIDs = new Set<string>();
   const visibleNodeEntries = [...graph.nodeTasks.entries()]
     .filter(([id, task]) => {
-      if (task && id !== input.sourceUID && id !== traversalRoot.uid && input.hideDone && isDone(task)) return false;
+      if (task && id !== input.sourceUID && id !== activeTraversalRoot.uid && input.hideDone && isDone(task)) {
+        return false;
+      }
       return true;
     })
     .sort((left, right) => compareGraphNodeEntries(left, right, input.sourceUID));
@@ -739,7 +758,10 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
         : edge,
     );
   const visibleEdges = [...visibleRelationshipEdges].sort(compareGraphEdges);
-  const layoutEdges = pruneTransitiveBlockEdges(visibleRelationshipEdges).sort(compareGraphEdges);
+  const layoutRelationshipEdges = showDepthContext
+    ? [...graph.edges.values()].filter((edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target))
+    : visibleRelationshipEdges;
+  const layoutEdges = pruneTransitiveBlockEdges(layoutRelationshipEdges).sort(compareGraphEdges);
   const positions = graphPositions(visibleNodeEntries, layoutEdges, layoutDirection);
   const projectLabels = visibleProjectLabels(visibleNodeEntries);
   const adjacentRelations = selectedAdjacentRelations(visibleRelationshipEdges, input.selectedUID);
@@ -763,12 +785,8 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
     nodes,
     edges: visibleEdges,
     layoutEdges,
-    missingRefs: [...graph.missingRefs.values()].sort((left, right) =>
-      `${left.projectUID}:${left.shortID}:${left.uid ?? ""}`.localeCompare(
-        `${right.projectUID}:${right.shortID}:${right.uid ?? ""}`,
-        undefined,
-        { numeric: true, sensitivity: "base" },
-      ),
+    missingRefs: sortedMissingRefs(
+      [...activeGraph.missingRefs.entries()].filter(([id]) => visibleIDs.has(id)).map(([, ref]) => ref),
     ),
   };
 }

@@ -744,6 +744,35 @@ describe("buildKataReachableGraph", () => {
     expect(graph.edges.map((edge) => edge.data?.isDepthContext ?? false)).toEqual([true, true, false]);
   });
 
+  it("does not request missing refs that only appear in faded depth context", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-hidden", short_id: "hidden" }],
+    });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "1",
+      showDepthContext: true,
+    });
+
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["issue-hidden", "issue-one", "issue-root"]);
+    expect(graph.nodes.find((node) => node.id === "issue-hidden")?.data.isDepthContext).toBe(true);
+    expect(graph.missingRefs).toEqual([]);
+  });
+
   it("prunes transitive blocking edges from the visualization", () => {
     const root = task({
       uid: "issue-root",
@@ -784,7 +813,95 @@ describe("buildKataReachableGraph", () => {
     expect(graph.nodes.find((node) => node.id === "issue-two")?.data.adjacentRelation).toBe("blocks");
   });
 
-  it("uses the selected task as the bounded depth root", () => {
+  it("keeps rendered direct edges when faded-context layout prunes them", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [
+        { uid: "issue-one", short_id: "one" },
+        { uid: "issue-two", short_id: "two" },
+      ],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({ uid: "issue-two", short_id: "two", title: "Two edges" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one, two],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "1",
+      showDepthContext: true,
+    });
+
+    expect(graph.edges.find((edge) => edge.id === "blocks:issue-one:issue-two")?.data?.isDepthContext).toBe(true);
+    expect(graph.edges.map((edge) => edge.id).sort()).toEqual([
+      "blocks:issue-one:issue-two",
+      "blocks:issue-root:issue-one",
+      "blocks:issue-root:issue-two",
+    ]);
+    expect(graph.layoutEdges.map((edge) => edge.id).sort()).toEqual([
+      "blocks:issue-one:issue-two",
+      "blocks:issue-root:issue-one",
+    ]);
+  });
+
+  it("keeps the faded context layout stable when selecting nodes in bounded depth", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({
+      uid: "issue-two",
+      short_id: "two",
+      title: "Two edges",
+      blocks: [{ uid: "issue-three", short_id: "three" }],
+    });
+    const three = task({ uid: "issue-three", short_id: "three", title: "Three edges" });
+
+    const rootSelected = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "1",
+      showDepthContext: true,
+    });
+    const twoSelected = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: two.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "1",
+      showDepthContext: true,
+    });
+
+    expect(twoSelected.nodes.map((node) => node.id)).toEqual(rootSelected.nodes.map((node) => node.id));
+    expect(twoSelected.layoutEdges.map((edge) => edge.id)).toEqual(rootSelected.layoutEdges.map((edge) => edge.id));
+    expect(positionsByID(twoSelected)).toEqual(positionsByID(rootSelected));
+    expect(twoSelected.nodes.find((node) => node.id === two.uid)?.data.isSelected).toBe(true);
+    expect(twoSelected.nodes.find((node) => node.id === three.uid)?.data.isDepthContext).toBe(false);
+    expect(twoSelected.nodes.find((node) => node.id === root.uid)?.data.isDepthContext).toBe(true);
+  });
+
+  it("uses the selected task as the bounded depth root without faded context", () => {
     const root = task({
       uid: "issue-root",
       short_id: "root",

@@ -2,6 +2,7 @@
   import NetworkIcon from "@lucide/svelte/icons/network";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
+  import { localDateTimeLabel, timeAgo } from "@middleman/ui/utils/time";
 
   import type {
     KataProjectSummary,
@@ -259,6 +260,9 @@
       {/if}
     </div>
     <div class="detail-actions">
+      <time class="detail-created-at" datetime={issue.issue.created_at} title={localDateTimeLabel(issue.issue.created_at)}>
+        {timeAgo(issue.issue.created_at)}
+      </time>
       {#if workspaceAction}
         <button
           type="button"
@@ -469,9 +473,16 @@
   .detail-actions {
     flex: 0 0 auto;
     display: inline-flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 6px;
     padding-top: 2px;
+  }
+
+  .detail-created-at {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+    padding: 6px 2px;
   }
 
   .workspace-action {

@@ -89,5 +89,13 @@ func TestAuthRotateOutputOffline(t *testing.T) {
 	var out, errOut bytes.Buffer
 	require.NoError(authRotateOutput(dir, false, &out, &errOut))
 	require.NotEqual(first, strings.TrimSpace(out.String()))
-	require.Contains(errOut.String(), "restart")
+	require.Contains(errOut.String(), "Restart")
+}
+
+func TestAuthURLOutputAbsentToken(t *testing.T) {
+	require := require.New(t)
+	var out bytes.Buffer
+	err := authURLOutput(t.TempDir(), "https://host/", &out)
+	require.Error(err)
+	require.Contains(err.Error(), "start the daemon")
 }

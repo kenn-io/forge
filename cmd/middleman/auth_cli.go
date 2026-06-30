@@ -131,7 +131,7 @@ func authRotateOutput(dataDir string, force bool, stdout, stderr io.Writer) erro
 				" clients using the new token will get 401 until you restart it.")
 		return err
 	}
-	_, err = fmt.Fprintln(stderr, "Rotated. restart the daemon to apply.")
+	_, err = fmt.Fprintln(stderr, "Rotated. Restart the daemon to apply.")
 	return err
 }
 

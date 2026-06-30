@@ -378,8 +378,7 @@ Add Svelte tests for workspace integration:
   covers both Enter and Space keyboard activation.
 - full-stack e2e coverage opens graph mode from the workspace, selects a cached
   graph node, confirms detail selection changes, verifies the source graph
-  remains visible/stable after selection, exercises uncached UID-backed graph
-  population through the real proxy path, and returns to the task list.
+  remains visible/stable after selection, and returns to the task list.
 - full-stack e2e coverage switches active depth and context through the real
   workspace graph path and verifies context remains emphasis-only by fading
   visible out-of-context edges without changing node ids, positions, or layout

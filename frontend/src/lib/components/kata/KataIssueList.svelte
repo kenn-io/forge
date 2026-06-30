@@ -85,8 +85,9 @@
         }
       }
     }
+    const allIssues = groups.flatMap((group) => group.issues);
     return groups
-      .map((group) => ({ ...group, issues: topLevelIssues(group.issues) }))
+      .map((group) => ({ ...group, issues: topLevelIssues(group.issues, allIssues) }))
       .filter((group) => group.issues.length > 0);
   });
 
@@ -204,8 +205,19 @@
       .filter((group) => group.issues.length > 0);
   }
 
-  function topLevelIssues(issues: readonly KataTaskSummary[]): KataTaskSummary[] {
-    return issues.filter((issue) => parentHierarchyKey(issue) === null);
+  function topLevelIssues(
+    issues: readonly KataTaskSummary[],
+    allIssues: readonly KataTaskSummary[] = issues,
+  ): KataTaskSummary[] {
+    // A child collapses into its parent only when that parent is actually
+    // present in the visible set. Search and filter results often surface a
+    // matching child without its parent; those rows must still render as
+    // their own top-level row instead of vanishing into a missing ancestor.
+    const visibleKeys = new Set(allIssues.map(issueHierarchyKey));
+    return issues.filter((issue) => {
+      const parentKey = parentHierarchyKey(issue);
+      return parentKey === null || !visibleKeys.has(parentKey);
+    });
   }
 
   function collectKnownExpandableIssues(issues: readonly KataTaskSummary[]): KataTaskSummary[] {

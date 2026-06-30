@@ -300,6 +300,34 @@ describe("KataIssueList", () => {
     expect(screen.getByRole("button", { name: /Child task/ }).classList.contains("row--child")).toBe(true);
   });
 
+  it("renders a matched child as a top-level row when its parent is absent", async () => {
+    // A search or filter can surface a child whose parent is not in the
+    // result set. The child has a parent_short_id, but with no visible
+    // ancestor to fold into it must still render as its own row instead of
+    // being dropped — otherwise the header counts it while the list shows
+    // "No tasks".
+    const child = task({
+      uid: "issue-child",
+      short_id: "child",
+      qualified_id: "Finances#child",
+      title: "Child task",
+      parent_short_id: "parent",
+    });
+
+    render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([child]),
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+
+    expect(screen.getByRole("button", { name: /Child task/ })).toBeTruthy();
+    expect(screen.queryByText("No tasks")).toBeNull();
+    expect(screen.getByText("1 task")).toBeTruthy();
+  });
+
   it("expands nested child rows beyond one level", async () => {
     const parent = task({
       uid: "issue-parent",

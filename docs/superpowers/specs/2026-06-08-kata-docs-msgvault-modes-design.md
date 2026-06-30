@@ -310,9 +310,13 @@ Header/navigation changes:
 Kata frontend adaptation:
 
 - Keep the existing task workspace behavior and daemon switcher semantics.
-- Treat task lists as trees: rows with a known parent stay out of the
-  top-level projection until their ancestor chain is expanded, and recursive row
-  rendering must support nested subtasks beyond one level
+- Treat task lists as trees: a row stays out of the top-level projection only
+  when its parent is present in the same result set (so it can fold under that
+  ancestor once expanded). A child whose parent is absent — e.g. a search or
+  filter that matches the child but not the parent — must still render and be
+  selectable as its own top-level row instead of being dropped; otherwise the
+  header counts it while the list shows "No tasks". Recursive row rendering must
+  support nested subtasks beyond one level
   (`frontend/src/lib/components/kata/KataIssueList.svelte::topLevelIssues`,
   `frontend/src/lib/components/kata/KataIssueList.svelte::row`,
   `frontend/src/lib/stores/kata-workspace.svelte.ts::selectableViewIssues`).

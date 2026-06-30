@@ -42,6 +42,7 @@ export interface KataGraphDebugGraphSnapshot {
   missingRefKeys: string[];
   nodeCount: number;
   edgeCount: number;
+  layoutEdgeCount: number;
   layoutBounds: { width: number; height: number; aspectRatio: number };
 }
 

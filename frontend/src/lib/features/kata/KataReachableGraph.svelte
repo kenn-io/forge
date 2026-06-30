@@ -86,7 +86,7 @@
       layoutDirection: effectiveLayoutDirection,
     }),
   );
-  let graphSignature = $derived(graphLayoutSignature(graph.nodes, graph.edges));
+  let graphSignature = $derived(graphLayoutSignature(graph.nodes, graph.layoutEdges));
   let activeLayoutKey = $derived(`${layoutMode}:${effectiveLayoutDirection}:${graphSignature}`);
   let flowNodes = $derived(
     layoutedKey === activeLayoutKey ? applyLayoutPositions(graph.nodes, layoutedPositions) : graph.nodes,
@@ -276,7 +276,7 @@
   $effect(() => {
     const key = activeLayoutKey;
     const nodes = graph.nodes;
-    const edges = graph.edges;
+    const edges = graph.layoutEdges;
     const mode = layoutMode;
     const direction = effectiveLayoutDirection;
     const run = ++layoutRun;
@@ -340,6 +340,7 @@
       missingRefKeys: graph.missingRefs.map(missingRefKey),
       nodeCount: flowNodes.length,
       edgeCount: graph.edges.length,
+      layoutEdgeCount: graph.layoutEdges.length,
       layoutBounds: layoutBounds(flowNodes),
     };
     setKataGraphDebugGraph(snapshot);

@@ -143,6 +143,12 @@ related links are normalized source-outward, and reverse cached related
 matches are rendered outward from the task being expanded. This prevents the
 same related pair from flipping direction when the daemon alternates which
 side of the pair supplied the relationship.
+For visualization layout only, transitive blocking edges are pruned: if `A`
+blocks `B`, `B` blocks `C`, and `A` also blocks `C`, the direct `A -> C`
+blocking edge is omitted from the edge set handed to compact/ELK layout. The
+full relationship set is still rendered and still drives selected-node
+adjacency/highlighting, so selecting `A` still marks `C` as blocked by `A` and
+the redundant direct edge can still be drawn over the reduced layout.
 
 Relationship matching prefers `uid`. When a relationship peer or expanded
 parent object carries a `uid`, that full id is the cache key and edge endpoint;

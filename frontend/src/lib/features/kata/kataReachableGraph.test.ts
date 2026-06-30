@@ -744,6 +744,46 @@ describe("buildKataReachableGraph", () => {
     expect(graph.edges.map((edge) => edge.data?.isDepthContext ?? false)).toEqual([true, true, false]);
   });
 
+  it("prunes transitive blocking edges from the visualization", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [
+        { uid: "issue-one", short_id: "one" },
+        { uid: "issue-two", short_id: "two" },
+      ],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({ uid: "issue-two", short_id: "two", title: "Two edges" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one, two],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "full",
+    });
+
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["issue-one", "issue-root", "issue-two"]);
+    expect(graph.edges.map((edge) => edge.id).sort()).toEqual([
+      "blocks:issue-one:issue-two",
+      "blocks:issue-root:issue-one",
+      "blocks:issue-root:issue-two",
+    ]);
+    expect(graph.layoutEdges.map((edge) => edge.id).sort()).toEqual([
+      "blocks:issue-one:issue-two",
+      "blocks:issue-root:issue-one",
+    ]);
+    expect(graph.nodes.find((node) => node.id === "issue-two")?.data.adjacentRelation).toBe("blocks");
+  });
+
   it("uses the selected task as the bounded depth root", () => {
     const root = task({
       uid: "issue-root",

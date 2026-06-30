@@ -1710,6 +1710,61 @@ func TestSyncNotificationsCapsRepositoryNotificationPages(t *testing.T) {
 	}
 }
 
+func TestSyncNotificationsContinuesAfterParticipatingNotificationPageCap(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	var participatingCalls atomic.Int32
+	var listCalls atomic.Int32
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	prNumber := 7
+	syncer := NewSyncer(
+		map[string]Client{
+			"github.com": &mockClient{
+				listNotificationsFn: func(_ context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+					if opts.Participating {
+						participatingCalls.Add(1)
+						return []NotificationThread{{ID: "thread-pr"}}, true, nil
+					}
+					listCalls.Add(1)
+					return []NotificationThread{
+						{
+							ID:           "thread-pr",
+							RepoOwner:    "acme",
+							RepoName:     "widget",
+							SubjectType:  "PullRequest",
+							SubjectTitle: "Review requested",
+							WebURL:       "https://github.com/acme/widget/pull/7",
+							ItemNumber:   &prNumber,
+							ItemType:     "pr",
+							Reason:       "mention",
+							Unread:       true,
+							UpdatedAt:    now,
+						},
+					}, false, nil
+				},
+			},
+		},
+		d,
+		nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		map[string]*SyncBudget{"github.com": NewSyncBudget(100)},
+	)
+
+	require.NoError(syncer.SyncNotifications(t.Context()))
+	assert.Equal(int32(notificationSyncMaxPages), participatingCalls.Load())
+	assert.Equal(int32(1), listCalls.Load())
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	if assert.Len(items, 1) {
+		assert.True(items[0].Participating)
+	}
+}
+
 func TestSyncMRMarksLinkedNotificationDone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

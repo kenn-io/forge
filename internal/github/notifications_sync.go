@@ -310,11 +310,9 @@ func (s *Syncer) listParticipatingNotificationIDs(
 ) (map[string]bool, error) {
 	participating := map[string]bool{}
 	for _, repo := range trackedRepos {
-		page := 1
-		for {
-			if page > notificationSyncMaxPages {
-				return nil, fmt.Errorf("participating notification page cap reached for %s/%s on %s after %d pages", repo.Owner, repo.Name, host, notificationSyncMaxPages)
-			}
+		// Participation is best-effort annotation; do not block the
+		// main notification sync when the secondary scan is huge.
+		for page := 1; page <= notificationSyncMaxPages; page++ {
 			if err := s.ensureNotificationPageBudget(host, client); err != nil {
 				return nil, err
 			}
@@ -337,7 +335,6 @@ func (s *Syncer) listParticipatingNotificationIDs(
 			if !hasNext {
 				break
 			}
-			page++
 		}
 	}
 	return participating, nil

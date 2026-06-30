@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
@@ -19,6 +20,12 @@ test("docs screenshot regeneration uses root Playwright dependencies", async () 
     "node node_modules/vite-plus/bin/vp exec -- playwright test --config docs/screenshots/playwright.config.ts --project=chromium",
   );
   assert.equal(rootPkg.devDependencies?.["@playwright/test"], "1.61.0");
+
+  const list = spawnSync(process.execPath, ["node_modules/vite-plus/bin/vp", "run", "docs:screenshots", "--list"], {
+    encoding: "utf8",
+  });
+  assert.equal(list.status, 0, list.stderr || list.stdout);
+  assert.match(list.stdout, /docs workflow screenshots/);
 
   for (const [path, contents] of [
     ["docs/screenshots/docs-screenshots.spec.ts", spec],

@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if root=$(git rev-parse --show-toplevel 2>/dev/null); then bash \"$root/scripts/hooks/frontend-deps-session-start.sh\"; fi",
+            "timeout": 300,
+            "statusMessage": "Installing frontend dependencies"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

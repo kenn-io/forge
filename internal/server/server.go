@@ -1110,6 +1110,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.checkHost(w, r) {
 		return
 	}
+	if s.handleLogout(w, r) {
+		return
+	}
 	if s.apiAuthToken != "" {
 		if s.handleAuthBootstrap(w, r) {
 			return

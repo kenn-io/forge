@@ -110,6 +110,32 @@ func AuthBootstrapURL(baseURL, token string) string {
 	return baseURL + "/?" + authBootstrapParam + "=" + url.QueryEscape(token)
 }
 
+// handleLogout expires the session cookie and redirects to the base
+// path when the request targets /auth/logout. It is wired ahead of the
+// auth-token block so it works whether or not require_auth is on; the
+// cookie is HttpOnly, so only the server can clear it. Returns true when
+// it wrote a response.
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) bool {
+	path := r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		path = strings.TrimPrefix(path, prefix)
+	}
+	if path != "/auth/logout" {
+		return false
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     authCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, s.basePath, http.StatusSeeOther)
+	return true
+}
+
 // redactedQuery renders a URL's query for logging with credential
 // parameters masked, so the auth bootstrap token never lands in
 // debug logs.

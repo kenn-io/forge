@@ -160,3 +160,39 @@ func TestRedactedQueryMasksBootstrapToken(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("tab=pulls", redactedQuery(plain))
 }
+
+// TestAuthLogoutExpiresCookie pins logout: GET /auth/logout expires the
+// session cookie and redirects to the base path, regardless of whether
+// require_auth is on, and a gated API call afterward is unauthorized.
+func TestAuthLogoutExpiresCookie(t *testing.T) {
+	for _, token := range []string{"secret-token", ""} {
+		t.Run("token="+token, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			ts := newAuthTestServer(t, token)
+
+			resp := authGet(t, ts, "/auth/logout", nil)
+			require.Equal(http.StatusSeeOther, resp.StatusCode)
+			assert.Equal("/", resp.Header.Get("Location"))
+			cookies := resp.Cookies()
+			require.Len(cookies, 1)
+			assert.Equal("middleman_auth", cookies[0].Name)
+			assert.Negative(cookies[0].MaxAge, "cookie must be expired")
+		})
+	}
+}
+
+// TestAuthLogoutUnderBasePath pins logout when middleman is mounted under
+// a base path: /middleman/auth/logout expires the cookie and redirects to
+// the base path.
+func TestAuthLogoutUnderBasePath(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv := New(dbtest.Open(t), nil, nil, "/middleman/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+
+	resp := authGet(t, ts, "/middleman/auth/logout", nil)
+	require.Equal(http.StatusSeeOther, resp.StatusCode)
+	assert.Equal("/middleman/", resp.Header.Get("Location"))
+}

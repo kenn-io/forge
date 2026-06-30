@@ -53,4 +53,27 @@ describe("RepoImportModal focus trap (browser)", () => {
     pressKey("Tab", {}, cancel);
     expect(document.activeElement).toBe(close);
   });
+
+  it("keeps Tab out of the open provider dropdown's option buttons", async () => {
+    render(RepoImportModal, {
+      props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
+    });
+
+    await expect.element(page.getByRole("dialog", { name: "Add repositories" })).toBeVisible();
+
+    const provider = controlByLabel<HTMLButtonElement>("Provider", ".select-dropdown-trigger");
+    const host = controlByLabel<HTMLInputElement>("Host", "input");
+
+    // Open the dropdown so its option buttons are rendered. They carry
+    // tabindex="-1" precisely so they stay out of the modal's tab order.
+    provider.click();
+    const option = await vi.waitFor(() => requireElement<HTMLButtonElement>(".select-dropdown-option"));
+    expect(option.getAttribute("tabindex")).toBe("-1");
+
+    // Tabbing forward from the trigger must skip the option buttons and land on
+    // the next modal control, not descend into the open dropdown.
+    provider.focus();
+    pressKey("Tab", {}, provider);
+    expect(document.activeElement).toBe(host);
+  });
 });

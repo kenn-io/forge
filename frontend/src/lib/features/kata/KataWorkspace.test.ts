@@ -183,6 +183,35 @@ describe("KataWorkspace", () => {
     expect(screen.getAllByText("Related graph task").length).toBeGreaterThan(0);
   });
 
+  it("updates the reachable graph direction with the task detail layout", async () => {
+    const root = {
+      ...issue("issue-root", "Root graph task", "project-kata"),
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+    };
+    const blocked = issue("issue-blocked", "Blocked graph task", "project-kata");
+    const { api } = createWorkspaceAPI([root, blocked]);
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: root.uid } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    });
+    await fireEvent.click(
+      within(screen.getByRole("region", { name: "Task detail" })).getByRole("button", {
+        name: "Open reachable graph",
+      }),
+    );
+
+    const graph = screen.getByRole("region", { name: "Reachable task graph" });
+    expect(graph.getAttribute("data-layout-direction")).toBe("TB");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Switch to side-by-side layout" }));
+    expect(graph.getAttribute("data-layout-direction")).toBe("LR");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Switch to stacked layout" }));
+    expect(graph.getAttribute("data-layout-direction")).toBe("TB");
+  });
+
   it("keeps source detail links in the graph after selecting a linked node", async () => {
     const root = issue("issue-root", "Root graph task", "project-kata");
     const related = issue("issue-related", "Detail-only graph task", "project-kata");

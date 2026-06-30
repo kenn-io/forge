@@ -24,6 +24,7 @@
     buildKataReachableGraph,
     type KataGraphDepthLimit,
     type KataGraphEdge,
+    type KataGraphLayoutDirection,
     type KataGraphMissingRef,
     type KataGraphNode,
   } from "./kataReachableGraph.js";
@@ -40,6 +41,7 @@
     selectedUID: string | null;
     tasks: readonly KataTaskSummary[];
     selectedDetail?: KataTaskDetail | null | undefined;
+    layoutDirection?: KataGraphLayoutDirection | undefined;
     onBack: () => void;
     onSelectIssue: (uid: string) => void;
     onRequestMissingTasks?: ((refs: readonly KataGraphMissingRef[]) => void) | undefined;
@@ -50,6 +52,7 @@
     selectedUID,
     tasks,
     selectedDetail = null,
+    layoutDirection = "LR",
     onBack,
     onSelectIssue,
     onRequestMissingTasks = undefined,
@@ -61,10 +64,10 @@
   let layoutedPositions = $state.raw<ReadonlyMap<string, LayoutPosition>>(new Map());
   let layoutedKey = $state("");
   let graph = $derived(
-    buildKataReachableGraph({ sourceUID, selectedUID, tasks, selectedDetail, hideDone, depthLimit }),
+    buildKataReachableGraph({ sourceUID, selectedUID, tasks, selectedDetail, hideDone, depthLimit, layoutDirection }),
   );
   let graphSignature = $derived(graphLayoutSignature(graph.nodes, graph.edges));
-  let activeLayoutKey = $derived(`${layoutMode}:${graphSignature}`);
+  let activeLayoutKey = $derived(`${layoutMode}:${layoutDirection}:${graphSignature}`);
   let flowNodes = $derived(
     layoutedKey === activeLayoutKey ? applyLayoutPositions(graph.nodes, layoutedPositions) : graph.nodes,
   );
@@ -75,7 +78,6 @@
   const elk = new ELK({
     defaultLayoutOptions: {
       "elk.algorithm": "layered",
-      "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.spacing.nodeNode": "24",
       "elk.layered.spacing.nodeNodeBetweenLayers": "72",
@@ -138,10 +140,21 @@
     });
   }
 
-  function elkGraph(nodes: readonly KataGraphNode[], edges: readonly KataGraphEdge[]): ElkNode {
+  function elkDirection(direction: KataGraphLayoutDirection): "RIGHT" | "DOWN" {
+    return direction === "TB" ? "DOWN" : "RIGHT";
+  }
+
+  function elkGraph(
+    nodes: readonly KataGraphNode[],
+    edges: readonly KataGraphEdge[],
+    direction: KataGraphLayoutDirection,
+  ): ElkNode {
     const nodeIDs = new Set(nodes.map((node) => node.id));
     return {
       id: "kata-reachable-graph",
+      layoutOptions: {
+        "elk.direction": elkDirection(direction),
+      },
       children: nodes.map((node) => ({
         id: node.id,
         width: node.width ?? 250,
@@ -208,15 +221,21 @@
       return;
     }
 
-    recordKataGraphDebugEvent("graph-layout-start", { layoutMode, nodeCount: nodes.length, edgeCount: edges.length });
+    recordKataGraphDebugEvent("graph-layout-start", {
+      layoutMode,
+      layoutDirection,
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+    });
     elk
-      .layout(elkGraph(nodes, edges))
+      .layout(elkGraph(nodes, edges, layoutDirection))
       .then((layoutedGraph) => {
         if (run !== layoutRun) return;
         layoutedPositions = elkPositions(layoutedGraph);
         layoutedKey = key;
         recordKataGraphDebugEvent("graph-layout-complete", {
           layoutMode,
+          layoutDirection,
           nodeCount: nodes.length,
           edgeCount: edges.length,
         });
@@ -227,6 +246,7 @@
         layoutedKey = key;
         recordKataGraphDebugEvent("graph-layout-error", {
           layoutMode,
+          layoutDirection,
           message: error instanceof Error ? error.message : String(error),
         });
       });
@@ -239,6 +259,7 @@
       hideDone,
       depthLimit,
       layoutMode,
+      layoutDirection,
       layoutReady,
       nodeIds: flowNodes.map((node) => node.id),
       edges: graph.edges.map((edge) => ({
@@ -262,7 +283,7 @@
   });
 </script>
 
-<section class="kata-graph-pane" aria-label="Reachable task graph">
+<section class="kata-graph-pane" aria-label="Reachable task graph" data-layout-direction={layoutDirection}>
   <header class="graph-toolbar">
     <button type="button" class="toolbar-button" aria-label="Back to task list" onclick={onBack}>
       <ArrowLeftIcon size={14} strokeWidth={1.9} aria-hidden="true" />
@@ -333,15 +354,16 @@
     height: 100%;
     display: flex;
     flex-direction: column;
+    container-type: inline-size;
     background: var(--bg-primary);
   }
 
   .graph-toolbar {
     flex: 0 0 auto;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 8px 10px;
     padding: 10px 14px;
     border-bottom: 1px solid var(--border-default);
     background: var(--bg-surface);
@@ -365,6 +387,10 @@
     cursor: pointer;
   }
 
+  .toolbar-button {
+    flex: 0 0 auto;
+  }
+
   .toolbar-button:hover,
   .depth-filter:hover,
   .layout-filter:hover,
@@ -375,8 +401,12 @@
 
   .graph-controls {
     display: inline-flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
+    min-width: 0;
   }
 
   .depth-filter,
@@ -414,6 +444,7 @@
   }
 
   .graph-source {
+    flex: 1 1 180px;
     min-width: 0;
     display: flex;
     align-items: center;
@@ -426,6 +457,34 @@
     white-space: nowrap;
     color: var(--text-primary);
     font-size: var(--font-size-sm);
+  }
+
+  @container (max-width: 700px) {
+    .graph-toolbar {
+      align-items: flex-start;
+    }
+
+    .graph-source {
+      flex: 1 1 calc(100% - 96px);
+      min-height: 28px;
+    }
+
+    .graph-controls {
+      flex: 1 0 100%;
+      justify-content: flex-start;
+    }
+
+    .depth-filter,
+    .layout-filter {
+      flex: 1 1 160px;
+      min-width: 0;
+    }
+
+    :global(.kata-graph-depth-select),
+    :global(.kata-graph-layout-select) {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
   }
 
   .graph-canvas {

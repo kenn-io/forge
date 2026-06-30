@@ -184,4 +184,44 @@ describe("KataReachableGraph (browser)", () => {
     expect(container.textContent).toContain("Root title after refresh");
     expect(container.textContent).not.toContain("Root browser task");
   });
+
+  it("keeps graph toolbar filters visible in a narrow pane", async () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root browser task with a longer title",
+      blocks: [{ uid: "issue-linked", short_id: "linked" }],
+    });
+    const linked = task({
+      uid: "issue-linked",
+      short_id: "linked",
+      title: "Linked browser task",
+    });
+    const { container } = render(KataReachableGraph, {
+      props: {
+        sourceUID: root.uid,
+        selectedUID: root.uid,
+        tasks: [root, linked],
+        selectedDetail: null,
+        onBack: () => {},
+        onSelectIssue: () => {},
+      },
+    });
+    container.style.width = "520px";
+    container.style.height = "460px";
+
+    await expect.element(page.getByRole("combobox", { name: "Graph layout: Compact" })).toBeVisible();
+    const toolbar = container.querySelector<HTMLElement>(".graph-toolbar");
+    const hideDone = container.querySelector<HTMLElement>(".hide-done");
+    expect(toolbar).toBeTruthy();
+    expect(hideDone).toBeTruthy();
+
+    await vi.waitFor(() => {
+      const toolbarRect = toolbar!.getBoundingClientRect();
+      const hideDoneRect = hideDone!.getBoundingClientRect();
+      expect(toolbar!.scrollWidth).toBeLessThanOrEqual(toolbar!.clientWidth + 1);
+      expect(hideDoneRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
+      expect(hideDoneRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
+    });
+  });
 });

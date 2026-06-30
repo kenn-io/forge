@@ -17,10 +17,12 @@ export interface KataGraphNodeData extends Record<string, unknown> {
   selectable: boolean;
   onSelect?: ((uid: string) => void) | undefined;
   adjacentRelation: KataGraphAdjacentRelation;
+  layoutDirection: KataGraphLayoutDirection;
 }
 
 export type KataGraphAdjacentRelation = "blocks" | "blockedBy" | "child" | "parent" | "related" | null;
 export type KataGraphDepthLimit = "full" | "1" | "2" | "3";
+export type KataGraphLayoutDirection = "LR" | "TB";
 export type KataGraphNode = Node<KataGraphNodeData, "kataTask">;
 export type KataGraphEdge = Edge<KataGraphEdgeData>;
 
@@ -41,6 +43,7 @@ export interface BuildKataReachableGraphInput {
   selectedDetail?: KataTaskDetail | null | undefined;
   hideDone: boolean;
   depthLimit?: KataGraphDepthLimit | undefined;
+  layoutDirection?: KataGraphLayoutDirection | undefined;
 }
 
 interface TaskIndexes {
@@ -301,6 +304,7 @@ function nodeData(
   adjacentRelation: KataGraphAdjacentRelation,
   projectLabel: string,
   missingRef: KataGraphMissingRef | undefined,
+  layoutDirection: KataGraphLayoutDirection,
 ): KataGraphNodeData {
   if (!task) {
     const label = missingRef?.shortID ?? id.split(":").at(-1) ?? id;
@@ -317,6 +321,7 @@ function nodeData(
       isSelected: false,
       selectable: false,
       adjacentRelation,
+      layoutDirection,
     };
   }
 
@@ -343,6 +348,7 @@ function nodeData(
     isSelected: task.uid === selectedUID,
     selectable: true,
     adjacentRelation,
+    layoutDirection,
   };
 }
 
@@ -409,17 +415,20 @@ function layoutNode(
   adjacentRelation: KataGraphAdjacentRelation,
   projectLabel: string,
   missingRef: KataGraphMissingRef | undefined,
+  layoutDirection: KataGraphLayoutDirection,
 ): KataGraphNode {
+  const sourcePosition = layoutDirection === "TB" ? Position.Bottom : Position.Right;
+  const targetPosition = layoutDirection === "TB" ? Position.Top : Position.Left;
   return {
     id,
     type: "kataTask",
     position,
-    data: nodeData(id, task, sourceUID, selectedUID, adjacentRelation, projectLabel, missingRef),
+    data: nodeData(id, task, sourceUID, selectedUID, adjacentRelation, projectLabel, missingRef, layoutDirection),
     class: nodeClass(task, sourceUID, selectedUID),
     draggable: false,
     selectable: task !== undefined,
-    sourcePosition: Position.Right,
-    targetPosition: Position.Left,
+    sourcePosition,
+    targetPosition,
     width: KATA_GRAPH_NODE_WIDTH,
     height: KATA_GRAPH_NODE_HEIGHT,
   };
@@ -428,6 +437,7 @@ function layoutNode(
 function graphPositions(
   entries: readonly [string, KataTaskSummary | undefined][],
   edges: readonly KataGraphEdge[],
+  layoutDirection: KataGraphLayoutDirection,
 ): Map<string, { x: number; y: number }> {
   const ids = entries.map(([id]) => id);
   const idSet = new Set(ids);
@@ -484,9 +494,16 @@ function graphPositions(
 
   const positions = new Map<string, { x: number; y: number }>();
   for (const [depth, layerIDs] of layers) {
-    const topOffset = -((layerIDs.length - 1) * KATA_GRAPH_Y_SPACING) / 2;
+    const layerOffset =
+      layoutDirection === "TB"
+        ? -((layerIDs.length - 1) * KATA_GRAPH_X_SPACING) / 2
+        : -((layerIDs.length - 1) * KATA_GRAPH_Y_SPACING) / 2;
     layerIDs.forEach((id, index) => {
-      positions.set(id, { x: depth * KATA_GRAPH_X_SPACING, y: topOffset + index * KATA_GRAPH_Y_SPACING });
+      if (layoutDirection === "TB") {
+        positions.set(id, { x: layerOffset + index * KATA_GRAPH_X_SPACING, y: depth * KATA_GRAPH_Y_SPACING });
+      } else {
+        positions.set(id, { x: depth * KATA_GRAPH_X_SPACING, y: layerOffset + index * KATA_GRAPH_Y_SPACING });
+      }
     });
   }
   return positions;
@@ -523,6 +540,7 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   const source = indexes.byUID.get(input.sourceUID);
   if (!source) return { nodes: [], edges: [], missingRefs: [] };
 
+  const layoutDirection = input.layoutDirection ?? "LR";
   const depthLimit = maxTraversalDepth(input.depthLimit);
   const selectedTask = input.selectedUID ? indexes.byUID.get(input.selectedUID) : undefined;
   const traversalRoot = hasBoundedDepth(input.depthLimit) && selectedTask ? selectedTask : source;
@@ -610,7 +628,7 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   const visibleEdges = [...edges.values()]
     .filter((edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target))
     .sort((left, right) => left.id.localeCompare(right.id, undefined, { numeric: true, sensitivity: "base" }));
-  const positions = graphPositions(visibleNodeEntries, visibleEdges);
+  const positions = graphPositions(visibleNodeEntries, visibleEdges, layoutDirection);
   const projectLabels = visibleProjectLabels(visibleNodeEntries);
   const adjacentRelations = selectedAdjacentRelations(visibleEdges, input.selectedUID);
   const nodes = visibleNodeEntries.map(([id, task]) => {
@@ -624,6 +642,7 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
       adjacentRelations.get(id) ?? null,
       task ? (projectLabels.get(id) ?? "") : missingProjectLabel(missingRef, projectLabels),
       missingRef,
+      layoutDirection,
     );
   });
 

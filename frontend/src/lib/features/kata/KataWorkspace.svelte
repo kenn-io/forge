@@ -45,6 +45,7 @@
   import KataRecurrenceDialogs from "./KataRecurrenceDialogs.svelte";
   import KataSearchPanel from "./KataSearchPanel.svelte";
   import { createKataEventStreamController } from "./kataEventStreamController.js";
+  import type { KataGraphLayoutDirection } from "./kataReachableGraph.js";
 
   interface Props {
     api?: KataTaskAPI | undefined;
@@ -74,6 +75,10 @@
   type SplitOrientation = "vertical" | "horizontal";
   type FailureSurface = "request" | "daemon" | "none";
   type ListMode = "tasks" | "reachableGraph";
+
+  function graphLayoutDirectionForSplit(orientation: SplitOrientation): KataGraphLayoutDirection {
+    return orientation === "horizontal" ? "LR" : "TB";
+  }
 
   let {
     api = undefined,
@@ -128,6 +133,7 @@
   let splitOrientation = $state<SplitOrientation>("vertical");
   let splitSizes = $state<Record<SplitOrientation, number>>({ ...defaultSplitSizes });
   const activeSplitSize = $derived(splitSizes[splitOrientation]);
+  const graphLayoutDirection = $derived(graphLayoutDirectionForSplit(splitOrientation));
   const activeKataDaemonId = $derived(
     getActiveKataDaemon() ??
       getDefaultKataDaemon() ??
@@ -1007,6 +1013,7 @@
         selectedUID={store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null}
         tasks={store.cachedTasks}
         selectedDetail={graphSourceDetail}
+        layoutDirection={graphLayoutDirection}
         onBack={closeReachableGraph}
         onSelectIssue={(uid) => {
           selectReachableGraphIssue(uid);

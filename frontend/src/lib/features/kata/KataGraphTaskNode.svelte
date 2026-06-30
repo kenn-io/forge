@@ -7,10 +7,16 @@
     id,
     data,
     selected = false,
-    sourcePosition = Position.Right,
-    targetPosition = Position.Left,
+    sourcePosition,
+    targetPosition,
   }: NodeProps<KataGraphNode> & { data: KataGraphNodeData } = $props();
 
+  let resolvedSourcePosition = $derived(
+    sourcePosition ?? (data.layoutDirection === "TB" ? Position.Bottom : Position.Right),
+  );
+  let resolvedTargetPosition = $derived(
+    targetPosition ?? (data.layoutDirection === "TB" ? Position.Top : Position.Left),
+  );
   let tone = $derived.by(() => {
     if (data.status === "uncached") return "uncached";
     if (data.status === "closed" && data.closedReason === "done") return "done";
@@ -62,14 +68,14 @@
   <Handle
     class="graph-task-handle"
     type="target"
-    position={targetPosition}
+    position={resolvedTargetPosition}
     isConnectable={false}
     aria-hidden="true"
   />
   <Handle
     class="graph-task-handle"
     type="source"
-    position={sourcePosition}
+    position={resolvedSourcePosition}
     isConnectable={false}
     aria-hidden="true"
   />

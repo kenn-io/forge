@@ -225,16 +225,25 @@ graph action beside the workspace/detail actions.
   documented `nodeColor`/`nodeStrokeColor` callbacks;
 - `onnodeclick` to select cached nodes for pointer activation.
 
+The graph toolbar must remain usable inside the resized list pane. In narrow
+side-by-side panes, keep the back button and source title on the first row and
+wrap graph filter controls onto a second row instead of clipping or hiding
+depth, layout, or done-filter controls.
+
 A pure `kataReachableGraph.ts` module builds nodes and edges. It performs the
 depth-limited reachability traversal, creates marker-backed edges, and computes
 the default compact directed layout with a deterministic topological ranker.
 Compact is the default because it keeps large task graphs dense enough for the
-Kata workspace canvas.
+Kata workspace canvas. The compact layout direction follows the Kata split
+presentation: side-by-side panes use left-to-right ranks, while stacked panes
+use top-to-bottom ranks with source/target handles on the bottom/top edges of
+each node.
 
 `KataReachableGraph.svelte` adds a layout switch with `Compact` and `ELK`
-options. `ELK` delegates node placement to `elkjs` using a left-to-right layered
-layout based on the final visible edge set after reciprocal edge deduplication
-and done filtering. ELK layout is asynchronous, so the graph renders compact
+options. `ELK` delegates node placement to `elkjs` using the same left-to-right
+or top-to-bottom direction as the split presentation, based on the final visible
+edge set after reciprocal edge deduplication and done filtering. ELK layout is
+asynchronous, so the graph renders compact
 positions until ELK returns, then stores only ELK coordinates if the graph
 signature still matches the active layout request. Node title, status,
 selection, and relation data always come from the latest graph nodes; cached

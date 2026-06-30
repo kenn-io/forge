@@ -32,6 +32,7 @@ export interface KataGraphDebugGraphSnapshot {
   hideDone: boolean;
   depthLimit: string;
   layoutMode: string;
+  layoutDirection: string;
   layoutReady: boolean;
   nodeIds: string[];
   edges: Array<{ id: string; source: string; target: string; kind: string | null }>;

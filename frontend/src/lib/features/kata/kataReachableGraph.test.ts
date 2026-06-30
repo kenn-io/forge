@@ -188,6 +188,34 @@ describe("buildKataReachableGraph", () => {
     expect(positions[related.uid]!.x).toBeGreaterThan(positions[root.uid]!.x);
   });
 
+  it("lays compact nodes top-to-bottom when requested", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+    });
+    const blocked = task({ uid: "issue-blocked", short_id: "blocked", title: "Blocked" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, blocked],
+      selectedDetail: detail(root),
+      hideDone: false,
+      layoutDirection: "TB",
+    });
+
+    const positions = positionsByID(graph);
+    expect(graph.nodes.find((node) => node.id === root.uid)).toMatchObject({
+      sourcePosition: Position.Bottom,
+      targetPosition: Position.Top,
+      data: { layoutDirection: "TB" },
+    });
+    expect(positions[blocked.uid]!.y).toBeGreaterThan(positions[root.uid]!.y);
+    expect(positions[blocked.uid]!.x).toBe(positions[root.uid]!.x);
+  });
+
   it("deduplicates inverse parent and blocking edge declarations", () => {
     const root = task({
       uid: "issue-root",

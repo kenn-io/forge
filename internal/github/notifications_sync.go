@@ -17,7 +17,6 @@ const (
 	defaultNotificationPropagationMaxAttempts = 10
 	notificationSyncSinceOverlap              = 5 * time.Minute
 	notificationFullSyncInterval              = time.Hour
-	notificationSyncMaxPages                  = 5
 )
 
 type NotificationSyncStatus struct {
@@ -229,11 +228,7 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 		return err
 	}
 	for _, repo := range trackedRepos {
-		page := 1
-		for {
-			if page > notificationSyncMaxPages {
-				return fmt.Errorf("notification sync page cap reached for %s/%s on %s after %d pages", repo.Owner, repo.Name, host, notificationSyncMaxPages)
-			}
+		for page := 1; ; page++ {
 			if err := s.ensureNotificationPageBudget(host, client); err != nil {
 				return err
 			}
@@ -291,7 +286,6 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 			if !hasNext {
 				break
 			}
-			page++
 		}
 	}
 	lastFullSyncAt := watermarkLastFullSyncAt(watermark, startedAt, fullSync)
@@ -310,9 +304,7 @@ func (s *Syncer) listParticipatingNotificationIDs(
 ) (map[string]bool, error) {
 	participating := map[string]bool{}
 	for _, repo := range trackedRepos {
-		// Participation is best-effort annotation; do not block the
-		// main notification sync when the secondary scan is huge.
-		for page := 1; page <= notificationSyncMaxPages; page++ {
+		for page := 1; ; page++ {
 			if err := s.ensureNotificationPageBudget(host, client); err != nil {
 				return nil, err
 			}

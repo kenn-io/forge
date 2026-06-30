@@ -637,10 +637,15 @@
     white-space: nowrap;
   }
 
-  :global(.kata-graph-depth-select),
-  :global(.kata-graph-context-select),
-  :global(.kata-graph-layout-select) {
-    min-width: 112px;
+  .kata-graph-pane :global(.select-dropdown.kata-graph-depth-select),
+  .kata-graph-pane :global(.select-dropdown.kata-graph-context-select) {
+    width: 88px;
+    min-width: 88px;
+  }
+
+  .kata-graph-pane :global(.select-dropdown.kata-graph-layout-select) {
+    width: 104px;
+    min-width: 104px;
   }
 
   :global(.kata-graph-depth-select .select-dropdown-trigger),
@@ -689,10 +694,15 @@
       align-items: flex-start;
     }
 
-    :global(.kata-graph-depth-select),
-    :global(.kata-graph-context-select),
-    :global(.kata-graph-layout-select) {
-      min-width: 108px;
+    .kata-graph-pane :global(.select-dropdown.kata-graph-depth-select),
+    .kata-graph-pane :global(.select-dropdown.kata-graph-context-select) {
+      width: 86px;
+      min-width: 86px;
+    }
+
+    .kata-graph-pane :global(.select-dropdown.kata-graph-layout-select) {
+      width: 100px;
+      min-width: 100px;
     }
   }
 

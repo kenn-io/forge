@@ -573,19 +573,34 @@ describe("KataReachableGraph (browser)", () => {
     const toolbar = container.querySelector<HTMLElement>(".graph-toolbar");
     const hideDone = container.querySelector<HTMLElement>(".hide-done");
     const contextFilter = container.querySelector<HTMLElement>(".context-filter");
+    const depthSelect = container.querySelector<HTMLElement>(".kata-graph-depth-select");
+    const contextSelect = container.querySelector<HTMLElement>(".kata-graph-context-select");
+    const layoutSelect = container.querySelector<HTMLElement>(".kata-graph-layout-select");
     expect(toolbar).toBeTruthy();
     expect(hideDone).toBeTruthy();
     expect(contextFilter).toBeTruthy();
+    expect(depthSelect).toBeTruthy();
+    expect(contextSelect).toBeTruthy();
+    expect(layoutSelect).toBeTruthy();
 
     await vi.waitFor(() => {
       const toolbarRect = toolbar!.getBoundingClientRect();
       const hideDoneRect = hideDone!.getBoundingClientRect();
       const contextFilterRect = contextFilter!.getBoundingClientRect();
+      const depthSelectWidth = depthSelect!.getBoundingClientRect().width;
+      const contextSelectWidth = contextSelect!.getBoundingClientRect().width;
+      const layoutSelectWidth = layoutSelect!.getBoundingClientRect().width;
       expect(toolbar!.scrollWidth).toBeLessThanOrEqual(toolbar!.clientWidth + 1);
       expect(hideDoneRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
       expect(hideDoneRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
       expect(contextFilterRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
       expect(contextFilterRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
+      expect(depthSelectWidth).toBeGreaterThanOrEqual(82);
+      expect(depthSelectWidth).toBeLessThanOrEqual(92);
+      expect(contextSelectWidth).toBeGreaterThanOrEqual(82);
+      expect(contextSelectWidth).toBeLessThanOrEqual(92);
+      expect(layoutSelectWidth).toBeGreaterThanOrEqual(96);
+      expect(layoutSelectWidth).toBeLessThanOrEqual(108);
     });
   });
 });

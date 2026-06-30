@@ -4,6 +4,7 @@
   "workspaces": {
     "": {
       "devDependencies": {
+        "@playwright/test": "1.60.0",
         "@sveltejs/mcp": "0.1.24",
         "svelte-check": "4.6.0",
         "vite-plus": "0.2.1",

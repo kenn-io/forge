@@ -7,7 +7,7 @@ fixtures or a local developer daemon.
 Run from the repository root:
 
 ```sh
-node frontend/node_modules/.bin/playwright test --config docs/screenshots/playwright.config.ts --project=chromium
+node node_modules/vite-plus/bin/vp run docs:screenshots
 ```
 
 The task writes SVG files under `docs/assets/generated/`. Each SVG serializes

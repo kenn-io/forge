@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 // package.json files that pin @playwright/test. All must agree, and the CI
 // container image version must match them.
-const PIN_FILES = ["frontend/package.json", "packages/github-app-ui/package.json"];
+const PIN_FILES = ["package.json", "frontend/package.json", "packages/github-app-ui/package.json"];
 const WORKFLOW_FILE = ".github/workflows/ci.yml";
 // A line that references the Playwright container image, by tag or by digest:
 //   mcr.microsoft.com/playwright:v1.60.0-noble

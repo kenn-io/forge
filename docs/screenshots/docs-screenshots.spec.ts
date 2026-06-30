@@ -1,11 +1,9 @@
-import { expect, test } from "../../frontend/node_modules/@playwright/test/index.mjs";
+import { expect, test, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startIsolatedWorkspaceE2EServer } from "../../frontend/tests/e2e-full/support/e2eServer";
-
-type Page = import("../../frontend/node_modules/@playwright/test").Page;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const docsDir = path.resolve(here, "..");

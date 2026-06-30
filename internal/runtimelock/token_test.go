@@ -75,3 +75,27 @@ func TestEnsureAuthTokenReplacesEmptyFile(t *testing.T) {
 	require.NoError(err)
 	require.Equal(os.FileMode(0o600), info.Mode().Perm())
 }
+
+// TestRotateAuthToken pins rotation: a new 0600 token replaces the old
+// one and is what subsequent reads return.
+func TestRotateAuthToken(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+
+	first, err := EnsureAuthToken(dir)
+	require.NoError(err)
+
+	rotated, err := RotateAuthToken(dir)
+	require.NoError(err)
+	assert.Len(rotated, 64, "32 random bytes hex-encoded")
+	assert.NotEqual(first, rotated, "rotation must change the token")
+
+	info, err := os.Stat(AuthTokenPath(dir))
+	require.NoError(err)
+	assert.Equal(os.FileMode(0o600), info.Mode().Perm())
+
+	read, err := ReadAuthToken(dir)
+	require.NoError(err)
+	assert.Equal(rotated, read, "rotation persists the new token")
+}

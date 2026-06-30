@@ -46,6 +46,14 @@ func EnsureAuthToken(dataDir string) (string, error) {
 		return "", fmt.Errorf("read auth token: %w", err)
 	}
 
+	return writeMintedToken(path)
+}
+
+// writeMintedToken generates a fresh token and writes it to path at
+// 0600, returning it. Single mint+write path shared by EnsureAuthToken
+// and RotateAuthToken. Not atomic (no temp+rename): rotation is an
+// offline operation, so there is no concurrent reader to tear.
+func writeMintedToken(path string) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("generate auth token: %w", err)
@@ -55,6 +63,15 @@ func EnsureAuthToken(dataDir string) (string, error) {
 		return "", fmt.Errorf("write auth token: %w", err)
 	}
 	return token, nil
+}
+
+// RotateAuthToken mints a new token and overwrites the token file under
+// dataDir, invalidating the previous one. Callers must ensure the daemon
+// is not running — a live daemon caches the old token in memory at
+// startup, so an online rotate would reject new-token clients while still
+// honoring the old one.
+func RotateAuthToken(dataDir string) (string, error) {
+	return writeMintedToken(AuthTokenPath(dataDir))
 }
 
 // ReadAuthToken returns the token under dataDir, or "" when absent.

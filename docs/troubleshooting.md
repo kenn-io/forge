@@ -116,10 +116,11 @@ middleman stores synced data in:
 ~/.config/middleman/middleman.db
 ```
 
-If startup reports a dirty failed migration, stop middleman and copy or rename
-the database file before starting again. Provider data will sync again from a
-fresh database, but local-only state such as stars, kanban columns, and
-workspace links is only available in the saved copy.
+If startup reports a dirty failed migration, stop middleman, make a backup copy,
+then move `middleman.db` and any `middleman.db-wal` or `middleman.db-shm`
+sidecars out of the data directory before starting again. Provider data will
+sync again from a fresh database, but local-only state such as stars, kanban
+columns, and workspace links is only available in the saved copy.
 
 If startup reports that the database is newer than the binary, upgrade
 middleman.

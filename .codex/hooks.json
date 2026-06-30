@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if root=$(git rev-parse --show-toplevel 2>/dev/null); then bash \"$root/scripts/hooks/frontend-deps-session-start.sh\"; fi",
+            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/hooks/frontend-deps-session-start.sh\"",
             "timeout": 300,
             "statusMessage": "Installing frontend dependencies"
           }

@@ -268,6 +268,53 @@ describe("KataReachableGraph (browser)", () => {
     expect(ambientStroke).not.toBe(resolvedColor(graphPane!, "var(--text-secondary)"));
   });
 
+  it("follows split direction until the user chooses a graph direction", async () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root browser task",
+      blocks: [{ uid: "issue-linked", short_id: "linked" }],
+    });
+    const linked = task({
+      uid: "issue-linked",
+      short_id: "linked",
+      title: "Linked browser task",
+    });
+    render(KataReachableGraph, {
+      props: {
+        sourceUID: root.uid,
+        selectedUID: root.uid,
+        tasks: [root, linked],
+        selectedDetail: null,
+        layoutDirection: "TB",
+        onBack: () => {},
+        onSelectIssue: () => {},
+      },
+    });
+
+    await expect
+      .element(page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }))
+      .toBeVisible();
+    await expect
+      .poll(() => {
+        const raw = localStorage.getItem(graphPreferencesStorageKey);
+        return raw ? JSON.parse(raw).layoutDirection : undefined;
+      })
+      .toBeNull();
+
+    await page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }).click();
+
+    await expect
+      .element(page.getByRole("button", { name: "Graph direction: left-right. Switch to top-bottom" }))
+      .toBeVisible();
+    await expect
+      .poll(() => {
+        const raw = localStorage.getItem(graphPreferencesStorageKey);
+        return raw ? JSON.parse(raw).layoutDirection : undefined;
+      })
+      .toBe("LR");
+  });
+
   it("restores graph control preferences from localStorage", async () => {
     localStorage.setItem(
       graphPreferencesStorageKey,

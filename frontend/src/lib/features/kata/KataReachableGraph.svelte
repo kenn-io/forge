@@ -202,19 +202,29 @@
     };
   }
 
-  function readGraphPreferences(): KataGraphPreferences {
-    if (typeof localStorage === "undefined") return defaultGraphPreferences;
+  function graphPreferenceStorage(): Storage | null {
     try {
-      return normalizeGraphPreferences(JSON.parse(localStorage.getItem(graphPreferencesStorageKey) ?? "null"));
+      return globalThis.localStorage ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  function readGraphPreferences(): KataGraphPreferences {
+    try {
+      const storage = graphPreferenceStorage();
+      if (!storage) return defaultGraphPreferences;
+      return normalizeGraphPreferences(JSON.parse(storage.getItem(graphPreferencesStorageKey) ?? "null"));
     } catch {
       return defaultGraphPreferences;
     }
   }
 
   function writeGraphPreferences(preferences: KataGraphPreferences): void {
-    if (typeof localStorage === "undefined") return;
     try {
-      localStorage.setItem(graphPreferencesStorageKey, JSON.stringify(preferences));
+      const storage = graphPreferenceStorage();
+      if (!storage) return;
+      storage.setItem(graphPreferencesStorageKey, JSON.stringify(preferences));
     } catch {
       // localStorage may be unavailable in private or quota-restricted contexts.
     }
@@ -350,7 +360,7 @@
       contextDepth,
       depthLimit,
       layoutMode,
-      layoutDirection: effectiveLayoutDirection,
+      layoutDirection: graphDirectionOverride,
     });
   });
 

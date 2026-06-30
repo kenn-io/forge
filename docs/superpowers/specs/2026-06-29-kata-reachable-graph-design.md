@@ -196,10 +196,12 @@ endpoint is hidden are dropped. The Svelte Flow node pane must be positioned
 above the edge pane so edges never paint on top of task cards. Disable Svelte
 Flow node-focus autopan so clicking/focusing a graph task changes selection
 without panning the viewport. The graph persists the depth, context, layout,
-and explicit graph direction controls in a versioned localStorage value so new
-graph pane sessions restore the last user layout. Invalid or unavailable
-storage falls back to `Full`, `All`, `Compact`, and the current workspace split
-direction.
+and explicit graph direction override in a versioned, browser-profile-global
+localStorage value so new graph pane sessions restore the last user layout.
+`layoutDirection: null` means follow the current workspace split direction;
+`LR` or `TB` is written only after the user toggles graph direction. Invalid or
+unavailable storage falls back to `Full`, `All`, `Compact`, and the current
+workspace split direction.
 
 Traversal sources by relationship kind:
 
@@ -294,8 +296,8 @@ options and a separate graph direction toggle. The split presentation still
 provides the default direction, but the user can override the graph itself
 between left-to-right and top-to-bottom without changing the workspace pane
 layout. The persisted direction starts from the current workspace split
-direction when no saved graph preference exists and then restores the last
-chosen graph direction across graph pane remounts.
+direction when no explicit saved graph preference exists and then restores the
+last user-chosen graph direction across graph pane remounts.
 `ELK` delegates node placement to `elkjs` using the active graph
 direction, based on the final visible edge set after reciprocal edge
 deduplication and done filtering. ELK layout is asynchronous, so the graph renders compact

@@ -298,6 +298,27 @@ Unlike GitLab, nested owners are not supported for these providers; `repo_path`
 is normally the same as `owner/name` and is most useful when middleman parsed a
 repository URL or needs to preserve provider-canonical casing.
 
+### Authentication
+
+middleman mints a per-daemon API token at `<data_dir>/auth_token` (mode
+0600). It is only enforced when `[api].require_auth = true`; the default
+is off (loopback-only dev needs no auth).
+
+With `require_auth` on:
+
+- Retrieve a one-shot browser login link: `middleman auth url` (defaults
+  to the loopback URL from runtime metadata) or
+  `middleman auth url --base-url https://host/middleman/` for the
+  proxied address. Open it once to set the session cookie.
+- Print the raw bearer for scripts: `middleman auth token`.
+- Rotate the token: `middleman auth rotate` (refuses while the daemon is
+  running — stop it first, or `--force` then restart so the server picks
+  up the new token).
+- Log out (clear the session cookie): open `<base>/auth/logout`, or use
+  the Settings → Session → Log out link.
+
+The browser shows a login overlay whenever an API call returns 401.
+
 ## Telemetry
 
 Middleman sends limited anonymous telemetry to PostHog: `daemon_active` with repo count and `app_loaded` with view name, plus version, commit, OS/arch, `application: "middleman"`, and an anonymous install ID.

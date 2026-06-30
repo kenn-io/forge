@@ -24,6 +24,8 @@
   } from "@middleman/ui/routes";
   import { client } from "./lib/api/runtime.js";
 
+  import LoginOverlay from "./lib/components/LoginOverlay.svelte";
+  import { isAuthenticated } from "./lib/stores/auth.svelte.js";
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import Palette from "./lib/components/keyboard/Palette.svelte";
@@ -886,6 +888,10 @@
     return registerPRDetailActions(buildPRDetailInput);
   });
 </script>
+
+{#if !isAuthenticated()}
+  <LoginOverlay />
+{/if}
 
 <svelte:window onresize={updateViewportState} />
 

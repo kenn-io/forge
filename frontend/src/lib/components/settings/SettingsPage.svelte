@@ -14,6 +14,7 @@
   import AgentSettings from "./AgentSettings.svelte";
   import FleetSettings from "./FleetSettings.svelte";
   import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
+  import { logoutHref } from "../../api/auth-urls.js";
 
   interface SettingsNavItem {
     id: string;
@@ -74,6 +75,13 @@
       group: "Workspace",
       summary: "Remote hosts and fleet membership",
       keywords: "fleet federation remote hosts peers ssh http membership",
+    },
+    {
+      id: "settings-session",
+      title: "Session",
+      group: "Console",
+      summary: "Sign out of this browser session",
+      keywords: "session logout sign out auth token",
     },
   ];
 
@@ -272,6 +280,12 @@
             }}
           />
         </SettingsSection>
+
+        <SettingsSection title="Session" sectionId="settings-session">
+          <a class="logout-link" href={logoutHref(typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/")}>
+            Log out
+          </a>
+        </SettingsSection>
       {/if}
     </div>
   </div>
@@ -436,6 +450,19 @@
 
   .state-msg { padding: 40px; text-align: center; color: var(--text-muted); font-size: var(--font-size-md); }
   .state-error { color: var(--accent-red); }
+
+  .logout-link {
+    display: inline-flex;
+    align-items: center;
+    color: var(--accent-red);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .logout-link:hover {
+    text-decoration: underline;
+  }
 
   @media (max-width: 47.999rem) {
     .settings-nav-groups {

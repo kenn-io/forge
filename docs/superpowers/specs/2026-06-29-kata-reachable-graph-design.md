@@ -183,9 +183,12 @@ rendered depth graph after `Hide done` filtering. `All` means every rendered
 node and edge is in-context; `1 edge`, `2 edges`, and `3 edges` compute distance
 from the selected task over the remaining visible edges. Incoming and outgoing
 visible edges both count as one step for emphasis, and hidden/non-rendered tasks
-do not bridge context distance. Rendered nodes and edges outside that emphasis
-traversal are tagged as faded context; selected-adjacent blocking edges may use
-the amber accent, while non-emphasized edges use muted static styling. Context
+do not bridge context distance. Edge emphasis is traversal-based: an edge is
+in-context only when the visible-edge BFS crosses it from a node whose distance
+is below the selected context depth; two in-context endpoints do not make an
+untraversed edge active. Rendered nodes and edges outside that emphasis traversal
+are tagged as faded context; selected-adjacent blocking edges may use the amber
+accent, while non-emphasized edges use muted static styling. Context
 works when depth is `Full`, so users can inspect a selected task's nearby
 context without reflowing the full source graph. `Hide done` applies after depth
 traversal and preserves the source, graph root, and selected task; edges whose
@@ -254,11 +257,12 @@ graph action beside the workspace/detail actions.
 - native Svelte Flow edge markers (`MarkerType.ArrowClosed`) on `markerEnd` to
   show relationship direction, rather than text labels such as `blocks`;
 - relationship kind is communicated by the edge style contract and accessible
-  edge label: blocking edges use the amber accent, parent edges use secondary
-  text color, related edges are dashed, and each edge carries a kind-specific
-  `ariaLabel`. Do not put text labels on every edge in the canvas.
+  edge label: ambient active edges use the neutral active edge color, only
+  selected-adjacent blocking edges use the amber accent, related edges are
+  dashed, and each edge carries a kind-specific `ariaLabel`. Do not put text
+  labels on every edge in the canvas.
 - bounded-depth context edges use a muted static stroke and marker color,
-  leaving active visible edges with their semantic colors above them;
+  leaving selected-adjacent edges above them;
 - node accessible labels include source/selected state, title, qualified id,
   cached status, and adjacent relationship state so the visible short-id
   subtitle is not the only disambiguator;
@@ -377,11 +381,13 @@ Add Svelte tests for workspace integration:
   remains visible/stable after selection, exercises uncached UID-backed graph
   population through the real proxy path, and returns to the task list.
 - full-stack e2e coverage switches active depth and context through the real
-  workspace graph path, verifies context remains emphasis-only and can fade
-  visible out-of-context edges without changing node positions, verifies
-  uncached UID-backed graph references populate through the real proxy path, and
-  verifies rendered edge count can stay larger than layout edge count when
-  transitive block edges are elided only for layout.
+  workspace graph path and verifies context remains emphasis-only by fading
+  visible out-of-context edges without changing node ids, positions, or layout
+  edge count.
+- full-stack e2e coverage verifies uncached UID-backed graph references populate
+  through the real proxy path.
+- full-stack e2e coverage verifies rendered edge count can stay larger than
+  layout edge count when transitive block edges are elided only for layout.
 - full-stack e2e coverage stalls a clicked graph-node detail request, verifies
   the URL changes immediately, verifies same-UID route catch-up does not abort or
   duplicate that request, uses browser Back to restore the previous issue, and

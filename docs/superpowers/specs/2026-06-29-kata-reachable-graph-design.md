@@ -25,7 +25,10 @@ The graph pane toolbar contains:
 - the source task title;
 - a depth filter with `Full`, `1 edge`, `2 edges`, and `3 edges` options;
 - a layout selector with `Compact` and `ELK` options;
+- a graph direction toggle with `LR` and `TB` options;
 - a `Hide done` toggle.
+- a `Show context` toggle that is disabled for `Full` depth and controls
+  whether bounded-depth views keep out-of-depth nodes visible.
 
 Each graph node contains:
 
@@ -168,6 +171,13 @@ direction; it does not infer extra incoming edges by scanning unrelated cached
 rows that happen to point at the active task except for the explicit parent
 reverse indexes listed below. Missing refs outside the selected depth are not
 requested until the user widens the depth.
+When `Show context` is enabled for a bounded depth, the full reachable closure
+remains in the graph but nodes outside the bounded traversal are faded. Edges
+outside the bounded traversal render as muted static context edges with lower
+edge z-index than active bounded-depth edges. Context edges must not use whole
+edge alpha over active edges, because overplotting makes the active edge
+semantics harder to read. The Svelte Flow node pane must be positioned above the
+edge pane so edges never paint on top of task cards.
 
 Traversal sources by relationship kind:
 
@@ -229,6 +239,8 @@ graph action beside the workspace/detail actions.
   edge label: blocking edges use the amber accent, parent edges use secondary
   text color, related edges are dashed, and each edge carries a kind-specific
   `ariaLabel`. Do not put text labels on every edge in the canvas.
+- bounded-depth context edges use a muted static stroke and marker color,
+  leaving active visible edges with their semantic colors above them;
 - node accessible labels include source/selected state, title, qualified id,
   cached status, and adjacent relationship state so the visible short-id
   subtitle is not the only disambiguator;
@@ -251,16 +263,21 @@ use top-to-bottom ranks with source/target handles on the bottom/top edges of
 each node.
 
 `KataReachableGraph.svelte` adds a layout switch with `Compact` and `ELK`
-options. `ELK` delegates node placement to `elkjs` using the same left-to-right
-or top-to-bottom direction as the split presentation, based on the final visible
-edge set after reciprocal edge deduplication and done filtering. ELK layout is
-asynchronous, so the graph renders compact
+options and a separate graph direction toggle. The split presentation still
+provides the default direction, but the user can override the graph itself
+between left-to-right and top-to-bottom without changing the workspace pane
+layout. `ELK` delegates node placement to `elkjs` using the active graph
+direction, based on the final visible edge set after reciprocal edge
+deduplication and done filtering. ELK layout is asynchronous, so the graph renders compact
 positions until ELK returns, then stores only ELK coordinates if the graph
 signature still matches the active layout request. Node title, status,
 selection, and relation data always come from the latest graph nodes; cached
 ELK output must never hold an older node object alive.
 Nodes include explicit Svelte Flow width/height values so edge endpoints are
 based on stable bounds instead of shifting after custom node measurement.
+ELK node coordinates are used directly; do not post-process those coordinates
+in the Svelte layer, because that breaks the relationship between ELK placement
+and Svelte Flow's edge routing.
 There is no duplicate card/button list below the canvas.
 
 Graph mode owns a source task detail snapshot. When launched from detail it
@@ -324,10 +341,12 @@ Add Svelte tests for workspace integration:
   selected task;
 - adjacent relation backgrounds do not overwrite status accents;
 - `Hide done` removes done nodes.
+- bounded-depth `Show context` keeps out-of-depth nodes visible but faded and
+  renders context edges underneath active bounded-depth edges.
 - browser coverage verifies nonblank canvas nodes, hidden handles, native edge
-  markers, themed controls/minimap, the Compact/ELK layout switch, and the
-  absence of a duplicate node-list fallback. It also covers both Enter and Space
-  keyboard activation.
+  markers, themed controls/minimap, the Compact/ELK layout switch, the TB/LR
+  direction toggle, and the absence of a duplicate node-list fallback. It also
+  covers both Enter and Space keyboard activation.
 - full-stack e2e coverage opens graph mode from the workspace, selects a cached
   graph node, confirms detail selection changes, verifies the source graph
   remains visible/stable after selection, exercises uncached UID-backed graph

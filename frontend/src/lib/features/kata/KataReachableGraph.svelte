@@ -1,6 +1,8 @@
 <script lang="ts">
   import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
+  import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
+  import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
   import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
   import {
     Background,
@@ -36,6 +38,12 @@
     y: number;
   }
 
+  interface LayoutBounds {
+    width: number;
+    height: number;
+    aspectRatio: number;
+  }
+
   interface Props {
     sourceUID: string;
     selectedUID: string | null;
@@ -59,30 +67,63 @@
   }: Props = $props();
 
   let hideDone = $state(false);
+  let showDepthContext = $state(true);
   let depthLimit = $state<KataGraphDepthLimit>("full");
   let layoutMode = $state<KataGraphLayoutMode>("compact");
+  let graphDirectionOverride = $state<KataGraphLayoutDirection | null>(null);
+  let effectiveLayoutDirection = $derived(graphDirectionOverride ?? layoutDirection);
   let layoutedPositions = $state.raw<ReadonlyMap<string, LayoutPosition>>(new Map());
   let layoutedKey = $state("");
   let graph = $derived(
-    buildKataReachableGraph({ sourceUID, selectedUID, tasks, selectedDetail, hideDone, depthLimit, layoutDirection }),
+    buildKataReachableGraph({
+      sourceUID,
+      selectedUID,
+      tasks,
+      selectedDetail,
+      hideDone,
+      depthLimit,
+      showDepthContext,
+      layoutDirection: effectiveLayoutDirection,
+    }),
   );
   let graphSignature = $derived(graphLayoutSignature(graph.nodes, graph.edges));
-  let activeLayoutKey = $derived(`${layoutMode}:${layoutDirection}:${graphSignature}`);
+  let activeLayoutKey = $derived(`${layoutMode}:${effectiveLayoutDirection}:${graphSignature}`);
   let flowNodes = $derived(
     layoutedKey === activeLayoutKey ? applyLayoutPositions(graph.nodes, layoutedPositions) : graph.nodes,
   );
   let interactiveNodes = $derived(flowNodes.map((node) => withNodeActivation(node)));
   let layoutReady = $derived(layoutMode === "compact" || layoutedKey === activeLayoutKey);
   let source = $derived(tasks.find((task) => task.uid === sourceUID));
+  let directionToggleLabel = $derived(
+    effectiveLayoutDirection === "TB"
+      ? "Graph direction: top-bottom. Switch to left-right"
+      : "Graph direction: left-right. Switch to top-bottom",
+  );
   let layoutRun = 0;
+  const elkDefaultLayoutOptions = {
+    "elk.algorithm": "layered",
+    "elk.edgeRouting": "ORTHOGONAL",
+    "elk.aspectRatio": "1.0",
+    "elk.separateConnectedComponents": "true",
+    "elk.spacing.nodeNode": "18",
+    "elk.spacing.componentComponent": "32",
+    "elk.layered.spacing.nodeNodeBetweenLayers": "42",
+    "elk.layered.spacing.edgeNodeBetweenLayers": "10",
+    "elk.layered.spacing.edgeEdgeBetweenLayers": "8",
+    "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+    "elk.layered.nodePlacement.favorStraightEdges": "false",
+    "elk.layered.compaction.connectedComponents": "true",
+    "elk.layered.compaction.postCompaction.strategy": "EDGE_LENGTH",
+    "elk.layered.compaction.postCompaction.constraints": "SCANLINE",
+    "elk.layered.wrapping.strategy": "MULTI_EDGE",
+    "elk.layered.wrapping.cutting.strategy": "MSD",
+    "elk.layered.wrapping.cutting.msd.freedom": "2",
+    "elk.layered.wrapping.additionalEdgeSpacing": "8",
+    "elk.layered.wrapping.multiEdge.improveCuts": "true",
+    "elk.layered.wrapping.multiEdge.improveWrappedEdges": "true",
+  };
   const elk = new ELK({
-    defaultLayoutOptions: {
-      "elk.algorithm": "layered",
-      "elk.edgeRouting": "ORTHOGONAL",
-      "elk.spacing.nodeNode": "24",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "72",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "14",
-    },
+    defaultLayoutOptions: elkDefaultLayoutOptions,
   });
   const nodeTypes: NodeTypes = {
     kataTask: KataGraphTaskNode,
@@ -97,9 +138,11 @@
     { value: "compact", label: "Compact" },
     { value: "elk", label: "ELK" },
   ];
+  const graphMinZoom = 0.02;
   const fitViewOptions = {
     duration: 0,
     padding: 0.12,
+    minZoom: graphMinZoom,
   };
 
   function missingRefKey(ref: KataGraphMissingRef): string {
@@ -131,6 +174,10 @@
 
   function setLayoutMode(value: string): void {
     layoutMode = value as KataGraphLayoutMode;
+  }
+
+  function toggleGraphDirection(): void {
+    graphDirectionOverride = effectiveLayoutDirection === "TB" ? "LR" : "TB";
   }
 
   function graphLayoutSignature(nodes: readonly KataGraphNode[], edges: readonly KataGraphEdge[]): string {
@@ -185,6 +232,21 @@
     }));
   }
 
+  function layoutBounds(nodes: readonly KataGraphNode[]): LayoutBounds {
+    if (nodes.length === 0) return { width: 0, height: 0, aspectRatio: 1 };
+    const minX = Math.min(...nodes.map((node) => node.position.x));
+    const minY = Math.min(...nodes.map((node) => node.position.y));
+    const maxX = Math.max(...nodes.map((node) => node.position.x + (node.width ?? 250)));
+    const maxY = Math.max(...nodes.map((node) => node.position.y + (node.height ?? 74)));
+    const width = Math.max(0, maxX - minX);
+    const height = Math.max(0, maxY - minY);
+    return {
+      width,
+      height,
+      aspectRatio: height === 0 ? 1 : width / height,
+    };
+  }
+
   function minimapData(node: SvelteFlowNode): Partial<KataGraphNode["data"]> {
     return node.data as Partial<KataGraphNode["data"]>;
   }
@@ -192,6 +254,7 @@
   function minimapNodeColor(node: SvelteFlowNode): string {
     const data = minimapData(node);
     if (data.status === "closed" && data.closedReason === "done") return "var(--text-muted)";
+    if (data.isDepthContext) return "var(--text-muted)";
     if (data.status === "uncached") return "var(--bg-surface-hover)";
     if (data.isSource || data.isSelected) return "var(--accent-blue)";
     return "var(--bg-surface)";
@@ -214,28 +277,30 @@
     const key = activeLayoutKey;
     const nodes = graph.nodes;
     const edges = graph.edges;
+    const mode = layoutMode;
+    const direction = effectiveLayoutDirection;
     const run = ++layoutRun;
-    if (layoutMode === "compact" || nodes.length === 0) {
+    if (mode === "compact" || nodes.length === 0) {
       layoutedPositions = new Map();
       layoutedKey = key;
       return;
     }
 
     recordKataGraphDebugEvent("graph-layout-start", {
-      layoutMode,
-      layoutDirection,
+      layoutMode: mode,
+      layoutDirection: direction,
       nodeCount: nodes.length,
       edgeCount: edges.length,
     });
     elk
-      .layout(elkGraph(nodes, edges, layoutDirection))
+      .layout(elkGraph(nodes, edges, direction))
       .then((layoutedGraph) => {
         if (run !== layoutRun) return;
         layoutedPositions = elkPositions(layoutedGraph);
         layoutedKey = key;
         recordKataGraphDebugEvent("graph-layout-complete", {
-          layoutMode,
-          layoutDirection,
+          layoutMode: mode,
+          layoutDirection: direction,
           nodeCount: nodes.length,
           edgeCount: edges.length,
         });
@@ -245,8 +310,8 @@
         layoutedPositions = new Map();
         layoutedKey = key;
         recordKataGraphDebugEvent("graph-layout-error", {
-          layoutMode,
-          layoutDirection,
+          layoutMode: mode,
+          layoutDirection: direction,
           message: error instanceof Error ? error.message : String(error),
         });
       });
@@ -257,9 +322,10 @@
       sourceUID,
       selectedUID,
       hideDone,
+      showDepthContext,
       depthLimit,
       layoutMode,
-      layoutDirection,
+      layoutDirection: effectiveLayoutDirection,
       layoutReady,
       nodeIds: flowNodes.map((node) => node.id),
       edges: graph.edges.map((edge) => ({
@@ -267,12 +333,14 @@
         source: edge.source,
         target: edge.target,
         kind: typeof edge.data?.kind === "string" ? edge.data.kind : null,
+        isDepthContext: Boolean(edge.data?.isDepthContext),
       })),
       nodePositions: flowNodes.map((node) => ({ id: node.id, x: node.position.x, y: node.position.y })),
       disabledNodeIds: flowNodes.filter((node) => !node.data.selectable).map((node) => node.id),
       missingRefKeys: graph.missingRefs.map(missingRefKey),
       nodeCount: flowNodes.length,
       edgeCount: graph.edges.length,
+      layoutBounds: layoutBounds(flowNodes),
     };
     setKataGraphDebugGraph(snapshot);
     recordKataGraphDebugEvent("graph-render", snapshot);
@@ -283,7 +351,7 @@
   });
 </script>
 
-<section class="kata-graph-pane" aria-label="Reachable task graph" data-layout-direction={layoutDirection}>
+<section class="kata-graph-pane" aria-label="Reachable task graph" data-layout-direction={effectiveLayoutDirection}>
   <header class="graph-toolbar">
     <button type="button" class="toolbar-button" aria-label="Back to task list" onclick={onBack}>
       <ArrowLeftIcon size={14} strokeWidth={1.9} aria-hidden="true" />
@@ -313,9 +381,22 @@
           onchange={setLayoutMode}
         />
       </div>
+      <button type="button" class="direction-toggle" aria-label={directionToggleLabel} onclick={toggleGraphDirection}>
+        {#if effectiveLayoutDirection === "TB"}
+          <ArrowDownIcon size={14} strokeWidth={2} aria-hidden="true" />
+          <span>TB</span>
+        {:else}
+          <ArrowRightIcon size={14} strokeWidth={2} aria-hidden="true" />
+          <span>LR</span>
+        {/if}
+      </button>
       <label class="hide-done">
         <input type="checkbox" bind:checked={hideDone} />
         <span>Hide done</span>
+      </label>
+      <label class="show-context" class:show-context--disabled={depthLimit === "full"}>
+        <input type="checkbox" bind:checked={showDepthContext} disabled={depthLimit === "full"} />
+        <span>Show context</span>
       </label>
     </div>
   </header>
@@ -332,6 +413,7 @@
         {fitViewOptions}
         autoPanOnSelection={false}
         defaultMarkerColor={null}
+        minZoom={graphMinZoom}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={true}
@@ -372,7 +454,9 @@
   .toolbar-button,
   .depth-filter,
   .layout-filter,
-  .hide-done {
+  .direction-toggle,
+  .hide-done,
+  .show-context {
     min-height: 28px;
     display: inline-flex;
     align-items: center;
@@ -394,9 +478,21 @@
   .toolbar-button:hover,
   .depth-filter:hover,
   .layout-filter:hover,
-  .hide-done:hover {
+  .direction-toggle:hover,
+  .hide-done:hover,
+  .show-context:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
+  }
+
+  .show-context--disabled {
+    opacity: 0.58;
+  }
+
+  .direction-toggle {
+    flex: 0 0 auto;
+    min-width: 58px;
+    justify-content: center;
   }
 
   .graph-controls {
@@ -475,7 +571,9 @@
     }
 
     .depth-filter,
-    .layout-filter {
+    .layout-filter,
+    .direction-toggle,
+    .show-context {
       flex: 1 1 160px;
       min-width: 0;
     }
@@ -543,6 +641,15 @@
     pointer-events: none;
   }
 
+  :global(.kata-graph-pane .svelte-flow__edges) {
+    z-index: 1;
+  }
+
+  :global(.kata-graph-pane .svelte-flow__nodes) {
+    position: relative;
+    z-index: 2;
+  }
+
   :global(.kata-graph-edge .svelte-flow__edge-path) {
     stroke-width: 1.8;
   }
@@ -557,6 +664,15 @@
 
   :global(.kata-graph-edge--related .svelte-flow__edge-path) {
     stroke-dasharray: 6 4;
+  }
+
+  :global(.kata-graph-edge--depth-context) {
+    z-index: 0;
+  }
+
+  :global(.kata-graph-edge--depth-context .svelte-flow__edge-path) {
+    stroke: var(--border-default);
+    stroke-width: 1.2;
   }
 
   .graph-empty {

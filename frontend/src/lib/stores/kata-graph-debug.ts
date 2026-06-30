@@ -30,17 +30,19 @@ export interface KataGraphDebugGraphSnapshot {
   sourceUID: string;
   selectedUID: string | null;
   hideDone: boolean;
+  showDepthContext: boolean;
   depthLimit: string;
   layoutMode: string;
   layoutDirection: string;
   layoutReady: boolean;
   nodeIds: string[];
-  edges: Array<{ id: string; source: string; target: string; kind: string | null }>;
+  edges: Array<{ id: string; source: string; target: string; kind: string | null; isDepthContext: boolean }>;
   nodePositions: Array<{ id: string; x: number; y: number }>;
   disabledNodeIds: string[];
   missingRefKeys: string[];
   nodeCount: number;
   edgeCount: number;
+  layoutBounds: { width: number; height: number; aspectRatio: number };
 }
 
 export interface KataGraphDebugStoreSnapshot {
@@ -87,6 +89,7 @@ function cloneSnapshot(): KataGraphDebugSnapshot {
           nodePositions: latestGraph.nodePositions.map((position) => ({ ...position })),
           disabledNodeIds: [...latestGraph.disabledNodeIds],
           missingRefKeys: [...latestGraph.missingRefKeys],
+          layoutBounds: { ...latestGraph.layoutBounds },
         }
       : undefined,
     store: store ? { ...store, queueKeys: [...store.queueKeys] } : undefined,
@@ -112,6 +115,7 @@ export function setKataGraphDebugGraph(snapshot: KataGraphDebugGraphSnapshot): v
     nodePositions: snapshot.nodePositions.map((position) => ({ ...position })),
     disabledNodeIds: [...snapshot.disabledNodeIds],
     missingRefKeys: [...snapshot.missingRefKeys],
+    layoutBounds: { ...snapshot.layoutBounds },
   };
 }
 

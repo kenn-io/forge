@@ -72,6 +72,15 @@ describe("KataReachableGraph (browser)", () => {
     const graphCanvas = container.querySelector<HTMLElement>(".graph-canvas");
     expect(graphCanvas).toBeTruthy();
     expect(getComputedStyle(graphCanvas!).overflow).toBe("hidden");
+    await expect
+      .element(page.getByRole("button", { name: "Graph direction: left-right. Switch to top-bottom" }))
+      .toBeVisible();
+    await page.getByRole("button", { name: "Graph direction: left-right. Switch to top-bottom" }).click();
+    await expect
+      .element(page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }))
+      .toBeVisible();
+    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("TB");
+    expect(container.querySelector(".kata-graph-pane")?.getAttribute("data-layout-direction")).toBe("TB");
     const controlsButton = container.querySelector<HTMLElement>(".svelte-flow__controls-button");
     const minimap = container.querySelector<SVGSVGElement>(".svelte-flow__minimap");
     expect(controlsButton).toBeTruthy();
@@ -185,6 +194,50 @@ describe("KataReachableGraph (browser)", () => {
     expect(container.textContent).not.toContain("Root browser task");
   });
 
+  it("keeps bounded-depth context visible and faded", async () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root browser task",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge task",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({
+      uid: "issue-two",
+      short_id: "two",
+      title: "Two edge task",
+    });
+    const { container } = render(KataReachableGraph, {
+      props: {
+        sourceUID: root.uid,
+        selectedUID: root.uid,
+        tasks: [root, one, two],
+        selectedDetail: null,
+        onBack: () => {},
+        onSelectIssue: () => {},
+      },
+    });
+
+    await page.getByRole("combobox", { name: "Graph depth: Full" }).click();
+    await page.getByRole("option", { name: "1 edge" }).click();
+    await expect.element(page.getByRole("checkbox", { name: "Show context" })).toBeVisible();
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll(".svelte-flow__node").length).toBe(3);
+    });
+    const contextNode = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((node) =>
+      node.textContent?.includes("Two edge task"),
+    );
+    expect(contextNode).toBeTruthy();
+    const contextButton = contextNode!.querySelector<HTMLElement>(".graph-task-node")!;
+    expect(contextButton.classList.contains("graph-task-node--depth-context")).toBe(true);
+    expect(Number(getComputedStyle(contextButton).opacity)).toBeLessThan(0.5);
+  });
+
   it("keeps graph toolbar filters visible in a narrow pane", async () => {
     const root = task({
       uid: "issue-root",
@@ -213,15 +266,20 @@ describe("KataReachableGraph (browser)", () => {
     await expect.element(page.getByRole("combobox", { name: "Graph layout: Compact" })).toBeVisible();
     const toolbar = container.querySelector<HTMLElement>(".graph-toolbar");
     const hideDone = container.querySelector<HTMLElement>(".hide-done");
+    const showContext = container.querySelector<HTMLElement>(".show-context");
     expect(toolbar).toBeTruthy();
     expect(hideDone).toBeTruthy();
+    expect(showContext).toBeTruthy();
 
     await vi.waitFor(() => {
       const toolbarRect = toolbar!.getBoundingClientRect();
       const hideDoneRect = hideDone!.getBoundingClientRect();
+      const showContextRect = showContext!.getBoundingClientRect();
       expect(toolbar!.scrollWidth).toBeLessThanOrEqual(toolbar!.clientWidth + 1);
       expect(hideDoneRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
       expect(hideDoneRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
+      expect(showContextRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
+      expect(showContextRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
     });
   });
 });

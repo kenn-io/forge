@@ -300,17 +300,19 @@ interface Window {
             sourceUID: string;
             selectedUID: string | null;
             hideDone: boolean;
+            showDepthContext: boolean;
             depthLimit: string;
             layoutMode: string;
             layoutDirection: string;
             layoutReady: boolean;
             nodeIds: string[];
-            edges: Array<{ id: string; source: string; target: string; kind: string | null }>;
+            edges: Array<{ id: string; source: string; target: string; kind: string | null; isDepthContext: boolean }>;
             nodePositions: Array<{ id: string; x: number; y: number }>;
             disabledNodeIds: string[];
             missingRefKeys: string[];
             nodeCount: number;
             edgeCount: number;
+            layoutBounds: { width: number; height: number; aspectRatio: number };
           }
         | undefined;
       store?:

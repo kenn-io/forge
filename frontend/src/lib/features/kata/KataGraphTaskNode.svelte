@@ -45,6 +45,7 @@
     `graph-task-node--${tone}`,
     data.isSource ? "graph-task-node--source" : "",
     data.isSelected || selected ? "graph-task-node--selected" : "",
+    data.isDepthContext ? "graph-task-node--depth-context" : "",
     data.adjacentRelation ? "graph-task-node--adjacent" : "",
     data.adjacentRelation ? `graph-task-node--relation-${data.adjacentRelation}` : "",
   ]}
@@ -139,6 +140,15 @@
     --node-status-bg: var(--bg-surface);
     border-style: dashed;
     color: var(--text-muted);
+  }
+
+  .graph-task-node--depth-context {
+    opacity: 0.36;
+  }
+
+  .graph-task-node--depth-context:hover,
+  .graph-task-node--depth-context:focus-visible {
+    opacity: 0.58;
   }
 
   .graph-task-node--relation-blocks {

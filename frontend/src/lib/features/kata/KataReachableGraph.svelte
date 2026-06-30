@@ -34,6 +34,13 @@
 
   type KataGraphLayoutMode = "compact" | "elk";
 
+  interface KataGraphPreferences {
+    contextDepth: KataGraphContextDepth;
+    depthLimit: KataGraphDepthLimit;
+    layoutMode: KataGraphLayoutMode;
+    layoutDirection: KataGraphLayoutDirection | null;
+  }
+
   interface LayoutPosition {
     x: number;
     y: number;
@@ -67,11 +74,20 @@
     onRequestMissingTasks = undefined,
   }: Props = $props();
 
+  const graphPreferencesStorageKey = "middleman:kata:reachableGraphPreferences/v1";
+  const defaultGraphPreferences: KataGraphPreferences = {
+    contextDepth: "all",
+    depthLimit: "full",
+    layoutMode: "compact",
+    layoutDirection: null,
+  };
+  const initialGraphPreferences = readGraphPreferences();
+
   let hideDone = $state(false);
-  let contextDepth = $state<KataGraphContextDepth>("all");
-  let depthLimit = $state<KataGraphDepthLimit>("full");
-  let layoutMode = $state<KataGraphLayoutMode>("compact");
-  let graphDirectionOverride = $state<KataGraphLayoutDirection | null>(null);
+  let contextDepth = $state<KataGraphContextDepth>(initialGraphPreferences.contextDepth);
+  let depthLimit = $state<KataGraphDepthLimit>(initialGraphPreferences.depthLimit);
+  let layoutMode = $state<KataGraphLayoutMode>(initialGraphPreferences.layoutMode);
+  let graphDirectionOverride = $state<KataGraphLayoutDirection | null>(initialGraphPreferences.layoutDirection);
   let effectiveLayoutDirection = $derived(graphDirectionOverride ?? layoutDirection);
   let layoutedPositions = $state.raw<ReadonlyMap<string, LayoutPosition>>(new Map());
   let layoutedKey = $state("");
@@ -151,6 +167,58 @@
     padding: 0.12,
     minZoom: graphMinZoom,
   };
+
+  function isContextDepth(value: unknown): value is KataGraphContextDepth {
+    return value === "all" || value === "1" || value === "2" || value === "3";
+  }
+
+  function isDepthLimit(value: unknown): value is KataGraphDepthLimit {
+    return value === "full" || value === "1" || value === "2" || value === "3";
+  }
+
+  function isLayoutMode(value: unknown): value is KataGraphLayoutMode {
+    return value === "compact" || value === "elk";
+  }
+
+  function isLayoutDirection(value: unknown): value is KataGraphLayoutDirection {
+    return value === "LR" || value === "TB";
+  }
+
+  function normalizeGraphPreferences(value: unknown): KataGraphPreferences {
+    if (!value || typeof value !== "object") return defaultGraphPreferences;
+    const candidate = value as Partial<KataGraphPreferences>;
+    return {
+      contextDepth: isContextDepth(candidate.contextDepth)
+        ? candidate.contextDepth
+        : defaultGraphPreferences.contextDepth,
+      depthLimit: isDepthLimit(candidate.depthLimit) ? candidate.depthLimit : defaultGraphPreferences.depthLimit,
+      layoutMode: isLayoutMode(candidate.layoutMode) ? candidate.layoutMode : defaultGraphPreferences.layoutMode,
+      layoutDirection:
+        candidate.layoutDirection === null || candidate.layoutDirection === undefined
+          ? defaultGraphPreferences.layoutDirection
+          : isLayoutDirection(candidate.layoutDirection)
+            ? candidate.layoutDirection
+            : defaultGraphPreferences.layoutDirection,
+    };
+  }
+
+  function readGraphPreferences(): KataGraphPreferences {
+    if (typeof localStorage === "undefined") return defaultGraphPreferences;
+    try {
+      return normalizeGraphPreferences(JSON.parse(localStorage.getItem(graphPreferencesStorageKey) ?? "null"));
+    } catch {
+      return defaultGraphPreferences;
+    }
+  }
+
+  function writeGraphPreferences(preferences: KataGraphPreferences): void {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(graphPreferencesStorageKey, JSON.stringify(preferences));
+    } catch {
+      // localStorage may be unavailable in private or quota-restricted contexts.
+    }
+  }
 
   function missingRefKey(ref: KataGraphMissingRef): string {
     return ref.uid ? `uid:${ref.uid}` : `short:${ref.projectUID}:${ref.shortID}`;
@@ -276,6 +344,15 @@
     if (data.isSource || data.isSelected) return "var(--accent-blue)";
     return "var(--border-default)";
   }
+
+  $effect(() => {
+    writeGraphPreferences({
+      contextDepth,
+      depthLimit,
+      layoutMode,
+      layoutDirection: effectiveLayoutDirection,
+    });
+  });
 
   $effect(() => {
     const refs = graph.missingRefs;

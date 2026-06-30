@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
@@ -7,6 +7,8 @@ import "../../../app.css";
 import { pressKey } from "../../../test/browserAppHarness.js";
 import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
 import KataReachableGraph from "./KataReachableGraph.svelte";
+
+const graphPreferencesStorageKey = "middleman:kata:reachableGraphPreferences/v1";
 
 function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
   const shortID = overrides.short_id ?? "root";
@@ -99,6 +101,10 @@ async function waitForStableRenderedNodeBoxes(
 }
 
 describe("KataReachableGraph (browser)", () => {
+  beforeEach(() => {
+    localStorage.removeItem(graphPreferencesStorageKey);
+  });
+
   it("renders nonblank Svelte Flow nodes and selects them from the canvas", async () => {
     const root = task({
       uid: "issue-root",
@@ -209,6 +215,65 @@ describe("KataReachableGraph (browser)", () => {
 
     expect(onSelectIssue).toHaveBeenCalledTimes(1);
     expect(onSelectIssue).toHaveBeenCalledWith(linked.uid);
+  });
+
+  it("restores graph control preferences from localStorage", async () => {
+    localStorage.setItem(
+      graphPreferencesStorageKey,
+      JSON.stringify({
+        depthLimit: "2",
+        contextDepth: "1",
+        layoutMode: "elk",
+        layoutDirection: "TB",
+      }),
+    );
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root browser task",
+      blocks: [{ uid: "issue-linked", short_id: "linked" }],
+    });
+    const linked = task({
+      uid: "issue-linked",
+      short_id: "linked",
+      title: "Linked browser task",
+      priority: 1,
+    });
+    render(KataReachableGraph, {
+      props: {
+        sourceUID: root.uid,
+        selectedUID: root.uid,
+        tasks: [root, linked],
+        selectedDetail: null,
+        onBack: () => {},
+        onSelectIssue: () => {},
+      },
+    });
+
+    await expect.element(page.getByRole("combobox", { name: "Graph depth: 2 edges" })).toBeVisible();
+    await expect.element(page.getByRole("combobox", { name: "Graph context: 1 edge" })).toBeVisible();
+    await expect.element(page.getByRole("combobox", { name: "Graph layout: ELK" })).toBeVisible();
+    await expect
+      .element(page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }))
+      .toBeVisible();
+    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutMode).toBe("elk");
+    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("TB");
+
+    await page.getByRole("combobox", { name: "Graph context: 1 edge" }).click();
+    await page.getByRole("option", { name: "3 edges" }).click();
+    await page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }).click();
+
+    await expect
+      .poll(() => {
+        const raw = localStorage.getItem(graphPreferencesStorageKey);
+        return raw ? JSON.parse(raw) : null;
+      })
+      .toMatchObject({
+        depthLimit: "2",
+        contextDepth: "3",
+        layoutMode: "elk",
+        layoutDirection: "LR",
+      });
   });
 
   it("switches to ELK layout without freezing current node data", async () => {

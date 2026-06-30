@@ -195,8 +195,11 @@ traversal and preserves the source, graph root, and selected task; edges whose
 endpoint is hidden are dropped. The Svelte Flow node pane must be positioned
 above the edge pane so edges never paint on top of task cards. Disable Svelte
 Flow node-focus autopan so clicking/focusing a graph task changes selection
-without panning the viewport. `Context` defaults to `All` for each graph
-component session and is not persisted.
+without panning the viewport. The graph persists the depth, context, layout,
+and explicit graph direction controls in a versioned localStorage value so new
+graph pane sessions restore the last user layout. Invalid or unavailable
+storage falls back to `Full`, `All`, `Compact`, and the current workspace split
+direction.
 
 Traversal sources by relationship kind:
 
@@ -288,9 +291,9 @@ each node.
 options and a separate graph direction toggle. The split presentation still
 provides the default direction, but the user can override the graph itself
 between left-to-right and top-to-bottom without changing the workspace pane
-layout. The override is per mounted graph session: it starts from the current
-workspace split direction, survives source task selection changes while the
-graph pane remains open, and resets when the graph pane is closed/remounted.
+layout. The persisted direction starts from the current workspace split
+direction when no saved graph preference exists and then restores the last
+chosen graph direction across graph pane remounts.
 `ELK` delegates node placement to `elkjs` using the active graph
 direction, based on the final visible edge set after reciprocal edge
 deduplication and done filtering. ELK layout is asynchronous, so the graph renders compact
@@ -374,8 +377,9 @@ Add Svelte tests for workspace integration:
   edges underneath emphasized selected-adjacent edges.
 - browser coverage verifies nonblank canvas nodes, hidden handles, native edge
   markers, themed controls/minimap, the Compact/ELK layout switch, the TB/LR
-  direction toggle, and the absence of a duplicate node-list fallback. It also
-  covers both Enter and Space keyboard activation.
+  direction toggle, localStorage restoration for graph controls, and the absence
+  of a duplicate node-list fallback. It also covers both Enter and Space
+  keyboard activation.
 - full-stack e2e coverage opens graph mode from the workspace, selects a cached
   graph node, confirms detail selection changes, verifies the source graph
   remains visible/stable after selection, and returns to the task list.

@@ -49,18 +49,22 @@ background tint. When several relationships connect the selected task to the
 same peer, the single adjacent tint uses this priority: peer blocks selected,
 selected blocks peer, parent, child, related.
 
-Clicking a cached node calls the existing `selectIssue(uid)` flow. Disabled
-placeholder nodes represent uncached linked peers and cannot be selected. If a
-placeholder came from a link that included a peer uid, graph mode schedules a
-background detail fetch for that uid and replaces the placeholder once the
-workspace cache receives the task. If only a short id is known, graph mode may
-search exactly within the peer project and cache exact matches. Background graph
-population failures do not replace the normal detail/request error surface; the
-placeholder remains visible. Graph population is queued through the workspace
-store and must pause/abort while a user-driven task detail selection is active;
-there should not be a graph-side issue refresh competing with the selected-task
-detail refresh. UID-backed placeholders use the final task uid as their Svelte
-Flow node id so the node updates in place when cached data arrives.
+Clicking a cached graph node first emits the routed issue selection, then lets
+the route-driven detail loader apply the task selection. This keeps browser
+Back/Forward useful even when the clicked node's detail load is slow: a route
+change back to the previous issue cancels the pending graph-node selection
+instead of leaving the detail pane stuck on loading. Disabled placeholder nodes
+represent uncached linked peers and cannot be selected. If a placeholder came
+from a link that included a peer uid, graph mode schedules a background detail
+fetch for that uid and replaces the placeholder once the workspace cache
+receives the task. If only a short id is known, graph mode may search exactly
+within the peer project and cache exact matches. Background graph population
+failures do not replace the normal detail/request error surface; the placeholder
+remains visible. Graph population is queued through the workspace store and must
+pause/abort while a user-driven task detail selection is active; there should
+not be a graph-side issue refresh competing with the selected-task detail
+refresh. UID-backed placeholders use the final task uid as their Svelte Flow node
+id so the node updates in place when cached data arrives.
 When a relationship peer includes `uid`, that uid is authoritative: missing
 UID-backed peers render and fetch by uid, and the builder must not attach the
 edge to another cached task just because the short id matches.

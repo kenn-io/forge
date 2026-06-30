@@ -322,13 +322,55 @@ describe("KataWorkspace", () => {
     });
   });
 
-  it("keeps a graph node selection while the route prop is still stale", async () => {
+  it("selects a graph node after the route prop catches up", async () => {
     const root = {
       ...issue("issue-root", "Root graph task", "project-kata"),
       blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
     };
     const blocked = issue("issue-blocked", "Blocked follow-up", "project-kata");
     const { api } = createWorkspaceAPI([root, blocked]);
+    const onSelectedIssueChange = vi.fn();
+
+    const { rerender } = render(KataWorkspace, {
+      props: {
+        api,
+        selectedIssueUID: root.uid,
+        onSelectedIssueChange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    });
+    await fireEvent.click(
+      within(screen.getByRole("region", { name: "Task detail" })).getByRole("button", {
+        name: "Open reachable graph",
+      }),
+    );
+
+    await fireEvent.click(graphNodeWithText("Blocked follow-up"));
+    expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-blocked");
+    expect(screen.queryByRole("heading", { name: "Blocked follow-up" })).toBeNull();
+
+    await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
+    });
+  });
+
+  it("routes graph node selections before the task detail load resolves", async () => {
+    const root = {
+      ...issue("issue-root", "Root graph task", "project-kata"),
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+    };
+    const blocked = issue("issue-blocked", "Blocked follow-up", "project-kata");
+    const { api } = createWorkspaceAPI([root, blocked]);
+    const blockedDetail = deferred<KataTaskDetail>();
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+      if (uid === blocked.uid) return blockedDetail.promise;
+      return detail(uid, [root, blocked]);
+    });
     const onSelectedIssueChange = vi.fn();
 
     render(KataWorkspace, {
@@ -350,10 +392,57 @@ describe("KataWorkspace", () => {
 
     await fireEvent.click(graphNodeWithText("Blocked follow-up"));
 
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
+    expect(onSelectedIssueChange).toHaveBeenCalledWith(blocked.uid);
+    expect(screen.queryByText("Loading task")).toBeNull();
+
+    blockedDetail.resolve(detail(blocked.uid, [root, blocked]));
+  });
+
+  it("lets route back cancel a pending graph node selection", async () => {
+    const root = {
+      ...issue("issue-root", "Root graph task", "project-kata"),
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+    };
+    const blocked = issue("issue-blocked", "Blocked follow-up", "project-kata");
+    const { api } = createWorkspaceAPI([root, blocked]);
+    const blockedDetail = deferred<KataTaskDetail>();
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+      if (uid === blocked.uid) return blockedDetail.promise;
+      return detail(uid, [root, blocked]);
     });
-    expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-blocked");
+    const onSelectedIssueChange = vi.fn();
+
+    const { rerender } = render(KataWorkspace, {
+      props: {
+        api,
+        selectedIssueUID: root.uid,
+        onSelectedIssueChange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    });
+    await fireEvent.click(
+      within(screen.getByRole("region", { name: "Task detail" })).getByRole("button", {
+        name: "Open reachable graph",
+      }),
+    );
+    await fireEvent.click(graphNodeWithText("Blocked follow-up"));
+    await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
+
+    await waitFor(() => {
+      expect(screen.getByText("Loading task")).toBeTruthy();
+    });
+
+    await rerender({ api, selectedIssueUID: root.uid, onSelectedIssueChange });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    });
+    expect(screen.queryByText("Loading task")).toBeNull();
+
+    blockedDetail.resolve(detail(blocked.uid, [root, blocked]));
   });
 
   it("opens system views without auto-selecting the first task", async () => {

@@ -377,8 +377,13 @@
     const uid = selectedIssueUID ?? null;
     if (loading) return;
     if (awaitingSelectedIssueRouteUID) {
-      if (uid !== awaitingSelectedIssueRouteUID) return;
-      awaitingSelectedIssueRouteUID = null;
+      if (uid === awaitingSelectedIssueRouteUID) {
+        awaitingSelectedIssueRouteUID = null;
+      } else if (uid !== syncedRouteIssueUID) {
+        awaitingSelectedIssueRouteUID = null;
+      } else {
+        return;
+      }
     }
     if ((routeViewName ?? null) !== syncedRouteViewName || (routeScopeUID ?? null) !== syncedRouteScopeUID) return;
     if (!uid) {
@@ -389,7 +394,7 @@
       return;
     }
     if (uid === syncedRouteIssueUID) return;
-    if (store.selectedIssue?.issue.uid === uid) {
+    if (store.selectedIssue?.issue.uid === uid && store.pendingSelectionUID !== uid) {
       syncedRouteIssueUID = uid;
       return;
     }
@@ -721,6 +726,19 @@
     if (notify) onSelectedIssueChange?.(uid);
   }
 
+  function selectReachableGraphIssue(uid: string): void {
+    if (!onSelectedIssueChange) {
+      void selectIssue(uid, false);
+      return;
+    }
+    if (selectedIssueUID === uid) {
+      void selectIssue(uid, false);
+      return;
+    }
+    awaitingSelectedIssueRouteUID = uid;
+    onSelectedIssueChange(uid);
+  }
+
   function openReachableGraph(issue: KataTaskSummary): void {
     store.rememberTasks([issue]);
     graphSourceUID = issue.uid;
@@ -988,7 +1006,7 @@
         selectedDetail={graphSourceDetail}
         onBack={closeReachableGraph}
         onSelectIssue={(uid) => {
-          void selectIssue(uid);
+          selectReachableGraphIssue(uid);
         }}
         onRequestMissingTasks={requestMissingGraphTasks}
       />

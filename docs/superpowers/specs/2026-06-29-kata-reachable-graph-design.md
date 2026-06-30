@@ -49,16 +49,18 @@ background tint. When several relationships connect the selected task to the
 same peer, the single adjacent tint uses this priority: peer blocks selected,
 selected blocks peer, parent, child, related.
 
-Clicking a cached graph node first emits the routed issue selection, then lets
-the route-driven detail loader apply the task selection. This keeps browser
-Back/Forward useful even when the clicked node's detail load is slow: a route
-change back to the previous issue cancels the pending graph-node selection
-instead of leaving the detail pane stuck on loading. Any late response from the
-abandoned detail request is ignored and must not update the selected task,
-detail pane, or graph selection after the route has moved on. When the routed
-selection callback is absent, graph nodes fall back to local selection; when it
-is present but does not produce a matching route update, the workspace leaves
-the current selection in place instead of doing a second local fallback.
+Clicking a cached graph node first emits the routed issue selection, then starts
+the same local detail selection used by row clicks. This keeps the URL and
+browser history ahead of the detail fetch while avoiding a URL-only graph click
+when the route prop is delayed or not re-rendered. When the route prop later
+catches up to the same uid, it marks the route as synced but must not start a
+duplicate detail request. Browser Back/Forward remains useful even when the
+clicked node's detail load is slow: a route change back to the previous issue
+cancels the pending graph-node selection instead of leaving the detail pane
+stuck on loading. Any late response from the abandoned detail request is ignored
+and must not update the selected task, detail pane, or graph selection after the
+route has moved on. When the routed selection callback is absent, graph nodes
+use local selection only.
 Disabled placeholder nodes represent uncached linked peers and cannot be
 selected. If a placeholder came from a link that included a peer uid, graph mode
 schedules a background detail fetch for that uid and replaces the placeholder

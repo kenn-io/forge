@@ -392,6 +392,10 @@
       return;
     }
     if (uid === syncedRouteIssueUID) return;
+    if (store.pendingSelectionUID === uid) {
+      syncedRouteIssueUID = uid;
+      return;
+    }
     if (store.selectedIssue?.issue.uid === uid && store.pendingSelectionUID !== uid) {
       syncedRouteIssueUID = uid;
       return;
@@ -735,6 +739,7 @@
     }
     awaitingSelectedIssueRouteUID = uid;
     onSelectedIssueChange(uid);
+    void selectIssue(uid, false);
   }
 
   function openReachableGraph(issue: KataTaskSummary): void {

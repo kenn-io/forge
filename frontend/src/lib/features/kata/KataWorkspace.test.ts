@@ -322,7 +322,7 @@ describe("KataWorkspace", () => {
     });
   });
 
-  it("selects a graph node after the route prop catches up", async () => {
+  it("selects a graph node immediately and tolerates the route prop catching up later", async () => {
     const root = {
       ...issue("issue-root", "Root graph task", "project-kata"),
       blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
@@ -350,16 +350,16 @@ describe("KataWorkspace", () => {
 
     await fireEvent.click(graphNodeWithText("Blocked follow-up"));
     expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-blocked");
-    expect(screen.queryByRole("heading", { name: "Blocked follow-up" })).toBeNull();
-
-    await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
-
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
     });
+
+    await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
+
+    expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
   });
 
-  it("routes graph node selections before the task detail load resolves", async () => {
+  it("routes and starts loading graph node selections before the task detail resolves", async () => {
     const root = {
       ...issue("issue-root", "Root graph task", "project-kata"),
       blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
@@ -393,9 +393,12 @@ describe("KataWorkspace", () => {
     await fireEvent.click(graphNodeWithText("Blocked follow-up"));
 
     expect(onSelectedIssueChange).toHaveBeenCalledWith(blocked.uid);
-    expect(screen.queryByText("Loading task")).toBeNull();
+    expect(screen.getByText("Loading task")).toBeTruthy();
 
     blockedDetail.resolve(detail(blocked.uid, [root, blocked]));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
+    });
   });
 
   it("lets route back cancel a pending graph node selection", async () => {

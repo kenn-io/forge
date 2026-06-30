@@ -163,7 +163,7 @@ func TestRedactedQueryMasksBootstrapToken(t *testing.T) {
 
 // TestAuthLogoutExpiresCookie pins logout: GET /auth/logout expires the
 // session cookie and redirects to the base path, regardless of whether
-// require_auth is on, and a gated API call afterward is unauthorized.
+// require_auth is on (the table covers both).
 func TestAuthLogoutExpiresCookie(t *testing.T) {
 	for _, token := range []string{"secret-token", ""} {
 		t.Run("token="+token, func(t *testing.T) {

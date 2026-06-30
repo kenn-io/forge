@@ -591,6 +591,7 @@
   .toolbar-button,
   .direction-toggle,
   .hide-done {
+    box-sizing: border-box;
     min-height: 28px;
     display: inline-flex;
     align-items: center;
@@ -618,8 +619,15 @@
 
   .direction-toggle {
     flex: 0 0 auto;
+    height: 30px;
+    min-height: 30px;
     min-width: 64px;
     justify-content: center;
+  }
+
+  .hide-done {
+    height: 30px;
+    min-height: 30px;
   }
 
   .graph-field {

@@ -576,12 +576,18 @@ describe("KataReachableGraph (browser)", () => {
     const depthSelect = container.querySelector<HTMLElement>(".kata-graph-depth-select");
     const contextSelect = container.querySelector<HTMLElement>(".kata-graph-context-select");
     const layoutSelect = container.querySelector<HTMLElement>(".kata-graph-layout-select");
+    const layoutSelectTrigger = container.querySelector<HTMLElement>(
+      ".kata-graph-layout-select .select-dropdown-trigger",
+    );
+    const directionToggle = container.querySelector<HTMLElement>(".direction-toggle");
     expect(toolbar).toBeTruthy();
     expect(hideDone).toBeTruthy();
     expect(contextFilter).toBeTruthy();
     expect(depthSelect).toBeTruthy();
     expect(contextSelect).toBeTruthy();
     expect(layoutSelect).toBeTruthy();
+    expect(layoutSelectTrigger).toBeTruthy();
+    expect(directionToggle).toBeTruthy();
 
     await vi.waitFor(() => {
       const toolbarRect = toolbar!.getBoundingClientRect();
@@ -590,6 +596,8 @@ describe("KataReachableGraph (browser)", () => {
       const depthSelectWidth = depthSelect!.getBoundingClientRect().width;
       const contextSelectWidth = contextSelect!.getBoundingClientRect().width;
       const layoutSelectWidth = layoutSelect!.getBoundingClientRect().width;
+      const layoutSelectHeight = layoutSelectTrigger!.getBoundingClientRect().height;
+      const directionToggleHeight = directionToggle!.getBoundingClientRect().height;
       expect(toolbar!.scrollWidth).toBeLessThanOrEqual(toolbar!.clientWidth + 1);
       expect(hideDoneRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
       expect(hideDoneRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
@@ -601,6 +609,8 @@ describe("KataReachableGraph (browser)", () => {
       expect(contextSelectWidth).toBeLessThanOrEqual(92);
       expect(layoutSelectWidth).toBeGreaterThanOrEqual(96);
       expect(layoutSelectWidth).toBeLessThanOrEqual(108);
+      expect(directionToggleHeight).toBe(layoutSelectHeight);
+      expect(hideDoneRect.height).toBe(layoutSelectHeight);
     });
   });
 });

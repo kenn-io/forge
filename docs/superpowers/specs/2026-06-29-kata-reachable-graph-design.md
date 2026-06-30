@@ -24,6 +24,7 @@ The graph pane toolbar contains:
 - a back-to-list button;
 - the source task title;
 - a depth filter with `Full`, `1 edge`, `2 edges`, and `3 edges` options;
+- a layout selector with `Compact` and `ELK` options;
 - a `Hide done` toggle.
 
 Each graph node contains:
@@ -54,13 +55,18 @@ the same local detail selection used by row clicks. This keeps the URL and
 browser history ahead of the detail fetch while avoiding a URL-only graph click
 when the route prop is delayed or not re-rendered. When the route prop later
 catches up to the same uid, it marks the route as synced but must not start a
-duplicate detail request. Browser Back/Forward remains useful even when the
-clicked node's detail load is slow: a route change back to the previous issue
-cancels the pending graph-node selection instead of leaving the detail pane
-stuck on loading. Any late response from the abandoned detail request is ignored
-and must not update the selected task, detail pane, or graph selection after the
-route has moved on. When the routed selection callback is absent, graph nodes
-use local selection only.
+duplicate detail request or abort the in-flight local detail request. If the
+parent never echoes the routed issue back, local selection remains valid until a
+later external route update reconciles or replaces it. Browser Back/Forward
+remains useful even when the clicked node's detail load is slow: a route change
+back to the previous issue cancels the pending graph-node selection instead of
+leaving the detail pane stuck on loading. Any late response from the abandoned
+detail request is ignored and must not update the selected task, detail pane, or
+graph selection after the route has moved on. When the routed selection callback
+is absent, graph nodes use local selection only. If the immediate detail request
+fails after the URL has already changed, the URL remains authoritative, the
+normal detail request error surface is shown for that routed task, graph mode
+stays open, and browser Back returns to the previous routed task.
 Disabled placeholder nodes represent uncached linked peers and cannot be
 selected. If a placeholder came from a link that included a peer uid, graph mode
 schedules a background detail fetch for that uid and replaces the placeholder
@@ -76,6 +82,11 @@ data arrives.
 When a relationship peer includes `uid`, that uid is authoritative: missing
 UID-backed peers render and fetch by uid, and the builder must not attach the
 edge to another cached task just because the short id matches.
+
+Graph mode survives issue-only route changes so graph-node navigation can use
+browser history, but closes and invalidates any graph-source detail work when
+the routed view or project scope changes. A graph opened in one view/scope must
+not remain visible beside another view or scoped project.
 
 ## Data Model
 
@@ -272,7 +283,9 @@ show a single source node.
 
 The graph does not surface daemon errors directly. It reflects whatever the
 workspace cache already knows. Normal detail selection errors continue to use the
-existing request error path.
+existing request error path. ELK layout failures are debug-only: keep or fall
+back to compact coordinates, record a graph layout error event, and do not show a
+blocking user-facing error for layout failure alone.
 
 ## Testing
 
@@ -319,6 +332,14 @@ Add Svelte tests for workspace integration:
   graph node, confirms detail selection changes, verifies the source graph
   remains visible/stable after selection, exercises uncached UID-backed graph
   population through the real proxy path, and returns to the task list.
+- full-stack e2e coverage stalls a clicked graph-node detail request, verifies
+  the URL changes immediately, verifies same-UID route catch-up does not abort or
+  duplicate that request, uses browser Back to restore the previous issue, and
+  verifies the late response is ignored.
+- full-stack e2e coverage opens the graph through the real workspace, verifies
+  stacked panes produce top-to-bottom graph direction, toggles to side-by-side
+  layout, verifies left-to-right graph direction, and asserts graph toolbar
+  filters remain visible without horizontal overflow in the narrowed list pane.
 
 ## Dependencies
 

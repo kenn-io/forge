@@ -428,12 +428,23 @@
     return `${route.view ?? ""}\u0000${route.scope ?? ""}\u0000${route.issue ?? ""}`;
   }
 
+  function routeChangeMatchesPendingSelection(route: KataRouteSnapshot): boolean {
+    return (
+      route.view === syncedRouteViewName &&
+      route.scope === syncedRouteScopeUID &&
+      route.issue !== null &&
+      route.issue === awaitingSelectedIssueRouteUID &&
+      route.issue === store.pendingSelectionUID
+    );
+  }
+
   $effect.pre(() => {
     if (loading) return;
     const snapshot = currentRouteSnapshot();
     const signature = routeSignature(snapshot);
     if (signature === observedRouteSignature) return;
     observedRouteSignature = signature;
+    if (routeChangeMatchesPendingSelection(snapshot)) return;
     beginNavigation();
     store.invalidatePendingLoads();
   });

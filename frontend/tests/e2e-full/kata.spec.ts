@@ -1299,14 +1299,22 @@ test("kata reachable graph renders and selects tasks through the configured exte
       .toBeGreaterThan(1);
     const debugBeforeSelection = await page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot());
     expect(debugBeforeSelection?.latestGraph?.sourceUID).toBe("issue-rent");
+    expect(debugBeforeSelection?.latestGraph?.layoutDirection).toBe("TB");
     expect(debugBeforeSelection?.latestGraph?.nodeIds).toEqual(expect.arrayContaining(["issue-rent", "issue-q3"]));
     const graphNodes = graph.locator(".svelte-flow__node");
     await expect(graphNodes.filter({ hasText: "Pay rent" })).toBeVisible();
     const linkedNode = graphNodes.filter({ hasText: "Email Susan re: Q3" }).first();
     await expect(linkedNode).toBeVisible();
+
     const linkedBox = await linkedNode.boundingBox();
-    expect(linkedBox?.width ?? 0).toBeGreaterThan(0);
-    expect(linkedBox?.height ?? 0).toBeGreaterThan(0);
+    const graphBox = await graph.boundingBox();
+    if (!linkedBox || !graphBox) throw new Error("Expected linked graph node and graph region to have layout boxes");
+    expect(linkedBox.width).toBeGreaterThan(0);
+    expect(linkedBox.height).toBeGreaterThan(0);
+    const linkedOffset = {
+      x: linkedBox.x - graphBox.x,
+      y: linkedBox.y - graphBox.y,
+    };
 
     await linkedNode.click();
 
@@ -1323,8 +1331,40 @@ test("kata reachable graph renders and selects tasks through the configured exte
     expect(eventKinds).toContain("detail-load-start");
     expect(eventKinds).toContain("detail-load-complete");
     const linkedBoxAfterSelection = await linkedNode.boundingBox();
-    expect(Math.abs((linkedBoxAfterSelection?.x ?? 0) - (linkedBox?.x ?? 0))).toBeLessThanOrEqual(1);
-    expect(Math.abs((linkedBoxAfterSelection?.y ?? 0) - (linkedBox?.y ?? 0))).toBeLessThanOrEqual(1);
+    const graphBoxAfterSelection = await graph.boundingBox();
+    if (!linkedBoxAfterSelection || !graphBoxAfterSelection) {
+      throw new Error("Expected linked graph node and graph region to keep layout boxes after selection");
+    }
+    expect(Math.abs(linkedBoxAfterSelection.x - graphBoxAfterSelection.x - linkedOffset.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(linkedBoxAfterSelection.y - graphBoxAfterSelection.y - linkedOffset.y)).toBeLessThanOrEqual(1);
+
+    await page.getByRole("button", { name: "Switch to side-by-side layout" }).click();
+    await expect(page.getByRole("separator", { name: "Resize Kata panes" })).toHaveAttribute(
+      "aria-orientation",
+      "vertical",
+    );
+    await expect(graph).toHaveAttribute("data-layout-direction", "LR");
+    await expect
+      .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection))
+      .toBe("LR");
+    const toolbarMetrics = await page.evaluate(() => {
+      const toolbar = document.querySelector<HTMLElement>(".graph-toolbar");
+      const hideDone = document.querySelector<HTMLElement>(".hide-done");
+      if (!toolbar || !hideDone) return null;
+      const toolbarRect = toolbar.getBoundingClientRect();
+      const hideDoneRect = hideDone.getBoundingClientRect();
+      return {
+        overflowX: toolbar.scrollWidth - toolbar.clientWidth,
+        hideDoneRight: hideDoneRect.right,
+        hideDoneBottom: hideDoneRect.bottom,
+        toolbarRight: toolbarRect.right,
+        toolbarBottom: toolbarRect.bottom,
+      };
+    });
+    expect(toolbarMetrics).not.toBeNull();
+    expect(toolbarMetrics!.overflowX).toBeLessThanOrEqual(1);
+    expect(toolbarMetrics!.hideDoneRight).toBeLessThanOrEqual(toolbarMetrics!.toolbarRight + 1);
+    expect(toolbarMetrics!.hideDoneBottom).toBeLessThanOrEqual(toolbarMetrics!.toolbarBottom + 1);
 
     await graph.getByRole("button", { name: "Back to task list" }).click();
     await expect(page.getByLabel("Search tasks")).toBeVisible();
@@ -1363,6 +1403,10 @@ test("kata reachable graph node selection participates in browser history", asyn
 
     await expect(page).toHaveURL(/\/kata\?issue=issue-q3$/);
     await expect(detail.getByText("Loading task")).toBeVisible();
+    await page.waitForTimeout(250);
+    expect(backend.state.seenPaths.filter((path) => path === "GET /api/v1/issues/issue-q3")).toHaveLength(1);
+    await expect(detail.getByText("Loading task")).toBeVisible();
+    await expect(detail.getByRole("heading", { name: "Email Susan re: Q3" })).toHaveCount(0);
 
     await page.goBack();
     await expect(page).toHaveURL(/\/kata\?issue=issue-rent$/);
@@ -1374,6 +1418,7 @@ test("kata reachable graph node selection participates in browser history", asyn
     await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
     await expect(detail.getByRole("heading", { name: "Email Susan re: Q3" })).toHaveCount(0);
   } finally {
+    releaseQ3Detail();
     await server.stop();
     kataHome.restore();
     await backend.close();

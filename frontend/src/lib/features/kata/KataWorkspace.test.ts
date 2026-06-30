@@ -402,7 +402,7 @@ describe("KataWorkspace", () => {
     });
     const onSelectedIssueChange = vi.fn();
 
-    render(KataWorkspace, {
+    const { rerender } = render(KataWorkspace, {
       props: {
         api,
         selectedIssueUID: root.uid,
@@ -423,6 +423,15 @@ describe("KataWorkspace", () => {
 
     expect(onSelectedIssueChange).toHaveBeenCalledWith(blocked.uid);
     expect(screen.getByText("Loading task")).toBeTruthy();
+
+    await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
+
+    expect(screen.getByText("Loading task")).toBeTruthy();
+    expect(api.issue).toHaveBeenCalledTimes(2);
+    expect(api.issue).toHaveBeenLastCalledWith(
+      blocked.uid,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
 
     blockedDetail.resolve(detail(blocked.uid, [root, blocked]));
     await waitFor(() => {

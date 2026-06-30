@@ -1004,6 +1004,44 @@ describe("kata workspace store", () => {
     expect(store.pendingSelectionUID).toBeNull();
   });
 
+  test("invalidating pending loads clears stale graph task population", async () => {
+    resetKataGraphDebug();
+    const api = createFakeKataTaskAPI();
+    const first = issue("issue-first-graph", "First graph task", "project-kata");
+    const second = issue("issue-second-graph", "Second graph task", "project-kata");
+    const pendingDetail = deferred<KataTaskDetail>();
+    const signals: (AbortSignal | undefined)[] = [];
+    api.mocks.issue.mockImplementation(async (uid: string, opts?: { signal?: AbortSignal }) => {
+      if (uid === first.uid) {
+        signals.push(opts?.signal);
+        return pendingDetail.promise;
+      }
+      if (uid === second.uid) return { ...detailFor("issue-email-susan"), issue: second };
+      return detailFor(uid);
+    });
+    const store = createKataWorkspaceStore({ api });
+    const graphLoad = store.loadGraphTaskRefs([
+      { uid: first.uid, projectUID: first.project_uid, shortID: first.short_id },
+      { uid: second.uid, projectUID: second.project_uid, shortID: second.short_id },
+    ]);
+
+    await Promise.resolve();
+    expect(signals).toHaveLength(1);
+
+    store.invalidatePendingLoads();
+    const aborted = signals[0]?.aborted;
+    const queueKeysAfterInvalidation = getKataGraphDebugSnapshot().store?.queueKeys;
+
+    pendingDetail.resolve({ ...detailFor("issue-email-susan"), issue: { ...first, body: "First graph task body" } });
+    await graphLoad;
+
+    expect(aborted).toBe(true);
+    expect(queueKeysAfterInvalidation).toEqual([]);
+    expect(api.mocks.issue.mock.calls.map(([uid]) => uid)).toEqual([first.uid]);
+    expect(store.cachedTasks.find((task) => task.uid === first.uid)).toBeUndefined();
+    expect(store.cachedTasks.find((task) => task.uid === second.uid)).toBeUndefined();
+  });
+
   test("coalesces graph task population into one refresh loop per missing issue", async () => {
     resetKataGraphDebug();
     const api = createFakeKataTaskAPI();

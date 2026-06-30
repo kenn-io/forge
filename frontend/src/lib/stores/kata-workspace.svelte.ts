@@ -62,6 +62,11 @@ export interface KataGraphTaskRef {
   shortID: string;
 }
 
+interface QueuedKataGraphTaskRef {
+  ref: KataGraphTaskRef;
+  generation: number;
+}
+
 function emptyView(name: KataTaskViewName = "today"): KataCurrentView {
   return { name, groups: [] };
 }
@@ -319,9 +324,10 @@ export class KataWorkspaceStore {
   private unscopedViewName: KataTaskViewName = "today";
   private issueETags = new Map<string, string>();
   private metadataQueues = new Map<string, Promise<void>>();
-  private graphTaskLoadQueue = new Map<string, KataGraphTaskRef>();
+  private graphTaskLoadQueue = new Map<string, QueuedKataGraphTaskRef>();
   private graphTaskLoadPromise: Promise<void> | null = null;
   private graphTaskLoadAbort: AbortController | null = null;
+  private graphTaskLoadGeneration = 0;
 
   constructor(options: CreateKataWorkspaceStoreOptions = {}) {
     this.api = options.api ?? createKataTaskAPI();
@@ -670,10 +676,11 @@ export class KataWorkspaceStore {
   async loadGraphTaskRefs(refs: readonly KataGraphTaskRef[]): Promise<void> {
     const requestedKeys = refs.map(graphTaskRefKey);
     const queuedKeys: string[] = [];
+    const generation = this.graphTaskLoadGeneration;
     for (const ref of refs) {
       const key = graphTaskRefKey(ref);
       if (this.hasCachedGraphTaskRef(ref)) continue;
-      this.graphTaskLoadQueue.set(key, ref);
+      this.graphTaskLoadQueue.set(key, { ref, generation });
       queuedKeys.push(key);
     }
     this.observeGraphStore("graph-load-enqueue", { requestedKeys, queuedKeys });
@@ -683,8 +690,12 @@ export class KataWorkspaceStore {
   invalidatePendingLoads(): void {
     this.viewRequestID++;
     this.detailRequestID++;
+    this.graphTaskLoadGeneration++;
+    this.graphTaskLoadQueue.clear();
+    this.abortGraphTaskLoad();
     this.abortPendingDetail();
     this.pendingSelectionUID = null;
+    this.updateGraphDebugStore();
   }
 
   // Whenever a detail load stops being wanted (newer selection, cleared
@@ -805,7 +816,14 @@ export class KataWorkspaceStore {
     return false;
   }
 
-  private async loadGraphTaskRef(ref: KataGraphTaskRef): Promise<void> {
+  private ensureCurrentGraphTaskLoad(generation: number): void {
+    if (generation !== this.graphTaskLoadGeneration) {
+      throw new GraphTaskLoadInterrupted();
+    }
+  }
+
+  private async loadGraphTaskRef(ref: KataGraphTaskRef, generation: number): Promise<void> {
+    this.ensureCurrentGraphTaskLoad(generation);
     if (ref.uid) {
       const abort = new AbortController();
       this.graphTaskLoadAbort = abort;
@@ -818,6 +836,7 @@ export class KataWorkspaceStore {
       } finally {
         if (this.graphTaskLoadAbort === abort) this.graphTaskLoadAbort = null;
       }
+      this.ensureCurrentGraphTaskLoad(generation);
       this.cacheDetail(detail);
       if (detail.etag) {
         this.issueETags.set(detail.issue.uid, detail.etag);
@@ -837,6 +856,7 @@ export class KataWorkspaceStore {
     const matches = results.issues.filter(
       (issue) => issue.project_uid === ref.projectUID && issue.short_id === ref.shortID,
     );
+    this.ensureCurrentGraphTaskLoad(generation);
     this.cacheTasks(matches);
   }
 
@@ -882,19 +902,22 @@ export class KataWorkspaceStore {
       }
       const next = this.graphTaskLoadQueue.entries().next();
       if (next.done) return;
-      const [key, ref] = next.value;
+      const [key, entry] = next.value;
       this.graphTaskLoadQueue.delete(key);
+      const { ref, generation } = entry;
+      if (generation !== this.graphTaskLoadGeneration) continue;
       if (this.hasCachedGraphTaskRef(ref)) continue;
       try {
         this.observeGraphStore("graph-load-start", { key });
-        await this.loadGraphTaskRef(ref);
+        await this.loadGraphTaskRef(ref, generation);
         this.observeGraphStore("graph-load-complete", { key });
       } catch (error) {
         if (
+          generation === this.graphTaskLoadGeneration &&
           (this.isIssueRefreshActive() || error instanceof GraphTaskLoadInterrupted) &&
           !this.hasCachedGraphTaskRef(ref)
         ) {
-          this.graphTaskLoadQueue.set(key, ref);
+          this.graphTaskLoadQueue.set(key, { ref, generation });
           this.observeGraphStore("graph-load-paused", { key });
           return;
         }

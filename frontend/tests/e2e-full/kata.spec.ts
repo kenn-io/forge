@@ -45,6 +45,28 @@ async function expectKataDaemonSwitcherReady(page: Page): Promise<void> {
   await expect(menu).toBeHidden();
 }
 
+async function graphFilterMenu(graph: Locator): Promise<Locator> {
+  const menu = graph.locator(".graph-filter-menu .filter-dropdown");
+  if (!(await menu.isVisible().catch(() => false))) {
+    await graph.getByRole("button", { name: /^Graph filters:/ }).click();
+    await expect(menu).toBeVisible();
+  }
+  return menu;
+}
+
+async function graphFilterItem(graph: Locator, id: string): Promise<Locator> {
+  const menu = await graphFilterMenu(graph);
+  const item = menu.locator(`.filter-item[data-filter-id="${id}"]`);
+  await expect(item).toBeVisible();
+  return item;
+}
+
+async function selectGraphFilterItem(graph: Locator, id: string): Promise<void> {
+  const item = await graphFilterItem(graph, id);
+  await item.click();
+  await expect(item).toHaveAttribute("aria-pressed", "true");
+}
+
 type BackendState = {
   commentsByUID: Map<string, CommentRow[]>;
   duplicateIssueListResponses: DuplicateIssueListResponse[];
@@ -1344,9 +1366,8 @@ test("kata reachable graph renders and selects tasks through the configured exte
     );
     expect(debugBeforeSelection?.latestGraph?.edgeCount).toBe(4);
     expect(debugBeforeSelection?.latestGraph?.layoutEdgeCount).toBe(3);
-    await graph.getByRole("combobox", { name: "Graph depth: Full" }).click();
-    await page.getByRole("option", { name: "1 edge" }).click();
-    await expect(graph.getByRole("combobox", { name: "Graph context: All" })).toBeEnabled();
+    await selectGraphFilterItem(graph, "depth-1");
+    await expect(await graphFilterItem(graph, "context-all")).toBeEnabled();
     await expect
       .poll(() =>
         page.evaluate(() => {
@@ -1369,8 +1390,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
         edgeCount: 2,
         layoutEdgeCount: 2,
       });
-    await graph.getByRole("combobox", { name: "Graph depth: 1 edge" }).click();
-    await page.getByRole("option", { name: "Full" }).click();
+    await selectGraphFilterItem(graph, "depth-full");
     await expect
       .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.depthLimit))
       .toBe("full");
@@ -1386,8 +1406,9 @@ test("kata reachable graph renders and selects tasks through the configured exte
         : null;
     });
     expect(fullSnapshotBeforeContext).not.toBeNull();
-    await graph.getByRole("combobox", { name: "Graph context: All" }).click();
-    await page.getByRole("option", { name: "1 edge" }).click();
+    await selectGraphFilterItem(graph, "context-1");
+    await expect(await graphFilterItem(graph, "visibility-hide-done")).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect
       .poll(() =>
         page.evaluate(() => {
@@ -1471,29 +1492,30 @@ test("kata reachable graph renders and selects tasks through the configured exte
     await expect
       .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection))
       .toBe("LR");
-    await graph.getByRole("button", { name: "Graph direction: left-right. Switch to top-bottom" }).click();
+    await selectGraphFilterItem(graph, "direction-TB");
+    await page.keyboard.press("Escape");
     await expect(graph).toHaveAttribute("data-layout-direction", "TB");
     await expect
       .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection))
       .toBe("TB");
     const toolbarMetrics = await page.evaluate(() => {
       const toolbar = document.querySelector<HTMLElement>(".graph-toolbar");
-      const hideDone = document.querySelector<HTMLElement>(".hide-done");
-      if (!toolbar || !hideDone) return null;
+      const graphFilters = document.querySelector<HTMLElement>(".graph-filter-menu .filter-btn");
+      if (!toolbar || !graphFilters) return null;
       const toolbarRect = toolbar.getBoundingClientRect();
-      const hideDoneRect = hideDone.getBoundingClientRect();
+      const graphFiltersRect = graphFilters.getBoundingClientRect();
       return {
         overflowX: toolbar.scrollWidth - toolbar.clientWidth,
-        hideDoneRight: hideDoneRect.right,
-        hideDoneBottom: hideDoneRect.bottom,
+        graphFiltersRight: graphFiltersRect.right,
+        graphFiltersBottom: graphFiltersRect.bottom,
         toolbarRight: toolbarRect.right,
         toolbarBottom: toolbarRect.bottom,
       };
     });
     expect(toolbarMetrics).not.toBeNull();
     expect(toolbarMetrics!.overflowX).toBeLessThanOrEqual(1);
-    expect(toolbarMetrics!.hideDoneRight).toBeLessThanOrEqual(toolbarMetrics!.toolbarRight + 1);
-    expect(toolbarMetrics!.hideDoneBottom).toBeLessThanOrEqual(toolbarMetrics!.toolbarBottom + 1);
+    expect(toolbarMetrics!.graphFiltersRight).toBeLessThanOrEqual(toolbarMetrics!.toolbarRight + 1);
+    expect(toolbarMetrics!.graphFiltersBottom).toBeLessThanOrEqual(toolbarMetrics!.toolbarBottom + 1);
 
     await graph.getByRole("button", { name: "Back to task list" }).click();
     await expect(page.getByLabel("Search tasks")).toBeVisible();

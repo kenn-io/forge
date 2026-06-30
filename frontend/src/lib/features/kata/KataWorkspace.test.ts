@@ -48,6 +48,10 @@ vi.mock("../../stores/router.svelte.js", () => ({
   navigate: mockNavigate,
 }));
 
+vi.mock("./KataReachableGraph.svelte", async () => ({
+  default: (await import("./KataReachableGraphTestStub.svelte")).default,
+}));
+
 function graphNodeWithText(text: string): HTMLElement {
   const node = screen
     .getAllByText(text)

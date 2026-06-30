@@ -164,7 +164,7 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - Use `huma` for the web framework and OpenAPI generation
 - Regenerate API artifacts with `make api-generate`; the Go client also supports `go generate ./internal/apiclient/generated`
 - **Never use npm** — use `bun install` for frontend dependencies and invoke Vite+ directly via `./node_modules/.bin/vp ...` (or `../node_modules/.bin/vp ...` from `frontend/`). Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
-- Repo-controlled agent `SessionStart` hooks may bootstrap frontend deps, but keep the command self-contained in the hook definition, avoid branch-controlled helper scripts or `Makefile` targets, prefer an existing `node_modules/vite-plus/bin/vp`, and use frozen-lockfile installs with lifecycle scripts disabled (`--ignore-scripts`) when installation is needed.
+- Repo-controlled agent `SessionStart` hooks may bootstrap frontend deps as a hard prerequisite for local tooling, but this is reduced execution surface rather than complete untrusted-PR protection if a runner blindly trusts changed hook config. Keep the command self-contained in the hook definition, avoid branch-controlled helper scripts or `Makefile` targets, prefer an existing `node_modules/vite-plus/bin/vp`, and use frozen-lockfile installs with lifecycle scripts disabled (`--ignore-scripts`) plus a post-install check for the local Vite+ entrypoint when installation is needed.
 - Tests should be fast and isolated
 - No emojis in code or output
 - Do not copy names, paths, prose, domain details, data values, or other

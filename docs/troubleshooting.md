@@ -73,7 +73,7 @@ merges are attributed to you.
 Register at least one folder:
 
 ```sh
-middleman docs add-folder ~/docs --name Docs
+middleman docs add-folder --name Docs ~/docs
 ```
 
 Then enable the mode if it is hidden:

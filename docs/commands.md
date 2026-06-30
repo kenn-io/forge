@@ -42,8 +42,8 @@ TOML file for normal configuration changes.
 
 ```sh
 middleman docs list-folders
-middleman docs add-folder ~/docs --name Docs
-middleman docs add-folder ~/project-docs --id project --daemon kata-main
+middleman docs add-folder --name Docs ~/docs
+middleman docs add-folder --id project --daemon kata-main ~/project-docs
 middleman docs remove-folder project
 ```
 

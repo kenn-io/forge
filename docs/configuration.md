@@ -16,13 +16,14 @@ sync_interval = "5m"
 host = "127.0.0.1"
 port = 8091
 base_path = "/"
-data_dir = "~/.config/middleman"
 ```
 
 - `sync_interval`: how often provider data is refreshed.
 - `host` and `port`: where the local daemon listens.
 - `base_path`: URL prefix when serving behind a reverse proxy.
-- `data_dir`: local database and app state location.
+- `data_dir`: local database and app state location. Leave unset for the
+  default; set `MIDDLEMAN_HOME` to relocate both config and data, or use an
+  absolute `data_dir` path to move only app state.
 
 ## Repositories
 
@@ -136,7 +137,7 @@ to hidden because they depend on external or local sources.
 Register markdown folders from the CLI:
 
 ```sh
-middleman docs add-folder ~/notes --name Notes
+middleman docs add-folder --name Notes ~/notes
 middleman docs list-folders
 middleman docs remove-folder notes
 ```

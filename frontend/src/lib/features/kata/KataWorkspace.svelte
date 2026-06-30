@@ -335,9 +335,7 @@
     issueUID: string | null,
   ): Promise<void> {
     const generation = beginNavigation();
-    if (listMode !== "reachableGraph") {
-      closeReachableGraph();
-    }
+    closeReachableGraph();
     store.invalidatePendingLoads();
     resetDetailDrafts();
     store.resetSearchFilters();

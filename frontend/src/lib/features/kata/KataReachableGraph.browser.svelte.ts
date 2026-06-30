@@ -130,4 +130,58 @@ describe("KataReachableGraph (browser)", () => {
     expect(onSelectIssue).toHaveBeenCalledTimes(1);
     expect(onSelectIssue).toHaveBeenCalledWith(linked.uid);
   });
+
+  it("switches to ELK layout without freezing current node data", async () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root browser task",
+      priority: 0,
+      blocks: [{ uid: "issue-linked", short_id: "linked" }],
+    });
+    const linked = task({
+      uid: "issue-linked",
+      short_id: "linked",
+      title: "Linked browser task",
+      priority: 1,
+    });
+    const { container, rerender } = render(KataReachableGraph, {
+      props: {
+        sourceUID: root.uid,
+        selectedUID: root.uid,
+        tasks: [root, linked],
+        selectedDetail: null,
+        onBack: () => {},
+        onSelectIssue: () => {},
+      },
+    });
+
+    await expect.element(page.getByRole("combobox", { name: "Graph layout: Compact" })).toBeVisible();
+    await page.getByRole("combobox", { name: "Graph layout: Compact" }).click();
+    await page.getByRole("option", { name: "ELK" }).click();
+    await expect
+      .poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutReady ?? false)
+      .toBe(true);
+    expect(
+      window.__middleman_kata_graph_debug?.snapshot().events.some((event) => event.kind === "graph-layout-complete"),
+    ).toBe(true);
+
+    await rerender({
+      sourceUID: root.uid,
+      selectedUID: linked.uid,
+      tasks: [
+        { ...root, title: "Root title after refresh" },
+        { ...linked, title: "Linked title after refresh" },
+      ],
+      selectedDetail: null,
+      onBack: () => {},
+      onSelectIssue: () => {},
+    });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("Linked title after refresh");
+    });
+    expect(container.textContent).toContain("Root title after refresh");
+    expect(container.textContent).not.toContain("Root browser task");
+  });
 });

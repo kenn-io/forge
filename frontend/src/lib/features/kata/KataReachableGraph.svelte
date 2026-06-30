@@ -30,6 +30,11 @@
 
   type KataGraphLayoutMode = "compact" | "elk";
 
+  interface LayoutPosition {
+    x: number;
+    y: number;
+  }
+
   interface Props {
     sourceUID: string;
     selectedUID: string | null;
@@ -53,14 +58,16 @@
   let hideDone = $state(false);
   let depthLimit = $state<KataGraphDepthLimit>("full");
   let layoutMode = $state<KataGraphLayoutMode>("compact");
-  let layoutedNodes = $state.raw<KataGraphNode[]>([]);
+  let layoutedPositions = $state.raw<ReadonlyMap<string, LayoutPosition>>(new Map());
   let layoutedKey = $state("");
   let graph = $derived(
     buildKataReachableGraph({ sourceUID, selectedUID, tasks, selectedDetail, hideDone, depthLimit }),
   );
   let graphSignature = $derived(graphLayoutSignature(graph.nodes, graph.edges));
   let activeLayoutKey = $derived(`${layoutMode}:${graphSignature}`);
-  let flowNodes = $derived(layoutedKey === activeLayoutKey ? layoutedNodes : graph.nodes);
+  let flowNodes = $derived(
+    layoutedKey === activeLayoutKey ? applyLayoutPositions(graph.nodes, layoutedPositions) : graph.nodes,
+  );
   let interactiveNodes = $derived(flowNodes.map((node) => withNodeActivation(node)));
   let layoutReady = $derived(layoutMode === "compact" || layoutedKey === activeLayoutKey);
   let source = $derived(tasks.find((task) => task.uid === sourceUID));
@@ -150,8 +157,15 @@
     };
   }
 
-  function applyElkPositions(nodes: readonly KataGraphNode[], layoutedGraph: ElkNode): KataGraphNode[] {
-    const positions = new Map((layoutedGraph.children ?? []).map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
+  function elkPositions(layoutedGraph: ElkNode): ReadonlyMap<string, LayoutPosition> {
+    return new Map((layoutedGraph.children ?? []).map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
+  }
+
+  function applyLayoutPositions(
+    nodes: readonly KataGraphNode[],
+    positions: ReadonlyMap<string, LayoutPosition>,
+  ): KataGraphNode[] {
+    if (positions.size === 0) return [...nodes];
     return nodes.map((node) => ({
       ...node,
       position: positions.get(node.id) ?? node.position,
@@ -189,7 +203,7 @@
     const edges = graph.edges;
     const run = ++layoutRun;
     if (layoutMode === "compact" || nodes.length === 0) {
-      layoutedNodes = nodes;
+      layoutedPositions = new Map();
       layoutedKey = key;
       return;
     }
@@ -199,17 +213,17 @@
       .layout(elkGraph(nodes, edges))
       .then((layoutedGraph) => {
         if (run !== layoutRun) return;
-        layoutedNodes = applyElkPositions(nodes, layoutedGraph);
+        layoutedPositions = elkPositions(layoutedGraph);
         layoutedKey = key;
         recordKataGraphDebugEvent("graph-layout-complete", {
           layoutMode,
-          nodeCount: layoutedNodes.length,
+          nodeCount: nodes.length,
           edgeCount: edges.length,
         });
       })
       .catch((error: unknown) => {
         if (run !== layoutRun) return;
-        layoutedNodes = nodes;
+        layoutedPositions = new Map();
         layoutedKey = key;
         recordKataGraphDebugEvent("graph-layout-error", {
           layoutMode,

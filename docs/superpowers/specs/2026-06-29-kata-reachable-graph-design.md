@@ -53,18 +53,24 @@ Clicking a cached graph node first emits the routed issue selection, then lets
 the route-driven detail loader apply the task selection. This keeps browser
 Back/Forward useful even when the clicked node's detail load is slow: a route
 change back to the previous issue cancels the pending graph-node selection
-instead of leaving the detail pane stuck on loading. Disabled placeholder nodes
-represent uncached linked peers and cannot be selected. If a placeholder came
-from a link that included a peer uid, graph mode schedules a background detail
-fetch for that uid and replaces the placeholder once the workspace cache
-receives the task. If only a short id is known, graph mode may search exactly
-within the peer project and cache exact matches. Background graph population
-failures do not replace the normal detail/request error surface; the placeholder
-remains visible. Graph population is queued through the workspace store and must
-pause/abort while a user-driven task detail selection is active; there should
-not be a graph-side issue refresh competing with the selected-task detail
-refresh. UID-backed placeholders use the final task uid as their Svelte Flow node
-id so the node updates in place when cached data arrives.
+instead of leaving the detail pane stuck on loading. Any late response from the
+abandoned detail request is ignored and must not update the selected task,
+detail pane, or graph selection after the route has moved on. When the routed
+selection callback is absent, graph nodes fall back to local selection; when it
+is present but does not produce a matching route update, the workspace leaves
+the current selection in place instead of doing a second local fallback.
+Disabled placeholder nodes represent uncached linked peers and cannot be
+selected. If a placeholder came from a link that included a peer uid, graph mode
+schedules a background detail fetch for that uid and replaces the placeholder
+once the workspace cache receives the task. If only a short id is known, graph
+mode may search exactly within the peer project and cache exact matches.
+Background graph population failures do not replace the normal detail/request
+error surface; the placeholder remains visible. Graph population is queued
+through the workspace store and must pause/abort while a user-driven task detail
+selection is active; there should not be a graph-side issue refresh competing
+with the selected-task detail refresh. UID-backed placeholders use the final
+task uid as their Svelte Flow node id so the node updates in place when cached
+data arrives.
 When a relationship peer includes `uid`, that uid is authoritative: missing
 UID-backed peers render and fetch by uid, and the builder must not attach the
 edge to another cached task just because the short id matches.
@@ -146,14 +152,15 @@ the source when the active task is not locally cached, so changing the active
 task changes the bounded graph. Bounded traversal follows relationships
 declared on the task being expanded, while still drawing edges in canonical
 direction; it does not infer extra incoming edges by scanning unrelated cached
-rows that happen to point at the active task. Missing refs outside the selected
-depth are not requested until the user widens the depth.
+rows that happen to point at the active task except for the explicit parent
+reverse indexes listed below. Missing refs outside the selected depth are not
+requested until the user widens the depth.
 
 Traversal sources by relationship kind:
 
 | Relationship | Full graph | Bounded depth graph |
 | --- | --- | --- |
-| `parent` | Declared parent on expanded task; child reverse index from cached tasks without parent UID; source-detail parent links | Declared parent on expanded task; child reverse index from cached tasks without parent UID; source-detail parent links only when expanding the source |
+| `parent` | Declared parent on expanded task; child reverse index by `parent.uid`; child reverse index by same-project `parent_short_id` only when that cached child has no `parent.uid`; source-detail parent links | Declared parent on expanded task; child reverse index by `parent.uid`; child reverse index by same-project `parent_short_id` only when that cached child has no `parent.uid`; source-detail parent links only when expanding the source |
 | `blocks` | Declared `blocks` and `blocked_by` on expanded task; source-detail blocks links | Declared `blocks` and `blocked_by` on expanded task; source-detail blocks links only when expanding the source |
 | `related` | Declared `related` on expanded task; source-detail related links normalized source-outward | Declared `related` on expanded task; source-detail related links only when expanding the source |
 
@@ -226,8 +233,10 @@ Kata workspace canvas.
 options. `ELK` delegates node placement to `elkjs` using a left-to-right layered
 layout based on the final visible edge set after reciprocal edge deduplication
 and done filtering. ELK layout is asynchronous, so the graph renders compact
-positions until ELK returns, then swaps in ELK coordinates if the graph signature
-still matches the active layout request.
+positions until ELK returns, then stores only ELK coordinates if the graph
+signature still matches the active layout request. Node title, status,
+selection, and relation data always come from the latest graph nodes; cached
+ELK output must never hold an older node object alive.
 Nodes include explicit Svelte Flow width/height values so edge endpoints are
 based on stable bounds instead of shifting after custom node measurement.
 There is no duplicate card/button list below the canvas.

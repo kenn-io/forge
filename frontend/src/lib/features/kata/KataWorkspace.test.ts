@@ -443,6 +443,50 @@ describe("KataWorkspace", () => {
     expect(screen.queryByText("Loading task")).toBeNull();
 
     blockedDetail.resolve(detail(blocked.uid, [root, blocked]));
+    await Promise.resolve();
+
+    expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Blocked follow-up" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Reachable task graph" })).toBeTruthy();
+  });
+
+  it("closes the reachable graph when the routed view or scope changes", async () => {
+    const root = {
+      ...issue("issue-root", "Root graph task", "project-kata"),
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+    };
+    const blocked = issue("issue-blocked", "Blocked follow-up", "project-kata");
+    const { api } = createWorkspaceAPI([root, blocked]);
+    const { rerender } = render(KataWorkspace, {
+      props: {
+        api,
+        routeViewName: null,
+        routeScopeUID: null,
+        selectedIssueUID: root.uid,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
+    });
+    await fireEvent.click(
+      within(screen.getByRole("region", { name: "Task detail" })).getByRole("button", {
+        name: "Open reachable graph",
+      }),
+    );
+    expect(screen.getByRole("region", { name: "Reachable task graph" })).toBeTruthy();
+
+    await rerender({
+      api,
+      routeViewName: "inbox",
+      routeScopeUID: null,
+      selectedIssueUID: null,
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("region", { name: "Reachable task graph" })).toBeNull();
+      expect(screen.getByLabelText("Search tasks")).toBeTruthy();
+    });
   });
 
   it("opens system views without auto-selecting the first task", async () => {

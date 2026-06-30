@@ -301,8 +301,11 @@ interface Window {
             selectedUID: string | null;
             hideDone: boolean;
             depthLimit: string;
+            layoutMode: string;
+            layoutReady: boolean;
             nodeIds: string[];
             edges: Array<{ id: string; source: string; target: string; kind: string | null }>;
+            nodePositions: Array<{ id: string; x: number; y: number }>;
             disabledNodeIds: string[];
             missingRefKeys: string[];
             nodeCount: number;

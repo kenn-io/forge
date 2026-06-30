@@ -1335,6 +1335,51 @@ test("kata reachable graph renders and selects tasks through the configured exte
   }
 });
 
+test("kata reachable graph node selection participates in browser history", async ({ page }) => {
+  let releaseQ3Detail = () => {};
+  const q3DetailBarrier = new Promise<void>((resolve) => {
+    releaseQ3Detail = resolve;
+  });
+  const backend = await startKataBackend({
+    links: [linkRow({ id: 1, project_id: issues[0]!.project_id, from: issues[0]!, to: issues[1]!, type: "related" })],
+    issueDetailGates: new Map([["issue-q3", { barrier: q3DetailBarrier }]]),
+  });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
+
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await detail.getByRole("button", { name: "Open reachable graph" }).click();
+    const graph = page.getByRole("region", { name: "Reachable task graph" });
+    await expect(graph).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.nodeIds ?? []))
+      .toContain("issue-q3");
+
+    await graph.locator(".svelte-flow__node", { hasText: "Email Susan re: Q3" }).click();
+
+    await expect(page).toHaveURL(/\/kata\?issue=issue-q3$/);
+    await expect(detail.getByText("Loading task")).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/kata\?issue=issue-rent$/);
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await expect(detail.getByText("Loading task")).toHaveCount(0);
+    await expect(graph).toBeVisible();
+
+    releaseQ3Detail();
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await expect(detail.getByRole("heading", { name: "Email Susan re: Q3" })).toHaveCount(0);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata reachable graph populates uncached refs after selection aborts the graph load", async ({ page }) => {
   let releaseHiddenDetail = () => {};
   const hiddenDetailBarrier = new Promise<void>((resolve) => {

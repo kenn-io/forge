@@ -134,6 +134,7 @@ Rules:
 - `/notifications/sync` triggers only notification sync and returns `202` once accepted.
 - Sync watermark identity is `(platform, platform_host)`.
 - First host sync may need GitHub `All: true`; later syncs should use persisted watermark/overlap to avoid full backlog scans.
+- The GitHub participating-only scan is best-effort annotation (`internal/github/notifications_sync.go::listParticipatingNotificationIDs`): hitting its page cap should truncate participation IDs and continue the main sync, so a large backlog does not pin the watermark. The primary repo notification list cap remains fatal because it protects against silently skipping notification rows (`internal/github/sync_test.go::TestSyncNotificationsContinuesAfterParticipatingNotificationPageCap`, `internal/github/sync_test.go::TestSyncNotificationsCapsRepositoryNotificationPages`).
 - `tracked_repos_key` must include provider-qualified tracked repo identity so watermark reuse does not cross providers sharing same host.
 - Notification sync and read propagation should stop with server lifecycle before shared services are torn down.
 - Closed/merged linked notification completion must run after repo/detail/list paths that persist closed PR or issue state, not only after notification sync.

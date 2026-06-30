@@ -529,6 +529,12 @@
 
 <style>
   .kata-graph-pane {
+    --kata-graph-edge-ambient: color-mix(in srgb, var(--text-muted) 58%, var(--bg-primary));
+    --kata-graph-edge-context: color-mix(in srgb, var(--border-default) 76%, var(--bg-primary));
+    --kata-graph-edge-related: color-mix(in srgb, var(--text-muted) 46%, var(--bg-primary));
+    --kata-graph-edge-selected: color-mix(in srgb, var(--text-secondary) 82%, var(--text-primary));
+    --kata-graph-edge-selected-blocks: color-mix(in srgb, var(--accent-amber) 90%, var(--text-primary));
+
     min-width: 0;
     min-height: 0;
     height: 100%;
@@ -536,6 +542,14 @@
     flex-direction: column;
     container-type: inline-size;
     background: var(--bg-primary);
+  }
+
+  :global(:root.dark) .kata-graph-pane {
+    --kata-graph-edge-ambient: color-mix(in srgb, var(--text-secondary) 88%, var(--bg-primary));
+    --kata-graph-edge-context: color-mix(in srgb, var(--text-muted) 45%, var(--bg-primary));
+    --kata-graph-edge-related: color-mix(in srgb, var(--text-muted) 74%, var(--bg-primary));
+    --kata-graph-edge-selected: var(--text-primary);
+    --kata-graph-edge-selected-blocks: var(--accent-amber);
   }
 
   .graph-toolbar {
@@ -742,15 +756,16 @@
   }
 
   :global(.kata-graph-edge--parent .svelte-flow__edge-path) {
-    stroke: var(--text-secondary);
+    stroke: var(--kata-graph-edge-ambient);
   }
 
   :global(.kata-graph-edge--related .svelte-flow__edge-path) {
+    stroke: var(--kata-graph-edge-related);
     stroke-dasharray: 6 4;
   }
 
   :global(.kata-graph-edge--ambient .svelte-flow__edge-path) {
-    stroke: var(--text-secondary);
+    stroke: var(--kata-graph-edge-ambient);
     stroke-width: 1.4;
   }
 
@@ -759,7 +774,7 @@
   }
 
   :global(.kata-graph-edge--depth-context .svelte-flow__edge-path) {
-    stroke: var(--border-default);
+    stroke: var(--kata-graph-edge-context);
     stroke-width: 1.2;
   }
 
@@ -768,11 +783,11 @@
   }
 
   :global(.kata-graph-edge--selected-adjacent.kata-graph-edge--blocks .svelte-flow__edge-path) {
-    stroke: var(--accent-amber);
+    stroke: var(--kata-graph-edge-selected-blocks);
   }
 
   :global(.kata-graph-edge--selected-adjacent.kata-graph-edge--parent .svelte-flow__edge-path) {
-    stroke: var(--text-primary);
+    stroke: var(--kata-graph-edge-selected);
   }
 
   .graph-empty {

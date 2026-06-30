@@ -170,11 +170,11 @@ describe("buildKataReachableGraph", () => {
       "related:issue-root:issue-related",
     ]);
     expect(graph.edges.find((edge) => edge.id === "blocks:issue-root:issue-blocked")).toMatchObject({
-      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--accent-amber)" },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--kata-graph-edge-selected-blocks)" },
       ariaLabel: "blocks relationship from issue-root to issue-blocked",
     });
     expect(graph.edges.find((edge) => edge.id === "parent:issue-root:issue-child")).toMatchObject({
-      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--text-secondary)" },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--kata-graph-edge-selected)" },
     });
     const positions = positionsByID(graph);
     expect(graph.nodes.find((node) => node.id === root.uid)).toMatchObject({
@@ -918,7 +918,7 @@ describe("buildKataReachableGraph", () => {
     expect(graph.nodes.find((node) => node.id === root.uid)?.data.adjacentRelation).toBe("blockedBy");
     expect(graph.edges.find((edge) => edge.id === "blocks:issue-root:issue-selected")).toMatchObject({
       data: { isSelectedAdjacent: true },
-      markerEnd: { color: "var(--accent-amber)" },
+      markerEnd: { color: "var(--kata-graph-edge-selected-blocks)" },
     });
   });
 
@@ -1100,10 +1100,10 @@ describe("buildKataReachableGraph", () => {
 
     const selectedEdge = graph.edges.find((edge) => edge.id === "blocks:issue-active:issue-active-child");
     expect(selectedEdge?.data?.isDepthContext).toBeUndefined();
-    expect(selectedEdge).toMatchObject({ markerEnd: { color: "var(--accent-amber)" } });
+    expect(selectedEdge).toMatchObject({ markerEnd: { color: "var(--kata-graph-edge-selected-blocks)" } });
     expect(graph.edges.find((edge) => edge.id === "blocks:issue-active-child:issue-active-grandchild")).toMatchObject({
       data: { isDepthContext: true },
-      markerEnd: { color: "var(--border-default)" },
+      markerEnd: { color: "var(--kata-graph-edge-context)" },
     });
   });
 

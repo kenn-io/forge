@@ -100,6 +100,15 @@ async function waitForStableRenderedNodeBoxes(
   return renderedNodeBoxes(container);
 }
 
+function resolvedColor(scope: HTMLElement, color: string): string {
+  const probe = document.createElement("span");
+  probe.style.color = color;
+  scope.append(probe);
+  const resolved = getComputedStyle(probe).color;
+  probe.remove();
+  return resolved;
+}
+
 describe("KataReachableGraph (browser)", () => {
   beforeEach(() => {
     localStorage.removeItem(graphPreferencesStorageKey);
@@ -215,6 +224,48 @@ describe("KataReachableGraph (browser)", () => {
 
     expect(onSelectIssue).toHaveBeenCalledTimes(1);
     expect(onSelectIssue).toHaveBeenCalledWith(linked.uid);
+  });
+
+  it("keeps light-mode ambient edges quieter than body text", async () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root browser task",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge task",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({
+      uid: "issue-two",
+      short_id: "two",
+      title: "Two edge task",
+    });
+    const { container } = render(KataReachableGraph, {
+      props: {
+        sourceUID: root.uid,
+        selectedUID: root.uid,
+        tasks: [root, one, two],
+        selectedDetail: null,
+        onBack: () => {},
+        onSelectIssue: () => {},
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(container.querySelector(".kata-graph-edge--ambient .svelte-flow__edge-path")).toBeTruthy();
+    });
+    const graphPane = container.querySelector<HTMLElement>(".kata-graph-pane");
+    const ambientEdge = container.querySelector<SVGPathElement>(".kata-graph-edge--ambient .svelte-flow__edge-path");
+    expect(graphPane).toBeTruthy();
+    expect(ambientEdge).toBeTruthy();
+
+    const ambientStroke = getComputedStyle(ambientEdge!).stroke;
+    expect(ambientStroke).toBe(resolvedColor(graphPane!, "var(--kata-graph-edge-ambient)"));
+    expect(ambientStroke).not.toBe(resolvedColor(graphPane!, "var(--text-secondary)"));
   });
 
   it("restores graph control preferences from localStorage", async () => {

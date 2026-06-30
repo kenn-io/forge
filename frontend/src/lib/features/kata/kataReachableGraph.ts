@@ -162,8 +162,7 @@ function resolvePeer(peer: KataLinkPeer, projectUID: string, indexes: TaskIndexe
 }
 
 function makeEdge(source: string, target: string, kind: GraphEdgeKind): KataGraphEdge {
-  const markerColor =
-    kind === "parent" ? "var(--text-secondary)" : kind === "related" ? "var(--text-muted)" : "var(--text-secondary)";
+  const markerColor = kind === "related" ? "var(--kata-graph-edge-related)" : "var(--kata-graph-edge-ambient)";
   return {
     id: `${kind}:${source}:${target}`,
     source,
@@ -661,15 +660,15 @@ function depthContextEdge(edge: KataGraphEdge): KataGraphEdge {
   if (!edge.markerEnd || typeof edge.markerEnd !== "object") return next;
   return {
     ...next,
-    markerEnd: { ...edge.markerEnd, color: "var(--border-default)" },
+    markerEnd: { ...edge.markerEnd, color: "var(--kata-graph-edge-context)" },
   };
 }
 
 function selectedEdgeMarkerColor(kind: GraphEdgeKind): string {
-  if (kind === "blocks") return "var(--accent-amber)";
-  if (kind === "parent") return "var(--text-secondary)";
-  if (kind === "related") return "var(--text-muted)";
-  return "var(--text-secondary)";
+  if (kind === "blocks") return "var(--kata-graph-edge-selected-blocks)";
+  if (kind === "parent") return "var(--kata-graph-edge-selected)";
+  if (kind === "related") return "var(--kata-graph-edge-related)";
+  return "var(--kata-graph-edge-selected)";
 }
 
 function ambientActiveEdge(edge: KataGraphEdge): KataGraphEdge {
@@ -685,7 +684,7 @@ function ambientActiveEdge(edge: KataGraphEdge): KataGraphEdge {
   if (!edge.markerEnd || typeof edge.markerEnd !== "object") return next;
   return {
     ...next,
-    markerEnd: { ...edge.markerEnd, color: "var(--text-secondary)" },
+    markerEnd: { ...edge.markerEnd, color: "var(--kata-graph-edge-ambient)" },
   } as KataGraphEdge;
 }
 

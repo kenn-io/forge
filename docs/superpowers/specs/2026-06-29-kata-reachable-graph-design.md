@@ -263,7 +263,9 @@ graph action beside the workspace/detail actions.
   edge label: ambient active edges use the neutral active edge color, only
   selected-adjacent blocking edges use the amber accent, related edges are
   dashed, and each edge carries a kind-specific `ariaLabel`. Do not put text
-  labels on every edge in the canvas.
+  labels on every edge in the canvas. In light mode, ambient and context edge
+  tokens stay lighter than body text so dense overplotting recedes behind task
+  cards while selected-adjacent edges remain legible.
 - bounded-depth context edges use a muted static stroke and marker color,
   leaving selected-adjacent edges above them;
 - node accessible labels include source/selected state, title, qualified id,

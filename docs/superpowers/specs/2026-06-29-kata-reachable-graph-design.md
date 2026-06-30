@@ -179,19 +179,21 @@ except for the explicit parent reverse indexes listed below.
 
 The context filter is independent of depth and never changes the rendered node
 or layout edge set. It only controls emphasis distance inside the already
-rendered depth graph. `All` means every rendered node and edge is in-context;
-`1 edge`, `2 edges`, and `3 edges` compute a selected-task emphasis traversal
-at that distance. Rendered nodes and edges outside that emphasis traversal are
-tagged as faded context; selected-adjacent blocking edges may use the amber
-accent, while non-emphasized edges use muted static styling. Context works when
-depth is `Full`, so users can inspect a selected task's nearby context without
-reflowing the full source graph. `Hide done` applies after depth traversal and
-preserves the source, graph root, and selected task; edges whose endpoint is
-hidden are dropped. The Svelte Flow node pane must be positioned above the edge
-pane so edges never paint on top of task cards. Disable Svelte Flow node-focus
-autopan so clicking/focusing a graph task changes selection without panning the
-viewport. `Context` defaults to `All` for each graph component session and is
-not persisted.
+rendered depth graph after `Hide done` filtering. `All` means every rendered
+node and edge is in-context; `1 edge`, `2 edges`, and `3 edges` compute distance
+from the selected task over the remaining visible edges. Incoming and outgoing
+visible edges both count as one step for emphasis, and hidden/non-rendered tasks
+do not bridge context distance. Rendered nodes and edges outside that emphasis
+traversal are tagged as faded context; selected-adjacent blocking edges may use
+the amber accent, while non-emphasized edges use muted static styling. Context
+works when depth is `Full`, so users can inspect a selected task's nearby
+context without reflowing the full source graph. `Hide done` applies after depth
+traversal and preserves the source, graph root, and selected task; edges whose
+endpoint is hidden are dropped. The Svelte Flow node pane must be positioned
+above the edge pane so edges never paint on top of task cards. Disable Svelte
+Flow node-focus autopan so clicking/focusing a graph task changes selection
+without panning the viewport. `Context` defaults to `All` for each graph
+component session and is not persisted.
 
 Traversal sources by relationship kind:
 
@@ -374,10 +376,12 @@ Add Svelte tests for workspace integration:
   graph node, confirms detail selection changes, verifies the source graph
   remains visible/stable after selection, exercises uncached UID-backed graph
   population through the real proxy path, and returns to the task list.
-- full-stack e2e coverage switches active depth through the real workspace graph
-  path, verifies context remains emphasis-only, and verifies rendered edge count
-  can stay larger than layout edge count when transitive block edges are elided
-  only for layout.
+- full-stack e2e coverage switches active depth and context through the real
+  workspace graph path, verifies context remains emphasis-only and can fade
+  visible out-of-context edges without changing node positions, verifies
+  uncached UID-backed graph references populate through the real proxy path, and
+  verifies rendered edge count can stay larger than layout edge count when
+  transitive block edges are elided only for layout.
 - full-stack e2e coverage stalls a clicked graph-node detail request, verifies
   the URL changes immediately, verifies same-UID route catch-up does not abort or
   duplicate that request, uses browser Back to restore the previous issue, and

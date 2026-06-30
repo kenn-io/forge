@@ -690,6 +690,10 @@
     stroke-width: 2.2;
   }
 
+  :global(.kata-graph-edge--selected-adjacent.kata-graph-edge--blocks .svelte-flow__edge-path) {
+    stroke: var(--accent-amber);
+  }
+
   :global(.kata-graph-edge--selected-adjacent.kata-graph-edge--parent .svelte-flow__edge-path) {
     stroke: var(--text-primary);
   }

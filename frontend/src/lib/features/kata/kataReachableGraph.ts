@@ -713,6 +713,38 @@ function activeEdge(edge: KataGraphEdge, selectedUID: string | null): KataGraphE
   return ambientActiveEdge(edge);
 }
 
+function visibleContextIDs(
+  rootID: string,
+  edges: readonly KataGraphEdge[],
+  maxDepth: number,
+): { nodeIDs: Set<string>; edgeIDs: Set<string> } {
+  const nodeIDs = new Set<string>([rootID]);
+  const edgeIDs = new Set<string>();
+  const distances = new Map<string, number>([[rootID, 0]]);
+  const adjacency = new Map<string, KataGraphEdge[]>();
+  for (const edge of edges) {
+    adjacency.set(edge.source, [...(adjacency.get(edge.source) ?? []), edge]);
+    adjacency.set(edge.target, [...(adjacency.get(edge.target) ?? []), edge]);
+  }
+
+  const queued = [rootID];
+  while (queued.length > 0) {
+    const id = queued.shift()!;
+    const distance = distances.get(id) ?? 0;
+    if (distance >= maxDepth) continue;
+    for (const edge of adjacency.get(id) ?? []) {
+      const nextID = edge.source === id ? edge.target : edge.source;
+      edgeIDs.add(edge.id);
+      if (distances.has(nextID)) continue;
+      distances.set(nextID, distance + 1);
+      nodeIDs.add(nextID);
+      queued.push(nextID);
+    }
+  }
+
+  return { nodeIDs, edgeIDs };
+}
+
 function compareGraphEdges(left: KataGraphEdge, right: KataGraphEdge): number {
   const leftDepthContext = left.data?.isDepthContext ? 0 : 1;
   const rightDepthContext = right.data?.isDepthContext ? 0 : 1;
@@ -783,14 +815,8 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   const depthLimit = maxTraversalDepth(input.depthLimit);
   const selectedTask = input.selectedUID ? indexes.byUID.get(input.selectedUID) : undefined;
   const graphTraversalRoot = hasBoundedDepth(input.depthLimit) && selectedTask ? selectedTask : source;
-  const emphasisTraversalRoot = selectedTask ?? graphTraversalRoot;
   const graph = collectReachableGraph(input, indexes, source, graphTraversalRoot, depthLimit);
   const hasDepthContext = input.contextDepth !== undefined && input.contextDepth !== "all";
-  const emphasisGraph = hasDepthContext
-    ? collectReachableGraph(input, indexes, source, emphasisTraversalRoot, maxContextDepth(input.contextDepth))
-    : graph;
-  const emphasisIDs = new Set(emphasisGraph.nodeTasks.keys());
-  const emphasisEdgeIDs = new Set(emphasisGraph.edges.keys());
 
   const visibleIDs = new Set<string>();
   const preservedNodeIDs = new Set([
@@ -809,14 +835,22 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   for (const [id] of visibleNodeEntries) {
     visibleIDs.add(id);
   }
-  const visibleRelationshipEdges = [...graph.edges.values()]
-    .filter((edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target))
-    .map((edge) =>
-      hasDepthContext &&
-      (!emphasisEdgeIDs.has(edge.id) || !emphasisIDs.has(edge.source) || !emphasisIDs.has(edge.target))
-        ? depthContextEdge(edge)
-        : activeEdge(edge, input.selectedUID),
-    );
+  const baseVisibleRelationshipEdges = [...graph.edges.values()].filter(
+    (edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target),
+  );
+  const contextRootID =
+    input.selectedUID && visibleIDs.has(input.selectedUID) ? input.selectedUID : graphTraversalRoot.uid;
+  const visibleContext = hasDepthContext
+    ? visibleContextIDs(contextRootID, baseVisibleRelationshipEdges, maxContextDepth(input.contextDepth))
+    : { nodeIDs: visibleIDs, edgeIDs: new Set(baseVisibleRelationshipEdges.map((edge) => edge.id)) };
+  const visibleRelationshipEdges = baseVisibleRelationshipEdges.map((edge) =>
+    hasDepthContext &&
+    (!visibleContext.edgeIDs.has(edge.id) ||
+      !visibleContext.nodeIDs.has(edge.source) ||
+      !visibleContext.nodeIDs.has(edge.target))
+      ? depthContextEdge(edge)
+      : activeEdge(edge, input.selectedUID),
+  );
   const visibleEdges = [...visibleRelationshipEdges].sort(compareGraphEdges);
   const layoutRelationshipEdges = [...graph.edges.values()].filter(
     (edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target),
@@ -837,7 +871,7 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
       task ? (projectLabels.get(id) ?? "") : missingProjectLabel(missingRef, projectLabels),
       missingRef,
       layoutDirection,
-      hasDepthContext && !emphasisIDs.has(id),
+      hasDepthContext && !visibleContext.nodeIDs.has(id),
     );
   });
 

@@ -894,6 +894,34 @@ describe("buildKataReachableGraph", () => {
     expect(oneEdgeContext.nodes.find((node) => node.id === three.uid)?.data.isDepthContext).toBe(true);
   });
 
+  it("computes context emphasis from visible incoming graph edges", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-selected", short_id: "selected" }],
+    });
+    const selected = task({ uid: "issue-selected", short_id: "selected", title: "Selected" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: selected.uid,
+      tasks: [root, selected],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "full",
+      contextDepth: "1",
+    });
+
+    expect(graph.nodes.find((node) => node.id === root.uid)?.data.isDepthContext).toBe(false);
+    expect(graph.nodes.find((node) => node.id === selected.uid)?.data.isDepthContext).toBe(false);
+    expect(graph.nodes.find((node) => node.id === root.uid)?.data.adjacentRelation).toBe("blockedBy");
+    expect(graph.edges.find((edge) => edge.id === "blocks:issue-root:issue-selected")).toMatchObject({
+      data: { isSelectedAdjacent: true },
+      markerEnd: { color: "var(--accent-amber)" },
+    });
+  });
+
   it("keeps full-depth layout stable when selection changes", () => {
     const root = task({
       uid: "issue-root",
@@ -1338,5 +1366,33 @@ describe("buildKataReachableGraph", () => {
 
     expect(populated.nodes.map((node) => node.id)).toEqual(["issue-root", "issue-missing"]);
     expect(populated.nodes.find((node) => node.id === "issue-missing")?.data.title).toBe("Fetched task");
+  });
+
+  it("carries unresolved source-detail link uids for background graph fetching", () => {
+    const root = task({ uid: "issue-root", short_id: "root", title: "Root" });
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root],
+      selectedDetail: detail(root, {
+        links: [
+          {
+            id: 1,
+            project_id: root.project_id,
+            from: { uid: root.uid, short_id: root.short_id },
+            to: { uid: "issue-missing-detail", short_id: "missing-detail" },
+            type: "related",
+            author: "middleman",
+            created_at: "2026-06-29T12:00:00Z",
+          },
+        ],
+      }),
+      hideDone: false,
+    });
+
+    expect(graph.nodes.map((node) => node.id)).toEqual(["issue-root", "issue-missing-detail"]);
+    expect(graph.missingRefs).toEqual([
+      { uid: "issue-missing-detail", projectUID: "project-kata", shortID: "missing-detail" },
+    ]);
   });
 });

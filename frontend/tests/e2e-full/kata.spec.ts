@@ -1293,6 +1293,18 @@ test("kata reachable graph renders and selects tasks through the configured exte
     body: "Read the agenda notes after the Q3 email is sent.",
     labels: ["work"],
   });
+  const deepFollowUp = issueSummary({
+    id: 34,
+    uid: "issue-deep-follow-up",
+    project_id: 2,
+    project_uid: "project-kata",
+    project_name: "Kata",
+    short_id: "kat-9",
+    qualified_id: "Kata#kat-9",
+    title: "Review implementation notes",
+    body: "This task should remain rendered while context only changes emphasis.",
+    labels: ["work"],
+  });
   const graphRoot = {
     ...issues[0]!,
     blocks: [
@@ -1302,9 +1314,12 @@ test("kata reachable graph renders and selects tasks through the configured exte
   };
   const graphQ3 = {
     ...issues[1]!,
-    blocks: [{ uid: followUp.uid, short_id: followUp.short_id }],
+    blocks: [
+      { uid: followUp.uid, short_id: followUp.short_id },
+      { uid: deepFollowUp.uid, short_id: deepFollowUp.short_id },
+    ],
   };
-  const backend = await startKataBackend({ issues: [graphRoot, graphQ3, followUp] });
+  const backend = await startKataBackend({ issues: [graphRoot, graphQ3, followUp, deepFollowUp] });
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
 
@@ -1325,10 +1340,10 @@ test("kata reachable graph renders and selects tasks through the configured exte
     expect(debugBeforeSelection?.latestGraph?.sourceUID).toBe("issue-rent");
     expect(debugBeforeSelection?.latestGraph?.layoutDirection).toBe("TB");
     expect(debugBeforeSelection?.latestGraph?.nodeIds).toEqual(
-      expect.arrayContaining(["issue-rent", "issue-q3", "issue-follow-up"]),
+      expect.arrayContaining(["issue-rent", "issue-q3", "issue-follow-up", "issue-deep-follow-up"]),
     );
-    expect(debugBeforeSelection?.latestGraph?.edgeCount).toBe(3);
-    expect(debugBeforeSelection?.latestGraph?.layoutEdgeCount).toBe(2);
+    expect(debugBeforeSelection?.latestGraph?.edgeCount).toBe(4);
+    expect(debugBeforeSelection?.latestGraph?.layoutEdgeCount).toBe(3);
     await graph.getByRole("combobox", { name: "Graph depth: Full" }).click();
     await page.getByRole("option", { name: "1 edge" }).click();
     await expect(graph.getByRole("combobox", { name: "Graph context: All" })).toBeEnabled();
@@ -1340,6 +1355,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
             ? {
                 depthLimit: latest.depthLimit,
                 nodeIds: latest.nodeIds,
+                hasDeepFollowUp: latest.nodeIds.includes("issue-deep-follow-up"),
                 edgeCount: latest.edgeCount,
                 layoutEdgeCount: latest.layoutEdgeCount,
               }
@@ -1349,6 +1365,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
       .toMatchObject({
         depthLimit: "1",
         nodeIds: expect.arrayContaining(["issue-rent", "issue-q3", "issue-follow-up"]),
+        hasDeepFollowUp: false,
         edgeCount: 2,
         layoutEdgeCount: 2,
       });
@@ -1357,6 +1374,46 @@ test("kata reachable graph renders and selects tasks through the configured exte
     await expect
       .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.depthLimit))
       .toBe("full");
+    const fullSnapshotBeforeContext = await page.evaluate(() => {
+      const latest = window.__middleman_kata_graph_debug?.snapshot().latestGraph;
+      return latest
+        ? {
+            nodeIds: latest.nodeIds,
+            edgeCount: latest.edgeCount,
+            layoutEdgeCount: latest.layoutEdgeCount,
+            nodePositions: latest.nodePositions,
+          }
+        : null;
+    });
+    expect(fullSnapshotBeforeContext).not.toBeNull();
+    await graph.getByRole("combobox", { name: "Graph context: All" }).click();
+    await page.getByRole("option", { name: "1 edge" }).click();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const latest = window.__middleman_kata_graph_debug?.snapshot().latestGraph;
+          return latest
+            ? {
+                contextDepth: latest.contextDepth,
+                nodeIds: latest.nodeIds,
+                edgeCount: latest.edgeCount,
+                layoutEdgeCount: latest.layoutEdgeCount,
+                nodePositions: latest.nodePositions,
+                deepEdgeIsContext:
+                  latest.edges.find((edge) => edge.id === "blocks:issue-q3:issue-deep-follow-up")?.isDepthContext ??
+                  false,
+              }
+            : null;
+        }),
+      )
+      .toMatchObject({
+        contextDepth: "1",
+        nodeIds: fullSnapshotBeforeContext?.nodeIds,
+        edgeCount: fullSnapshotBeforeContext?.edgeCount,
+        layoutEdgeCount: fullSnapshotBeforeContext?.layoutEdgeCount,
+        nodePositions: fullSnapshotBeforeContext?.nodePositions,
+        deepEdgeIsContext: true,
+      });
     const graphNodes = graph.locator(".svelte-flow__node");
     await expect(graphNodes.filter({ hasText: "Pay rent" })).toBeVisible();
     const linkedNode = graphNodes.filter({ hasText: "Email Susan re: Q3" }).first();

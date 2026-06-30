@@ -1439,7 +1439,18 @@ test("kata reachable graph renders and selects tasks through the configured exte
     const debugAfterSelection = await page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot());
     const eventKinds = debugAfterSelection?.events.map((event) => event.kind) ?? [];
     expect(debugAfterSelection?.latestGraph?.selectedUID).toBe("issue-q3");
+    expect(debugAfterSelection?.latestGraph?.contextDepth).toBe("1");
     expect(debugAfterSelection?.latestGraph?.nodeIds).toEqual(expect.arrayContaining(["issue-rent", "issue-q3"]));
+    expect(
+      debugAfterSelection?.latestGraph?.edges.find((edge) => edge.id === "blocks:issue-rent:issue-q3"),
+    ).toMatchObject({
+      isDepthContext: false,
+    });
+    const incomingEdgeClass = await page.evaluate(() =>
+      document.querySelector('.svelte-flow__edge[data-id="blocks:issue-rent:issue-q3"]')?.getAttribute("class"),
+    );
+    expect(incomingEdgeClass).toContain("kata-graph-edge--selected-adjacent");
+    expect(incomingEdgeClass).not.toContain("kata-graph-edge--depth-context");
     expect(eventKinds).toContain("selection-start");
     expect(eventKinds).toContain("detail-load-start");
     expect(eventKinds).toContain("detail-load-complete");

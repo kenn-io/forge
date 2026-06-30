@@ -165,14 +165,16 @@
     { value: "LR", label: "Left to right" },
     { value: "TB", label: "Top to bottom" },
   ] as const satisfies readonly { value: KataGraphLayoutDirection; label: string }[];
-  let graphFilterDetail = $derived(
-    [
+  let graphFilterDetail = $derived.by(() => {
+    const parts = [
       optionLabel(depthOptions, depthLimit),
       optionLabel(contextOptions, contextDepth),
       optionLabel(layoutOptions, layoutMode),
       effectiveLayoutDirection,
-    ].join(" · "),
-  );
+    ];
+    if (hideDone) parts.push("Hide done");
+    return parts.join(" · ");
+  });
   const graphFilterSections = $derived.by(() => [
     {
       title: "Depth",
@@ -333,6 +335,7 @@
   }
 
   function setGraphDirection(direction: KataGraphLayoutDirection): void {
+    if (direction === effectiveLayoutDirection) return;
     graphDirectionOverride = direction;
   }
 
@@ -538,6 +541,7 @@
           showBadge={false}
           sections={graphFilterSections}
           minWidth="220px"
+          includeDetailInAriaLabel={true}
         />
       </div>
     </div>

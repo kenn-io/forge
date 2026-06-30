@@ -112,7 +112,8 @@ describe("KataReachableGraph", () => {
     });
 
     expect(screen.getAllByText("Done task").length).toBeGreaterThan(0);
-    await fireEvent.click(screen.getByRole("checkbox", { name: "Hide done" }));
+    await fireEvent.click(screen.getByRole("button", { name: /Graph filters/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Hide done" }));
     expect(screen.queryAllByText("Done task")).toEqual([]);
   });
 

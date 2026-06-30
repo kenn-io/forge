@@ -111,7 +111,7 @@ function resolvedColor(scope: HTMLElement, color: string): string {
 
 async function ensureGraphFilterMenuOpen(): Promise<void> {
   if (!document.querySelector(".graph-filter-menu .filter-dropdown")) {
-    await page.getByRole("button", { name: "Graph filters" }).click();
+    await page.getByRole("button", { name: /Graph filters/ }).click();
   }
   await vi.waitFor(() => {
     expect(document.querySelector(".graph-filter-menu .filter-dropdown")).toBeTruthy();
@@ -195,7 +195,7 @@ describe("KataReachableGraph (browser)", () => {
     const graphCanvas = container.querySelector<HTMLElement>(".graph-canvas");
     expect(graphCanvas).toBeTruthy();
     expect(getComputedStyle(graphCanvas!).overflow).toBe("hidden");
-    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     await selectGraphFilterItem("Context", "1 edge");
     await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.contextDepth).toBe("1");
     await selectGraphFilterItem("Direction", "Top to bottom");
@@ -329,7 +329,7 @@ describe("KataReachableGraph (browser)", () => {
       },
     });
 
-    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     await vi.waitFor(() => {
       expect(graphFilterDetailText(container)).toContain("TB");
     });
@@ -337,6 +337,14 @@ describe("KataReachableGraph (browser)", () => {
       .poll(() => {
         const raw = localStorage.getItem(graphPreferencesStorageKey);
         return raw ? JSON.parse(raw).layoutDirection : undefined;
+      })
+      .toBeNull();
+
+    await selectGraphFilterItem("Direction", "Top to bottom");
+    await expect
+      .poll(() => {
+        const raw = localStorage.getItem(graphPreferencesStorageKey);
+        return raw ? JSON.parse(raw).layoutDirection : null;
       })
       .toBeNull();
 
@@ -386,7 +394,7 @@ describe("KataReachableGraph (browser)", () => {
       },
     });
 
-    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     await vi.waitFor(() => {
       expect(graphFilterDetailText(container)).toBe("2 edges · 1 edge · ELK · TB");
     });
@@ -434,7 +442,7 @@ describe("KataReachableGraph (browser)", () => {
       },
     });
 
-    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     await selectGraphFilterItem("Layout", "ELK");
     await expect
       .poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutReady ?? false)
@@ -492,7 +500,7 @@ describe("KataReachableGraph (browser)", () => {
     });
 
     await selectGraphFilterItem("Depth", "1 edge");
-    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     await vi.waitFor(() => {
       expect(container.querySelectorAll(".svelte-flow__node").length).toBe(2);
     });
@@ -599,7 +607,7 @@ describe("KataReachableGraph (browser)", () => {
     container.style.width = "520px";
     container.style.height = "460px";
 
-    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     const toolbar = container.querySelector<HTMLElement>(".graph-toolbar");
     const graphFilterMenu = container.querySelector<HTMLElement>(".graph-filter-menu");
     const graphFilterButton = container.querySelector<HTMLElement>(".graph-filter-menu .filter-btn");
@@ -619,6 +627,12 @@ describe("KataReachableGraph (browser)", () => {
       expect(graphFilterRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
       expect(graphFilterRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
       expect(graphFilterRect.height).toBe(30);
+    });
+
+    await selectGraphFilterItem("Visibility", "Hide done");
+    await vi.waitFor(() => {
+      expect(graphFilterDetailText(container)).toContain("Hide done");
+      expect(graphFilterButton!.getAttribute("aria-label")).toContain("Hide done");
     });
   });
 });

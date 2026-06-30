@@ -317,7 +317,7 @@ describe("KataReachableGraph (browser)", () => {
       short_id: "linked",
       title: "Linked browser task",
     });
-    const { container } = render(KataReachableGraph, {
+    const { container, rerender } = render(KataReachableGraph, {
       props: {
         sourceUID: root.uid,
         selectedUID: root.uid,
@@ -331,8 +331,10 @@ describe("KataReachableGraph (browser)", () => {
 
     await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     await vi.waitFor(() => {
-      expect(graphFilterDetailText(container)).toContain("TB");
+      expect(graphFilterDetailText(container)).toContain("Follow TB");
     });
+    await ensureGraphFilterMenuOpen();
+    expect(findGraphFilterItem("Direction", "Follow split").getAttribute("aria-pressed")).toBe("true");
     await expect
       .poll(() => {
         const raw = localStorage.getItem(graphPreferencesStorageKey);
@@ -340,18 +342,9 @@ describe("KataReachableGraph (browser)", () => {
       })
       .toBeNull();
 
-    await selectGraphFilterItem("Direction", "Top to bottom");
-    await expect
-      .poll(() => {
-        const raw = localStorage.getItem(graphPreferencesStorageKey);
-        return raw ? JSON.parse(raw).layoutDirection : null;
-      })
-      .toBeNull();
-
     await selectGraphFilterItem("Direction", "Left to right");
-
     await vi.waitFor(() => {
-      expect(graphFilterDetailText(container)).toContain("LR");
+      expect(graphFilterDetailText(container)).toContain("Pinned LR");
     });
     await expect
       .poll(() => {
@@ -359,6 +352,31 @@ describe("KataReachableGraph (browser)", () => {
         return raw ? JSON.parse(raw).layoutDirection : undefined;
       })
       .toBe("LR");
+
+    await selectGraphFilterItem("Direction", "Follow split");
+    await vi.waitFor(() => {
+      expect(graphFilterDetailText(container)).toContain("Follow TB");
+    });
+    await expect
+      .poll(() => {
+        const raw = localStorage.getItem(graphPreferencesStorageKey);
+        return raw ? JSON.parse(raw).layoutDirection : undefined;
+      })
+      .toBeNull();
+
+    await rerender({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, linked],
+      selectedDetail: null,
+      layoutDirection: "LR",
+      onBack: () => {},
+      onSelectIssue: () => {},
+    });
+    await vi.waitFor(() => {
+      expect(graphFilterDetailText(container)).toContain("Follow LR");
+    });
+    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("LR");
   });
 
   it("restores graph control preferences from localStorage", async () => {
@@ -396,7 +414,7 @@ describe("KataReachableGraph (browser)", () => {
 
     await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     await vi.waitFor(() => {
-      expect(graphFilterDetailText(container)).toBe("2 edges · 1 edge · ELK · TB");
+      expect(graphFilterDetailText(container)).toBe("2 edges · 1 edge · ELK · Pinned TB");
     });
     await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutMode).toBe("elk");
     await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("TB");

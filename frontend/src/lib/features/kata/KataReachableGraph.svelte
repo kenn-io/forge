@@ -31,6 +31,7 @@
   } from "./kataReachableGraph.js";
 
   type KataGraphLayoutMode = "compact" | "elk";
+  type KataGraphDirectionChoice = "follow" | KataGraphLayoutDirection;
 
   interface KataGraphPreferences {
     contextDepth: KataGraphContextDepth;
@@ -162,15 +163,19 @@
     { value: "elk", label: "ELK" },
   ] as const satisfies readonly { value: KataGraphLayoutMode; label: string }[];
   const graphDirectionOptions = [
+    { value: "follow", label: "Follow split" },
     { value: "LR", label: "Left to right" },
     { value: "TB", label: "Top to bottom" },
-  ] as const satisfies readonly { value: KataGraphLayoutDirection; label: string }[];
+  ] as const satisfies readonly { value: KataGraphDirectionChoice; label: string }[];
+  let graphDirectionDetail = $derived(
+    graphDirectionOverride === null ? `Follow ${effectiveLayoutDirection}` : `Pinned ${effectiveLayoutDirection}`,
+  );
   let graphFilterDetail = $derived.by(() => {
     const parts = [
       optionLabel(depthOptions, depthLimit),
       optionLabel(contextOptions, contextDepth),
       optionLabel(layoutOptions, layoutMode),
-      effectiveLayoutDirection,
+      graphDirectionDetail,
     ];
     if (hideDone) parts.push("Hide done");
     return parts.join(" · ");
@@ -208,7 +213,7 @@
       items: graphDirectionOptions.map((option) => ({
         id: `direction-${option.value}`,
         label: option.label,
-        active: effectiveLayoutDirection === option.value,
+        active: graphDirectionOverride === null ? option.value === "follow" : graphDirectionOverride === option.value,
         onSelect: () => setGraphDirection(option.value),
       })),
     },
@@ -334,9 +339,8 @@
     layoutMode = value as KataGraphLayoutMode;
   }
 
-  function setGraphDirection(direction: KataGraphLayoutDirection): void {
-    if (direction === effectiveLayoutDirection) return;
-    graphDirectionOverride = direction;
+  function setGraphDirection(direction: KataGraphDirectionChoice): void {
+    graphDirectionOverride = direction === "follow" ? null : direction;
   }
 
   function graphLayoutSignature(nodes: readonly KataGraphNode[], edges: readonly KataGraphEdge[]): string {

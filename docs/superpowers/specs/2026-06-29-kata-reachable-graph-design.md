@@ -23,14 +23,15 @@ The graph pane toolbar contains:
 
 - a back-to-list button;
 - the source task title;
-- a single graph filter menu summarizing the current graph depth, context
-  emphasis depth, layout engine, and direction. The menu groups graph depth
+- a single graph filter popover summarizing the current graph depth, context
+  emphasis depth, layout engine, and direction. The popover groups graph depth
   (`Full`, `1 edge`, `2 edges`, `3 edges`), context emphasis (`All`, `1 edge`,
-  `2 edges`, `3 edges`), layout (`Compact`, `ELK`), direction (`LR`, `TB`),
-  and visibility (`Hide done`) choices so resized graph panes do not need to
-  fit several standalone controls. `Hide done` appears in the trigger summary
-  only when enabled so missing done tasks are explained without making the
-  default trigger wider.
+  `2 edges`, `3 edges`), layout (`Compact`, `ELK`), direction (`Follow split`,
+  `LR`, `TB`), and visibility (`Hide done`) choices so resized graph panes do
+  not need to fit several standalone controls. The direction summary must
+  distinguish followed and pinned state, for example `Follow TB` vs `Pinned TB`.
+  `Hide done` appears in the trigger summary only when enabled so missing done
+  tasks are explained without making the default trigger wider.
 
 Each graph node contains:
 
@@ -201,12 +202,13 @@ Flow node-focus autopan so clicking/focusing a graph task changes selection
 without panning the viewport. The graph persists the depth, context, layout,
 and explicit graph direction override in a versioned, browser-profile-global
 localStorage value so new graph pane sessions restore the last user layout.
-`layoutDirection: null` means follow the current workspace split direction;
-`LR` or `TB` is written only after the user chooses a direction different from
-the current effective direction. Choosing the already-active split-derived
-direction is a no-op so the graph does not accidentally stop following split
-layout changes. Invalid or unavailable storage falls back to `Full`, `All`,
-`Compact`, and the current workspace split direction.
+`layoutDirection: null` means follow the current workspace split direction.
+The Direction group includes a `Follow split` item that clears the persisted
+direction override back to `null`; `LR` or `TB` means the user intentionally
+pinned graph direction. The trigger summary distinguishes the two states so a
+matching effective direction is not secretly pinned. Invalid or unavailable
+storage falls back to `Full`, `All`, `Compact`, and the current workspace split
+direction.
 
 Traversal sources by relationship kind:
 
@@ -249,13 +251,15 @@ graph action beside the workspace/detail actions.
 
 - `SvelteFlow` with `nodesDraggable={false}` and `nodesConnectable={false}`;
 - `fitView`, `Controls`, `MiniMap`, and `Background`;
-- the graph toolbar view controls use the shared `FilterDropdown` menu pattern
+- the graph toolbar view controls use the shared `FilterDropdown` popover pattern
   from `@middleman/ui`, not native `<select>` elements or several standalone
   controls, so one compact trigger can expose grouped depth, context, layout,
   direction, and visibility choices while following the app theme and keyboard
-  behavior. The trigger accessible label includes the current summary and
-  exposes its expanded state; active menu items expose pressed state in addition
-  to the visible dot/check treatment;
+  behavior. This is a button-list popover, not an ARIA `menu`: the trigger
+  accessible label includes the current summary and exposes expanded state, and
+  active popover buttons expose pressed state in addition to the visible
+  dot/check treatment. Escape and outside-click dismiss the popover; arrow-key
+  menu navigation is not part of this control contract;
 - a registered custom task node type that renders title, id label, status,
   priority, source and selected markers, and cached/placeholder state directly
   inside the Svelte Flow canvas;
@@ -300,13 +304,13 @@ presentation: side-by-side panes use left-to-right ranks, while stacked panes
 use top-to-bottom ranks with source/target handles on the bottom/top edges of
 each node.
 
-`KataReachableGraph.svelte` adds grouped graph filter menu controls for
-`Compact`/`ELK` layout and `LR`/`TB` graph direction. The split presentation
-still provides the default direction, but the user can override the graph itself
-between left-to-right and top-to-bottom without changing the workspace pane
-layout. The persisted direction starts from the current workspace split
-direction when no explicit saved graph preference exists and then restores the
-last user-chosen graph direction across graph pane remounts.
+`KataReachableGraph.svelte` adds grouped graph filter popover controls for
+`Compact`/`ELK` layout and `Follow split`/`LR`/`TB` graph direction. The split
+presentation still provides the default direction, but the user can override the
+graph itself between left-to-right and top-to-bottom without changing the
+workspace pane layout. `Follow split` clears the saved override and resumes
+tracking pane orientation; choosing `LR` or `TB` saves an explicit pinned graph
+direction across graph pane remounts.
 `ELK` delegates node placement to `elkjs` using the active graph
 direction, based on the final visible edge set after reciprocal edge
 deduplication and done filtering. ELK layout is asynchronous, so the graph renders compact
@@ -389,11 +393,11 @@ Add Svelte tests for workspace integration:
 - context keeps out-of-emphasis nodes visible but faded and renders context
   edges underneath emphasized selected-adjacent edges.
 - browser coverage verifies nonblank canvas nodes, hidden handles, native edge
-  markers, themed controls/minimap, the graph filter menu, the Compact/ELK
-  layout choice, the TB/LR direction choice, localStorage restoration for graph
-  controls, active split-derived direction no-op behavior, `Hide done` trigger
-  summary state, and the absence of a duplicate node-list fallback. It also
-  covers both Enter and Space keyboard activation.
+  markers, themed controls/minimap, the graph filter popover, the Compact/ELK
+  layout choice, the Follow/LR/TB direction choice, localStorage restoration for
+  graph controls, clearing a pinned graph direction back to follow-split mode,
+  `Hide done` trigger summary state, and the absence of a duplicate node-list
+  fallback. It also covers both Enter and Space keyboard activation.
 - full-stack e2e coverage opens graph mode from the workspace, selects a cached
   graph node, confirms detail selection changes, verifies the source graph
   remains visible/stable after selection, and returns to the task list.

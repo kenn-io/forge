@@ -18,7 +18,7 @@ test("docs screenshot regeneration uses root Playwright dependencies", async () 
     rootPkg.scripts?.["docs:screenshots"],
     "node node_modules/vite-plus/bin/vp exec -- playwright test --config docs/screenshots/playwright.config.ts --project=chromium",
   );
-  assert.equal(rootPkg.devDependencies?.["@playwright/test"], "1.60.0");
+  assert.equal(rootPkg.devDependencies?.["@playwright/test"], "1.61.0");
 
   for (const [path, contents] of [
     ["docs/screenshots/docs-screenshots.spec.ts", spec],

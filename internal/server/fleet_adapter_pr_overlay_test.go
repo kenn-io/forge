@@ -153,7 +153,6 @@ func TestBuildLocalRawLeavesUnlinkedWorktreeWithoutPR(t *testing.T) {
 // the enrichment strand at the raw layer.
 func TestSnapshotEndpointCarriesPREnrichment(t *testing.T) {
 	require := require.New(t)
-	assert := assert.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
@@ -195,16 +194,71 @@ func TestSnapshotEndpointCarriesPREnrichment(t *testing.T) {
 	require.NoError(json.Unmarshal(resp.Body.Bytes(), &snap))
 
 	wt := requireWorktreeSummary(t, snap.Worktrees, fleet.NormPath(wtPath))
-	require.NotNil(wt.PRReviewDecision)
-	assert.Equal("changes_requested", *wt.PRReviewDecision)
-	require.NotNil(wt.PRMergeable)
-	assert.Equal("dirty", *wt.PRMergeable)
-	require.NotNil(wt.PRAdditions)
-	assert.Equal(40, *wt.PRAdditions)
-	require.NotNil(wt.PRDeletions)
-	assert.Equal(9, *wt.PRDeletions)
-	require.NotNil(wt.PRCommentCount)
-	assert.Equal(4, *wt.PRCommentCount)
+	assertPtrEqual(t, "changes_requested", wt.PRReviewDecision)
+	assertPtrEqual(t, "dirty", wt.PRMergeable)
+	assertPtrEqual(t, 40, wt.PRAdditions)
+	assertPtrEqual(t, 9, wt.PRDeletions)
+	assertPtrEqual(t, 4, wt.PRCommentCount)
+}
+
+// TestSnapshotEndpointCarriesWorkspacePREnrichment covers the other overlay
+// path: a PR-checkout workspace whose enrichment comes from worktreeFromWorkspace
+// reading the joined merge-request columns scanned by ListWorkspaceSummaries.
+// The branch-match test exercises applyLinkPR; this one exercises the workspace
+// summary scan, so a column-order or missing-scan regression that dropped
+// prMergeable or prCommentCount for workspace-backed worktrees would fail here
+// rather than slip past the hand-built-struct unit tests.
+func TestSnapshotEndpointCarriesWorkspacePREnrichment(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	// setupTestServer leaves workspaces nil (no WorktreeDir); wire a manager so
+	// the workspace-overlay branch of buildLocalRaw runs on the snapshot read.
+	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	ctx := t.Context()
+	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 7, Title: "Add feature",
+		Author: "a", State: db.MergeRequestStateOpen, CIStatus: "success",
+		HeadBranch: "feature", BaseBranch: "main",
+		ReviewDecision: "changes_requested", MergeableState: "dirty",
+		Additions: 40, Deletions: 9, CommentCount: 4,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	wtPath := filepath.Join(t.TempDir(), "widget-pr")
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-pr", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+		GitHeadRef: "feature", WorktreePath: wtPath, Status: "ready",
+	}))
+
+	resp := doJSON(t, srv, http.MethodGet, "/api/v1/snapshot", nil)
+	require.Equal(http.StatusOK, resp.Code)
+	var snap fleet.Snapshot
+	require.NoError(json.Unmarshal(resp.Body.Bytes(), &snap))
+
+	wt := requireWorktreeSummary(t, snap.Worktrees, fleet.NormPath(wtPath))
+	assertPtrEqual(t, 7, wt.LinkedPRNumber)
+	assertPtrEqual(t, "changes_requested", wt.PRReviewDecision)
+	assertPtrEqual(t, "dirty", wt.PRMergeable)
+	assertPtrEqual(t, 40, wt.PRAdditions)
+	assertPtrEqual(t, 9, wt.PRDeletions)
+	assertPtrEqual(t, 4, wt.PRCommentCount)
+}
+
+// assertPtrEqual asserts got is non-nil and points to want. testify's Equal
+// compares with reflect.DeepEqual, which follows pointers and reports a nil
+// pointer as not-equal instead of panicking, so a single Equal on the pointer
+// pair collapses the NotNil + dereferenced-Equal the nullable enrichment fields
+// would otherwise repeat field by field.
+func assertPtrEqual[T any](t *testing.T, want T, got *T) {
+	t.Helper()
+	assert.Equal(t, &want, got)
 }
 
 func requireWorktreeSummary(

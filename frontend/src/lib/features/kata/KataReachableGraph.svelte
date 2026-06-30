@@ -1,9 +1,7 @@
 <script lang="ts">
   import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
-  import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
-  import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
-  import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
+  import { FilterDropdown } from "@middleman/ui";
   import {
     Background,
     BackgroundVariant,
@@ -111,10 +109,12 @@
   let interactiveNodes = $derived(flowNodes.map((node) => withNodeActivation(node)));
   let layoutReady = $derived(layoutMode === "compact" || layoutedKey === activeLayoutKey);
   let source = $derived(tasks.find((task) => task.uid === sourceUID));
-  let directionToggleLabel = $derived(
-    effectiveLayoutDirection === "TB"
-      ? "Graph direction: top-bottom. Switch to left-right"
-      : "Graph direction: left-right. Switch to top-bottom",
+  let graphFilterActive = $derived(
+    hideDone
+      || depthLimit !== defaultGraphPreferences.depthLimit
+      || contextDepth !== defaultGraphPreferences.contextDepth
+      || layoutMode !== defaultGraphPreferences.layoutMode
+      || graphDirectionOverride !== defaultGraphPreferences.layoutDirection,
   );
   let layoutRun = 0;
   const elkDefaultLayoutOptions = {
@@ -145,22 +145,85 @@
   const nodeTypes: NodeTypes = {
     kataTask: KataGraphTaskNode,
   };
-  const depthOptions: SelectDropdownOption[] = [
+  const depthOptions = [
     { value: "full", label: "Full" },
     { value: "1", label: "1 edge" },
     { value: "2", label: "2 edges" },
     { value: "3", label: "3 edges" },
-  ];
-  const contextOptions: SelectDropdownOption[] = [
+  ] as const satisfies readonly { value: KataGraphDepthLimit; label: string }[];
+  const contextOptions = [
     { value: "all", label: "All" },
     { value: "1", label: "1 edge" },
     { value: "2", label: "2 edges" },
     { value: "3", label: "3 edges" },
-  ];
-  const layoutOptions: SelectDropdownOption[] = [
+  ] as const satisfies readonly { value: KataGraphContextDepth; label: string }[];
+  const layoutOptions = [
     { value: "compact", label: "Compact" },
     { value: "elk", label: "ELK" },
-  ];
+  ] as const satisfies readonly { value: KataGraphLayoutMode; label: string }[];
+  const graphDirectionOptions = [
+    { value: "LR", label: "Left to right" },
+    { value: "TB", label: "Top to bottom" },
+  ] as const satisfies readonly { value: KataGraphLayoutDirection; label: string }[];
+  let graphFilterDetail = $derived(
+    [
+      optionLabel(depthOptions, depthLimit),
+      optionLabel(contextOptions, contextDepth),
+      optionLabel(layoutOptions, layoutMode),
+      effectiveLayoutDirection,
+    ].join(" · "),
+  );
+  const graphFilterSections = $derived.by(() => [
+    {
+      title: "Depth",
+      items: depthOptions.map((option) => ({
+        id: `depth-${option.value}`,
+        label: option.label,
+        active: depthLimit === option.value,
+        onSelect: () => setDepthLimit(option.value),
+      })),
+    },
+    {
+      title: "Context",
+      items: contextOptions.map((option) => ({
+        id: `context-${option.value}`,
+        label: option.label,
+        active: contextDepth === option.value,
+        onSelect: () => setContextDepth(option.value),
+      })),
+    },
+    {
+      title: "Layout",
+      items: layoutOptions.map((option) => ({
+        id: `layout-${option.value}`,
+        label: option.label,
+        active: layoutMode === option.value,
+        onSelect: () => setLayoutMode(option.value),
+      })),
+    },
+    {
+      title: "Direction",
+      items: graphDirectionOptions.map((option) => ({
+        id: `direction-${option.value}`,
+        label: option.label,
+        active: effectiveLayoutDirection === option.value,
+        onSelect: () => setGraphDirection(option.value),
+      })),
+    },
+    {
+      title: "Visibility",
+      items: [
+        {
+          id: "visibility-hide-done",
+          label: "Hide done",
+          active: hideDone,
+          onSelect: () => {
+            hideDone = !hideDone;
+          },
+        },
+      ],
+    },
+  ]);
   const graphMinZoom = 0.02;
   const fitViewOptions = {
     duration: 0,
@@ -230,6 +293,10 @@
     }
   }
 
+  function optionLabel<T extends string>(options: readonly { value: T; label: string }[], value: T): string {
+    return options.find((option) => option.value === value)?.label ?? value;
+  }
+
   function missingRefKey(ref: KataGraphMissingRef): string {
     return ref.uid ? `uid:${ref.uid}` : `short:${ref.projectUID}:${ref.shortID}`;
   }
@@ -265,8 +332,8 @@
     layoutMode = value as KataGraphLayoutMode;
   }
 
-  function toggleGraphDirection(): void {
-    graphDirectionOverride = effectiveLayoutDirection === "TB" ? "LR" : "TB";
+  function setGraphDirection(direction: KataGraphLayoutDirection): void {
+    graphDirectionOverride = direction;
   }
 
   function graphLayoutSignature(nodes: readonly KataGraphNode[], edges: readonly KataGraphEdge[]): string {
@@ -462,49 +529,17 @@
       </div>
     </div>
     <div class="graph-control-row" aria-label="Graph controls">
-      <div class="graph-field depth-filter">
-        <span>Depth</span>
-        <SelectDropdown
-          class="kata-graph-depth-select"
-          title="Graph depth"
-          value={depthLimit}
-          options={depthOptions}
-          onchange={setDepthLimit}
+      <div class="graph-filter-menu">
+        <FilterDropdown
+          label="Graph filters"
+          detail={graphFilterDetail}
+          title="Graph filters"
+          active={graphFilterActive}
+          showBadge={false}
+          sections={graphFilterSections}
+          minWidth="220px"
         />
       </div>
-      <div class="graph-field context-filter">
-        <span>Context</span>
-        <SelectDropdown
-          class="kata-graph-context-select"
-          title="Graph context"
-          value={contextDepth}
-          options={contextOptions}
-          onchange={setContextDepth}
-        />
-      </div>
-      <div class="graph-field layout-filter">
-        <span>Layout</span>
-        <SelectDropdown
-          class="kata-graph-layout-select"
-          title="Graph layout"
-          value={layoutMode}
-          options={layoutOptions}
-          onchange={setLayoutMode}
-        />
-      </div>
-      <button type="button" class="direction-toggle" aria-label={directionToggleLabel} onclick={toggleGraphDirection}>
-        {#if effectiveLayoutDirection === "TB"}
-          <ArrowDownIcon size={14} strokeWidth={2} aria-hidden="true" />
-          <span>TB</span>
-        {:else}
-          <ArrowRightIcon size={14} strokeWidth={2} aria-hidden="true" />
-          <span>LR</span>
-        {/if}
-      </button>
-      <label class="hide-done">
-        <input type="checkbox" bind:checked={hideDone} />
-        <span>Hide done</span>
-      </label>
     </div>
   </header>
 
@@ -588,9 +623,7 @@
     flex-wrap: wrap;
   }
 
-  .toolbar-button,
-  .direction-toggle,
-  .hide-done {
+  .toolbar-button {
     box-sizing: border-box;
     min-height: 28px;
     display: inline-flex;
@@ -610,66 +643,46 @@
     flex: 0 0 auto;
   }
 
-  .toolbar-button:hover,
-  .direction-toggle:hover,
-  .hide-done:hover {
+  .toolbar-button:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
 
-  .direction-toggle {
-    flex: 0 0 auto;
-    height: 30px;
-    min-height: 30px;
-    min-width: 64px;
-    justify-content: center;
-  }
-
-  .hide-done {
-    height: 30px;
-    min-height: 30px;
-  }
-
-  .graph-field {
-    display: inline-flex;
+  .graph-filter-menu {
     flex: 0 1 auto;
-    align-items: center;
-    gap: 7px;
     min-width: 0;
-    cursor: default;
   }
 
-  .graph-field > span {
-    color: var(--text-secondary);
-    font-size: var(--font-size-xs);
-    white-space: nowrap;
-  }
-
-  .kata-graph-pane :global(.select-dropdown.kata-graph-depth-select),
-  .kata-graph-pane :global(.select-dropdown.kata-graph-context-select) {
-    width: 88px;
-    min-width: 88px;
-  }
-
-  .kata-graph-pane :global(.select-dropdown.kata-graph-layout-select) {
-    width: 104px;
-    min-width: 104px;
-  }
-
-  :global(.kata-graph-depth-select .select-dropdown-trigger),
-  :global(.kata-graph-context-select .select-dropdown-trigger),
-  :global(.kata-graph-layout-select .select-dropdown-trigger) {
+  .graph-filter-menu :global(.filter-btn) {
+    min-height: 30px;
     height: 30px;
+    max-width: 100%;
     background: var(--bg-primary);
     border-color: var(--border-default);
+    color: var(--text-secondary);
+  }
+
+  .graph-filter-menu :global(.filter-btn:hover:not(:disabled)) {
+    background: var(--bg-hover);
     color: var(--text-primary);
   }
 
-  :global(.kata-graph-depth-select .select-dropdown-list),
-  :global(.kata-graph-context-select .select-dropdown-list),
-  :global(.kata-graph-layout-select .select-dropdown-list) {
-    left: 0;
-    right: auto;
+  .graph-filter-menu :global(.filter-trigger-detail) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .graph-filter-menu :global(.filter-active) {
+    border-color: var(--accent-blue);
+  }
+
+  .graph-filter-menu :global(.filter-dropdown) {
+    max-height: min(520px, calc(100vh - 24px));
+    overflow-y: auto;
   }
 
   .graph-source {
@@ -698,19 +711,8 @@
       min-height: 28px;
     }
 
-    .graph-control-row {
-      align-items: flex-start;
-    }
-
-    .kata-graph-pane :global(.select-dropdown.kata-graph-depth-select),
-    .kata-graph-pane :global(.select-dropdown.kata-graph-context-select) {
-      width: 86px;
-      min-width: 86px;
-    }
-
-    .kata-graph-pane :global(.select-dropdown.kata-graph-layout-select) {
-      width: 100px;
-      min-width: 100px;
+    .graph-filter-menu :global(.filter-btn) {
+      width: 100%;
     }
   }
 

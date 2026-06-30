@@ -23,11 +23,12 @@ The graph pane toolbar contains:
 
 - a back-to-list button;
 - the source task title;
-- a depth filter with `Full`, `1 edge`, `2 edges`, and `3 edges` options;
-- a context filter with `All`, `1 edge`, `2 edges`, and `3 edges` options;
-- a layout selector with `Compact` and `ELK` options;
-- a graph direction toggle with `LR` and `TB` options;
-- a `Hide done` toggle.
+- a single graph filter menu summarizing the current graph depth, context
+  emphasis depth, layout engine, and direction. The menu groups graph depth
+  (`Full`, `1 edge`, `2 edges`, `3 edges`), context emphasis (`All`, `1 edge`,
+  `2 edges`, `3 edges`), layout (`Compact`, `ELK`), direction (`LR`, `TB`),
+  and visibility (`Hide done`) choices so resized graph panes do not need to
+  fit several standalone controls.
 
 Each graph node contains:
 
@@ -244,9 +245,11 @@ graph action beside the workspace/detail actions.
 
 - `SvelteFlow` with `nodesDraggable={false}` and `nodesConnectable={false}`;
 - `fitView`, `Controls`, `MiniMap`, and `Background`;
-- the graph depth and layout controls use the shared `SelectDropdown` combobox
-  component from `@middleman/ui`, not native `<select>` elements, so popups
-  follow the app theme and keyboard behavior;
+- the graph toolbar view controls use the shared `FilterDropdown` menu pattern
+  from `@middleman/ui`, not native `<select>` elements or several standalone
+  controls, so one compact trigger can expose grouped depth, context, layout,
+  direction, and visibility choices while following the app theme and keyboard
+  behavior;
 - a registered custom task node type that renders title, id label, status,
   priority, source and selected markers, and cached/placeholder state directly
   inside the Svelte Flow canvas;
@@ -279,8 +282,8 @@ graph action beside the workspace/detail actions.
 
 The graph toolbar must remain usable inside the resized list pane. In narrow
 side-by-side panes, keep the back button and source title on the first row and
-wrap graph filter controls onto a second row instead of clipping or hiding
-depth, layout, or done-filter controls.
+keep the single graph filter trigger visible on the controls row instead of
+clipping or hiding depth, context, layout, direction, or done-filter controls.
 
 A pure `kataReachableGraph.ts` module builds nodes and edges. It performs the
 depth-limited reachability traversal, creates marker-backed edges, and computes

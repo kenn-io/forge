@@ -109,6 +109,47 @@ function resolvedColor(scope: HTMLElement, color: string): string {
   return resolved;
 }
 
+async function ensureGraphFilterMenuOpen(): Promise<void> {
+  if (!document.querySelector(".graph-filter-menu .filter-dropdown")) {
+    await page.getByRole("button", { name: "Graph filters" }).click();
+  }
+  await vi.waitFor(() => {
+    expect(document.querySelector(".graph-filter-menu .filter-dropdown")).toBeTruthy();
+  });
+}
+
+function findGraphFilterItem(sectionTitle: string, itemLabel: string): HTMLButtonElement {
+  const dropdown = document.querySelector<HTMLElement>(".graph-filter-menu .filter-dropdown");
+  expect(dropdown).toBeTruthy();
+  let inSection = false;
+  for (const element of dropdown!.children) {
+    if (element.classList.contains("filter-section-title")) {
+      inSection = element.textContent?.trim() === sectionTitle;
+      continue;
+    }
+    if (element.classList.contains("filter-divider")) {
+      inSection = false;
+      continue;
+    }
+    if (!inSection || !element.classList.contains("filter-item")) continue;
+    const label = element.querySelector(".filter-label")?.textContent?.trim();
+    if (label === itemLabel) return element as HTMLButtonElement;
+  }
+  throw new Error(`Missing graph filter item: ${sectionTitle} / ${itemLabel}`);
+}
+
+async function selectGraphFilterItem(sectionTitle: string, itemLabel: string): Promise<void> {
+  await ensureGraphFilterMenuOpen();
+  findGraphFilterItem(sectionTitle, itemLabel).click();
+  await vi.waitFor(() => {
+    expect(findGraphFilterItem(sectionTitle, itemLabel).classList.contains("active")).toBe(true);
+  });
+}
+
+function graphFilterDetailText(container: HTMLElement): string {
+  return container.querySelector(".graph-filter-menu .filter-trigger-detail")?.textContent?.trim() ?? "";
+}
+
 describe("KataReachableGraph (browser)", () => {
   beforeEach(() => {
     localStorage.removeItem(graphPreferencesStorageKey);
@@ -154,17 +195,13 @@ describe("KataReachableGraph (browser)", () => {
     const graphCanvas = container.querySelector<HTMLElement>(".graph-canvas");
     expect(graphCanvas).toBeTruthy();
     expect(getComputedStyle(graphCanvas!).overflow).toBe("hidden");
-    await expect
-      .element(page.getByRole("button", { name: "Graph direction: left-right. Switch to top-bottom" }))
-      .toBeVisible();
-    await expect.element(page.getByRole("combobox", { name: "Graph context: All" })).toBeEnabled();
-    await page.getByRole("combobox", { name: "Graph context: All" }).click();
-    await page.getByRole("option", { name: "1 edge" }).click();
+    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
+    await selectGraphFilterItem("Context", "1 edge");
     await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.contextDepth).toBe("1");
-    await page.getByRole("button", { name: "Graph direction: left-right. Switch to top-bottom" }).click();
-    await expect
-      .element(page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }))
-      .toBeVisible();
+    await selectGraphFilterItem("Direction", "Top to bottom");
+    await vi.waitFor(() => {
+      expect(graphFilterDetailText(container)).toContain("TB");
+    });
     await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("TB");
     expect(container.querySelector(".kata-graph-pane")?.getAttribute("data-layout-direction")).toBe("TB");
     const controlsButton = container.querySelector<HTMLElement>(".svelte-flow__controls-button");
@@ -280,7 +317,7 @@ describe("KataReachableGraph (browser)", () => {
       short_id: "linked",
       title: "Linked browser task",
     });
-    render(KataReachableGraph, {
+    const { container } = render(KataReachableGraph, {
       props: {
         sourceUID: root.uid,
         selectedUID: root.uid,
@@ -292,9 +329,10 @@ describe("KataReachableGraph (browser)", () => {
       },
     });
 
-    await expect
-      .element(page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }))
-      .toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
+    await vi.waitFor(() => {
+      expect(graphFilterDetailText(container)).toContain("TB");
+    });
     await expect
       .poll(() => {
         const raw = localStorage.getItem(graphPreferencesStorageKey);
@@ -302,11 +340,11 @@ describe("KataReachableGraph (browser)", () => {
       })
       .toBeNull();
 
-    await page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }).click();
+    await selectGraphFilterItem("Direction", "Left to right");
 
-    await expect
-      .element(page.getByRole("button", { name: "Graph direction: left-right. Switch to top-bottom" }))
-      .toBeVisible();
+    await vi.waitFor(() => {
+      expect(graphFilterDetailText(container)).toContain("LR");
+    });
     await expect
       .poll(() => {
         const raw = localStorage.getItem(graphPreferencesStorageKey);
@@ -337,7 +375,7 @@ describe("KataReachableGraph (browser)", () => {
       title: "Linked browser task",
       priority: 1,
     });
-    render(KataReachableGraph, {
+    const { container } = render(KataReachableGraph, {
       props: {
         sourceUID: root.uid,
         selectedUID: root.uid,
@@ -348,18 +386,15 @@ describe("KataReachableGraph (browser)", () => {
       },
     });
 
-    await expect.element(page.getByRole("combobox", { name: "Graph depth: 2 edges" })).toBeVisible();
-    await expect.element(page.getByRole("combobox", { name: "Graph context: 1 edge" })).toBeVisible();
-    await expect.element(page.getByRole("combobox", { name: "Graph layout: ELK" })).toBeVisible();
-    await expect
-      .element(page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }))
-      .toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
+    await vi.waitFor(() => {
+      expect(graphFilterDetailText(container)).toBe("2 edges · 1 edge · ELK · TB");
+    });
     await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutMode).toBe("elk");
     await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("TB");
 
-    await page.getByRole("combobox", { name: "Graph context: 1 edge" }).click();
-    await page.getByRole("option", { name: "3 edges" }).click();
-    await page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }).click();
+    await selectGraphFilterItem("Context", "3 edges");
+    await selectGraphFilterItem("Direction", "Left to right");
 
     await expect
       .poll(() => {
@@ -399,9 +434,8 @@ describe("KataReachableGraph (browser)", () => {
       },
     });
 
-    await expect.element(page.getByRole("combobox", { name: "Graph layout: Compact" })).toBeVisible();
-    await page.getByRole("combobox", { name: "Graph layout: Compact" }).click();
-    await page.getByRole("option", { name: "ELK" }).click();
+    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
+    await selectGraphFilterItem("Layout", "ELK");
     await expect
       .poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutReady ?? false)
       .toBe(true);
@@ -457,14 +491,12 @@ describe("KataReachableGraph (browser)", () => {
       },
     });
 
-    await page.getByRole("combobox", { name: "Graph depth: Full" }).click();
-    await page.getByRole("option", { name: "1 edge" }).click();
-    await expect.element(page.getByRole("combobox", { name: "Graph context: All" })).toBeVisible();
+    await selectGraphFilterItem("Depth", "1 edge");
+    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
     await vi.waitFor(() => {
       expect(container.querySelectorAll(".svelte-flow__node").length).toBe(2);
     });
-    await page.getByRole("combobox", { name: "Graph context: All" }).click();
-    await page.getByRole("option", { name: "1 edge" }).click();
+    await selectGraphFilterItem("Context", "1 edge");
     await vi.waitFor(() => {
       expect(container.querySelectorAll(".svelte-flow__node").length).toBe(2);
     });
@@ -517,8 +549,7 @@ describe("KataReachableGraph (browser)", () => {
 
     const initialBoxes = await waitForStableRenderedNodeBoxes(container, 4);
 
-    await page.getByRole("combobox", { name: "Graph context: All" }).click();
-    await page.getByRole("option", { name: "1 edge" }).click();
+    await selectGraphFilterItem("Context", "1 edge");
     await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.contextDepth).toBe("1");
     expectRenderedNodeBoxesStable(await waitForStableRenderedNodeBoxes(container, 4), initialBoxes);
 
@@ -568,49 +599,26 @@ describe("KataReachableGraph (browser)", () => {
     container.style.width = "520px";
     container.style.height = "460px";
 
-    await expect.element(page.getByRole("combobox", { name: "Graph layout: Compact" })).toBeVisible();
-    await expect.element(page.getByRole("combobox", { name: "Graph context: All" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Graph filters" })).toBeVisible();
     const toolbar = container.querySelector<HTMLElement>(".graph-toolbar");
-    const hideDone = container.querySelector<HTMLElement>(".hide-done");
-    const contextFilter = container.querySelector<HTMLElement>(".context-filter");
-    const depthSelect = container.querySelector<HTMLElement>(".kata-graph-depth-select");
-    const contextSelect = container.querySelector<HTMLElement>(".kata-graph-context-select");
-    const layoutSelect = container.querySelector<HTMLElement>(".kata-graph-layout-select");
-    const layoutSelectTrigger = container.querySelector<HTMLElement>(
-      ".kata-graph-layout-select .select-dropdown-trigger",
-    );
-    const directionToggle = container.querySelector<HTMLElement>(".direction-toggle");
+    const graphFilterMenu = container.querySelector<HTMLElement>(".graph-filter-menu");
+    const graphFilterButton = container.querySelector<HTMLElement>(".graph-filter-menu .filter-btn");
     expect(toolbar).toBeTruthy();
-    expect(hideDone).toBeTruthy();
-    expect(contextFilter).toBeTruthy();
-    expect(depthSelect).toBeTruthy();
-    expect(contextSelect).toBeTruthy();
-    expect(layoutSelect).toBeTruthy();
-    expect(layoutSelectTrigger).toBeTruthy();
-    expect(directionToggle).toBeTruthy();
+    expect(graphFilterMenu).toBeTruthy();
+    expect(graphFilterButton).toBeTruthy();
+    expect(container.querySelector(".depth-filter")).toBeNull();
+    expect(container.querySelector(".context-filter")).toBeNull();
+    expect(container.querySelector(".layout-filter")).toBeNull();
+    expect(container.querySelector(".direction-toggle")).toBeNull();
+    expect(container.querySelector(".hide-done")).toBeNull();
 
     await vi.waitFor(() => {
       const toolbarRect = toolbar!.getBoundingClientRect();
-      const hideDoneRect = hideDone!.getBoundingClientRect();
-      const contextFilterRect = contextFilter!.getBoundingClientRect();
-      const depthSelectWidth = depthSelect!.getBoundingClientRect().width;
-      const contextSelectWidth = contextSelect!.getBoundingClientRect().width;
-      const layoutSelectWidth = layoutSelect!.getBoundingClientRect().width;
-      const layoutSelectHeight = layoutSelectTrigger!.getBoundingClientRect().height;
-      const directionToggleHeight = directionToggle!.getBoundingClientRect().height;
+      const graphFilterRect = graphFilterButton!.getBoundingClientRect();
       expect(toolbar!.scrollWidth).toBeLessThanOrEqual(toolbar!.clientWidth + 1);
-      expect(hideDoneRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
-      expect(hideDoneRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
-      expect(contextFilterRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
-      expect(contextFilterRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
-      expect(depthSelectWidth).toBeGreaterThanOrEqual(82);
-      expect(depthSelectWidth).toBeLessThanOrEqual(92);
-      expect(contextSelectWidth).toBeGreaterThanOrEqual(82);
-      expect(contextSelectWidth).toBeLessThanOrEqual(92);
-      expect(layoutSelectWidth).toBeGreaterThanOrEqual(96);
-      expect(layoutSelectWidth).toBeLessThanOrEqual(108);
-      expect(directionToggleHeight).toBe(layoutSelectHeight);
-      expect(hideDoneRect.height).toBe(layoutSelectHeight);
+      expect(graphFilterRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
+      expect(graphFilterRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
+      expect(graphFilterRect.height).toBe(30);
     });
   });
 });

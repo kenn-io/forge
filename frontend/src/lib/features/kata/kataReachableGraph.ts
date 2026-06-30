@@ -15,6 +15,7 @@ export interface KataGraphNodeData extends Record<string, unknown> {
   isSource: boolean;
   isSelected: boolean;
   selectable: boolean;
+  onSelect?: ((uid: string) => void) | undefined;
   adjacentRelation: KataGraphAdjacentRelation;
 }
 
@@ -64,10 +65,10 @@ interface QueuedGraphTask {
 
 type GraphEdgeKind = "parent" | "blocks" | "related";
 
-const KATA_GRAPH_X_SPACING = 320;
-const KATA_GRAPH_Y_SPACING = 108;
 const KATA_GRAPH_NODE_WIDTH = 250;
 const KATA_GRAPH_NODE_HEIGHT = 74;
+const KATA_GRAPH_X_SPACING = 320;
+const KATA_GRAPH_Y_SPACING = 108;
 
 function taskKey(projectUID: string, shortID: string): string {
   return `${projectUID}:${shortID}`;
@@ -102,7 +103,7 @@ function collectTasks(tasks: readonly KataTaskSummary[]): TaskIndexes {
     if (task.parent?.uid) {
       childrenByParentUID.set(task.parent.uid, [...(childrenByParentUID.get(task.parent.uid) ?? []), task]);
     }
-    if (task.parent_short_id) {
+    if (task.parent_short_id && !task.parent?.uid) {
       const parentKey = taskKey(task.project_uid, task.parent_short_id);
       childrenByParent.set(parentKey, [...(childrenByParent.get(parentKey) ?? []), task]);
     }
@@ -166,7 +167,7 @@ function makeEdge(source: string, target: string, kind: GraphEdgeKind): KataGrap
 }
 
 function edgePairID(source: string, target: string, kind: GraphEdgeKind): string {
-  return [source, target].sort((left, right) => left.localeCompare(right)).join(`:${kind}:`);
+  return JSON.stringify([kind, ...[source, target].sort((left, right) => left.localeCompare(right))]);
 }
 
 function addEdge(edges: Map<string, KataGraphEdge>, source: string, target: string, kind: GraphEdgeKind): void {
@@ -204,11 +205,26 @@ function resolveDetailLink(
   const to = resolvePeer(link.to, projectUID, indexes);
   rememberMissingRef(from, missingRefs);
   rememberMissingRef(to, missingRefs);
-  if (link.type === "parent") return [makeEdge(to.id, from.id, "parent")];
+  if (link.type === "parent") {
+    const [parent, child] = parentDetailEndpoints(from, to);
+    return [makeEdge(parent.id, child.id, "parent")];
+  }
   if (link.type === "blocks") return [makeEdge(from.id, to.id, "blocks")];
   if (from.id === sourceUID) return [makeEdge(from.id, to.id, "related")];
   if (to.id === sourceUID) return [makeEdge(to.id, from.id, "related")];
   return [makeEdge(from.id, to.id, "related")];
+}
+
+function isDeclaredParentOf(parent: ResolvedPeer, child: ResolvedPeer): boolean {
+  if (!child.task) return false;
+  if (child.task.parent?.uid) return child.task.parent.uid === parent.id;
+  return child.task.project_uid === parent.projectUID && child.task.parent_short_id === parent.shortID;
+}
+
+function parentDetailEndpoints(from: ResolvedPeer, to: ResolvedPeer): [parent: ResolvedPeer, child: ResolvedPeer] {
+  if (isDeclaredParentOf(from, to)) return [from, to];
+  if (isDeclaredParentOf(to, from)) return [to, from];
+  return [from, to];
 }
 
 function rememberMissingRef(peer: ResolvedPeer, missingRefs: Map<string, KataGraphMissingRef>): void {

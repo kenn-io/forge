@@ -12,6 +12,9 @@ export type KataGraphDebugEventKind =
   | "graph-load-error"
   | "graph-load-paused"
   | "graph-load-start"
+  | "graph-layout-complete"
+  | "graph-layout-error"
+  | "graph-layout-start"
   | "graph-missing-refs"
   | "graph-render"
   | "selection-start";
@@ -28,8 +31,11 @@ export interface KataGraphDebugGraphSnapshot {
   selectedUID: string | null;
   hideDone: boolean;
   depthLimit: string;
+  layoutMode: string;
+  layoutReady: boolean;
   nodeIds: string[];
   edges: Array<{ id: string; source: string; target: string; kind: string | null }>;
+  nodePositions: Array<{ id: string; x: number; y: number }>;
   disabledNodeIds: string[];
   missingRefKeys: string[];
   nodeCount: number;
@@ -77,6 +83,7 @@ function cloneSnapshot(): KataGraphDebugSnapshot {
           ...latestGraph,
           nodeIds: [...latestGraph.nodeIds],
           edges: latestGraph.edges.map((edge) => ({ ...edge })),
+          nodePositions: latestGraph.nodePositions.map((position) => ({ ...position })),
           disabledNodeIds: [...latestGraph.disabledNodeIds],
           missingRefKeys: [...latestGraph.missingRefKeys],
         }
@@ -101,6 +108,7 @@ export function setKataGraphDebugGraph(snapshot: KataGraphDebugGraphSnapshot): v
     ...snapshot,
     nodeIds: [...snapshot.nodeIds],
     edges: snapshot.edges.map((edge) => ({ ...edge })),
+    nodePositions: snapshot.nodePositions.map((position) => ({ ...position })),
     disabledNodeIds: [...snapshot.disabledNodeIds],
     missingRefKeys: [...snapshot.missingRefKeys],
   };

@@ -227,6 +227,30 @@ describe("buildKataReachableGraph", () => {
     expect(graph.nodes.find((node) => node.id === parent.uid)?.data.adjacentRelation).toBe("parent");
   });
 
+  it("deduplicates reciprocal edges without delimiter collisions", () => {
+    const root = task({
+      uid: "a:blocks:b",
+      short_id: "root",
+      title: "Root",
+      blocks: [
+        { uid: "c", short_id: "c" },
+        { uid: "b", short_id: "b" },
+      ],
+    });
+    const c = task({ uid: "c", short_id: "c", title: "C", blocks: [{ uid: "a:blocks:b", short_id: "root" }] });
+    const b = task({ uid: "b", short_id: "b", title: "B" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, c, b],
+      selectedDetail: detail(root),
+      hideDone: false,
+    });
+
+    expect(graph.edges.map((edge) => edge.id).sort()).toEqual(["blocks:a:blocks:b:b", "blocks:a:blocks:b:c"]);
+  });
+
   it("deduplicates inverse detail links against cached relationship edges", () => {
     const root = task({
       uid: "issue-root",
@@ -327,7 +351,7 @@ describe("buildKataReachableGraph", () => {
 
   it("normalizes detail parent links from child-to-parent into parent-to-child graph edges", () => {
     const root = task({ uid: "issue-root", short_id: "root", title: "Root" });
-    const child = task({ uid: "issue-child", short_id: "child", title: "Child" });
+    const child = task({ uid: "issue-child", short_id: "child", title: "Child", parent_short_id: "root" });
 
     const graph = buildKataReachableGraph({
       sourceUID: root.uid,
@@ -354,9 +378,42 @@ describe("buildKataReachableGraph", () => {
     expect(positionsByID(graph)[child.uid]!.x).toBeGreaterThan(positionsByID(graph)[root.uid]!.x);
   });
 
+  it("preserves already canonical parent-to-child detail links", () => {
+    const parent = task({ uid: "issue-parent", short_id: "parent", title: "Parent" });
+    const child = task({
+      uid: "issue-child",
+      short_id: "child",
+      title: "Child",
+      parent_short_id: "parent",
+    });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: parent.uid,
+      selectedUID: parent.uid,
+      tasks: [parent, child],
+      selectedDetail: detail(parent, {
+        links: [
+          {
+            id: 1,
+            project_id: parent.project_id,
+            from: { uid: parent.uid, short_id: parent.short_id },
+            to: { uid: child.uid, short_id: child.short_id },
+            type: "parent",
+            author: "middleman",
+            created_at: "2026-06-29T12:00:00Z",
+          },
+        ],
+      }),
+      hideDone: false,
+    });
+
+    expect(graph.edges.map((edge) => edge.id)).toEqual(["parent:issue-parent:issue-child"]);
+    expect(graph.nodes.find((node) => node.id === child.uid)?.data.adjacentRelation).toBe("child");
+  });
+
   it("keeps the parent visible when the source detail declares a parent link", () => {
     const parent = task({ uid: "issue-parent", short_id: "parent", title: "Parent" });
-    const child = task({ uid: "issue-child", short_id: "child", title: "Child" });
+    const child = task({ uid: "issue-child", short_id: "child", title: "Child", parent_short_id: "parent" });
 
     const graph = buildKataReachableGraph({
       sourceUID: child.uid,
@@ -409,6 +466,30 @@ describe("buildKataReachableGraph", () => {
     expect(graph.edges.map((edge) => edge.id).sort()).toContain("parent:issue-parent:issue-child");
     expect(graph.edges.map((edge) => edge.id).sort()).not.toContain("parent:issue-wrong-parent:issue-child");
     expect(graph.nodes.find((node) => node.id === parent.uid)?.data.isSource).toBe(true);
+  });
+
+  it("does not discover uid-backed children through a colliding parent short id", () => {
+    const parent = task({ uid: "issue-parent", short_id: "parent", title: "Parent" });
+    const sameShortID = task({ uid: "issue-wrong-parent", short_id: "parent", title: "Wrong parent" });
+    const child = task({
+      uid: "issue-child",
+      short_id: "child",
+      title: "Child",
+      parent: { uid: parent.uid, short_id: sameShortID.short_id },
+      parent_short_id: sameShortID.short_id,
+    });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: sameShortID.uid,
+      selectedUID: sameShortID.uid,
+      tasks: [child, sameShortID, parent],
+      selectedDetail: detail(sameShortID),
+      hideDone: false,
+      depthLimit: "full",
+    });
+
+    expect(graph.nodes.map((node) => node.id)).toEqual([sameShortID.uid]);
+    expect(graph.edges).toEqual([]);
   });
 
   it("marks nodes adjacent to the selected task by relationship direction", () => {

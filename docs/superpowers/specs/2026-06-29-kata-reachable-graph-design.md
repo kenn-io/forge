@@ -145,6 +145,18 @@ direction; it does not infer extra incoming edges by scanning unrelated cached
 rows that happen to point at the active task. Missing refs outside the selected
 depth are not requested until the user widens the depth.
 
+Traversal sources by relationship kind:
+
+| Relationship | Full graph | Bounded depth graph |
+| --- | --- | --- |
+| `parent` | Declared parent on expanded task; child reverse index from cached tasks without parent UID; source-detail parent links | Declared parent on expanded task; child reverse index from cached tasks without parent UID; source-detail parent links only when expanding the source |
+| `blocks` | Declared `blocks` and `blocked_by` on expanded task; source-detail blocks links | Declared `blocks` and `blocked_by` on expanded task; source-detail blocks links only when expanding the source |
+| `related` | Declared `related` on expanded task; source-detail related links normalized source-outward | Declared `related` on expanded task; source-detail related links only when expanding the source |
+
+The graph source is always present in `Full`. In bounded depth modes, the graph
+is selected-task anchored: the original source remains visible only when it is
+inside the selected task's bounded closure or is the bounded fallback root.
+
 Depth changes only affect the current graph render and newly reported missing
 refs. Narrowing the graph depth does not cancel a store-owned graph fetch
 already in flight, and a completed fetch may still enter the workspace cache
@@ -172,19 +184,19 @@ graph action beside the workspace/detail actions.
 
 - `SvelteFlow` with `nodesDraggable={false}` and `nodesConnectable={false}`;
 - `fitView`, `Controls`, `MiniMap`, and `Background`;
-- the graph depth control uses the shared `SelectDropdown` combobox component
-  from `@middleman/ui`, not a native `<select>`, so the popup follows the app
-  theme and keyboard behavior;
+- the graph depth and layout controls use the shared `SelectDropdown` combobox
+  component from `@middleman/ui`, not native `<select>` elements, so popups
+  follow the app theme and keyboard behavior;
 - a registered custom task node type that renders title, id label, status,
   priority, source and selected markers, and cached/placeholder state directly
   inside the Svelte Flow canvas;
 - selected task nodes use an accent border, visible ring, and subtle selection
   tint so the active task is distinguishable from neutral open nodes,
   relation-tinted adjacent nodes, and source-only nodes;
-- a real full-node button inside the custom node as the single activation
-  target for keyboard users. Pointer activation is delegated to the Svelte Flow
-  node click handler. Both paths call the same cached-node selection handler
-  exactly once;
+- a real full-node button inside the custom node for pointer and keyboard
+  activation. The Svelte Flow node click handler remains as a wrapper fallback
+  for clicks outside the button, and button clicks stop propagation so cached-node
+  selection runs exactly once;
 - hidden `Handle` anchors inside the custom node so Svelte Flow can route edges
   without showing connection handles as visible UI;
 - native Svelte Flow edge markers (`MarkerType.ArrowClosed`) on `markerEnd` to
@@ -201,13 +213,17 @@ graph action beside the workspace/detail actions.
 - `onnodeclick` to select cached nodes for pointer activation.
 
 A pure `kataReachableGraph.ts` module builds nodes and edges. It performs the
-depth-limited reachability traversal, creates marker-backed edges, and assigns
-stable layered positions so tests can assert the graph without depending on
-browser layout.
-Layout is directed and based on the final visible edge set after reciprocal
-edge deduplication and done filtering. Incoming relationships can appear to the
-left of the active/source task and outgoing relationships to the right; cycles
-fall back to the stable task sort for deterministic placement.
+depth-limited reachability traversal, creates marker-backed edges, and computes
+the default compact directed layout with a deterministic topological ranker.
+Compact is the default because it keeps large task graphs dense enough for the
+Kata workspace canvas.
+
+`KataReachableGraph.svelte` adds a layout switch with `Compact` and `ELK`
+options. `ELK` delegates node placement to `elkjs` using a left-to-right layered
+layout based on the final visible edge set after reciprocal edge deduplication
+and done filtering. ELK layout is asynchronous, so the graph renders compact
+positions until ELK returns, then swaps in ELK coordinates if the graph signature
+still matches the active layout request.
 Nodes include explicit Svelte Flow width/height values so edge endpoints are
 based on stable bounds instead of shifting after custom node measurement.
 There is no duplicate card/button list below the canvas.
@@ -272,8 +288,9 @@ Add Svelte tests for workspace integration:
 - adjacent relation backgrounds do not overwrite status accents;
 - `Hide done` removes done nodes.
 - browser coverage verifies nonblank canvas nodes, hidden handles, native edge
-  markers, themed controls/minimap, and the absence of a duplicate node-list
-  fallback. It also covers both Enter and Space keyboard activation.
+  markers, themed controls/minimap, the Compact/ELK layout switch, and the
+  absence of a duplicate node-list fallback. It also covers both Enter and Space
+  keyboard activation.
 - full-stack e2e coverage opens graph mode from the workspace, selects a cached
   graph node, confirms detail selection changes, verifies the source graph
   remains visible/stable after selection, exercises uncached UID-backed graph
@@ -281,5 +298,5 @@ Add Svelte tests for workspace integration:
 
 ## Dependencies
 
-Add `@xyflow/svelte` to `frontend/package.json` using `bun install` so the Bun
-lockfile remains authoritative.
+Add `@xyflow/svelte` and `elkjs` to `frontend/package.json` using `bun install`
+so the Bun lockfile remains authoritative.

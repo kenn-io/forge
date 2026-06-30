@@ -4,6 +4,7 @@
   import type { KataGraphNode, KataGraphNodeData } from "./kataReachableGraph.js";
 
   let {
+    id,
     data,
     selected = false,
     sourcePosition = Position.Right,
@@ -23,6 +24,12 @@
     event.preventDefault();
     (event.currentTarget as HTMLButtonElement).click();
   }
+
+  function activateNode(event: MouseEvent): void {
+    event.stopPropagation();
+    if (!data.selectable) return;
+    data.onSelect?.(id);
+  }
 </script>
 
 <button
@@ -40,6 +47,7 @@
   aria-current={data.isSource ? "true" : undefined}
   aria-pressed={data.isSelected || selected}
   disabled={!data.selectable}
+  onclick={activateNode}
   onkeydown={activateFromKeyboard}
 >
   <div class="node-title-row">

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
   import {
@@ -22,9 +23,12 @@
   import {
     buildKataReachableGraph,
     type KataGraphDepthLimit,
+    type KataGraphEdge,
     type KataGraphMissingRef,
     type KataGraphNode,
   } from "./kataReachableGraph.js";
+
+  type KataGraphLayoutMode = "compact" | "elk";
 
   interface Props {
     sourceUID: string;
@@ -48,10 +52,29 @@
 
   let hideDone = $state(false);
   let depthLimit = $state<KataGraphDepthLimit>("full");
+  let layoutMode = $state<KataGraphLayoutMode>("compact");
+  let layoutedNodes = $state.raw<KataGraphNode[]>([]);
+  let layoutedKey = $state("");
   let graph = $derived(
     buildKataReachableGraph({ sourceUID, selectedUID, tasks, selectedDetail, hideDone, depthLimit }),
   );
+  let graphSignature = $derived(graphLayoutSignature(graph.nodes, graph.edges));
+  let activeLayoutKey = $derived(`${layoutMode}:${graphSignature}`);
+  let flowNodes = $derived(layoutedKey === activeLayoutKey ? layoutedNodes : graph.nodes);
+  let interactiveNodes = $derived(flowNodes.map((node) => withNodeActivation(node)));
+  let layoutReady = $derived(layoutMode === "compact" || layoutedKey === activeLayoutKey);
   let source = $derived(tasks.find((task) => task.uid === sourceUID));
+  let layoutRun = 0;
+  const elk = new ELK({
+    defaultLayoutOptions: {
+      "elk.algorithm": "layered",
+      "elk.direction": "RIGHT",
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.spacing.nodeNode": "24",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "72",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "14",
+    },
+  });
   const nodeTypes: NodeTypes = {
     kataTask: KataGraphTaskNode,
   };
@@ -60,6 +83,10 @@
     { value: "1", label: "1 edge" },
     { value: "2", label: "2 edges" },
     { value: "3", label: "3 edges" },
+  ];
+  const layoutOptions: SelectDropdownOption[] = [
+    { value: "compact", label: "Compact" },
+    { value: "elk", label: "ELK" },
   ];
   const fitViewOptions = {
     duration: 0,
@@ -70,13 +97,65 @@
     return ref.uid ? `uid:${ref.uid}` : `short:${ref.projectUID}:${ref.shortID}`;
   }
 
+  function selectNodeID(uid: string): void {
+    onSelectIssue(uid);
+  }
+
   function selectNode(node: KataGraphNode): void {
     if (!node.data.selectable) return;
-    onSelectIssue(node.id);
+    selectNodeID(node.id);
+  }
+
+  function withNodeActivation(node: KataGraphNode): KataGraphNode {
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        onSelect: selectNodeID,
+      },
+    };
   }
 
   function setDepthLimit(value: string): void {
     depthLimit = value as KataGraphDepthLimit;
+  }
+
+  function setLayoutMode(value: string): void {
+    layoutMode = value as KataGraphLayoutMode;
+  }
+
+  function graphLayoutSignature(nodes: readonly KataGraphNode[], edges: readonly KataGraphEdge[]): string {
+    return JSON.stringify({
+      nodes: nodes.map((node) => node.id),
+      edges: edges.map((edge) => [edge.id, edge.source, edge.target]),
+    });
+  }
+
+  function elkGraph(nodes: readonly KataGraphNode[], edges: readonly KataGraphEdge[]): ElkNode {
+    const nodeIDs = new Set(nodes.map((node) => node.id));
+    return {
+      id: "kata-reachable-graph",
+      children: nodes.map((node) => ({
+        id: node.id,
+        width: node.width ?? 250,
+        height: node.height ?? 74,
+      })),
+      edges: edges
+        .filter((edge) => nodeIDs.has(edge.source) && nodeIDs.has(edge.target))
+        .map((edge) => ({
+          id: edge.id,
+          sources: [edge.source],
+          targets: [edge.target],
+        })),
+    };
+  }
+
+  function applyElkPositions(nodes: readonly KataGraphNode[], layoutedGraph: ElkNode): KataGraphNode[] {
+    const positions = new Map((layoutedGraph.children ?? []).map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
+    return nodes.map((node) => ({
+      ...node,
+      position: positions.get(node.id) ?? node.position,
+    }));
   }
 
   function minimapData(node: SvelteFlowNode): Partial<KataGraphNode["data"]> {
@@ -105,21 +184,59 @@
   });
 
   $effect(() => {
+    const key = activeLayoutKey;
+    const nodes = graph.nodes;
+    const edges = graph.edges;
+    const run = ++layoutRun;
+    if (layoutMode === "compact" || nodes.length === 0) {
+      layoutedNodes = nodes;
+      layoutedKey = key;
+      return;
+    }
+
+    recordKataGraphDebugEvent("graph-layout-start", { layoutMode, nodeCount: nodes.length, edgeCount: edges.length });
+    elk
+      .layout(elkGraph(nodes, edges))
+      .then((layoutedGraph) => {
+        if (run !== layoutRun) return;
+        layoutedNodes = applyElkPositions(nodes, layoutedGraph);
+        layoutedKey = key;
+        recordKataGraphDebugEvent("graph-layout-complete", {
+          layoutMode,
+          nodeCount: layoutedNodes.length,
+          edgeCount: edges.length,
+        });
+      })
+      .catch((error: unknown) => {
+        if (run !== layoutRun) return;
+        layoutedNodes = nodes;
+        layoutedKey = key;
+        recordKataGraphDebugEvent("graph-layout-error", {
+          layoutMode,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+  });
+
+  $effect(() => {
     const snapshot = {
       sourceUID,
       selectedUID,
       hideDone,
       depthLimit,
-      nodeIds: graph.nodes.map((node) => node.id),
+      layoutMode,
+      layoutReady,
+      nodeIds: flowNodes.map((node) => node.id),
       edges: graph.edges.map((edge) => ({
         id: edge.id,
         source: edge.source,
         target: edge.target,
         kind: typeof edge.data?.kind === "string" ? edge.data.kind : null,
       })),
-      disabledNodeIds: graph.nodes.filter((node) => !node.data.selectable).map((node) => node.id),
+      nodePositions: flowNodes.map((node) => ({ id: node.id, x: node.position.x, y: node.position.y })),
+      disabledNodeIds: flowNodes.filter((node) => !node.data.selectable).map((node) => node.id),
       missingRefKeys: graph.missingRefs.map(missingRefKey),
-      nodeCount: graph.nodes.length,
+      nodeCount: flowNodes.length,
       edgeCount: graph.edges.length,
     };
     setKataGraphDebugGraph(snapshot);
@@ -151,6 +268,16 @@
           onchange={setDepthLimit}
         />
       </div>
+      <div class="layout-filter">
+        <span>Layout</span>
+        <SelectDropdown
+          class="kata-graph-layout-select"
+          title="Graph layout"
+          value={layoutMode}
+          options={layoutOptions}
+          onchange={setLayoutMode}
+        />
+      </div>
       <label class="hide-done">
         <input type="checkbox" bind:checked={hideDone} />
         <span>Hide done</span>
@@ -163,7 +290,7 @@
   {:else}
     <div class="graph-canvas">
       <SvelteFlow
-        nodes={graph.nodes}
+        nodes={interactiveNodes}
         edges={graph.edges}
         {nodeTypes}
         fitView
@@ -208,6 +335,7 @@
 
   .toolbar-button,
   .depth-filter,
+  .layout-filter,
   .hide-done {
     min-height: 28px;
     display: inline-flex;
@@ -225,6 +353,7 @@
 
   .toolbar-button:hover,
   .depth-filter:hover,
+  .layout-filter:hover,
   .hide-done:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
@@ -236,7 +365,8 @@
     gap: 8px;
   }
 
-  .depth-filter {
+  .depth-filter,
+  .layout-filter {
     gap: 7px;
     border: 0;
     background: transparent;
@@ -244,23 +374,27 @@
     cursor: default;
   }
 
-  .depth-filter:hover {
+  .depth-filter:hover,
+  .layout-filter:hover {
     background: transparent;
     color: var(--text-secondary);
   }
 
-  :global(.kata-graph-depth-select) {
+  :global(.kata-graph-depth-select),
+  :global(.kata-graph-layout-select) {
     min-width: 104px;
   }
 
-  :global(.kata-graph-depth-select .select-dropdown-trigger) {
+  :global(.kata-graph-depth-select .select-dropdown-trigger),
+  :global(.kata-graph-layout-select .select-dropdown-trigger) {
     height: 28px;
     background: var(--bg-primary);
     border-color: var(--border-default);
     color: var(--text-primary);
   }
 
-  :global(.kata-graph-depth-select .select-dropdown-list) {
+  :global(.kata-graph-depth-select .select-dropdown-list),
+  :global(.kata-graph-layout-select .select-dropdown-list) {
     left: 0;
     right: auto;
   }

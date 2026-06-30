@@ -23,6 +23,7 @@ export interface KataGraphNodeData extends Record<string, unknown> {
 
 export type KataGraphAdjacentRelation = "blocks" | "blockedBy" | "child" | "parent" | "related" | null;
 export type KataGraphDepthLimit = "full" | "1" | "2" | "3";
+export type KataGraphContextDepth = "all" | "1" | "2" | "3";
 export type KataGraphLayoutDirection = "LR" | "TB";
 export type KataGraphNode = Node<KataGraphNodeData, "kataTask">;
 export type KataGraphEdge = Edge<KataGraphEdgeData>;
@@ -45,7 +46,7 @@ export interface BuildKataReachableGraphInput {
   selectedDetail?: KataTaskDetail | null | undefined;
   hideDone: boolean;
   depthLimit?: KataGraphDepthLimit | undefined;
-  showDepthContext?: boolean | undefined;
+  contextDepth?: KataGraphContextDepth | undefined;
   layoutDirection?: KataGraphLayoutDirection | undefined;
 }
 
@@ -97,6 +98,10 @@ function priorityLabel(priority: number | undefined): string | null {
 
 function maxTraversalDepth(limit: KataGraphDepthLimit | undefined): number {
   return limit === undefined || limit === "full" ? Number.POSITIVE_INFINITY : Number(limit);
+}
+
+function maxContextDepth(limit: KataGraphContextDepth | undefined): number {
+  return limit === undefined || limit === "all" ? Number.POSITIVE_INFINITY : Number(limit);
 }
 
 function hasBoundedDepth(limit: KataGraphDepthLimit | undefined): boolean {
@@ -158,7 +163,7 @@ function resolvePeer(peer: KataLinkPeer, projectUID: string, indexes: TaskIndexe
 
 function makeEdge(source: string, target: string, kind: GraphEdgeKind): KataGraphEdge {
   const markerColor =
-    kind === "blocks" ? "var(--accent-amber)" : kind === "parent" ? "var(--text-secondary)" : "var(--text-muted)";
+    kind === "parent" ? "var(--text-secondary)" : kind === "related" ? "var(--text-muted)" : "var(--text-secondary)";
   return {
     id: `${kind}:${source}:${target}`,
     source,
@@ -660,6 +665,54 @@ function depthContextEdge(edge: KataGraphEdge): KataGraphEdge {
   };
 }
 
+function selectedEdgeMarkerColor(kind: GraphEdgeKind): string {
+  if (kind === "blocks") return "var(--accent-amber)";
+  if (kind === "parent") return "var(--text-secondary)";
+  if (kind === "related") return "var(--text-muted)";
+  return "var(--text-secondary)";
+}
+
+function ambientActiveEdge(edge: KataGraphEdge): KataGraphEdge {
+  const kind = edge.data?.kind;
+  if (!kind) return edge;
+  const className = typeof edge.class === "string" ? edge.class : "";
+  const next: KataGraphEdge = {
+    ...edge,
+    class: `${className} kata-graph-edge--ambient`.trim(),
+    data: { ...edge.data, kind, isSelectedAdjacent: false },
+    zIndex: 1,
+  };
+  if (!edge.markerEnd || typeof edge.markerEnd !== "object") return next;
+  return {
+    ...next,
+    markerEnd: { ...edge.markerEnd, color: "var(--text-secondary)" },
+  } as KataGraphEdge;
+}
+
+function selectedActiveEdge(edge: KataGraphEdge): KataGraphEdge {
+  const kind = edge.data?.kind;
+  if (!kind) return edge;
+  const className = typeof edge.class === "string" ? edge.class : "";
+  const next: KataGraphEdge = {
+    ...edge,
+    class: `${className} kata-graph-edge--selected-adjacent`.trim(),
+    data: { ...edge.data, kind, isSelectedAdjacent: true },
+    zIndex: 4,
+  };
+  if (!edge.markerEnd || typeof edge.markerEnd !== "object") return next;
+  return {
+    ...next,
+    markerEnd: { ...edge.markerEnd, color: selectedEdgeMarkerColor(kind) },
+  } as KataGraphEdge;
+}
+
+function activeEdge(edge: KataGraphEdge, selectedUID: string | null): KataGraphEdge {
+  if (selectedUID && (edge.source === selectedUID || edge.target === selectedUID)) {
+    return selectedActiveEdge(edge);
+  }
+  return ambientActiveEdge(edge);
+}
+
 function compareGraphEdges(left: KataGraphEdge, right: KataGraphEdge): number {
   const leftDepthContext = left.data?.isDepthContext ? 0 : 1;
   const rightDepthContext = right.data?.isDepthContext ? 0 : 1;
@@ -729,19 +782,25 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   const layoutDirection = input.layoutDirection ?? "LR";
   const depthLimit = maxTraversalDepth(input.depthLimit);
   const selectedTask = input.selectedUID ? indexes.byUID.get(input.selectedUID) : undefined;
-  const activeTraversalRoot = hasBoundedDepth(input.depthLimit) && selectedTask ? selectedTask : source;
-  const activeGraph = collectReachableGraph(input, indexes, source, activeTraversalRoot, depthLimit);
-  const showDepthContext = Boolean(hasBoundedDepth(input.depthLimit) && input.showDepthContext);
-  const graph = showDepthContext
-    ? collectReachableGraph(input, indexes, source, source, Number.POSITIVE_INFINITY)
-    : activeGraph;
-  const activeIDs = new Set(activeGraph.nodeTasks.keys());
-  const activeEdgeIDs = new Set(activeGraph.edges.keys());
+  const graphTraversalRoot = hasBoundedDepth(input.depthLimit) && selectedTask ? selectedTask : source;
+  const emphasisTraversalRoot = selectedTask ?? graphTraversalRoot;
+  const graph = collectReachableGraph(input, indexes, source, graphTraversalRoot, depthLimit);
+  const hasDepthContext = input.contextDepth !== undefined && input.contextDepth !== "all";
+  const emphasisGraph = hasDepthContext
+    ? collectReachableGraph(input, indexes, source, emphasisTraversalRoot, maxContextDepth(input.contextDepth))
+    : graph;
+  const emphasisIDs = new Set(emphasisGraph.nodeTasks.keys());
+  const emphasisEdgeIDs = new Set(emphasisGraph.edges.keys());
 
   const visibleIDs = new Set<string>();
+  const preservedNodeIDs = new Set([
+    input.sourceUID,
+    graphTraversalRoot.uid,
+    ...(selectedTask ? [selectedTask.uid] : []),
+  ]);
   const visibleNodeEntries = [...graph.nodeTasks.entries()]
     .filter(([id, task]) => {
-      if (task && id !== input.sourceUID && id !== activeTraversalRoot.uid && input.hideDone && isDone(task)) {
+      if (task && !preservedNodeIDs.has(id) && input.hideDone && isDone(task)) {
         return false;
       }
       return true;
@@ -753,14 +812,15 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
   const visibleRelationshipEdges = [...graph.edges.values()]
     .filter((edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target))
     .map((edge) =>
-      showDepthContext && (!activeEdgeIDs.has(edge.id) || !activeIDs.has(edge.source) || !activeIDs.has(edge.target))
+      hasDepthContext &&
+      (!emphasisEdgeIDs.has(edge.id) || !emphasisIDs.has(edge.source) || !emphasisIDs.has(edge.target))
         ? depthContextEdge(edge)
-        : edge,
+        : activeEdge(edge, input.selectedUID),
     );
   const visibleEdges = [...visibleRelationshipEdges].sort(compareGraphEdges);
-  const layoutRelationshipEdges = showDepthContext
-    ? [...graph.edges.values()].filter((edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target))
-    : visibleRelationshipEdges;
+  const layoutRelationshipEdges = [...graph.edges.values()].filter(
+    (edge) => visibleIDs.has(edge.source) && visibleIDs.has(edge.target),
+  );
   const layoutEdges = pruneTransitiveBlockEdges(layoutRelationshipEdges).sort(compareGraphEdges);
   const positions = graphPositions(visibleNodeEntries, layoutEdges, layoutDirection);
   const projectLabels = visibleProjectLabels(visibleNodeEntries);
@@ -777,7 +837,7 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
       task ? (projectLabels.get(id) ?? "") : missingProjectLabel(missingRef, projectLabels),
       missingRef,
       layoutDirection,
-      showDepthContext && !activeIDs.has(id),
+      hasDepthContext && !emphasisIDs.has(id),
     );
   });
 
@@ -786,7 +846,7 @@ export function buildKataReachableGraph(input: BuildKataReachableGraphInput): {
     edges: visibleEdges,
     layoutEdges,
     missingRefs: sortedMissingRefs(
-      [...activeGraph.missingRefs.entries()].filter(([id]) => visibleIDs.has(id)).map(([, ref]) => ref),
+      [...graph.missingRefs.entries()].filter(([id]) => visibleIDs.has(id)).map(([, ref]) => ref),
     ),
   };
 }

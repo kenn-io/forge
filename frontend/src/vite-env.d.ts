@@ -300,7 +300,7 @@ interface Window {
             sourceUID: string;
             selectedUID: string | null;
             hideDone: boolean;
-            showDepthContext: boolean;
+            contextDepth: string;
             depthLimit: string;
             layoutMode: string;
             layoutDirection: string;

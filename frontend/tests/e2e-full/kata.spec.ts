@@ -1331,7 +1331,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
     expect(debugBeforeSelection?.latestGraph?.layoutEdgeCount).toBe(2);
     await graph.getByRole("combobox", { name: "Graph depth: Full" }).click();
     await page.getByRole("option", { name: "1 edge" }).click();
-    await expect(graph.getByRole("checkbox", { name: "Show context" })).toBeEnabled();
+    await expect(graph.getByRole("combobox", { name: "Graph context: All" })).toBeEnabled();
     await expect
       .poll(() =>
         page.evaluate(() => {
@@ -1349,7 +1349,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
       .toMatchObject({
         depthLimit: "1",
         nodeIds: expect.arrayContaining(["issue-rent", "issue-q3", "issue-follow-up"]),
-        edgeCount: 3,
+        edgeCount: 2,
         layoutEdgeCount: 2,
       });
     await graph.getByRole("combobox", { name: "Graph depth: 1 edge" }).click();

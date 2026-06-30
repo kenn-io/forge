@@ -697,7 +697,7 @@ describe("buildKataReachableGraph", () => {
     expect(full.nodes.map((node) => node.id).sort()).toEqual(["issue-one", "issue-root", "issue-three", "issue-two"]);
   });
 
-  it("can keep out-of-depth graph context faded", () => {
+  it("keeps context all from widening the depth node set", () => {
     const root = task({
       uid: "issue-root",
       short_id: "root",
@@ -725,23 +725,17 @@ describe("buildKataReachableGraph", () => {
       selectedDetail: detail(root),
       hideDone: false,
       depthLimit: "1",
-      showDepthContext: true,
+      contextDepth: "all",
     });
 
-    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["issue-one", "issue-root", "issue-three", "issue-two"]);
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["issue-one", "issue-root"]);
     expect(graph.nodes.find((node) => node.id === "issue-root")?.data.isDepthContext).toBe(false);
     expect(graph.nodes.find((node) => node.id === "issue-one")?.data.isDepthContext).toBe(false);
-    expect(graph.nodes.find((node) => node.id === "issue-two")?.data.isDepthContext).toBe(true);
-    expect(graph.nodes.find((node) => node.id === "issue-three")?.data.isDepthContext).toBe(true);
+    expect(graph.nodes.find((node) => node.id === "issue-two")).toBeUndefined();
+    expect(graph.nodes.find((node) => node.id === "issue-three")).toBeUndefined();
     expect(graph.edges.find((edge) => edge.id === "blocks:issue-root:issue-one")?.data?.isDepthContext).toBeFalsy();
-    expect(graph.edges.find((edge) => edge.id === "blocks:issue-one:issue-two")?.data?.isDepthContext).toBe(true);
-    expect(graph.edges.find((edge) => edge.id === "blocks:issue-root:issue-one")?.zIndex).toBeGreaterThan(
-      graph.edges.find((edge) => edge.id === "blocks:issue-one:issue-two")?.zIndex ?? -1,
-    );
-    expect(graph.edges.find((edge) => edge.id === "blocks:issue-one:issue-two")?.markerEnd).toMatchObject({
-      color: "var(--border-default)",
-    });
-    expect(graph.edges.map((edge) => edge.data?.isDepthContext ?? false)).toEqual([true, true, false]);
+    expect(graph.edges.find((edge) => edge.id === "blocks:issue-one:issue-two")).toBeUndefined();
+    expect(graph.edges.map((edge) => edge.data?.isDepthContext ?? false)).toEqual([false]);
   });
 
   it("does not request missing refs that only appear in faded depth context", () => {
@@ -765,11 +759,11 @@ describe("buildKataReachableGraph", () => {
       selectedDetail: detail(root),
       hideDone: false,
       depthLimit: "1",
-      showDepthContext: true,
+      contextDepth: "all",
     });
 
-    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["issue-hidden", "issue-one", "issue-root"]);
-    expect(graph.nodes.find((node) => node.id === "issue-hidden")?.data.isDepthContext).toBe(true);
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual(["issue-one", "issue-root"]);
+    expect(graph.nodes.find((node) => node.id === "issue-hidden")).toBeUndefined();
     expect(graph.missingRefs).toEqual([]);
   });
 
@@ -837,8 +831,8 @@ describe("buildKataReachableGraph", () => {
       tasks: [root, one, two],
       selectedDetail: detail(root),
       hideDone: false,
-      depthLimit: "1",
-      showDepthContext: true,
+      depthLimit: "2",
+      contextDepth: "1",
     });
 
     expect(graph.edges.find((edge) => edge.id === "blocks:issue-one:issue-two")?.data?.isDepthContext).toBe(true);
@@ -853,7 +847,54 @@ describe("buildKataReachableGraph", () => {
     ]);
   });
 
-  it("keeps the faded context layout stable when selecting nodes in bounded depth", () => {
+  it("keeps context changes from moving the depth layout", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({
+      uid: "issue-two",
+      short_id: "two",
+      title: "Two edges",
+      blocks: [{ uid: "issue-three", short_id: "three" }],
+    });
+    const three = task({ uid: "issue-three", short_id: "three", title: "Three edges" });
+
+    const allContext = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "3",
+      contextDepth: "all",
+    });
+    const oneEdgeContext = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "3",
+      contextDepth: "1",
+    });
+
+    expect(oneEdgeContext.nodes.map((node) => node.id)).toEqual(allContext.nodes.map((node) => node.id));
+    expect(oneEdgeContext.layoutEdges.map((edge) => edge.id)).toEqual(allContext.layoutEdges.map((edge) => edge.id));
+    expect(positionsByID(oneEdgeContext)).toEqual(positionsByID(allContext));
+    expect(oneEdgeContext.nodes.find((node) => node.id === two.uid)?.data.isDepthContext).toBe(true);
+    expect(oneEdgeContext.nodes.find((node) => node.id === three.uid)?.data.isDepthContext).toBe(true);
+  });
+
+  it("keeps full-depth layout stable when selection changes", () => {
     const root = task({
       uid: "issue-root",
       short_id: "root",
@@ -880,8 +921,8 @@ describe("buildKataReachableGraph", () => {
       tasks: [root, one, two, three],
       selectedDetail: detail(root),
       hideDone: false,
-      depthLimit: "1",
-      showDepthContext: true,
+      depthLimit: "full",
+      contextDepth: "1",
     });
     const twoSelected = buildKataReachableGraph({
       sourceUID: root.uid,
@@ -889,19 +930,156 @@ describe("buildKataReachableGraph", () => {
       tasks: [root, one, two, three],
       selectedDetail: detail(root),
       hideDone: false,
-      depthLimit: "1",
-      showDepthContext: true,
+      depthLimit: "full",
+      contextDepth: "1",
     });
 
     expect(twoSelected.nodes.map((node) => node.id)).toEqual(rootSelected.nodes.map((node) => node.id));
     expect(twoSelected.layoutEdges.map((edge) => edge.id)).toEqual(rootSelected.layoutEdges.map((edge) => edge.id));
     expect(positionsByID(twoSelected)).toEqual(positionsByID(rootSelected));
     expect(twoSelected.nodes.find((node) => node.id === two.uid)?.data.isSelected).toBe(true);
-    expect(twoSelected.nodes.find((node) => node.id === three.uid)?.data.isDepthContext).toBe(false);
     expect(twoSelected.nodes.find((node) => node.id === root.uid)?.data.isDepthContext).toBe(true);
+    expect(twoSelected.nodes.find((node) => node.id === three.uid)?.data.isDepthContext).toBe(false);
   });
 
-  it("uses the selected task as the bounded depth root without faded context", () => {
+  it("keeps the depth node set stable when changing context highlight distance", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({
+      uid: "issue-two",
+      short_id: "two",
+      title: "Two edges",
+      blocks: [{ uid: "issue-three", short_id: "three" }],
+    });
+    const three = task({ uid: "issue-three", short_id: "three", title: "Three edges" });
+
+    const allContext = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "3",
+      contextDepth: "all",
+    });
+    const oneEdgeContext = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: root.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "3",
+      contextDepth: "1",
+    });
+
+    expect(oneEdgeContext.nodes.map((node) => node.id)).toEqual(allContext.nodes.map((node) => node.id));
+    expect(oneEdgeContext.layoutEdges.map((edge) => edge.id)).toEqual(allContext.layoutEdges.map((edge) => edge.id));
+    expect(positionsByID(oneEdgeContext)).toEqual(positionsByID(allContext));
+    expect(allContext.nodes.map((node) => node.data.isDepthContext)).toEqual([false, false, false, false]);
+    expect(oneEdgeContext.nodes.find((node) => node.id === "issue-root")?.data.isDepthContext).toBe(false);
+    expect(oneEdgeContext.nodes.find((node) => node.id === "issue-one")?.data.isDepthContext).toBe(false);
+    expect(oneEdgeContext.nodes.find((node) => node.id === "issue-two")?.data.isDepthContext).toBe(true);
+    expect(oneEdgeContext.nodes.find((node) => node.id === "issue-three")?.data.isDepthContext).toBe(true);
+  });
+
+  it("fades selected full-depth nodes outside the context radius", () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({
+      uid: "issue-two",
+      short_id: "two",
+      title: "Two edges",
+      blocks: [{ uid: "issue-three", short_id: "three" }],
+    });
+    const three = task({
+      uid: "issue-three",
+      short_id: "three",
+      title: "Three edges",
+      blocks: [{ uid: "issue-four", short_id: "four" }],
+    });
+    const four = task({ uid: "issue-four", short_id: "four", title: "Four edges" });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: root.uid,
+      selectedUID: two.uid,
+      tasks: [root, one, two, three, four],
+      selectedDetail: detail(root),
+      hideDone: false,
+      depthLimit: "full",
+      contextDepth: "1",
+    });
+
+    expect(graph.nodes.map((node) => node.id).sort()).toEqual([
+      "issue-four",
+      "issue-one",
+      "issue-root",
+      "issue-three",
+      "issue-two",
+    ]);
+    expect(graph.nodes.find((node) => node.id === "issue-two")?.data.isDepthContext).toBe(false);
+    expect(graph.nodes.find((node) => node.id === "issue-three")?.data.isDepthContext).toBe(false);
+    expect(graph.nodes.find((node) => node.id === "issue-four")?.data.isDepthContext).toBe(true);
+  });
+
+  it("mutes edges outside the context highlight distance", () => {
+    const active = task({
+      uid: "issue-active",
+      short_id: "active",
+      title: "Active",
+      blocks: [{ uid: "issue-active-child", short_id: "active-child" }],
+    });
+    const activeChild = task({
+      uid: "issue-active-child",
+      short_id: "active-child",
+      title: "Active child",
+      blocks: [{ uid: "issue-active-grandchild", short_id: "active-grandchild" }],
+    });
+    const activeGrandchild = task({
+      uid: "issue-active-grandchild",
+      short_id: "active-grandchild",
+      title: "Active grandchild",
+    });
+
+    const graph = buildKataReachableGraph({
+      sourceUID: active.uid,
+      selectedUID: active.uid,
+      tasks: [active, activeChild, activeGrandchild],
+      selectedDetail: detail(active),
+      hideDone: false,
+      depthLimit: "2",
+      contextDepth: "1",
+    });
+
+    const selectedEdge = graph.edges.find((edge) => edge.id === "blocks:issue-active:issue-active-child");
+    expect(selectedEdge?.data?.isDepthContext).toBeUndefined();
+    expect(selectedEdge).toMatchObject({ markerEnd: { color: "var(--accent-amber)" } });
+    expect(graph.edges.find((edge) => edge.id === "blocks:issue-active-child:issue-active-grandchild")).toMatchObject({
+      data: { isDepthContext: true },
+      markerEnd: { color: "var(--border-default)" },
+    });
+  });
+
+  it("uses the selected task as the active depth root without faded context", () => {
     const root = task({
       uid: "issue-root",
       short_id: "root",
@@ -950,6 +1128,7 @@ describe("buildKataReachableGraph", () => {
     expect(oneEdge.nodes.map((node) => node.id).sort()).toEqual(["issue-three", "issue-two"]);
     expect(oneEdge.edges.map((edge) => edge.id).sort()).toEqual(["blocks:issue-two:issue-three"]);
     expect(twoEdges.nodes.map((node) => node.id).sort()).toEqual(["issue-three", "issue-two"]);
+    expect(full.nodes.map((node) => node.id).sort()).toEqual(["issue-one", "issue-root", "issue-three", "issue-two"]);
     expect(positionsByID(oneEdge)[one.uid]).toBeUndefined();
     expect(positionsByID(oneEdge)[three.uid]!.x).toBeGreaterThan(positionsByID(oneEdge)[two.uid]!.x);
     expect(positionsByID(full)[root.uid]!.x).toBe(0);

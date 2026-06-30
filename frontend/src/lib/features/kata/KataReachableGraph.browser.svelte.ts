@@ -31,6 +31,73 @@ function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
   };
 }
 
+interface RenderedNodeBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function renderedNodeBoxes(container: HTMLElement): Map<string, RenderedNodeBox> {
+  const graph = container.querySelector<HTMLElement>(".graph-canvas");
+  expect(graph).toBeTruthy();
+  const graphRect = graph!.getBoundingClientRect();
+  return new Map(
+    [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")]
+      .map((node) => {
+        const id = node.dataset.id;
+        expect(id).toBeTruthy();
+        const rect = node.getBoundingClientRect();
+        return [
+          id!,
+          {
+            x: Math.round(rect.x - graphRect.x),
+            y: Math.round(rect.y - graphRect.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          },
+        ] as const;
+      })
+      .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" })),
+  );
+}
+
+function expectRenderedNodeBoxesStable(
+  actual: Map<string, RenderedNodeBox>,
+  expected: Map<string, RenderedNodeBox>,
+): void {
+  expect([...actual.keys()]).toEqual([...expected.keys()]);
+  for (const [id, actualBox] of actual) {
+    const expectedBox = expected.get(id);
+    expect(expectedBox).toBeTruthy();
+    expect(Math.abs(actualBox.x - expectedBox!.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(actualBox.y - expectedBox!.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(actualBox.width - expectedBox!.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(actualBox.height - expectedBox!.height)).toBeLessThanOrEqual(1);
+  }
+}
+
+async function waitForStableRenderedNodeBoxes(
+  container: HTMLElement,
+  expectedCount: number,
+): Promise<Map<string, RenderedNodeBox>> {
+  let lastSignature = "";
+  let stableReads = 0;
+  await vi.waitFor(() => {
+    expect(container.querySelectorAll(".svelte-flow__node")).toHaveLength(expectedCount);
+    const boxes = renderedNodeBoxes(container);
+    const signature = JSON.stringify([...boxes.entries()]);
+    if (signature === lastSignature) {
+      stableReads += 1;
+    } else {
+      stableReads = 0;
+      lastSignature = signature;
+    }
+    expect(stableReads).toBeGreaterThanOrEqual(1);
+  });
+  return renderedNodeBoxes(container);
+}
+
 describe("KataReachableGraph (browser)", () => {
   it("renders nonblank Svelte Flow nodes and selects them from the canvas", async () => {
     const root = task({
@@ -75,6 +142,10 @@ describe("KataReachableGraph (browser)", () => {
     await expect
       .element(page.getByRole("button", { name: "Graph direction: left-right. Switch to top-bottom" }))
       .toBeVisible();
+    await expect.element(page.getByRole("combobox", { name: "Graph context: All" })).toBeEnabled();
+    await page.getByRole("combobox", { name: "Graph context: All" }).click();
+    await page.getByRole("option", { name: "1 edge" }).click();
+    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.contextDepth).toBe("1");
     await page.getByRole("button", { name: "Graph direction: left-right. Switch to top-bottom" }).click();
     await expect
       .element(page.getByRole("button", { name: "Graph direction: top-bottom. Switch to left-right" }))
@@ -194,7 +265,7 @@ describe("KataReachableGraph (browser)", () => {
     expect(container.textContent).not.toContain("Root browser task");
   });
 
-  it("keeps bounded-depth context visible and faded", async () => {
+  it("keeps context as emphasis without widening the depth node set", async () => {
     const root = task({
       uid: "issue-root",
       short_id: "root",
@@ -225,17 +296,88 @@ describe("KataReachableGraph (browser)", () => {
 
     await page.getByRole("combobox", { name: "Graph depth: Full" }).click();
     await page.getByRole("option", { name: "1 edge" }).click();
-    await expect.element(page.getByRole("checkbox", { name: "Show context" })).toBeVisible();
+    await expect.element(page.getByRole("combobox", { name: "Graph context: All" })).toBeVisible();
     await vi.waitFor(() => {
-      expect(container.querySelectorAll(".svelte-flow__node").length).toBe(3);
+      expect(container.querySelectorAll(".svelte-flow__node").length).toBe(2);
     });
-    const contextNode = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((node) =>
+    await page.getByRole("combobox", { name: "Graph context: All" }).click();
+    await page.getByRole("option", { name: "1 edge" }).click();
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll(".svelte-flow__node").length).toBe(2);
+    });
+    const hiddenByDepthNode = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((node) =>
       node.textContent?.includes("Two edge task"),
     );
-    expect(contextNode).toBeTruthy();
-    const contextButton = contextNode!.querySelector<HTMLElement>(".graph-task-node")!;
-    expect(contextButton.classList.contains("graph-task-node--depth-context")).toBe(true);
-    expect(Number(getComputedStyle(contextButton).opacity)).toBeLessThan(0.5);
+    expect(hiddenByDepthNode).toBeUndefined();
+    const oneEdgeNode = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((node) =>
+      node.textContent?.includes("One edge task"),
+    );
+    expect(oneEdgeNode).toBeTruthy();
+    const oneEdgeButton = oneEdgeNode!.querySelector<HTMLElement>(".graph-task-node")!;
+    expect(oneEdgeButton.classList.contains("graph-task-node--depth-context")).toBe(false);
+  });
+
+  it("keeps full-depth rendered layout stable across context and selection emphasis", async () => {
+    const root = task({
+      uid: "issue-root",
+      short_id: "root",
+      title: "Root browser task",
+      blocks: [{ uid: "issue-one", short_id: "one" }],
+    });
+    const one = task({
+      uid: "issue-one",
+      short_id: "one",
+      title: "One edge task",
+      blocks: [{ uid: "issue-two", short_id: "two" }],
+    });
+    const two = task({
+      uid: "issue-two",
+      short_id: "two",
+      title: "Two edge task",
+      blocks: [{ uid: "issue-three", short_id: "three" }],
+    });
+    const three = task({
+      uid: "issue-three",
+      short_id: "three",
+      title: "Three edge task",
+    });
+    const { container, rerender } = render(KataReachableGraph, {
+      props: {
+        sourceUID: root.uid,
+        selectedUID: root.uid,
+        tasks: [root, one, two, three],
+        selectedDetail: null,
+        onBack: () => {},
+        onSelectIssue: () => {},
+      },
+    });
+
+    const initialBoxes = await waitForStableRenderedNodeBoxes(container, 4);
+
+    await page.getByRole("combobox", { name: "Graph context: All" }).click();
+    await page.getByRole("option", { name: "1 edge" }).click();
+    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.contextDepth).toBe("1");
+    expectRenderedNodeBoxesStable(await waitForStableRenderedNodeBoxes(container, 4), initialBoxes);
+
+    await rerender({
+      sourceUID: root.uid,
+      selectedUID: two.uid,
+      tasks: [root, one, two, three],
+      selectedDetail: null,
+      onBack: () => {},
+      onSelectIssue: () => {},
+    });
+
+    await vi.waitFor(() => {
+      const selected = container.querySelector<HTMLElement>('[data-id="issue-two"] .graph-task-node');
+      expect(selected?.classList.contains("graph-task-node--selected")).toBe(true);
+    });
+    expect(
+      container
+        .querySelector('[data-id="issue-root"] .graph-task-node')
+        ?.classList.contains("graph-task-node--depth-context"),
+    ).toBe(true);
+    expectRenderedNodeBoxesStable(await waitForStableRenderedNodeBoxes(container, 4), initialBoxes);
   });
 
   it("keeps graph toolbar filters visible in a narrow pane", async () => {
@@ -264,22 +406,23 @@ describe("KataReachableGraph (browser)", () => {
     container.style.height = "460px";
 
     await expect.element(page.getByRole("combobox", { name: "Graph layout: Compact" })).toBeVisible();
+    await expect.element(page.getByRole("combobox", { name: "Graph context: All" })).toBeVisible();
     const toolbar = container.querySelector<HTMLElement>(".graph-toolbar");
     const hideDone = container.querySelector<HTMLElement>(".hide-done");
-    const showContext = container.querySelector<HTMLElement>(".show-context");
+    const contextFilter = container.querySelector<HTMLElement>(".context-filter");
     expect(toolbar).toBeTruthy();
     expect(hideDone).toBeTruthy();
-    expect(showContext).toBeTruthy();
+    expect(contextFilter).toBeTruthy();
 
     await vi.waitFor(() => {
       const toolbarRect = toolbar!.getBoundingClientRect();
       const hideDoneRect = hideDone!.getBoundingClientRect();
-      const showContextRect = showContext!.getBoundingClientRect();
+      const contextFilterRect = contextFilter!.getBoundingClientRect();
       expect(toolbar!.scrollWidth).toBeLessThanOrEqual(toolbar!.clientWidth + 1);
       expect(hideDoneRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
       expect(hideDoneRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
-      expect(showContextRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
-      expect(showContextRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
+      expect(contextFilterRect.right).toBeLessThanOrEqual(toolbarRect.right + 1);
+      expect(contextFilterRect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 1);
     });
   });
 });

@@ -24,6 +24,7 @@
   import KataGraphTaskNode from "./KataGraphTaskNode.svelte";
   import {
     buildKataReachableGraph,
+    type KataGraphContextDepth,
     type KataGraphDepthLimit,
     type KataGraphEdge,
     type KataGraphLayoutDirection,
@@ -67,7 +68,7 @@
   }: Props = $props();
 
   let hideDone = $state(false);
-  let showDepthContext = $state(true);
+  let contextDepth = $state<KataGraphContextDepth>("all");
   let depthLimit = $state<KataGraphDepthLimit>("full");
   let layoutMode = $state<KataGraphLayoutMode>("compact");
   let graphDirectionOverride = $state<KataGraphLayoutDirection | null>(null);
@@ -82,7 +83,7 @@
       selectedDetail,
       hideDone,
       depthLimit,
-      showDepthContext,
+      contextDepth,
       layoutDirection: effectiveLayoutDirection,
     }),
   );
@@ -134,6 +135,12 @@
     { value: "2", label: "2 edges" },
     { value: "3", label: "3 edges" },
   ];
+  const contextOptions: SelectDropdownOption[] = [
+    { value: "all", label: "All" },
+    { value: "1", label: "1 edge" },
+    { value: "2", label: "2 edges" },
+    { value: "3", label: "3 edges" },
+  ];
   const layoutOptions: SelectDropdownOption[] = [
     { value: "compact", label: "Compact" },
     { value: "elk", label: "ELK" },
@@ -170,6 +177,10 @@
 
   function setDepthLimit(value: string): void {
     depthLimit = value as KataGraphDepthLimit;
+  }
+
+  function setContextDepth(value: string): void {
+    contextDepth = value as KataGraphContextDepth;
   }
 
   function setLayoutMode(value: string): void {
@@ -322,7 +333,7 @@
       sourceUID,
       selectedUID,
       hideDone,
-      showDepthContext,
+      contextDepth,
       depthLimit,
       layoutMode,
       layoutDirection: effectiveLayoutDirection,
@@ -354,15 +365,17 @@
 
 <section class="kata-graph-pane" aria-label="Reachable task graph" data-layout-direction={effectiveLayoutDirection}>
   <header class="graph-toolbar">
-    <button type="button" class="toolbar-button" aria-label="Back to task list" onclick={onBack}>
-      <ArrowLeftIcon size={14} strokeWidth={1.9} aria-hidden="true" />
-      <span>Tasks</span>
-    </button>
-    <div class="graph-source">
-      <strong title={source?.qualified_id ?? sourceUID}>{source?.title ?? "Reachable graph"}</strong>
+    <div class="graph-title-row">
+      <button type="button" class="toolbar-button" aria-label="Back to task list" onclick={onBack}>
+        <ArrowLeftIcon size={14} strokeWidth={1.9} aria-hidden="true" />
+        <span>Tasks</span>
+      </button>
+      <div class="graph-source">
+        <strong title={source?.qualified_id ?? sourceUID}>{source?.title ?? "Reachable graph"}</strong>
+      </div>
     </div>
-    <div class="graph-controls">
-      <div class="depth-filter">
+    <div class="graph-control-row" aria-label="Graph controls">
+      <div class="graph-field depth-filter">
         <span>Depth</span>
         <SelectDropdown
           class="kata-graph-depth-select"
@@ -372,7 +385,17 @@
           onchange={setDepthLimit}
         />
       </div>
-      <div class="layout-filter">
+      <div class="graph-field context-filter">
+        <span>Context</span>
+        <SelectDropdown
+          class="kata-graph-context-select"
+          title="Graph context"
+          value={contextDepth}
+          options={contextOptions}
+          onchange={setContextDepth}
+        />
+      </div>
+      <div class="graph-field layout-filter">
         <span>Layout</span>
         <SelectDropdown
           class="kata-graph-layout-select"
@@ -395,10 +418,6 @@
         <input type="checkbox" bind:checked={hideDone} />
         <span>Hide done</span>
       </label>
-      <label class="show-context" class:show-context--disabled={depthLimit === "full"}>
-        <input type="checkbox" bind:checked={showDepthContext} disabled={depthLimit === "full"} />
-        <span>Show context</span>
-      </label>
     </div>
   </header>
 
@@ -413,6 +432,7 @@
         fitView
         {fitViewOptions}
         autoPanOnSelection={false}
+        autoPanOnNodeFocus={false}
         defaultMarkerColor={null}
         minZoom={graphMinZoom}
         nodesDraggable={false}
@@ -444,20 +464,32 @@
   .graph-toolbar {
     flex: 0 0 auto;
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 10px;
+    flex-direction: column;
+    gap: 8px;
     padding: 10px 14px;
     border-bottom: 1px solid var(--border-default);
     background: var(--bg-surface);
   }
 
+  .graph-title-row,
+  .graph-control-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .graph-title-row {
+    width: 100%;
+  }
+
+  .graph-control-row {
+    flex-wrap: wrap;
+  }
+
   .toolbar-button,
-  .depth-filter,
-  .layout-filter,
   .direction-toggle,
-  .hide-done,
-  .show-context {
+  .hide-done {
     min-height: 28px;
     display: inline-flex;
     align-items: center;
@@ -477,64 +509,50 @@
   }
 
   .toolbar-button:hover,
-  .depth-filter:hover,
-  .layout-filter:hover,
   .direction-toggle:hover,
-  .hide-done:hover,
-  .show-context:hover {
+  .hide-done:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
 
-  .show-context--disabled {
-    opacity: 0.58;
-  }
-
   .direction-toggle {
     flex: 0 0 auto;
-    min-width: 58px;
+    min-width: 64px;
     justify-content: center;
   }
 
-  .graph-controls {
+  .graph-field {
     display: inline-flex;
     flex: 0 1 auto;
-    flex-wrap: wrap;
     align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .depth-filter,
-  .layout-filter {
     gap: 7px;
-    border: 0;
-    background: transparent;
-    padding: 0;
+    min-width: 0;
     cursor: default;
   }
 
-  .depth-filter:hover,
-  .layout-filter:hover {
-    background: transparent;
+  .graph-field > span {
     color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
   }
 
   :global(.kata-graph-depth-select),
+  :global(.kata-graph-context-select),
   :global(.kata-graph-layout-select) {
-    min-width: 104px;
+    min-width: 112px;
   }
 
   :global(.kata-graph-depth-select .select-dropdown-trigger),
+  :global(.kata-graph-context-select .select-dropdown-trigger),
   :global(.kata-graph-layout-select .select-dropdown-trigger) {
-    height: 28px;
+    height: 30px;
     background: var(--bg-primary);
     border-color: var(--border-default);
     color: var(--text-primary);
   }
 
   :global(.kata-graph-depth-select .select-dropdown-list),
+  :global(.kata-graph-context-select .select-dropdown-list),
   :global(.kata-graph-layout-select .select-dropdown-list) {
     left: 0;
     right: auto;
@@ -558,31 +576,22 @@
 
   @container (max-width: 700px) {
     .graph-toolbar {
-      align-items: flex-start;
+      padding: 9px 12px;
     }
 
     .graph-source {
-      flex: 1 1 calc(100% - 96px);
+      flex: 1 1 auto;
       min-height: 28px;
     }
 
-    .graph-controls {
-      flex: 1 0 100%;
-      justify-content: flex-start;
-    }
-
-    .depth-filter,
-    .layout-filter,
-    .direction-toggle,
-    .show-context {
-      flex: 1 1 160px;
-      min-width: 0;
+    .graph-control-row {
+      align-items: flex-start;
     }
 
     :global(.kata-graph-depth-select),
+    :global(.kata-graph-context-select),
     :global(.kata-graph-layout-select) {
-      flex: 1 1 auto;
-      min-width: 0;
+      min-width: 108px;
     }
   }
 
@@ -655,16 +664,17 @@
     stroke-width: 1.8;
   }
 
-  :global(.kata-graph-edge--blocks .svelte-flow__edge-path) {
-    stroke: var(--accent-amber);
-  }
-
   :global(.kata-graph-edge--parent .svelte-flow__edge-path) {
     stroke: var(--text-secondary);
   }
 
   :global(.kata-graph-edge--related .svelte-flow__edge-path) {
     stroke-dasharray: 6 4;
+  }
+
+  :global(.kata-graph-edge--ambient .svelte-flow__edge-path) {
+    stroke: var(--text-secondary);
+    stroke-width: 1.4;
   }
 
   :global(.kata-graph-edge--depth-context) {
@@ -674,6 +684,14 @@
   :global(.kata-graph-edge--depth-context .svelte-flow__edge-path) {
     stroke: var(--border-default);
     stroke-width: 1.2;
+  }
+
+  :global(.kata-graph-edge--selected-adjacent .svelte-flow__edge-path) {
+    stroke-width: 2.2;
+  }
+
+  :global(.kata-graph-edge--selected-adjacent.kata-graph-edge--parent .svelte-flow__edge-path) {
+    stroke: var(--text-primary);
   }
 
   .graph-empty {

@@ -111,6 +111,17 @@ Some PR-derived state is only valid for one head commit.
   state between items.
 - When a refresh cannot prove the state belongs to the current head SHA, clear
   the stale derived state instead of preserving it.
+- Review-thread line ranges must preserve the comment commit as
+  `DiffHeadSHA`, even for current threads
+  (`internal/github/sync.go::githubReviewLineRange`). Review suggestion
+  application relies on that stored reviewed head to reject stale suggestions
+  before mutating the branch.
+- GitHub review suggestions apply through the source branch, not the base repo
+  default branch. `internal/github/client.go::ApplyReviewSuggestions` reads the
+  target files from the PR head repo at the expected head, applies the stored
+  review-thread line ranges locally, and commits with
+  `createCommitOnBranch.expectedHeadOid` in
+  `internal/github/client.go::createCommitForReviewSuggestions`.
 
 ## Fallback Data Rules
 

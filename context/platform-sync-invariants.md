@@ -71,7 +71,7 @@ Minimum read scope should cover repository metadata, merge requests or pull
 requests, issues, comments, commits, tags, releases, and CI/status data. Write
 scopes are only required for mutation capabilities: comments, issue creation,
 issue or PR content/state changes, merge, review approval, workflow approval,
-or ready-for-review.
+review suggestion application, or ready-for-review.
 
 ## Sync Capabilities
 
@@ -86,6 +86,15 @@ registry helpers return typed errors for missing providers or capabilities.
   changing state, merging, requesting review, or approving workflows.
   Server handlers translate these typed platform errors into the stable problem
   envelope described in [`context/error-handling.md`](./error-handling.md).
+- Review suggestion application is a provider capability, not a markdown/UI
+  shortcut. Providers that can apply suggestions must expose
+  `review_suggestion_application` and implement
+  `internal/platform/client.go::ReviewSuggestionApplier`. The server must
+  rebuild each provider suggestion from persisted review-thread metadata in
+  `internal/server/diff_review_handlers.go::applyReviewSuggestions` and
+  `validateReviewSuggestionThread`, including path, side, range, and reviewed
+  head; clients may send the replacement text and expected head, but must not
+  be trusted for provider comment ids or line ranges.
 - Forgejo and Gitea currently expose only SDK-proven mutations: comments,
   issue creation, issue and PR content/state edits, merge, and review approval.
   Workflow approval and ready-for-review must remain hidden or return typed

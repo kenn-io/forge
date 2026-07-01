@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileDiff, VirtualizedFileDiff } from "@pierre/diffs";
+  import { DEFAULT_TOKENIZE_MAX_LENGTH, FileDiff, VirtualizedFileDiff } from "@pierre/diffs";
   import type {
     DiffLineAnnotation,
     ExpansionDirections,
@@ -881,9 +881,12 @@
     applyLineCommentButtons();
     syncLineAnnotationWrappers();
 
-    const ready = renderedDomReady();
-    rendered = ready;
-    if (!ready) return false;
+    // Latch visibility: scroll-driven virtualized re-renders fire onPostRender
+    // too, and the shared worker pool being busy must not hide content that
+    // this render attempt has already shown. Attempt boundaries reset the
+    // latch by assigning `rendered = false` before rendering.
+    if (renderedDomReady()) rendered = true;
+    if (!rendered) return false;
 
     installDemandContextHandler();
     scheduleSelectedRangesApplication();
@@ -896,8 +899,19 @@
 
   function renderedDomReady(): boolean {
     if (!syntaxHighlightWorkerActive) return true;
+    if (diffRendersPlainText()) return true;
     if (host?.shadowRoot?.querySelector("[data-line] span[style]") != null) return true;
     return !syntaxHighlightWorkerHasPendingWork();
+  }
+
+  // Mirrors Pierre's isDiffPlainText/isDiffMassive checks: these diffs render
+  // without styled spans, so waiting on worker-pool idleness would hide them
+  // for as long as any other file still has highlight tasks queued.
+  function diffRendersPlainText(): boolean {
+    const fileDiff = fullContextFileDiff ?? pierreFile;
+    if (!fileDiff) return false;
+    if (fileDiff.lang === "text") return true;
+    return Math.max(fileDiff.additionLines.length, fileDiff.deletionLines.length) > DEFAULT_TOKENIZE_MAX_LENGTH;
   }
 
   function syntaxHighlightWorkerHasPendingWork(): boolean {

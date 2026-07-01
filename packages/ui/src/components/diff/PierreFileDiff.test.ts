@@ -37,6 +37,7 @@ const pierre = (() => {
     virtualized: 0,
   };
   let renderResults: boolean[] = [];
+  let shadowHtml: string | undefined;
   let events: string[] = [];
   let lastExpansion:
     | {
@@ -56,7 +57,9 @@ const pierre = (() => {
     events.push(`render:${String(didRender)}`);
     if (didRender && props?.fileContainer) {
       const root = props.fileContainer.shadowRoot ?? props.fileContainer.attachShadow({ mode: "open" });
-      root.innerHTML = `
+      root.innerHTML =
+        shadowHtml ??
+        `
         <pre data-diff-type="unified">
           <code data-unified>
             <div data-gutter>
@@ -132,6 +135,7 @@ const pierre = (() => {
       lastExpansion = undefined;
       events = [];
       renderResults = [];
+      shadowHtml = undefined;
       lastOptions = undefined;
       lastVirtualizer = undefined;
       parsedMetadata = metadata;
@@ -141,6 +145,9 @@ const pierre = (() => {
     },
     setRenderResults: (results: boolean[]) => {
       renderResults = [...results];
+    },
+    setShadowHtml: (html: string | undefined) => {
+      shadowHtml = html;
     },
     virtualizedCount: () => counts.virtualized,
     VirtualizedFileDiff,
@@ -158,9 +165,29 @@ vi.doMock("@pierre/diffs", async (importOriginal) => {
   };
 });
 
+const workerPool = (() => {
+  let current: unknown;
+  return {
+    get: () => current,
+    reset: () => {
+      current = undefined;
+    },
+    set: (pool: unknown) => {
+      current = pool;
+    },
+  };
+})();
+
+function makeBusyWorkerPool(): unknown {
+  return {
+    getStats: () => ({ activeTasks: 0, queuedTasks: 1 }),
+    subscribeToStatChanges: () => () => {},
+  };
+}
+
 vi.doMock("./pierre-worker-pool.js", () => ({
   diffTokenizeMaxLineLength: 180,
-  getPierreDiffWorkerPool: () => undefined,
+  getPierreDiffWorkerPool: () => workerPool.get(),
   syntaxHighlightingDisabledForAutomation: () => false,
 }));
 
@@ -288,6 +315,7 @@ describe("PierreFileDiff", () => {
     vi.useRealTimers();
     cleanup();
     pierre.reset();
+    workerPool.reset();
   });
 
   it("uses Pierre virtualized diffs when a viewer virtualizer is provided", async () => {
@@ -468,6 +496,63 @@ describe("PierreFileDiff", () => {
     });
 
     expect(pierre.lastOptions()?.tokenizeMaxLineLength).toBe(diffTokenizeMaxLineLength);
+  });
+
+  it("keeps shown content visible when a later post-render has no highlighted spans", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    workerPool.set(makeBusyWorkerPool());
+    pierre.setShadowHtml(`
+      <pre data-diff-type="unified">
+        <code data-unified>
+          <div data-gutter>
+            <div data-line-index="0" data-line-type="change-addition"></div>
+          </div>
+          <div data-content>
+            <div data-line data-line-index="0" data-line-type="change-addition">
+              <span style="color: red">func newName() {}</span>
+            </div>
+          </div>
+        </code>
+      </pre>
+    `);
+
+    render(PierreFileDiff, {
+      props: { file: makeFile() },
+    });
+
+    const shell = await waitFor(() => {
+      const el = document.querySelector(".pierre-diff-shell");
+      expect(el?.getAttribute("aria-busy")).toBe("false");
+      return el!;
+    });
+
+    // Simulate a scroll-driven Pierre re-render whose rendered window has no
+    // highlighted spans yet while the shared worker pool is still busy.
+    const container = document.querySelector<HTMLElement>(".pierre-diff")!;
+    for (const span of container.shadowRoot?.querySelectorAll("[data-line] span[style]") ?? []) {
+      span.removeAttribute("style");
+    }
+    pierre.lastOptions()?.onPostRender?.(container, undefined as never, "update" as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(shell.getAttribute("aria-busy")).toBe("false");
+    expect(document.querySelector(".pierre-diff-loading")).toBeNull();
+  });
+
+  it("shows plain-text diffs without waiting for the shared highlight pool to drain", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    workerPool.set(makeBusyWorkerPool());
+
+    render(PierreFileDiff, {
+      props: { file: { ...makeFile(), path: "notes.txt", old_path: "notes.txt" } },
+    });
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+      expect(document.querySelector(".pierre-diff-shell")?.getAttribute("aria-busy")).toBe("false");
+    });
+
+    expect(document.querySelector(".pierre-diff-loading")).toBeNull();
   });
 
   it("rerenders when annotation metadata changes without moving lines", async () => {

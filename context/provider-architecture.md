@@ -65,12 +65,13 @@ Rules:
 - Capability flags and implemented interfaces must agree.
 - Handlers must check capabilities before performing mutations. A missing
   capability is a feature-level failure, not a whole-provider failure.
-- Per-operation availability starts repo-scoped, but item detail responses may
-  overlay item-specific gates when the rule needs the concrete PR/MR or issue.
-  Keep those gates out of repo settings and list summaries: `repoOperations`
-  should answer "can this repo generally perform the operation?", while
-  `repoOperationsForMergeRequest` may additionally answer "can this viewer do
-  it on this PR?" such as GitHub self-approval being unavailable
+- Keep operation availability split by scope. `repoOperations` handles
+  repo-level gates: provider capability, write credentials, rate limits, and
+  repo-wide viewer permissions. Detail responses may add item-level gates with
+  `repoOperationsForMergeRequest`, where the loaded PR/MR is available. For
+  example, GitHub self-approval is disabled only on PR detail because the rule
+  needs both the authenticated viewer and the PR author. Do not put item-level
+  gates in repo settings or list summaries
   (`internal/server/operation_availability.go::repoOperations`,
   `internal/server/operation_availability.go::repoOperationsForMergeRequest`).
 - Read sync should continue for supported resources if optional resources such

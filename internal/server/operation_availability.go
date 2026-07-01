@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
@@ -215,7 +214,7 @@ func (s *Server) repoOperationsForMergeRequest(
 	mr db.MergeRequest,
 ) RepoOperations {
 	opContext := operationAvailabilityContext{}
-	if s.viewerAuthoredMergeRequest(ctx, repo, mr) {
+	if s.mergeRequestAuthoredByViewer(ctx, repo, mr) {
 		opContext.selfApproval = true
 	}
 	return s.repoOperationsWithContext(repo, opContext)
@@ -270,34 +269,29 @@ func selfApprovalUnavailable() OperationAvailability {
 	}
 }
 
-func (s *Server) viewerAuthoredMergeRequest(
+func (s *Server) mergeRequestAuthoredByViewer(
 	ctx context.Context,
 	repo db.Repo,
 	mr db.MergeRequest,
 ) bool {
-	if repoProviderKind(repo) != platform.KindGitHub {
+	if s == nil || s.syncer == nil || s.syncer.Registry() == nil {
 		return false
 	}
-	author := strings.TrimSpace(mr.Author)
-	if author == "" {
-		return false
-	}
-	viewer := strings.TrimSpace(s.githubAuthenticatedLogin(ctx, repoProviderHost(repo)))
-	return viewer != "" && strings.EqualFold(viewer, author)
-}
-
-func (s *Server) githubAuthenticatedLogin(ctx context.Context, host string) string {
-	run := s.toolingRun
-	if run == nil {
-		run = defaultToolingRunner
-	}
-	out, err := runToolingProbe(
-		ctx, run, "gh", "api", "user", "--hostname", host, "--jq", ".login",
+	resolver, err := s.syncer.Registry().MergeRequestViewerResolver(
+		repoProviderKind(repo), repoProviderHost(repo),
 	)
 	if err != nil {
-		return ""
+		return false
 	}
-	return strings.TrimSpace(string(out))
+	authored, err := resolver.ViewerAuthoredMergeRequest(ctx, platform.MergeRequest{
+		Repo:   platformRepoRefFromDB(repo),
+		Number: mr.Number,
+		Author: mr.Author,
+	})
+	if err != nil {
+		return false
+	}
+	return authored
 }
 
 // rateLimitAvailability is the result of consulting a rate tracker

@@ -192,6 +192,8 @@ type mockGH struct {
 	getIssueIfChangedFn        func(context.Context, string, string, int, string) (*gh.Issue, string, bool, error)
 	createIssueFn              func(context.Context, string, string, string, string) (*gh.Issue, error)
 	getUserFn                  func(context.Context, string) (*gh.User, error)
+	authenticatedViewerLoginFn func(context.Context) (string, error)
+	authenticatedViewerCalls   int
 	markReadyForReviewFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
 	convertToDraftFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
 	dismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
@@ -290,6 +292,14 @@ func (m *mockGH) GetUser(ctx context.Context, login string) (*gh.User, error) {
 		return m.getUserFn(ctx, login)
 	}
 	return &gh.User{Login: &login}, nil
+}
+
+func (m *mockGH) AuthenticatedViewerLogin(ctx context.Context) (string, error) {
+	m.authenticatedViewerCalls++
+	if m.authenticatedViewerLoginFn != nil {
+		return m.authenticatedViewerLoginFn(ctx)
+	}
+	return "", nil
 }
 
 func (m *mockGH) GetRateLimitSnapshot(ctx context.Context) (*ghclient.RateLimitSnapshot, error) {

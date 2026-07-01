@@ -92,6 +92,22 @@ func (r *Registry) MergeRequestReader(kind Kind, host string) (MergeRequestReade
 	return reader, nil
 }
 
+func (r *Registry) MergeRequestViewerResolver(
+	kind Kind,
+	host string,
+) (MergeRequestViewerResolver, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	resolver, ok := provider.(MergeRequestViewerResolver)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "merge_request_viewer")
+	}
+	return resolver, nil
+}
+
 func (r *Registry) IssueReader(kind Kind, host string) (IssueReader, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

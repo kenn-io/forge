@@ -1491,8 +1491,8 @@ func (c *liveClient) authenticatedLogin(ctx context.Context) (string, error) {
 	if c.viewerLogin != "" {
 		return c.viewerLogin, nil
 	}
-	user, resp, err := c.gh.Users.Get(ctx, "")
-	c.trackRate(resp)
+	user, resp, err := c.writeGH().Users.Get(ctx, "")
+	c.trackWriteRate(resp)
 	if err != nil {
 		return "", fmt.Errorf("getting authenticated user: %w", err)
 	}
@@ -1502,6 +1502,10 @@ func (c *liveClient) authenticatedLogin(ctx context.Context) (string, error) {
 	}
 	c.viewerLogin = login
 	return login, nil
+}
+
+func (c *liveClient) AuthenticatedViewerLogin(ctx context.Context) (string, error) {
+	return c.authenticatedLogin(ctx)
 }
 
 func (c *liveClient) GetIssue(

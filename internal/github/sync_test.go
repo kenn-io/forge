@@ -8201,7 +8201,7 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 		},
 	}
 	registry, err := platform.NewRegistry(
-		gitHubClientProvider{host: host, client: githubClient},
+		&gitHubClientProvider{host: host, client: githubClient},
 		gitlabProvider,
 	)
 	require.NoError(err)

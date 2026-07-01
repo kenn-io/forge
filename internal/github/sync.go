@@ -705,8 +705,14 @@ func NewSyncerWithRegistry(
 }
 
 type gitHubClientProvider struct {
-	host   string
-	client Client
+	host        string
+	client      Client
+	viewerMu    sync.Mutex
+	viewerLogin string
+}
+
+type authenticatedViewerLoginClient interface {
+	AuthenticatedViewerLogin(ctx context.Context) (string, error)
 }
 
 type githubLabelClient interface {
@@ -732,7 +738,7 @@ func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
 		if client == nil {
 			continue
 		}
-		provider := gitHubClientProvider{
+		provider := &gitHubClientProvider{
 			host:   canonicalRepoHost(host),
 			client: client,
 		}
@@ -754,15 +760,15 @@ func NewProviderRegistry(
 	return registry, nil
 }
 
-func (p gitHubClientProvider) Platform() platform.Kind {
+func (p *gitHubClientProvider) Platform() platform.Kind {
 	return platform.KindGitHub
 }
 
-func (p gitHubClientProvider) Host() string {
+func (p *gitHubClientProvider) Host() string {
 	return p.host
 }
 
-func (p gitHubClientProvider) Capabilities() platform.Capabilities {
+func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 	_, labels := p.client.(githubLabelClient)
 	_, assignees := p.client.(githubAssigneeClient)
 	_, reviewers := p.client.(githubReviewerClient)
@@ -800,25 +806,62 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 	}
 }
 
-func (p gitHubClientProvider) GitHubClient() Client {
+func (p *gitHubClientProvider) GitHubClient() Client {
 	return p.client
 }
 
-func (p gitHubClientProvider) ListNotifications(
+func (p *gitHubClientProvider) ViewerAuthoredMergeRequest(
+	ctx context.Context,
+	mr platform.MergeRequest,
+) (bool, error) {
+	author := strings.TrimSpace(mr.Author)
+	if author == "" {
+		return false, nil
+	}
+	viewer, err := p.authenticatedViewerLogin(ctx)
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(viewer, author), nil
+}
+
+func (p *gitHubClientProvider) authenticatedViewerLogin(ctx context.Context) (string, error) {
+	p.viewerMu.Lock()
+	defer p.viewerMu.Unlock()
+	if p.viewerLogin != "" {
+		return p.viewerLogin, nil
+	}
+	client, ok := p.client.(authenticatedViewerLoginClient)
+	if !ok {
+		return "", fmt.Errorf("github client does not resolve authenticated viewer")
+	}
+	login, err := client.AuthenticatedViewerLogin(ctx)
+	if err != nil {
+		return "", err
+	}
+	login = strings.TrimSpace(login)
+	if login == "" {
+		return "", fmt.Errorf("authenticated viewer login is empty")
+	}
+	p.viewerLogin = login
+	return login, nil
+}
+
+func (p *gitHubClientProvider) ListNotifications(
 	ctx context.Context,
 	opts platform.NotificationListOptions,
 ) ([]platform.NotificationThread, bool, error) {
 	return p.client.ListNotifications(ctx, opts)
 }
 
-func (p gitHubClientProvider) MarkNotificationThreadRead(
+func (p *gitHubClientProvider) MarkNotificationThreadRead(
 	ctx context.Context,
 	threadID string,
 ) error {
 	return p.client.MarkNotificationThreadRead(ctx, threadID)
 }
 
-func (p gitHubClientProvider) GetRepository(
+func (p *gitHubClientProvider) GetRepository(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) (platform.Repository, error) {
@@ -871,7 +914,7 @@ func gitHubViewerCanMerge(repo *gh.Repository) *bool {
 	return &canMerge
 }
 
-func (p gitHubClientProvider) ListRepositories(
+func (p *gitHubClientProvider) ListRepositories(
 	ctx context.Context,
 	owner string,
 	_ platform.RepositoryListOptions,
@@ -913,7 +956,7 @@ func (p gitHubClientProvider) ListRepositories(
 	return out, nil
 }
 
-func (p gitHubClientProvider) ListOpenMergeRequests(
+func (p *gitHubClientProvider) ListOpenMergeRequests(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) ([]platform.MergeRequest, error) {
@@ -932,7 +975,7 @@ func (p gitHubClientProvider) ListOpenMergeRequests(
 	return out, nil
 }
 
-func (p gitHubClientProvider) GetMergeRequest(
+func (p *gitHubClientProvider) GetMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -941,7 +984,7 @@ func (p gitHubClientProvider) GetMergeRequest(
 	return mr, err
 }
 
-func (p gitHubClientProvider) GetGitHubPullRequest(
+func (p *gitHubClientProvider) GetGitHubPullRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -957,7 +1000,7 @@ func (p gitHubClientProvider) GetGitHubPullRequest(
 	return pr, mr, nil
 }
 
-func (p gitHubClientProvider) ListMergeRequestEvents(
+func (p *gitHubClientProvider) ListMergeRequestEvents(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1027,7 +1070,7 @@ func (p gitHubClientProvider) ListMergeRequestEvents(
 	return out, nil
 }
 
-func (p gitHubClientProvider) ListOpenIssues(
+func (p *gitHubClientProvider) ListOpenIssues(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) ([]platform.Issue, error) {
@@ -1046,14 +1089,14 @@ func (p gitHubClientProvider) ListOpenIssues(
 	return out, nil
 }
 
-func (p gitHubClientProvider) ListOpenGitHubIssues(
+func (p *gitHubClientProvider) ListOpenGitHubIssues(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) ([]*gh.Issue, error) {
 	return p.client.ListOpenIssues(ctx, ref.Owner, ref.Name)
 }
 
-func (p gitHubClientProvider) ListLabels(
+func (p *gitHubClientProvider) ListLabels(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) (platform.LabelCatalog, error) {
@@ -1068,7 +1111,7 @@ func (p gitHubClientProvider) ListLabels(
 	return platform.LabelCatalog{Labels: platformgithub.NormalizeLabels(ref, labels)}, nil
 }
 
-func (p gitHubClientProvider) GetIssue(
+func (p *gitHubClientProvider) GetIssue(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1080,7 +1123,7 @@ func (p gitHubClientProvider) GetIssue(
 	return platformgithub.NormalizeIssue(ref, issue)
 }
 
-func (p gitHubClientProvider) GetGitHubIssue(
+func (p *gitHubClientProvider) GetGitHubIssue(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1088,7 +1131,7 @@ func (p gitHubClientProvider) GetGitHubIssue(
 	return p.client.GetIssue(ctx, ref.Owner, ref.Name, number)
 }
 
-func (p gitHubClientProvider) ListIssueEvents(
+func (p *gitHubClientProvider) ListIssueEvents(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1137,7 +1180,7 @@ func (p gitHubClientProvider) ListIssueEvents(
 	return out, nil
 }
 
-func (p gitHubClientProvider) CreateMergeRequestComment(
+func (p *gitHubClientProvider) CreateMergeRequestComment(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1153,7 +1196,7 @@ func (p gitHubClientProvider) CreateMergeRequestComment(
 	return platformgithub.NormalizeCommentEvent(ref, number, comment), nil
 }
 
-func (p gitHubClientProvider) EditMergeRequestComment(
+func (p *gitHubClientProvider) EditMergeRequestComment(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1170,7 +1213,7 @@ func (p gitHubClientProvider) EditMergeRequestComment(
 	return platformgithub.NormalizeCommentEvent(ref, number, comment), nil
 }
 
-func (p gitHubClientProvider) ReplyToThread(
+func (p *gitHubClientProvider) ReplyToThread(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1193,7 +1236,7 @@ func (p gitHubClientProvider) ReplyToThread(
 	return platformgithub.NormalizeReviewCommentEvent(ref, number, comment), nil
 }
 
-func (p gitHubClientProvider) CreateIssueComment(
+func (p *gitHubClientProvider) CreateIssueComment(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1209,7 +1252,7 @@ func (p gitHubClientProvider) CreateIssueComment(
 	return platformgithub.NormalizeIssueCommentEvent(ref, number, comment), nil
 }
 
-func (p gitHubClientProvider) EditIssueComment(
+func (p *gitHubClientProvider) EditIssueComment(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1226,7 +1269,7 @@ func (p gitHubClientProvider) EditIssueComment(
 	return platformgithub.NormalizeIssueCommentEvent(ref, number, comment), nil
 }
 
-func (p gitHubClientProvider) SetMergeRequestState(
+func (p *gitHubClientProvider) SetMergeRequestState(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1244,7 +1287,7 @@ func (p gitHubClientProvider) SetMergeRequestState(
 	return platformgithub.NormalizePullRequest(ref, ghPR)
 }
 
-func (p gitHubClientProvider) SetIssueState(
+func (p *gitHubClientProvider) SetIssueState(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1263,7 +1306,7 @@ func (p gitHubClientProvider) SetIssueState(
 // MergeMergeRequest passes expectedHeadSHA as the GitHub merge sha
 // parameter: GitHub rejects the merge when the PR head moved past the
 // reviewed commit, and that rejection is classified as stale_state.
-func (p gitHubClientProvider) MergeMergeRequest(
+func (p *gitHubClientProvider) MergeMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1312,7 +1355,7 @@ func isGitHubHeadModified(err error) bool {
 	return strings.Contains(strings.ToLower(ghErr.Message), "head branch was modified")
 }
 
-func (p gitHubClientProvider) ApproveWorkflow(
+func (p *gitHubClientProvider) ApproveWorkflow(
 	ctx context.Context,
 	ref platform.RepoRef,
 	runID string,
@@ -1324,7 +1367,7 @@ func (p gitHubClientProvider) ApproveWorkflow(
 	return p.client.ApproveWorkflowRun(ctx, ref.Owner, ref.Name, parsed)
 }
 
-func (p gitHubClientProvider) MarkReadyForReview(
+func (p *gitHubClientProvider) MarkReadyForReview(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1339,7 +1382,7 @@ func (p gitHubClientProvider) MarkReadyForReview(
 	return platformgithub.NormalizePullRequest(ref, pr)
 }
 
-func (p gitHubClientProvider) ConvertMergeRequestToDraft(
+func (p *gitHubClientProvider) ConvertMergeRequestToDraft(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1354,7 +1397,7 @@ func (p gitHubClientProvider) ConvertMergeRequestToDraft(
 	return nil
 }
 
-func (p gitHubClientProvider) CreateIssue(
+func (p *gitHubClientProvider) CreateIssue(
 	ctx context.Context,
 	ref platform.RepoRef,
 	title string,
@@ -1370,7 +1413,7 @@ func (p gitHubClientProvider) CreateIssue(
 	return platformgithub.NormalizeIssue(ref, issue)
 }
 
-func (p gitHubClientProvider) SetMergeRequestLabels(
+func (p *gitHubClientProvider) SetMergeRequestLabels(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1379,7 +1422,7 @@ func (p gitHubClientProvider) SetMergeRequestLabels(
 	return p.setIssueLikeLabels(ctx, ref, number, names)
 }
 
-func (p gitHubClientProvider) SetIssueLabels(
+func (p *gitHubClientProvider) SetIssueLabels(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1388,7 +1431,7 @@ func (p gitHubClientProvider) SetIssueLabels(
 	return p.setIssueLikeLabels(ctx, ref, number, names)
 }
 
-func (p gitHubClientProvider) setIssueLikeLabels(
+func (p *gitHubClientProvider) setIssueLikeLabels(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1405,7 +1448,7 @@ func (p gitHubClientProvider) setIssueLikeLabels(
 	return platformgithub.NormalizeLabels(ref, labels), nil
 }
 
-func (p gitHubClientProvider) SetMergeRequestAssignees(
+func (p *gitHubClientProvider) SetMergeRequestAssignees(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1414,7 +1457,7 @@ func (p gitHubClientProvider) SetMergeRequestAssignees(
 	return p.setIssueLikeAssignees(ctx, ref, number, usernames)
 }
 
-func (p gitHubClientProvider) SetIssueAssignees(
+func (p *gitHubClientProvider) SetIssueAssignees(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1423,7 +1466,7 @@ func (p gitHubClientProvider) SetIssueAssignees(
 	return p.setIssueLikeAssignees(ctx, ref, number, usernames)
 }
 
-func (p gitHubClientProvider) setIssueLikeAssignees(
+func (p *gitHubClientProvider) setIssueLikeAssignees(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1449,7 +1492,7 @@ func (p gitHubClientProvider) setIssueLikeAssignees(
 	return assignees, nil
 }
 
-func (p gitHubClientProvider) RequestMergeRequestReviewers(
+func (p *gitHubClientProvider) RequestMergeRequestReviewers(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1481,7 +1524,7 @@ func (p gitHubClientProvider) RequestMergeRequestReviewers(
 	return githubRequestedReviewerLogins(pr), nil
 }
 
-func (p gitHubClientProvider) RemoveMergeRequestReviewers(
+func (p *gitHubClientProvider) RemoveMergeRequestReviewers(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1516,7 +1559,7 @@ func githubRequestedReviewerLogins(pr *gh.PullRequest) []string {
 	return logins
 }
 
-func (p gitHubClientProvider) ApproveMergeRequest(
+func (p *gitHubClientProvider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1542,7 +1585,7 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
 }
 
-func (p gitHubClientProvider) ListMergeRequestReviewThreads(
+func (p *gitHubClientProvider) ListMergeRequestReviewThreads(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1665,7 +1708,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func (p gitHubClientProvider) PublishDiffReviewDraft(
+func (p *gitHubClientProvider) PublishDiffReviewDraft(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1748,7 +1791,7 @@ func githubDraftReviewComment(comment platform.LocalDiffReviewDraftComment) *gh.
 	return next
 }
 
-func (p gitHubClientProvider) EditMergeRequestContent(
+func (p *gitHubClientProvider) EditMergeRequestContent(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -1767,7 +1810,7 @@ func (p gitHubClientProvider) EditMergeRequestContent(
 	return platformgithub.NormalizePullRequest(ref, pr)
 }
 
-func (p gitHubClientProvider) EditIssueContent(
+func (p *gitHubClientProvider) EditIssueContent(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,

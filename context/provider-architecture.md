@@ -69,8 +69,11 @@ Rules:
   repo-level gates: provider capability, write credentials, rate limits, and
   repo-wide viewer permissions. Detail responses may add item-level gates with
   `repoOperationsForMergeRequest`, where the loaded PR/MR is available. For
-  example, GitHub self-approval is disabled only on PR detail because the rule
-  needs both the authenticated viewer and the PR author. Do not put item-level
+  provider-specific facts, go through provider interfaces. For example, GitHub
+  self-approval uses `platform.MergeRequestViewerResolver`; the GitHub provider
+  resolves the authenticated viewer with the write credential, caches that
+  login, and compares it to the PR author. Server code must not shell out to
+  provider CLIs or do provider-specific identity matching. Do not put item-level
   gates in repo settings or list summaries
   (`internal/server/operation_availability.go::repoOperations`,
   `internal/server/operation_availability.go::repoOperationsForMergeRequest`).

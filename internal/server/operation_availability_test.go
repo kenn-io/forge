@@ -615,13 +615,13 @@ func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1, withSeedPRAuthor("marius"))
-	srv.toolingRun = (&recordingToolingRunner{
-		outputs: map[string]string{
-			"gh api user --hostname github.com --jq .login": "marius\n",
+	mock := &mockGH{
+		authenticatedViewerLoginFn: func(context.Context) (string, error) {
+			return "marius", nil
 		},
-	}).run
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1, withSeedPRAuthor("marius"))
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
 	require.Equal(http.StatusOK, rr.Code)
@@ -635,4 +635,9 @@ func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
 	assert.Equal(availabilityCodeSelfApproval, submitReview.Code)
 	assert.Equal("You cannot approve your own pull request", submitReview.UnavailableReason)
 	assert.True(resp.Repo.Operations.MergePR.Available)
+
+	rr = doJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	assert.Equal(1, mock.authenticatedViewerCalls,
+		"provider should cache the authenticated viewer login")
 }

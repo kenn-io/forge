@@ -215,25 +215,28 @@ describe("EventTimeline", () => {
     expect(screen.getByText("aaaaaaa -> bbbbbbb")).toBeTruthy();
   });
 
-  it("renders lifecycle event labels and summaries", () => {
+  it("renders lifecycle event labels with actor bylines", () => {
     render(EventTimeline, {
       props: {
         events: [
           makeEvent({
             ID: 3,
             EventType: "merged",
+            Author: "merge-admin",
             Summary: "merged this",
             CreatedAt: "2024-06-01T12:03:00Z",
           }),
           makeEvent({
             ID: 2,
             EventType: "closed",
+            Author: "reviewer",
             Summary: "closed this",
             CreatedAt: "2024-06-01T12:02:00Z",
           }),
           makeEvent({
             ID: 1,
             EventType: "reopened",
+            Author: "maintainer",
             Summary: "reopened this",
             CreatedAt: "2024-06-01T12:01:00Z",
           }),
@@ -244,9 +247,24 @@ describe("EventTimeline", () => {
     expect(screen.getByText("Merged")).toBeTruthy();
     expect(screen.getByText("Closed")).toBeTruthy();
     expect(screen.getByText("Reopened")).toBeTruthy();
-    expect(screen.getByText("merged this")).toBeTruthy();
-    expect(screen.getByText("closed this")).toBeTruthy();
-    expect(screen.getByText("reopened this")).toBeTruthy();
+    const authors = Array.from(document.querySelectorAll(".event-author")).map((element) =>
+      element.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(authors).toContain("by merge-admin");
+    expect(authors).toContain("by reviewer");
+    expect(authors).toContain("by maintainer");
+    expect(document.querySelector(".event-author-prefix")?.textContent).toBe("by");
+    expect(document.querySelector(".event-author--lifecycle")?.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "by merge-admin",
+    );
+    const prefixStyle = findCompiledStyleRule(".event-author-prefix");
+    expect(prefixStyle.color).toBe("var(--text-muted)");
+    expect(prefixStyle.fontWeight).toBe("400");
+    expect(compiledCss).toContain(".event-author--lifecycle");
+    expect(compiledCss).toContain("margin-left: calc(var(--focus-detail-space-xs, 0.46rem) * -0.5)");
+    expect(screen.queryByText("merged this")).toBeNull();
+    expect(screen.queryByText("closed this")).toBeNull();
+    expect(screen.queryByText("reopened this")).toBeNull();
     expect(document.querySelectorAll(".event--compact")).toHaveLength(3);
   });
 
@@ -266,6 +284,28 @@ describe("EventTimeline", () => {
     const dot = document.querySelector(".dot");
     expect(label.getAttribute("style")).toContain("var(--accent-purple)");
     expect(dot?.getAttribute("style")).toContain("var(--accent-purple)");
+  });
+
+  it("renders compact activity lifecycle rows with actor bylines", () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        activityViewMode: "compact",
+        events: [
+          makeEvent({
+            EventType: "merged",
+            Author: "alice",
+            Summary: "merged this",
+          }),
+        ],
+      },
+    });
+
+    const row = container.querySelector<HTMLElement>(".event-card--compact-row");
+    const rowText = row?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+    expect(rowText).toContain("Merged by alice");
+    expect(rowText).not.toContain("merged this");
+    expect(row?.querySelector(".event-author-prefix")?.textContent).toBe("by");
+    expect(row?.querySelector(".compact-event-summary")?.textContent?.trim()).toBe("");
   });
 
   it("collapses duplicate merge lifecycle rows into the single authored transition", () => {
@@ -303,7 +343,38 @@ describe("EventTimeline", () => {
     expect(screen.getAllByText("Merged")).toHaveLength(1);
     expect(screen.queryByText("Closed")).toBeNull();
     expect(screen.queryByText("closed this")).toBeNull();
-    expect(screen.getByText("mariusvniekerk")).toBeTruthy();
+    expect(document.querySelector(".event--compact")?.textContent).toContain("by mariusvniekerk");
+    expect(document.querySelectorAll(".event--compact")).toHaveLength(1);
+  });
+
+  it("uses the authored close transition when an anonymous merged row is coalesced", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 1,
+            EventType: "merged",
+            Author: "",
+            Summary: "merged this",
+            CreatedAt: "2024-06-01T12:03:00Z",
+            DedupeKey: "timeline-merge-fallback",
+          }),
+          makeEvent({
+            ID: 2,
+            EventType: "closed",
+            Author: "merge-admin",
+            Summary: "closed this",
+            CreatedAt: "2024-06-01T12:03:00Z",
+            DedupeKey: "timeline-close-provider",
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getAllByText("Merged")).toHaveLength(1);
+    expect(screen.queryByText("Closed")).toBeNull();
+    expect(document.querySelector(".event--compact")?.textContent).toContain("by merge-admin");
+    expect(screen.queryByText("merged this")).toBeNull();
     expect(document.querySelectorAll(".event--compact")).toHaveLength(1);
   });
 
@@ -339,7 +410,11 @@ describe("EventTimeline", () => {
     expect(screen.getByText("Merged")).toBeTruthy();
     expect(screen.getByText("Reopened")).toBeTruthy();
     expect(screen.getByText("Closed")).toBeTruthy();
-    expect(screen.getByText("closed this")).toBeTruthy();
+    const authors = Array.from(document.querySelectorAll(".event-author")).map((element) =>
+      element.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(authors.filter((author) => author === "by mariusvniekerk")).toHaveLength(3);
+    expect(screen.queryByText("closed this")).toBeNull();
     expect(document.querySelectorAll(".event--compact")).toHaveLength(3);
   });
 

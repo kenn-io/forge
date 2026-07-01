@@ -173,7 +173,10 @@ test.describe("PR timeline filters", () => {
       .toBe("compact");
 
     await openPRTimelinePath(page, "/pulls/github/acme/tools/2");
-    await expect(page.locator(".pull-detail .event-card--compact-row").first()).toBeVisible();
+    const mergedRows = page.locator(".pull-detail .event-card--compact-row", { hasText: "MERGED" });
+    await expect(mergedRows).toHaveCount(1);
+    await expect(mergedRows.first()).toContainText("by alice");
+    await expect(mergedRows.first()).not.toContainText("merged this");
 
     await openIssueTimeline(page);
     await expect(page.locator(".issue-detail").getByRole("button", { name: "View", exact: true })).toContainText(

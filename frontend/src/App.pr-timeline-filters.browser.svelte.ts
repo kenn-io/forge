@@ -339,7 +339,8 @@ describe("PR timeline filters", () => {
     const mergedRows = inDetail(".event--compact").filter((el) => (el.textContent ?? "").includes("Merged"));
     expect(mergedRows.length).toBe(1);
     expect(mergedRows[0]!.textContent ?? "").toContain("alice");
-    expect(mergedRows[0]!.textContent ?? "").toContain("merged this");
+    expect(mergedRows[0]!.textContent ?? "").toContain("by alice");
+    expect(mergedRows[0]!.textContent ?? "").not.toContain("merged this");
     const mergedType = mergedRows[0]!.querySelector(".event-type");
     expect(mergedType?.getAttribute("style") ?? "").toContain("var(--accent-purple)");
     expect(mergedRows[0]!.querySelector(".dot")?.getAttribute("style") ?? "").toContain("var(--accent-purple)");

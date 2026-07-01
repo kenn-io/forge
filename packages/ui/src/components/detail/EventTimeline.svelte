@@ -209,6 +209,23 @@
     return elapsedAfterMerge >= 0 && elapsedAfterMerge < mergedCloseCoalesceWindowMs;
   }
 
+  function coalescedMergedCloseEvent(
+    sourceEvents: Array<PREvent | IssueEvent>,
+    mergedEvent: PREvent | IssueEvent,
+  ): PREvent | IssueEvent | null {
+    return sourceEvents
+      .filter((event) => event.EventType === "closed" && isCoalescedMergedCloseEvent(event, mergedEvent))
+      .reduce<PREvent | IssueEvent | null>(preferredLifecycleEvent, null);
+  }
+
+  function mergedEventWithCoalescedAuthor(
+    mergedEvent: PREvent | IssueEvent,
+    coalescedCloseEvent: PREvent | IssueEvent | null,
+  ): PREvent | IssueEvent {
+    if (mergedEvent.Author || !coalescedCloseEvent?.Author) return mergedEvent;
+    return { ...mergedEvent, Author: coalescedCloseEvent.Author };
+  }
+
   function collapseLifecycleTransitions(
     sourceEvents: Array<PREvent | IssueEvent>,
   ): Array<PREvent | IssueEvent> {
@@ -217,12 +234,16 @@
       .reduce<PREvent | IssueEvent | null>(preferredLifecycleEvent, null);
 
     if (mergedEvent === null) return sourceEvents;
+    const closeEvent = coalescedMergedCloseEvent(sourceEvents, mergedEvent);
+    const displayMergedEvent = mergedEventWithCoalescedAuthor(mergedEvent, closeEvent);
 
-    return sourceEvents.filter((event) => {
-      if (event.EventType === "merged") return event.ID === mergedEvent.ID;
-      if (event.EventType === "closed" && isCoalescedMergedCloseEvent(event, mergedEvent)) return false;
-      return true;
-    });
+    return sourceEvents
+      .filter((event) => {
+        if (event.EventType === "merged") return event.ID === mergedEvent.ID;
+        if (event.EventType === "closed" && isCoalescedMergedCloseEvent(event, mergedEvent)) return false;
+        return true;
+      })
+      .map((event) => (event.ID === mergedEvent.ID ? displayMergedEvent : event));
   }
 
   function compareEventsAscending(a: PREvent | IssueEvent, b: PREvent | IssueEvent): number {
@@ -604,6 +625,10 @@
     );
   }
 
+  function isLifecycleTransitionEvent(eventType: string): boolean {
+    return eventType === "merged" || eventType === "closed" || eventType === "reopened";
+  }
+
   function shortCommit(summary: string): string {
     return summary.length > 7 ? summary.slice(0, 7) : summary;
   }
@@ -738,6 +763,9 @@
     }
     if (event.EventType === "cross_referenced") {
       return metadataString(parseMetadata(event), "source_title") ?? event.Summary;
+    }
+    if (isLifecycleTransitionEvent(event.EventType)) {
+      return "";
     }
     return event.Summary || compactMarkdownPreview(event.Body) || systemEventLabel(event.EventType);
   }
@@ -1313,6 +1341,16 @@
 	{/if}
 {/snippet}
 
+{#snippet eventAuthorByline(event: PREvent | IssueEvent, compact = false)}
+  <span class={["event-author", compact && "compact-event-author", isLifecycleTransitionEvent(event.EventType) && event.Author && "event-author--lifecycle"]}>
+    {#if isLifecycleTransitionEvent(event.EventType) && event.Author}
+      <span class="event-author-prefix">by</span> {event.Author}
+    {:else}
+      {event.Author || "Unknown"}
+    {/if}
+  </span>
+{/snippet}
+
 {#snippet threadReplyPanel(entry: TimelineEntry, targetID: string)}
 	{#if provider && repoOwner && repoName && repoPath}
 	  <div class="thread-reply-panel">
@@ -1405,7 +1443,7 @@
                   >
                     {compactEventLabel(event.EventType)}
                   </span>
-                  <span class="event-author compact-event-author">{event.Author || "Unknown"}</span>
+                  {@render eventAuthorByline(event, true)}
                   <span class="compact-event-context" title={compactContext}>
                     {compactContext}
                   </span>
@@ -1423,7 +1461,7 @@
                   >
                     {compactEventLabel(event.EventType)}
                   </span>
-                  <span class="event-author compact-event-author">{event.Author || "Unknown"}</span>
+                  {@render eventAuthorByline(event, true)}
                   <span class="compact-event-context" title={compactContext}>
                     {compactContext}
                   </span>
@@ -1509,6 +1547,11 @@
                   <span class="event-author">{event.Author}</span>
                 {/if}
                 <span class="system-event-summary system-event-summary--sentence">{event.Summary}</span>
+                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+              {:else if isLifecycleTransitionEvent(event.EventType)}
+                {#if event.Author}
+                  {@render eventAuthorByline(event)}
+                {/if}
                 <span class="event-time">{timeAgo(event.CreatedAt)}</span>
               {:else if event.EventType === "cross_referenced"}
                 {#if event.Author}
@@ -1713,6 +1756,10 @@
     margin-left: 0;
   }
 
+  .event-header--compact .event-type + .event-author--lifecycle {
+    margin-left: calc(var(--focus-detail-space-xs, 0.46rem) * -0.5);
+  }
+
   .event-card--compact-row {
     overflow: hidden;
   }
@@ -1815,6 +1862,11 @@
     font-size: var(--font-size-sm);
     font-weight: 500;
     color: var(--text-primary);
+  }
+
+  .event-author-prefix {
+    color: var(--text-muted);
+    font-weight: 400;
   }
 
   .event-time {

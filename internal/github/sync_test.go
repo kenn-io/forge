@@ -489,6 +489,8 @@ type mockClient struct {
 	getPullRequestFn                func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn                      func(context.Context, string, string, int) (*gh.Issue, error)
 	getUserFn                       func(context.Context, string) (*gh.User, error)
+	authenticatedViewerLoginFn      func(context.Context) (string, error)
+	authenticatedViewerCalls        atomic.Int32
 	listReposByOwnerFn              func(context.Context, string) ([]*gh.Repository, error)
 	listReleases                    []*gh.RepositoryRelease
 	listReleasesErr                 error
@@ -847,6 +849,15 @@ func (m *mockClient) GetUser(ctx context.Context, login string) (*gh.User, error
 	return &gh.User{Login: &login, Name: &name}, nil
 }
 
+func (m *mockClient) AuthenticatedViewerLogin(ctx context.Context) (string, error) {
+	m.trackCall()
+	m.authenticatedViewerCalls.Add(1)
+	if m.authenticatedViewerLoginFn != nil {
+		return m.authenticatedViewerLoginFn(ctx)
+	}
+	return "", nil
+}
+
 func (m *mockClient) ListRepositoriesByOwner(
 	ctx context.Context, owner string,
 ) ([]*gh.Repository, error) {
@@ -1134,6 +1145,39 @@ func TestGitHubProviderPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) 
 	assert.Equal("reviewed-head", mock.createdReviewCommitID)
 	require.Len(mock.createdReviewComments, 1)
 	assert.Equal("inline note", mock.createdReviewComments[0].GetBody())
+}
+
+func TestGitHubProviderViewerAuthoredMergeRequestCacheExpires(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	logins := []string{"marius", "octocat"}
+	mock := &mockClient{
+		authenticatedViewerLoginFn: func(context.Context) (string, error) {
+			next := logins[0]
+			logins = logins[1:]
+			return next, nil
+		},
+	}
+	provider := &gitHubClientProvider{client: mock, host: "github.com"}
+	mr := platform.MergeRequest{Author: "marius"}
+
+	authored, err := provider.ViewerAuthoredMergeRequest(t.Context(), mr)
+	require.NoError(err)
+	assert.True(authored)
+
+	authored, err = provider.ViewerAuthoredMergeRequest(t.Context(), mr)
+	require.NoError(err)
+	assert.True(authored)
+	assert.EqualValues(1, mock.authenticatedViewerCalls.Load())
+
+	provider.viewerMu.Lock()
+	provider.viewerCacheAt = time.Now().Add(-authenticatedViewerLoginTTL - time.Second)
+	provider.viewerMu.Unlock()
+
+	authored, err = provider.ViewerAuthoredMergeRequest(t.Context(), mr)
+	require.NoError(err)
+	assert.False(authored)
+	assert.EqualValues(2, mock.authenticatedViewerCalls.Load())
 }
 
 func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {

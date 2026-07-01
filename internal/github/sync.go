@@ -705,15 +705,23 @@ func NewSyncerWithRegistry(
 }
 
 type gitHubClientProvider struct {
-	host        string
-	client      Client
-	viewerMu    sync.Mutex
-	viewerLogin string
+	host           string
+	client         Client
+	viewerMu       sync.Mutex
+	viewerLogin    string
+	viewerCacheAt  time.Time
+	viewerCacheKey string
 }
 
 type authenticatedViewerLoginClient interface {
 	AuthenticatedViewerLogin(ctx context.Context) (string, error)
 }
+
+type authenticatedViewerCacheKeyClient interface {
+	AuthenticatedViewerCacheKey() string
+}
+
+const authenticatedViewerLoginTTL = time.Minute
 
 type githubLabelClient interface {
 	ListRepoLabels(ctx context.Context, owner, repo string) ([]*gh.Label, error)
@@ -826,11 +834,16 @@ func (p *gitHubClientProvider) ViewerAuthoredMergeRequest(
 }
 
 func (p *gitHubClientProvider) authenticatedViewerLogin(ctx context.Context) (string, error) {
+	cacheKey := p.authenticatedViewerCacheKey()
+	now := time.Now()
 	p.viewerMu.Lock()
 	defer p.viewerMu.Unlock()
-	if p.viewerLogin != "" {
+	if p.viewerLogin != "" &&
+		p.viewerCacheKey == cacheKey &&
+		now.Sub(p.viewerCacheAt) < authenticatedViewerLoginTTL {
 		return p.viewerLogin, nil
 	}
+
 	client, ok := p.client.(authenticatedViewerLoginClient)
 	if !ok {
 		return "", fmt.Errorf("github client does not resolve authenticated viewer")
@@ -844,7 +857,17 @@ func (p *gitHubClientProvider) authenticatedViewerLogin(ctx context.Context) (st
 		return "", fmt.Errorf("authenticated viewer login is empty")
 	}
 	p.viewerLogin = login
+	p.viewerCacheAt = now
+	p.viewerCacheKey = cacheKey
 	return login, nil
+}
+
+func (p *gitHubClientProvider) authenticatedViewerCacheKey() string {
+	client, ok := p.client.(authenticatedViewerCacheKeyClient)
+	if !ok {
+		return ""
+	}
+	return client.AuthenticatedViewerCacheKey()
 }
 
 func (p *gitHubClientProvider) ListNotifications(

@@ -13421,6 +13421,67 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 	assert.Nil(storedDraft)
 }
 
+func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	var publishCalls int
+	mock := &mockGH{
+		authenticatedViewerLoginFn: func(context.Context) (string, error) {
+			return "marius", nil
+		},
+		createReviewWithCommentsFn: func(
+			context.Context,
+			string, string,
+			int,
+			string,
+			string,
+			string,
+			[]*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			publishCalls++
+			return nil, errors.New("provider should not be called")
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 42, withSeedPRAuthor("marius"))
+	mr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpdateDiffSHAs(ctx, mr.RepoID, 42, "github-head", "base", "merge-base"))
+
+	basePath := "/api/v1/pulls/gh/acme/widget/42/review-draft"
+	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+		"body": "Please tighten this line.",
+		"range": map[string]any{
+			"path":          "src/main.go",
+			"side":          "right",
+			"line":          42,
+			"new_line":      42,
+			"line_type":     "add",
+			"diff_head_sha": "github-head",
+			"commit_sha":    "github-head",
+		},
+	})
+	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
+
+	publishRR := doJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
+		"action": "approve",
+		"body":   "looks good",
+	})
+	require.Equal(http.StatusForbidden, publishRR.Code, publishRR.Body.String())
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(publishRR.Body).Decode(&problem))
+	assert.Equal("forbidden", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal(availabilityCodeSelfApproval, problem.Details["reason"])
+	assert.Zero(publishCalls)
+
+	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	assert.NotNil(storedDraft, "rejected self-approval must leave the local draft intact")
+}
+
 func TestAPIPublishReviewDraftRejectsStoredCommentWithoutDiffHeadSHA(t *testing.T) {
 	require := require.New(t)
 	caps := platform.Capabilities{

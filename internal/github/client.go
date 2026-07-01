@@ -415,6 +415,8 @@ type liveClient struct {
 	etag                    *etagTransport
 	viewerMu                sync.Mutex
 	viewerLogin             string
+	viewerLoginAt           time.Time
+	viewerLoginCacheKey     string
 }
 
 func (c *liveClient) writeGH() *gh.Client {
@@ -1486,9 +1488,13 @@ func (c *liveClient) ListRepositoriesByOwner(
 }
 
 func (c *liveClient) authenticatedLogin(ctx context.Context) (string, error) {
+	cacheKey := c.authenticatedViewerCacheKey()
+	now := time.Now()
 	c.viewerMu.Lock()
 	defer c.viewerMu.Unlock()
-	if c.viewerLogin != "" {
+	if c.viewerLogin != "" &&
+		c.viewerLoginCacheKey == cacheKey &&
+		now.Sub(c.viewerLoginAt) < authenticatedViewerLoginTTL {
 		return c.viewerLogin, nil
 	}
 	user, resp, err := c.writeGH().Users.Get(ctx, "")
@@ -1501,11 +1507,24 @@ func (c *liveClient) authenticatedLogin(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("authenticated user login is empty")
 	}
 	c.viewerLogin = login
+	c.viewerLoginAt = now
+	c.viewerLoginCacheKey = cacheKey
 	return login, nil
 }
 
 func (c *liveClient) AuthenticatedViewerLogin(ctx context.Context) (string, error) {
 	return c.authenticatedLogin(ctx)
+}
+
+func (c *liveClient) AuthenticatedViewerCacheKey() string {
+	return c.authenticatedViewerCacheKey()
+}
+
+func (c *liveClient) authenticatedViewerCacheKey() string {
+	if c.source == nil {
+		return ""
+	}
+	return c.source.Descriptor().CanonicalSourceString()
 }
 
 func (c *liveClient) GetIssue(

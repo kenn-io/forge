@@ -185,6 +185,9 @@ func (s *Server) publishDiffReviewDraft(
 	if !reviewActionSupported(caps, action) {
 		return nil, problemUnsupportedCapability(*repo, "review_action_"+string(action))
 	}
+	if action == platform.ReviewActionApprove && s.mergeRequestAuthoredByViewer(ctx, *repo, *mr) {
+		return nil, selfApprovalProblem(*repo)
+	}
 	draft, err := s.db.GetMRReviewDraft(ctx, mr.ID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get review draft failed")

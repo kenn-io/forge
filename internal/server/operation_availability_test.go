@@ -558,10 +558,16 @@ func splitTestDescriptor(writeCandidate tokenauth.Candidate) tokenauth.Descripto
 func newSplitTestServer(
 	t *testing.T, writeCandidate tokenauth.Candidate,
 ) (*Server, *tokenauth.SourceSet) {
+	return newSplitTestServerWithMock(t, writeCandidate, &mockGH{})
+}
+
+func newSplitTestServerWithMock(
+	t *testing.T, writeCandidate tokenauth.Candidate, mock *mockGH,
+) (*Server, *tokenauth.SourceSet) {
 	t.Helper()
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
+		map[string]ghclient.Client{"github.com": mock},
 		database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute, nil, nil,
@@ -640,4 +646,26 @@ func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code)
 	assert.Equal(1, mock.authenticatedViewerCalls,
 		"provider should cache the authenticated viewer login")
+}
+
+func TestAPIPullDetailOperationsSkipViewerLookupWhenSubmitReviewUnavailable(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	t.Setenv("SPLIT_WRITE_CRED_PAT", "")
+	mock := &mockGH{}
+	srv, _ := newSplitTestServerWithMock(t, tokenauth.Candidate{
+		Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT",
+	}, mock)
+	seedPR(t, srv.db, "acme", "widget", 1, withSeedPRAuthor("marius"))
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.NotNil(resp.Repo.Operations)
+	assert.Equal(availabilityCodeMissingWriteCredential, resp.Repo.Operations.SubmitReview.Code)
+	assert.Zero(mock.authenticatedViewerCalls,
+		"viewer lookup must not run when the write credential already blocks review submission")
 }

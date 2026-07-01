@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/ratelimit"
@@ -213,11 +214,15 @@ func (s *Server) repoOperationsForMergeRequest(
 	repo db.Repo,
 	mr db.MergeRequest,
 ) RepoOperations {
-	opContext := operationAvailabilityContext{}
-	if s.mergeRequestAuthoredByViewer(ctx, repo, mr) {
-		opContext.selfApproval = true
+	ops := s.repoOperationsWithContext(repo, operationAvailabilityContext{})
+	if !ops.SubmitReview.Available {
+		return ops
 	}
-	return s.repoOperationsWithContext(repo, opContext)
+	if !s.mergeRequestAuthoredByViewer(ctx, repo, mr) {
+		return ops
+	}
+	ops.SubmitReview = selfApprovalUnavailable()
+	return ops
 }
 
 func deriveOperationAvailabilityWithContext(
@@ -267,6 +272,17 @@ func selfApprovalUnavailable() OperationAvailability {
 		Code:              availabilityCodeSelfApproval,
 		UnavailableReason: "You cannot approve your own pull request",
 	}
+}
+
+func selfApprovalProblem(repo db.Repo) huma.StatusError {
+	return problemForbidden(
+		"You cannot approve your own pull request",
+		map[string]any{
+			"reason":       availabilityCodeSelfApproval,
+			"provider":     string(repoProviderKind(repo)),
+			"platformHost": repoProviderHost(repo),
+		},
+	)
 }
 
 func (s *Server) mergeRequestAuthoredByViewer(

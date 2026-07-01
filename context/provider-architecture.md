@@ -72,9 +72,11 @@ Rules:
   provider-specific facts, go through provider interfaces. For example, GitHub
   self-approval uses `platform.MergeRequestViewerResolver`; the GitHub provider
   resolves the authenticated viewer with the write credential, caches that
-  login, and compares it to the PR author. Server code must not shell out to
-  provider CLIs or do provider-specific identity matching. Do not put item-level
-  gates in repo settings or list summaries
+  login only for a bounded window keyed to the credential chain, and compares it
+  to the PR author. Viewer-resolution errors fail open in availability because
+  the provider mutation remains authoritative. Server code must not shell out
+  to provider CLIs or do provider-specific identity matching. Do not put
+  item-level gates in repo settings or list summaries
   (`internal/server/operation_availability.go::repoOperations`,
   `internal/server/operation_availability.go::repoOperationsForMergeRequest`).
 - Read sync should continue for supported resources if optional resources such

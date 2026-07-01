@@ -79,6 +79,7 @@ type PullSuffix =
   | "/review-draft/comments"
   | "/review-draft/comments/{draft_comment_id}"
   | "/review-draft/publish"
+  | "/review-suggestions/apply"
   | "/review-threads/{thread_id}/resolve"
   | "/review-threads/{thread_id}/unresolve"
   | "/stack"

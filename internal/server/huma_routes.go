@@ -161,6 +161,30 @@ type publishDiffReviewDraftInput struct {
 	}
 }
 
+type applyReviewSuggestionInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
+		Message         string `json:"message,omitempty"`
+		Suggestions     []struct {
+			ThreadID    string `json:"thread_id"`
+			Replacement string `json:"replacement"`
+		} `json:"suggestions"`
+	}
+}
+
+type applyReviewSuggestionResponse struct {
+	Status    string `json:"status"`
+	CommitSHA string `json:"commit_sha,omitempty"`
+	CommitURL string `json:"commit_url,omitempty"`
+}
+
+type applyReviewSuggestionOutput = bodyOutput[applyReviewSuggestionResponse]
+
 type discardDiffReviewDraftInput = repoNumberInput
 
 type resolveDiffReviewThreadInput struct {
@@ -1218,6 +1242,8 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "publish-pr-review-draft-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-draft/publish", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.publishDiffReviewDraftOnHost)
 	huma.Register(api, huma.Operation{OperationID: "discard-pr-review-draft", Method: http.MethodDelete, Path: pullPath + "/review-draft", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.discardDiffReviewDraft)
 	huma.Register(api, huma.Operation{OperationID: "discard-pr-review-draft-on-host", Method: http.MethodDelete, Path: hostPullPath + "/review-draft", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.discardDiffReviewDraftOnHost)
+	huma.Register(api, huma.Operation{OperationID: "apply-pr-review-suggestions", Method: http.MethodPost, Path: pullPath + "/review-suggestions/apply", DefaultStatus: http.StatusOK, Summary: "Apply pull request review suggestions", Tags: []string{"Pull Requests"}}, s.applyReviewSuggestions)
+	huma.Register(api, huma.Operation{OperationID: "apply-pr-review-suggestions-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-suggestions/apply", DefaultStatus: http.StatusOK, Summary: "Apply pull request review suggestions", Tags: []string{"Pull Requests"}}, s.applyReviewSuggestionsOnHost)
 	huma.Register(api, huma.Operation{OperationID: "resolve-pr-review-thread", Method: http.MethodPost, Path: pullPath + "/review-threads/{thread_id}/resolve", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.resolveDiffReviewThread)
 	huma.Register(api, huma.Operation{OperationID: "resolve-pr-review-thread-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-threads/{thread_id}/resolve", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.resolveDiffReviewThreadOnHost)
 	huma.Register(api, huma.Operation{OperationID: "unresolve-pr-review-thread", Method: http.MethodPost, Path: pullPath + "/review-threads/{thread_id}/unresolve", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.unresolveDiffReviewThread)

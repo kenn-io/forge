@@ -544,6 +544,16 @@ func (m *mockGH) CreateReviewWithComments(
 	return m.CreateReview(ctx, owner, repo, number, event, body)
 }
 
+func (m *mockGH) ApplyReviewSuggestions(
+	context.Context,
+	string,
+	string,
+	int,
+	platform.ApplyReviewSuggestionsInput,
+) (*platform.AppliedReviewSuggestions, error) {
+	return nil, nil
+}
+
 func (m *mockGH) DismissReview(
 	ctx context.Context, owner, repo string, number int, reviewID int64, message string,
 ) (*gh.PullRequestReview, error) {
@@ -673,23 +683,25 @@ func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string
 func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
 
 type apiTestGitLabProvider struct {
-	ref                platform.RepoRef
-	capabilities       *platform.Capabilities
-	mergeRequests      []platform.MergeRequest
-	mergeRequestDetail map[int]platform.MergeRequest
-	mergeRequestEvents map[int][]platform.MergeRequestEvent
-	issues             []platform.Issue
-	issueEvents        map[int][]platform.IssueEvent
-	releases           []platform.Release
-	tags               []platform.Tag
-	ciChecks           map[string][]platform.CICheck
-	ciErr              error
-	reviewThreads      []platform.MergeRequestReviewThread
-	reviewThreadsErr   error
-	publishedReviews   []platform.PublishDiffReviewDraftInput
-	publishReviewErr   error
-	resolvedThreads    []string
-	unresolvedThreads  []string
+	ref                 platform.RepoRef
+	capabilities        *platform.Capabilities
+	mergeRequests       []platform.MergeRequest
+	mergeRequestDetail  map[int]platform.MergeRequest
+	mergeRequestEvents  map[int][]platform.MergeRequestEvent
+	issues              []platform.Issue
+	issueEvents         map[int][]platform.IssueEvent
+	releases            []platform.Release
+	tags                []platform.Tag
+	ciChecks            map[string][]platform.CICheck
+	ciErr               error
+	reviewThreads       []platform.MergeRequestReviewThread
+	reviewThreadsErr    error
+	publishedReviews    []platform.PublishDiffReviewDraftInput
+	publishReviewErr    error
+	appliedSuggestions  []platform.ApplyReviewSuggestionsInput
+	applySuggestionsErr error
+	resolvedThreads     []string
+	unresolvedThreads   []string
 }
 
 func (p *apiTestGitLabProvider) Platform() platform.Kind {
@@ -722,6 +734,16 @@ func (p *apiTestGitLabProvider) PublishDiffReviewDraft(
 ) (*platform.PublishedDiffReview, error) {
 	p.publishedReviews = append(p.publishedReviews, input)
 	return &platform.PublishedDiffReview{SubmittedAt: time.Now().UTC()}, p.publishReviewErr
+}
+
+func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
+	_ context.Context,
+	_ platform.RepoRef,
+	_ int,
+	input platform.ApplyReviewSuggestionsInput,
+) (*platform.AppliedReviewSuggestions, error) {
+	p.appliedSuggestions = append(p.appliedSuggestions, input)
+	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}, p.applySuggestionsErr
 }
 
 func (p *apiTestGitLabProvider) ListMergeRequestReviewThreads(
@@ -2055,7 +2077,8 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	assert.Equal("right", event.DiffThread.Side)
 	assert.Equal(int64(line), event.DiffThread.Line)
 	assert.Equal("inline note", event.DiffThread.Body)
-	assert.Nil(event.DiffThread.DiffHeadSha)
+	require.NotNil(event.DiffThread.DiffHeadSha)
+	assert.Equal(commentCommitSHA, *event.DiffThread.DiffHeadSha)
 	require.NotNil(event.DiffThread.CommitSha)
 	assert.Equal(commentCommitSHA, *event.DiffThread.CommitSha)
 	require.NotNil(event.DiffThread.ProviderCommentId)
@@ -15722,6 +15745,139 @@ func TestAPIPullDetailAttachesReviewThreadMetadata(t *testing.T) {
 	assert.InDelta(12, diffThread["line"], 0)
 	assert.Equal(false, diffThread["resolved"])
 	assert.NotContains(diffThread, "provider_thread_id")
+}
+
+func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	startLine := 10
+	line := 11
+	require.NoError(database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
+		ProviderThreadID:  "provider-thread-1",
+		ProviderCommentID: "provider-comment-1",
+		Body:              "Inline suggestion",
+		AuthorLogin:       "ada",
+		Range: db.ReviewLineRange{
+			Path:        "src/review.ts",
+			Side:        "right",
+			StartSide:   "right",
+			StartLine:   &startLine,
+			Line:        line,
+			NewLine:     &line,
+			LineType:    "context",
+			DiffHeadSHA: "abc123",
+			CommitSHA:   "abc123",
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}}))
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	require.Len(provider.appliedSuggestions, 1)
+	applied := provider.appliedSuggestions[0]
+	require.Len(applied.Suggestions, 1)
+	assert.Equal("feature/gitlab", applied.HeadBranch)
+	assert.Equal("abc123", applied.ExpectedHeadSHA)
+	assert.Equal("provider-thread-1", applied.Suggestions[0].ProviderThreadID)
+	assert.Equal("provider-comment-1", applied.Suggestions[0].ProviderCommentID)
+	assert.Equal("src/review.ts", applied.Suggestions[0].Range.Path)
+	assert.Equal("return client.publishThreads();", applied.Suggestions[0].Replacement)
+}
+
+func TestAPIApplyReviewSuggestionRejectsStaleHead(t *testing.T) {
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	line := 11
+	require.NoError(database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
+		ProviderThreadID: "provider-thread-1",
+		Range: db.ReviewLineRange{
+			Path:        "src/review.ts",
+			Side:        "right",
+			Line:        line,
+			NewLine:     &line,
+			LineType:    "context",
+			DiffHeadSHA: "abc123",
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}}))
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "stale-head",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 }
 
 func draftIDFromResponse(t *testing.T, draft map[string]any) int64 {

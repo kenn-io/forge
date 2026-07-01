@@ -17,26 +17,27 @@ import (
 // of RepoOperations and are part of the wire contract; renaming one
 // is a breaking change for clients pinned to an older schema.
 const (
-	operationMergePR             = "merge_pr"
-	operationClosePR             = "close_pr"
-	operationReopenPR            = "reopen_pr"
-	operationMarkReadyForReview  = "mark_ready_for_review"
-	operationMarkDraft           = "mark_draft"
-	operationSubmitReview        = "submit_review"
-	operationReviewDraft         = "review_draft"
-	operationAddComment          = "add_comment"
-	operationEditComment         = "edit_comment"
-	operationAddLabel            = "add_label"
-	operationRemoveLabel         = "remove_label"
-	operationSetAssignees        = "set_assignees"
-	operationSetReviewers        = "set_reviewers"
-	operationCreateIssue         = "create_issue"
-	operationCloseIssue          = "close_issue"
-	operationReopenIssue         = "reopen_issue"
-	operationApproveWorkflow     = "approve_workflow"
-	operationUpdateContent       = "update_content"
-	operationReplyReviewThread   = "reply_review_thread"
-	operationResolveReviewThread = "resolve_review_thread"
+	operationMergePR               = "merge_pr"
+	operationClosePR               = "close_pr"
+	operationReopenPR              = "reopen_pr"
+	operationMarkReadyForReview    = "mark_ready_for_review"
+	operationMarkDraft             = "mark_draft"
+	operationSubmitReview          = "submit_review"
+	operationReviewDraft           = "review_draft"
+	operationAddComment            = "add_comment"
+	operationEditComment           = "edit_comment"
+	operationAddLabel              = "add_label"
+	operationRemoveLabel           = "remove_label"
+	operationSetAssignees          = "set_assignees"
+	operationSetReviewers          = "set_reviewers"
+	operationCreateIssue           = "create_issue"
+	operationCloseIssue            = "close_issue"
+	operationReopenIssue           = "reopen_issue"
+	operationApproveWorkflow       = "approve_workflow"
+	operationUpdateContent         = "update_content"
+	operationReplyReviewThread     = "reply_review_thread"
+	operationResolveReviewThread   = "resolve_review_thread"
+	operationApplyReviewSuggestion = "apply_review_suggestion"
 )
 
 // Availability codes returned to clients. Empty code means available.
@@ -87,26 +88,27 @@ type OperationAvailability struct {
 // frontend helper packages/ui/.../operation-gates.ts implements this
 // side of the contract.
 type RepoOperations struct {
-	MergePR             OperationAvailability `json:"merge_pr"`
-	ClosePR             OperationAvailability `json:"close_pr"`
-	ReopenPR            OperationAvailability `json:"reopen_pr"`
-	MarkReadyForReview  OperationAvailability `json:"mark_ready_for_review"`
-	MarkDraft           OperationAvailability `json:"mark_draft"`
-	SubmitReview        OperationAvailability `json:"submit_review"`
-	ReviewDraft         OperationAvailability `json:"review_draft"`
-	AddComment          OperationAvailability `json:"add_comment"`
-	EditComment         OperationAvailability `json:"edit_comment"`
-	AddLabel            OperationAvailability `json:"add_label"`
-	RemoveLabel         OperationAvailability `json:"remove_label"`
-	SetAssignees        OperationAvailability `json:"set_assignees"`
-	SetReviewers        OperationAvailability `json:"set_reviewers"`
-	CreateIssue         OperationAvailability `json:"create_issue"`
-	CloseIssue          OperationAvailability `json:"close_issue"`
-	ReopenIssue         OperationAvailability `json:"reopen_issue"`
-	ApproveWorkflow     OperationAvailability `json:"approve_workflow"`
-	UpdateContent       OperationAvailability `json:"update_content"`
-	ReplyReviewThread   OperationAvailability `json:"reply_review_thread"`
-	ResolveReviewThread OperationAvailability `json:"resolve_review_thread"`
+	MergePR               OperationAvailability `json:"merge_pr"`
+	ClosePR               OperationAvailability `json:"close_pr"`
+	ReopenPR              OperationAvailability `json:"reopen_pr"`
+	MarkReadyForReview    OperationAvailability `json:"mark_ready_for_review"`
+	MarkDraft             OperationAvailability `json:"mark_draft"`
+	SubmitReview          OperationAvailability `json:"submit_review"`
+	ReviewDraft           OperationAvailability `json:"review_draft"`
+	AddComment            OperationAvailability `json:"add_comment"`
+	EditComment           OperationAvailability `json:"edit_comment"`
+	AddLabel              OperationAvailability `json:"add_label"`
+	RemoveLabel           OperationAvailability `json:"remove_label"`
+	SetAssignees          OperationAvailability `json:"set_assignees"`
+	SetReviewers          OperationAvailability `json:"set_reviewers"`
+	CreateIssue           OperationAvailability `json:"create_issue"`
+	CloseIssue            OperationAvailability `json:"close_issue"`
+	ReopenIssue           OperationAvailability `json:"reopen_issue"`
+	ApproveWorkflow       OperationAvailability `json:"approve_workflow"`
+	UpdateContent         OperationAvailability `json:"update_content"`
+	ReplyReviewThread     OperationAvailability `json:"reply_review_thread"`
+	ResolveReviewThread   OperationAvailability `json:"resolve_review_thread"`
+	ApplyReviewSuggestion OperationAvailability `json:"apply_review_suggestion"`
 }
 
 // operationDescriptor lists the capabilities an operation needs and
@@ -155,9 +157,10 @@ var (
 	// budget of the routes that serve them; review-thread reply and
 	// resolution are REST on every provider that supports them (GitHub
 	// replies via REST comments, GitLab discussions via REST).
-	descUpdateContent       = operationDescriptor{name: operationUpdateContent, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
-	descReplyReviewThread   = operationDescriptor{name: operationReplyReviewThread, requiredCapabilities: []string{capabilityThreadReply}, bucket: apiBucketREST}
-	descResolveReviewThread = operationDescriptor{name: operationResolveReviewThread, requiredCapabilities: []string{capabilityReviewThreadResolution}, bucket: apiBucketREST}
+	descUpdateContent         = operationDescriptor{name: operationUpdateContent, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
+	descReplyReviewThread     = operationDescriptor{name: operationReplyReviewThread, requiredCapabilities: []string{capabilityThreadReply}, bucket: apiBucketREST}
+	descResolveReviewThread   = operationDescriptor{name: operationResolveReviewThread, requiredCapabilities: []string{capabilityReviewThreadResolution}, bucket: apiBucketREST}
+	descApplyReviewSuggestion = operationDescriptor{name: operationApplyReviewSuggestion, requiredCapabilities: []string{capabilityReviewSuggestionApplication}, bucket: apiBucketGraphQL}
 )
 
 // repoOperations derives the availability of every operation for a
@@ -186,26 +189,27 @@ func (s *Server) repoOperationsWithContext(
 		)
 	}
 	return RepoOperations{
-		MergePR:             derive(descMergePR),
-		ClosePR:             derive(descClosePR),
-		ReopenPR:            derive(descReopenPR),
-		MarkReadyForReview:  derive(descMarkReadyForReview),
-		MarkDraft:           derive(descMarkDraft),
-		SubmitReview:        derive(descSubmitReview),
-		ReviewDraft:         derive(descReviewDraft),
-		AddComment:          derive(descAddComment),
-		EditComment:         derive(descEditComment),
-		AddLabel:            derive(descAddLabel),
-		RemoveLabel:         derive(descRemoveLabel),
-		SetAssignees:        derive(descSetAssignees),
-		SetReviewers:        derive(descSetReviewers),
-		CreateIssue:         derive(descCreateIssue),
-		CloseIssue:          derive(descCloseIssue),
-		ReopenIssue:         derive(descReopenIssue),
-		ApproveWorkflow:     derive(descApproveWorkflow),
-		UpdateContent:       derive(descUpdateContent),
-		ReplyReviewThread:   derive(descReplyReviewThread),
-		ResolveReviewThread: derive(descResolveReviewThread),
+		MergePR:               derive(descMergePR),
+		ClosePR:               derive(descClosePR),
+		ReopenPR:              derive(descReopenPR),
+		MarkReadyForReview:    derive(descMarkReadyForReview),
+		MarkDraft:             derive(descMarkDraft),
+		SubmitReview:          derive(descSubmitReview),
+		ReviewDraft:           derive(descReviewDraft),
+		AddComment:            derive(descAddComment),
+		EditComment:           derive(descEditComment),
+		AddLabel:              derive(descAddLabel),
+		RemoveLabel:           derive(descRemoveLabel),
+		SetAssignees:          derive(descSetAssignees),
+		SetReviewers:          derive(descSetReviewers),
+		CreateIssue:           derive(descCreateIssue),
+		CloseIssue:            derive(descCloseIssue),
+		ReopenIssue:           derive(descReopenIssue),
+		ApproveWorkflow:       derive(descApproveWorkflow),
+		UpdateContent:         derive(descUpdateContent),
+		ReplyReviewThread:     derive(descReplyReviewThread),
+		ResolveReviewThread:   derive(descResolveReviewThread),
+		ApplyReviewSuggestion: derive(descApplyReviewSuggestion),
 	}
 }
 

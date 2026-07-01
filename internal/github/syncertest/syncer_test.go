@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -139,6 +140,15 @@ func (m *mockClient) CreateReviewWithComments(
 	string,
 	[]*gh.DraftReviewComment,
 ) (*gh.PullRequestReview, error) {
+	return nil, nil
+}
+func (m *mockClient) ApplyReviewSuggestions(
+	context.Context,
+	string,
+	string,
+	int,
+	platform.ApplyReviewSuggestionsInput,
+) (*platform.AppliedReviewSuggestions, error) {
 	return nil, nil
 }
 func (m *mockClient) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {

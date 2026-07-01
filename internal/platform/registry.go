@@ -351,6 +351,21 @@ func (r *Registry) DiffReviewDraftMutator(
 	return mutator, nil
 }
 
+func (r *Registry) ReviewSuggestionApplier(
+	kind Kind,
+	host string,
+) (ReviewSuggestionApplier, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	applier, ok := provider.(ReviewSuggestionApplier)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "review_suggestion_application")
+	}
+	return applier, nil
+}
+
 func (r *Registry) DiffReviewThreadResolver(
 	kind Kind,
 	host string,

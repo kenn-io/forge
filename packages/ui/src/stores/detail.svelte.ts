@@ -1,4 +1,5 @@
 import type { KanbanStatus, Label, PullDetail } from "../api/types.js";
+import type { ApplySuggestionRequest } from "../utils/markdown-suggestions.js";
 import {
   providerDefaultHost,
   providerItemPath,
@@ -1099,6 +1100,47 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return true;
   }
 
+  async function applyReviewSuggestions(
+    owner: string,
+    name: string,
+    number: number,
+    input: ApplySuggestionRequest,
+  ): Promise<boolean> {
+    const ref = currentDetailRef(owner, name, number);
+    const expectedHeadSHA = detail?.platform_head_sha ?? "";
+    storeError = null;
+    try {
+      const { error: requestError } = await apiClient.POST(
+        providerItemPath("pulls", ref, "/review-suggestions/apply"),
+        {
+          params: {
+            path: {
+              ...providerRouteParams(ref),
+              number,
+            },
+          },
+          body: {
+            expected_head_sha: expectedHeadSHA,
+            ...(input.message ? { message: input.message } : {}),
+            suggestions: input.suggestions.map((suggestion) => ({
+              thread_id: suggestion.threadID,
+              replacement: suggestion.replacement,
+            })),
+          },
+        },
+      );
+      if (requestError) {
+        throw new Error(requestError.detail ?? requestError.title ?? "failed to apply suggestion");
+      }
+    } catch (err) {
+      storeError = err instanceof Error ? err.message : String(err);
+      return false;
+    }
+    await refreshDetail(owner, name, number, syncGeneration, currentDetailRef(owner, name, number));
+    await refreshPullsIfActive();
+    return true;
+  }
+
   return {
     getDetail,
     isDetailLoading,
@@ -1125,6 +1167,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     submitComment,
     editComment,
     replyToDiscussion,
+    applyReviewSuggestions,
   };
 }
 

@@ -158,6 +158,160 @@ func (s *Server) discardDiffReviewDraft(
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
 }
 
+func (s *Server) applyReviewSuggestions(
+	ctx context.Context,
+	input *applyReviewSuggestionInput,
+) (*applyReviewSuggestionOutput, error) {
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityReviewSuggestionApplication,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSyncerCapability(*repo, capabilityReviewSuggestionApplication); err != nil {
+		return nil, err
+	}
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get pull request failed")
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+	if len(input.Body.Suggestions) == 0 {
+		return nil, problemValidation("body.suggestions", "at least one suggestion is required")
+	}
+	caps := s.capabilitiesForRepo(*repo)
+	expectedHeadSHA := strings.TrimSpace(input.Body.ExpectedHeadSHA)
+	if expectedHeadSHA == "" && caps.MutationHeadBinding {
+		return nil, problemValidation(
+			"body.expected_head_sha",
+			"required for this provider: echo the platform_head_sha you rendered",
+		)
+	}
+	if err := s.verifyClientReviewedHead(repo, input.Number, expectedHeadSHA, mr.PlatformHeadSHA); err != nil {
+		return nil, err
+	}
+
+	applier, err := s.syncer.ReviewSuggestionApplier(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+	suggestions := make([]platform.ReviewSuggestion, 0, len(input.Body.Suggestions))
+	seenThreadIDs := make(map[int64]struct{}, len(input.Body.Suggestions))
+	for i, request := range input.Body.Suggestions {
+		field := "body.suggestions[" + strconv.Itoa(i) + "].thread_id"
+		threadID, err := parseReviewLocalID(request.ThreadID, "review thread")
+		if err != nil {
+			return nil, problemValidation(field, "review thread id must be a positive integer")
+		}
+		if _, ok := seenThreadIDs[threadID]; ok {
+			return nil, problemValidation(field, "duplicate review thread id")
+		}
+		seenThreadIDs[threadID] = struct{}{}
+		thread, err := s.db.GetMRReviewThread(ctx, mr.ID, threadID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, huma.Error404NotFound("review thread not found")
+			}
+			return nil, huma.Error500InternalServerError("get review thread failed")
+		}
+		if thread == nil {
+			return nil, huma.Error404NotFound("review thread not found")
+		}
+		if err := validateReviewSuggestionThread(*thread, expectedHeadSHA); err != nil {
+			return nil, err
+		}
+		suggestions = append(suggestions, platform.ReviewSuggestion{
+			ProviderThreadID:  thread.ProviderThreadID,
+			ProviderCommentID: thread.ProviderCommentID,
+			Range:             platformReviewLineRange(thread.Range),
+			Replacement:       request.Replacement,
+		})
+	}
+
+	result, err := applier.ApplyReviewSuggestions(
+		ctx,
+		platformRepoRefFromDB(*repo),
+		input.Number,
+		platform.ApplyReviewSuggestionsInput{
+			HeadBranch:       mr.HeadBranch,
+			HeadRepoCloneURL: mr.HeadRepoCloneURL,
+			ExpectedHeadSHA:  expectedHeadSHA,
+			Message:          strings.TrimSpace(input.Body.Message),
+			Suggestions:      suggestions,
+		},
+	)
+	if err != nil {
+		if errors.Is(err, platform.ErrStaleState) {
+			s.syncAfterReviewSuggestionApply(*repo, input.Number)
+		}
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)),
+			repoProviderHost(*repo),
+			"apply review suggestions on provider failed",
+		)
+	}
+	s.syncAfterReviewSuggestionApply(*repo, input.Number)
+	response := applyReviewSuggestionResponse{Status: "applied"}
+	if result != nil {
+		response.CommitSHA = result.CommitSHA
+		response.CommitURL = result.CommitURL
+	}
+	return &applyReviewSuggestionOutput{Body: response}, nil
+}
+
+func validateReviewSuggestionThread(thread db.MRReviewThread, expectedHeadSHA string) error {
+	lineRange := thread.Range
+	if strings.TrimSpace(lineRange.Path) == "" {
+		return huma.Error400BadRequest("review thread path is missing")
+	}
+	if strings.ToLower(strings.TrimSpace(lineRange.Side)) != "right" {
+		return huma.Error400BadRequest("suggestions on removed lines cannot be applied")
+	}
+	if lineRange.Line <= 0 {
+		return huma.Error400BadRequest("review thread line is missing")
+	}
+	if lineRange.StartLine != nil && *lineRange.StartLine <= 0 {
+		return huma.Error400BadRequest("review thread start line is invalid")
+	}
+	if lineRange.StartLine != nil && *lineRange.StartLine > lineRange.Line {
+		return huma.Error400BadRequest("review thread start line must be before line")
+	}
+	if strings.TrimSpace(lineRange.DiffHeadSHA) == "" {
+		return problemConflict(
+			CodeConflict,
+			"review suggestion is missing a reviewed head commit",
+			map[string]any{"reason": "head_unknown"},
+		)
+	}
+	if expectedHeadSHA != "" && lineRange.DiffHeadSHA != expectedHeadSHA {
+		return problemConflict(
+			CodeConflict,
+			"target changed since it was reviewed; refresh and retry",
+			map[string]any{"reason": "stale_state"},
+		)
+	}
+	return nil
+}
+
+func (s *Server) syncAfterReviewSuggestionApply(repo db.Repo, number int) {
+	s.runBackground(func(bgCtx context.Context) {
+		if syncErr := s.syncer.SyncMROnProvider(
+			bgCtx,
+			repoProviderKind(repo), repoProviderHost(repo),
+			repo.Owner, repo.Name, number,
+		); syncErr != nil {
+			slog.Warn("background sync after review suggestion apply", "err", syncErr)
+		}
+	})
+}
+
 func (s *Server) publishDiffReviewDraft(
 	ctx context.Context,
 	input *publishDiffReviewDraftInput,

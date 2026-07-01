@@ -195,6 +195,13 @@ async function expectPierreTimelineText(pattern: RegExp): Promise<void> {
   });
 }
 
+async function expectSuggestionPierreText(pattern: RegExp): Promise<void> {
+  await waitFor(() => {
+    const host = document.querySelector(".review-suggestion .pierre-diff");
+    expect(host?.shadowRoot?.textContent).toMatch(pattern);
+  });
+}
+
 describe("EventTimeline", () => {
   afterEach(() => {
     cleanup();
@@ -589,6 +596,54 @@ describe("EventTimeline", () => {
     expect(threadText.indexOf("Pushed an update")).toBeLessThan(
       threadText.indexOf("The wrapper should stay close to the call site"),
     );
+  });
+
+  it("renders GitHub suggestion fences as applicable diff blocks", async () => {
+    const applySuggestion = vi.fn(async () => true);
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeReviewThreadEvent({
+            Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join(
+              "\n",
+            ),
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        onApplySuggestion: applySuggestion,
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    expect(screen.getByText("This can return directly.")).toBeTruthy();
+    expect(screen.queryByText("```suggestion")).toBeNull();
+    await expectSuggestionPierreText(/return client\.publishThreads\(\);/);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Commit suggestion" }));
+    expect(applySuggestion).toHaveBeenCalledWith({
+      suggestions: [
+        {
+          threadID: "thread-1",
+          replacement: "return client.publishThreads();",
+        },
+      ],
+    });
   });
 
   it("renders threaded comments as separate compact rows with one-line previews", async () => {

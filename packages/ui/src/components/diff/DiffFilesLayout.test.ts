@@ -39,6 +39,7 @@ const capabilities: ProviderCapabilities = {
   thread_resolve: false,
   review_draft_mutation: true,
   review_thread_resolution: false,
+  review_suggestion_application: false,
   read_review_threads: true,
   native_multiline_ranges: false,
   supported_review_actions: ["COMMENT"],
@@ -72,6 +73,7 @@ function operations(overrides: Partial<RepoOperations>): RepoOperations {
     update_content: operation(true),
     reply_review_thread: operation(true),
     resolve_review_thread: operation(true),
+    apply_review_suggestion: operation(true),
     ...overrides,
   };
 }

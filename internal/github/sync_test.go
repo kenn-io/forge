@@ -533,6 +533,8 @@ type mockClient struct {
 	createdReviewBody               string
 	createdReviewCommitID           string
 	createdReviewComments           []*gh.DraftReviewComment
+	applyReviewSuggestionsFn        func(context.Context, string, string, int, platform.ApplyReviewSuggestionsInput) (*platform.AppliedReviewSuggestions, error)
+	appliedReviewSuggestions        []platform.ApplyReviewSuggestionsInput
 	dismissReviewErr                error
 	dismissedReviewID               int64
 	dismissedReviewMessage          string
@@ -1066,6 +1068,21 @@ func (m *mockClient) CreateReviewWithComments(
 	return &gh.PullRequestReview{ID: &id, State: &event, SubmittedAt: &submittedAt}, nil
 }
 
+func (m *mockClient) ApplyReviewSuggestions(
+	ctx context.Context,
+	owner string,
+	repo string,
+	number int,
+	input platform.ApplyReviewSuggestionsInput,
+) (*platform.AppliedReviewSuggestions, error) {
+	m.trackCall()
+	if m.applyReviewSuggestionsFn != nil {
+		return m.applyReviewSuggestionsFn(ctx, owner, repo, number, input)
+	}
+	m.appliedReviewSuggestions = append(m.appliedReviewSuggestions, input)
+	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-sha"}, nil
+}
+
 func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1180,6 +1197,31 @@ func TestGitHubProviderViewerAuthoredMergeRequestCacheExpires(t *testing.T) {
 	assert.EqualValues(2, mock.authenticatedViewerCalls.Load())
 }
 
+func TestGitHubProviderApplyReviewSuggestionsDelegatesToClient(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mock := &mockClient{}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+	input := platform.ApplyReviewSuggestionsInput{
+		HeadBranch:      "feature",
+		ExpectedHeadSHA: "head-sha",
+		Suggestions: []platform.ReviewSuggestion{{
+			Range:       platform.DiffReviewLineRange{Path: "src/main.go", Side: "right", Line: 12},
+			Replacement: "return nil",
+		}},
+	}
+
+	result, err := provider.ApplyReviewSuggestions(t.Context(), platform.RepoRef{
+		Owner: "acme",
+		Name:  "widget",
+	}, 7, input)
+
+	require.NoError(err)
+	assert.Equal("suggestion-sha", result.CommitSHA)
+	require.Len(mock.appliedReviewSuggestions, 1)
+	assert.Equal(input, mock.appliedReviewSuggestions[0])
+}
+
 func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
 	require := require.New(t)
 	provider := gitHubClientProvider{client: &mockClient{}, host: "github.com"}
@@ -1188,6 +1230,7 @@ func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
 
 	require.True(caps.ReadReviewThreads)
 	require.True(caps.ReviewDraftMutation)
+	require.True(caps.ReviewSuggestionApplication)
 	require.False(caps.ReviewThreadResolution)
 	require.True(caps.ReviewMutation)
 	require.Contains(caps.SupportedReviewActions, platform.ReviewActionApprove)
@@ -1261,7 +1304,7 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 	assert.Equal(12, *thread.Range.NewLine)
 	assert.Nil(thread.Range.OldLine)
 	assert.Equal("add", thread.Range.LineType)
-	assert.Empty(thread.Range.DiffHeadSHA)
+	assert.Equal("head-sha", thread.Range.DiffHeadSHA)
 	assert.Equal("head-sha", thread.Range.CommitSHA)
 	assert.Equal("PRRT_1", threads[1].ProviderThreadID)
 	assert.Equal("102", threads[1].ProviderCommentID)

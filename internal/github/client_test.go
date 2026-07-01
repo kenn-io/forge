@@ -3,6 +3,7 @@ package github
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -78,6 +80,106 @@ func TestClientInterfaceIncludesListPullRequestTimelineEvents(t *testing.T) {
 func TestClientInterfaceIncludesListPullRequestReviewThreads(t *testing.T) {
 	_, ok := reflect.TypeFor[Client]().MethodByName("ListPullRequestReviewThreads")
 	require.True(t, ok)
+}
+
+func TestApplyReviewSuggestionEdits(t *testing.T) {
+	assert := assert.New(t)
+	content := "package main\nfunc main() {\n\tfmt.Println(\"old\")\n}\n"
+
+	got, err := applyReviewSuggestionEdits(content, []platform.ReviewSuggestion{
+		{
+			Range: platform.DiffReviewLineRange{
+				Path: "main.go",
+				Side: "right",
+				Line: 3,
+			},
+			Replacement: "\tfmt.Println(\"new\")\n\tfmt.Println(\"done\")",
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal("package main\nfunc main() {\n\tfmt.Println(\"new\")\n\tfmt.Println(\"done\")\n}\n", got)
+}
+
+func TestApplyReviewSuggestionEditsRejectsOverlap(t *testing.T) {
+	startLine := 1
+	_, err := applyReviewSuggestionEdits("a\nb\nc\n", []platform.ReviewSuggestion{
+		{
+			Range:       platform.DiffReviewLineRange{Path: "main.go", Side: "right", StartLine: &startLine, Line: 2},
+			Replacement: "x",
+		},
+		{
+			Range:       platform.DiffReviewLineRange{Path: "main.go", Side: "right", Line: 2},
+			Replacement: "y",
+		},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "overlapping")
+}
+
+func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	content := base64.StdEncoding.EncodeToString([]byte("one\ntwo\nthree\n"))
+	var graphqlPayload graphQLRequest
+	var graphqlDecodeErr error
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/fork/widget/contents/src/main.go", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodGet, r.Method)
+		assert.Equal("head-sha", r.URL.Query().Get("ref"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"file","encoding":"base64","content":"` + content + `","path":"src/main.go","sha":"file-sha"}`))
+	})
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodPost, r.Method)
+		graphqlDecodeErr = json.NewDecoder(r.Body).Decode(&graphqlPayload)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"createCommitOnBranch":{"commit":{"oid":"commit-sha","url":"https://github.com/fork/widget/commit/commit-sha"}}}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/",
+		srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	client := &liveClient{
+		gh:              ghClient,
+		ghWrite:         ghClient,
+		httpWriteClient: srv.Client(),
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	result, err := client.ApplyReviewSuggestions(t.Context(), "acme", "widget", 7, platform.ApplyReviewSuggestionsInput{
+		HeadBranch:       "feature/suggestion",
+		HeadRepoCloneURL: "https://github.com/fork/widget.git",
+		ExpectedHeadSHA:  "head-sha",
+		Message:          "Apply suggested fix",
+		Suggestions: []platform.ReviewSuggestion{{
+			Range:       platform.DiffReviewLineRange{Path: "src/main.go", Side: "right", Line: 2},
+			Replacement: "TWO",
+		}},
+	})
+
+	require.NoError(err)
+	require.NoError(graphqlDecodeErr)
+	assert.Equal("commit-sha", result.CommitSHA)
+	variables := graphqlPayload.Variables["input"].(map[string]any)
+	branch := variables["branch"].(map[string]any)
+	assert.Equal("fork/widget", branch["repositoryNameWithOwner"])
+	assert.Equal("feature/suggestion", branch["branchName"])
+	assert.Equal("head-sha", variables["expectedHeadOid"])
+	assert.Equal("Apply suggested fix", variables["message"].(map[string]any)["headline"])
+	additions := variables["fileChanges"].(map[string]any)["additions"].([]any)
+	require.Len(additions, 1)
+	addition := additions[0].(map[string]any)
+	assert.Equal("src/main.go", addition["path"])
+	decoded, err := base64.StdEncoding.DecodeString(addition["contents"].(string))
+	require.NoError(err)
+	assert.Equal("one\nTWO\nthree\n", string(decoded))
 }
 
 func TestListReleasesTracksRate(t *testing.T) {

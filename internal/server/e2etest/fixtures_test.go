@@ -12,6 +12,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
@@ -282,6 +283,15 @@ func (m *mockGH) CreateReviewWithComments(
 	if m.createReviewWithCommentsFn != nil {
 		return m.createReviewWithCommentsFn(ctx, owner, repo, number, event, body, commitID, comments)
 	}
+	return nil, nil
+}
+func (m *mockGH) ApplyReviewSuggestions(
+	context.Context,
+	string,
+	string,
+	int,
+	platform.ApplyReviewSuggestionsInput,
+) (*platform.AppliedReviewSuggestions, error) {
 	return nil, nil
 }
 func (m *mockGH) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {

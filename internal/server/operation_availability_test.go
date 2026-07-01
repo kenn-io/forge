@@ -265,6 +265,7 @@ func TestRepoOperationsWireShape(t *testing.T) {
 		"update_content",
 		"reply_review_thread",
 		"resolve_review_thread",
+		"apply_review_suggestion",
 	}, tags)
 }
 

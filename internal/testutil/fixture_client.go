@@ -13,6 +13,7 @@ import (
 
 	gh "github.com/google/go-github/v84/github"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 var errFixtureReadOnly = errors.New("fixture client: mutation not supported")
@@ -920,6 +921,16 @@ func (c *FixtureClient) CreateReviewWithComments(
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.createReviewLocked(owner, repo, number, event, body)
+}
+
+func (c *FixtureClient) ApplyReviewSuggestions(
+	context.Context,
+	string,
+	string,
+	int,
+	platform.ApplyReviewSuggestionsInput,
+) (*platform.AppliedReviewSuggestions, error) {
+	return nil, errFixtureReadOnly
 }
 
 func (c *FixtureClient) DismissReview(

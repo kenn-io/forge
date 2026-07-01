@@ -13,8 +13,12 @@
   import type { DetailActivityViewMode } from "../../stores/detail-activity-view.svelte.js";
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
-  import { formatRelativeTime } from "@kenn-io/kit-ui";
-  import { copyToClipboard } from "@kenn-io/kit-ui";
+  import { copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
+  import {
+    parseMarkdownSuggestions,
+    type ApplySuggestionRequest,
+    type MarkdownSuggestionBlock,
+  } from "../../utils/markdown-suggestions.js";
   import { getStores } from "../../context.js";
   import {
     buildItemReferenceLink,
@@ -22,6 +26,7 @@
   } from "../../utils/item-reference.js";
   import CommentEditor from "./CommentEditor.svelte";
   import DiffReviewThreadSnippet from "../diff/DiffReviewThreadSnippet.svelte";
+  import ReviewSuggestionBlock from "./ReviewSuggestionBlock.svelte";
   import {
     reviewThreadContext,
     reviewThreadLineLabel,
@@ -43,6 +48,7 @@
     showCommitDetails?: boolean;
     activityViewMode?: DetailActivityViewMode;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
+    onApplySuggestion?: ((input: ApplySuggestionRequest) => Promise<boolean>) | undefined;
     jumpToReviewThread?: ((thread: ReviewThread) => void) | undefined;
   }
 
@@ -61,6 +67,7 @@
     showCommitDetails = true,
     activityViewMode = "normal",
     onEditComment,
+    onApplySuggestion,
     jumpToReviewThread,
   }: Props = $props();
   const stores = getStores() as StoreInstances | undefined;
@@ -866,6 +873,10 @@
   let replyDraft = $state("");
   let savingReplyThreadID = $state<string | null>(null);
   let replyError = $state<string | null>(null);
+  let applyingSuggestionKey = $state<string | null>(null);
+  let suggestionError = $state<Record<string, string>>({});
+  let batchedSuggestionKeys = $state<string[]>([]);
+  let savingSuggestionBatch = $state(false);
 
   function canEditComment(event: PREvent | IssueEvent): boolean {
     return (
@@ -1026,6 +1037,117 @@
         copyTimeout = null;
       }, 1500);
     });
+  }
+
+  function suggestionKey(event: PREvent | IssueEvent, block: MarkdownSuggestionBlock): string {
+    return `${event.ID}:${block.key}`;
+  }
+
+  function eventSuggestionBlocks(event: PREvent | IssueEvent): MarkdownSuggestionBlock[] {
+    if (!shouldRenderMarkdown(event.EventType)) return [];
+    return parseMarkdownSuggestions(event.Body);
+  }
+
+  function hasSuggestionBlocks(blocks: MarkdownSuggestionBlock[]): boolean {
+    return blocks.some((block) => block.type === "suggestion");
+  }
+
+  async function renderedMarkdownTextHtml(text: string): Promise<string> {
+    return renderMarkdown(
+      text,
+      provider && repoOwner && repoName && repoPath
+        ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath }
+        : undefined,
+    );
+  }
+
+  function renderedMarkdownTextHtmlSync(text: string): string {
+    return renderMarkdownSync(
+      text,
+      provider && repoOwner && repoName && repoPath
+        ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath }
+        : undefined,
+    );
+  }
+
+  function suggestionRequest(
+    thread: ReviewThread,
+    replacement: string,
+  ): ApplySuggestionRequest["suggestions"][number] {
+    return {
+      threadID: thread.id,
+      replacement,
+    };
+  }
+
+  async function commitSuggestion(
+    event: PREvent | IssueEvent,
+    block: Extract<MarkdownSuggestionBlock, { type: "suggestion" }>,
+    thread: ReviewThread,
+  ): Promise<void> {
+    if (onApplySuggestion === undefined) return;
+    const key = suggestionKey(event, block);
+    applyingSuggestionKey = key;
+    suggestionError = { ...suggestionError, [key]: "" };
+    try {
+      const ok = await onApplySuggestion({
+        suggestions: [suggestionRequest(thread, block.replacement)],
+      });
+      if (!ok) {
+        suggestionError = {
+          ...suggestionError,
+          [key]: detailStore?.getDetailError() ?? "Could not apply suggestion",
+        };
+      } else {
+        batchedSuggestionKeys = batchedSuggestionKeys.filter((item) => item !== key);
+      }
+    } finally {
+      applyingSuggestionKey = null;
+    }
+  }
+
+  function toggleSuggestionBatch(event: PREvent | IssueEvent, block: MarkdownSuggestionBlock): void {
+    const key = suggestionKey(event, block);
+    batchedSuggestionKeys = batchedSuggestionKeys.includes(key)
+      ? batchedSuggestionKeys.filter((item) => item !== key)
+      : [...batchedSuggestionKeys, key];
+  }
+
+  function batchedSuggestionRequests(): ApplySuggestionRequest["suggestions"] {
+    const selected = new Set(batchedSuggestionKeys);
+    const suggestions: ApplySuggestionRequest["suggestions"] = [];
+    for (const entry of renderedTimelineEntries) {
+      const thread = entry.reviewThread?.thread;
+      if (!thread) continue;
+      for (const block of eventSuggestionBlocks(entry.event)) {
+        if (block.type !== "suggestion") continue;
+        if (!selected.has(suggestionKey(entry.event, block))) continue;
+        suggestions.push(suggestionRequest(thread, block.replacement));
+      }
+    }
+    return suggestions;
+  }
+
+  async function commitSuggestionBatch(): Promise<void> {
+    if (onApplySuggestion === undefined || batchedSuggestionKeys.length === 0) return;
+    const suggestions = batchedSuggestionRequests();
+    if (suggestions.length === 0) {
+      batchedSuggestionKeys = [];
+      return;
+    }
+    savingSuggestionBatch = true;
+    suggestionError = {};
+    try {
+      const ok = await onApplySuggestion({ suggestions });
+      if (ok) {
+        batchedSuggestionKeys = [];
+      } else {
+        const message = detailStore?.getDetailError() ?? "Could not apply suggestion batch";
+        suggestionError = Object.fromEntries(batchedSuggestionKeys.map((key) => [key, message]));
+      }
+    } finally {
+      savingSuggestionBatch = false;
+    }
   }
 
   function directLinkCopyID(event: PREvent | IssueEvent): string {
@@ -1274,11 +1396,67 @@
             </div>
           {/if}
           {#if shouldRenderMarkdown(event.EventType)}
-            {#await renderedBodyHtml(event, inlineReplyEntry)}
-              {@html renderedBodyHtmlSync(event, inlineReplyEntry)}
-            {:then html}
-              {@html html}
-            {/await}
+            {@const blocks = eventSuggestionBlocks(event)}
+            {#if hasSuggestionBlocks(blocks)}
+              <div class="event-body-segments">
+                {#each blocks as block (block.key)}
+                  {#if block.type === "markdown"}
+                    {#if block.text.trim().length > 0}
+                      <div class="event-body-segment">
+                        {#await renderedMarkdownTextHtml(block.text)}
+                          {@html renderedMarkdownTextHtmlSync(block.text)}
+                        {:then html}
+                          {@html html}
+                        {/await}
+                      </div>
+                    {/if}
+                  {:else if reviewThread}
+                    {@const blockKey = suggestionKey(event, block)}
+                    <ReviewSuggestionBlock
+                      thread={reviewThread.thread}
+                      context={diff ? reviewThreadContext(diff, reviewThread.thread) : reviewThreadContext(null, reviewThread.thread)}
+                      replacement={block.replacement}
+                      applying={applyingSuggestionKey === blockKey}
+                      batched={batchedSuggestionKeys.includes(blockKey)}
+                      error={suggestionError[blockKey] || null}
+                      onCommit={onApplySuggestion !== undefined
+                        ? () => void commitSuggestion(event, block, reviewThread.thread)
+                        : undefined}
+                      onToggleBatch={onApplySuggestion !== undefined
+                        ? () => toggleSuggestionBatch(event, block)
+                        : undefined}
+                    />
+                  {:else}
+                    {@const fallback = "```suggestion\n" + block.replacement + "\n```"}
+                    <div class="event-body-segment">
+                      {#await renderedMarkdownTextHtml(fallback)}
+                        {@html renderedMarkdownTextHtmlSync(fallback)}
+                      {:then html}
+                        {@html html}
+                      {/await}
+                    </div>
+                  {/if}
+                {/each}
+                {#if inlineReplyEntry}
+                  <button
+                    class="thread-toggle thread-reply-action thread-reply-action--inline"
+                    type="button"
+                    onclick={() => startReply(inlineReplyEntry)}
+                    aria-expanded={isReplyingToEntry(inlineReplyEntry)}
+                    disabled={savingReplyThreadID !== null}
+                  >
+                    <MessageSquareReplyIcon size={14} />
+                    Reply
+                  </button>
+                {/if}
+              </div>
+            {:else}
+              {#await renderedBodyHtml(event, inlineReplyEntry)}
+                {@html renderedBodyHtmlSync(event, inlineReplyEntry)}
+              {:then html}
+                {@html html}
+              {/await}
+            {/if}
           {:else}
             {event.Body}
           {/if}
@@ -1398,6 +1576,20 @@
 {#if events.length === 0}
   <p class="empty">{filtered ? "No activity matches the current filters" : "No activity yet"}</p>
 {:else}
+  {#if onApplySuggestion !== undefined && batchedSuggestionKeys.length > 0}
+    <div class="suggestion-batch-bar">
+      <span>{batchedSuggestionKeys.length} {batchedSuggestionKeys.length === 1 ? "suggestion" : "suggestions"} in batch</span>
+      <button
+        class="thread-toggle thread-reply-action"
+        type="button"
+        onclick={() => void commitSuggestionBatch()}
+        disabled={savingSuggestionBatch}
+      >
+        <CheckIcon size={14} />
+        {savingSuggestionBatch ? "Committing..." : "Commit batch"}
+      </button>
+    </div>
+  {/if}
   <ol class="timeline">
     {#each renderedTimelineEntries as entry (entry.key)}
       {@const event = entry.event}
@@ -1683,6 +1875,20 @@
     padding: 16px 0;
   }
 
+  .suggestion-batch-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--focus-detail-space-sm, 0.62rem);
+    margin: 0.31rem 0 0.31rem 2.47rem;
+    padding: 0.46rem 0.62rem;
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
   .timeline {
     list-style: none;
     display: flex;
@@ -1762,6 +1968,14 @@
 
   .event-card--compact-row {
     overflow: hidden;
+  }
+
+  .event-body-segments {
+    display: flow-root;
+  }
+
+  .event-body-segment:empty {
+    display: none;
   }
 
   .compact-event-line {

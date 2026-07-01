@@ -781,31 +781,32 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 	_, assignees := p.client.(githubAssigneeClient)
 	_, reviewers := p.client.(githubReviewerClient)
 	return platform.Capabilities{
-		ReadRepositories:      true,
-		ReadMergeRequests:     true,
-		ReadIssues:            true,
-		ReadComments:          true,
-		ReadReleases:          true,
-		ReadCI:                true,
-		ReadLabels:            labels,
-		ReadNotifications:     true,
-		CommentMutation:       true,
-		StateMutation:         true,
-		MergeMutation:         true,
-		ReviewMutation:        true,
-		MutationHeadBinding:   true,
-		WorkflowApproval:      true,
-		ReadyForReview:        true,
-		DraftMutation:         true,
-		IssueMutation:         true,
-		LabelMutation:         labels,
-		AssigneeMutation:      assignees,
-		ReviewerMutation:      reviewers,
-		NotificationMutation:  true,
-		ThreadReply:           true,
-		ReviewDraftMutation:   true,
-		ReadReviewThreads:     true,
-		NativeMultilineRanges: true,
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReadReleases:                true,
+		ReadCI:                      true,
+		ReadLabels:                  labels,
+		ReadNotifications:           true,
+		CommentMutation:             true,
+		StateMutation:               true,
+		MergeMutation:               true,
+		ReviewMutation:              true,
+		MutationHeadBinding:         true,
+		WorkflowApproval:            true,
+		ReadyForReview:              true,
+		DraftMutation:               true,
+		IssueMutation:               true,
+		LabelMutation:               labels,
+		AssigneeMutation:            assignees,
+		ReviewerMutation:            reviewers,
+		NotificationMutation:        true,
+		ThreadReply:                 true,
+		ReviewDraftMutation:         true,
+		ReviewSuggestionApplication: true,
+		ReadReviewThreads:           true,
+		NativeMultilineRanges:       true,
 		SupportedReviewActions: []platform.ReviewAction{
 			platform.ReviewActionComment,
 			platform.ReviewActionApprove,
@@ -1681,10 +1682,6 @@ func githubReviewLineRange(
 		newLine = &line
 	}
 	commitSHA := firstNonEmpty(comment.CommitID, comment.OriginalCommitID)
-	diffHeadSHA := ""
-	if thread.IsOutdated {
-		diffHeadSHA = commitSHA
-	}
 	return platform.DiffReviewLineRange{
 		Path:        firstNonEmpty(thread.Path, comment.Path),
 		Side:        side,
@@ -1694,7 +1691,7 @@ func githubReviewLineRange(
 		OldLine:     oldLine,
 		NewLine:     newLine,
 		LineType:    lineType,
-		DiffHeadSHA: diffHeadSHA,
+		DiffHeadSHA: commitSHA,
 		CommitSHA:   commitSHA,
 	}
 }
@@ -1767,6 +1764,15 @@ func (p *gitHubClientProvider) PublishDiffReviewDraft(
 		ProviderReviewID: strconv.FormatInt(review.GetID(), 10),
 		SubmittedAt:      submittedAt.Time,
 	}, nil
+}
+
+func (p gitHubClientProvider) ApplyReviewSuggestions(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	input platform.ApplyReviewSuggestionsInput,
+) (*platform.AppliedReviewSuggestions, error) {
+	return p.client.ApplyReviewSuggestions(ctx, ref.Owner, ref.Name, number, input)
 }
 
 func githubReviewEvent(action platform.ReviewAction) (string, error) {
@@ -2295,6 +2301,13 @@ func (s *Syncer) DiffReviewDraftMutator(
 	host string,
 ) (platform.DiffReviewDraftMutator, error) {
 	return s.clients.DiffReviewDraftMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) ReviewSuggestionApplier(
+	kind platform.Kind,
+	host string,
+) (platform.ReviewSuggestionApplier, error) {
+	return s.clients.ReviewSuggestionApplier(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) DiffReviewThreadResolver(

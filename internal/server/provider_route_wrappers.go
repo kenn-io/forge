@@ -125,6 +125,22 @@ type publishDiffReviewDraftHostInput struct {
 	}
 }
 
+type applyReviewSuggestionHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
+		Message         string `json:"message,omitempty"`
+		Suggestions     []struct {
+			ThreadID    string `json:"thread_id"`
+			Replacement string `json:"replacement"`
+		} `json:"suggestions"`
+	}
+}
+
 type resolveDiffReviewThreadHostInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string `path:"platform_host"`
@@ -562,6 +578,21 @@ func (s *Server) discardDiffReviewDraftOnHost(
 ) (*statusOnlyOutput, error) {
 	next := repoNumberFromHost(input)
 	return s.discardDiffReviewDraft(ctx, &next)
+}
+
+func (s *Server) applyReviewSuggestionsOnHost(
+	ctx context.Context,
+	input *applyReviewSuggestionHostInput,
+) (*applyReviewSuggestionOutput, error) {
+	next := applyReviewSuggestionInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Body:         input.Body,
+	}
+	return s.applyReviewSuggestions(ctx, &next)
 }
 
 func (s *Server) resolveDiffReviewThreadOnHost(

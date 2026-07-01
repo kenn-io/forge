@@ -49,6 +49,7 @@ export const defaultProviderCapabilities: ProviderCapabilities = {
   thread_resolve: false,
   review_draft_mutation: false,
   review_thread_resolution: false,
+  review_suggestion_application: false,
   read_review_threads: false,
   native_multiline_ranges: false,
   mutation_head_binding: false,

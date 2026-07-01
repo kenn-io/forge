@@ -184,6 +184,15 @@ type DiffReviewDraftMutator interface {
 	) (*PublishedDiffReview, error)
 }
 
+type ReviewSuggestionApplier interface {
+	ApplyReviewSuggestions(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		input ApplyReviewSuggestionsInput,
+	) (*AppliedReviewSuggestions, error)
+}
+
 type DiffReviewThreadResolver interface {
 	ResolveDiffReviewThread(ctx context.Context, ref RepoRef, number int, providerThreadID string) error
 	UnresolveDiffReviewThread(ctx context.Context, ref RepoRef, number int, providerThreadID string) error

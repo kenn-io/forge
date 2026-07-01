@@ -42,6 +42,10 @@ func TestDeriveOperationAvailability(t *testing.T) {
 		name:                 operationMergePR,
 		requiredCapabilities: []string{capabilityMergeMutation},
 	}
+	submitReview := operationDescriptor{
+		name:                 operationSubmitReview,
+		requiredCapabilities: []string{capabilityReviewMutation},
+	}
 	addLabel := operationDescriptor{
 		name:                 operationAddLabel,
 		requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation},
@@ -62,6 +66,7 @@ func TestDeriveOperationAvailability(t *testing.T) {
 		repo      db.Repo
 		rate      rateLimitAvailability
 		writeCred writeCredentialGate
+		opContext operationAvailabilityContext
 		expected  OperationAvailability
 	}{
 		{
@@ -118,6 +123,17 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			caps:     allCaps,
 			repo:     repoCannotMerge,
 			expected: OperationAvailability{Available: true},
+		},
+		{
+			name:      "viewer cannot approve own pull request",
+			op:        submitReview,
+			caps:      allCaps,
+			repo:      repoCanMerge,
+			opContext: operationAvailabilityContext{selfApproval: true},
+			expected: OperationAvailability{
+				Code:              availabilityCodeSelfApproval,
+				UnavailableReason: "You cannot approve your own pull request",
+			},
 		},
 		{
 			name: "review draft operation uses draft capability without requiring submitted reviews",
@@ -192,7 +208,9 @@ func TestDeriveOperationAvailability(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := deriveOperationAvailability(tc.op, tc.caps, tc.repo, tc.rate, tc.writeCred)
+			got := deriveOperationAvailabilityWithContext(
+				tc.op, tc.caps, tc.repo, tc.rate, tc.writeCred, tc.opContext,
+			)
 			require.Equal(t, tc.expected, got)
 		})
 	}
@@ -591,4 +609,30 @@ func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 	// Other operations remain available because viewer_can_merge only
 	// gates merge_pr.
 	assert.True(resp.Operations.ClosePR.Available)
+}
+
+func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1, withSeedPRAuthor("marius"))
+	srv.toolingRun = (&recordingToolingRunner{
+		outputs: map[string]string{
+			"gh api user --hostname github.com --jq .login": "marius\n",
+		},
+	}).run
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	require.Equal(http.StatusOK, rr.Code)
+
+	var resp mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.NotNil(resp.Repo.Operations)
+
+	submitReview := resp.Repo.Operations.SubmitReview
+	assert.False(submitReview.Available)
+	assert.Equal(availabilityCodeSelfApproval, submitReview.Code)
+	assert.Equal("You cannot approve your own pull request", submitReview.UnavailableReason)
+	assert.True(resp.Repo.Operations.MergePR.Available)
 }

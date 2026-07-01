@@ -1041,6 +1041,10 @@ func withSeedPRTitle(title string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.Title = title }
 }
 
+func withSeedPRAuthor(author string) seedPROpt {
+	return func(pr *db.MergeRequest) { pr.Author = author }
+}
+
 func withSeedPRLifecycle(
 	state db.MergeRequestState,
 	mergedAt *time.Time,

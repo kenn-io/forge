@@ -1624,7 +1624,7 @@ func (s *Server) buildPullDetailResponse(
 	}
 	resp := mergeRequestDetailResponse{
 		Events:           eventResponses,
-		Repo:             s.repoRefWithOperations(*repo),
+		Repo:             s.repoRefWithMergeRequestOperations(ctx, *repo, *mr),
 		RepoOwner:        repo.Owner,
 		RepoName:         repo.Name,
 		PlatformHost:     repo.PlatformHost,

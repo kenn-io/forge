@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/ratelimit"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
@@ -44,6 +46,7 @@ const (
 	availabilityCodeRateLimited            = "rate_limited"
 	availabilityCodeMissingWriteCredential = "missing_write_credential"
 	availabilityCodeWriteCredentialError   = "write_credential_error"
+	availabilityCodeSelfApproval           = "self_approval"
 )
 
 // apiBucket identifies which API quota an operation consumes. GitHub
@@ -117,6 +120,10 @@ type operationDescriptor struct {
 	bucket               apiBucket
 }
 
+type operationAvailabilityContext struct {
+	selfApproval bool
+}
+
 // Mutations are REST-served except ready-for-review, which GitHub
 // only exposes as a GraphQL mutation and therefore consumes the
 // GraphQL budget. The bucket field keeps each operation gated on the
@@ -160,6 +167,13 @@ var (
 // a paused GraphQL tracker does not block REST-backed operations
 // and vice versa.
 func (s *Server) repoOperations(repo db.Repo) RepoOperations {
+	return s.repoOperationsWithContext(repo, operationAvailabilityContext{})
+}
+
+func (s *Server) repoOperationsWithContext(
+	repo db.Repo,
+	opContext operationAvailabilityContext,
+) RepoOperations {
 	caps := s.capabilitiesForRepo(repo)
 	rates := map[apiBucket]rateLimitAvailability{
 		apiBucketREST:    s.mutationRateLimitedReason(repo, apiBucketREST),
@@ -167,8 +181,8 @@ func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 	}
 	writeCred := s.writeCredentialGateForRepo(repo)
 	derive := func(op operationDescriptor) OperationAvailability {
-		return deriveOperationAvailability(
-			op, caps, repo, rates[op.bucket], writeCred,
+		return deriveOperationAvailabilityWithContext(
+			op, caps, repo, rates[op.bucket], writeCred, opContext,
 		)
 	}
 	return RepoOperations{
@@ -195,12 +209,25 @@ func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 	}
 }
 
-func deriveOperationAvailability(
+func (s *Server) repoOperationsForMergeRequest(
+	ctx context.Context,
+	repo db.Repo,
+	mr db.MergeRequest,
+) RepoOperations {
+	opContext := operationAvailabilityContext{}
+	if s.viewerAuthoredMergeRequest(ctx, repo, mr) {
+		opContext.selfApproval = true
+	}
+	return s.repoOperationsWithContext(repo, opContext)
+}
+
+func deriveOperationAvailabilityWithContext(
 	op operationDescriptor,
 	caps providerCapabilitiesResponse,
 	repo db.Repo,
 	rate rateLimitAvailability,
 	writeCred writeCredentialGate,
+	opContext operationAvailabilityContext,
 ) OperationAvailability {
 	for _, capability := range op.requiredCapabilities {
 		if !capabilityEnabled(caps, capability) {
@@ -223,6 +250,9 @@ func deriveOperationAvailability(
 			UnavailableReason: "You do not have permission to merge in this repository",
 		}
 	}
+	if op.name == operationSubmitReview && opContext.selfApproval {
+		return selfApprovalUnavailable()
+	}
 	if rate.limited {
 		return OperationAvailability{
 			Code:              availabilityCodeRateLimited,
@@ -231,6 +261,43 @@ func deriveOperationAvailability(
 		}
 	}
 	return OperationAvailability{Available: true}
+}
+
+func selfApprovalUnavailable() OperationAvailability {
+	return OperationAvailability{
+		Code:              availabilityCodeSelfApproval,
+		UnavailableReason: "You cannot approve your own pull request",
+	}
+}
+
+func (s *Server) viewerAuthoredMergeRequest(
+	ctx context.Context,
+	repo db.Repo,
+	mr db.MergeRequest,
+) bool {
+	if repoProviderKind(repo) != platform.KindGitHub {
+		return false
+	}
+	author := strings.TrimSpace(mr.Author)
+	if author == "" {
+		return false
+	}
+	viewer := strings.TrimSpace(s.githubAuthenticatedLogin(ctx, repoProviderHost(repo)))
+	return viewer != "" && strings.EqualFold(viewer, author)
+}
+
+func (s *Server) githubAuthenticatedLogin(ctx context.Context, host string) string {
+	run := s.toolingRun
+	if run == nil {
+		run = defaultToolingRunner
+	}
+	out, err := runToolingProbe(
+		ctx, run, "gh", "api", "user", "--hostname", host, "--jq", ".login",
+	)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // rateLimitAvailability is the result of consulting a rate tracker

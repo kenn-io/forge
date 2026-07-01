@@ -65,6 +65,14 @@ Rules:
 - Capability flags and implemented interfaces must agree.
 - Handlers must check capabilities before performing mutations. A missing
   capability is a feature-level failure, not a whole-provider failure.
+- Per-operation availability starts repo-scoped, but item detail responses may
+  overlay item-specific gates when the rule needs the concrete PR/MR or issue.
+  Keep those gates out of repo settings and list summaries: `repoOperations`
+  should answer "can this repo generally perform the operation?", while
+  `repoOperationsForMergeRequest` may additionally answer "can this viewer do
+  it on this PR?" such as GitHub self-approval being unavailable
+  (`internal/server/operation_availability.go::repoOperations`,
+  `internal/server/operation_availability.go::repoOperationsForMergeRequest`).
 - Read sync should continue for supported resources if optional resources such
   as releases, tags, CI, or comments fail or are unsupported.
 - Do not fake GitHub behavior for another provider. Add provider-specific

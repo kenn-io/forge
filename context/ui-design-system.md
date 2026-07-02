@@ -34,9 +34,18 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 
 ## kit-ui contract
 
-middleman consumes `@kenn-io/kit-ui` as source from the sibling `../kit-ui`
-checkout (see `docs/migration.md` and `docs/theming.md` in that repo). The
-parts middleman depends on as stable API:
+middleman consumes `@kenn-io/kit-ui` as source from a GitHub dependency
+pinned to a full commit SHA (`github:kenn-io/kit-ui#<sha>` in both
+`frontend/package.json` and `packages/ui/package.json`; keep the two pins
+identical). To upgrade, bump the SHA in both files and run `bun install`.
+Do not use a `file:` path to a sibling checkout — bun's store keys the copy
+by name@version, so it silently goes stale when that checkout switches
+branches. kit-ui's runtime deps are peer dependencies satisfied by
+middleman's own installs, and its rune-module source cannot be prebundled:
+`@kenn-io/kit-ui` stays in vite `optimizeDeps.exclude` with its transitive
+deps pinned as `"@kenn-io/kit-ui > <dep>"` include entries (see
+`frontend/vite.config.ts`). See `docs/migration.md` and `docs/theming.md`
+in the kit-ui repo. The parts middleman depends on as stable API:
 
 - Theme tokens from `theme.css`: `--bg-*`, `--text-*`, `--border-*`,
   `--accent-*`, `--font-size-2xs…2xl`, `--font-size-root`, `--space-1…8`,

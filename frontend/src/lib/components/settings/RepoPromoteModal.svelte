@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { EmptyState } from "@kenn-io/kit-ui";
   import { tick, untrack } from "svelte";
   import type { ConfigRepo, Settings } from "@middleman/ui/api/types";
   import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
@@ -233,7 +234,7 @@
       {/if}
 
       {#if loading}
-        <div class="empty-state">Loading matches...</div>
+        <EmptyState title="Loading matches..." />
       {:else if filteredRows.length > 0}
         <div class="match-list" role="radiogroup" aria-label="Wildcard matches">
           {#each filteredRows as row (promoteRowKey(row))}
@@ -259,7 +260,7 @@
           {/each}
         </div>
       {:else}
-        <div class="empty-state">No matching repositories.</div>
+        <EmptyState title="No matching repositories." />
       {/if}
 
       {#if selectedRow}
@@ -426,14 +427,6 @@
     flex-shrink: 0;
     color: var(--text-muted);
     font-size: var(--font-size-xs);
-  }
-  .empty-state {
-    border: 1px dashed var(--border-muted);
-    border-radius: var(--radius-md);
-    padding: 24px;
-    color: var(--text-muted);
-    text-align: center;
-    font-size: var(--font-size-sm);
   }
   .secondary-btn,
   .submit-btn {

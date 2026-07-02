@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Spinner } from "@kenn-io/kit-ui";
   import { DEFAULT_TOKENIZE_MAX_LENGTH, FileDiff, VirtualizedFileDiff } from "@pierre/diffs";
   import type {
     DiffLineAnnotation,
@@ -1661,12 +1662,9 @@
     <div class="empty-textual-diff">No textual changes</div>
   {/if}
   {#if !rendered}
-    <div class="pierre-diff-loading" role="status" aria-live="polite">
-      <svg class="pierre-diff-spinner" width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <circle cx="10" cy="10" r="8" stroke="currentColor" stroke-opacity="0.2" stroke-width="2" />
-        <path d="M18 10a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-      </svg>
-      <span>Loading diff</span>
+    <div class="pierre-diff-loading">
+      <Spinner size={18} label="Loading diff" />
+      <span aria-hidden="true">Loading diff</span>
     </div>
   {/if}
 </div>
@@ -1720,10 +1718,6 @@
     background: var(--bg-surface);
   }
 
-  .pierre-diff-spinner {
-    animation: spin 0.8s linear infinite;
-  }
-
   .context-error {
     padding: 6px 12px;
     color: var(--danger);
@@ -1731,9 +1725,4 @@
     font-size: var(--font-size-xs);
   }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 </style>

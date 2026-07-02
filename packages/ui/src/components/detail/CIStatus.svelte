@@ -5,6 +5,7 @@
 <script lang="ts">
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
+  import { Spinner } from "@kenn-io/kit-ui";
   import DotIcon from "@lucide/svelte/icons/dot";
   import XIcon from "@lucide/svelte/icons/x";
   import CheckIcon from "@lucide/svelte/icons/check";
@@ -230,9 +231,7 @@
         {#if !detailLoaded}
           {#if detailSyncing}
             <div class="loading-placeholder">
-              <span class="sync-spinner" aria-hidden="true">
-                <LoaderCircleIcon size={14} strokeWidth={2} />
-              </span>
+              <Spinner size={14} label="Loading checks" />
               Loading checks...
             </div>
           {:else}
@@ -432,16 +431,13 @@
     white-space: nowrap;
   }
 
-  .sync-spinner {
-    display: inline-flex;
-    animation: spin 0.9s linear infinite;
-  }
-
   .spin {
     display: inline-flex;
     animation: spin 0.9s linear infinite;
   }
 
+  /* kit-ui-check-ignore: pending-status loader icon tinted by row-icon-amber;
+     kit-ui Spinner has no tone and would drop the semantic color. */
   @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }

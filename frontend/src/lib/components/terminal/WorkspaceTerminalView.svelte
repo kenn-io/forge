@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { EmptyState, Spinner } from "@kenn-io/kit-ui";
   import { tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
@@ -78,7 +79,6 @@
   import {
     AlertIcon,
     RefreshIcon,
-    SpinnerIcon,
   } from "../../icons.ts";
   import { apiErrorMessage, client } from "../../api/runtime.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
@@ -2579,12 +2579,7 @@
         </div>
       {:else if !workspace || workspace.status === "creating"}
         <div class="state-message">
-          <SpinnerIcon
-            class="spinner"
-            size="18"
-            strokeWidth="2"
-            aria-hidden="true"
-          />
+          <Spinner size={18} />
           <span>Setting up workspace...</span>
         </div>
       {:else if workspace.status === "error"}
@@ -2694,12 +2689,7 @@
                 onclick={() => void handleRefreshWorkspace()}
               >
                 {#if refreshingWorkspace}
-                  <SpinnerIcon
-                    class="header-icon spinning"
-                    size="14"
-                    strokeWidth="2.2"
-                    aria-hidden="true"
-                  />
+                  <Spinner size={14} label="Refreshing workspace" />
                 {:else}
                   <RefreshIcon
                     class="header-icon"
@@ -2757,12 +2747,7 @@
               >
                 {#if !runtimeLive}
                   <div class="state-message">
-                    <SpinnerIcon
-                      class="spinner"
-                      size="18"
-                      strokeWidth="2"
-                      aria-hidden="true"
-                    />
+                    <Spinner size={18} />
                     <span>Loading workspace runtime...</span>
                   </div>
                 {:else}
@@ -2931,7 +2916,7 @@
                     disabled={actionsBlocked}
                   />
                 {:else}
-                  <div class="sidebar-empty-state">No linked Kata task</div>
+                  <EmptyState title="No linked Kata task" />
                 {/if}
               {/snippet}
               <WorkspaceRightSidebar
@@ -3274,16 +3259,6 @@
     font-size: var(--font-size-sm);
   }
 
-  :global(.spinner) {
-    animation: spin 0.8s linear infinite;
-    color: var(--text-muted);
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 
   .header-bar {
     display: flex;
@@ -3358,10 +3333,6 @@
 
   :global(.header-icon) {
     display: block;
-  }
-
-  :global(.header-icon.spinning) {
-    animation: spin 0.8s linear infinite;
   }
 
   .header-btn:hover:not(:disabled) {
@@ -3513,17 +3484,6 @@
     z-index: 80;
   }
 
-  .sidebar-empty-state {
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-    text-align: center;
-    background: var(--bg-surface);
-  }
 
   .rename-form {
     display: grid;

@@ -18,7 +18,7 @@
   import IssueCommentBox from "./IssueCommentBox.svelte";
   import ActionButton from "../shared/ActionButton.svelte";
   import { Chip } from "@kenn-io/kit-ui";
-  import { ColorLabel } from "@kenn-io/kit-ui";
+  import { ColorLabel, Spinner } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
   import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
@@ -986,9 +986,7 @@
         {#if issues.isIssueDetailSyncing()}
           <span class="meta-sep">·</span>
           <span class="sync-indicator" title="Syncing from GitHub">
-            <svg class="sync-spinner" width="12" height="12" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
-            </svg>
+            <Spinner size={12} label="Syncing" />
             Syncing
           </span>
         {/if}
@@ -1184,9 +1182,7 @@
           />
         {:else if issues.isIssueDetailSyncing()}
           <div class="loading-placeholder">
-            <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
-            </svg>
+            <Spinner size={14} label="Syncing" />
             Loading comments...
           </div>
         {:else}
@@ -1490,14 +1486,6 @@
     gap: 4px;
     font-size: var(--font-size-xs);
     color: var(--accent-blue);
-  }
-
-  .sync-spinner {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .section {

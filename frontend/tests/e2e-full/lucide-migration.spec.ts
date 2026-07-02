@@ -128,7 +128,7 @@ test.describe("lucide migration", () => {
 
     const loadingState = page.locator(".loading-state");
     await expect(loadingState).toBeVisible();
-    await expect(loadingState.locator(".loading-spinner")).toBeVisible();
+    await expect(loadingState.locator(".kit-spinner")).toBeVisible();
 
     releaseSettings();
     await gotoPromise;
@@ -197,7 +197,7 @@ test.describe("lucide migration", () => {
 
     const stateMessage = page.locator(".state-message");
     await expect(stateMessage).toContainText("Setting up workspace...");
-    await expect(stateMessage.locator(".spinner")).toBeVisible();
+    await expect(stateMessage.locator(".kit-spinner")).toBeVisible();
   });
 
   test("workspace load failure shows the alert icon and retry recovers", async ({ page }) => {

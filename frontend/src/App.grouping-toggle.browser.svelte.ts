@@ -426,11 +426,11 @@ describe("grouping toggle", () => {
             : null,
       ],
     });
-    await vi.waitFor(() => expect(document.querySelector(".activity-feed .empty-state")).not.toBeNull(), WAIT);
-    expect(document.querySelector(".activity-feed .empty-state")?.textContent ?? "").toContain("No activity found");
+    await vi.waitFor(() => expect(document.querySelector(".activity-feed .kit-empty-state")).not.toBeNull(), WAIT);
+    expect(document.querySelector(".activity-feed .kit-empty-state")?.textContent ?? "").toContain("No activity found");
 
     await selectActivityViewItem("Threaded");
     await selectActivityViewItem("All");
-    await vi.waitFor(() => expect(document.querySelector(".threaded-view .empty-state")).not.toBeNull(), WAIT);
+    await vi.waitFor(() => expect(document.querySelector(".threaded-view .kit-empty-state")).not.toBeNull(), WAIT);
   });
 });

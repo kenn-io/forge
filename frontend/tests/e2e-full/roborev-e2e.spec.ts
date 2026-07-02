@@ -818,7 +818,7 @@ test.describe.serial("Roborev", () => {
       await page.goto("/reviews");
       // Daemon was never available on this fresh page, so
       // ReviewsView shows the empty-state fallback.
-      const emptyState = page.locator(".empty-state");
+      const emptyState = page.locator(".kit-empty-state");
       await expect(emptyState).toBeVisible({
         timeout: 15_000,
       });
@@ -827,7 +827,7 @@ test.describe.serial("Roborev", () => {
 
     test("empty state does not render table or filter bar", async ({ page }) => {
       await page.goto("/reviews");
-      await expect(page.locator(".empty-state")).toBeVisible({
+      await expect(page.locator(".kit-empty-state")).toBeVisible({
         timeout: 15_000,
       });
 
@@ -839,32 +839,32 @@ test.describe.serial("Roborev", () => {
 
     test("retry button appears in empty state", async ({ page }) => {
       await page.goto("/reviews");
-      await expect(page.locator(".empty-state")).toBeVisible({
+      await expect(page.locator(".kit-empty-state")).toBeVisible({
         timeout: 15_000,
       });
 
-      const retryBtn = page.locator(".empty-state button");
+      const retryBtn = page.locator(".kit-empty-state button");
       await expect(retryBtn).toBeVisible();
       await expect(retryBtn).toHaveText("Retry");
     });
 
     test("retry button while daemon still down keeps empty state", async ({ page }) => {
       await page.goto("/reviews");
-      await expect(page.locator(".empty-state")).toBeVisible({
+      await expect(page.locator(".kit-empty-state")).toBeVisible({
         timeout: 15_000,
       });
 
       // Click retry while daemon is still stopped
-      await page.locator(".empty-state button").click();
+      await page.locator(".kit-empty-state button").click();
       await page.waitForTimeout(1_000);
 
       // Should still show the empty state
-      await expect(page.locator(".empty-state")).toBeVisible();
+      await expect(page.locator(".kit-empty-state")).toBeVisible();
     });
 
     test("header Reviews tab is still navigable", async ({ page }) => {
       await page.goto("/reviews");
-      await expect(page.locator(".empty-state")).toBeVisible({
+      await expect(page.locator(".kit-empty-state")).toBeVisible({
         timeout: 15_000,
       });
 
@@ -885,15 +885,15 @@ test.describe.serial("Roborev", () => {
       // Start with daemon stopped to get the empty state
       stopDaemon();
       await page.goto("/reviews");
-      await expect(page.locator(".empty-state")).toBeVisible({
+      await expect(page.locator(".kit-empty-state")).toBeVisible({
         timeout: 15_000,
       });
 
       // Restart daemon (waits for healthcheck), click
       // Retry once, then wait for recovery.
       startDaemon();
-      await page.locator(".empty-state button").click();
-      await expect(page.locator(".empty-state")).not.toBeVisible({
+      await page.locator(".kit-empty-state button").click();
+      await expect(page.locator(".kit-empty-state")).not.toBeVisible({
         timeout: 20_000,
       });
       await expect(page.locator(".conn-indicator.connected")).toBeVisible({
@@ -907,13 +907,13 @@ test.describe.serial("Roborev", () => {
       // data is present — all on the same page.
       stopDaemon();
       await page.goto("/reviews");
-      await expect(page.locator(".empty-state")).toBeVisible({
+      await expect(page.locator(".kit-empty-state")).toBeVisible({
         timeout: 15_000,
       });
 
       startDaemon();
-      await page.locator(".empty-state button").click();
-      await expect(page.locator(".empty-state")).not.toBeVisible({
+      await page.locator(".kit-empty-state button").click();
+      await expect(page.locator(".kit-empty-state")).not.toBeVisible({
         timeout: 20_000,
       });
       await waitForJobRows(page, 1);
@@ -931,14 +931,14 @@ test.describe.serial("Roborev", () => {
       // Stop daemon and get empty state (fresh page load)
       stopDaemon();
       await page.goto("/reviews");
-      await expect(page.locator(".empty-state")).toBeVisible({
+      await expect(page.locator(".kit-empty-state")).toBeVisible({
         timeout: 15_000,
       });
 
       // Restart daemon, click Retry to recover
       startDaemon();
-      await page.locator(".empty-state button").click();
-      await expect(page.locator(".empty-state")).not.toBeVisible({
+      await page.locator(".kit-empty-state button").click();
+      await expect(page.locator(".kit-empty-state")).not.toBeVisible({
         timeout: 20_000,
       });
       await waitForJobRows(page, 1);

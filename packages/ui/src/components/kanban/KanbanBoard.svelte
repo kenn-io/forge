@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { EmptyState } from "@kenn-io/kit-ui";
   import { onMount, onDestroy } from "svelte";
   import type { PullRequest, KanbanStatus } from "../../api/types.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
@@ -87,9 +88,9 @@
 
 <div class="kanban-wrap">
   {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
-    <div class="empty-state">No repositories configured.<br />
+    <EmptyState title="No repositories configured.">
       {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}
-    </div>
+    </EmptyState>
   {:else}
   <div class="kanban-board">
     {#each columns as col (col.id)}
@@ -139,16 +140,6 @@
     align-items: stretch;
   }
 
-  .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    color: var(--text-muted);
-    font-size: var(--font-size-md);
-    text-align: center;
-  }
 
   .settings-link {
     color: var(--accent-blue);

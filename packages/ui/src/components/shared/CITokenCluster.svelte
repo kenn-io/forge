@@ -97,5 +97,7 @@
   .tok-muted { color: var(--text-muted); }
   .tok-purple { color: var(--accent-purple); }
   .spin { display: inline-flex; animation: spin 0.9s linear infinite; }
+  /* kit-ui-check-ignore: pending CI token spins its status-colored loader icon;
+     kit-ui Spinner has no tone and would drop the semantic color. */
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 </style>

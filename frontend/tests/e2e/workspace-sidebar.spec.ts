@@ -4623,7 +4623,7 @@ test.describe("sidebar Reviews tab", () => {
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
     // Should show empty/no-reviews message
-    await expect(page.locator(".right-sidebar .empty-state")).toContainText("No reviews");
+    await expect(page.locator(".right-sidebar .kit-empty-state")).toContainText("No reviews");
   });
 
   test("branch picker shows and clears branch filter", async ({ page }) => {

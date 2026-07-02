@@ -43,7 +43,8 @@
   import { createDocsAPI } from "./lib/api/docs/api.js";
   import { createMessageIssueLinker } from "./lib/messages/kataMessageLinker.js";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
-  import { MonitorIcon, SpinnerIcon } from "./lib/icons.ts";
+  import { Spinner } from "@kenn-io/kit-ui";
+  import { MonitorIcon } from "./lib/icons.ts";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
@@ -1087,12 +1088,7 @@
       <main class="mobile-main">
         {#if !appReady}
           <div class="loading-state">
-            <SpinnerIcon
-              class="loading-spinner"
-              size="18"
-              strokeWidth="2"
-              aria-hidden="true"
-            />
+            <Spinner size={18} />
             Loading
           </div>
         {:else if getPage() === "mobile-pulls"}
@@ -1119,12 +1115,7 @@
         <DesignSystemPage />
       {:else if !appReady}
         <div class="loading-state">
-          <SpinnerIcon
-            class="loading-spinner"
-            size="18"
-            strokeWidth="2"
-            aria-hidden="true"
-          />
+          <Spinner size={18} />
           Loading
         </div>
       {:else if getPage() === "settings"}
@@ -1170,12 +1161,7 @@
           </div>
         {:else if !DocsFeature}
           <div class="loading-state">
-            <SpinnerIcon
-              class="loading-spinner"
-              size="18"
-              strokeWidth="2"
-              aria-hidden="true"
-            />
+            <Spinner size={18} />
             Loading Docs
           </div>
         {/if}
@@ -1187,12 +1173,7 @@
           </div>
         {:else if !MessagesFeature}
           <div class="loading-state">
-            <SpinnerIcon
-              class="loading-spinner"
-              size="18"
-              strokeWidth="2"
-              aria-hidden="true"
-            />
+            <Spinner size={18} />
             Loading Messages
           </div>
         {/if}
@@ -1626,15 +1607,6 @@
     display: none;
   }
 
-  :global(.loading-spinner) {
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 
   @keyframes fade-in {
     from {

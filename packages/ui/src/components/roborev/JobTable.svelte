@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { EmptyState } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import JobRow from "./JobRow.svelte";
 
@@ -106,7 +107,7 @@
   {/if}
 
   {#if jobsStore && !jobsStore.isLoading() && jobsStore.getJobs().length === 0}
-    <div class="empty-state">No jobs found</div>
+    <EmptyState title="No jobs found" />
   {/if}
 
   {#if jobsStore?.getHasMore()}
@@ -182,12 +183,6 @@
     color: var(--accent-red);
   }
 
-  .empty-state {
-    padding: 32px;
-    text-align: center;
-    font-size: var(--font-size-md);
-    color: var(--text-muted);
-  }
 
   .load-more {
     padding: 8px 12px;

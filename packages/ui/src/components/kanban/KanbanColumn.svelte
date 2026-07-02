@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { EmptyState } from "@kenn-io/kit-ui";
   import type { PullRequest, KanbanStatus } from "../../api/types.js";
   import KanbanCard from "./KanbanCard.svelte";
   import { parseKanbanDragPayload, type KanbanDragPayload } from "./drag.js";
@@ -56,7 +57,7 @@
   </div>
   <div class="column-body">
     {#if pulls.length === 0}
-      <p class="empty-state">No PRs</p>
+      <EmptyState title="No PRs" />
     {:else}
       {#each pulls as pr (pr.ID)}
         <KanbanCard {pr} onclick={() => onSelect(pr)} />
@@ -121,10 +122,4 @@
     gap: 6px;
   }
 
-  .empty-state {
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-    text-align: center;
-    padding: 24px 0;
-  }
 </style>

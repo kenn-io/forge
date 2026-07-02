@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { EmptyState } from "@kenn-io/kit-ui";
   import type { ActivityItem } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
@@ -763,7 +764,7 @@
   {/each}
 
   {#if grouped.length === 0}
-    <div class="empty-state">No activity found</div>
+    <EmptyState title="No activity found" />
   {/if}
 </div>
 
@@ -1084,13 +1085,6 @@
     color: var(--accent-blue);
   }
 
-  .empty-state {
-    grid-column: 1 / -1;
-    padding: 40px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: var(--font-size-md);
-  }
 
   .cell--repo :global(.repo-chip) {
     min-width: 0;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { EmptyState } from "@kenn-io/kit-ui";
   import { onMount, onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
   import {
@@ -619,13 +620,13 @@
 
   {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
     <div class="table-container">
-      <div class="empty-state">No repositories configured.<br />
+      <EmptyState title="No repositories configured.">
         {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}
-      </div>
+      </EmptyState>
     </div>
   {:else if activity.getViewMode() === "threaded"}
     {#if displayItems.length === 0 && activity.isActivityLoading()}
-      <div class="table-container"><div class="empty-state">Loading...</div></div>
+      <div class="table-container"><EmptyState title="Loading..." /></div>
     {:else}
       <ActivityThreaded
         items={displayItems}
@@ -896,7 +897,7 @@
       {/if}
 
       {#if flatRows.length === 0 && !activity.isActivityLoading()}
-        <div class="empty-state">No activity found</div>
+        <EmptyState title="No activity found" />
       {/if}
     </div>
   {/if}
@@ -1326,12 +1327,6 @@
     flex-shrink: 0;
   }
 
-  .empty-state {
-    padding: 40px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: var(--font-size-md);
-  }
 
   .settings-link {
     color: var(--accent-blue);

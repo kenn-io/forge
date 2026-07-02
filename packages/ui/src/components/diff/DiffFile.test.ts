@@ -390,7 +390,7 @@ describe("DiffFile", () => {
     try {
       renderDiffFile(makeFile());
 
-      expect(screen.getByRole("status").textContent).toContain("Loading diff");
+      expect(screen.getByRole("status", { name: "Loading diff" })).toBeTruthy();
       expect(document.querySelector(".pierre-diff--pending")).toBeTruthy();
     } finally {
       (globalThis as GlobalWithIO).IntersectionObserver = visibleObserver;

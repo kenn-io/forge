@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Spinner } from "@kenn-io/kit-ui";
   import { Virtualizer } from "@pierre/diffs";
   import { onMount, tick, untrack } from "svelte";
   import { getStores } from "../../context.js";
@@ -589,10 +590,7 @@
   <div class="diff-body">
     {#if loading && !diff}
       <div class="diff-state">
-        <svg class="diff-spinner" width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <circle cx="10" cy="10" r="8" stroke="currentColor" stroke-opacity="0.2" stroke-width="2" />
-          <path d="M18 10a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-        </svg>
+        <Spinner size={20} label="Loading diff" />
         <p class="diff-state-msg">Loading diff</p>
       </div>
     {:else if error}
@@ -713,11 +711,6 @@
     min-height: 180px;
   }
 
-  .diff-spinner {
-    animation: spin 0.8s linear infinite;
-    color: var(--text-muted);
-  }
-
   .diff-state-msg {
     font-size: var(--font-size-md);
     color: var(--text-muted);
@@ -727,7 +720,4 @@
     color: var(--accent-red);
   }
 
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
 </style>

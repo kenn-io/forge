@@ -11,7 +11,7 @@ export function kbdGlyph(spec: KeySpec): string {
   return kbdGlyphParts(spec).join(kbdGlyphJoiner());
 }
 
-function kbdGlyphParts(spec: KeySpec): string[] {
+export function kbdGlyphParts(spec: KeySpec): string[] {
   const isMac = isMacPlatform();
   const parts: string[] = [];
   if (spec.ctrlOrMeta) parts.push(isMac ? "⌘" : "Ctrl");

@@ -1,5 +1,6 @@
 import { expect, type Page, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import { openSettingsPanel } from "./support/settingsPanel";
 
 let isolatedServer: IsolatedE2EServer | undefined;
 let api: APIRequestContext | undefined;
@@ -24,7 +25,7 @@ async function expandAgent(page: Page, name: string): Promise<void> {
 
 test("settings preserves quoted empty workspace agent arguments", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await openSettingsPanel(page, "Workspace agents");
 
   await expandAgent(page, "Codex");
   const argsInput = page.getByLabel("Codex arguments");
@@ -56,7 +57,7 @@ test("settings preserves quoted empty workspace agent arguments", async ({ page 
     .toEqual(["codex", ""]);
 
   await page.reload();
-  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await openSettingsPanel(page, "Workspace agents");
   await expandAgent(page, "Codex");
   await expect(page.getByLabel("Codex arguments")).toHaveValue('""');
 });
@@ -82,7 +83,7 @@ test("settings preserves explicit default built-in agents during other saves", a
   expect(seedResponse.status(), `PUT /api/v1/settings seed failed: ${seedBody}`).toBe(200);
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await openSettingsPanel(page, "Workspace agents");
 
   const saveButton = page.getByRole("button", {
     name: "Save workspace agents",
@@ -142,7 +143,7 @@ test("settings preserves disabled built-in agents with empty commands", async ({
   expect(seedResponse.status(), `PUT /api/v1/settings seed failed: ${seedBody}`).toBe(200);
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await openSettingsPanel(page, "Workspace agents");
 
   const saveButton = page.getByRole("button", {
     name: "Save workspace agents",

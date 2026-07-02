@@ -104,6 +104,10 @@ function resolveTheme(): void {
     // Initialize kit even on the forced path so its storage key is bound
     // (a later toggle persists to the right place), then immediately drop
     // its OS listener and override the classes with the forced mode.
+    // Lifecycle contract this leans on (covered by the forced-toggle unit
+    // test): kit cleanupTheme tears down only the OS-preference listener;
+    // the bound storage key and in-memory mode survive, so setThemeMode
+    // still works after cleanup.
     kitInitTheme({ storageKey: THEME_KEY });
     kitCleanupTheme();
     applyForcedMode(configMode);

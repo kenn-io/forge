@@ -108,8 +108,24 @@ in the kit-ui repo. The parts middleman depends on as stable API:
   keybindings tour.
 - Status bar (`StatusBar`): middleman relies on the `kit-status-bar` and
   `kit-status-bar__section--left/--right` classes and the
-  `--status-bar-height` token (DetailDrawer offsets against it). Protected
-  by the StatusBar counts/budget browser suites and the focus-mode e2e spec.
+  `--status-bar-height` token (DetailDrawer offsets against it). Sections
+  are `overflow: hidden`; popover content anchored inside one must use
+  fixed positioning (BudgetPopover measures its trigger once on open — the
+  bar is static chrome, so it deliberately ignores viewport resize while
+  open). Protected by the StatusBar counts/budget browser suites and the
+  focus-mode e2e spec.
+- Flash (`FlashBanner` + flash store): one shared store instance via
+  `@middleman/ui/stores/flash` (a re-export of kit's), rendered by kit
+  `FlashBanner` mounted once per shell — above the focus/desktop branching
+  in `App.svelte` (`top="var(--header-height)"`) and in
+  `WorkspaceEmbedShell` (`top="0"`, no header there). Tests assert against
+  `.kit-flash-stack`. Stacking (not latest-wins) is the intended
+  semantics. Protected by `App.flash-presentations.browser.svelte.ts` and
+  the App jsdom flash test.
+- kit BEM classes are the sanctioned selector surface for middleman tests
+  (there is no separate app-owned test-hook layer); when kit renames a
+  class, the pinned-SHA bump that brings it in must update the selectors in
+  the same change.
 
 kit-ui component swaps must not keep local copies of replaced components;
 `kit-ui-check` (run with `--warn` during migration) tracks hand-rolled

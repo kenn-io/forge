@@ -51,6 +51,23 @@ test("settings page uses the kit sidebar-and-panel layout", async ({ page }) => 
   await expect(page.getByRole("heading", { name: "Repositories" })).toBeHidden();
 });
 
+test("switching settings categories preserves unsaved drafts", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.locator(".settings-page")).toBeVisible();
+
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  await nav.getByRole("button", { name: "Terminal" }).click();
+  const fontSize = page.getByLabel("Font size");
+  await fontSize.fill("17");
+
+  // Panels are hidden, not unmounted, on switch — an unsaved edit must
+  // survive a round-trip through another category.
+  await nav.getByRole("button", { name: "Activity" }).click();
+  await expect(fontSize).toBeHidden();
+  await nav.getByRole("button", { name: "Terminal" }).click();
+  await expect(fontSize).toHaveValue("17");
+});
+
 test("settings shell stacks at kit's 760px breakpoint", async ({ page }) => {
   await page.goto("/settings");
   await expect(page.locator(".settings-page")).toBeVisible();

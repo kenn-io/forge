@@ -108,9 +108,13 @@
     {@const loaded = settings}
     <SettingsLayout {categories} bind:active title="Settings">
       {#snippet panel(activeId)}
-        {@const meta = panels.find((p) => p.id === activeId) ?? panels[0]!}
-        <SettingsSection title={meta.title} description={meta.description}>
-          {#if activeId === "settings-repositories"}
+        <!-- Every panel stays mounted; only the active one is shown. Panel
+             components keep unsaved edits in local draft state, so switching
+             categories must hide, not unmount, or drafts are silently lost. -->
+        {#each panels as meta (meta.id)}
+          <div class="settings-panel" hidden={meta.id !== activeId}>
+            <SettingsSection title={meta.title} description={meta.description}>
+              {#if meta.id === "settings-repositories"}
             <RepoSettings
               repos={loaded.repos}
               onUpdate={(repos) => {
@@ -118,14 +122,14 @@
                 settingsStore.setConfiguredRepos(repos);
               }}
             />
-          {:else if activeId === "settings-activity"}
+          {:else if meta.id === "settings-activity"}
             <ActivitySettings
               activity={loaded.activity}
               onUpdate={(activity) => {
                 settings = { ...settings!, activity };
               }}
             />
-          {:else if activeId === "settings-terminal"}
+          {:else if meta.id === "settings-terminal"}
             <TerminalSettings
               terminal={loaded.terminal}
               onUpdate={(terminal) => {
@@ -133,7 +137,7 @@
                 settingsStore.setTerminalSettings(terminal);
               }}
             />
-          {:else if activeId === "settings-kata-projects"}
+          {:else if meta.id === "settings-kata-projects"}
             <KataProjectMappingsSettings
               mappings={loaded.kata_projects}
               repos={loaded.repos}
@@ -141,7 +145,7 @@
                 settings = { ...settings!, kata_projects };
               }}
             />
-          {:else if activeId === "settings-modes"}
+          {:else if meta.id === "settings-modes"}
             <ModeVisibilitySettings
               modes={loaded.modes}
               saveLabel="Save visible modes"
@@ -150,22 +154,24 @@
                 settingsStore.setModeVisibility(modes);
               }}
             />
-          {:else if activeId === "settings-agents"}
+          {:else if meta.id === "settings-agents"}
             <AgentSettings
               agents={loaded.agents}
               onUpdate={(agents) => {
                 settings = { ...settings!, agents };
               }}
             />
-          {:else if activeId === "settings-fleet"}
+          {:else if meta.id === "settings-fleet"}
             <FleetSettings
               fleet={loaded.fleet}
               onUpdate={(fleet) => {
                 settings = { ...settings!, fleet };
               }}
             />
-          {/if}
-        </SettingsSection>
+              {/if}
+            </SettingsSection>
+          </div>
+        {/each}
       {/snippet}
     </SettingsLayout>
   {/if}
@@ -187,5 +193,9 @@
 
   .state-error {
     color: var(--accent-red);
+  }
+
+  .settings-panel[hidden] {
+    display: none;
   }
 </style>

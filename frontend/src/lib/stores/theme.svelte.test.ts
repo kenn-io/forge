@@ -61,6 +61,19 @@ describe("standalone mode (no config)", () => {
     const stored = localStorage.getItem("middleman-theme");
     expect(stored).toBeTruthy();
   });
+
+  it("an explicit toggle overwrites an invalid stored value", () => {
+    // kit ignores garbage (resolving to system) without deleting it; the
+    // contract is that the next explicit choice replaces it.
+    localStorage.setItem("middleman-theme", "garbage");
+    mockMatchMedia(true);
+    initTheme();
+    expect(isDark()).toBe(true);
+
+    toggleTheme();
+    expect(isDark()).toBe(false);
+    expect(localStorage.getItem("middleman-theme")).toBe("light");
+  });
 });
 
 describe("embedded mode with theme.mode", () => {
@@ -69,6 +82,22 @@ describe("embedded mode with theme.mode", () => {
     window.__middleman_notify_config_changed?.();
     initTheme();
     expect(isThemeToggleVisible()).toBe(false);
+  });
+
+  it("a keyboard toggle under a forced mode persists to the middleman key", () => {
+    // Covers the adapter's kit lifecycle assumption: initTheme binds kit's
+    // storage key before cleanupTheme drops the OS listener, and cleanup
+    // must not unbind the key — a later setThemeMode from toggleTheme has
+    // to land in middleman-theme, not kit's default key.
+    window.__middleman_config = { theme: { mode: "light" } };
+    window.__middleman_notify_config_changed?.();
+    initTheme();
+    expect(isDark()).toBe(false);
+
+    toggleTheme();
+    expect(isDark()).toBe(true);
+    expect(localStorage.getItem("middleman-theme")).toBe("dark");
+    expect(localStorage.getItem("kit-ui-theme")).toBeNull();
   });
 
   it("applies dark class when mode is dark", () => {

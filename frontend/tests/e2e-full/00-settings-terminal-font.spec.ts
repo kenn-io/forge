@@ -5,6 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from "@playwright/test";
 import { startIsolatedE2EServer, startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import { openSettingsPanel } from "./support/settingsPanel";
 
 let isolatedServer: IsolatedE2EServer | undefined;
 let api: APIRequestContext | undefined;
@@ -69,7 +70,7 @@ test.afterAll(async () => {
 
 test("settings saves and reloads workspace terminal options", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await openSettingsPanel(page, "Terminal");
 
   const input = page.getByLabel("Monospace font family");
   const fontSize = page.getByLabel("Font size");
@@ -145,7 +146,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
     });
 
   await page.reload();
-  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await openSettingsPanel(page, "Terminal");
   await expect(page.getByLabel("Monospace font family")).toHaveValue('"Iosevka Term", monospace');
   await expect(page.getByLabel("Font size")).toHaveValue("18");
   await expect(page.getByLabel("Scrollback")).toHaveValue("5000");
@@ -168,7 +169,7 @@ test("settings saves visible modes and hides disabled nav entries", async ({ pag
   try {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${isolatedServer!.info.base_url}/settings`);
-    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+    await openSettingsPanel(page, "Visible modes");
     await expect(page.getByLabel("PRs")).toBeChecked();
 
     await page.getByLabel("PRs").uncheck();

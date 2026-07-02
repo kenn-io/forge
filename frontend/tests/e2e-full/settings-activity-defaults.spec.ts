@@ -1,5 +1,6 @@
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import { openSettingsPanel } from "./support/settingsPanel";
 
 let isolatedServer: IsolatedE2EServer | undefined;
 let api: APIRequestContext | undefined;
@@ -25,7 +26,7 @@ type ActivitySettings = {
 
 test("activity default view mode and time range persist through the segmented controls", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await openSettingsPanel(page, "Activity");
 
   const viewModeGroup = page.getByRole("radiogroup", { name: "Default view mode" });
   const timeRangeGroup = page.getByRole("radiogroup", { name: "Default time range" });
@@ -50,7 +51,7 @@ test("activity default view mode and time range persist through the segmented co
   expect(settings.activity.time_range).toBe("30d");
 
   await page.reload();
-  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await openSettingsPanel(page, "Activity");
   await expect(
     page.getByRole("radiogroup", { name: "Default view mode" }).getByRole("radio", { name: "Threaded" }),
   ).toBeChecked();

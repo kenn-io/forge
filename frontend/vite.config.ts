@@ -450,6 +450,12 @@ const config = {
         timeout: 0,
         proxyTimeout: 0,
       },
+      // Auth session routes (login/logout cookie handling) live on the
+      // Go server, outside /api, and must reach it in dev too.
+      "/auth": {
+        target: apiUrl,
+        changeOrigin: true,
+      },
       "/ws": terminalWebSocketProxy(apiUrl),
     },
   },

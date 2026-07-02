@@ -61,6 +61,18 @@ describe("vite config", () => {
     expect(apiProxy).not.toMatchObject({ ws: true });
   });
 
+  it("proxies auth session routes to the Go server", () => {
+    const proxy = config.server?.proxy;
+    expect(proxy).toBeDefined();
+    expect(typeof proxy).toBe("object");
+    if (!proxy || typeof proxy !== "object" || Array.isArray(proxy)) {
+      throw new Error("expected object proxy config");
+    }
+
+    expect(proxy["/auth"]).toMatchObject({ changeOrigin: true });
+    expect(proxy["/auth"]).not.toMatchObject({ ws: true });
+  });
+
   it("proxies terminal websocket upgrades under /ws only", () => {
     const proxy = config.server?.proxy;
     expect(proxy).toBeDefined();

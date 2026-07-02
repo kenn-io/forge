@@ -13,7 +13,7 @@
   import {
     DiffStats,
     FilterDropdown,
-    LeftSidebarToggle,
+    SidebarToggle,
   } from "@middleman/ui";
   import {
     createRepoLabelFormatter,
@@ -996,11 +996,11 @@
       <!-- No --push here: .workspace-sort's auto margin already
            claims the free space, and a second auto margin would
            split it and strand the sort trigger mid-header. -->
-      <LeftSidebarToggle
+      <SidebarToggle
         state="expanded"
         label="Workspaces sidebar"
         onclick={onCollapseSidebar}
-        class="left-sidebar-toggle--compact"
+        class="kit-sidebar-toggle--compact"
       />
     {/if}
   </div>

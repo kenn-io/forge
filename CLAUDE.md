@@ -70,33 +70,33 @@ Kata, Docs, and Messages are first-class middleman modes, but they are not platf
 
 ## Key Files
 
-| Path | Purpose |
-|------|---------|
-| `cmd/middleman/main.go` | CLI entry point, server startup, signal handling |
-| `internal/config/config.go` | TOML config, validation, defaults |
-| `internal/db/migrations/` | Numbered SQL migrations for schema changes |
-| `internal/db/db.go` | Database open, WAL, migration init |
-| `internal/db/queries.go` | All CRUD operations |
-| `internal/db/types.go` | DB model types |
-| `internal/kata/` | External Kata daemon discovery, selection, health, and passthrough transport |
-| `internal/docs/` | Planned on this branch: markdown folder registry, safe file operations, search, and git publish |
-| `internal/messages/msgvault/` | Msgvault server integration, health/configure flow, sanitization, image proxying |
-| `internal/platform/types.go` | Provider-neutral domain types (Repository, MergeRequest, Issue, events, labels, releases, checks) |
-| `internal/platform/registry.go` | `(platform, platform_host)` provider lookup and capability error types |
-| `internal/platform/metadata.go` | Provider metadata (kind, label, default host, owner casing/nesting behavior) |
-| `internal/platform/persist.go` | Conversion between neutral platform types and DB rows |
-| `internal/platform/<provider>/` | Per-provider client, normalization, and capability implementations |
-| `internal/github/client.go` | GitHub SDK transport used by `internal/platform/github` |
-| `internal/github/sync.go` | Periodic sync engine (dispatches per-provider work through the platform registry) |
-| `internal/github/graphql.go` | GitHub-only GraphQL bulk-fetch optimization |
-| `internal/server/server.go` | HTTP router, SPA serving |
-| `internal/server/huma_routes.go` | Huma API registrations and handlers |
-| `internal/server/api_types.go` | Shared API response types used by Huma |
-| `internal/apiclient/generated/client.gen.go` | Generated Go API client from the checked-in OpenAPI spec |
-| `frontend/src/App.svelte` | Root component, view routing |
-| `frontend/src/app.css` | Design tokens, theme, global styles |
-| `frontend/src/lib/stores/` | Svelte 5 rune-based stores |
-| `frontend/src/lib/components/` | UI components (sidebar, detail, kanban) |
+| Path                                         | Purpose                                                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `cmd/middleman/main.go`                      | CLI entry point, server startup, signal handling                                                  |
+| `internal/config/config.go`                  | TOML config, validation, defaults                                                                 |
+| `internal/db/migrations/`                    | Numbered SQL migrations for schema changes                                                        |
+| `internal/db/db.go`                          | Database open, WAL, migration init                                                                |
+| `internal/db/queries.go`                     | All CRUD operations                                                                               |
+| `internal/db/types.go`                       | DB model types                                                                                    |
+| `internal/kata/`                             | External Kata daemon discovery, selection, health, and passthrough transport                      |
+| `internal/docs/`                             | Planned on this branch: markdown folder registry, safe file operations, search, and git publish   |
+| `internal/messages/msgvault/`                | Msgvault server integration, health/configure flow, sanitization, image proxying                  |
+| `internal/platform/types.go`                 | Provider-neutral domain types (Repository, MergeRequest, Issue, events, labels, releases, checks) |
+| `internal/platform/registry.go`              | `(platform, platform_host)` provider lookup and capability error types                            |
+| `internal/platform/metadata.go`              | Provider metadata (kind, label, default host, owner casing/nesting behavior)                      |
+| `internal/platform/persist.go`               | Conversion between neutral platform types and DB rows                                             |
+| `internal/platform/<provider>/`              | Per-provider client, normalization, and capability implementations                                |
+| `internal/github/client.go`                  | GitHub SDK transport used by `internal/platform/github`                                           |
+| `internal/github/sync.go`                    | Periodic sync engine (dispatches per-provider work through the platform registry)                 |
+| `internal/github/graphql.go`                 | GitHub-only GraphQL bulk-fetch optimization                                                       |
+| `internal/server/server.go`                  | HTTP router, SPA serving                                                                          |
+| `internal/server/huma_routes.go`             | Huma API registrations and handlers                                                               |
+| `internal/server/api_types.go`               | Shared API response types used by Huma                                                            |
+| `internal/apiclient/generated/client.gen.go` | Generated Go API client from the checked-in OpenAPI spec                                          |
+| `frontend/src/App.svelte`                    | Root component, view routing                                                                      |
+| `frontend/src/app.css`                       | Design tokens, theme, global styles                                                               |
+| `frontend/src/lib/stores/`                   | Svelte 5 rune-based stores                                                                        |
+| `frontend/src/lib/components/`               | UI components (sidebar, detail, kanban)                                                           |
 
 ## Development
 

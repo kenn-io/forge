@@ -156,13 +156,10 @@ The existing `frontend/src/lib/utils/keyboardShortcuts.ts` `shouldIgnoreGlobalSh
 ### Action descriptor
 
 ```ts
-type ScopeTag =
-  | "global"
-  | "view-pulls" | "view-issues"
-  | "detail-pr" | "detail-issue";
+type ScopeTag = "global" | "view-pulls" | "view-issues" | "detail-pr" | "detail-issue";
 
 interface KeySpec {
-  key: string;          // e.g. "k", "Escape", "ArrowDown"
+  key: string; // e.g. "k", "Escape", "ArrowDown"
   ctrlOrMeta?: boolean; // true matches both Ctrl on Linux/Windows and Meta on macOS
   shift?: boolean;
   alt?: boolean;
@@ -170,34 +167,34 @@ interface KeySpec {
 
 interface Context {
   page: ReturnType<typeof getPage>; // string union from frontend/src/lib/stores/router.svelte.ts
-  route: Route;                     // from getRoute()
-  selectedPR: PullSelection | null;     // from pulls.getSelectedPR()
+  route: Route; // from getRoute()
+  selectedPR: PullSelection | null; // from pulls.getSelectedPR()
   selectedIssue: IssueSelection | null; // from issues.getSelectedIssue()
-  isDiffView: boolean;              // from isDiffView()
-  detailTab: DetailTab;             // from getDetailTab()
+  isDiffView: boolean; // from isDiffView()
+  detailTab: DetailTab; // from getDetailTab()
 }
 
 interface Action {
-  id: string;                 // dotted, e.g. "go.next", "pr.approve"
+  id: string; // dotted, e.g. "go.next", "pr.approve"
   label: string;
   scope: ScopeTag;
-  binding: KeySpec | KeySpec[] | null;  // null = palette-only
-  priority: number;           // default 0; higher wins when binding+scope tie
+  binding: KeySpec | KeySpec[] | null; // null = palette-only
+  priority: number; // default 0; higher wins when binding+scope tie
   when: (ctx: Context) => boolean;
   handler: (ctx: Context) => void | Promise<void>;
   preview?: (ctx: Context) => PreviewBlock;
 }
 
 interface CheatsheetEntry {
-  id: string;                 // unique within owner; may match an Action.id when describing the same shortcut
+  id: string; // unique within owner; may match an Action.id when describing the same shortcut
   label: string;
   binding: KeySpec | KeySpec[]; // never null — display-only entries always have a visible key
   scope: ScopeTag;
-  conditionBadge?: string;    // e.g. "PR selected", rendered as a chip on the cheatsheet row
+  conditionBadge?: string; // e.g. "PR selected", rendered as a chip on the cheatsheet row
 }
 ```
 
-Every `Action` with a non-null `binding` is automatically rendered as a cheatsheet row using its `id`/`label`/`scope`/`binding`. `registerCheatsheetEntries(ownerId, entries: CheatsheetEntry[])` is for *display-only* shortcuts whose handler stays inside an existing component (e.g. `RepoTypeahead`'s arrow-key nav, comment editor shortcuts) — those keystrokes never go through the registry's dispatch but still need to surface in the cheatsheet. Owner-based replacement/cleanup matches `registerScopedActions`. Cheatsheet-only entries do NOT participate in the dispatch conflict assertion (they have no handler), but the cheatsheet does deduplicate by `(scope, binding)` at render time. When an action-derived row and a `registerCheatsheetEntries` row collide on `(scope, binding)`, the action-derived row wins and the display-only entry is suppressed, regardless of registration order. This avoids flicker during dynamic mount/unmount and gives `Action` definitions authoritative rendering for any shortcut they cover.
+Every `Action` with a non-null `binding` is automatically rendered as a cheatsheet row using its `id`/`label`/`scope`/`binding`. `registerCheatsheetEntries(ownerId, entries: CheatsheetEntry[])` is for _display-only_ shortcuts whose handler stays inside an existing component (e.g. `RepoTypeahead`'s arrow-key nav, comment editor shortcuts) — those keystrokes never go through the registry's dispatch but still need to surface in the cheatsheet. Owner-based replacement/cleanup matches `registerScopedActions`. Cheatsheet-only entries do NOT participate in the dispatch conflict assertion (they have no handler), but the cheatsheet does deduplicate by `(scope, binding)` at render time. When an action-derived row and a `registerCheatsheetEntries` row collide on `(scope, binding)`, the action-derived row wins and the display-only entry is suppressed, regardless of registration order. This avoids flicker during dynamic mount/unmount and gives `Action` definitions authoritative rendering for any shortcut they cover.
 
 ### Registration
 
@@ -295,7 +292,7 @@ Each stage lands with the unit, component, and Playwright coverage that exercise
     - Dynamic-conflict assertion under mount/unmount cycles: stage 1 unit tests.
     - Keyboard-only PR detail command flow: stage 10.
 
-   When stage 11 lands, its PR enumerates the named cross-stage integration tests it adds (and only those). If a check fits naturally earlier, it goes there instead.
+When stage 11 lands, its PR enumerates the named cross-stage integration tests it adds (and only those). If a check fits naturally earlier, it goes there instead.
 
 Stages 6 through 11 each depend on stages 1 through 3 being complete. Stage 7 depends on stage 6. Stage 10 depends on stage 7 (palette search must exist before PR detail commands are useful). Implementers should not start a later stage before its prerequisites land in main.
 

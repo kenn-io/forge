@@ -146,18 +146,22 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
   await page.waitForTimeout(400);
 
   // ---- Step 13: Cmd+[ toggles the sidebar -------------------------------
-  // The sidebar lives under .sidebar; the collapsed variant adds
-  // .sidebar--collapsed. Capture the initial collapsed-ness, toggle once,
-  // and verify the state flipped.
-  const sidebar = page.locator(".sidebar").first();
-  const wasCollapsed = await sidebar.evaluate((el) => el.classList.contains("sidebar--collapsed")).catch(() => false);
+  // The sidebar lives under .kit-sidebar-layout__sidebar; the collapsed
+  // variant adds .kit-sidebar-layout__sidebar--collapsed. Capture the initial
+  // collapsed-ness, toggle once, and verify the state flipped.
+  const sidebar = page.locator(".kit-sidebar-layout__sidebar").first();
+  const wasCollapsed = await sidebar
+    .evaluate((el) => el.classList.contains("kit-sidebar-layout__sidebar--collapsed"))
+    .catch(() => false);
   await page.keyboard.press("Meta+[");
   await page.waitForTimeout(400);
   // After toggle the sidebar element may have been swapped between the
-  // expanded `aside.sidebar` and the collapsed `aside.sidebar.sidebar--collapsed`,
+  // expanded `aside.kit-sidebar-layout__sidebar` and the collapsed variant,
   // so re-query and re-check the class.
-  const sidebarAfter = page.locator(".sidebar").first();
-  const isCollapsedAfter = await sidebarAfter.evaluate((el) => el.classList.contains("sidebar--collapsed"));
+  const sidebarAfter = page.locator(".kit-sidebar-layout__sidebar").first();
+  const isCollapsedAfter = await sidebarAfter.evaluate((el) =>
+    el.classList.contains("kit-sidebar-layout__sidebar--collapsed"),
+  );
   expect(isCollapsedAfter).toBe(!wasCollapsed);
   // Toggle back so the rest of the recording shows the expanded layout
   // (purely cosmetic — the assertion above is the actual proof).

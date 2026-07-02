@@ -13,6 +13,7 @@
 ### Task 1: Provider Icon Component
 
 **Files:**
+
 - Create: `frontend/src/lib/components/provider/ProviderIcon.svelte`
 - Create: `frontend/src/lib/components/provider/provider-icons.ts`
 - Test: `frontend/src/lib/components/provider/ProviderIcon.test.ts`
@@ -25,6 +26,7 @@
 ### Task 2: Repository Cards
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/repositories/RepoSummaryPage.svelte`
 - Modify: `frontend/src/lib/components/repositories/RepoSummaryCard.svelte`
 - Test: `frontend/src/lib/components/repositories/RepoSummaryPage.test.ts`
@@ -37,6 +39,7 @@
 ### Task 3: Workspace Sidebar
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte`
 - Test: `frontend/src/lib/components/terminal/WorkspaceListSidebar.test.ts`
 
@@ -48,6 +51,7 @@
 ### Task 4: Settings and Project Identity
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/settings/RepoSettings.svelte`
 - Modify: `frontend/src/lib/components/terminal/WorkspaceProjectCard.svelte`
 - Test: `frontend/src/lib/components/terminal/WorkspaceProjectCard.test.ts`

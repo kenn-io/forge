@@ -32,10 +32,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "managerFilePatterns": [
-        "/(^|/)\\.github/workflows/.+\\.ya?ml$/",
-        "/(^|/)Dockerfile\\.dev$/"
-      ],
+      "managerFilePatterns": ["/(^|/)\\.github/workflows/.+\\.ya?ml$/", "/(^|/)Dockerfile\\.dev$/"],
       "matchStrings": [
         "bun-version:\\s*[\"']?(?<currentValue>\\d+\\.\\d+\\.\\d+)[\"']?",
         "bun-v(?<currentValue>\\d+\\.\\d+\\.\\d+)/bun-linux"

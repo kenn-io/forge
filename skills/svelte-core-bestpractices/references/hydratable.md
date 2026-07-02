@@ -35,8 +35,8 @@ To fix the example above:
 This API can also be used to provide access to random or time-based values that are stable between server rendering and hydration. For example, to get a random number that doesn't update on hydration:
 
 ```ts
-import { hydratable } from 'svelte';
-const rand = hydratable('random', () => Math.random());
+import { hydratable } from "svelte";
+const rand = hydratable("random", () => Math.random());
 ```
 
 If you're a library author, be sure to prefix the keys of your `hydratable` values with the name of your library so that your keys don't conflict with other libraries.
@@ -68,14 +68,14 @@ All data returned from a `hydratable` function must be serializable. But this do
 const nonce = crypto.randomUUID();
 
 const { head, body } = await render(App, {
-	csp: { nonce },
+  csp: { nonce },
 });
 ```
 
 This will add the `nonce` to the script block, on the assumption that you will later add the same nonce to the CSP header of the document that contains it:
 
 ```js
-response.headers.set('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
+response.headers.set("Content-Security-Policy", `script-src 'nonce-${nonce}'`);
 ```
 
 It's essential that a `nonce` — which, British slang definition aside, means 'number used once' — is only used when dynamically server rendering an individual response.
@@ -84,17 +84,14 @@ If instead you are generating static HTML ahead of time, you must use hashes ins
 
 ```js
 const { head, body, hashes } = await render(App, {
-	csp: { hash: true },
+  csp: { hash: true },
 });
 ```
 
 `hashes.script` will be an array of strings like `["sha256-abcd123"]`. As with `nonce`, the hashes should be used in your CSP header:
 
 ```js
-response.headers.set(
-	'Content-Security-Policy',
-	`script-src ${hashes.script.map((hash) => `'${hash}'`).join(' ')}`,
-);
+response.headers.set("Content-Security-Policy", `script-src ${hashes.script.map((hash) => `'${hash}'`).join(" ")}`);
 ```
 
 We recommend using `nonce` over hash if you can, as `hash` will interfere with streaming SSR in the future.

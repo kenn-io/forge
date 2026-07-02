@@ -30,6 +30,7 @@
 ## Task 1: Persist Workspace Owner Keys
 
 **Files:**
+
 - Create: `internal/db/migrations/000036_kata_workspace_owner_keys.up.sql`
 - Create: `internal/db/migrations/000036_kata_workspace_owner_keys.down.sql`
 - Modify: `internal/db/types.go`
@@ -67,6 +68,7 @@ Expected: pass.
 ## Task 2: Add Manual Kata Project Mappings to Settings
 
 **Files:**
+
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go`
 - Modify: `internal/server/settings_handlers.go`
@@ -76,6 +78,7 @@ Expected: pass.
 - [ ] **Step 1: Write failing config/settings tests**
 
 Add tests covering:
+
 - a valid mapping from project UID to an exact configured repo survives config load/save,
 - duplicate daemon/project mapping is rejected,
 - a mapping to a non-configured repo is rejected,
@@ -108,6 +111,7 @@ Expected: pass.
 ## Task 3: Resolve Kata Workspace Targets
 
 **Files:**
+
 - Create: `internal/server/kata_workspace.go`
 - Test: `internal/server/kata_workspace_test.go`
 - Modify: `internal/server/kata_routes.go`
@@ -115,6 +119,7 @@ Expected: pass.
 - [ ] **Step 1: Write failing route tests**
 
 Add tests for `POST /api/v1/kata/workspace-target`:
+
 - manual daemon/project mapping returns the configured repo,
 - manual global project mapping is used when daemon-specific mapping is absent,
 - `.kata.toml` under exactly one configured repo with `worktree_base_path` resolves automatically by project UID, identity, or unambiguous project name,
@@ -148,6 +153,7 @@ Expected: pass.
 ## Task 4: Create and Reuse Kata Workspaces
 
 **Files:**
+
 - Modify: `internal/workspace/manager.go`
 - Modify: `internal/server/kata_workspace.go`
 - Test: `internal/workspace/manager_test.go`
@@ -156,6 +162,7 @@ Expected: pass.
 - [ ] **Step 1: Write failing create/reuse tests**
 
 Add tests for `POST /api/v1/kata/workspaces`:
+
 - creating a workspace does not require a provider issue row,
 - the workspace uses `item_type="kata_task"`, a scoped Kata workspace `item_key`, stored metadata, and a branch generated from the Kata task ID/title,
 - calling create again returns the existing workspace instead of creating a duplicate.
@@ -187,6 +194,7 @@ Expected: pass.
 ## Task 5: Add Kata Workspace Button in the Task Browser
 
 **Files:**
+
 - Create: `frontend/src/lib/api/kata/workspaces.ts`
 - Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
 - Modify: `frontend/src/lib/features/kata/KataIssueDetail.svelte`
@@ -195,6 +203,7 @@ Expected: pass.
 - [ ] **Step 1: Write failing frontend tests**
 
 Add tests that select a Kata issue and assert:
+
 - no workspace button appears when `available:false`,
 - `Create workspace` appears when a repo target exists and no workspace exists,
 - `Open workspace` appears when `existing_workspace` is returned,
@@ -227,6 +236,7 @@ Expected: pass.
 ## Task 6: Embed the Live Kata Detail in Workspaces
 
 **Files:**
+
 - Create: `frontend/src/lib/components/terminal/KataWorkspaceSidebarPane.svelte`
 - Modify: `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`
 - Modify: `packages/ui/src/components/workspace/WorkspaceRightSidebar.svelte`
@@ -275,6 +285,7 @@ Expected: pass.
 ## Task 7: Regenerate Artifacts, Context, and Final Verification
 
 **Files:**
+
 - Modify generated API files from `make api-generate`
 - Modify context docs only if the implemented behavior adds durable project knowledge outside the feature spec
 

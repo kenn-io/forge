@@ -1445,13 +1445,13 @@
     min-width: 0;
   }
 
-  .focus-layout--phone :global(.list-layout),
-  .focus-layout--phone :global(.main-area) {
+  .focus-layout--phone :global(.kit-sidebar-layout),
+  .focus-layout--phone :global(.kit-sidebar-layout__main) {
     width: 100%;
     min-width: 0;
   }
 
-  .focus-layout--phone :global(.main-area) {
+  .focus-layout--phone :global(.kit-sidebar-layout__main) {
     overflow-y: auto;
   }
 

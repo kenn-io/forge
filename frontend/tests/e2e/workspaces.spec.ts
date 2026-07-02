@@ -109,14 +109,14 @@ test("workspace row context menu escapes the clipped sidebar", async ({ page }) 
 test("workspaces sidebar collapses and expands through the shared control", async ({ page }) => {
   await page.goto("/workspaces");
 
-  const sidebar = page.locator(".sidebar").first();
+  const sidebar = page.locator(".kit-sidebar-layout__sidebar").first();
   await expect(sidebar).toBeVisible();
 
   await sidebar.getByRole("button", { name: "Collapse Workspaces sidebar" }).click();
-  await expect(sidebar).toHaveClass(/sidebar--collapsed/);
+  await expect(sidebar).toHaveClass(/kit-sidebar-layout__sidebar--collapsed/);
 
   await sidebar.getByRole("button", { name: "Expand sidebar" }).click();
-  await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
+  await expect(sidebar).not.toHaveClass(/kit-sidebar-layout__sidebar--collapsed/);
 });
 
 test("AppHeader workspaces tab navigates to /workspaces", async ({ page }) => {

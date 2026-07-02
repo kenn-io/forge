@@ -69,7 +69,7 @@
     clearActiveTerminalDrag,
     readRuntimeSessionDrag,
   } from "./terminal-drag";
-  import { Button, CollapsibleResizableSidebar,
+  import { Button, CollapsibleSidebar,
     SplitResizeHandle,
     WorkspaceRightSidebar,
     type SplitResizeEvent, } from "@middleman/ui";
@@ -2944,7 +2944,7 @@
   {#if hideWorkspaceList}
     {@render terminalMainContent()}
   {:else}
-    <CollapsibleResizableSidebar
+    <CollapsibleSidebar
       isCollapsed={isSidebarCollapsed}
       sidebarWidth={currentWorkspaceListWidth}
       minSidebarWidth={MIN_WORKSPACE_LIST_WIDTH}
@@ -2976,7 +2976,7 @@
         />
       {/snippet}
       {@render terminalMainContent()}
-    </CollapsibleResizableSidebar>
+    </CollapsibleSidebar>
   {/if}
 </div>
 

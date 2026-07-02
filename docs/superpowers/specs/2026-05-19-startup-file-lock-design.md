@@ -105,7 +105,7 @@ the least intrusive layout and the easiest to find when troubleshooting.
 
 - `pid` (int): the daemon's process ID at startup.
 - `host` (string): the **bound** host as reported by `ln.Addr().
-  (*net.TCPAddr).IP.String()` — exactly what the kernel returned, not
+(*net.TCPAddr).IP.String()` — exactly what the kernel returned, not
   the configured `cfg.Host`. For a config of `0.0.0.0:0`, this might
   be `0.0.0.0` (depending on the platform); for `127.0.0.1:0`, it's
   `127.0.0.1`.
@@ -122,7 +122,7 @@ the least intrusive layout and the easiest to find when troubleshooting.
 - `started_at` (string): UTC RFC3339, per the project's
   "UTC-everywhere-except-presentation" convention.
 - `version`, `commit` (strings): the same values used by `middleman
-  version`.
+version`.
 
 Decoding is tolerant of unknown fields (default `encoding/json`
 behavior). Adding new fields later does not break older readers.
@@ -219,7 +219,7 @@ Behavior:
 - On `status.Running == true` with parsed metadata: print PID, host,
   port, listen_addr, started_at, version, commit. Exit 0.
 - On `status.Running == true` with a metadata error: print `"running
-  (metadata unavailable: <reason>)"` and the data_dir + lock path.
+(metadata unavailable: <reason>)"` and the data_dir + lock path.
   Exit 0.
 
 The TryLock-then-release pattern inside `Read` is safe: the kernel
@@ -321,7 +321,7 @@ acquisition, metadata read/write, and status rendering logic so
   `middleman status` reader. Probes the lock, reads metadata when
   busy, returns a `Status` struct.
 - `runtimelock.FormatCollisionBanner(err *CollisionError, configPath
-  string, defaultConfigPath string, w io.Writer)`: renders the banner.
+string, defaultConfigPath string, w io.Writer)`: renders the banner.
   Separate from `Acquire` so tests can format synthetic collisions.
 - `runtimelock.FormatStatus(status Status, w io.Writer, asJSON bool)`:
   renders status output for the subcommand.
@@ -405,7 +405,7 @@ Cases:
 14. **End-to-end collision E2E.** Two `middleman` subprocesses
     against the same `data_dir` via `t.TempDir()`. The test
     pre-resolves a free TCP port with `net.Listen("tcp",
-    "127.0.0.1:0")`, closes the listener, and writes that port into
+"127.0.0.1:0")`, closes the listener, and writes that port into
     the config so both subprocesses target the same address. The
     first subprocess starts successfully; the second's exit code is
     1; the second's stderr matches the banner shape.

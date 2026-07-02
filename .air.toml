@@ -5,7 +5,16 @@ tmp_dir = "tmp"
 cmd = "./scripts/dev-backend-build.sh"
 entrypoint = "./tmp/middleman"
 delay = 500
-exclude_dir = ["frontend", "internal/web/dist", "internal/apiclient/generated", "node_modules", "target", "tmp", "vendor", ".git"]
+exclude_dir = [
+  "frontend",
+  "internal/web/dist",
+  "internal/apiclient/generated",
+  "node_modules",
+  "target",
+  "tmp",
+  "vendor",
+  ".git",
+]
 include_ext = ["go", "tpl", "tmpl", "html"]
 stop_on_error = true
 send_interrupt = true

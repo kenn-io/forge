@@ -66,7 +66,7 @@ This design deliberately keeps the observer provider-neutral:
 - Use local Git upstream state as the source of the remote name and branch ref,
   and as association evidence for issue workspaces.
 - Use provider identity everywhere: `(provider, platform_host, repo_path,
-  owner, name, number)`.
+owner, name, number)`.
 - Keep provider-specific optimizations optional behind the platform capability
   model.
 

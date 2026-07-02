@@ -9,11 +9,7 @@ services:
       - "${ROBOREV_PORT:-17373}:7373"
     command: ["daemon", "run", "--addr", "127.0.0.1:7374", "--workers", "0"]
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -sf http://127.0.0.1:7373/api/status || exit 1",
-        ]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:7373/api/status || exit 1"]
       interval: 2s
       timeout: 5s
       retries: 15

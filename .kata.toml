@@ -2,4 +2,4 @@ version = 1
 
 [project]
 identity = "github.com/wesm/middleman"
-name     = "middleman"
+name = "middleman"

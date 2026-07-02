@@ -197,7 +197,7 @@ test.describe("PR list view", () => {
     const finalScroll = await pullDetail.evaluate((el) => el.scrollTop);
     expect(finalScroll).toBeGreaterThan(0);
 
-    const detailArea = page.locator(".main-area");
+    const detailArea = page.locator(".kit-sidebar-layout__main");
     const contentHeader = page.locator(".pull-detail .detail-header");
     const areaBox = await detailArea.boundingBox();
     const detailBox = await pullDetail.boundingBox();

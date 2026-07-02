@@ -5,7 +5,7 @@
   import PullItem from "./PullItem.svelte";
   import { Chip } from "@kenn-io/kit-ui";
   import { FilterDropdown } from "@kenn-io/kit-ui";
-  import LeftSidebarToggle from "../shared/LeftSidebarToggle.svelte";
+  import { SidebarToggle } from "@kenn-io/kit-ui";
   import type { KanbanStatus, PullRequest } from "../../api/types.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
   import type { PullAttributeFilter } from "../../stores/pulls.svelte.js";
@@ -383,11 +383,11 @@
       />
     </div>
     {#if isSidebarToggleEnabled()}
-      <LeftSidebarToggle
+      <SidebarToggle
         state="expanded"
         label="sidebar"
         onclick={toggleSidebar}
-        class="left-sidebar-toggle--push"
+        class="kit-sidebar-toggle--push"
       />
     {/if}
   </div>

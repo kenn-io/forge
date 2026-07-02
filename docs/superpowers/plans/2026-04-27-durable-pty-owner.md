@@ -25,9 +25,11 @@
 This would persist runtime sessions and restart them after middleman restarts.
 
 Pros:
+
 - Reuses a lot of existing PTY session code.
 
 Cons:
+
 - Restarting is not durable; it loses process state.
 - It does not solve the main workspace terminal route, which currently expects the base tmux session.
 
@@ -38,11 +40,13 @@ Rejected.
 Middleman starts a detached helper process per base workspace terminal when tmux is unavailable. The helper owns the PTY and serves a local socket protocol for attach, input, resize, recent output replay, status, and stop.
 
 Pros:
+
 - Matches tmux's key durability property: middleman can restart while the workspace shell keeps running.
 - Keeps tmux behavior unchanged where tmux exists.
 - Gives Windows a backend path that does not depend on tmux.
 
 Cons:
+
 - Adds an internal local protocol and helper process lifecycle to test.
 - Requires a Windows-specific PTY driver.
 
@@ -53,9 +57,11 @@ Chosen.
 This would build panes/sessions/windows inside middleman.
 
 Pros:
+
 - Could eventually replace tmux-specific assumptions.
 
 Cons:
+
 - Much larger than needed for a single durable shell per workspace.
 - Higher risk to the existing terminal behavior.
 
@@ -80,6 +86,7 @@ Rejected.
 ## Task 1: Add the PTY Owner Protocol
 
 **Files:**
+
 - Create: `internal/ptyowner/protocol.go`
 - Create: `internal/ptyowner/paths.go`
 - Test: `internal/ptyowner/protocol_test.go`
@@ -87,6 +94,7 @@ Rejected.
 - [ ] **Step 1: Write protocol and path tests**
 
 Add tests that assert:
+
 - session names reject path separators and empty values
 - socket/state paths are stable under a provided root
 - JSON control frames round-trip for `attach`, `resize`, `stop`, `status`, and `input`
@@ -121,6 +129,7 @@ Use newline-delimited JSON for control messages and length-prefixed binary frame
 - [ ] **Step 3: Implement path helpers**
 
 Use a root like `<data-dir>/pty-owner/<session>/` with:
+
 - `control.sock` on Unix
 - `control.pipe` metadata naming `\\.\pipe\middleman-<session>` on Windows
 - `owner.json` containing session, cwd, pid, created_at, and backend version
@@ -151,6 +160,7 @@ types and stable per-session paths used by the owner and middleman.
 ## Task 2: Implement the Owner Runtime on Unix
 
 **Files:**
+
 - Create: `internal/ptyowner/owner.go`
 - Create: `internal/ptyowner/driver_unix.go`
 - Test: `internal/ptyowner/owner_test.go`
@@ -158,6 +168,7 @@ types and stable per-session paths used by the owner and middleman.
 - [ ] **Step 1: Write owner lifecycle tests**
 
 Cover:
+
 - owner starts a shell command in a PTY and emits output to an attached client
 - a detached client can reconnect and receive recent output replay
 - resize control calls the driver resize path
@@ -171,6 +182,7 @@ Expected: FAIL because owner runtime is missing.
 - [ ] **Step 2: Implement the owner**
 
 Implement `RunOwner(ctx, Options) error` with:
+
 - command resolution using the same executable safety rules as `localruntime.resolveExecutable`
 - sanitized environment using the existing `localruntime` environment helper or a small exported wrapper
 - PTY output fanout to attached clients
@@ -180,6 +192,7 @@ Implement `RunOwner(ctx, Options) error` with:
 - [ ] **Step 3: Add Unix PTY driver**
 
 Under `//go:build !windows`, wrap:
+
 - `pty.StartWithSize`
 - `pty.Setsize`
 - process wait/close
@@ -210,12 +223,14 @@ output replay, resize, and stop behavior for Unix-like hosts.
 ## Task 3: Add the Hidden `middleman pty-owner` Subcommand
 
 **Files:**
+
 - Modify: `cmd/middleman/main.go`
 - Test: `cmd/middleman/main_test.go`
 
 - [ ] **Step 1: Write CLI tests**
 
 Cover:
+
 - `runCLI([]string{"pty-owner"})` requires a session, cwd, and root
 - `version` and `config read` behavior remain unchanged
 - invalid owner args return an error without starting the normal server
@@ -234,6 +249,7 @@ case "pty-owner":
 ```
 
 Flags:
+
 - `-session`
 - `-cwd`
 - `-root`
@@ -265,6 +281,7 @@ normal server startup and owns only one workspace terminal session.
 ## Task 4: Introduce Workspace Terminal Backends
 
 **Files:**
+
 - Create: `internal/workspace/terminal_backend.go`
 - Modify: `internal/workspace/manager.go`
 - Test: `internal/workspace/manager_test.go`
@@ -272,6 +289,7 @@ normal server startup and owns only one workspace terminal session.
 - [ ] **Step 1: Write backend selection tests**
 
 Cover:
+
 - tmux available selects tmux backend
 - tmux unavailable selects pty-owner backend
 - configured tmux command that exists still selects tmux
@@ -302,6 +320,7 @@ Name can stay tmux-flavored in public response structs for compatibility, but in
 - [ ] **Step 3: Move tmux calls behind `tmuxBackend`**
 
 Keep existing tmux methods in `manager.go` or move them into `terminal_backend.go` with no behavior change:
+
 - `newTmuxSession`
 - `EnsureTmux`
 - `killTmuxSession`
@@ -311,6 +330,7 @@ Keep existing tmux methods in `manager.go` or move them into `terminal_backend.g
 - [ ] **Step 4: Add `ptyOwnerBackend`**
 
 Use `ptyowner.Client` to:
+
 - start the helper if no live owner responds
 - ensure existing owner on attach
 - stop owner on delete/retry
@@ -345,6 +365,7 @@ pty-owner helper when tmux cannot be resolved.
 ## Task 5: Attach Browser Terminals Through the Selected Backend
 
 **Files:**
+
 - Modify: `internal/terminal/handler.go`
 - Modify: `internal/terminal/bridge.go`
 - Test: `internal/terminal/handler_test.go`
@@ -352,6 +373,7 @@ pty-owner helper when tmux cannot be resolved.
 - [ ] **Step 1: Write terminal handler tests**
 
 Cover:
+
 - tmux backend still shells out to `tmux attach-session`
 - pty-owner backend attaches to the owner socket
 - binary input reaches the owner
@@ -383,6 +405,7 @@ Use it for the pty-owner path. Keep the tmux path as a local PTY running `tmux a
 - [ ] **Step 3: Update handler flow**
 
 After workspace readiness checks and slot claim:
+
 - call backend `Ensure`
 - if backend is tmux, preserve existing `tmux attach-session` flow
 - if backend is pty-owner, bridge WebSocket to the owner attachment
@@ -411,6 +434,7 @@ directly to the durable owner process.
 ## Task 6: Wire Server Startup and API Behavior
 
 **Files:**
+
 - Modify: `internal/server/server.go`
 - Modify: `internal/server/huma_routes.go`
 - Modify: `internal/server/api_types.go`
@@ -419,6 +443,7 @@ directly to the durable owner process.
 - [ ] **Step 1: Write full-stack API tests**
 
 Add e2e tests with real SQLite that simulate tmux absence:
+
 - creating a workspace reaches `ready` instead of `error`
 - `GET /workspaces/{id}` returns the existing response shape
 - WebSocket `/workspaces/{id}/terminal` can read/write through the pty-owner backend
@@ -448,6 +473,7 @@ Do not call `ReapOrphanTmuxSessions` when tmux is unavailable.
 - [ ] **Step 4: Preserve response compatibility**
 
 Keep JSON fields as-is for now:
+
 - `tmux_session` remains the stable session identifier
 - `tmux_working` can report true when either tmux or pty-owner shows activity
 - `tmux_activity_source` may gain a value such as `pty_owner` only if frontend tests are updated; otherwise map pty-owner recent output to `output`
@@ -476,6 +502,7 @@ while allowing terminal reattachment after middleman restarts.
 ## Task 7: Add Windows Driver Support
 
 **Files:**
+
 - Create: `internal/ptyowner/driver_windows.go`
 - Modify: `go.mod`
 - Modify: `go.sum`
@@ -484,6 +511,7 @@ while allowing terminal reattachment after middleman restarts.
 - [ ] **Step 1: Choose and document the Windows PTY dependency**
 
 Use the smallest maintained ConPTY-backed Go package that supports:
+
 - start process attached to pseudoconsole
 - read/write
 - resize
@@ -524,6 +552,7 @@ keeping the owner protocol shared across platforms.
 ## Task 8: Update Runtime Target Semantics
 
 **Files:**
+
 - Modify: `internal/workspace/localruntime/targets.go`
 - Modify: `internal/workspace/localruntime/manager.go`
 - Test: `internal/workspace/localruntime/targets_test.go`
@@ -532,6 +561,7 @@ keeping the owner protocol shared across platforms.
 - [ ] **Step 1: Write tests for no-tmux hosts**
 
 Cover:
+
 - tmux target is unavailable when tmux cannot be found
 - agent launches do not attempt tmux wrapping when tmux is unavailable
 - plain shell still works
@@ -569,6 +599,7 @@ keeps that boundary explicit on hosts without tmux.
 ## Task 9: Final Verification
 
 **Files:**
+
 - All changed files
 
 - [ ] **Step 1: Regenerate API artifacts if response types changed**

@@ -13,6 +13,7 @@
 ### Task 1: Write Failing E2E Coverage
 
 **Files:**
+
 - Modify: `frontend/tests/e2e-full/mobile-routes.spec.ts`
 - Modify: `frontend/tests/e2e-full/routed-items.spec.ts`
 
@@ -47,27 +48,23 @@ In `frontend/tests/e2e-full/routed-items.spec.ts`, add tests that phone-sized ca
 test("narrow canonical PR list routes selected rows to canonical detail", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/pulls");
-  await page.locator(".focus-list .pull-item").first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".focus-list .pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
 
   await page.locator(".focus-list .pull-item").filter({ hasText: prTitle }).first().click();
 
   await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1$/);
-  await expect(page.locator(".focus-layout .pull-detail .detail-title"))
-    .toContainText(prTitle);
+  await expect(page.locator(".focus-layout .pull-detail .detail-title")).toContainText(prTitle);
 });
 
 test("narrow canonical issue list routes selected rows to canonical detail", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/issues");
-  await page.locator(".focus-list .issue-item").first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".focus-list .issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
 
   await page.locator(".focus-list .issue-item").filter({ hasText: issueTitle }).first().click();
 
   await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
-  await expect(page.locator(".focus-layout .issue-detail .detail-title"))
-    .toContainText(issueTitle);
+  await expect(page.locator(".focus-layout .issue-detail .detail-title")).toContainText(issueTitle);
 });
 ```
 
@@ -85,6 +82,7 @@ Expected: tests fail because canonical routes still redirect or list clicks stil
 ### Task 2: Make FocusListView Route-Family Aware
 
 **Files:**
+
 - Modify: `packages/ui/src/views/FocusListView.svelte`
 
 - [ ] **Step 1: Add route-family prop and canonical builders**
@@ -116,15 +114,11 @@ Update selection:
 
 ```ts
 function handlePRSelect(ref: PullRequestRouteRef): void {
-  navigate(routeFamily === "canonical"
-    ? buildPullRequestRoute(ref)
-    : buildFocusPullRequestRoute(ref));
+  navigate(routeFamily === "canonical" ? buildPullRequestRoute(ref) : buildFocusPullRequestRoute(ref));
 }
 
 function handleIssueSelect(ref: IssueRouteRef): void {
-  navigate(routeFamily === "canonical"
-    ? buildIssueRoute(ref)
-    : buildFocusIssueRoute(ref));
+  navigate(routeFamily === "canonical" ? buildIssueRoute(ref) : buildFocusIssueRoute(ref));
 }
 ```
 
@@ -141,6 +135,7 @@ Expected: no blocking Svelte issues.
 ### Task 3: Select Focus Presentation Without URL Rewrites
 
 **Files:**
+
 - Modify: `frontend/src/App.svelte`
 
 - [ ] **Step 1: Remove automatic responsive redirect**
@@ -211,6 +206,7 @@ Expected: no blocking Svelte issues.
 ### Task 4: Verify and Commit
 
 **Files:**
+
 - Modify: test and Svelte files from prior tasks.
 
 - [ ] **Step 1: Run focused e2e tests**

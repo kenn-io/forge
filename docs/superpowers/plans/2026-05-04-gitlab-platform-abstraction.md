@@ -252,17 +252,17 @@ POST /api/v1/items/issue/refresh
 
 Fallback route matrix:
 
-| Workflow | Method | Preferred escaped-path route | Fallback route | Fallback identity fields |
-| --- | --- | --- | --- | --- |
-| PR detail | `GET` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}` | `/api/v1/items/pull-request` | query: `provider`, `platform_host`, `repo_path`, `number` |
-| Issue detail | `GET` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}` | `/api/v1/items/issue` | query: `provider`, `platform_host`, `repo_path`, `number` |
-| PR refresh | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}/refresh` | `/api/v1/items/pull-request/refresh` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number` |
-| Issue refresh | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}/refresh` | `/api/v1/items/issue/refresh` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number` |
-| PR comments/events refresh | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}/events/refresh` | `/api/v1/items/pull-request/events/refresh` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number` |
-| Issue comments/events refresh | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}/events/refresh` | `/api/v1/items/issue/events/refresh` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number` |
-| PR action/mutation | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}/actions` | `/api/v1/items/pull-request/actions` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number`, `action`, action-specific fields |
-| Issue action/mutation | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}/actions` | `/api/v1/items/issue/actions` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number`, `action`, action-specific fields |
-| Repo detail/settings | `GET` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}` | `/api/v1/repo` | query: `provider`, `platform_host`, `repo_path` |
+| Workflow                      | Method | Preferred escaped-path route                                                                                 | Fallback route                              | Fallback identity fields                                                                                       |
+| ----------------------------- | ------ | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| PR detail                     | `GET`  | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}`                | `/api/v1/items/pull-request`                | query: `provider`, `platform_host`, `repo_path`, `number`                                                      |
+| Issue detail                  | `GET`  | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}`                       | `/api/v1/items/issue`                       | query: `provider`, `platform_host`, `repo_path`, `number`                                                      |
+| PR refresh                    | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}/refresh`        | `/api/v1/items/pull-request/refresh`        | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number`                                   |
+| Issue refresh                 | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}/refresh`               | `/api/v1/items/issue/refresh`               | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number`                                   |
+| PR comments/events refresh    | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}/events/refresh` | `/api/v1/items/pull-request/events/refresh` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number`                                   |
+| Issue comments/events refresh | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}/events/refresh`        | `/api/v1/items/issue/events/refresh`        | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number`                                   |
+| PR action/mutation            | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}/actions`        | `/api/v1/items/pull-request/actions`        | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number`, `action`, action-specific fields |
+| Issue action/mutation         | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}/actions`               | `/api/v1/items/issue/actions`               | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number`, `action`, action-specific fields |
+| Repo detail/settings          | `GET`  | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}`                                       | `/api/v1/repo`                              | query: `provider`, `platform_host`, `repo_path`                                                                |
 
 Only one route family should be implemented for new provider-aware clients after the Task 5 router proof: the escaped-path family if it works, otherwise the fallback family above. Existing GitHub compatibility routes remain wrappers either way.
 
@@ -310,15 +310,15 @@ const (
 
 Server handlers should return these codes in JSON error details for platform-aware routes. GitHub legacy routes may keep their current text messages until they are migrated, but new GitLab paths must use the coded errors from the start.
 
-| Source error | Platform code | HTTP status | Response detail |
-| --- | --- | --- | --- |
-| Provider registry miss | `provider_not_configured` | `502 Bad Gateway` | `{ "code": "provider_not_configured", "provider": "...", "platform_host": "..." }` |
-| Missing token during startup/client creation | `missing_token` | startup error or `502 Bad Gateway` in settings flows | `{ "code": "missing_token", "provider": "...", "token_env": "..." }` |
-| Config or request repo ref validation failure | `invalid_repo_ref` | `400 Bad Request` | `{ "code": "invalid_repo_ref", "field": "repo_path" }` |
-| Provider optional interface/capability absent | `unsupported_capability` | `501 Not Implemented` for route families, `409 Conflict` for item-specific actions | `{ "code": "unsupported_capability", "capability": "merge_mutation" }` |
-| GitHub/GitLab 401 or 403 | `permission_denied` | `502 Bad Gateway` for background/preview flows, provider status stored on sync rows | `{ "code": "permission_denied" }` |
-| GitHub/GitLab 404 | `not_found` | `404 Not Found` for direct user refresh/detail, `502 Bad Gateway` for startup/import validation | `{ "code": "not_found" }` |
-| GitHub/GitLab rate-limit response | `rate_limited` | `429 Too Many Requests` for foreground actions, sync backoff for background | `{ "code": "rate_limited", "reset_at": "..." }` |
+| Source error                                  | Platform code             | HTTP status                                                                                     | Response detail                                                                    |
+| --------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Provider registry miss                        | `provider_not_configured` | `502 Bad Gateway`                                                                               | `{ "code": "provider_not_configured", "provider": "...", "platform_host": "..." }` |
+| Missing token during startup/client creation  | `missing_token`           | startup error or `502 Bad Gateway` in settings flows                                            | `{ "code": "missing_token", "provider": "...", "token_env": "..." }`               |
+| Config or request repo ref validation failure | `invalid_repo_ref`        | `400 Bad Request`                                                                               | `{ "code": "invalid_repo_ref", "field": "repo_path" }`                             |
+| Provider optional interface/capability absent | `unsupported_capability`  | `501 Not Implemented` for route families, `409 Conflict` for item-specific actions              | `{ "code": "unsupported_capability", "capability": "merge_mutation" }`             |
+| GitHub/GitLab 401 or 403                      | `permission_denied`       | `502 Bad Gateway` for background/preview flows, provider status stored on sync rows             | `{ "code": "permission_denied" }`                                                  |
+| GitHub/GitLab 404                             | `not_found`               | `404 Not Found` for direct user refresh/detail, `502 Bad Gateway` for startup/import validation | `{ "code": "not_found" }`                                                          |
+| GitHub/GitLab rate-limit response             | `rate_limited`            | `429 Too Many Requests` for foreground actions, sync backoff for background                     | `{ "code": "rate_limited", "reset_at": "..." }`                                    |
 
 Provider clients should wrap raw GitHub/GitLab errors into typed platform errors at the transport boundary when status codes are known. HTTP handlers should only map typed platform errors to response codes and should avoid parsing raw provider error strings.
 
@@ -415,16 +415,16 @@ Container fixture rules:
 
 Middleman stores one aggregate `ci_status` plus a JSON list of checks. GitLab starts with a single synthesized check for the MR head pipeline.
 
-| GitLab pipeline status | Middleman check status | Middleman conclusion | Aggregate `ci_status` |
-| --- | --- | --- | --- |
-| `created`, `waiting_for_resource`, `preparing`, `pending`, `running` | `in_progress` | empty | `pending` |
-| `success` | `completed` | `success` | `success` |
-| `failed` | `completed` | `failure` | `failure` |
-| `canceled`, `cancelled` | `completed` | `cancelled` | `failure` |
-| `skipped` | `completed` | `skipped` | `success` |
-| `manual`, `scheduled` | `queued` | empty | `pending` |
-| unknown non-empty status | `completed` | `neutral` | `neutral` |
-| missing pipeline | empty list | empty | empty |
+| GitLab pipeline status                                               | Middleman check status | Middleman conclusion | Aggregate `ci_status` |
+| -------------------------------------------------------------------- | ---------------------- | -------------------- | --------------------- |
+| `created`, `waiting_for_resource`, `preparing`, `pending`, `running` | `in_progress`          | empty                | `pending`             |
+| `success`                                                            | `completed`            | `success`            | `success`             |
+| `failed`                                                             | `completed`            | `failure`            | `failure`             |
+| `canceled`, `cancelled`                                              | `completed`            | `cancelled`          | `failure`             |
+| `skipped`                                                            | `completed`            | `skipped`            | `success`             |
+| `manual`, `scheduled`                                                | `queued`               | empty                | `pending`             |
+| unknown non-empty status                                             | `completed`            | `neutral`            | `neutral`             |
+| missing pipeline                                                     | empty list             | empty                | empty                 |
 
 If the MR list response omits `head_pipeline`, detail sync should request the MR detail endpoint once before concluding CI is missing. If both omit pipeline data, leave `ci_status` and `ci_checks_json` empty rather than carrying stale data across a head SHA change.
 
@@ -452,23 +452,23 @@ Rules:
 
 The provider migration work should use this table as the implementation checklist. Tables not listed here should either be unaffected because they already point through a provider-aware parent row, or be added to the table before implementation starts.
 
-| Table or API surface | Change | Backfill and cleanup | Indexes/query helpers |
-| --- | --- | --- | --- |
-| `middleman_repos` | Add `repo_path`, lookup keys, `platform_repo_id`, `web_url`, `clone_url`, `default_branch` | Existing rows backfill to `platform = 'github'`, `repo_path = owner || '/' || name`, GitHub case-folded keys, empty provider metadata | Unique `(platform, platform_host, owner_key, name_key)` or equivalent helper; partial unique `(platform, platform_host, platform_repo_id)` where non-empty; `UpsertRepoByProviderID` |
-| `middleman_merge_requests` | Add `platform_external_id`; keep numeric `platform_id` | Existing rows keep empty external id because GitHub numeric ids remain valid | Keep unique `(repo_id, number)` and `(repo_id, platform_id)`; add partial unique `(repo_id, platform_external_id)` where non-empty |
-| `middleman_issues` | Add `platform_external_id`; keep numeric `platform_id` | Existing rows keep empty external id | Keep unique `(repo_id, number)` and `(repo_id, platform_id)`; add partial unique `(repo_id, platform_external_id)` where non-empty |
-| `middleman_mr_events` | Add `platform_external_id`; rebuild new event dedupe keys only for newly synced rows | Historical rows remain tied to provider through `merge_request_id -> repo_id`; no destructive cleanup required | New dedupe helper includes provider, host, repo, parent item kind/id, event kind, and provider event id/external id |
-| `middleman_issue_events` | Add `platform_external_id`; rebuild new event dedupe keys only for newly synced rows | Historical rows remain tied to provider through `issue_id -> repo_id`; no destructive cleanup required | Same provider-scoped dedupe helper as MR events |
-| `middleman_labels` | Add `platform_external_id`; keep name uniqueness per repo | Existing rows keep empty external id; label display remains `(repo_id, name)` | Keep unique `(repo_id, name)`; add partial unique `(repo_id, platform_external_id)` where non-empty |
-| `middleman_merge_request_labels`, `middleman_issue_labels` | No schema change | Parent item and label rows carry provider identity | Query helpers join through item/label parents |
-| `middleman_repo_overviews` | No repo identity columns needed; review `releases_json` for provider external ids before GitLab releases land | Rows are keyed by `repo_id`, so historical data already inherits provider identity | Release/tag persistence helpers should include provider external ids inside JSON or move to normalized tables before non-numeric ids are needed |
-| `middleman_workspaces` | Add `platform`, `repo_path`, and preferably nullable `repo_id`; keep old denormalized fields as compatibility columns during migration | Existing rows backfill `platform = 'github'`; resolve `repo_id` by current host/owner/name where possible. If no repo exists, preserve old fields and leave `repo_id` null until the workspace is re-associated | Unique workspace identity becomes `(platform, platform_host, repo_path_key, item_type, item_number)` or `(repo_id, item_type, item_number)` when `repo_id` is known; replace lower-case workspace triggers with provider-aware keys |
-| `middleman_workspace_setup_events`, `middleman_workspace_tmux_sessions` | No schema change | Inherit provider identity through `workspace_id` | No new indexes |
-| `middleman_starred_items` | No schema change | Already keyed by `repo_id`, `item_type`, `number` | API/list helpers must return `RepoRefResponse` from joined repo rows |
-| `middleman_stacks`, `middleman_stack_members` | No schema change | Already keyed by `repo_id` or `merge_request_id` | Stack queries must join repos when returning route refs |
-| `middleman_kanban_state`, `middleman_mr_worktree_links` | No schema change | Inherit provider identity through `merge_request_id` | API/list helpers must join repos when returning route refs |
-| `middleman_rate_limits` | Add `platform`; keep `platform_host` and `api_type` | Existing rows backfill `platform = 'github'`; preserve bucket values | Unique `(platform, platform_host, api_type)` |
-| List/search/dashboard/activity/settings API responses | Response-shape change, not necessarily table change | Historical rows tied through `repo_id` need no cleanup; unresolved historical workspace rows return their preserved GitHub-compatible ref | Use one `RepoRefResponse` helper rather than ad hoc owner/name reconstruction |
+| Table or API surface                                                    | Change                                                                                                                                 | Backfill and cleanup                                                                                                                                                                                            | Indexes/query helpers                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | --- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `middleman_repos`                                                       | Add `repo_path`, lookup keys, `platform_repo_id`, `web_url`, `clone_url`, `default_branch`                                             | Existing rows backfill to `platform = 'github'`, `repo_path = owner                                                                                                                                             |                                                                                                                                                                                                                                     | '/' |     | name`, GitHub case-folded keys, empty provider metadata | Unique `(platform, platform_host, owner_key, name_key)` or equivalent helper; partial unique `(platform, platform_host, platform_repo_id)` where non-empty; `UpsertRepoByProviderID` |
+| `middleman_merge_requests`                                              | Add `platform_external_id`; keep numeric `platform_id`                                                                                 | Existing rows keep empty external id because GitHub numeric ids remain valid                                                                                                                                    | Keep unique `(repo_id, number)` and `(repo_id, platform_id)`; add partial unique `(repo_id, platform_external_id)` where non-empty                                                                                                  |
+| `middleman_issues`                                                      | Add `platform_external_id`; keep numeric `platform_id`                                                                                 | Existing rows keep empty external id                                                                                                                                                                            | Keep unique `(repo_id, number)` and `(repo_id, platform_id)`; add partial unique `(repo_id, platform_external_id)` where non-empty                                                                                                  |
+| `middleman_mr_events`                                                   | Add `platform_external_id`; rebuild new event dedupe keys only for newly synced rows                                                   | Historical rows remain tied to provider through `merge_request_id -> repo_id`; no destructive cleanup required                                                                                                  | New dedupe helper includes provider, host, repo, parent item kind/id, event kind, and provider event id/external id                                                                                                                 |
+| `middleman_issue_events`                                                | Add `platform_external_id`; rebuild new event dedupe keys only for newly synced rows                                                   | Historical rows remain tied to provider through `issue_id -> repo_id`; no destructive cleanup required                                                                                                          | Same provider-scoped dedupe helper as MR events                                                                                                                                                                                     |
+| `middleman_labels`                                                      | Add `platform_external_id`; keep name uniqueness per repo                                                                              | Existing rows keep empty external id; label display remains `(repo_id, name)`                                                                                                                                   | Keep unique `(repo_id, name)`; add partial unique `(repo_id, platform_external_id)` where non-empty                                                                                                                                 |
+| `middleman_merge_request_labels`, `middleman_issue_labels`              | No schema change                                                                                                                       | Parent item and label rows carry provider identity                                                                                                                                                              | Query helpers join through item/label parents                                                                                                                                                                                       |
+| `middleman_repo_overviews`                                              | No repo identity columns needed; review `releases_json` for provider external ids before GitLab releases land                          | Rows are keyed by `repo_id`, so historical data already inherits provider identity                                                                                                                              | Release/tag persistence helpers should include provider external ids inside JSON or move to normalized tables before non-numeric ids are needed                                                                                     |
+| `middleman_workspaces`                                                  | Add `platform`, `repo_path`, and preferably nullable `repo_id`; keep old denormalized fields as compatibility columns during migration | Existing rows backfill `platform = 'github'`; resolve `repo_id` by current host/owner/name where possible. If no repo exists, preserve old fields and leave `repo_id` null until the workspace is re-associated | Unique workspace identity becomes `(platform, platform_host, repo_path_key, item_type, item_number)` or `(repo_id, item_type, item_number)` when `repo_id` is known; replace lower-case workspace triggers with provider-aware keys |
+| `middleman_workspace_setup_events`, `middleman_workspace_tmux_sessions` | No schema change                                                                                                                       | Inherit provider identity through `workspace_id`                                                                                                                                                                | No new indexes                                                                                                                                                                                                                      |
+| `middleman_starred_items`                                               | No schema change                                                                                                                       | Already keyed by `repo_id`, `item_type`, `number`                                                                                                                                                               | API/list helpers must return `RepoRefResponse` from joined repo rows                                                                                                                                                                |
+| `middleman_stacks`, `middleman_stack_members`                           | No schema change                                                                                                                       | Already keyed by `repo_id` or `merge_request_id`                                                                                                                                                                | Stack queries must join repos when returning route refs                                                                                                                                                                             |
+| `middleman_kanban_state`, `middleman_mr_worktree_links`                 | No schema change                                                                                                                       | Inherit provider identity through `merge_request_id`                                                                                                                                                            | API/list helpers must join repos when returning route refs                                                                                                                                                                          |
+| `middleman_rate_limits`                                                 | Add `platform`; keep `platform_host` and `api_type`                                                                                    | Existing rows backfill `platform = 'github'`; preserve bucket values                                                                                                                                            | Unique `(platform, platform_host, api_type)`                                                                                                                                                                                        |
+| List/search/dashboard/activity/settings API responses                   | Response-shape change, not necessarily table change                                                                                    | Historical rows tied through `repo_id` need no cleanup; unresolved historical workspace rows return their preserved GitHub-compatible ref                                                                       | Use one `RepoRefResponse` helper rather than ad hoc owner/name reconstruction                                                                                                                                                       |
 
 ### Self-Hosted GitLab URLs
 
@@ -493,6 +493,7 @@ Standing rule for API work: every task that changes Huma routes, request schemas
 ### Task 1: Add Neutral Platform Types
 
 **Files:**
+
 - Create: `internal/platform/types.go`
 - Create: `internal/platform/client.go`
 - Create: `internal/platform/registry.go`
@@ -510,6 +511,7 @@ Standing rule for API work: every task that changes Huma routes, request schemas
 ### Task 2: Persist Repository Identity And Provider Metadata
 
 **Files:**
+
 - Modify: `internal/db/types.go`
 - Modify: `internal/db/queries.go`
 - Create: `internal/db/migrations/000017_platform_repo_identity.up.sql`
@@ -552,6 +554,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 ### Task 2A: Replace Repo And Workspace Canonicalization
 
 **Files:**
+
 - Modify: `internal/db/queries.go`
 - Modify: `internal/db/migrations/000017_platform_repo_identity.up.sql`
 - Modify: `internal/db/migrations/000017_platform_repo_identity.down.sql`
@@ -568,6 +571,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 ### Task 2B: Make Workspace And List Refs Provider-Aware
 
 **Files:**
+
 - Modify: `internal/db/types.go`
 - Modify: `internal/db/queries.go`
 - Modify: `internal/db/migrations/000017_platform_repo_identity.up.sql`
@@ -585,6 +589,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 ### Task 2C: Scope External Item And Event IDs
 
 **Files:**
+
 - Modify: `internal/db/types.go`
 - Modify: `internal/db/queries.go`
 - Modify: `internal/db/migrations/000017_platform_repo_identity.up.sql`
@@ -601,6 +606,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 ### Task 2D: Key Rate Limits By Provider
 
 **Files:**
+
 - Modify: `internal/db/types.go`
 - Modify: `internal/db/queries.go`
 - Modify: `internal/db/migrations/000017_platform_repo_identity.up.sql`
@@ -617,6 +623,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 ### Task 3: Generalize Config And Token Resolution
 
 **Files:**
+
 - Modify: `internal/config/config.go`
 - Modify: `config.example.toml`
 - Test: `internal/config/config_test.go`
@@ -634,6 +641,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 ### Task 4: Wrap GitHub In The Platform Adapter
 
 **Files:**
+
 - Create: `internal/platform/github/adapter.go`
 - Create: `internal/platform/github/normalize.go`
 - Test: `internal/platform/github/normalize_test.go`
@@ -650,6 +658,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 ### Task 5: Add Platform-Aware Repo Routes
 
 **Files:**
+
 - Create: `internal/server/repo_ref.go`
 - Modify: `internal/server/huma_routes.go`
 - Modify: `internal/server/api_types.go`
@@ -684,6 +693,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ### Task 6: Wire Syncer Registry Lookup
 
 **Files:**
+
 - Modify: `internal/github/sync.go`
 - Modify: `internal/github/repo_config_resolver.go`
 - Create or modify: `internal/platform/persist.go`
@@ -702,6 +712,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ### Task 7: Propagate Full RepoRef Through Sync Paths
 
 **Files:**
+
 - Modify: `internal/github/sync.go`
 - Modify: `internal/github/queue.go`
 - Modify: `internal/github/repo_config_resolver.go`
@@ -717,6 +728,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ### Task 8: Preserve GitHub Optimizations And Diff Behavior
 
 **Files:**
+
 - Modify: `internal/github/sync.go`
 - Modify: `internal/platform/client.go`
 - Test: `internal/github/sync_test.go`
@@ -732,6 +744,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ### Task 9: Add GitLab Client And Normalization
 
 **Files:**
+
 - Create: `internal/platform/gitlab/client.go`
 - Create: `internal/platform/gitlab/normalize.go`
 - Create: `internal/platform/gitlab/client_test.go`
@@ -759,6 +772,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ### Task 10: Wire Runtime Client Construction
 
 **Files:**
+
 - Modify: `cmd/middleman/main.go`
 - Modify: `middleman.go`
 - Modify: `cmd/e2e-server/main.go`
@@ -777,6 +791,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ### Task 11: Provider-Aware Repository Import
 
 **Files:**
+
 - Modify: `internal/server/repo_import_handlers.go`
 - Modify: `internal/server/settings_handlers.go`
 - Modify: `internal/server/api_types.go`
@@ -814,6 +829,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ### Task 12: Gate Provider-Specific Actions
 
 **Files:**
+
 - Modify: `internal/server/huma_routes.go`
 - Modify: `internal/server/api_types.go`
 - Modify: `packages/ui/src/api/types.ts`
@@ -834,6 +850,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ### Task 13: GitLab Sync E2E
 
 **Files:**
+
 - Create or modify: `internal/server/gitlab_sync_e2e_test.go`
 - Modify: `internal/testutil/fixture_client.go` only if shared fixture support is useful
 - Test: `internal/server/gitlab_sync_e2e_test.go`
@@ -854,6 +871,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ### Task 13A: Optional Real GitLab CE Container E2E
 
 **Files:**
+
 - Create: `scripts/e2e/gitlab/docker-compose.yml`
 - Create: `scripts/e2e/gitlab/wait.sh`
 - Create: `scripts/e2e/gitlab/bootstrap.sh`
@@ -876,6 +894,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ### Task 14: Documentation And Invariants
 
 **Files:**
+
 - Create: `context/platform-sync-invariants.md`
 - Modify: `context/github-sync-invariants.md`
 - Modify: `README.md`

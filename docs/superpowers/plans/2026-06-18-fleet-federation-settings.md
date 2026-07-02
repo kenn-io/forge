@@ -13,6 +13,7 @@
 ### Task 1: Backend Config And Fleet Gate
 
 **Files:**
+
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go`
 - Modify: `internal/server/fleet_hub.go`
@@ -63,6 +64,7 @@ Expected: pass.
 ### Task 2: Fleet Settings API
 
 **Files:**
+
 - Modify: `internal/server/settings_handlers.go`
 - Modify: `internal/server/settings_routes.go`
 - Modify: `internal/server/e2etest/settings_test.go`
@@ -104,6 +106,7 @@ Expected: generated schema/client files include fleet settings types and `/setti
 ### Task 3: Frontend API And Settings Panel
 
 **Files:**
+
 - Modify: `packages/ui/src/api/types.ts`
 - Modify: `frontend/src/lib/api/settings.ts`
 - Modify: `frontend/src/lib/components/settings/SettingsPage.svelte`
@@ -143,6 +146,7 @@ Expected: tests pass and autofixer reports no required changes.
 ### Task 4: Workspace Sidebar Fleet Indicator
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte`
 - Test: `frontend/src/lib/components/terminal/WorkspaceListSidebar.test.ts`
 
@@ -171,6 +175,7 @@ Expected: tests pass and autofixer reports no required changes.
 ### Task 5: Final Verification
 
 **Files:**
+
 - All modified files
 
 - [x] **Step 1: Run focused Go tests**

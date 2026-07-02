@@ -124,15 +124,14 @@ export { default as CommentEditor } from "./components/detail/CommentEditor.svel
 export { Chip } from "@kenn-io/kit-ui";
 export { default as ItemKindChip } from "./components/shared/ItemKindChip.svelte";
 export { default as ItemStateChip } from "./components/shared/ItemStateChip.svelte";
-export { default as CollapsibleResizableSidebar } from "./components/shared/CollapsibleResizableSidebar.svelte";
-export { default as LeftSidebarToggle } from "./components/shared/LeftSidebarToggle.svelte";
+export { CollapsibleSidebar, SidebarToggle } from "@kenn-io/kit-ui";
 export { DiffStats } from "@kenn-io/kit-ui";
 export { FilterDropdown } from "@kenn-io/kit-ui";
 export type { FilterDropdownItem, FilterDropdownSection } from "@kenn-io/kit-ui";
 export { SelectDropdown } from "@kenn-io/kit-ui";
 export type { SelectDropdownOption } from "@kenn-io/kit-ui";
-export { default as SplitResizeHandle } from "./components/shared/SplitResizeHandle.svelte";
-export type { SplitResizeEvent } from "./components/shared/split-resize.js";
+export { SplitResizeHandle } from "@kenn-io/kit-ui";
+export type { SplitResizeEvent } from "@kenn-io/kit-ui";
 export { default as TabbedPanelTree } from "./components/shared/TabbedPanelTree.svelte";
 export {
   clearActiveTabbedPanelDrag,

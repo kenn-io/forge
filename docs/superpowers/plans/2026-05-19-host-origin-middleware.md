@@ -142,14 +142,14 @@ git commit -m "feat(server): add Host validation middleware (no wiring yet)"
        `config.Load` so `Validate()` cached the bind key), derive
        the entire option set from cfg —
        `HostCheckOptions{Bind: cfg.BindHostKey(), Allowed:
-       cfg.ParsedAllowedHosts(), TrustReverseProxy:
-       cfg.TrustReverseProxy}`. Done.
+cfg.ParsedAllowedHosts(), TrustReverseProxy:
+cfg.TrustReverseProxy}`. Done.
     3. **Test-friendly default.** Else if `cfg == nil` AND
        `ServerOptions.HostCheck` is zero, install the documented
        fallback:
        `HostCheckOptions{Bind: {127.0.0.1, 8091}, Allowed:
-       [{example.com, ""}, {middleman.test, ""}],
-       TrustReverseProxy: false}`. This exists so the dozens of
+[{example.com, ""}, {middleman.test, ""}],
+TrustReverseProxy: false}`. This exists so the dozens of
        pre-existing test helpers that construct servers with
        `cfg = nil` keep working without per-test churn. The
        default does NOT accept `attacker.example` or other
@@ -193,7 +193,7 @@ git commit -m "feat(server): add Host validation middleware (no wiring yet)"
     `ServerOptions.HostCheck` so step 1 of the precedence rule
     provides the bind without touching the cfg literal:
     `ServerOptions{HostCheck: server.HostCheckOptions{Bind:
-    config.HostKey{Host: "127.0.0.1", Port: "8091"}}}`. cfg
+config.HostKey{Host: "127.0.0.1", Port: "8091"}}}`. cfg
     stays partial for the test's original purpose.
   - `internal/server/workspacetest/fixtures_test.go:92` —
     `server.New(database, syncer, nil, basePath, cfg, ...)`. cfg
@@ -232,8 +232,8 @@ git commit -m "feat(server): wire Host validation into the request chain"
 
 - Add `internal/server/host_check_test.go` exercising every row of
   the spec's wire-level table. A helper `setupHostCheckServer(t,
-  HostCheckOptions)` builds a `Server` via `New(..., nil, "/",
-  nil, ServerOptions{HostCheck: opts})` so each table row controls
+HostCheckOptions)` builds a `Server` via `New(..., nil, "/",
+nil, ServerOptions{HostCheck: opts})` so each table row controls
   bind, allowed_hosts, and trust_reverse_proxy precisely.
 - Tests use `require.NoError` / `assert.Equal` / `assert.New(t)`.
 - Each row issues `srv.ServeHTTP(rr, req)` with `req.Host` /

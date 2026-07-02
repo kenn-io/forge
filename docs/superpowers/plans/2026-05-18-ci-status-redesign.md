@@ -11,9 +11,10 @@
 **Spec:** `docs/superpowers/specs/2026-05-18-ci-status-redesign-design.md`
 
 **Non-goals (compatibility assumptions):**
+
 - The redesigned chip, dropdown, and sidebar do NOT read `pr.CIStatus` directly — `CIStatus` keeps its non-UI consumers (`stack_health.go`, sync paths) untouched, but the redesigned surfaces gate solely on parsed checks.
 - Empty `CIChecksJSON` hides the chip even when `CIStatus` is non-empty (transient sync state); the chip never falls back to status-only rendering.
-- The reduced-motion swap is "next-render-aware" via getter reads of `matchMedia.matches`; it does NOT subscribe to live preference changes (see the `prefersReducedMotion` rationale in Task 7). **Acceptance for visual verification:** capture the chip in both motion states by setting the OS preference *before* navigating to the page (or before clicking the chip to expand). If the user toggles the OS-level reduced-motion setting while a view is already mounted and otherwise idle, the loader-circle/static-circle swap will not re-render until something else triggers a re-render. This is intentional — a subscription-based helper is out of scope for v1.
+- The reduced-motion swap is "next-render-aware" via getter reads of `matchMedia.matches`; it does NOT subscribe to live preference changes (see the `prefersReducedMotion` rationale in Task 7). **Acceptance for visual verification:** capture the chip in both motion states by setting the OS preference _before_ navigating to the page (or before clicking the chip to expand). If the user toggles the OS-level reduced-motion setting while a view is already mounted and otherwise idle, the loader-circle/static-circle swap will not re-render until something else triggers a re-render. This is intentional — a subscription-based helper is out of scope for v1.
 - Provider identity is not surfaced in the CI UI — the repo chip elsewhere already conveys it.
 - Required-vs-optional check distinction is not surfaced in v1 (data is available on `CICheck.required` for future work).
 - Sidebar diagnostic visibility on malformed CI relies on the row button's accessible name + token `title` attribute, not on a separate focus-visible popover. The detail chip carries the popover treatment because it's the primary diagnostic surface; the sidebar is a triage surface and inherits the row button's focus path. This is intentional — the design trades sidebar-specific keyboard popover affordance for row density.
@@ -38,7 +39,7 @@
 - The malformed-chip popover anchors below the chip and may clip the viewport edge if the chip sits at the bottom-right corner. Acceptable v1 limitation — the `title` attribute and aria-describedby still expose the diagnostic when the popover is partially off-screen. Future work can add viewport-edge detection.
 - Extremely large `CIChecksJSON` arrays (e.g. 500+ checks) within the 64 KiB cache cap: the LRU parses once and reuses. The dropdown renders Failed/Pending/Unknown rows in full (these are actionable) and Passed/Skipped only their first 8 + "Show N more"; the `min(340px, 50vh)` scroll cap keeps the panel bounded even when Show-N-more is expanded. The cluster rendering is linear in token count (at most 5 tokens), independent of array length. No additional pagination is planned for v1.
 - Malformed CI does not directly affect merge-warning affordances. The merge-warning lines in `PullDetail.svelte` (conflict, branch protection, behind) are driven by `pr.MergeableState`, not by `CIChecksJSON`. The "CI unavailable" chip surfaces the diagnostic; merge warnings stay independent.
-- Unknown `status` values (anything not in the active set and not `"completed"`) are **not** auto-routed to Pending. Following the spec's 6-step precedence, after the active-status check the classifier falls through to conclusion-based bucketing. So `status: "weird", conclusion: "success"` → Passed; `status: "weird", conclusion: ""` → Pending (step 6's fallback only when conclusion is also empty). This avoids trapping otherwise-resolved checks in Pending just because the provider's status string drifted. Unknown statuses are not warned because the warning system targets unrecognised *conclusions*, where treating an unknown failure-like value as Passed/Skipped would actually be misleading.
+- Unknown `status` values (anything not in the active set and not `"completed"`) are **not** auto-routed to Pending. Following the spec's 6-step precedence, after the active-status check the classifier falls through to conclusion-based bucketing. So `status: "weird", conclusion: "success"` → Passed; `status: "weird", conclusion: ""` → Pending (step 6's fallback only when conclusion is also empty). This avoids trapping otherwise-resolved checks in Pending just because the provider's status string drifted. Unknown statuses are not warned because the warning system targets unrecognised _conclusions_, where treating an unknown failure-like value as Passed/Skipped would actually be misleading.
 - **No whitespace/case normalisation on `status` or `conclusion`.** `bucketForCheck` compares against the active-status `Set` and the failed/skipped-conclusion `Set`s by strict equality. A provider sending `"Success"` (capital S) or `" success "` (with leading/trailing whitespace) won't match `"success"` and will fall through to Unknown. This is intentional for v1: all four supported providers' normalisation layers in `internal/platform/<provider>/` already emit lowercase, trimmed values; any drift surfaces as a provider-side bug we want to see via the unknown-conclusion warning. Normalising silently in the frontend would hide that signal. If a future provider's normalisation layer is found to ship whitespace/case-inconsistent values, the fix belongs in `internal/platform/<provider>/` (so all consumers benefit), not in `bucketForCheck`.
 - The new `/__e2e/pr-ci-state/{mixed,malformed,status-only,dropdown-mixed}` endpoints mutate the global PR #1 row in the e2e server's DB. They are safe only under `startIsolatedE2EServer`, which the Playwright specs already use — each spec file gets a fresh SQLite DB seeded from `cmd/e2e-server`'s default fixtures, so cross-spec pollution is impossible. If a future test runner shares one DB across spec files (it doesn't today), the order-dependent shape of these endpoints would surface as flake. The existing `pr-ci-state/pending` and `pr-ci-state/success` endpoints already rely on this isolation; the new endpoints follow the same contract.
 
@@ -48,16 +49,16 @@ For the full spec including state taxonomy, edge cases, and accessibility contra
 
 The redesign is correct when each payload shape produces the expected output on every surface:
 
-| Payload shape                                                                                   | Chip                                             | Sidebar token                                 | Dropdown                                          |
-| ----------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------- | ------------------------------------------------- |
-| Empty (`""` or whitespace)                                                                      | Hidden                                           | Hidden                                        | Hidden                                            |
-| Malformed (non-empty, parse-fails)                                                              | "CI: unavailable", focus-visible popover         | `circle-alert` token (amber/warning, see below), row a11y carries error | Hidden (chip's panel skips when `isUnavailable`)  |
-| All passed (any positive count of successes)                                                    | One Passed token with the count                  | One Passed compact token with the count       | Passed section (first 8 + "Show N more" when >8); illustrative case in docs uses 26 |
-| Mixed-small — 1 failed / 1 pending / 2 passed / 1 skipped (Task 10 `mixed` fixture)             | Tokens F/Pe/Pa/Sk with counts                    | Same vocab, compact size                      | All non-zero sections in fixed order              |
-| Mixed-large — 1 failed / 5 pending / 12 passed / 2 skipped / 1 unknown (Task 12 `dropdown-mixed` fixture) | Tokens F/Pe/U/Pa/Sk with counts                  | Same vocab, compact size                      | Passed shows 8 rows + "Show 4 more" affordance    |
-| Unknown-only (1 conclusion the frontend doesn't recognise)                                      | One Unknown token "1"                            | One Unknown compact token "1"                 | Unknown section (1 row), console.warn fires once  |
-| Status-only (`CIStatus` non-empty, `CIChecksJSON` empty)                                        | Hidden                                           | Hidden                                        | Hidden                                            |
-| Pending precedence (status=in_progress, conclusion=failure)                                     | One Pending token "1" (not Failed)               | Same                                          | Pending section only                              |
+| Payload shape                                                                                             | Chip                                     | Sidebar token                                                           | Dropdown                                                                            |
+| --------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Empty (`""` or whitespace)                                                                                | Hidden                                   | Hidden                                                                  | Hidden                                                                              |
+| Malformed (non-empty, parse-fails)                                                                        | "CI: unavailable", focus-visible popover | `circle-alert` token (amber/warning, see below), row a11y carries error | Hidden (chip's panel skips when `isUnavailable`)                                    |
+| All passed (any positive count of successes)                                                              | One Passed token with the count          | One Passed compact token with the count                                 | Passed section (first 8 + "Show N more" when >8); illustrative case in docs uses 26 |
+| Mixed-small — 1 failed / 1 pending / 2 passed / 1 skipped (Task 10 `mixed` fixture)                       | Tokens F/Pe/Pa/Sk with counts            | Same vocab, compact size                                                | All non-zero sections in fixed order                                                |
+| Mixed-large — 1 failed / 5 pending / 12 passed / 2 skipped / 1 unknown (Task 12 `dropdown-mixed` fixture) | Tokens F/Pe/U/Pa/Sk with counts          | Same vocab, compact size                                                | Passed shows 8 rows + "Show 4 more" affordance                                      |
+| Unknown-only (1 conclusion the frontend doesn't recognise)                                                | One Unknown token "1"                    | One Unknown compact token "1"                                           | Unknown section (1 row), console.warn fires once                                    |
+| Status-only (`CIStatus` non-empty, `CIChecksJSON` empty)                                                  | Hidden                                   | Hidden                                                                  | Hidden                                                                              |
+| Pending precedence (status=in_progress, conclusion=failure)                                               | One Pending token "1" (not Failed)       | Same                                                                    | Pending section only                                                                |
 
 The two Mixed rows exist because chip and sidebar tests don't need a large payload (the chip cares about multi-bucket presence + count format; the sidebar cares about compact rendering), while the dropdown tests do (the "Show N more" affordance only fires past 8 passed checks). The Mixed-small fixture keeps chip/sidebar tests fast; Mixed-large exercises the dropdown's truncation and Unknown section together.
 
@@ -68,6 +69,7 @@ Each row is a positive acceptance criterion for at least one unit, component, or
 ## File Structure
 
 **Create:**
+
 - `packages/ui/src/utils/ci-buckets.ts` — pure parse + classify
 - `packages/ui/src/utils/ci-buckets.test.ts` — unit tests for pure core
 - `packages/ui/src/utils/ci-buckets-warn.ts` — side-effect warning helpers
@@ -80,6 +82,7 @@ Each row is a positive acceptance criterion for at least one unit, component, or
 - `frontend/tests/e2e-full/pull-list-ci.spec.ts` — sidebar full-stack e2e
 
 **Modify:**
+
 - `packages/ui/src/components/shared/Chip.svelte` — accept and forward `ariaLabel` / `dataTestid` props (Task 9a)
 - `packages/ui/src/components/detail/CIStatus.svelte` — switch to shared cluster + bucketing
 - `packages/ui/src/components/detail/CIStatus.test.ts` — update existing tests, add new
@@ -95,6 +98,7 @@ Each row is a positive acceptance criterion for at least one unit, component, or
 ### Task 1: Define bucket types and `bucketForCheck`
 
 **Files:**
+
 - Create: `packages/ui/src/utils/ci-buckets.ts`
 - Create: `packages/ui/src/utils/ci-buckets.test.ts`
 
@@ -123,16 +127,11 @@ describe("bucketForCheck", () => {
   });
 
   it("pending status takes precedence over conclusion", () => {
-    expect(
-      bucketForCheck(check({ status: "in_progress", conclusion: "failure" })),
-    ).toBe("pending");
+    expect(bucketForCheck(check({ status: "in_progress", conclusion: "failure" }))).toBe("pending");
   });
 
   it("returns failed for known failure conclusions", () => {
-    for (const conclusion of [
-      "failure", "cancelled", "timed_out",
-      "action_required", "stale", "startup_failure",
-    ]) {
+    for (const conclusion of ["failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure"]) {
       expect(bucketForCheck(check({ conclusion }))).toBe("failed");
     }
   });
@@ -147,36 +146,24 @@ describe("bucketForCheck", () => {
   });
 
   it("returns unknown for non-empty unrecognised conclusions", () => {
-    expect(bucketForCheck(check({ conclusion: "weird_new_state" }))).toBe(
-      "unknown",
-    );
+    expect(bucketForCheck(check({ conclusion: "weird_new_state" }))).toBe("unknown");
   });
 
   it("returns pending when status is non-active and conclusion is empty", () => {
     expect(bucketForCheck(check({ status: "", conclusion: "" }))).toBe("pending");
-    expect(bucketForCheck(check({ status: "completed", conclusion: "" }))).toBe(
-      "pending",
-    );
+    expect(bucketForCheck(check({ status: "completed", conclusion: "" }))).toBe("pending");
   });
 
   it("trusts the conclusion when status is an unrecognised non-completed value", () => {
     // status='weird' is not 'completed' and not active. The classifier
     // falls through to conclusion-based bucketing, NOT Pending.
-    expect(
-      bucketForCheck(check({ status: "weird", conclusion: "success" })),
-    ).toBe("passed");
-    expect(
-      bucketForCheck(check({ status: "weird", conclusion: "failure" })),
-    ).toBe("failed");
-    expect(
-      bucketForCheck(check({ status: "weird", conclusion: "skipped" })),
-    ).toBe("skipped");
+    expect(bucketForCheck(check({ status: "weird", conclusion: "success" }))).toBe("passed");
+    expect(bucketForCheck(check({ status: "weird", conclusion: "failure" }))).toBe("failed");
+    expect(bucketForCheck(check({ status: "weird", conclusion: "skipped" }))).toBe("skipped");
   });
 
   it("returns pending for unrecognised status with empty conclusion (step 6 fallback)", () => {
-    expect(bucketForCheck(check({ status: "weird", conclusion: "" }))).toBe(
-      "pending",
-    );
+    expect(bucketForCheck(check({ status: "weird", conclusion: "" }))).toBe("pending");
   });
 });
 ```
@@ -194,12 +181,7 @@ import type { CICheck } from "../api/types.js";
 
 export type CIBucket = "failed" | "pending" | "passed" | "skipped" | "unknown";
 
-const ACTIVE_STATUSES = new Set([
-  "in_progress",
-  "queued",
-  "pending",
-  "waiting",
-]);
+const ACTIVE_STATUSES = new Set(["in_progress", "queued", "pending", "waiting"]);
 
 const FAILED_CONCLUSIONS = new Set([
   "failure",
@@ -239,6 +221,7 @@ git commit -m "feat(ui): add bucketForCheck classifier for CI checks"
 ### Task 2: Add `bucketCIChecks` aggregator with longest duration
 
 **Files:**
+
 - Modify: `packages/ui/src/utils/ci-buckets.ts`
 - Modify: `packages/ui/src/utils/ci-buckets.test.ts`
 
@@ -358,6 +341,7 @@ git commit -m "feat(ui): add bucketCIChecks aggregator with longest duration"
 ### Task 3: Add `parseCIChecks` with shape validation and duration normalization
 
 **Files:**
+
 - Modify: `packages/ui/src/utils/ci-buckets.ts`
 - Modify: `packages/ui/src/utils/ci-buckets.test.ts`
 
@@ -370,9 +354,7 @@ import { parseCIChecks } from "./ci-buckets.js";
 
 describe("parseCIChecks", () => {
   it("parses well-formed JSON into typed checks", () => {
-    const json = JSON.stringify([
-      { name: "build", status: "completed", conclusion: "success", url: "", app: "GH" },
-    ]);
+    const json = JSON.stringify([{ name: "build", status: "completed", conclusion: "success", url: "", app: "GH" }]);
     const result = parseCIChecks(json);
     expect(result.error).toBeNull();
     expect(result.checks.length).toBe(1);
@@ -517,8 +499,9 @@ it("safeDiagnosticText collapses native JSON.parse errors to content-free catego
 });
 
 it("safeDiagnosticText forwards locally-created CIChecksJSON shape errors intact", () => {
-  expect(safeDiagnosticText(new Error("CIChecksJSON: payload is not an array")))
-    .toBe("CIChecksJSON: payload is not an array");
+  expect(safeDiagnosticText(new Error("CIChecksJSON: payload is not an array"))).toBe(
+    "CIChecksJSON: payload is not an array",
+  );
 });
 ```
 
@@ -546,6 +529,7 @@ git commit -m "feat(ui): add parseCIChecks with shape validation and duration no
 ### Task 4: Wrap `parseCIChecks` in a byte-aware LRU cache
 
 **Files:**
+
 - Modify: `packages/ui/src/utils/ci-buckets.ts`
 - Modify: `packages/ui/src/utils/ci-buckets.test.ts`
 
@@ -554,10 +538,7 @@ git commit -m "feat(ui): add parseCIChecks with shape validation and duration no
 Append to `ci-buckets.test.ts`:
 
 ```typescript
-import {
-  __resetParseCIChecksCache,
-  __parseCIChecksCacheStats,
-} from "./ci-buckets.js";
+import { __resetParseCIChecksCache, __parseCIChecksCacheStats } from "./ci-buckets.js";
 
 describe("parseCIChecks LRU cache", () => {
   beforeEach(() => __resetParseCIChecksCache());
@@ -648,10 +629,7 @@ export function parseCIChecks(json: string): ParsedCIChecks {
   const result = parseCIChecksUncached(json);
   parseCache.set(json, { result, bytes });
   parseCacheBytes += bytes;
-  while (
-    parseCache.size > PARSE_CACHE_MAX_ENTRIES ||
-    parseCacheBytes > PARSE_CACHE_MAX_BYTES
-  ) {
+  while (parseCache.size > PARSE_CACHE_MAX_ENTRIES || parseCacheBytes > PARSE_CACHE_MAX_BYTES) {
     const oldestEntry = parseCache.entries().next().value;
     if (oldestEntry === undefined) break;
     parseCache.delete(oldestEntry[0]);
@@ -742,6 +720,7 @@ git commit -m "feat(ui): add byte-aware LRU cache to parseCIChecks"
 ### Task 5: Implement `warnOnUnknownConclusions` with de-dup
 
 **Files:**
+
 - Create: `packages/ui/src/utils/ci-buckets-warn.ts`
 - Create: `packages/ui/src/utils/ci-buckets-warn.test.ts`
 
@@ -750,10 +729,7 @@ git commit -m "feat(ui): add byte-aware LRU cache to parseCIChecks"
 ```typescript
 // packages/ui/src/utils/ci-buckets-warn.test.ts
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  warnOnUnknownConclusions,
-  __resetCIWarnings,
-} from "./ci-buckets-warn.js";
+import { warnOnUnknownConclusions, __resetCIWarnings } from "./ci-buckets-warn.js";
 import type { CICheck } from "../api/types.js";
 
 const check = (conclusion: string): CICheck => ({
@@ -830,19 +806,11 @@ const warnedUnknown = new Set<string>();
 const warnedMalformed = new Set<string>();
 
 function truncateConclusion(c: string): string {
-  return c.length > UNKNOWN_CONCLUSION_DISPLAY_MAX
-    ? `${c.slice(0, UNKNOWN_CONCLUSION_DISPLAY_MAX)}…`
-    : c;
+  return c.length > UNKNOWN_CONCLUSION_DISPLAY_MAX ? `${c.slice(0, UNKNOWN_CONCLUSION_DISPLAY_MAX)}…` : c;
 }
 
-export function warnOnUnknownConclusions(
-  unknown: CICheck[],
-  context?: { repo?: string; number?: number },
-): void {
-  const id =
-    context?.repo && context?.number !== undefined
-      ? `${context.repo}#${context.number}`
-      : "";
+export function warnOnUnknownConclusions(unknown: CICheck[], context?: { repo?: string; number?: number }): void {
+  const id = context?.repo && context?.number !== undefined ? `${context.repo}#${context.number}` : "";
   const idPrefix = id ? `[${id}] ` : "";
   for (const c of unknown) {
     const display = truncateConclusion(c.conclusion);
@@ -876,6 +844,7 @@ git commit -m "feat(ui): add unknown-conclusion warning helper"
 ### Task 6: Implement `warnOnMalformedCIChecksJSON` with FNV-1a hash + truncation
 
 **Files:**
+
 - Modify: `packages/ui/src/utils/ci-buckets-warn.ts`
 - Modify: `packages/ui/src/utils/ci-buckets-warn.test.ts`
 
@@ -974,7 +943,7 @@ describe("warnOnMalformedCIChecksJSON", () => {
   it("includes PR identifier when context is provided", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     warnOnMalformedCIChecksJSON("{}", new Error("bad"), { repo: "x/y", number: 42 });
-    expect((spy.mock.calls[0]?.[0] as string)).toContain("x/y#42");
+    expect(spy.mock.calls[0]?.[0] as string).toContain("x/y#42");
     spy.mockRestore();
   });
 });
@@ -997,10 +966,7 @@ const DEV_PAYLOAD_PREVIEW_MAX = 64;
 // the module. Production builds inline this away via Vite's compile-time
 // `import.meta.env.DEV` replacement.
 function isDevMode(): boolean {
-  return (
-    typeof import.meta !== "undefined" &&
-    (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true
-  );
+  return typeof import.meta !== "undefined" && (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
 }
 
 function fnv1a(input: string): string {
@@ -1040,10 +1006,7 @@ export function warnOnMalformedCIChecksJSON(
   error: Error,
   context?: { repo?: string; number?: number },
 ): void {
-  const id =
-    context?.repo && context?.number !== undefined
-      ? `${context.repo}#${context.number}`
-      : "";
+  const id = context?.repo && context?.number !== undefined ? `${context.repo}#${context.number}` : "";
   const hash = fnv1a(raw);
   const key = `${id}|${hash}`;
   if (warnedMalformed.has(key)) return;
@@ -1062,9 +1025,7 @@ export function warnOnMalformedCIChecksJSON(
       `${idPrefix}Malformed CIChecksJSON: ${error.message} (length=${raw.length}, hash=${hash})${previewClause}`,
     );
   } else {
-    console.warn(
-      `${idPrefix}Malformed CIChecksJSON: ${category} (length=${raw.length}, hash=${hash})`,
-    );
+    console.warn(`${idPrefix}Malformed CIChecksJSON: ${category} (length=${raw.length}, hash=${hash})`);
   }
 }
 ```
@@ -1088,6 +1049,7 @@ git commit -m "feat(ui): add malformed-JSON warning helper with FNV hash de-dup"
 ### Task 7: `prefersReducedMotion` Svelte helper
 
 **Files:**
+
 - Create: `packages/ui/src/utils/prefers-reduced-motion.svelte.ts`
 - Create: `packages/ui/src/utils/prefers-reduced-motion.svelte.test.ts`
 
@@ -1096,10 +1058,7 @@ git commit -m "feat(ui): add malformed-JSON warning helper with FNV hash de-dup"
 ```typescript
 // packages/ui/src/utils/prefers-reduced-motion.svelte.test.ts
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  prefersReducedMotion,
-  __resetPrefersReducedMotion,
-} from "./prefers-reduced-motion.svelte.js";
+import { prefersReducedMotion, __resetPrefersReducedMotion } from "./prefers-reduced-motion.svelte.js";
 
 function stubMatchMedia(initialMatches: boolean) {
   const mql = { matches: initialMatches } as MediaQueryList;
@@ -1200,6 +1159,7 @@ git commit -m "feat(ui): add prefersReducedMotion Svelte helper"
 ### Task 8: `CITokenCluster.svelte` shared component
 
 **Files:**
+
 - Create: `packages/ui/src/components/shared/CITokenCluster.svelte`
 - Create: `packages/ui/src/components/shared/CITokenCluster.test.ts`
 
@@ -1214,17 +1174,28 @@ import { composeAriaLabel } from "./CITokenCluster.svelte";
 import type { CIBucketedChecks } from "../../utils/ci-buckets.js";
 import { __resetPrefersReducedMotion } from "../../utils/prefers-reduced-motion.svelte.js";
 
-function bucketed(counts: Partial<Record<"failed" | "pending" | "passed" | "skipped" | "unknown", number>>): CIBucketedChecks {
-  const make = (n: number) => Array.from({ length: n }, () => ({
-    name: "", status: "completed", conclusion: "", url: "", app: "",
-  }));
+function bucketed(
+  counts: Partial<Record<"failed" | "pending" | "passed" | "skipped" | "unknown", number>>,
+): CIBucketedChecks {
+  const make = (n: number) =>
+    Array.from({ length: n }, () => ({
+      name: "",
+      status: "completed",
+      conclusion: "",
+      url: "",
+      app: "",
+    }));
   const failed = make(counts.failed ?? 0);
   const pending = make(counts.pending ?? 0);
   const passed = make(counts.passed ?? 0);
   const skipped = make(counts.skipped ?? 0);
   const unknown = make(counts.unknown ?? 0);
   return {
-    failed, pending, passed, skipped, unknown,
+    failed,
+    pending,
+    passed,
+    skipped,
+    unknown,
     all: [...failed, ...pending, ...unknown, ...passed, ...skipped],
     longestCompletedDurationSeconds: undefined,
   };
@@ -1249,7 +1220,7 @@ describe("CITokenCluster", () => {
       props: { bucketed: bucketed({ failed: 1, pending: 2, unknown: 3, passed: 4, skipped: 5 }), size: "default" },
     });
     const tokens = document.querySelectorAll("[data-testid^='ci-token-']");
-    const ids = Array.from(tokens).map(t => t.getAttribute("data-testid"));
+    const ids = Array.from(tokens).map((t) => t.getAttribute("data-testid"));
     expect(ids).toEqual([
       "ci-token-failed",
       "ci-token-pending",
@@ -1272,8 +1243,12 @@ describe("CITokenCluster", () => {
 
   it("pending token has the spin class when prefers-reduced-motion: reduce is OFF (animated chip path)", () => {
     // matchMedia stub returning matches=false ↔ reduced-motion preference is OFF.
-    const mqlOff = { matches: false, media: "(prefers-reduced-motion: reduce)",
-                     addEventListener: () => {}, removeEventListener: () => {} };
+    const mqlOff = {
+      matches: false,
+      media: "(prefers-reduced-motion: reduce)",
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue(mqlOff));
     // Force the helper to re-read by resetting its module-scoped cache.
     __resetPrefersReducedMotion();
@@ -1288,8 +1263,12 @@ describe("CITokenCluster", () => {
   });
 
   it("pending token has no spin class when prefers-reduced-motion: reduce is ON (static chip path)", () => {
-    const mqlOn = { matches: true, media: "(prefers-reduced-motion: reduce)",
-                    addEventListener: () => {}, removeEventListener: () => {} };
+    const mqlOn = {
+      matches: true,
+      media: "(prefers-reduced-motion: reduce)",
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue(mqlOn));
     __resetPrefersReducedMotion();
     render(CITokenCluster, {
@@ -1302,8 +1281,12 @@ describe("CITokenCluster", () => {
   });
 
   it("pending token has no spin class when pendingStyle='static' (sidebar path) regardless of reduced-motion", () => {
-    const mqlOff = { matches: false, media: "(prefers-reduced-motion: reduce)",
-                     addEventListener: () => {}, removeEventListener: () => {} };
+    const mqlOff = {
+      matches: false,
+      media: "(prefers-reduced-motion: reduce)",
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue(mqlOff));
     __resetPrefersReducedMotion();
     render(CITokenCluster, {
@@ -1317,9 +1300,7 @@ describe("CITokenCluster", () => {
 
 describe("composeAriaLabel", () => {
   it("uses singular for 1, plural for others", () => {
-    expect(composeAriaLabel(bucketed({ failed: 1, pending: 5 }))).toBe(
-      "CI: 1 failed check, 5 pending checks",
-    );
+    expect(composeAriaLabel(bucketed({ failed: 1, pending: 5 }))).toBe("CI: 1 failed check, 5 pending checks");
   });
 
   it("omits zero buckets", () => {
@@ -1449,6 +1430,7 @@ git commit -m "feat(ui): add shared CITokenCluster component"
 This task and Task 9b together replace the previous "rewrite the chip in one commit" approach. Splitting them keeps each commit independently reviewable: 9a is a pure prop-passing refactor with no visual change (so any regression here is a wiring mistake, easy to bisect); 9b is the rendering rewrite that depends on 9a's contract.
 
 **Files:**
+
 - Modify: `packages/ui/src/components/shared/Chip.svelte` — extend the prop interface to accept `ariaLabel?: string | undefined` and `dataTestid?: string | undefined`, and forward them onto the rendered element. Without this, Task 9b cannot set `data-testid="ci-chip"` or `aria-label={composeAriaLabel(bucketed)}` on the chip's outer element.
 - Modify: `packages/ui/src/components/detail/CIStatus.svelte` — add four new props (`owner: string`, `name: string`, `number: number`, `prKey: string`). They are accepted into `$props()` but **not consumed** in this task. Task 9b wires `owner`/`name`/`number` into `parseCIChecks` context and the warning effects; Task 11 wires `prKey` into the dropdown's expansion-state reset. The reason to introduce them in 9a is that updating every `<CIStatus>` call site is an atomic grep-then-edit that's better done once with the full final prop set than twice with a partial set.
 - Modify: `packages/ui/src/components/detail/CIStatus.test.ts` — every `render(CIStatus, { props })` in the existing tests must include the new props in the props object. The visual behaviour and assertions are unchanged; only the props object grows. Without this update, existing tests fail type-check the moment 9a introduces the props as required.
@@ -1557,9 +1539,10 @@ git commit -m "feat(ui): extend Chip + introduce CIStatus contract props"
 
 ### Task 9b: Wire bucketing pipeline through `$derived` and rewrite the chip (normal + unavailable variants together)
 
-This task depends on Task 9a's contract changes (Chip props + CIStatus props). It is intentionally bundled as one commit even though it touches multiple visual concerns (cluster, unavailable variant, warnings) — splitting *within* 9b risks intermediate UI states where (e.g.) the cluster renders but the malformed path falls through to old code, which the previous split attempt found to be a worse regression surface than the single-commit visual rewrite.
+This task depends on Task 9a's contract changes (Chip props + CIStatus props). It is intentionally bundled as one commit even though it touches multiple visual concerns (cluster, unavailable variant, warnings) — splitting _within_ 9b risks intermediate UI states where (e.g.) the cluster renders but the malformed path falls through to old code, which the previous split attempt found to be a worse regression surface than the single-commit visual rewrite.
 
 **Files:**
+
 - Modify: `packages/ui/src/components/detail/CIStatus.svelte`
 - Modify: `packages/ui/src/components/detail/CIStatus.test.ts`
 
@@ -1644,9 +1627,7 @@ it("fires malformed warning at most once per payload via console.warn", async ()
   });
   await rerender({ ...chipBaseProps, checksJSON: "{not json" });
   // Same payload — warning helper's internal Set keeps the actual log count at 1.
-  expect(spy.mock.calls.filter(c =>
-    typeof c[0] === "string" && c[0].includes("Malformed"))
-  ).toHaveLength(1);
+  expect(spy.mock.calls.filter((c) => typeof c[0] === "string" && c[0].includes("Malformed"))).toHaveLength(1);
   spy.mockRestore();
 });
 
@@ -1657,8 +1638,8 @@ it("fires unknown warning at most once per distinct conclusion via console.warn"
     props: { ...chipBaseProps, prKey: "A", checksJSON: checks },
   });
   await rerender({ ...chipBaseProps, prKey: "B", checksJSON: checks });
-  expect(spy.mock.calls.filter(c =>
-    typeof c[0] === "string" && c[0].includes("Unrecognised CI conclusion"))
+  expect(
+    spy.mock.calls.filter((c) => typeof c[0] === "string" && c[0].includes("Unrecognised CI conclusion")),
   ).toHaveLength(1);
   spy.mockRestore();
 });
@@ -1672,6 +1653,7 @@ Expected: many failures.
 - [ ] **Step 4: Refactor `CIStatus.svelte` — chip rewrite + temporary dropdown adapter**
 
 Replace the contents of `CIStatus.svelte` with a new version that:
+
 1. Imports `parseCIChecks`, `bucketCIChecks`, `safeDiagnosticText` from `ci-buckets.js`.
 2. Imports `warnOnUnknownConclusions`, `warnOnMalformedCIChecksJSON` from `ci-buckets-warn.js`.
 3. Imports `CITokenCluster`, `composeAriaLabel` from `../shared/CITokenCluster.svelte`.
@@ -1708,33 +1690,52 @@ Replace the contents of `CIStatus.svelte` with a new version that:
    The popover is hidden by default and revealed via CSS when the chip is `:focus-visible` or `:hover`:
 
    ```css
-   .ci-unavailable-wrap { position: relative; display: inline-flex; }
+   .ci-unavailable-wrap {
+     position: relative;
+     display: inline-flex;
+   }
    .ci-unavailable-popover {
-     position: absolute; top: calc(100% + 4px); left: 0;
-     padding: 4px 8px; border-radius: 4px;
-     background: var(--bg-surface); border: 1px solid var(--border-muted);
-     color: var(--text-primary); font-size: var(--font-size-xs);
+     position: absolute;
+     top: calc(100% + 4px);
+     left: 0;
+     padding: 4px 8px;
+     border-radius: 4px;
+     background: var(--bg-surface);
+     border: 1px solid var(--border-muted);
+     color: var(--text-primary);
+     font-size: var(--font-size-xs);
      box-shadow: var(--shadow-sm);
-     max-width: 320px; white-space: normal; overflow-wrap: anywhere;
-     opacity: 0; visibility: hidden;
+     max-width: 320px;
+     white-space: normal;
+     overflow-wrap: anywhere;
+     opacity: 0;
+     visibility: hidden;
      transition: opacity 0.12s;
      pointer-events: none;
    }
    .ci-chip-unavailable:hover + .sr-only + .ci-unavailable-popover,
    .ci-chip-unavailable:focus + .sr-only + .ci-unavailable-popover,
    .ci-chip-unavailable:focus-visible + .sr-only + .ci-unavailable-popover {
-     opacity: 1; visibility: visible;
+     opacity: 1;
+     visibility: visible;
    }
    .sr-only {
-     position: absolute; width: 1px; height: 1px; padding: 0;
-     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+     position: absolute;
+     width: 1px;
+     height: 1px;
+     padding: 0;
+     overflow: hidden;
+     clip: rect(0, 0, 0, 0);
+     white-space: nowrap;
+     border: 0;
    }
    ```
 
    `instanceId` is a unique per-component id sourced from a module-level monotonic counter (e.g., `let _ciStatusInstanceCounter = 0;` at module scope, then `const instanceId = ++_ciStatusInstanceCounter;` cached in `$state` so it stabilises per instance). This avoids `crypto.randomUUID()` — which has SSR/jsdom edge cases — and produces deterministic IDs in tests. The popover content is bounded to 320px width with wrapping so a long parse error doesn't blow out the layout.
 
    **Diagnostic text sanitisation.** The raw `parseError.message` can include a preview of the malformed input when the error originated from native `JSON.parse` (V8 messages like `Unexpected token X in JSON at position N` or `Unexpected end of JSON input near "..."` embed input fragments). To prevent the chip's `title`, popover content, sr-only text, and aria-describedby span from leaking provider-controlled content into UI surfaces, every display-bound interpolation uses `safeDiagnosticText(parseError)` (exported from `ci-buckets.ts` and added in Stage 1a Task 3). The category text is short, stable, and safe to render in any of the three surfaces. The original `parseError.message` is still available in dev logs via the warning helper.
-7. Sets the chip's `aria-label` via `composeAriaLabel(bucketed)` when normal, or `\`CI unavailable: ${safeDiagnosticText(parseError)}\`` when unavailable. Never use raw `parseError.message` on any UI surface; the helper enforces the single sanitisation rule documented in non-goals.
+
+7. Sets the chip's `aria-label` via `composeAriaLabel(bucketed)` when normal, or `\`CI unavailable: ${safeDiagnosticText(parseError)}\``when unavailable. Never use raw`parseError.message` on any UI surface; the helper enforces the single sanitisation rule documented in non-goals.
 8. Keeps the existing dropdown markup unchanged for now (it still reads the old `checks` / `failedChecks` derivations — wire those off `bucketed.all` and `bucketed.failed` to keep them functional).
 9. Adds two `$effect` blocks. The first calls `warnOnUnknownConclusions(bucketed.unknown, ctx)` when `bucketed.unknown.length > 0`. The second calls `warnOnMalformedCIChecksJSON(checksJSON, parseError, ctx)` when `parseError !== null`. Both helpers' module-scoped Sets dedupe the actual `console.warn` calls; the effects may fire multiple times across rerenders, but the user-visible log count is bounded by the dedupe keys (raw conclusion for unknown; `repo+number+payload-hash` for malformed).
 
@@ -1767,6 +1768,7 @@ git commit -m "feat(ui): rewrite CIStatus chip to use shared token cluster"
 ### Task 10: Update Playwright e2e for chip changes
 
 **Files:**
+
 - Modify: `cmd/e2e-server/main.go` — add `/__e2e/pr-ci-state/mixed` and `/__e2e/pr-ci-state/malformed` fixture endpoints (reused later by Task 14)
 - Modify: `frontend/tests/e2e-full/ci-dropdown.spec.ts`
 
@@ -1967,9 +1969,7 @@ Append to `ci-dropdown.spec.ts`:
 test("mixed-state chip renders all bucket tokens", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
-    const seed = await page.request.post(
-      `${server.info.base_url}/__e2e/pr-ci-state/mixed`,
-    );
+    const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/mixed`);
     expect(seed.ok()).toBe(true);
 
     await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
@@ -1987,9 +1987,7 @@ test("mixed-state chip renders all bucket tokens", async ({ page }) => {
 test("malformed CIChecksJSON renders the unavailable chip with focus-visible popover", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
-    const seed = await page.request.post(
-      `${server.info.base_url}/__e2e/pr-ci-state/malformed`,
-    );
+    const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/malformed`);
     expect(seed.ok()).toBe(true);
 
     await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
@@ -2014,9 +2012,7 @@ test("malformed CIChecksJSON renders the unavailable chip with focus-visible pop
 test("CIStatus set but CIChecksJSON empty hides the chip (transient sync state)", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
-    const seed = await page.request.post(
-      `${server.info.base_url}/__e2e/pr-ci-state/status-only`,
-    );
+    const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/status-only`);
     expect(seed.ok()).toBe(true);
 
     await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
@@ -2048,8 +2044,8 @@ it("renders a single Unknown token when all checks have unrecognised conclusions
   expect(document.querySelector("[data-testid='ci-token-passed']")).toBeNull();
   expect(document.querySelector("[data-testid='ci-token-skipped']")).toBeNull();
   // The unknown warning fires once.
-  expect(spy.mock.calls.filter(c =>
-    typeof c[0] === "string" && c[0].includes("Unrecognised CI conclusion"))
+  expect(
+    spy.mock.calls.filter((c) => typeof c[0] === "string" && c[0].includes("Unrecognised CI conclusion")),
   ).toHaveLength(1);
   spy.mockRestore();
 });
@@ -2086,6 +2082,7 @@ git commit -m "test(ui): add e2e + unknown-only chip coverage for new CI renderi
 ### Task 11: Summary header + five-section dropdown + show-more toggle
 
 **Files:**
+
 - Modify: `packages/ui/src/components/detail/CIStatus.svelte`
 - Modify: `packages/ui/src/components/detail/CIStatus.test.ts`
 
@@ -2094,13 +2091,23 @@ git commit -m "test(ui): add e2e + unknown-only chip coverage for new CI renderi
 Append to `CIStatus.test.ts`:
 
 ```typescript
-function mkCheck(partial: Partial<{
-  name: string; status: string; conclusion: string;
-  duration_seconds: number; url: string; app: string;
-}> = {}) {
+function mkCheck(
+  partial: Partial<{
+    name: string;
+    status: string;
+    conclusion: string;
+    duration_seconds: number;
+    url: string;
+    app: string;
+  }> = {},
+) {
   return {
-    name: "x", status: "completed", conclusion: "success",
-    url: "", app: "", ...partial,
+    name: "x",
+    status: "completed",
+    conclusion: "success",
+    url: "",
+    app: "",
+    ...partial,
   };
 }
 
@@ -2119,20 +2126,14 @@ it("dropdown shows summary header with longest duration", () => {
   render(CIStatus, {
     props: {
       ...baseProps,
-      checksJSON: JSON.stringify([
-        mkCheck({ duration_seconds: 30 }),
-        mkCheck({ duration_seconds: 90 }),
-      ]),
+      checksJSON: JSON.stringify([mkCheck({ duration_seconds: 30 }), mkCheck({ duration_seconds: 90 })]),
     },
   });
-  expect(document.querySelector(".ci-summary")!.textContent).toMatch(
-    /2 checks · longest 1m 30s/,
-  );
+  expect(document.querySelector(".ci-summary")!.textContent).toMatch(/2 checks · longest 1m 30s/);
 });
 
 it("dropdown renders five sections in fixed order when all non-zero", () => {
-  const c = (conclusion: string, status = "completed") =>
-    mkCheck({ status, conclusion });
+  const c = (conclusion: string, status = "completed") => mkCheck({ status, conclusion });
   render(CIStatus, {
     props: {
       ...baseProps,
@@ -2145,16 +2146,12 @@ it("dropdown renders five sections in fixed order when all non-zero", () => {
       ]),
     },
   });
-  const headings = Array.from(document.querySelectorAll(".ci-section-heading"))
-    .map((h) => h.textContent?.trim() ?? "");
-  expect(headings).toEqual([
-    "Failed (1)", "Pending (1)", "Unknown (1)", "Passed (1)", "Skipped (1)",
-  ]);
+  const headings = Array.from(document.querySelectorAll(".ci-section-heading")).map((h) => h.textContent?.trim() ?? "");
+  expect(headings).toEqual(["Failed (1)", "Pending (1)", "Unknown (1)", "Passed (1)", "Skipped (1)"]);
 });
 
 it("Passed section shows first 8 + Show 1 more toggle", async () => {
-  const checks = Array.from({ length: 9 }, (_, i) =>
-    mkCheck({ name: `p${i}` }));
+  const checks = Array.from({ length: 9 }, (_, i) => mkCheck({ name: `p${i}` }));
   render(CIStatus, { props: { ...baseProps, checksJSON: JSON.stringify(checks) } });
   expect(document.querySelectorAll(".ci-row").length).toBe(8);
   const toggle = screen.getByRole("button", { name: /Show 1 more passed/i });
@@ -2178,8 +2175,7 @@ it("dropdown row uses bucket Lucide icon (not ASCII glyph)", () => {
 });
 
 it("expansion state resets when prKey changes", async () => {
-  const checks = Array.from({ length: 9 }, (_, i) =>
-    mkCheck({ name: `p${i}` }));
+  const checks = Array.from({ length: 9 }, (_, i) => mkCheck({ name: `p${i}` }));
   const { rerender } = render(CIStatus, {
     props: { ...baseProps, prKey: "ext-A", checksJSON: JSON.stringify(checks) },
   });
@@ -2190,16 +2186,12 @@ it("expansion state resets when prKey changes", async () => {
 });
 
 it("renders static circle for pending row under prefers-reduced-motion", () => {
-  vi.spyOn(window, "matchMedia").mockReturnValue(
-    { matches: true } as MediaQueryList,
-  );
+  vi.spyOn(window, "matchMedia").mockReturnValue({ matches: true } as MediaQueryList);
   __resetPrefersReducedMotion();
   render(CIStatus, {
     props: {
       ...baseProps,
-      checksJSON: JSON.stringify([
-        mkCheck({ status: "in_progress", conclusion: "" }),
-      ]),
+      checksJSON: JSON.stringify([mkCheck({ status: "in_progress", conclusion: "" })]),
     },
   });
   const row = document.querySelector(".ci-row")!;
@@ -2256,6 +2248,7 @@ In `CIStatus.svelte`'s `{#if showPanel && expanded}` block:
      {:else}<CircleHelpIcon size={14} class="row-icon row-icon-purple" />{/if}
    {/snippet}
    ```
+
 3. Wire the `prKey` prop (already added to `CIStatus.svelte` in Task 9a and threaded from `PullDetail.svelte`) into a new `expandedSections` `$state` plus a reset `$effect`:
 
    ```svelte
@@ -2294,6 +2287,7 @@ git commit -m "feat(ui): restructure CI dropdown with summary header and five se
 ### Task 12: Dropdown Playwright e2e
 
 **Files:**
+
 - Modify: `cmd/e2e-server/main.go` — add `/__e2e/pr-ci-state/dropdown-mixed` fixture for the bigger payload this test needs
 - Modify: `frontend/tests/e2e-full/ci-dropdown.spec.ts`
 
@@ -2354,9 +2348,7 @@ Append to `ci-dropdown.spec.ts`:
 test("dropdown shows summary header, five sections, show-N-more toggle", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
-    const seed = await page.request.post(
-      `${server.info.base_url}/__e2e/pr-ci-state/dropdown-mixed`,
-    );
+    const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/dropdown-mixed`);
     expect(seed.ok()).toBe(true);
 
     await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
@@ -2414,6 +2406,7 @@ git commit -m "test(ui): add e2e for dropdown summary, sections, show-N-more"
 ### Task 13: Replace the single sidebar CI icon with the shared cluster
 
 **Files:**
+
 - Modify: `packages/ui/src/components/sidebar/PullItem.svelte`
 - Create: `packages/ui/src/components/sidebar/PullItem.test.ts`
 
@@ -2525,8 +2518,7 @@ describe("PullItem CI cluster", () => {
       },
     });
     expect(document.querySelector("[data-testid='ci-token-unavailable']")).not.toBeNull();
-    const titleAttr = document.querySelector("[data-testid='ci-token-unavailable']")
-      ?.getAttribute("title") ?? "";
+    const titleAttr = document.querySelector("[data-testid='ci-token-unavailable']")?.getAttribute("title") ?? "";
     expect(titleAttr).not.toContain(sentinel);
     expect(titleAttr).toMatch(/CI unavailable:/i);
     const button = screen.getByRole("button", { name: /Sample PR/i });
@@ -2597,18 +2589,18 @@ describe("PullItem CI cluster", () => {
     render(PullItem, { props: { ...props, pr: mkPR({ CIChecksJSON: "{not json", Number: 1 }) } });
     cleanup();
     render(PullItem, { props: { ...props, pr: mkPR({ CIChecksJSON: "{not json", Number: 1 }) } });
-    expect(spy.mock.calls.filter(c =>
-      typeof c[0] === "string" && c[0].includes("Malformed"))
-    ).toHaveLength(1);
+    expect(spy.mock.calls.filter((c) => typeof c[0] === "string" && c[0].includes("Malformed"))).toHaveLength(1);
     spy.mockRestore();
   });
 
   it("renders a single Unknown token for an unknown-only payload (acceptance-matrix Unknown-only row)", () => {
     render(PullItem, {
       props: {
-        pr: mkPR({ CIChecksJSON: JSON.stringify([
-          { status: "completed", conclusion: "mystery_state", name: "", url: "", app: "" },
-        ]) }),
+        pr: mkPR({
+          CIChecksJSON: JSON.stringify([
+            { status: "completed", conclusion: "mystery_state", name: "", url: "", app: "" },
+          ]),
+        }),
         selected: false,
         showRepo: false,
         onclick: () => {},
@@ -2631,6 +2623,7 @@ Expected: token elements not found.
 - [ ] **Step 3: Refactor `PullItem.svelte`**
 
 In `PullItem.svelte`:
+
 1. Import `parseCIChecks`, `bucketCIChecks`, `safeDiagnosticText` from `../../utils/ci-buckets.js`.
 2. Import `warnOnUnknownConclusions`, `warnOnMalformedCIChecksJSON` from `../../utils/ci-buckets-warn.js`.
 3. Import `CITokenCluster`, `composeAriaLabel` from `../shared/CITokenCluster.svelte`.
@@ -2638,7 +2631,7 @@ In `PullItem.svelte`:
 5. Add `const parsed = $derived(parseCIChecks(pr.CIChecksJSON));` and `const bucketed = $derived(bucketCIChecks(parsed.checks));`.
 6. Add `$effect`s that fire the warning helpers with `{ repo: \`${pr.repo_owner}/${pr.repo_name}\`, number: pr.Number }`.
 7. Remove the existing `{#if pr.CIStatus === "success"} … {/if}` block.
-8. Replace with the following markup. The CI summary text lives in a real `<span class="sr-only">` *sibling* of the visual cluster, both inside the row button. The visible cluster is `aria-hidden` (its tokens carry no semantic content for AT); the sr-only span is the sole carrier of the accessible name fragment. This avoids relying on AccName's "wrap an element with aria-label and its descendants get included" behaviour for a generic `<span>` — visually-hidden text inside the button is the most robust pattern across browsers and screen readers.
+8. Replace with the following markup. The CI summary text lives in a real `<span class="sr-only">` _sibling_ of the visual cluster, both inside the row button. The visible cluster is `aria-hidden` (its tokens carry no semantic content for AT); the sr-only span is the sole carrier of the accessible name fragment. This avoids relying on AccName's "wrap an element with aria-label and its descendants get included" behaviour for a generic `<span>` — visually-hidden text inside the button is the most robust pattern across browsers and screen readers.
 
    ```svelte
    {#if parsed.error !== null}
@@ -2659,8 +2652,14 @@ In `PullItem.svelte`:
 
    ```css
    .sr-only {
-     position: absolute; width: 1px; height: 1px; padding: 0;
-     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+     position: absolute;
+     width: 1px;
+     height: 1px;
+     padding: 0;
+     overflow: hidden;
+     clip: rect(0, 0, 0, 0);
+     white-space: nowrap;
+     border: 0;
    }
    ```
 
@@ -2714,6 +2713,7 @@ git commit -m "feat(ui): replace sidebar CI icon with compact token cluster"
 ### Task 14: Playwright e2e for sidebar list payload
 
 **Files:**
+
 - Create: `frontend/tests/e2e-full/pull-list-ci.spec.ts`
 
 This task reuses the `/__e2e/pr-ci-state/mixed` and `/__e2e/pr-ci-state/malformed` fixture endpoints added in Task 10.
@@ -2729,9 +2729,7 @@ test.describe("pull list CI cluster", () => {
   test("renders compact tokens from the live list payload (mixed state)", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
-      const seed = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/mixed`,
-      );
+      const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/mixed`);
       expect(seed.ok()).toBe(true);
 
       await page.goto(`${server.info.base_url}/pulls`);
@@ -2749,17 +2747,13 @@ test.describe("pull list CI cluster", () => {
   test("renders the unavailable token when CIChecksJSON is malformed", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
-      const seed = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/malformed`,
-      );
+      const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/malformed`);
       expect(seed.ok()).toBe(true);
 
       await page.goto(`${server.info.base_url}/pulls`);
 
       const row = page.locator(".pull-item", { hasText: "#1" });
-      await expect(
-        row.locator("[data-testid='ci-token-unavailable']"),
-      ).toBeVisible();
+      await expect(row.locator("[data-testid='ci-token-unavailable']")).toBeVisible();
     } finally {
       await server.stop();
     }
@@ -2803,8 +2797,7 @@ Concrete capture path — a one-off Playwright script that consumes the Playwrig
 import { chromium } from "playwright";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8091";
-const OUT  = process.env.CAPTURE_DIR
-  ?? `${process.env.TMPDIR ?? "/tmp"}/ci-status-redesign-captures-${Date.now()}`;
+const OUT = process.env.CAPTURE_DIR ?? `${process.env.TMPDIR ?? "/tmp"}/ci-status-redesign-captures-${Date.now()}`;
 const fs = await import("node:fs/promises");
 await fs.mkdir(OUT, { recursive: true });
 
@@ -2813,8 +2806,7 @@ await fs.mkdir(OUT, { recursive: true });
 //   "detail-open"     — chip clicked, dropdown panel visible
 //   "detail-expanded" — dropdown's "Show N more passed" toggle clicked
 //   "sidebar"         — sidebar list row
-async function capture(name, viewport, route, variant = "detail",
-                       reducedMotion = "no-preference") {
+async function capture(name, viewport, route, variant = "detail", reducedMotion = "no-preference") {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport, reducedMotion });
   const page = await ctx.newPage();
@@ -2825,7 +2817,7 @@ async function capture(name, viewport, route, variant = "detail",
   }
   if (variant === "detail-expanded") {
     const showMore = page.getByRole("button", { name: /Show \d+ more passed/i });
-    if (await showMore.count() > 0) {
+    if ((await showMore.count()) > 0) {
       await showMore.first().click();
     }
   }
@@ -2837,33 +2829,46 @@ const fixtures = ["mixed", "malformed", "status-only", "dropdown-mixed", "succes
 for (const f of fixtures) {
   await fetch(`${BASE}/__e2e/pr-ci-state/${f}`, { method: "POST" });
   // Closed chip
-  await capture(`${f}-desktop-detail`,        { width: 1440, height: 900 },
-                "/pulls/github/acme/widgets/1", "detail");
-  await capture(`${f}-mobile-detail`,         { width:  390, height: 844 },
-                "/pulls/github/acme/widgets/1", "detail");
+  await capture(`${f}-desktop-detail`, { width: 1440, height: 900 }, "/pulls/github/acme/widgets/1", "detail");
+  await capture(`${f}-mobile-detail`, { width: 390, height: 844 }, "/pulls/github/acme/widgets/1", "detail");
   // Open dropdown (skip for state where dropdown is hidden: malformed, status-only)
   if (f !== "malformed" && f !== "status-only") {
-    await capture(`${f}-desktop-detail-open`, { width: 1440, height: 900 },
-                  "/pulls/github/acme/widgets/1", "detail-open");
-    await capture(`${f}-mobile-detail-open`,  { width:  390, height: 844 },
-                  "/pulls/github/acme/widgets/1", "detail-open");
+    await capture(
+      `${f}-desktop-detail-open`,
+      { width: 1440, height: 900 },
+      "/pulls/github/acme/widgets/1",
+      "detail-open",
+    );
+    await capture(
+      `${f}-mobile-detail-open`,
+      { width: 390, height: 844 },
+      "/pulls/github/acme/widgets/1",
+      "detail-open",
+    );
   }
   // Sidebar
-  await capture(`${f}-desktop-sidebar`,       { width: 1440, height: 900 }, "/pulls",   "sidebar");
-  await capture(`${f}-mobile-sidebar`,        { width:  390, height: 844 }, "/m/pulls", "sidebar");
+  await capture(`${f}-desktop-sidebar`, { width: 1440, height: 900 }, "/pulls", "sidebar");
+  await capture(`${f}-mobile-sidebar`, { width: 390, height: 844 }, "/m/pulls", "sidebar");
 }
 
 // dropdown-mixed has >8 passed checks → exercises the "Show N more" expansion.
 await fetch(`${BASE}/__e2e/pr-ci-state/dropdown-mixed`, { method: "POST" });
-await capture("dropdown-mixed-desktop-detail-expanded",
-              { width: 1440, height: 900 }, "/pulls/github/acme/widgets/1",
-              "detail-expanded");
+await capture(
+  "dropdown-mixed-desktop-detail-expanded",
+  { width: 1440, height: 900 },
+  "/pulls/github/acme/widgets/1",
+  "detail-expanded",
+);
 
 // Reduced-motion variants for pending (the only fixture with active checks).
 await fetch(`${BASE}/__e2e/pr-ci-state/pending`, { method: "POST" });
-await capture("pending-desktop-detail-reduced-motion-on",
-              { width: 1440, height: 900 }, "/pulls/github/acme/widgets/1",
-              "detail-open", "reduce");
+await capture(
+  "pending-desktop-detail-reduced-motion-on",
+  { width: 1440, height: 900 },
+  "/pulls/github/acme/widgets/1",
+  "detail-open",
+  "reduce",
+);
 
 console.log(`Captures saved to ${OUT}`);
 ```
@@ -2887,6 +2892,7 @@ For reduced-motion verification, capture the pending chip in both motion states.
 - [ ] **Step 3: Manually inspect and audit**
 
 Open each screenshot. Verify:
+
 - No clipped tokens or wrapped text breaking the chip layout.
 - Mobile chip cluster fits in the row without overflowing.
 - Mobile sidebar cluster's tightened gap (3px) keeps tokens on one line.
@@ -2909,6 +2915,7 @@ If issues surfaced, file them as follow-up plan tasks before proceeding to Task 
 ### Task 16: Lint + typecheck + final unit/component/e2e cleanup
 
 **Files:**
+
 - Modify (if needed): existing components, tests
 
 - [ ] **Step 1: Run packages/ui typecheck**

@@ -10,9 +10,9 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { getNavigate, getSidebar, getStores } from "../context.js";
-  import CollapsibleResizableSidebar from "../components/shared/CollapsibleResizableSidebar.svelte";
-  import SplitResizeHandle from "../components/shared/SplitResizeHandle.svelte";
-  import type { SplitResizeEvent } from "../components/shared/split-resize.js";
+  import { CollapsibleSidebar } from "@kenn-io/kit-ui";
+  import { SplitResizeHandle } from "@kenn-io/kit-ui";
+  import type { SplitResizeEvent } from "@kenn-io/kit-ui";
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetail from "../components/detail/PullDetail.svelte";
   import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
@@ -280,7 +280,7 @@
   });
 </script>
 
-<CollapsibleResizableSidebar
+<CollapsibleSidebar
   isCollapsed={isSidebarCollapsed}
   {hideSidebar}
   {sidebarWidth}
@@ -409,7 +409,7 @@
       <p class="placeholder-hint">j/k to navigate &middot; 1/2 to switch views</p>
     </div>
   {/if}
-</CollapsibleResizableSidebar>
+</CollapsibleSidebar>
 
 <style>
   .detail-host {

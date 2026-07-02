@@ -21,7 +21,7 @@ let square = $derived(num * num);
 let square;
 
 $effect(() => {
-	square = num * num;
+  square = num * num;
 });
 ```
 
@@ -51,10 +51,10 @@ Treat props as though they will change. For example, values that depend on props
 let { type } = $props();
 
 // do this
-let color = $derived(type === 'danger' ? 'red' : 'green');
+let color = $derived(type === "danger" ? "red" : "green");
 
 // don't do this — `color` will not update if `type` changes
-let color = type === 'danger' ? 'red' : 'green';
+let color = type === "danger" ? "red" : "green";
 ```
 
 ## `$inspect.trace`

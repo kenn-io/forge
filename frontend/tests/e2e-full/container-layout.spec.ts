@@ -15,7 +15,7 @@ test.describe("container-aware layout", () => {
     await expect(page.locator(".tab-group")).not.toBeAttached();
 
     // Sidebar should be auto-collapsed in narrow mode.
-    await expect(page.locator(".sidebar")).toHaveClass(/sidebar--collapsed/);
+    await expect(page.locator(".kit-sidebar-layout__sidebar")).toHaveClass(/kit-sidebar-layout__sidebar--collapsed/);
   });
 
   test("mobile viewport wraps header controls without horizontal overflow", async ({ page }) => {
@@ -118,10 +118,12 @@ test.describe("container-aware layout", () => {
     await page.locator(".app-header").waitFor({ state: "visible", timeout: 10_000 });
 
     await page.getByLabel("Expand sidebar").click();
-    await expect(page.locator(".sidebar").first()).not.toHaveClass(/sidebar--collapsed/);
+    await expect(page.locator(".kit-sidebar-layout__sidebar").first()).not.toHaveClass(
+      /kit-sidebar-layout__sidebar--collapsed/,
+    );
 
     const metrics = await page.evaluate(() => {
-      const sidebarRect = document.querySelector(".sidebar")?.getBoundingClientRect();
+      const sidebarRect = document.querySelector(".kit-sidebar-layout__sidebar")?.getBoundingClientRect();
       return {
         viewportWidth: window.innerWidth,
         sidebarRight: sidebarRect?.right ?? 0,

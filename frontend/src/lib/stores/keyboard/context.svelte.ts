@@ -10,7 +10,7 @@ interface SelectionSources {
 
 function sidebarTargetAvailable(route: Route): boolean {
   if (route.page !== "pulls" && route.page !== "issues") return true;
-  return document.querySelector(".sidebar") !== null;
+  return document.querySelector(".kit-sidebar-layout__sidebar") !== null;
 }
 
 export function buildContext(stores: SelectionSources): Context {

@@ -31,7 +31,7 @@ async function waitForPRList(page: Page): Promise<void> {
 async function sidebarWidth(page: Page): Promise<number> {
   return Math.round(
     await page
-      .locator(".sidebar")
+      .locator(".kit-sidebar-layout__sidebar")
       .first()
       .evaluate((node) => node.getBoundingClientRect().width),
   );

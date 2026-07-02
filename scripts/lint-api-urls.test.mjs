@@ -22,12 +22,7 @@ test("flags hardcoded production /api/v1 endpoint calls", async () => {
   await write(
     root,
     "frontend/src/lib/stores/pulls.svelte.ts",
-    [
-      "export async function loadPulls() {",
-      '  return fetch("/api/v1/pulls");',
-      "}",
-      "",
-    ].join("\n"),
+    ["export async function loadPulls() {", '  return fetch("/api/v1/pulls");', "}", ""].join("\n"),
   );
 
   const findings = await lintApiUrls({ root });
@@ -40,26 +35,14 @@ test("flags hardcoded production /api/v1 endpoint calls", async () => {
 
 test("ignores tests, generated code, and OpenAPI schema files", async () => {
   const root = await makeRoot();
-  await write(
-    root,
-    "frontend/src/lib/api/settings.test.ts",
-    'expect(url).toBe("/api/v1/settings");\n',
-  );
+  await write(root, "frontend/src/lib/api/settings.test.ts", 'expect(url).toBe("/api/v1/settings");\n');
   await write(
     root,
     "frontend/tests/e2e/settings.spec.ts",
     'await page.route("**/api/v1/settings", route => route.fulfill());\n',
   );
-  await write(
-    root,
-    "packages/ui/src/api/generated/client.ts",
-    'export const base = "/api/v1";\n',
-  );
-  await write(
-    root,
-    "frontend/openapi/openapi.yaml",
-    "servers:\n  - url: /api/v1\n",
-  );
+  await write(root, "packages/ui/src/api/generated/client.ts", 'export const base = "/api/v1";\n');
+  await write(root, "frontend/openapi/openapi.yaml", "servers:\n  - url: /api/v1\n");
 
   const findings = await lintApiUrls({ root });
 
@@ -71,12 +54,7 @@ test("allows generated client base path helpers", async () => {
   await write(
     root,
     "packages/ui/src/stores/diff.svelte.ts",
-    [
-      "function apiBaseURL(basePath) {",
-      '  return `${basePath.replace(/\\/$/, "")}/api/v1`;',
-      "}",
-      "",
-    ].join("\n"),
+    ["function apiBaseURL(basePath) {", '  return `${basePath.replace(/\\/$/, "")}/api/v1`;', "}", ""].join("\n"),
   );
 
   const findings = await lintApiUrls({ root });
@@ -91,10 +69,10 @@ test("allows scoped streaming transports", async () => {
     "frontend/src/lib/components/terminal/TerminalPane.svelte",
     [
       '<script lang="ts">',
-      '  const events = new EventSource(`${basePath}/api/v1/events`);',
+      "  const events = new EventSource(`${basePath}/api/v1/events`);",
       "  const socketUrl =",
-      '    `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +',
-      '    `/terminal?cols=${cols}&rows=${rows}`;',
+      "    `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +",
+      "    `/terminal?cols=${cols}&rows=${rows}`;",
       "  const socket = new WebSocket(socketUrl);",
       "  await fetch(`/api/v1/workspaces/${workspaceId}/logs`, {",
       '    headers: { Accept: "application/x-ndjson" },',

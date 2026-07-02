@@ -22,6 +22,7 @@ No new files. No new packages. No changes outside `internal/config/`.
 ## Task 1: Wire the test seam to a context-aware exec
 
 **Files:**
+
 - Modify: `internal/config/config.go` (the `var execCommand = exec.Command` line at ~1090 and `ghAuthToken` at ~1092)
 
 The current `var execCommand = exec.Command` cannot pass a context through. Switch it to `exec.CommandContext` and update the (still-host-agnostic) `ghAuthToken` to thread `context.Background()` so existing tests keep passing while the seam is ready for Task 2. This is the smallest behavior-preserving change.
@@ -80,6 +81,7 @@ git commit -m "refactor(config): switch gh exec seam to CommandContext"
 ## Task 2: Introduce `ghAuthTokenForHost` with `--hostname` and timeout
 
 **Files:**
+
 - Modify: `internal/config/config.go` (replace `ghAuthToken`, add helpers, leave `(*Config).GitHubToken` and `(*Config).TokenForPlatformHost` alone for now)
 - Test: `internal/config/config_test.go` (extend `setFakeGHCLI`, add new tests)
 
@@ -395,6 +397,7 @@ git commit -m "feat(config): add host-scoped gh auth token helper"
 ## Task 3: Thread the host through `TokenForPlatformHost` and `GitHubToken`
 
 **Files:**
+
 - Modify: `internal/config/config.go` (`(*Config).GitHubToken` and `(*Config).TokenForPlatformHost`; add `(*Config).gitHubTokenForHost`)
 - Test: `internal/config/config_test.go` (new tests for GHE-host resolution and ordering)
 

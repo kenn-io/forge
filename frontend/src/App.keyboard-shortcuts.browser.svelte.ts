@@ -12,11 +12,11 @@
 //   - The jsdom harness simulated layout width via mountApp's `viewportWidth`
 //     option (jsdom has no real layout). The container store classifies #app's
 //     clientWidth: <500px is "narrow", and the PR-list / Activity views render a
-//     different mobile DOM in narrow mode (no .sidebar). The browser analog is
+//     different mobile DOM in narrow mode (no sidebar). The browser analog is
 //     sizing the real Chromium viewport: the desktop cases set a wide viewport so
 //     the sidebar renders, and the compact case sets a 480px viewport (mirroring
 //     the jsdom `{ viewportWidth: 480 }`).
-//   - The .pr-list-row / [data-test='sidebar'] / data-collapsed / .palette-row
+//   - The .pr-list-row / .kit-sidebar-layout__sidebar / data-collapsed / .palette-row
 //     selectors all survive in the rendered browser DOM (verified), so the
 //     DOM-shape assertions stay as querySelector against the real DOM. The page
 //     locator API (getByText/getByRole/getByTitle/getByTestId) drives the
@@ -62,7 +62,7 @@ describe("migrated global shortcuts", () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/pulls");
     const sidebar = await vi.waitFor(() => {
-      const el = document.querySelector("[data-test='sidebar']");
+      const el = document.querySelector(".kit-sidebar-layout__sidebar");
       expect(el).not.toBeNull();
       return el!;
     });
@@ -71,7 +71,7 @@ describe("migrated global shortcuts", () => {
     pressKey("[", { meta: true });
 
     await vi.waitFor(() =>
-      expect(document.querySelector("[data-test='sidebar']")?.getAttribute("data-collapsed")).toBe(
+      expect(document.querySelector(".kit-sidebar-layout__sidebar")?.getAttribute("data-collapsed")).toBe(
         (!wasCollapsed).toString(),
       ),
     );
@@ -120,13 +120,13 @@ describe("migrated global shortcuts", () => {
 
   it("Cmd+[ is reserved on compact PR list without toggling persisted sidebar state", async () => {
     // 480px viewport mirrors the jsdom `{ viewportWidth: 480 }`: #app classifies
-    // as "narrow", the PR list renders the compact mobile layout, and no .sidebar
+    // as "narrow", the PR list renders the compact mobile layout, and no sidebar
     // exists for Cmd+[ to toggle.
     await page.viewport(480, 900);
     mounted = await mountBrowserApp("/pulls");
     await vi.waitFor(() => expect(document.body.textContent).toContain("Add browser regression coverage"));
 
-    expect(document.querySelectorAll(".sidebar")).toHaveLength(0);
+    expect(document.querySelectorAll(".kit-sidebar-layout__sidebar")).toHaveLength(0);
     localStorage.removeItem("middleman-sidebar");
 
     const event = pressKey("[", { meta: true });

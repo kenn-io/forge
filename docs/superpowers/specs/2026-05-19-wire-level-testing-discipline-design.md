@@ -89,14 +89,14 @@ internal helpers that compose into a handler.
 
 ## Bug classes this discipline catches
 
-| Bug class | Where wire-level catches it |
-|-----------|-----------------------------|
-| Time field serialization (`Z` vs `+00:00`) | Parses raw response body; handler-internal tests inspect `time.Time` values before marshaling. |
-| Error code missing from OpenAPI doc | apitest/ generated client surfaces unknown status variants and schema mismatches against generated.ErrorModel. |
-| Header set in handler but stripped by middleware | Asserts on `resp.Header`, not the handler's `w.Header()` before middleware ran. |
-| Status code overridden by middleware | Asserts on `resp.StatusCode`, not the handler's return. |
+| Bug class                                             | Where wire-level catches it                                                                                             |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Time field serialization (`Z` vs `+00:00`)            | Parses raw response body; handler-internal tests inspect `time.Time` values before marshaling.                          |
+| Error code missing from OpenAPI doc                   | apitest/ generated client surfaces unknown status variants and schema mismatches against generated.ErrorModel.          |
+| Header set in handler but stripped by middleware      | Asserts on `resp.Header`, not the handler's `w.Header()` before middleware ran.                                         |
+| Status code overridden by middleware                  | Asserts on `resp.StatusCode`, not the handler's return.                                                                 |
 | Mutation guard short-circuits before handler dispatch | `srv.ServeHTTP` runs the full middleware chain; handler-internal tests calling the handler directly miss this entirely. |
-| SSE Content-Type / Cache-Control drift | Real-socket read; recorder may not reflect what a real client sees on a buffered stream. |
+| SSE Content-Type / Cache-Control drift                | Real-socket read; recorder may not reflect what a real client sees on a buffered stream.                                |
 
 ## Where the doctrine lives
 

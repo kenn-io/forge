@@ -1,6 +1,3 @@
 {
-  "skills": [
-    "svelte-code-writer",
-    "svelte-core-bestpractices"
-  ]
+  "skills": ["svelte-code-writer", "svelte-core-bestpractices"]
 }

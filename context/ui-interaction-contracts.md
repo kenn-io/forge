@@ -108,7 +108,7 @@ shortcuts while it is open.
   cleanup so stale frames, listeners, and highlighted rows are not left behind.
 - Custom focus traps must cycle controls in rendered DOM order. If the trap
   builds the focusable list from a mixed selector list (`button, input, select,
-  ...`), normalize the result by document position before wrapping Tab /
+...`), normalize the result by document position before wrapping Tab /
   Shift+Tab so selector-engine grouping cannot change keyboard order.
 
 ## Palette Persistence

@@ -3,9 +3,9 @@
   import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import ActivityFeed from "../components/ActivityFeed.svelte";
   import CommitDiffPanel from "../components/CommitDiffPanel.svelte";
-  import LeftSidebarToggle from "../components/shared/LeftSidebarToggle.svelte";
-  import SplitResizeHandle from "../components/shared/SplitResizeHandle.svelte";
-  import type { SplitResizeEvent } from "../components/shared/split-resize.js";
+  import { SidebarToggle } from "@kenn-io/kit-ui";
+  import { SplitResizeHandle } from "@kenn-io/kit-ui";
+  import type { SplitResizeEvent } from "@kenn-io/kit-ui";
   import type { PullRequestRouteRef } from "../routes.js";
   import PRListView from "./PRListView.svelte";
   import IssueListView from "./IssueListView.svelte";
@@ -309,21 +309,21 @@
   >
     {#if hasActiveDetail && activityPaneCollapsed}
       <div class="activity-collapsed-strip">
-        <LeftSidebarToggle
+        <SidebarToggle
           state="collapsed"
           label="Activity sidebar"
           onclick={expandActivityPane}
-          class="left-sidebar-toggle--compact"
+          class="kit-sidebar-toggle--compact"
         />
       </div>
     {:else if hasActiveDetail}
       <div class="activity-rail-header">
         <span>Activity</span>
-        <LeftSidebarToggle
+        <SidebarToggle
           state="expanded"
           label="Activity sidebar"
           onclick={collapseActivityPane}
-          class="left-sidebar-toggle--compact"
+          class="kit-sidebar-toggle--compact"
         />
       </div>
     {/if}

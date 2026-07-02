@@ -52,6 +52,7 @@
 **TDD scenario:** New feature — full TDD cycle.
 
 **Files:**
+
 - Modify: `internal/server/settings_test.go`
 - Implemented in later task files: `internal/server/repo_import_handlers.go`, `internal/server/server.go`
 
@@ -336,6 +337,7 @@ Do not commit failing tests alone unless working in a TDD checkpoint branch with
 **TDD scenario:** Implement minimal code to pass Task 1 tests.
 
 **Files:**
+
 - Create: `internal/server/repo_import_handlers.go`
 - Modify: `internal/server/server.go`
 - Test: `internal/server/settings_test.go`
@@ -735,6 +737,7 @@ git commit -m "feat: add repository import API"
 **TDD scenario:** New feature — full TDD cycle for TypeScript helpers.
 
 **Files:**
+
 - Modify: `frontend/src/lib/api/settings.ts`
 - Modify: `frontend/src/lib/api/settings.test.ts`
 - Create: `frontend/src/lib/components/settings/repoImportSelection.ts`
@@ -750,20 +753,23 @@ import { bulkAddRepos, previewRepos, removeRepo } from "./settings.js";
 
 describe("settings api", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue({ repos: [] }),
-      text: vi.fn().mockResolvedValue(""),
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ repos: [] }),
+        text: vi.fn().mockResolvedValue(""),
+      }),
+    );
   });
 
   it("encodes repo names for delete requests", async () => {
     await removeRepo("acme", "widgets-?");
 
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/v1/repos/acme/widgets-%3F",
-      { method: "DELETE", headers: { "Content-Type": "application/json" } },
-    );
+    expect(fetch).toHaveBeenCalledWith("/api/v1/repos/acme/widgets-%3F", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    });
   });
 
   it("posts preview requests", async () => {
@@ -819,10 +825,31 @@ import {
 } from "./repoImportSelection.js";
 
 const rows: RepoImportRow[] = [
-  { owner: "acme", name: "worker", description: "Background jobs", private: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "api", description: "HTTP API", private: true, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
+  {
+    owner: "acme",
+    name: "worker",
+    description: "Background jobs",
+    private: false,
+    pushed_at: "2026-04-20T00:00:00Z",
+    already_configured: false,
+  },
+  {
+    owner: "acme",
+    name: "api",
+    description: "HTTP API",
+    private: true,
+    pushed_at: "2026-04-22T00:00:00Z",
+    already_configured: false,
+  },
   { owner: "acme", name: "empty", description: null, private: false, pushed_at: null, already_configured: false },
-  { owner: "acme", name: "widget", description: "Configured", private: false, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
+  {
+    owner: "acme",
+    name: "widget",
+    description: "Configured",
+    private: false,
+    pushed_at: "2026-04-21T00:00:00Z",
+    already_configured: true,
+  },
 ];
 
 describe("repo import selection helpers", () => {
@@ -846,9 +873,24 @@ describe("repo import selection helpers", () => {
   });
 
   it("sorts deterministically with null pushed_at last", () => {
-    expect(sortRows(rows, { field: "pushed_at", direction: "desc" }).map((row) => row.name)).toEqual(["api", "widget", "worker", "empty"]);
-    expect(sortRows(rows, { field: "pushed_at", direction: "asc" }).map((row) => row.name)).toEqual(["worker", "widget", "api", "empty"]);
-    expect(sortRows(rows, { field: "name", direction: "asc" }).map((row) => row.name)).toEqual(["api", "empty", "widget", "worker"]);
+    expect(sortRows(rows, { field: "pushed_at", direction: "desc" }).map((row) => row.name)).toEqual([
+      "api",
+      "widget",
+      "worker",
+      "empty",
+    ]);
+    expect(sortRows(rows, { field: "pushed_at", direction: "asc" }).map((row) => row.name)).toEqual([
+      "worker",
+      "widget",
+      "api",
+      "empty",
+    ]);
+    expect(sortRows(rows, { field: "name", direction: "asc" }).map((row) => row.name)).toEqual([
+      "api",
+      "empty",
+      "widget",
+      "worker",
+    ]);
   });
 
   it("selects and deselects all visible selectable rows", () => {
@@ -927,7 +969,7 @@ interface RepoInput {
 
 async function errorFromResponse(res: Response, fallback: string): Promise<Error> {
   try {
-    const data = await res.json() as { error?: string };
+    const data = (await res.json()) as { error?: string };
     if (data.error) return new Error(data.error);
   } catch {
     // Fall through to text fallback.
@@ -940,10 +982,7 @@ async function errorFromResponse(res: Response, fallback: string): Promise<Error
 Update existing `addRepo`, `removeRepo`, and `refreshRepo` to use `errorFromResponse` for consistency. Then add:
 
 ```ts
-export async function previewRepos(
-  owner: string,
-  pattern: string,
-): Promise<RepoPreviewResponse> {
+export async function previewRepos(owner: string, pattern: string): Promise<RepoPreviewResponse> {
   const res = await fetch(`${BASE}/repos/preview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1014,7 +1053,8 @@ export function filterRows(
   const needle = query.trim().toLowerCase();
   return rows.filter((row) => {
     const key = rowKey(row);
-    const matchesText = needle === "" ||
+    const matchesText =
+      needle === "" ||
       key.includes(needle) ||
       row.name.toLowerCase().includes(needle) ||
       (row.description ?? "").toLowerCase().includes(needle);
@@ -1051,11 +1091,7 @@ export function sortRows(rows: RepoImportRow[], sort: SortState): RepoImportRow[
     .map(({ row }) => row);
 }
 
-export function setAllVisible(
-  selected: Set<string>,
-  visibleRows: RepoImportRow[],
-  checked: boolean,
-): Set<string> {
+export function setAllVisible(selected: Set<string>, visibleRows: RepoImportRow[], checked: boolean): Set<string> {
   const next = new Set(selected);
   for (const row of visibleRows) {
     if (row.already_configured) continue;
@@ -1075,9 +1111,7 @@ export function applyRangeSelection(input: {
 }): { selected: Set<string>; anchorKey: string } {
   const next = new Set(input.selected);
   const clickedIndex = input.visibleRows.findIndex((row) => rowKey(row) === input.clickedKey);
-  const anchorIndex = input.anchorKey
-    ? input.visibleRows.findIndex((row) => rowKey(row) === input.anchorKey)
-    : -1;
+  const anchorIndex = input.anchorKey ? input.visibleRows.findIndex((row) => rowKey(row) === input.anchorKey) : -1;
   if (clickedIndex === -1) return { selected: next, anchorKey: input.clickedKey };
   const start = anchorIndex === -1 ? clickedIndex : Math.min(anchorIndex, clickedIndex);
   const end = anchorIndex === -1 ? clickedIndex : Math.max(anchorIndex, clickedIndex);
@@ -1090,10 +1124,7 @@ export function applyRangeSelection(input: {
   return { selected: next, anchorKey: input.clickedKey };
 }
 
-export function selectedRowsForSubmit(
-  sortedRows: RepoImportRow[],
-  selected: Set<string>,
-): RepoImportRow[] {
+export function selectedRowsForSubmit(sortedRows: RepoImportRow[], selected: Set<string>): RepoImportRow[] {
   return sortedRows.filter((row) => selected.has(rowKey(row)) && !row.already_configured);
 }
 ```
@@ -1124,6 +1155,7 @@ git commit -m "feat: add repository import selection helpers"
 **TDD scenario:** New UI feature — component tests first, then Svelte implementation. Use Svelte 5 runes guidance from `svelte-core-bestpractices` and run `svelte-autofixer` before committing.
 
 **Files:**
+
 - Create: `frontend/src/lib/components/settings/RepoPreviewTable.svelte`
 - Create: `frontend/src/lib/components/settings/RepoImportModal.svelte`
 - Create: `frontend/src/lib/components/settings/RepoImportModal.test.ts`
@@ -1164,9 +1196,30 @@ const preview = vi.mocked(previewRepos);
 const bulk = vi.mocked(bulkAddRepos);
 
 const rows = [
-  { owner: "acme", name: "worker", description: "Background jobs", private: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "api", description: "HTTP API", private: true, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "widget", description: "Configured", private: false, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
+  {
+    owner: "acme",
+    name: "worker",
+    description: "Background jobs",
+    private: false,
+    pushed_at: "2026-04-20T00:00:00Z",
+    already_configured: false,
+  },
+  {
+    owner: "acme",
+    name: "api",
+    description: "HTTP API",
+    private: true,
+    pushed_at: "2026-04-22T00:00:00Z",
+    already_configured: false,
+  },
+  {
+    owner: "acme",
+    name: "widget",
+    description: "Configured",
+    private: false,
+    pushed_at: "2026-04-21T00:00:00Z",
+    already_configured: true,
+  },
 ];
 
 describe("RepoImportModal", () => {
@@ -1192,7 +1245,11 @@ describe("RepoImportModal", () => {
   it("filters, deselects visible rows, and submits remaining selected rows", async () => {
     const onImported = vi.fn();
     preview.mockResolvedValue({ owner: "acme", pattern: "*", repos: rows });
-    bulk.mockResolvedValue({ repos: [], activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false }, terminal: { font_family: "" } });
+    bulk.mockResolvedValue({
+      repos: [],
+      activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false },
+      terminal: { font_family: "" },
+    });
     render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported } });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/*" } });
@@ -1209,7 +1266,11 @@ describe("RepoImportModal", () => {
 
   it("ignores stale preview responses after input changes", async () => {
     let resolveFirst: (value: Awaited<ReturnType<typeof previewRepos>>) => void = () => {};
-    preview.mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve; }));
+    preview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirst = resolve;
+      }),
+    );
     render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported: vi.fn() } });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/*" } });
@@ -1705,12 +1766,41 @@ let importOpen = $state(false);
 5. Add compact CSS:
 
 ```css
-.repo-import-entry { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border-muted); }
-.primary-import-btn { align-self: flex-start; padding: 6px 14px; font-size: 13px; font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
-.repo-import-entry p { margin: 0; color: var(--text-muted); font-size: 12px; }
-.advanced-add { padding-top: 8px; }
-.advanced-add summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; }
-.advanced-body { padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.repo-import-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-muted);
+}
+.primary-import-btn {
+  align-self: flex-start;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  background: var(--accent-blue);
+  border-radius: var(--radius-sm);
+}
+.repo-import-entry p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.advanced-add {
+  padding-top: 8px;
+}
+.advanced-add summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.advanced-body {
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 ```
 
 - [ ] **Step 8: Run Svelte autofixer**
@@ -1761,6 +1851,7 @@ git commit -m "feat: add repository import modal"
 **TDD scenario:** Full-stack e2e for user-visible workflow.
 
 **Files:**
+
 - Modify: `cmd/e2e-server/main.go`
 - Modify: `frontend/tests/e2e-full/settings-globs.spec.ts`
 
@@ -1836,7 +1927,7 @@ test("settings imports a selected subset from a repository glob", async ({ page 
 
   if (!api) throw new Error("settings-globs API context not initialized");
   const response = await api.get("/api/v1/settings");
-  const settings = await response.json() as { repos: Array<{ owner: string; name: string; is_glob: boolean }> };
+  const settings = (await response.json()) as { repos: Array<{ owner: string; name: string; is_glob: boolean }> };
   const exactNames = settings.repos
     .filter((repo) => repo.owner === "roborev-dev" && !repo.is_glob)
     .map((repo) => repo.name)
@@ -1871,7 +1962,9 @@ test("repository import ignores older preview responses", async ({ page }) => {
   await page.route("**/api/v1/repos/preview", async (route) => {
     previewCalls += 1;
     if (previewCalls === 1) {
-      await new Promise<void>((resolve) => { firstPreviewRelease = resolve; });
+      await new Promise<void>((resolve) => {
+        firstPreviewRelease = resolve;
+      });
     }
     const response = await route.fetch();
     await route.fulfill({ response });
@@ -1922,6 +2015,7 @@ git commit -m "test: cover repository import workflow"
 **TDD scenario:** Verification before completion.
 
 **Files:**
+
 - Review all modified files.
 - No planned source changes unless tests reveal issues.
 

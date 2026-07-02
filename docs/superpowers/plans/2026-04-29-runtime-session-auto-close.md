@@ -13,6 +13,7 @@
 ### Task 1: Runtime Manager Cleanup
 
 **Files:**
+
 - Modify: `internal/workspace/localruntime/types.go`
 - Modify: `internal/workspace/localruntime/manager.go`
 - Test: `internal/workspace/localruntime/manager_test.go`
@@ -40,6 +41,7 @@ Expected: tests pass.
 ### Task 2: Server Tmux Row Cleanup
 
 **Files:**
+
 - Modify: `internal/server/server.go`
 - Test: `internal/server/api_test.go`
 
@@ -66,6 +68,7 @@ Expected: tests pass.
 ### Task 3: Workspace UI Auto-Close
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`
 - Modify: `frontend/src/lib/components/terminal/ShellDrawer.svelte`
 - Test: `frontend/src/lib/components/terminal/WorkspaceTerminalView.test.ts` or nearest existing component test file
@@ -93,6 +96,7 @@ Expected: no required fixes.
 ### Task 4: Final Verification
 
 **Files:**
+
 - All modified files
 
 - [ ] **Step 1: Run focused backend tests**

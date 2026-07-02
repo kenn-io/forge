@@ -851,8 +851,8 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail.locator(".issue-detail")).toBeVisible();
     expect(seenHosts).toContain("ghe.example.com");
     expect(seenHosts).not.toContain("github.com");
-    await expect(detail.locator(".list-layout > .sidebar")).toHaveCount(0);
-    await expect(detail.locator(".list-layout > .resize-handle")).toHaveCount(0);
+    await expect(detail.locator(".kit-sidebar-layout > .kit-sidebar-layout__sidebar")).toHaveCount(0);
+    await expect(detail.locator(".kit-sidebar-layout > .kit-split-resize-handle")).toHaveCount(0);
   });
 
   test("Activity issue row selection preserves platform host", async ({ page }) => {
@@ -957,8 +957,8 @@ test.describe("activity split view and detail drawers", () => {
     await expect(treeFileItems(fileSidebar)).toHaveCount(1);
     await expect(treeFileItem(fileSidebar, "src/handler.go")).toBeVisible();
     await expect(detail.locator(".stack-sidebar")).toHaveCount(0);
-    await expect(detail.locator(".list-layout > .sidebar")).toHaveCount(0);
-    await expect(detail.locator(".list-layout > .resize-handle")).toHaveCount(0);
+    await expect(detail.locator(".kit-sidebar-layout > .kit-sidebar-layout__sidebar")).toHaveCount(0);
+    await expect(detail.locator(".kit-sidebar-layout > .kit-split-resize-handle")).toHaveCount(0);
   });
 
   test("Escape from merge modal keeps activity split detail open", async ({ page }) => {
@@ -1640,21 +1640,21 @@ test.describe("PR list tabs", () => {
 
     await page.goto("/pulls/github/acme/widgets/1");
 
-    // Wait for the PRListView tab bar (scoped to .main-area) to
+    // Wait for the PRListView tab bar (scoped to .kit-sidebar-layout__main) to
     // render.
-    await page.locator(".main-area .detail-tabs").first().waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".kit-sidebar-layout__main .detail-tabs").first().waitFor({ state: "visible", timeout: 10_000 });
 
     // Exactly one tab bar is present inside the outer PRListView
     // container. If PullDetail ever stops respecting hideTabs, a
-    // second .detail-tabs element would show up inside .main-area.
-    await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
+    // second .detail-tabs element would show up inside .kit-sidebar-layout__main.
+    await expect(page.locator(".kit-sidebar-layout__main .detail-tabs")).toHaveCount(1);
     await expect(
-      page.locator(".main-area .detail-tabs .detail-tab", {
+      page.locator(".kit-sidebar-layout__main .detail-tabs .detail-tab", {
         hasText: "Conversation",
       }),
     ).toHaveCount(1);
     await expect(
-      page.locator(".main-area .detail-tabs .detail-tab", {
+      page.locator(".kit-sidebar-layout__main .detail-tabs .detail-tab", {
         hasText: "Files changed",
       }),
     ).toHaveCount(1);
@@ -1662,23 +1662,23 @@ test.describe("PR list tabs", () => {
     // Clicking Files changed in the outer tab bar updates the URL to
     // the /files sub-route.
     await page
-      .locator(".main-area .detail-tabs .detail-tab", {
+      .locator(".kit-sidebar-layout__main .detail-tabs .detail-tab", {
         hasText: "Files changed",
       })
       .click();
     await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1\/files$/);
     await expect(page.locator(".diff-view")).toBeVisible();
-    await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
+    await expect(page.locator(".kit-sidebar-layout__main .detail-tabs")).toHaveCount(1);
 
     // Clicking Conversation routes back and keeps the tab bar
     // singular.
     await page
-      .locator(".main-area .detail-tabs .detail-tab", {
+      .locator(".kit-sidebar-layout__main .detail-tabs .detail-tab", {
         hasText: "Conversation",
       })
       .click();
     await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1$/);
-    await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
+    await expect(page.locator(".kit-sidebar-layout__main .detail-tabs")).toHaveCount(1);
   });
 
   test("direct load of provider PR files route renders the diff with a single tab bar", async ({ page }) => {
@@ -1690,12 +1690,12 @@ test.describe("PR list tabs", () => {
 
     await page.goto("/pulls/github/acme/widgets/1/files");
 
-    await page.locator(".main-area .detail-tabs").first().waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".kit-sidebar-layout__main .detail-tabs").first().waitFor({ state: "visible", timeout: 10_000 });
 
-    await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
+    await expect(page.locator(".kit-sidebar-layout__main .detail-tabs")).toHaveCount(1);
     await expect(page.locator(".diff-view")).toBeVisible();
     await expect(
-      page.locator(".main-area .detail-tabs .detail-tab--active", {
+      page.locator(".kit-sidebar-layout__main .detail-tabs .detail-tab--active", {
         hasText: "Files changed",
       }),
     ).toHaveCount(1);

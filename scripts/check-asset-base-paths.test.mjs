@@ -33,11 +33,7 @@ test("flags the minified worker URL that breaks subpath deploys", async () => {
 
 test("flags double-quoted absolute import.meta.url asset URLs", async () => {
   const root = await makeRoot();
-  await write(
-    root,
-    "assets/chunk.js",
-    'const u = new URL("/assets/img-9.png", import.meta.url);',
-  );
+  await write(root, "assets/chunk.js", 'const u = new URL("/assets/img-9.png", import.meta.url);');
 
   const findings = await findAbsoluteAssetUrls({ root, paths: ["assets"] });
 
@@ -64,11 +60,7 @@ test("ignores absolute paths resolved against a non import.meta.url base", async
   const root = await makeRoot();
   // Legit runtime URL building (e.g. API calls) must not be flagged: only
   // import.meta.url-relative asset references drop the base path.
-  await write(
-    root,
-    "assets/api.js",
-    'const u = new URL("/api/v1/pulls", window.location.origin);',
-  );
+  await write(root, "assets/api.js", 'const u = new URL("/api/v1/pulls", window.location.origin);');
 
   const findings = await findAbsoluteAssetUrls({ root, paths: ["assets"] });
 

@@ -27,12 +27,12 @@ jobs:
       rust: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.rust == 'true' || steps.filter.outputs.ci == 'true' }}
       e2e: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.e2e == 'true' || steps.filter.outputs.ci == 'true' }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d  # v4.0.1
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
           filters: |
@@ -70,16 +70,16 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1  # v1
+        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
           cache: true
@@ -96,7 +96,7 @@ jobs:
       - name: Run guardrail checks
         run: make guardrail-check
 
-      - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20  # v9.2.0
+      - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           version: v2.10.1
 
@@ -114,11 +114,11 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
@@ -134,7 +134,7 @@ jobs:
 
       - name: Publish unit test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451  # v2.7.0
+        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451 # v2.7.0
         with:
           name: Go unit tests
           path: tmp/test-output.json
@@ -152,7 +152,7 @@ jobs:
 
       - name: Publish live GraphQL test report
         if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451  # v2.7.0
+        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451 # v2.7.0
         with:
           name: Go live GraphQL tests
           path: tmp/test-graphql-output.json
@@ -166,7 +166,7 @@ jobs:
 
       - name: Publish integration test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451  # v2.7.0
+        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451 # v2.7.0
         with:
           name: Go integration tests
           path: tmp/test-integration-output.json
@@ -179,12 +179,12 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1  # v1
+        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
           cache: true
@@ -199,11 +199,11 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.rust == 'true'
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
@@ -231,11 +231,11 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
@@ -279,7 +279,7 @@ jobs:
 
       - name: Publish race test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451  # v2.7.0
+        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451 # v2.7.0
         with:
           name: Go race tests
           path: tmp/test-race-output.json
@@ -288,7 +288,7 @@ jobs:
 
       - name: Upload race timing artifacts
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: go-race-timing
           path: |
@@ -299,16 +299,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1  # v1
+        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
           cache: true
@@ -335,23 +335,23 @@ jobs:
     # old 10m cap off a slow mirror). Pinned by digest like the actions above so
     # a bot can bump it; the trailing comment records the version, which
     # `make playwright-version-check` keeps locked to the @playwright/test pin.
-    container: mcr.microsoft.com/playwright@sha256:57b65fdc9ceabe0ef613124c7bbe2babcf9362c4d85e382fe3b03604e84b428a  # v1.61.0-noble
+    container: mcr.microsoft.com/playwright@sha256:57b65fdc9ceabe0ef613124c7bbe2babcf9362c4d85e382fe3b03604e84b428a # v1.61.0-noble
     strategy:
       fail-fast: false
       matrix:
         browser: [chromium, firefox]
     name: e2e (${{ matrix.browser }})
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1  # v1
+        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
           cache: true
@@ -402,7 +402,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: e2e-report-${{ matrix.browser }}
           path: frontend/playwright-report/
@@ -410,7 +410,7 @@ jobs:
 
       - name: Upload GitHub App setup UI Playwright report
         if: failure() && matrix.browser == 'chromium'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: github-app-ui-e2e-report
           path: packages/github-app-ui/playwright-report/
@@ -425,23 +425,23 @@ jobs:
       # Update to next release tag when available.
       ROBOREV_REF: 34091063a7d9c415c35a0faba18d41952b331b0f
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: roborev-dev/roborev
           ref: ${{ env.ROBOREV_REF }}
           path: .roborev-src
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1  # v1
+        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
           cache: true
@@ -454,7 +454,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: roborev-e2e-report
           path: frontend/playwright-report/
@@ -468,14 +468,14 @@ jobs:
     # Keep browser-component tests on the same Playwright image as the full e2e
     # suite so Chromium and its OS dependencies are preinstalled instead of
     # depending on apt during the workflow.
-    container: mcr.microsoft.com/playwright@sha256:57b65fdc9ceabe0ef613124c7bbe2babcf9362c4d85e382fe3b03604e84b428a  # v1.61.0-noble
+    container: mcr.microsoft.com/playwright@sha256:57b65fdc9ceabe0ef613124c7bbe2babcf9362c4d85e382fe3b03604e84b428a # v1.61.0-noble
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1  # v1
+        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
           cache: true

@@ -83,14 +83,14 @@ listed.
 
 ## Threat model
 
-| Attacker | Vector | Pre-fix outcome | Post-fix outcome |
-|---|---|---|---|
-| Malicious web page | DNS rebinding to 127.0.0.1 | `Sec-Fetch-Site: same-origin` because browser sees one origin; passes CSRF; reaches handler | Backend Host is `attacker.example:8091` (browser sends what it typed). Step 2 rejects 403 before CSRF runs. |
-| Direct curl from another LAN host hitting loopback | N/A | Already rejected by bind | Already rejected by bind |
-| Browser on the same host typing `http://127.0.0.1:8091` | Normal use | Allowed | Allowed (Backend Host `127.0.0.1:8091` matches bind) |
-| Browser typing `http://localhost:8091` | Normal use | Allowed | Allowed (`localhost` is a loopback synonym for the bind port) |
-| Reverse-proxy front, public hostname `mm.example.com` | Proxied use | Already works (no Host check) | Operator sets `trust_reverse_proxy = true` and adds the Public Host (and the proxy-set Backend Host, if it isn't loopback) to `allowed_hosts`. |
-| DNS-rebound page with spoofed `X-Forwarded-Host: mm.example.com` | Hits loopback directly with attacker Host on Host header | N/A pre-fix | Backend Host fails Step 2 regardless of `X-Forwarded-Host` content. Forwarded header is never read. |
+| Attacker                                                         | Vector                                                   | Pre-fix outcome                                                                             | Post-fix outcome                                                                                                                               |
+| ---------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Malicious web page                                               | DNS rebinding to 127.0.0.1                               | `Sec-Fetch-Site: same-origin` because browser sees one origin; passes CSRF; reaches handler | Backend Host is `attacker.example:8091` (browser sends what it typed). Step 2 rejects 403 before CSRF runs.                                    |
+| Direct curl from another LAN host hitting loopback               | N/A                                                      | Already rejected by bind                                                                    | Already rejected by bind                                                                                                                       |
+| Browser on the same host typing `http://127.0.0.1:8091`          | Normal use                                               | Allowed                                                                                     | Allowed (Backend Host `127.0.0.1:8091` matches bind)                                                                                           |
+| Browser typing `http://localhost:8091`                           | Normal use                                               | Allowed                                                                                     | Allowed (`localhost` is a loopback synonym for the bind port)                                                                                  |
+| Reverse-proxy front, public hostname `mm.example.com`            | Proxied use                                              | Already works (no Host check)                                                               | Operator sets `trust_reverse_proxy = true` and adds the Public Host (and the proxy-set Backend Host, if it isn't loopback) to `allowed_hosts`. |
+| DNS-rebound page with spoofed `X-Forwarded-Host: mm.example.com` | Hits loopback directly with attacker Host on Host header | N/A pre-fix                                                                                 | Backend Host fails Step 2 regardless of `X-Forwarded-Host` content. Forwarded header is never read.                                            |
 
 ## Validation flow
 
@@ -106,8 +106,7 @@ in `[]`. No default-port assumption: an empty port stays empty.
 
 For each request:
 
-1. **Parse Backend Host.** Split into `hostKey`. Empty / malformed →
-   403.
+1. **Parse Backend Host.** Split into `hostKey`. Empty / malformed → 403.
 2. **Validate Backend Host** against the accepted set:
    - The bind's canonical `hostKey` (e.g. `("127.0.0.1", "8091")`).
    - Loopback synonyms at the bind port: `("localhost", "8091")`,
@@ -127,6 +126,7 @@ For each request:
        entries prevent surprises.
 
    If no match, 403.
+
 3. **(Optional, `trust_reverse_proxy` only.)** When the flag is
    false, the request is accepted at Step 2. When true:
    - For each present forwarded-host header, require exactly one
@@ -217,36 +217,36 @@ package never re-implements the parser; it borrows the exported
 helper. This satisfies the "same canonicalization" rule without
 creating an import cycle.
 
-| File | Change |
-|---|---|
-| `internal/config/hostmatch.go` | New file. Exports `ParseHostKey(string) (HostKey, error)` plus the `HostKey{Host, Port string}` type. Pure stdlib. |
-| `internal/config/hostmatch_test.go` | New file. Table-driven tests for the parser: good entries, bad entries, IPv6 bracketing, uppercase normalisation, empty/missing port. |
-| `internal/config/config.go` | Add `AllowedHosts []string`, `TrustReverseProxy bool` to `Config`. Validate via `ParseHostKey`. Canonicalize once at load and store the parsed list on the config struct (e.g., `parsedAllowedHosts []HostKey`, populated in `Validate` and accessed via a getter so the TOML-visible field stays a `[]string`). |
-| `internal/server/host_check.go` | New file. Exports `checkHost(w, r, bindKey, allowed []config.HostKey, trustProxy) bool`. Uses `config.ParseHostKey` for runtime Host parsing. Pure stdlib + slog + the existing `writeError` helper. |
-| `internal/server/server.go` | Wire `checkHost` into `ServeHTTP` BEFORE `checkCSRF`. Plumb bind host:port plus `allowed_hosts`/`trust_reverse_proxy` through `Server` struct (default constructor reads them from `cfg`; the test constructor accepts an explicit option so callers without a full `config.Config` can still wire the middleware). |
-| `internal/server/host_check_test.go` | New wire-level test file. Table-driven cases per the test plan below. |
-| `internal/server/apitest/host_check_test.go` | New apitest case per the test plan below. |
-| `cmd/middleman/main.go` | Confirm `server.NewWithConfig` is given the bind host:port; no other change. |
-| `README.md` | Document the two new fields under Configuration. |
+| File                                         | Change                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `internal/config/hostmatch.go`               | New file. Exports `ParseHostKey(string) (HostKey, error)` plus the `HostKey{Host, Port string}` type. Pure stdlib.                                                                                                                                                                                                  |
+| `internal/config/hostmatch_test.go`          | New file. Table-driven tests for the parser: good entries, bad entries, IPv6 bracketing, uppercase normalisation, empty/missing port.                                                                                                                                                                               |
+| `internal/config/config.go`                  | Add `AllowedHosts []string`, `TrustReverseProxy bool` to `Config`. Validate via `ParseHostKey`. Canonicalize once at load and store the parsed list on the config struct (e.g., `parsedAllowedHosts []HostKey`, populated in `Validate` and accessed via a getter so the TOML-visible field stays a `[]string`).    |
+| `internal/server/host_check.go`              | New file. Exports `checkHost(w, r, bindKey, allowed []config.HostKey, trustProxy) bool`. Uses `config.ParseHostKey` for runtime Host parsing. Pure stdlib + slog + the existing `writeError` helper.                                                                                                                |
+| `internal/server/server.go`                  | Wire `checkHost` into `ServeHTTP` BEFORE `checkCSRF`. Plumb bind host:port plus `allowed_hosts`/`trust_reverse_proxy` through `Server` struct (default constructor reads them from `cfg`; the test constructor accepts an explicit option so callers without a full `config.Config` can still wire the middleware). |
+| `internal/server/host_check_test.go`         | New wire-level test file. Table-driven cases per the test plan below.                                                                                                                                                                                                                                               |
+| `internal/server/apitest/host_check_test.go` | New apitest case per the test plan below.                                                                                                                                                                                                                                                                           |
+| `cmd/middleman/main.go`                      | Confirm `server.NewWithConfig` is given the bind host:port; no other change.                                                                                                                                                                                                                                        |
+| `README.md`                                  | Document the two new fields under Configuration.                                                                                                                                                                                                                                                                    |
 
 ## Test plan
 
 ### Parser-level (`internal/config/hostmatch_test.go`)
 
-| name | input | expect |
-|---|---|---|
-| empty allowed_hosts | `[]` | no error |
-| valid entry with port | `["mm.local:8091"]` | canonicalised to `("mm.local", "8091")` |
-| valid bare entry (no port) | `["mm.local"]` | canonicalised to `("mm.local", "")` |
-| uppercase canonicalisation | `["MM.Local:8091"]` | canonicalised to `("mm.local", "8091")` |
-| IPv6 entry with port | `["[::1]:8091"]` | canonicalised to `("[::1]", "8091")` |
-| IPv6 entry no port | `["[::1]"]` | canonicalised to `("[::1]", "")` |
-| unbracketed IPv6 | `["::1:8091"]` | error: `config: invalid allowed_hosts entry %q` |
-| empty entry | `[""]` | error |
-| port-only entry | `[":8091"]` | error |
-| port out of range | `["mm.local:99999"]` | error |
-| trust_reverse_proxy default | (unset) | false |
-| allowed_hosts default | (unset) | `nil` |
+| name                        | input                | expect                                          |
+| --------------------------- | -------------------- | ----------------------------------------------- |
+| empty allowed_hosts         | `[]`                 | no error                                        |
+| valid entry with port       | `["mm.local:8091"]`  | canonicalised to `("mm.local", "8091")`         |
+| valid bare entry (no port)  | `["mm.local"]`       | canonicalised to `("mm.local", "")`             |
+| uppercase canonicalisation  | `["MM.Local:8091"]`  | canonicalised to `("mm.local", "8091")`         |
+| IPv6 entry with port        | `["[::1]:8091"]`     | canonicalised to `("[::1]", "8091")`            |
+| IPv6 entry no port          | `["[::1]"]`          | canonicalised to `("[::1]", "")`                |
+| unbracketed IPv6            | `["::1:8091"]`       | error: `config: invalid allowed_hosts entry %q` |
+| empty entry                 | `[""]`               | error                                           |
+| port-only entry             | `[":8091"]`          | error                                           |
+| port out of range           | `["mm.local:99999"]` | error                                           |
+| trust_reverse_proxy default | (unset)              | false                                           |
+| allowed_hosts default       | (unset)              | `nil`                                           |
 
 ### Wire-level (`internal/server/host_check_test.go`)
 
@@ -260,40 +260,40 @@ behavior, one for the forwarded-header dance).
 
 Bind for every case below: `127.0.0.1:8091`.
 
-| name | allowed_hosts | trust_reverse_proxy | Host | X-Forwarded-Host | Forwarded | expect |
-|---|---|---|---|---|---|---|
-| direct loopback IP | [] | false | `127.0.0.1:8091` | - | - | 200 |
-| direct localhost | [] | false | `localhost:8091` | - | - | 200 |
-| direct IPv6 loopback | [] | false | `[::1]:8091` | - | - | 200 |
-| uppercase host accepted | [] | false | `LOCALHOST:8091` | - | - | 200 |
-| wrong port | [] | false | `127.0.0.1:9999` | - | - | 403 |
-| attacker host (DNS rebinding) | [] | false | `attacker.example:8091` | - | - | 403 |
-| empty Host | [] | false | (none) | - | - | 403 |
-| malformed Host | [] | false | `][` | - | - | 403 |
-| port-only Host | [] | false | `:8091` | - | - | 403 |
-| allowed_hosts hit, exact port | `["mm.local:8091"]` | false | `mm.local:8091` | - | - | 200 |
-| allowed_hosts miss, wrong port | `["mm.local:8091"]` | false | `mm.local:9999` | - | - | 403 |
-| allowed_hosts bare entry hits bare Host | `["mm.local"]` | false | `mm.local` | - | - | 200 |
-| allowed_hosts bare entry rejects ported Host | `["mm.local"]` | false | `mm.local:8091` | - | - | 403 |
-| IPv6 allowed_hosts hit | `["[::1]:8443"]` | false | `[::1]:8443` | - | - | 200 |
-| allowed_hosts attacker miss | `["mm.local:8091"]` | false | `attacker.example:8091` | - | - | 403 |
-| trust_reverse_proxy off, X-Forwarded-Host ignored | [] | false | `attacker.example:8091` | `127.0.0.1:8091` | - | 403 |
-| trust on, raw Host loopback, XFH in allowlist | `["mm.example.com"]` | true | `127.0.0.1:8091` | `mm.example.com` | - | 200 |
-| trust on, raw Host loopback, Forwarded in allowlist | `["mm.example.com"]` | true | `127.0.0.1:8091` | - | `for=10.0.0.1;host=mm.example.com` | 200 |
-| trust on, Forwarded quoted host | `["mm.example.com"]` | true | `127.0.0.1:8091` | - | `host="mm.example.com"` | 200 |
-| trust on, multi-value XFH rejected | `["mm.example.com"]` | true | `127.0.0.1:8091` | `mm.example.com, other.example.com` | - | 403 |
-| trust on, multi-value XFH rejected even when later entry is allowed | `["other.example.com"]` | true | `127.0.0.1:8091` | `mm.example.com, other.example.com` | - | 403 |
-| trust on, both headers agree | `["mm.example.com"]` | true | `127.0.0.1:8091` | `mm.example.com` | `host=mm.example.com` | 200 |
-| trust on, headers disagree | `["mm.example.com", "other.example.com"]` | true | `127.0.0.1:8091` | `mm.example.com` | `host=other.example.com` | 403 |
-| trust on, neither forwarded header | `["mm.example.com"]` | true | `127.0.0.1:8091` | - | - | 403 |
-| trust on, forwarded host NOT in allowlist | [] | true | `127.0.0.1:8091` | `attacker.example` | - | 403 |
-| trust on, raw Host fails (DNS rebinding even with proxy on) | `["mm.example.com"]` | true | `attacker.example:8091` | `mm.example.com` | - | 403 |
-| trust on, empty XFH | [] | true | `127.0.0.1:8091` | `` (empty) | - | 403 |
-| trust on, malformed Forwarded | [] | true | `127.0.0.1:8091` | - | `wat` | 403 |
-| trust on, Forwarded first entry lacks host= | [] | true | `127.0.0.1:8091` | - | `for=10.0.0.1, host=mm.example.com` | 403 |
-| trust on, present-but-malformed Forwarded with valid XFH | `["mm.example.com"]` | true | `127.0.0.1:8091` | `mm.example.com` | `wat` | 403 |
-| trust on, present-but-empty XFH with valid Forwarded | `["mm.example.com"]` | true | `127.0.0.1:8091` | `` (empty) | `host=mm.example.com` | 403 |
-| trust on, forwarded port mismatch | `["mm.example.com:8443"]` | true | `127.0.0.1:8091` | `mm.example.com:9999` | - | 403 |
+| name                                                                | allowed_hosts                             | trust_reverse_proxy | Host                    | X-Forwarded-Host                    | Forwarded                           | expect |
+| ------------------------------------------------------------------- | ----------------------------------------- | ------------------- | ----------------------- | ----------------------------------- | ----------------------------------- | ------ |
+| direct loopback IP                                                  | []                                        | false               | `127.0.0.1:8091`        | -                                   | -                                   | 200    |
+| direct localhost                                                    | []                                        | false               | `localhost:8091`        | -                                   | -                                   | 200    |
+| direct IPv6 loopback                                                | []                                        | false               | `[::1]:8091`            | -                                   | -                                   | 200    |
+| uppercase host accepted                                             | []                                        | false               | `LOCALHOST:8091`        | -                                   | -                                   | 200    |
+| wrong port                                                          | []                                        | false               | `127.0.0.1:9999`        | -                                   | -                                   | 403    |
+| attacker host (DNS rebinding)                                       | []                                        | false               | `attacker.example:8091` | -                                   | -                                   | 403    |
+| empty Host                                                          | []                                        | false               | (none)                  | -                                   | -                                   | 403    |
+| malformed Host                                                      | []                                        | false               | `][`                    | -                                   | -                                   | 403    |
+| port-only Host                                                      | []                                        | false               | `:8091`                 | -                                   | -                                   | 403    |
+| allowed_hosts hit, exact port                                       | `["mm.local:8091"]`                       | false               | `mm.local:8091`         | -                                   | -                                   | 200    |
+| allowed_hosts miss, wrong port                                      | `["mm.local:8091"]`                       | false               | `mm.local:9999`         | -                                   | -                                   | 403    |
+| allowed_hosts bare entry hits bare Host                             | `["mm.local"]`                            | false               | `mm.local`              | -                                   | -                                   | 200    |
+| allowed_hosts bare entry rejects ported Host                        | `["mm.local"]`                            | false               | `mm.local:8091`         | -                                   | -                                   | 403    |
+| IPv6 allowed_hosts hit                                              | `["[::1]:8443"]`                          | false               | `[::1]:8443`            | -                                   | -                                   | 200    |
+| allowed_hosts attacker miss                                         | `["mm.local:8091"]`                       | false               | `attacker.example:8091` | -                                   | -                                   | 403    |
+| trust_reverse_proxy off, X-Forwarded-Host ignored                   | []                                        | false               | `attacker.example:8091` | `127.0.0.1:8091`                    | -                                   | 403    |
+| trust on, raw Host loopback, XFH in allowlist                       | `["mm.example.com"]`                      | true                | `127.0.0.1:8091`        | `mm.example.com`                    | -                                   | 200    |
+| trust on, raw Host loopback, Forwarded in allowlist                 | `["mm.example.com"]`                      | true                | `127.0.0.1:8091`        | -                                   | `for=10.0.0.1;host=mm.example.com`  | 200    |
+| trust on, Forwarded quoted host                                     | `["mm.example.com"]`                      | true                | `127.0.0.1:8091`        | -                                   | `host="mm.example.com"`             | 200    |
+| trust on, multi-value XFH rejected                                  | `["mm.example.com"]`                      | true                | `127.0.0.1:8091`        | `mm.example.com, other.example.com` | -                                   | 403    |
+| trust on, multi-value XFH rejected even when later entry is allowed | `["other.example.com"]`                   | true                | `127.0.0.1:8091`        | `mm.example.com, other.example.com` | -                                   | 403    |
+| trust on, both headers agree                                        | `["mm.example.com"]`                      | true                | `127.0.0.1:8091`        | `mm.example.com`                    | `host=mm.example.com`               | 200    |
+| trust on, headers disagree                                          | `["mm.example.com", "other.example.com"]` | true                | `127.0.0.1:8091`        | `mm.example.com`                    | `host=other.example.com`            | 403    |
+| trust on, neither forwarded header                                  | `["mm.example.com"]`                      | true                | `127.0.0.1:8091`        | -                                   | -                                   | 403    |
+| trust on, forwarded host NOT in allowlist                           | []                                        | true                | `127.0.0.1:8091`        | `attacker.example`                  | -                                   | 403    |
+| trust on, raw Host fails (DNS rebinding even with proxy on)         | `["mm.example.com"]`                      | true                | `attacker.example:8091` | `mm.example.com`                    | -                                   | 403    |
+| trust on, empty XFH                                                 | []                                        | true                | `127.0.0.1:8091`        | `` (empty)                          | -                                   | 403    |
+| trust on, malformed Forwarded                                       | []                                        | true                | `127.0.0.1:8091`        | -                                   | `wat`                               | 403    |
+| trust on, Forwarded first entry lacks host=                         | []                                        | true                | `127.0.0.1:8091`        | -                                   | `for=10.0.0.1, host=mm.example.com` | 403    |
+| trust on, present-but-malformed Forwarded with valid XFH            | `["mm.example.com"]`                      | true                | `127.0.0.1:8091`        | `mm.example.com`                    | `wat`                               | 403    |
+| trust on, present-but-empty XFH with valid Forwarded                | `["mm.example.com"]`                      | true                | `127.0.0.1:8091`        | `` (empty)                          | `host=mm.example.com`               | 403    |
+| trust on, forwarded port mismatch                                   | `["mm.example.com:8443"]`                 | true                | `127.0.0.1:8091`        | `mm.example.com:9999`               | -                                   | 403    |
 
 403 body shape: one dedicated test reads the JSON body on any 403
 case and asserts the body contains both `allowed_hosts` and

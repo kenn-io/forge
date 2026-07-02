@@ -1,7 +1,7 @@
 <script lang="ts">
-  import SplitResizeHandle from "../shared/SplitResizeHandle.svelte";
+  import { SplitResizeHandle } from "@kenn-io/kit-ui";
   import type { ProviderCapabilities, RepoOperations } from "../../api/types.js";
-  import type { SplitResizeEvent } from "../shared/split-resize.js";
+  import type { SplitResizeEvent } from "@kenn-io/kit-ui";
   import { operationGate } from "../detail/operation-gates.js";
   import DiffSidebar from "./DiffSidebar.svelte";
   import DiffToolbar from "./DiffToolbar.svelte";

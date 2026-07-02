@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getSidebar } from "../context.js";
-  import CollapsibleResizableSidebar from "../components/shared/CollapsibleResizableSidebar.svelte";
+  import { CollapsibleSidebar } from "@kenn-io/kit-ui";
   import IssueList
     from "../components/sidebar/IssueList.svelte";
   import IssueDetail
@@ -31,7 +31,7 @@
   }: Props = $props();
 </script>
 
-<CollapsibleResizableSidebar
+<CollapsibleSidebar
   isCollapsed={isSidebarCollapsed}
   {hideSidebar}
   {sidebarWidth}
@@ -61,7 +61,7 @@
       <p class="placeholder-hint">j/k to navigate</p>
     </div>
   {/if}
-</CollapsibleResizableSidebar>
+</CollapsibleSidebar>
 
 <style>
   .placeholder-content {

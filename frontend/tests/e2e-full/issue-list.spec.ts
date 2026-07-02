@@ -168,7 +168,7 @@ test.describe("issue list view", () => {
     // seeded fixture (max-width 800px centered layout).
     await page.locator(".issue-item").filter({ hasText: "Safari" }).first().click();
 
-    // IssueListView renders IssueDetail into .main-area, where
+    // IssueListView renders IssueDetail into .kit-sidebar-layout__main, where
     // .issue-detail is the designated internal scroll container.
     const issueDetail = page.locator(".issue-detail");
     await expect(issueDetail).toBeVisible();
@@ -209,7 +209,7 @@ test.describe("issue list view", () => {
     // The scroll container should span the detail pane so the native
     // scrollbar is flush with the pane edge, not the centered content
     // column. The header remains in the capped content column.
-    const detailArea = page.locator(".main-area");
+    const detailArea = page.locator(".kit-sidebar-layout__main");
     const contentHeader = page.locator(".issue-detail .detail-header");
     const areaBox = await detailArea.boundingBox();
     const detailBox = await issueDetail.boundingBox();

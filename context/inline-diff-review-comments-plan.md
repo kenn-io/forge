@@ -529,8 +529,8 @@ Add missing default hosts in both route maps:
 Defaults:
 
 ```ts
-gitea: "gitea.com"
-forgejo: "codeberg.org"
+gitea: "gitea.com";
+forgejo: "codeberg.org";
 ```
 
 ### Baseline API Generation

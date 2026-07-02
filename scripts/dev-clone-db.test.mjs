@@ -63,7 +63,11 @@ test("dev-clone-db copies source database and rewrites cloned config", async () 
     "conn = sqlite3.connect(sys.argv[1])",
     "print(conn.execute('SELECT value FROM sample').fetchone()[0])",
   ].join("\n");
-  const { stdout: queryStdout } = await execFileAsync("python3", ["-c", queryScript, path.join(resolvedCloneDir, "middleman.db")]);
+  const { stdout: queryStdout } = await execFileAsync("python3", [
+    "-c",
+    queryScript,
+    path.join(resolvedCloneDir, "middleman.db"),
+  ]);
   assert.equal(queryStdout.trim(), "copied");
 
   const cloneDirMode = (await stat(resolvedCloneDir)).mode & 0o777;

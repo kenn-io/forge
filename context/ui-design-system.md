@@ -142,9 +142,9 @@ If a new repeated button treatment is needed, extend `ActionButton` rather than 
 - `ConfirmDialog`
 - `DialogButton`
 
-### LeftSidebarToggle
+### SidebarToggle
 
-Use `LeftSidebarToggle` for collapse and expand controls on left-side navigation rails.
+Use kit-ui's `SidebarToggle` (re-exported from `@middleman/ui`) for collapse and expand controls on left-side navigation rails.
 
 Intent:
 
@@ -152,11 +152,11 @@ Intent:
 - consistent expanded/collapsed direction across PR, issue, activity, and workspace sidebars
 - avoid one-off SVG buttons or local `.sidebar-toggle` styling in each rail
 
-Use it inside left sidebar headers and collapsed strips. Pass a specific label such as `Workspaces sidebar` when the generic `sidebar` label would be ambiguous.
+Use it inside left sidebar headers and collapsed strips. Pass a specific label such as `Workspaces sidebar` when the generic `sidebar` label would be ambiguous. The resizable sidebar layout itself is kit-ui's `CollapsibleSidebar`; the app keeps its container-width-driven overlay behavior in `app.css` keyed on `#app.container-narrow` (kit's `overlayOnNarrow` is viewport-based, which is not the same signal).
 
 ### SplitResizeHandle
 
-Use `SplitResizeHandle` for draggable pane dividers in split views.
+Use kit-ui's `SplitResizeHandle` (re-exported from `@middleman/ui`) for draggable pane dividers in split views.
 
 Intent:
 

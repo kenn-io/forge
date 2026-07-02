@@ -7,7 +7,7 @@ test.describe("focus mode", () => {
 
     await expect(page.locator(".pull-detail")).toBeVisible();
     await expect(page.locator(".app-header")).not.toBeAttached();
-    await expect(page.locator(".sidebar")).not.toBeAttached();
+    await expect(page.locator(".kit-sidebar-layout__sidebar")).not.toBeAttached();
     await expect(page.locator(".status-bar")).not.toBeAttached();
   });
 
@@ -17,7 +17,7 @@ test.describe("focus mode", () => {
 
     await expect(page.locator(".issue-detail")).toBeVisible();
     await expect(page.locator(".app-header")).not.toBeAttached();
-    await expect(page.locator(".sidebar")).not.toBeAttached();
+    await expect(page.locator(".kit-sidebar-layout__sidebar")).not.toBeAttached();
     await expect(page.locator(".status-bar")).not.toBeAttached();
   });
 

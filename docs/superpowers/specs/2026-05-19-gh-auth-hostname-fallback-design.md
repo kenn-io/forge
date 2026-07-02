@@ -13,7 +13,7 @@ the current resolution chain (`internal/config/config.go`
 - **`gh auth token`** — bare, no `--hostname` argument. Reached today for
   any github host (`github.com` or a GHE host) once the env-var step
   comes up empty, via the path `TokenForPlatformHost -> GitHubToken ->
-  ghAuthToken`.
+ghAuthToken`.
 
 The `gh auth token` invocation in `internal/config/config.go` is unscoped:
 

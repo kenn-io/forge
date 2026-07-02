@@ -830,3 +830,26 @@ a.item-ref {
 a.item-ref:hover {
   text-decoration: underline;
 }
+
+/* Narrow-container sidebar overlay. kit-ui CollapsibleSidebar's own
+   overlayOnNarrow prop keys on viewport width (media query at 900px), but
+   this app's narrow signal is the #app element's measured width
+   (container.svelte.ts adds .container-narrow under 500px) so embedded or
+   split-pane hosts behave like phones regardless of viewport. Keep the
+   overlay app-side, keyed on the container class, targeting kit's BEM
+   classes. */
+#app.container-narrow .kit-sidebar-layout {
+  position: relative;
+}
+#app.container-narrow .kit-sidebar-layout__sidebar:not(.kit-sidebar-layout__sidebar--collapsed) {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  width: min(100%, 390px) !important;
+  max-width: 100%;
+  box-shadow: var(--shadow-lg);
+}
+#app.container-narrow .kit-sidebar-layout__sidebar--collapsed {
+  width: 36px;
+  padding-top: 8px;
+}

@@ -21,7 +21,10 @@ export default defineConfig({
         cache: false,
       },
       "frontend-package-check": {
-        command: [`${rootVP} fmt --check frontend --no-error-on-unmatched-pattern --threads=1`, `${rootVP} run frontend-package-typecheck`],
+        command: [
+          `${rootVP} fmt --check frontend --no-error-on-unmatched-pattern --threads=1`,
+          `${rootVP} run frontend-package-typecheck`,
+        ],
         cache: false,
       },
       "frontend-package-typecheck": {
@@ -53,7 +56,10 @@ export default defineConfig({
         ],
       },
       "ui-package-check": {
-        command: [`${rootVP} fmt --check packages/ui --no-error-on-unmatched-pattern --threads=1`, `${rootVP} run ui-package-typecheck`],
+        command: [
+          `${rootVP} fmt --check packages/ui --no-error-on-unmatched-pattern --threads=1`,
+          `${rootVP} run ui-package-typecheck`,
+        ],
         cache: false,
       },
       "ui-package-typecheck": {

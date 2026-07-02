@@ -8512,14 +8512,7 @@ func (s *Syncer) filterDuplicateMergedLifecycleEvents(
 	mrID int64,
 	events []db.MREvent,
 ) ([]db.MREvent, error) {
-	needsExisting := false
-	for _, event := range events {
-		if isAuthoredMergedLifecycleEvent(event) {
-			needsExisting = true
-			break
-		}
-	}
-	if !needsExisting {
+	if !slices.ContainsFunc(events, isAuthoredMergedLifecycleEvent) {
 		return events, nil
 	}
 	existing, err := s.db.ListMREvents(ctx, mrID)

@@ -61,6 +61,12 @@ in the kit-ui repo. The parts middleman depends on as stable API:
   layout breakpoints are 640/760/900px).
 - Component class names (`.kit-chip`, `.kit-color-label`, …) are relied on
   by parent `:global` styles and test selectors.
+- Icons composed into Chip children (state chevrons, CI tokens) render
+  inside the inline `.kit-chip__label` span, where an svg baseline-aligns
+  and sags below uppercase labels. `app.css` centers chip-label svgs
+  globally (`vertical-align: middle` + negative block margin); do not add
+  per-call-site alignment hacks, and do not make the label span flex — repo
+  chips depend on its `text-overflow` ellipsis.
 - The dark/high-contrast mechanism: `dark` / `high-contrast` classes on
   `<html>`.
 

@@ -35,9 +35,6 @@
     "./utils/markdown": {
       "default": "./src/utils/markdown.ts"
     },
-    "./utils/repo-color": {
-      "default": "./src/utils/repo-color.ts"
-    },
     "./utils/repo-label": {
       "default": "./src/utils/repo-label.ts"
     },

@@ -4,7 +4,7 @@
   import { tick } from "svelte";
   import type { DiffFile } from "../../api/types.js";
   import { getStores } from "../../context.js";
-  import { floatingPopoverStyle } from "../shared/floatingPosition.js";
+  import { floatingPopoverStyle } from "@kenn-io/kit-ui";
 
   interface Props {
     disabled?: boolean;

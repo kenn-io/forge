@@ -11,7 +11,7 @@
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
-  import { timeAgo } from "../../utils/time.js";
+  import { formatRelativeTime } from "@kenn-io/kit-ui";
   import { copyToClipboard } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
@@ -28,7 +28,7 @@
     type OpenLabelPickerDetail,
   } from "./labelPickerCommand.js";
   import { nextCatalogLabelNames } from "./labelSelection.js";
-  import { floatingPopoverStyle } from "../shared/floatingPosition.js";
+  import { floatingPopoverStyle } from "@kenn-io/kit-ui";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
@@ -934,7 +934,7 @@
           </UserListEditor>
         {/if}
         <span class="meta-sep">·</span>
-        <span class="meta-item">{timeAgo(issue.CreatedAt)}</span>
+        <span class="meta-item">{formatRelativeTime(issue.CreatedAt)}</span>
         <span class="meta-sep">·</span>
         <Chip size="xs" tone={issue.State === "open" ? "success" : "merged"} class="issue-state-chip">
           {issue.State === "open" ? "Open" : "Closed"}

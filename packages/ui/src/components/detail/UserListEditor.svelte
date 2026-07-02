@@ -12,7 +12,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { Chip } from "@kenn-io/kit-ui";
   import UserPicker from "./UserPicker.svelte";
-  import { floatingPopoverStyle } from "../shared/floatingPosition.js";
+  import { floatingPopoverStyle } from "@kenn-io/kit-ui";
 
   interface Props {
     label: string;

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { localDateTimeLabel, localDateLabel, parseAPITimestamp, timeAgo } from "./time.js";
+import { localDateTimeLabel, localDateLabel, parseAPITimestamp } from "./time.js";
 
 describe("time helpers", () => {
   beforeEach(() => {
@@ -32,9 +32,5 @@ describe("time helpers", () => {
       dateStyle: "medium",
       timeStyle: "short",
     });
-  });
-
-  it("computes relative time from canonical instants", () => {
-    expect(timeAgo("2026-04-11T11:30:00Z")).toBe("30m ago");
   });
 });

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PullRequest } from "../../api/types.js";
-  import { timeAgo } from "../../utils/time.js";
+  import { formatRelativeTime } from "@kenn-io/kit-ui";
   import { kanbanDragPayloadFromPull } from "./drag.js";
 
   interface Props {
@@ -10,7 +10,7 @@
 
   const { pr, onclick }: Props = $props();
 
-  const ago = $derived(timeAgo(pr.LastActivityAt));
+  const ago = $derived(formatRelativeTime(pr.LastActivityAt));
   const repoLabel = $derived(pr.repo.name);
 
   function handleDragStart(e: DragEvent): void {

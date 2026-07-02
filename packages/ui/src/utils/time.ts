@@ -19,21 +19,11 @@ export function parseAPITimestamp(dateStr: string): Date {
   return new Date(dateStr);
 }
 
-/**
- * Returns a relative label for an API timestamp while keeping calculations in
- * absolute time. This must not introduce any local timezone formatting.
+/*
+ * Relative-time labels come from kit-ui's formatRelativeTime (same output
+ * under a week; beyond that it shows a short absolute month/day instead of
+ * "12d ago"/"2mo ago"). Import it from @kenn-io/kit-ui directly.
  */
-export function timeAgo(dateStr: string): string {
-  const diffMs = Date.now() - parseAPITimestamp(dateStr).getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const days = Math.floor(diffHr / 24);
-  if (days < 30) return `${days}d ago`;
-  return `${Math.floor(days / 30)}mo ago`;
-}
 
 /**
  * Converts an API timestamp to a local calendar label for display.

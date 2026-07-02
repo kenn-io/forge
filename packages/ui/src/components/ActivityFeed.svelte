@@ -29,7 +29,7 @@
     createRepoLabelFormatter,
     type RepoLabelIdentity,
   } from "../utils/repo-label.js";
-  import { repoColor } from "../utils/repo-color.js";
+  import { hashColor } from "@kenn-io/kit-ui";
   import { Chip, type ChipTone } from "@kenn-io/kit-ui";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
@@ -765,9 +765,9 @@
           {#each flatRows as row (row.id)}
             {@const rep = isCollapsedActivityRow(row) ? row.representative : row}
             {@const repoStyle =
-              `color: ${repoColor(`${rep.repo_owner}/${rep.repo_name}`)}; `
+              `color: ${hashColor(`${rep.repo_owner}/${rep.repo_name}`)}; `
               + `background: color-mix(in srgb, `
-              + `${repoColor(`${rep.repo_owner}/${rep.repo_name}`)} 15%, transparent);`}
+              + `${hashColor(`${rep.repo_owner}/${rep.repo_name}`)} 15%, transparent);`}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div

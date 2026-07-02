@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Issue } from "../../api/types.js";
   import { getStores } from "../../context.js";
-  import { timeAgo } from "../../utils/time.js";
-  import { repoColor } from "../../utils/repo-color.js";
+  import { formatRelativeTime } from "@kenn-io/kit-ui";
+  import { hashColor } from "@kenn-io/kit-ui";
   import { Chip } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
@@ -46,7 +46,7 @@
   }
 
   const labels = $derived(issue.labels ?? []);
-  const ago = $derived(timeAgo(issue.LastActivityAt));
+  const ago = $derived(formatRelativeTime(issue.LastActivityAt));
   const stateLabel = $derived(
     issue.State === "open" ? "Open" : "Closed",
   );
@@ -62,7 +62,7 @@
         uppercase={false}
         title={repoSlug}
         tone="muted" class="repo-chip"
-        style={`color: ${repoColor(repoSlug)}; background: color-mix(in srgb, ${repoColor(repoSlug)} 15%, transparent);`}
+        style={`color: ${hashColor(repoSlug)}; background: color-mix(in srgb, ${hashColor(repoSlug)} 15%, transparent);`}
       >{repoSlug}</Chip>
     </div>
   {/if}

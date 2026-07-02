@@ -28,7 +28,7 @@
   import WorkspaceIndicator from "./shared/WorkspaceIndicator.svelte";
 
   const { grouping, activity } = getStores();
-  import { repoColor } from "../utils/repo-color.js";
+  import { hashColor } from "@kenn-io/kit-ui";
   import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
@@ -625,7 +625,7 @@
                   size="sm"
                   uppercase={false}
                   class="repo-chip repo-tag"
-                  style="color: {repoColor(`${entry.repoOwner}/${entry.repoName}`)}; background: color-mix(in srgb, {repoColor(`${entry.repoOwner}/${entry.repoName}`)} 15%, transparent);"
+                  style="color: {hashColor(`${entry.repoOwner}/${entry.repoName}`)}; background: color-mix(in srgb, {hashColor(`${entry.repoOwner}/${entry.repoName}`)} 15%, transparent);"
                 >
                   <span class="repo-chip__label">{repoLabel(entryRepoIdentity(entry))}</span>
                 </Chip>
@@ -690,7 +690,7 @@
                 size="sm"
                 uppercase={false}
                 class="repo-chip repo-tag"
-                style="color: {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)}; background: color-mix(in srgb, {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)} 15%, transparent);"
+                style="color: {hashColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)}; background: color-mix(in srgb, {hashColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)} 15%, transparent);"
               >
                 <span class="repo-chip__label">{repoLabel(entryRepoIdentity(entry))}</span>
               </Chip>

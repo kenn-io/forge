@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { components } from "../../api/roborev/generated/schema.js";
   import { parseCostUsd } from "../../utils/roborev-cost.js";
-  import { timeAgo } from "../../utils/time.js";
+  import { formatRelativeTime } from "@kenn-io/kit-ui";
   import StatusBadge from "./StatusBadge.svelte";
   import VerdictBadge from "./VerdictBadge.svelte";
 
@@ -91,7 +91,7 @@
   </td>
   <td class="col-type">{job.job_type}</td>
   <td class="col-queued" title={job.enqueued_at}>
-    {timeAgo(job.enqueued_at)}
+    {formatRelativeTime(job.enqueued_at)}
   </td>
 </tr>
 

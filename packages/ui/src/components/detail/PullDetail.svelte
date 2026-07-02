@@ -21,7 +21,7 @@
   import { buildPullRequestFilesRoute } from "../../routes.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
-  import { timeAgo } from "../../utils/time.js";
+  import { formatRelativeTime } from "@kenn-io/kit-ui";
   import { copyToClipboard } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
@@ -57,7 +57,7 @@
     type OpenLabelPickerDetail,
   } from "./labelPickerCommand.js";
   import { nextCatalogLabelNames } from "./labelSelection.js";
-  import { floatingPopoverStyle } from "../shared/floatingPosition.js";
+  import { floatingPopoverStyle } from "@kenn-io/kit-ui";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
   import { reviewThreadsFromEvents } from "../diff/review-thread-context.js";
   import {
@@ -1582,7 +1582,7 @@
         <span class="meta-sep">·</span>
         <span class="meta-item">{pr.Author}</span>
         <span class="meta-sep">·</span>
-        <span class="meta-item">{timeAgo(pr.CreatedAt)}</span>
+        <span class="meta-item">{formatRelativeTime(pr.CreatedAt)}</span>
         {#if pr.HeadBranch}
           <span class="meta-sep meta-sep--branch">·</span>
           <span class="meta-branch">

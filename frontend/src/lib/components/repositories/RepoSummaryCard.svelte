@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button, Chip, operationGate } from "@middleman/ui";
   import type { ChipTone } from "@kenn-io/kit-ui";
-  import { timeAgo } from "@middleman/ui/utils/time";
+  import { formatRelativeTime } from "@kenn-io/kit-ui";
   import { ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
@@ -277,7 +277,7 @@
       </Chip>
       {#if releaseDate}
         <span title={localDateTimeLabel(releaseDate)}>
-          {timeAgo(releaseDate)}
+          {formatRelativeTime(releaseDate)}
         </span>
       {/if}
       {#if summary.commits_since_release !== undefined}
@@ -353,7 +353,7 @@
                 title={issue.author}
                 loading="lazy"
               />
-              <span>{timeAgo(issue.last_activity_at)}</span>
+              <span>{formatRelativeTime(issue.last_activity_at)}</span>
             </span>
           </button>
         {/each}
@@ -374,7 +374,7 @@
     </span>
     {#if syncTime}
       <span title={localDateTimeLabel(syncTime)}>
-        Synced {timeAgo(syncTime)}
+        Synced {formatRelativeTime(syncTime)}
       </span>
     {:else}
       <span>Not synced yet</span>

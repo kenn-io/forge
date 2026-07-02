@@ -13,7 +13,7 @@
   import type { DetailActivityViewMode } from "../../stores/detail-activity-view.svelte.js";
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
-  import { timeAgo } from "../../utils/time.js";
+  import { formatRelativeTime } from "@kenn-io/kit-ui";
   import { copyToClipboard } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import {
@@ -1450,7 +1450,7 @@
                   <span class="compact-event-summary" title={compactSummary}>
                     {compactSummary}
                   </span>
-                  <span class="event-time compact-event-time">{timeAgo(event.CreatedAt)}</span>
+                  <span class="event-time compact-event-time">{formatRelativeTime(event.CreatedAt)}</span>
                 </button>
               {:else}
                 <div class="compact-event-row">
@@ -1480,7 +1480,7 @@
                       {compactSummary}
                     {/if}
                   </span>
-                  <span class="event-time compact-event-time">{timeAgo(event.CreatedAt)}</span>
+                  <span class="event-time compact-event-time">{formatRelativeTime(event.CreatedAt)}</span>
                 </div>
               {/if}
               {#if canCopyCompact}
@@ -1535,24 +1535,24 @@
                 {#if !showCommitDetails}
                   <span class="commit-title">{commitTitle(event.Body)}</span>
                 {/if}
-                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
               {:else if event.EventType === "comment_deleted"}
                 {#if event.Author}
                   <span class="event-author">{event.Author}</span>
                 {/if}
                 <span class="system-event-summary system-event-summary--sentence">{event.Summary}</span>
-                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
               {:else if event.EventType === "assigned" || event.EventType === "unassigned"}
                 {#if event.Author}
                   <span class="event-author">{event.Author}</span>
                 {/if}
                 <span class="system-event-summary system-event-summary--sentence">{event.Summary}</span>
-                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
               {:else if isLifecycleTransitionEvent(event.EventType)}
                 {#if event.Author}
                   {@render eventAuthorByline(event)}
                 {/if}
-                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
               {:else if event.EventType === "cross_referenced"}
                 {#if event.Author}
                   <span class="event-author">{event.Author}</span>
@@ -1560,7 +1560,7 @@
                 {@const sourceUrl = metadataString(metadata, "source_url")}
                 {@const sourceTitle = metadataString(metadata, "source_title") ?? event.Summary}
                 {@const sourceLink = crossReferenceLink(metadata, sourceUrl)}
-                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
                 {#if sourceLink}
                   <a
                     class={["system-event-link", { "item-ref": sourceLink.internal }]}
@@ -1578,7 +1578,7 @@
                 {#if event.Author}
                   <span class="event-author">{event.Author}</span>
                 {/if}
-                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
                 <span class="system-event-summary">{event.Summary}</span>
               {/if}
             </div>
@@ -1603,7 +1603,7 @@
               {#if event.Author}
                 <span class="event-author">{event.Author}</span>
               {/if}
-              <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+              <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
             </div>
             {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push")}
               <p class="event-summary">{event.Summary}</p>
@@ -1657,7 +1657,7 @@
                           {#if reply.Author}
                             <span class="event-author">{reply.Author}</span>
                           {/if}
-                          <span class="event-time">{timeAgo(reply.CreatedAt)}</span>
+                          <span class="event-time">{formatRelativeTime(reply.CreatedAt)}</span>
                         </div>
                         {@render eventBody(reply, true)}
                       </div>

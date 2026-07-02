@@ -2,8 +2,8 @@
   import type { PullRequest } from "../../api/types.js";
   import type { Action } from "../../types.js";
   import { getStores, getHostState } from "../../context.js";
-  import { timeAgo } from "../../utils/time.js";
-  import { repoColor } from "../../utils/repo-color.js";
+  import { formatRelativeTime } from "@kenn-io/kit-ui";
+  import { hashColor } from "@kenn-io/kit-ui";
   import { parseCIChecks, bucketCIChecks, safeDiagnosticText } from "../../utils/ci-buckets.js";
   import {
     warnOnUnknownConclusions,
@@ -73,7 +73,7 @@
   const statusLabel = $derived(kanbanLabels[pr.KanbanStatus] ?? pr.KanbanStatus);
   const statusClass = $derived(`status-chip--${pr.KanbanStatus.replace("_", "-")}`);
   const showStatus = $derived(pr.State !== "closed" && pr.State !== "merged");
-  const ago = $derived(timeAgo(pr.LastActivityAt));
+  const ago = $derived(formatRelativeTime(pr.LastActivityAt));
   const hasWorktree = $derived(
     (pr.worktree_links?.length ?? 0) > 0,
   );
@@ -178,7 +178,7 @@
         uppercase={false}
         title={repoSlug}
         tone="muted" class="repo-chip"
-        style={`color: ${repoColor(repoSlug)}; background: color-mix(in srgb, ${repoColor(repoSlug)} 15%, transparent);`}
+        style={`color: ${hashColor(repoSlug)}; background: color-mix(in srgb, ${hashColor(repoSlug)} 15%, transparent);`}
       >{repoSlug}</Chip>
     </div>
   {/if}

@@ -92,11 +92,13 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 		Mergeable: &mergeable,
 		Merged:    true,
 		MergedAt:  &closed,
+		MergedBy:  UserDTO{UserName: "merge-admin"},
 		Closed:    &closed,
 	})
 	assert.Equal("merged", pr.State)
 	assert.Equal(7, pr.Number)
 	assert.Equal("alice", pr.Author)
+	assert.Equal("merge-admin", pr.MergedBy)
 	assert.Equal("Alice", pr.AuthorDisplayName)
 	assert.Equal("clean", pr.MergeableState)
 	assert.Equal("feature", pr.HeadBranch)

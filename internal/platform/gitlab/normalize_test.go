@@ -151,6 +151,7 @@ func TestNormalizeMergeRequestUsesIIDAndPipelineStatus(t *testing.T) {
 		Draft:               true,
 		WebURL:              "https://gitlab.example.com/group/project/-/merge_requests/7",
 		Author:              &gitlab.BasicUser{Username: "alice", Name: "Alice A."},
+		MergeUser:           &gitlab.BasicUser{Username: "merge-admin"},
 		CreatedAt:           &createdAt,
 		UpdatedAt:           &updatedAt,
 		MergedAt:            &mergedAt,
@@ -163,6 +164,7 @@ func TestNormalizeMergeRequestUsesIIDAndPipelineStatus(t *testing.T) {
 	assert.Equal(7, mr.Number)
 	assert.Equal("alice", mr.Author)
 	assert.Equal("Alice A.", mr.AuthorDisplayName)
+	assert.Equal("merge-admin", mr.MergedBy)
 	assert.Equal("merged", mr.State)
 	assert.True(mr.IsDraft)
 	assert.Equal("feature", mr.HeadBranch)
@@ -178,6 +180,17 @@ func TestNormalizeMergeRequestUsesIIDAndPipelineStatus(t *testing.T) {
 	assert.Equal(mergedAt, *mr.MergedAt)
 	require.Len(t, mr.Labels, 1)
 	assert.Equal("bug", mr.Labels[0].Name)
+}
+
+func TestNormalizeMergeRequestLeavesMergedByEmptyWhenGitLabOmitsMergeUser(t *testing.T) {
+	mr := NormalizeMergeRequest(testGitLabRepoRef(), &gitlab.BasicMergeRequest{
+		ID:       1001,
+		IID:      7,
+		State:    "merged",
+		MergedAt: &time.Time{},
+	}, nil)
+
+	assert.Empty(t, mr.MergedBy)
 }
 
 func TestNormalizeMergeRequestMapsGitLabMergeability(t *testing.T) {

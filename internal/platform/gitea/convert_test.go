@@ -73,9 +73,14 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 		Updated: &updated,
 		Closed:  &closed,
 		Merged:  &closed,
+		MergedBy: &giteasdk.User{
+			UserName: "merge-admin",
+			FullName: "Merge Admin",
+		},
 	}, &mergeable)
 	assert.Equal(4, pr.Index)
 	assert.Equal("alice", pr.User.UserName)
+	assert.Equal("merge-admin", pr.MergedBy.UserName)
 	assert.Equal("open", pr.State)
 	assert.True(pr.IsLocked)
 	assert.True(pr.Draft)

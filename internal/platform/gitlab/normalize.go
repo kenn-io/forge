@@ -184,9 +184,6 @@ func normalizeMergeRequest(
 		Assignees:          basicUsernames(mr.Assignees),
 		RequestedReviewers: basicUsernames(mr.Reviewers),
 	}
-	if out.MergedBy == "" {
-		out.MergedBy = basicUsername(mr.MergedBy)
-	}
 	if mr.MergedAt != nil {
 		t := mr.MergedAt.UTC()
 		out.MergedAt = &t

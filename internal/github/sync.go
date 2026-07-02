@@ -5458,6 +5458,9 @@ func (s *Syncer) fetchMRDetail(
 			"upsert MR #%d: %w", number, err,
 		)
 	}
+	if err := s.persistMergedTransitionEvent(ctx, mrID, fullPR, normalized.MergedAt); err != nil {
+		return calls, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+	}
 	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 		return calls, fmt.Errorf("persist labels for MR #%d: %w", number, err)
 	}
@@ -7809,6 +7812,11 @@ func (s *Syncer) syncMRForRepo(
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
+	if ghPR != nil {
+		if err := s.persistMergedTransitionEvent(ctx, mrID, ghPR, normalized.MergedAt); err != nil {
+			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+		}
+	}
 	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
 		return err
 	}
@@ -8313,6 +8321,9 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		return fmt.Errorf("get closed MR #%d for labels: %w", number, err)
 	}
 	if mr != nil {
+		if err := s.persistMergedTransitionEvent(ctx, mr.ID, ghPR, mergedAt); err != nil {
+			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+		}
 		normalized, err := NormalizePR(repoID, ghPR)
 		if err != nil {
 			return fmt.Errorf("normalize closed PR #%d: %w", number, err)
@@ -8362,6 +8373,30 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		}
 	}
 	return s.markClosedLinkedNotificationsDone(ctx)
+}
+
+func (s *Syncer) persistMergedTransitionEvent(
+	ctx context.Context,
+	mrID int64,
+	ghPR *gh.PullRequest,
+	mergedAt *time.Time,
+) error {
+	if !pullRequestWasMerged(ghPR) || mergedAt == nil {
+		return nil
+	}
+	actor := ghPR.GetMergedBy().GetLogin()
+	if actor == "" {
+		return nil
+	}
+	event := NormalizeTimelineEvent(mrID, PullRequestTimelineEvent{
+		EventType: "merged",
+		Actor:     actor,
+		CreatedAt: *mergedAt,
+	})
+	if event == nil {
+		return nil
+	}
+	return s.db.UpsertMREvents(ctx, []db.MREvent{*event})
 }
 
 func (s *Syncer) fetchAndUpdateClosedMergeRequest(

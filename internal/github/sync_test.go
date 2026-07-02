@@ -5887,6 +5887,63 @@ func TestFetchMRDetailPersistsWorkflowApproval(t *testing.T) {
 	assert.Equal(1, got.WorkflowApprovalCount)
 }
 
+func TestFetchMRDetailPersistsMergedActorEventFromPullRequest(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+
+	merged := true
+	mergedBy := "merge-admin"
+	pr := buildOpenPR(7, now)
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(now.Add(time.Minute))
+	pr.ClosedAt = makeTimestamp(now.Add(time.Minute))
+	pr.UpdatedAt = makeTimestamp(now.Add(time.Minute))
+	pr.MergedBy = &gh.User{Login: &mergedBy}
+	mc := &mockClient{
+		singlePR: pr,
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7, true)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(db.MergeRequestStateMerged, got.State)
+
+	events, err := d.ListMREvents(ctx, got.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("merged", events[0].EventType)
+	assert.Equal("merge-admin", events[0].Author)
+	assert.Equal("merged this", events[0].Summary)
+	assert.True(events[0].CreatedAt.Equal(now.Add(time.Minute)))
+}
+
 func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -9053,6 +9110,49 @@ func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
 	require.Len(storedAfter.Labels, 1)
 	require.Equal("release", storedAfter.Labels[0].Name)
 	require.Equal(int64(902), storedAfter.Labels[0].PlatformID)
+}
+
+func TestFetchAndUpdateClosedPersistsMergedActorEvent(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+	pr := buildOpenPR(7, now)
+	normalizedPR, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+	require.NoError(err)
+
+	merged := true
+	mergedBy := "merge-admin"
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(now.Add(time.Minute))
+	pr.ClosedAt = makeTimestamp(now.Add(time.Minute))
+	pr.UpdatedAt = makeTimestamp(now.Add(time.Minute))
+	pr.MergedBy = &gh.User{Login: &mergedBy}
+
+	mc := &mockClient{singlePR: pr}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+
+	require.NoError(syncer.fetchAndUpdateClosed(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 7, false))
+
+	storedAfter, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 7)
+	require.NoError(err)
+	require.NotNil(storedAfter)
+	assert.Equal(db.MergeRequestStateMerged, storedAfter.State)
+
+	events, err := d.ListMREvents(ctx, storedAfter.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("merged", events[0].EventType)
+	assert.Equal("merge-admin", events[0].Author)
+	assert.Equal("merged this", events[0].Summary)
+	assert.True(events[0].CreatedAt.Equal(now.Add(time.Minute)))
 }
 
 func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testing.T) {

@@ -5778,6 +5778,7 @@ func TestIndexUpsertMRPersistsMergedActorEventFromPullRequest(t *testing.T) {
 	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
 
 	require.NoError(syncer.indexUpsertMR(ctx, &mockClient{}, repo, repoID, pr))
+	require.NoError(syncer.indexUpsertMR(ctx, &mockClient{}, repo, repoID, pr))
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
@@ -8002,7 +8003,7 @@ func TestFetchMRDetailBackfillsMergedActorOn304(t *testing.T) {
 	assert.True(events[0].CreatedAt.Equal(mergedAt))
 }
 
-func TestFetchMRDetailDoesNotRepeatNoActorBackfillOn304(t *testing.T) {
+func TestFetchMRDetailRetriesNoActorBackfillOn304(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8062,9 +8063,9 @@ func TestFetchMRDetailDoesNotRepeatNoActorBackfillOn304(t *testing.T) {
 
 	calls, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
 	require.NoError(err)
-	assert.Equal(1, calls)
+	assert.Equal(3, calls)
 	assert.Equal(int32(2), mc.conditionalCalls.Load())
-	assert.Equal(int32(1), mc.getPRCalls.Load())
+	assert.Equal(int32(2), mc.getPRCalls.Load())
 	events, err := d.ListMREvents(ctx, mrID)
 	require.NoError(err)
 	assert.Empty(events)
@@ -8133,9 +8134,9 @@ func TestFetchMRDetailKeeps304FreshWhenMergedActorTimelineBackfillFails(t *testi
 
 	calls, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
 	require.NoError(err)
-	assert.Equal(1, calls)
+	assert.Equal(3, calls)
 	assert.Equal(int32(2), mc.conditionalCalls.Load())
-	assert.Equal(int32(1), mc.getPRCalls.Load())
+	assert.Equal(int32(2), mc.getPRCalls.Load())
 	events, err := d.ListMREvents(ctx, mrID)
 	require.NoError(err)
 	assert.Empty(events)
@@ -8146,62 +8147,7 @@ func TestFetchMRDetailKeeps304FreshWhenMergedActorTimelineBackfillFails(t *testi
 	assert.True(fresh.DetailFetchedAt.After(detailFetchedAt))
 }
 
-func TestMergedActorDetailBackfillRetryExpires(t *testing.T) {
-	assert := assert.New(t)
-	mergedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
-	existing := &db.MergeRequest{ID: 10, MergedAt: &mergedAt}
-	retryAfter := mergedAt.Add(mergedActorDetailBackfillErrorBackoff)
-	syncer := &Syncer{}
-
-	syncer.recordMergedActorDetailBackfillRetry(existing, retryAfter)
-	assert.True(syncer.skipMergedActorDetailBackfill(existing, retryAfter.Add(-time.Nanosecond)))
-	assert.False(syncer.skipMergedActorDetailBackfill(existing, retryAfter))
-	assert.False(syncer.skipMergedActorDetailBackfill(existing, retryAfter.Add(time.Second)))
-}
-
-func TestBackfillMergedActorForDetailSkipsThrottledBeforeClientLookup(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-
-	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
-	require.NoError(err)
-	now := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
-	mergedAt := now.Add(time.Minute)
-	existing := &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     1000,
-		Number:         1,
-		URL:            "https://github.com/owner/repo/pull/1",
-		Title:          "test PR",
-		Author:         "alice",
-		State:          db.MergeRequestStateMerged,
-		HeadBranch:     "feature-branch",
-		BaseBranch:     "main",
-		CreatedAt:      now,
-		UpdatedAt:      mergedAt,
-		LastActivityAt: mergedAt,
-		MergedAt:       &mergedAt,
-		ClosedAt:       &mergedAt,
-	}
-	existing.ID, err = d.UpsertMergeRequest(ctx, existing)
-	require.NoError(err)
-
-	syncer := NewSyncer(
-		map[string]Client{},
-		d, nil,
-		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, nil,
-	)
-	syncer.recordMergedActorDetailBackfillTerminalMiss(existing)
-
-	wrote, err := syncer.BackfillMergedActorForDetail(ctx, existing)
-	require.NoError(err)
-	assert.False(wrote)
-}
-
-func TestBackfillMergedActorForDetailRecordsRetryOnTimelineError(t *testing.T) {
+func TestBackfillMergedActorForDetailRetriesAfterTimelineError(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -8256,9 +8202,10 @@ func TestBackfillMergedActorForDetailRecordsRetryOnTimelineError(t *testing.T) {
 	assert.Equal(int32(1), client.getPRCalls.Load())
 
 	wrote, err = syncer.BackfillMergedActorForDetail(ctx, existing)
-	require.NoError(err)
+	require.Error(err)
+	require.ErrorContains(err, "list timeline events for merged actor backfill")
 	assert.False(wrote)
-	assert.Equal(int32(1), client.getPRCalls.Load())
+	assert.Equal(int32(2), client.getPRCalls.Load())
 }
 
 func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {

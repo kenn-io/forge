@@ -63,6 +63,7 @@ func convertPullRequest(pr *forgejosdk.PullRequest, mergeable *bool) gitealike.P
 		Updated:   timeValue(pr.Updated),
 		Merged:    pr.HasMerged,
 		MergedAt:  timePtrValue(pr.Merged),
+		MergedBy:  convertUser(pr.MergedBy),
 		Closed:    timePtrValue(pr.Closed),
 		// The Forgejo SDK pull request has no requested-reviewers
 		// field, so RequestedReviewers stays nil (unknown) and

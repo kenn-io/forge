@@ -135,6 +135,7 @@ type PullRequestDTO struct {
 	Updated   time.Time
 	Merged    bool
 	MergedAt  *time.Time
+	MergedBy  UserDTO
 	Closed    *time.Time
 	// Assignees and RequestedReviewers are nil when the transport's SDK
 	// does not expose the field (unknown) and an empty non-nil slice

@@ -62,6 +62,7 @@ func convertPullRequest(pr *giteasdk.PullRequest, mergeable *bool) gitealike.Pul
 		Updated:   timeValue(pr.Updated),
 		Merged:    pr.HasMerged,
 		MergedAt:  timePtrValue(pr.Merged),
+		MergedBy:  convertUser(pr.MergedBy),
 		Closed:    timePtrValue(pr.Closed),
 		// convertUsers never returns nil, so both fields read as
 		// provider-confirmed sets: the Gitea API always serializes

@@ -94,6 +94,7 @@ type MergeRequest struct {
 	UpdatedAt          time.Time
 	LastActivityAt     time.Time
 	MergedAt           *time.Time
+	MergedBy           string
 	ClosedAt           *time.Time
 	Labels             []Label
 	// Assignees and RequestedReviewers carry usernames. nil means the

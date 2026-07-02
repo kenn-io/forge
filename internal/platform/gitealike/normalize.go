@@ -94,6 +94,7 @@ func NormalizePullRequest(repo platform.RepoRef, pr PullRequestDTO) platform.Mer
 		UpdatedAt:          pr.Updated.UTC(),
 		LastActivityAt:     pr.Updated.UTC(),
 		MergedAt:           timePtrUTC(pr.MergedAt),
+		MergedBy:           pr.MergedBy.UserName,
 		ClosedAt:           timePtrUTC(pr.Closed),
 		Labels:             NormalizeLabels(repo, pr.Labels),
 		Assignees:          userDTONames(pr.Assignees),

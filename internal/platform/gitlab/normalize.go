@@ -179,9 +179,13 @@ func normalizeMergeRequest(
 		CreatedAt:          timeValue(mr.CreatedAt),
 		UpdatedAt:          timeValue(mr.UpdatedAt),
 		LastActivityAt:     timeValue(mr.UpdatedAt),
+		MergedBy:           basicUsername(mr.MergeUser),
 		Labels:             normalizeLabelNames(repo, mr.Labels),
 		Assignees:          basicUsernames(mr.Assignees),
 		RequestedReviewers: basicUsernames(mr.Reviewers),
+	}
+	if out.MergedBy == "" {
+		out.MergedBy = basicUsername(mr.MergedBy)
 	}
 	if mr.MergedAt != nil {
 		t := mr.MergedAt.UTC()

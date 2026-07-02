@@ -6166,6 +6166,7 @@ func (s *Syncer) refreshTimeline(
 		return fmt.Errorf("list commits for MR #%d: %w", number, err)
 	}
 
+	timelineEventsFetched := true
 	timelineEvents, err := client.ListPullRequestTimelineEvents(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
 		slog.Warn("timeline event fetch failed during timeline refresh",
@@ -6173,6 +6174,7 @@ func (s *Syncer) refreshTimeline(
 			"number", number,
 			"err", err,
 		)
+		timelineEventsFetched = false
 		timelineEvents = nil
 	}
 
@@ -6216,6 +6218,15 @@ func (s *Syncer) refreshTimeline(
 
 	reviewDecision := DeriveReviewDecision(reviews)
 	lastActivityAt := computeLastActivity(ghPR, comments, reviews, commits, timelineEvents)
+	if !timelineEventsFetched {
+		nonCommentLatest, err := s.db.GetMRLatestNonCommentEventTime(ctx, mrID)
+		if err != nil {
+			return fmt.Errorf("load stored non-comment activity for MR #%d: %w", number, err)
+		}
+		if nonCommentLatest.After(lastActivityAt) {
+			lastActivityAt = nonCommentLatest
+		}
+	}
 
 	return s.db.UpdateMRDerivedFields(ctx, repoID, number, db.MRDerivedFields{
 		ReviewDecision: reviewDecision,

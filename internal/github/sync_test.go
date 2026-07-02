@@ -3615,6 +3615,66 @@ func TestRefreshTimelineUsesForcePushForLastActivity(t *testing.T) {
 	assert.Equal(forcePushAt, pr.LastActivityAt)
 }
 
+func TestRefreshTimelineFetchFailurePreservesStoredForcePushActivity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	forcePushAt := now.Add(30 * time.Minute)
+	commitSHA := "abc123def456"
+	commitMsg := "fix: tighten validation"
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     1,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/pull/1",
+		Title:          "force push activity",
+		Author:         "dev",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      now.Add(-3 * time.Hour),
+		UpdatedAt:      now.Add(-2 * time.Hour),
+		LastActivityAt: forcePushAt,
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: mrID,
+		EventType:      "force_push",
+		Author:         "alice",
+		Summary:        "aaaaaaa -> bbbbbbb",
+		MetadataJSON:   `{"ref":"feature"}`,
+		CreatedAt:      forcePushAt,
+		DedupeKey:      "force-push-feature-bbbbbbbbbbbb",
+	}}))
+
+	mc := &mockClient{
+		commits: []*gh.RepositoryCommit{{
+			SHA: &commitSHA,
+			Commit: &gh.Commit{
+				Message: &commitMsg,
+				Author:  &gh.CommitAuthor{Name: new("dev"), Date: makeTimestamp(now.Add(-1 * time.Hour))},
+			},
+		}},
+		timelineEventsErr: errors.New("graphql unavailable"),
+		reviews:           []*gh.PullRequestReview{},
+		comments:          []*gh.IssueComment{},
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
+	require.NoError(syncer.refreshTimeline(ctx, repo, repoID, mrID, buildOpenPR(1, now.Add(-2*time.Hour))))
+
+	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal(forcePushAt, pr.LastActivityAt)
+}
+
 func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

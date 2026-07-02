@@ -8039,6 +8039,48 @@ func TestMergedActorDetailBackfillRetryExpires(t *testing.T) {
 	assert.False(syncer.skipMergedActorDetailBackfill(existing, retryAfter.Add(time.Second)))
 }
 
+func TestBackfillMergedActorForDetailSkipsThrottledBeforeClientLookup(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	now := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	mergedAt := now.Add(time.Minute)
+	existing := &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     1000,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/pull/1",
+		Title:          "test PR",
+		Author:         "alice",
+		State:          db.MergeRequestStateMerged,
+		HeadBranch:     "feature-branch",
+		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      mergedAt,
+		LastActivityAt: mergedAt,
+		MergedAt:       &mergedAt,
+		ClosedAt:       &mergedAt,
+	}
+	existing.ID, err = d.UpsertMergeRequest(ctx, existing)
+	require.NoError(err)
+
+	syncer := NewSyncer(
+		map[string]Client{},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	syncer.recordMergedActorDetailBackfillTerminalMiss(existing)
+
+	wrote, err := syncer.BackfillMergedActorForDetail(ctx, existing)
+	require.NoError(err)
+	assert.False(wrote)
+}
+
 func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

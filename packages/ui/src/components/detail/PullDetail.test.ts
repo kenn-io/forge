@@ -846,7 +846,7 @@ describe("PullDetail approvals", () => {
 
     await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
 
-    expect(screen.getByRole("heading", { name: "Merge Pull Request" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
   });
 
@@ -865,7 +865,7 @@ describe("PullDetail approvals", () => {
 
     await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
 
-    expect(screen.getByRole("heading", { name: "Merge Pull Request" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
   });
 
@@ -899,7 +899,7 @@ describe("PullDetail approvals", () => {
 
     await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
 
-    expect(screen.getByRole("heading", { name: "Merge Pull Request" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
     // A failed aggregate with a still-running check must not route to deferred
     // merge, since the backend would reject that with a 409.
     expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();

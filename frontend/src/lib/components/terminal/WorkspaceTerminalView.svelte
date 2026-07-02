@@ -3477,7 +3477,7 @@
     overflow: hidden;
   }
 
-  .right-sidebar:has(:global(.modal-overlay)) {
+  .right-sidebar:has(:global(.kit-modal-overlay)) {
     z-index: 80;
   }
 

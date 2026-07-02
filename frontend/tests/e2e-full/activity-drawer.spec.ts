@@ -968,7 +968,7 @@ test.describe("activity split view and detail drawers", () => {
     const detail = await openActivityPRSplit(page);
     await detail.locator(".btn--merge").first().click();
 
-    const modal = page.locator(".modal", { hasText: "Merge Pull Request" });
+    const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
     await expect(modal).toBeVisible();
 
     await page.keyboard.press("Escape");

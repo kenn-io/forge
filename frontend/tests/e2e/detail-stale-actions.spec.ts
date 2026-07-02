@@ -361,7 +361,7 @@ test.describe("PR detail merge modal route reset", () => {
     const mergeButton = page.locator(".btn--merge").first();
     await expect(mergeButton).toBeDisabled();
     await mergeButton.click({ force: true });
-    await expect(page.locator(".modal-title", { hasText: "Merge Pull Request" })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
   });
 
   const warningLineCases = [
@@ -460,7 +460,7 @@ test.describe("PR detail merge modal route reset", () => {
 
     // Open the merge modal for PR A.
     await page.locator(".btn--merge").first().click();
-    await expect(page.locator(".modal-title", { hasText: "Merge Pull Request" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toBeVisible();
 
     // Navigate to PR B. The action-local reset must close the
     // modal as soon as the props change.
@@ -473,7 +473,7 @@ test.describe("PR detail merge modal route reset", () => {
     );
 
     await expect(page.locator(".detail-title")).toContainText(prB.Title);
-    await expect(page.locator(".modal-title", { hasText: "Merge Pull Request" })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
   });
 
   test("hides merge actions when repo permissions disallow merging", async ({ page }) => {
@@ -519,7 +519,7 @@ test.describe("PR detail merge modal route reset", () => {
 
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
     await expect(page.locator(".btn--merge")).toHaveCount(0);
-    await expect(page.locator(".modal-title", { hasText: "Merge Pull Request" })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
   });
 
   test("merge actions wait for settings that match the selected repo", async ({ page }) => {
@@ -591,10 +591,10 @@ test.describe("PR detail merge modal route reset", () => {
     await expect(mergeButton).toBeVisible();
     await mergeButton.click();
 
-    await expect(page.locator(".modal-title", { hasText: "Merge Pull Request" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toBeVisible();
     await expect(page.locator(".method-option")).toHaveCount(0);
     await expect(
-      page.locator(".modal-footer").getByRole("button", {
+      page.locator(".kit-modal-footer").getByRole("button", {
         name: "Squash and merge",
       }),
     ).toBeVisible();
@@ -606,7 +606,7 @@ test.describe("PR detail merge modal route reset", () => {
     const mergeRequest = page.waitForRequest(
       (req) => req.method() === "POST" && /\/merge$/.test(new URL(req.url()).pathname),
     );
-    await page.locator(".modal-footer").getByRole("button", { name: "Squash and merge" }).click();
+    await page.locator(".kit-modal-footer").getByRole("button", { name: "Squash and merge" }).click();
     const request = await mergeRequest;
     const body = request.postDataJSON() as { expected_head_sha?: string };
     expect(body.expected_head_sha).toBe("fixture-head-sha-300");

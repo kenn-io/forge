@@ -152,7 +152,7 @@ async function gotoPull42(page: Page): Promise<void> {
 
 async function openMergeModalAndConfirm(page: Page): Promise<void> {
   await page.locator(".btn--merge").first().click();
-  const modal = page.locator(".modal", { hasText: "Merge Pull Request" });
+  const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
   await expect(modal).toBeVisible();
   await modal.getByRole("button", { name: "Squash and merge" }).click();
 }
@@ -179,7 +179,7 @@ test.describe("head-pinned merge and approve", () => {
     await gotoPull42(page);
     await openMergeModalAndConfirm(page);
 
-    await expect(page.locator(".modal-title", { hasText: "Merge Pull Request" })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
     expect(mergeBody).not.toBeNull();
     expect(mergeBody!["expected_head_sha"]).toBe(REVIEWED_SHA);
   });
@@ -273,7 +273,7 @@ test.describe("head-pinned merge and approve", () => {
     );
     await openMergeModalAndConfirm(page);
 
-    await expect(page.locator(".modal-title", { hasText: "Merge Pull Request" })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
     await expect(page.getByText(STALE_PROMPT)).toBeVisible();
     await refresh;
     // The prompt asks for a re-review; the actions themselves stay
@@ -289,7 +289,7 @@ test.describe("head-pinned merge and approve", () => {
     await gotoPull42(page);
     await openMergeModalAndConfirm(page);
 
-    const modal = page.locator(".modal", { hasText: "Merge Pull Request" });
+    const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
     await expect(modal).toBeVisible();
     await expect(modal.locator(".merge-error")).toHaveText("pull request is not mergeable");
     await expect(page.getByText(STALE_PROMPT)).toHaveCount(0);

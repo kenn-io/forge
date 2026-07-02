@@ -2667,7 +2667,7 @@ test.describe("sidebar toggle behavior", () => {
 
     await page.locator(".right-sidebar .btn--merge").first().click();
     await expect(
-      page.locator(".right-sidebar .modal-title", {
+      page.locator(".right-sidebar .kit-modal-title", {
         hasText: "Merge Pull Request",
       }),
     ).toBeVisible();
@@ -2679,7 +2679,7 @@ test.describe("sidebar toggle behavior", () => {
       }
       const rect = resizer.getBoundingClientRect();
       const topElement = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      return topElement instanceof HTMLElement && topElement.closest(".modal-overlay") !== null;
+      return topElement instanceof HTMLElement && topElement.closest(".kit-modal-overlay") !== null;
     });
 
     expect(topElementIsModal).toBe(true);

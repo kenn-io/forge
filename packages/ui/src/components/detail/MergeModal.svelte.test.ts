@@ -83,7 +83,7 @@ describe("MergeModal head pinning", () => {
   }
 
   async function confirmMerge(): Promise<void> {
-    await fireEvent.click(screen.getByText("Squash and merge", { selector: ".modal-footer button" }));
+    await fireEvent.click(screen.getByText("Squash and merge", { selector: ".kit-modal-footer button" }));
   }
 
   it("echoes the reviewed head as expected_head_sha in the merge body", async () => {
@@ -166,7 +166,7 @@ describe("MergeModal head pinning", () => {
       onclose,
     });
 
-    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".modal-footer button" }));
+    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".kit-modal-footer button" }));
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     const [path, init] = post.mock.calls[0];
@@ -200,7 +200,7 @@ describe("MergeModal head pinning", () => {
       deferUntilChecksPass: true,
     });
 
-    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".modal-footer button" }));
+    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".kit-modal-footer button" }));
 
     const pendingButton = screen.getByRole<HTMLButtonElement>("button", { name: "Merge scheduled..." });
     expect(pendingButton.disabled).toBe(true);
@@ -217,7 +217,7 @@ describe("MergeModal head pinning", () => {
       onclose,
     });
 
-    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".modal-footer button" }));
+    await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".kit-modal-footer button" }));
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     const [path] = post.mock.calls[0];

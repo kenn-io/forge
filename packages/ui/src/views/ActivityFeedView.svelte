@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ActivityItem } from "../api/types.js";
+  import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import ActivityFeed from "../components/ActivityFeed.svelte";
   import CommitDiffPanel from "../components/CommitDiffPanel.svelte";
   import LeftSidebarToggle from "../components/shared/LeftSidebarToggle.svelte";
@@ -274,11 +275,15 @@
 
   // Escape closes the active drawer when one is open. Mirrors the
   // behavior of the previous DetailDrawer the split view replaced.
+  // Dialogs register on the modal stack and their kit-ui Escape handler
+  // runs after this one (later window listener), so defaultPrevented can't
+  // signal "a dialog owns this Escape" here — check the stack instead.
   $effect(() => {
     if (!hasActiveDetail) return;
     function onKey(event: KeyboardEvent): void {
       if (event.key !== "Escape") return;
       if (event.defaultPrevented) return;
+      if (getStackDepth() > 0) return;
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;

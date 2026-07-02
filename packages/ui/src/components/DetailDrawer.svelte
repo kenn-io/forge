@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import PullDetail from "./detail/PullDetail.svelte";
   import IssueDetail from "./detail/IssueDetail.svelte";
 
@@ -27,6 +28,10 @@
   }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent): void {
+    // A dialog above the drawer (e.g. the merge modal) owns Escape via the
+    // modal stack; its kit-ui handler runs after this one, so the stack —
+    // not defaultPrevented — is the signal to stand down.
+    if (getStackDepth() > 0) return;
     if (e.key === "Escape" && !e.defaultPrevented) {
       e.preventDefault();
       onClose();

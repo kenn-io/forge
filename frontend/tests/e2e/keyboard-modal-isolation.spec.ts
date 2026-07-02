@@ -30,7 +30,7 @@ async function openMergeModal(page: Page): Promise<void> {
   const mergeButton = page.locator(".btn--merge").first();
   await expect(mergeButton).toBeVisible();
   await mergeButton.click();
-  await expect(page.locator(".modal-title", { hasText: "Merge Pull Request" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toBeVisible();
 }
 
 async function openRepoImportModal(page: Page): Promise<void> {

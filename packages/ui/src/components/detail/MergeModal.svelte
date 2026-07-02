@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from "@kenn-io/kit-ui";
+  import { Button, Modal } from "@kenn-io/kit-ui";
   import { onMount, untrack } from "svelte";
 
   import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
@@ -9,14 +9,7 @@
 
   const client = getClient();
 
-  onMount(() => {
-    const cleanupFrame = pushModalFrame("merge-modal", []);
-    window.addEventListener("keydown", handleKeydown, { capture: true });
-    return () => {
-      window.removeEventListener("keydown", handleKeydown, { capture: true });
-      cleanupFrame();
-    };
-  });
+  onMount(() => pushModalFrame("merge-modal", []));
 
   interface Props {
     owner: string;
@@ -177,14 +170,6 @@
     void submitMerge(false);
   }
 
-  function handleKeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      onclose();
-    }
-  }
-
   function methodLabel(): string {
     return (
       methods.find(m => m.value === selectedMethod)?.label
@@ -203,34 +188,13 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-  class="modal-overlay"
-  onclick={onclose}
-  onkeydown={handleKeydown}
+<Modal
+  title="Merge Pull Request"
+  width="min(560px, 92vw)"
+  maxWidth="min(560px, 92vw)"
+  {onclose}
 >
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="modal" onclick={(e) => e.stopPropagation()}>
-    <div class="modal-header">
-      <h3 class="modal-title">Merge Pull Request</h3>
-      <button
-        class="modal-close"
-        onclick={onclose}
-        title="Cancel (Esc)"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="currentColor"
-        >
-          <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
-        </svg>
-      </button>
-    </div>
-
-    <div class="modal-body">
+  <div class="merge-body">
       {#if methods.length > 1}
         <div class="field" role="group" aria-label="Merge method">
           <span class="field-label">Merge method</span>
@@ -285,7 +249,6 @@
           CI is still running. This will merge only if the checks that are pending now pass.
         </div>
       {/if}
-    </div>
 
     {#if headPinMissing}
       <p class="head-pin-note">
@@ -293,40 +256,40 @@
         next sync and re-review before merging.
       </p>
     {/if}
+  </div>
 
-    <div class="modal-footer">
+  {#snippet footer()}
+    <Button
+      class="btn btn--secondary"
+      onclick={onclose}
+      disabled={merging}
+      tone="neutral"
+      surface="outline"
+    >
+      Cancel
+    </Button>
+    <Button
+      class="btn btn--primary btn--green"
+      onclick={handleMerge}
+      disabled={merging || headPinMissing}
+      tone="success"
+      surface="solid"
+    >
+      {primaryButtonLabel()}
+    </Button>
+    {#if deferUntilChecksPass}
       <Button
-        class="btn btn--secondary"
-        onclick={onclose}
-        disabled={merging}
-        tone="neutral"
-        surface="outline"
-      >
-        Cancel
-      </Button>
-      <Button
-        class="btn btn--primary btn--green"
-        onclick={handleMerge}
+        class="btn btn--merge-anyway"
+        onclick={handleMergeAnyway}
         disabled={merging || headPinMissing}
         tone="success"
-        surface="solid"
+        surface="soft"
       >
-        {primaryButtonLabel()}
+        {mergeAnywayButtonLabel()}
       </Button>
-      {#if deferUntilChecksPass}
-        <Button
-          class="btn btn--merge-anyway"
-          onclick={handleMergeAnyway}
-          disabled={merging || headPinMissing}
-          tone="success"
-          surface="soft"
-        >
-          {mergeAnywayButtonLabel()}
-        </Button>
-      {/if}
-    </div>
-  </div>
-</div>
+    {/if}
+  {/snippet}
+</Modal>
 
 <style>
   .ci-defer-note {
@@ -345,73 +308,10 @@
     font-size: var(--font-size-sm);
   }
 
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--overlay-bg);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-    animation: fade-in 0.12s ease-out;
-  }
-
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  .modal {
-    width: min(560px, 92vw);
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
-    display: flex;
-    flex-direction: column;
-    animation: scale-in 0.12s ease-out;
-  }
-
-  @keyframes scale-in {
-    from { opacity: 0; transform: scale(0.96); }
-    to { opacity: 1; transform: scale(1); }
-  }
-
-  .modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border-muted);
-  }
-
-  .modal-title {
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-  }
-
-  .modal-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    transition: background 0.1s, color 0.1s;
-  }
-  .modal-close:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .modal-body {
-    padding: 16px;
+  .merge-body {
     display: flex;
     flex-direction: column;
     gap: 14px;
-    max-height: 60vh;
-    overflow-y: auto;
   }
 
   .field {
@@ -496,11 +396,4 @@
     border-radius: var(--radius-sm);
   }
 
-  .modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 12px 16px;
-    border-top: 1px solid var(--border-muted);
-  }
 </style>

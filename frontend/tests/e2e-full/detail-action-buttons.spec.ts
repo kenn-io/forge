@@ -435,7 +435,7 @@ test.describe("detail action buttons", () => {
       await expect(page.locator(".pull-detail")).toBeVisible();
 
       await page.locator(".btn--merge").first().click();
-      const modal = page.locator(".modal", { hasText: "Merge Pull Request" });
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
       await expect(modal).toBeVisible();
 
       const deferResponse = page.waitForResponse((response) => {
@@ -474,7 +474,7 @@ test.describe("detail action buttons", () => {
       await expect(page.locator(".pull-detail")).toBeVisible();
 
       await page.locator(".btn--merge").first().click();
-      const modal = page.locator(".modal", { hasText: "Merge Pull Request" });
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
       await expect(modal).toBeVisible();
       await expect(modal.getByRole("button", { name: "Merge after CI is complete" })).toBeVisible();
 
@@ -505,7 +505,7 @@ test.describe("detail action buttons", () => {
       await expect(page.locator(".pull-detail")).toBeVisible();
 
       await page.locator(".btn--merge").first().click();
-      const modal = page.locator(".modal", { hasText: "Merge Pull Request" });
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
       await expect(modal).toBeVisible();
 
       const deferResponse = page.waitForResponse((response) => {
@@ -555,7 +555,7 @@ test.describe("detail action buttons", () => {
       await expect(merge).toHaveAttribute("title", "You do not have permission to merge in this repository");
       // Clicking a disabled merge button must not open the merge modal.
       await merge.click({ force: true });
-      await expect(page.locator(".modal-title", { hasText: "Merge Pull Request" })).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();
     }
@@ -575,7 +575,7 @@ test.describe("detail action buttons", () => {
       const merge = page.locator(".btn--merge").first();
       await expect(merge).toBeDisabled();
       await merge.click({ force: true });
-      await expect(page.locator(".modal-title", { hasText: "Merge Pull Request" })).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();
     }

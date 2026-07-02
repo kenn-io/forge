@@ -115,7 +115,7 @@ test.describe("UTC maintainer flows", () => {
     await expect(page.locator(".btn--merge")).toBeVisible();
 
     await page.locator(".btn--merge").click();
-    await expect(page.locator(".modal-title")).toHaveText("Merge Pull Request");
+    await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toBeVisible();
     await page.locator(".btn--primary.btn--green").click();
 
     await expect(page.locator(".kit-chip.kit-chip--tone-merged")).toHaveText("Merged");

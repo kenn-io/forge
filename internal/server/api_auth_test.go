@@ -199,6 +199,104 @@ func TestRedactedQueryMasksBootstrapToken(t *testing.T) {
 	assert.Equal("tab=pulls", redactedQuery(plain))
 }
 
+func authPostLogin(
+	t *testing.T, ts *httptest.Server, path, body string,
+	decorate func(*http.Request),
+) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(
+		http.MethodPost, ts.URL+path, strings.NewReader(body),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	if decorate != nil {
+		decorate(req)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { resp.Body.Close() })
+	return resp
+}
+
+// TestAuthLoginSetsCookie pins the overlay login path: POSTing the
+// token as JSON sets the session cookie without the token ever
+// appearing in a request URI, and that cookie authorizes the API. A
+// wrong token is rejected without a cookie.
+func TestAuthLoginSetsCookie(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ts := newAuthTestServer(t, "secret-token")
+
+	resp := authPostLogin(t, ts, "/auth/login", `{"token":"secret-token"}`, nil)
+	require.Equal(http.StatusNoContent, resp.StatusCode)
+	cookies := resp.Cookies()
+	require.Len(cookies, 1)
+	assert.Equal("middleman_auth", cookies[0].Name)
+	assert.True(cookies[0].HttpOnly)
+
+	apiResp := authGet(t, ts, "/api/v1/snapshot", func(r *http.Request) {
+		r.AddCookie(cookies[0])
+	})
+	assert.Equal(http.StatusOK, apiResp.StatusCode,
+		"the login cookie authorizes API requests")
+
+	resp = authPostLogin(t, ts, "/auth/login", `{"token":"wrong"}`, nil)
+	assert.Equal(http.StatusForbidden, resp.StatusCode)
+	assert.Empty(resp.Cookies())
+}
+
+// TestAuthLoginRejectsForgeableRequests pins the same-origin defenses:
+// cross-origin fetches, non-JSON bodies (cross-origin form posts), and
+// non-POST methods are all rejected, and a malformed body is a 400.
+func TestAuthLoginRejectsForgeableRequests(t *testing.T) {
+	assert := assert.New(t)
+	ts := newAuthTestServer(t, "secret-token")
+
+	resp := authPostLogin(t, ts, "/auth/login", `{"token":"secret-token"}`,
+		func(r *http.Request) {
+			r.Header.Set("Sec-Fetch-Site", "cross-site")
+		})
+	assert.Equal(http.StatusForbidden, resp.StatusCode)
+	assert.Empty(resp.Cookies())
+
+	resp = authPostLogin(t, ts, "/auth/login", "token=secret-token",
+		func(r *http.Request) {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		})
+	assert.Equal(http.StatusUnsupportedMediaType, resp.StatusCode)
+	assert.Empty(resp.Cookies())
+
+	resp = authGet(t, ts, "/auth/login", nil)
+	assert.Equal(http.StatusMethodNotAllowed, resp.StatusCode)
+
+	resp = authPostLogin(t, ts, "/auth/login", "{", nil)
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+}
+
+// TestAuthLoginUnderBasePath pins login when middleman is mounted
+// under a base path.
+func TestAuthLoginUnderBasePath(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv := New(dbtest.Open(t), nil, nil, "/middleman/", nil, ServerOptions{
+		APIAuthToken: "secret-token",
+	})
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+
+	resp := authPostLogin(
+		t, ts, "/middleman/auth/login", `{"token":"secret-token"}`, nil,
+	)
+	require.Equal(http.StatusNoContent, resp.StatusCode)
+	require.Len(resp.Cookies(), 1)
+
+	apiResp := authGet(t, ts, "/middleman/api/v1/snapshot",
+		func(r *http.Request) {
+			r.AddCookie(resp.Cookies()[0])
+		})
+	assert.Equal(http.StatusOK, apiResp.StatusCode)
+}
+
 // TestAuthLogoutExpiresCookie pins logout: GET /auth/logout expires the
 // session cookie and redirects to the base path, regardless of whether
 // require_auth is on (the table covers both).

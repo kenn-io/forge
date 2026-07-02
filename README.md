@@ -309,7 +309,12 @@ With `require_auth` on:
 - Retrieve a one-shot browser login link: `middleman auth url` (defaults
   to the loopback URL from runtime metadata) or
   `middleman auth url --base-url https://host/middleman/` for the
-  proxied address. Open it once to set the session cookie.
+  proxied address. Open it once to set the session cookie. The link
+  carries the token in its query string — the server strips it via an
+  immediate redirect and redacts it from its own logs, but intermediate
+  proxies may log full request URIs, so treat the link like a password
+  (or paste the token into the login overlay instead, which sends it in
+  a POST body).
 - Print the raw bearer for scripts: `middleman auth token`.
 - Rotate the token: `middleman auth rotate` (refuses while the daemon is
   running — stop it first, or `--force` then restart so the server picks

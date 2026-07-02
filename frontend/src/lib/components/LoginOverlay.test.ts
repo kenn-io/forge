@@ -1,9 +1,17 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import LoginOverlay from "./LoginOverlay.svelte";
-import { loginHref } from "../api/auth-urls.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+async function submitToken(token: string): Promise<void> {
+  const input = screen.getByLabelText("Access token") as HTMLInputElement;
+  await fireEvent.input(input, { target: { value: token } });
+  await fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+}
 
 describe("LoginOverlay", () => {
   test("renders the token field and hint", () => {
@@ -12,20 +20,40 @@ describe("LoginOverlay", () => {
     expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
   });
 
-  test("submitting a token navigates to the bootstrap URL", async () => {
-    const navigate = vi.fn();
-    render(LoginOverlay, { props: { navigate } });
-    const input = screen.getByLabelText("Access token") as HTMLInputElement;
-    await fireEvent.input(input, { target: { value: "  tok123  " } });
-    await fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  test("submitting a token POSTs it as JSON and reloads on success", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const reload = vi.fn();
+    render(LoginOverlay, { props: { reload } });
+
+    await submitToken("  tok123  ");
+    await waitFor(() => expect(reload).toHaveBeenCalled());
+
     const base = window.__BASE_PATH__ ?? "/";
-    expect(navigate).toHaveBeenCalledWith(loginHref(base, "tok123"));
+    expect(fetchMock).toHaveBeenCalledWith(`${base}auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: "tok123" }),
+    });
   });
 
-  test("does not navigate on an empty token", async () => {
-    const navigate = vi.fn();
-    render(LoginOverlay, { props: { navigate } });
+  test("a rejected token shows an error without reloading", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid auth token", { status: 403 })));
+    const reload = vi.fn();
+    render(LoginOverlay, { props: { reload } });
+
+    await submitToken("wrong");
+    await screen.findByRole("alert");
+
+    expect(screen.getByRole("alert").textContent).toBe("Invalid token");
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  test("does not submit an empty token", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(LoginOverlay);
     await fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(navigate).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

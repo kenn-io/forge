@@ -1,21 +1,41 @@
 <script lang="ts">
-  import { loginHref } from "../api/auth-urls.js";
-
   interface Props {
-    navigate?: (url: string) => void;
+    reload?: () => void;
   }
 
-  let { navigate = (url: string) => { window.location.href = url; } }: Props = $props();
+  let { reload = () => window.location.reload() }: Props = $props();
 
   let token = $state("");
+  let error = $state<string | null>(null);
+  let submitting = $state(false);
 
   const basePath = typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/";
 
-  function submit(event: SubmitEvent): void {
+  // The token is POSTed as a JSON body instead of navigating to the
+  // ?auth_token= bootstrap URL so it never appears in a request URI,
+  // which reverse proxies commonly log.
+  async function submit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     const trimmed = token.trim();
-    if (trimmed === "") return;
-    navigate(loginHref(basePath, trimmed));
+    if (trimmed === "" || submitting) return;
+    submitting = true;
+    error = null;
+    try {
+      const response = await fetch(`${basePath}auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: trimmed }),
+      });
+      if (!response.ok) {
+        error = response.status === 403 ? "Invalid token" : `Sign in failed (${response.status})`;
+        return;
+      }
+      reload();
+    } catch {
+      error = "Sign in failed: could not reach the server";
+    } finally {
+      submitting = false;
+    }
   }
 </script>
 
@@ -34,7 +54,10 @@
       aria-label="Access token"
       bind:value={token}
     />
-    <button class="login-submit" type="submit">Sign in</button>
+    {#if error !== null}
+      <p class="login-error" role="alert">{error}</p>
+    {/if}
+    <button class="login-submit" type="submit" disabled={submitting}>Sign in</button>
   </form>
 </div>
 
@@ -69,6 +92,12 @@
   .login-hint {
     margin: 0;
     color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .login-error {
+    margin: 0;
+    color: var(--accent-red);
     font-size: var(--font-size-sm);
   }
 

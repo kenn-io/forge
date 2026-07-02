@@ -2,6 +2,8 @@ package server
 
 import (
 	"crypto/subtle"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,6 +31,25 @@ func tokenEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
+// stripBasePath removes the configured base path prefix so /auth/*
+// route matching works both at the root and under a mount point.
+func (s *Server) stripBasePath(path string) string {
+	if s.basePath == "/" {
+		return path
+	}
+	return strings.TrimPrefix(path, strings.TrimSuffix(s.basePath, "/"))
+}
+
+func newAuthSessionCookie(token string) *http.Cookie {
+	return &http.Cookie{
+		Name:     authCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
 // handleAuthBootstrap converts a valid ?auth_token= query into the
 // session cookie and redirects to the same URL without the parameter.
 // Returns true when it wrote a response (redirect or rejection).
@@ -43,13 +64,7 @@ func (s *Server) handleAuthBootstrap(
 		http.Error(w, "invalid auth token", http.StatusForbidden)
 		return true
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     authCookieName,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	http.SetCookie(w, newAuthSessionCookie(token))
 	redirect := *r.URL
 	query := redirect.Query()
 	query.Del(authBootstrapParam)
@@ -59,6 +74,40 @@ func (s *Server) handleAuthBootstrap(
 		target = "/"
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+	return true
+}
+
+// handleLogin exchanges a token submitted in a JSON POST body for the
+// session cookie. The login overlay uses it instead of navigating to
+// the ?auth_token= bootstrap URL so a pasted token never appears in a
+// request URI, which reverse proxies commonly log. Same-origin
+// enforcement matches the mutating API routes (checkCSRF). Returns
+// true when it wrote a response.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) bool {
+	if s.stripBasePath(r.URL.Path) != "/auth/login" {
+		return false
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return true
+	}
+	if !checkCSRF(w, r, false) {
+		return true
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body); err != nil {
+		http.Error(w, "body must be JSON with a token field", http.StatusBadRequest)
+		return true
+	}
+	if !tokenEqual(strings.TrimSpace(body.Token), s.apiAuthToken) {
+		http.Error(w, "invalid auth token", http.StatusForbidden)
+		return true
+	}
+	http.SetCookie(w, newAuthSessionCookie(s.apiAuthToken))
+	w.WriteHeader(http.StatusNoContent)
 	return true
 }
 
@@ -96,11 +145,7 @@ func (s *Server) authorizeAPIRequest(
 // session cookie on the WebSocket upgrade, so the same cookie/bearer
 // check applies uniformly.
 func (s *Server) isGatedAPIRequest(r *http.Request) bool {
-	path := r.URL.Path
-	if s.basePath != "/" {
-		prefix := strings.TrimSuffix(s.basePath, "/")
-		path = strings.TrimPrefix(path, prefix)
-	}
+	path := s.stripBasePath(r.URL.Path)
 	return strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws/")
 }
 
@@ -116,12 +161,7 @@ func AuthBootstrapURL(baseURL, token string) string {
 // cookie is HttpOnly, so only the server can clear it. Returns true when
 // it wrote a response.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) bool {
-	path := r.URL.Path
-	if s.basePath != "/" {
-		prefix := strings.TrimSuffix(s.basePath, "/")
-		path = strings.TrimPrefix(path, prefix)
-	}
-	if path != "/auth/logout" {
+	if s.stripBasePath(r.URL.Path) != "/auth/logout" {
 		return false
 	}
 	http.SetCookie(w, &http.Cookie{

@@ -1117,6 +1117,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.handleAuthBootstrap(w, r) {
 			return
 		}
+		if s.handleLogin(w, r) {
+			return
+		}
 		if s.isGatedAPIRequest(r) && !s.authorizeAPIRequest(w, r) {
 			return
 		}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SegmentedControl } from "@kenn-io/kit-ui";
   import { getStores } from "@middleman/ui";
   import type { ActivitySettings as ActivitySettingsType } from "@middleman/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
@@ -66,10 +67,15 @@
 
 <div class="setting-row">
   <span class="setting-label">Default view mode</span>
-  <div class="segmented-control">
-    <button class="seg-btn" class:active={activity.view_mode === "flat"} onclick={() => setViewMode("flat")}>Flat</button>
-    <button class="seg-btn" class:active={activity.view_mode === "threaded"} onclick={() => setViewMode("threaded")}>Threaded</button>
-  </div>
+  <SegmentedControl
+    options={[
+      { value: "flat", label: "Flat" },
+      { value: "threaded", label: "Threaded" },
+    ]}
+    value={activity.view_mode}
+    onchange={(v) => setViewMode(v as ActivitySettingsType["view_mode"])}
+    ariaLabel="Default view mode"
+  />
 </div>
 
 <div class="setting-row">
@@ -81,11 +87,12 @@
 
 <div class="setting-row">
   <span class="setting-label">Default time range</span>
-  <div class="segmented-control">
-    {#each TIME_RANGES as r}
-      <button class="seg-btn" class:active={activity.time_range === r.value} onclick={() => setTimeRange(r.value)}>{r.label}</button>
-    {/each}
-  </div>
+  <SegmentedControl
+    options={TIME_RANGES}
+    value={activity.time_range}
+    onchange={(v) => setTimeRange(v as ActivitySettingsType["time_range"])}
+    ariaLabel="Default time range"
+  />
 </div>
 
 <div class="setting-row">
@@ -105,16 +112,6 @@
 <style>
   .setting-row { display: flex; align-items: center; justify-content: space-between; min-height: 32px; }
   .setting-label { font-size: var(--font-size-md); color: var(--text-secondary); }
-  .segmented-control {
-    display: flex; align-items: center; gap: 1px;
-    background: var(--bg-inset); border-radius: var(--radius-sm); padding: 2px;
-  }
-  .seg-btn {
-    padding: 4px 12px; font-size: var(--font-size-sm); font-weight: 500; color: var(--text-muted);
-    border-radius: calc(var(--radius-sm) - 1px); transition: background 0.12s, color 0.12s;
-  }
-  .seg-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-sm); }
-  .seg-btn:hover:not(.active) { color: var(--text-secondary); }
   .toggle-btn { cursor: pointer; padding: 0; background: none; }
   .toggle-track {
     display: block; width: 36px; height: 20px; border-radius: 10px;

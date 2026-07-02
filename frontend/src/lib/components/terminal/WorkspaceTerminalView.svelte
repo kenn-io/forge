@@ -2628,9 +2628,9 @@
           </div>
           <div class="header-right">
             {#if !hideRightSidebar}
-              <div class="seg-control">
+              <div class="sidebar-tabs">
                 <button
-                  class="seg-btn"
+                  class="sidebar-tab-btn"
                   class:active={sidebarOpen && sidebarTab === "diff"}
                   disabled={actionsBlocked}
                   onclick={() => handleSegmentClick("diff")}
@@ -2639,7 +2639,7 @@
                 </button>
                 {#if workspace.item_type === "issue"}
                   <button
-                    class="seg-btn"
+                    class="sidebar-tab-btn"
                     class:active={sidebarOpen && sidebarTab === "issue"}
                     disabled={actionsBlocked}
                     onclick={() => handleSegmentClick("issue")}
@@ -2649,7 +2649,7 @@
                 {/if}
                 {#if workspace.item_type === "kata_task"}
                   <button
-                    class="seg-btn"
+                    class="sidebar-tab-btn"
                     class:active={sidebarOpen && sidebarTab === "kata_task"}
                     disabled={actionsBlocked}
                     onclick={() => handleSegmentClick("kata_task")}
@@ -2659,7 +2659,7 @@
                 {/if}
                 {#if getWorkspacePRNumber(workspace) !== null}
                   <button
-                    class="seg-btn"
+                    class="sidebar-tab-btn"
                     class:active={sidebarOpen && sidebarTab === "pr"}
                     disabled={actionsBlocked}
                     onclick={() => handleSegmentClick("pr")}
@@ -2669,7 +2669,7 @@
                 {/if}
                 {#if workspace.item_type === "pull_request"}
                   <button
-                    class="seg-btn"
+                    class="sidebar-tab-btn"
                     class:active={sidebarOpen && sidebarTab === "reviews"}
                     disabled={actionsBlocked}
                     onclick={() => handleSegmentClick("reviews")}
@@ -3411,7 +3411,7 @@
     background: var(--bg-primary);
   }
 
-  .seg-control {
+  .sidebar-tabs {
     display: inline-flex;
     height: 22px;
     border: 1px solid var(--border-default);
@@ -3420,7 +3420,7 @@
     background: var(--bg-surface);
   }
 
-  .seg-btn {
+  .sidebar-tab-btn {
     display: inline-flex;
     align-items: center;
     padding: 0 10px;
@@ -3435,29 +3435,29 @@
     transition: background-color 80ms ease, color 80ms ease;
   }
 
-  .seg-btn + .seg-btn {
+  .sidebar-tab-btn + .sidebar-tab-btn {
     border-left: 1px solid var(--border-default);
   }
 
-  .seg-btn:hover:not(.active):not(:disabled) {
+  .sidebar-tab-btn:hover:not(.active):not(:disabled) {
     color: var(--text-primary);
     background: var(--bg-surface-hover);
   }
 
-  .seg-btn.active:not(:disabled) {
+  .sidebar-tab-btn.active:not(:disabled) {
     background: var(--accent-blue);
     color: #fff;
     font-weight: 600;
   }
 
-  .seg-btn:disabled {
+  .sidebar-tab-btn:disabled {
     cursor: not-allowed;
     color: color-mix(in srgb, var(--text-muted) 75%, var(--bg-surface));
     background: var(--bg-surface);
     opacity: 1;
   }
 
-  .seg-control .seg-btn.active:disabled {
+  .sidebar-tabs .sidebar-tab-btn.active:disabled {
     background: color-mix(in srgb, rgb(128 128 128) 28%, var(--bg-surface)) !important;
     color: color-mix(in srgb, rgb(115 115 115) 80%, var(--text-primary)) !important;
     box-shadow: inset 0 0 0 1px

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmptyState, Spinner } from "@kenn-io/kit-ui";
+  import { EmptyState, SegmentedControl, Spinner } from "@kenn-io/kit-ui";
   import { onMount, onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
   import {
@@ -562,11 +562,17 @@
 >
   <div class="controls-bar">
     <div class="filter-group">
-      <div class="segmented-control">
-        <button class="seg-btn" class:active={activity.getItemFilter() === "all"} onclick={() => handleItemFilterChange("all")}>All</button>
-        <button class="seg-btn" class:active={activity.getItemFilter() === "prs"} onclick={() => handleItemFilterChange("prs")}>PRs</button>
-        <button class="seg-btn" class:active={activity.getItemFilter() === "issues"} onclick={() => handleItemFilterChange("issues")}>Issues</button>
-      </div>
+      <SegmentedControl
+        options={[
+          { value: "all", label: "All" },
+          { value: "prs", label: "PRs" },
+          { value: "issues", label: "Issues" },
+        ]}
+        value={activity.getItemFilter()}
+        onchange={(v) => handleItemFilterChange(v as "all" | "prs" | "issues")}
+        ariaLabel="Item filter"
+        block={compact}
+      />
     </div>
 
     <FilterDropdown
@@ -949,34 +955,6 @@
     gap: 8px;
   }
 
-  .segmented-control {
-    display: flex;
-    align-items: center;
-    gap: 1px;
-    background: var(--bg-inset);
-    border-radius: var(--radius-sm);
-    padding: 2px;
-  }
-
-  .seg-btn {
-    padding: 3px 10px;
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-    color: var(--text-muted);
-    border-radius: calc(var(--radius-sm) - 1px);
-    transition: background 0.12s, color 0.12s;
-  }
-
-  .seg-btn.active {
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .seg-btn:hover:not(.active) {
-    color: var(--text-secondary);
-  }
-
   .search-input {
     margin-left: auto;
     width: 180px;
@@ -1019,15 +997,6 @@
     order: 2;
     flex: 1 1 auto;
     min-width: 0;
-  }
-
-  .activity-feed--compact .segmented-control {
-    width: 100%;
-  }
-
-  .activity-feed--compact .seg-btn {
-    flex: 1;
-    padding-inline: 6px;
   }
 
   .activity-feed--compact .search-input {

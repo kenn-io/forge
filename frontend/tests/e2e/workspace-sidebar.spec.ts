@@ -862,7 +862,7 @@ test.describe("terminal state icons", () => {
     await setupTerminalMocks(page, { diffRequests, commitRequests });
 
     await page.goto("/terminal/ws-123");
-    await page.locator(".seg-btn", { hasText: "Diff" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "Diff" }).click();
 
     await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "head" })).toBe(true);
 
@@ -912,7 +912,7 @@ test.describe("terminal state icons", () => {
     });
 
     await page.goto("/terminal/ws-123");
-    await page.locator(".seg-btn", { hasText: "Diff" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "Diff" }).click();
 
     await page.getByRole("button", { name: "Compare with merge target" }).click();
     await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "merge-target" })).toBe(true);
@@ -2565,7 +2565,7 @@ test.describe("sidebar toggle behavior", () => {
     const listSidebar = page.locator(".workspace-list-sidebar");
     await expect(listSidebar).toBeVisible();
 
-    const prBtn = page.locator(".seg-btn", {
+    const prBtn = page.locator(".sidebar-tab-btn", {
       hasText: "PR",
     });
     await prBtn.click();
@@ -2598,11 +2598,11 @@ test.describe("sidebar toggle behavior", () => {
   test("segmented control visible in terminal header", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 
-    const segControl = page.locator(".seg-control");
+    const segControl = page.locator(".sidebar-tabs");
     await expect(segControl).toBeVisible();
-    await expect(segControl.locator(".seg-btn", { hasText: "PR" })).toBeVisible();
+    await expect(segControl.locator(".sidebar-tab-btn", { hasText: "PR" })).toBeVisible();
     await expect(
-      segControl.locator(".seg-btn", {
+      segControl.locator(".sidebar-tab-btn", {
         hasText: "Reviews",
       }),
     ).toBeVisible();
@@ -2611,7 +2611,7 @@ test.describe("sidebar toggle behavior", () => {
   test("clicking PR segment opens sidebar with PR content", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 
-    const prBtn = page.locator(".seg-btn", {
+    const prBtn = page.locator(".sidebar-tab-btn", {
       hasText: "PR",
     });
     await expect(prBtn).toBeVisible();
@@ -2658,7 +2658,7 @@ test.describe("sidebar toggle behavior", () => {
       .click();
     await expect(page.locator(".terminal-panel.bottom.open .panel-resizer")).toBeVisible();
 
-    const prBtn = page.locator(".seg-btn", {
+    const prBtn = page.locator(".sidebar-tab-btn", {
       hasText: "PR",
     });
     await prBtn.click();
@@ -2688,7 +2688,7 @@ test.describe("sidebar toggle behavior", () => {
   test("clicking active segment closes sidebar", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 
-    const prBtn = page.locator(".seg-btn", {
+    const prBtn = page.locator(".sidebar-tab-btn", {
       hasText: "PR",
     });
     // Open
@@ -2704,10 +2704,10 @@ test.describe("sidebar toggle behavior", () => {
   test("clicking Reviews switches tab without closing", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 
-    const prBtn = page.locator(".seg-btn", {
+    const prBtn = page.locator(".sidebar-tab-btn", {
       hasText: "PR",
     });
-    const reviewsBtn = page.locator(".seg-btn", {
+    const reviewsBtn = page.locator(".sidebar-tab-btn", {
       hasText: "Reviews",
     });
 
@@ -3021,7 +3021,7 @@ test.describe("sidebar persistence", () => {
     await clearSidebarStorage(page);
 
     // Open sidebar
-    const prBtn = page.locator(".seg-btn", {
+    const prBtn = page.locator(".sidebar-tab-btn", {
       hasText: "PR",
     });
     await prBtn.click();
@@ -3041,7 +3041,7 @@ test.describe("sidebar persistence", () => {
     await clearSidebarStorage(page);
 
     // Open Reviews tab
-    const reviewsBtn = page.locator(".seg-btn", {
+    const reviewsBtn = page.locator(".sidebar-tab-btn", {
       hasText: "Reviews",
     });
     await reviewsBtn.click();
@@ -3053,7 +3053,7 @@ test.describe("sidebar persistence", () => {
 
     // Reload
     await page.reload();
-    const reviewsBtnAfter = page.locator(".seg-btn", {
+    const reviewsBtnAfter = page.locator(".sidebar-tab-btn", {
       hasText: "Reviews",
     });
     await expect(reviewsBtnAfter).toHaveClass(/active/);
@@ -3064,7 +3064,7 @@ test.describe("sidebar persistence", () => {
     await clearSidebarStorage(page);
 
     // Open sidebar
-    await page.locator(".seg-btn", { hasText: "PR" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "PR" }).click();
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
     const handle = page.locator(".sidebar-resize-handle");
@@ -3114,7 +3114,7 @@ test.describe("sidebar PR tab", () => {
     await page.goto("/terminal/ws-123");
 
     // Open PR tab
-    await page.locator(".seg-btn", { hasText: "PR" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "PR" }).click();
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
     // PR detail component should show PR title
@@ -3132,7 +3132,7 @@ test.describe("sidebar PR tab", () => {
 
     await page.goto("/terminal/ws-issue-7");
 
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveCount(0);
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "PR" })).toHaveCount(0);
   });
 });
 
@@ -3159,7 +3159,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
     await page.locator(".workspace-list-sidebar .ws-row .item-bubble").click();
 
     await expect(page.locator(".right-sidebar")).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveClass(/\bactive\b/);
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "PR" })).toHaveClass(/\bactive\b/);
   });
 
   test("clicking issue bubble opens Issue tab for issue workspace", async ({ page }) => {
@@ -3173,7 +3173,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
     await page.locator(".workspace-list-sidebar .ws-row .item-bubble").click();
 
     await expect(page.locator(".right-sidebar")).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "Issue" })).toHaveClass(/\bactive\b/);
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "Issue" })).toHaveClass(/\bactive\b/);
   });
 
   test("Enter keypress on PR bubble does not navigate row", async ({ page }) => {
@@ -3208,7 +3208,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
     await expect(page).toHaveURL(/\/terminal\/ws-123$/);
     await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(1);
     await expect(page.locator(".right-sidebar")).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveClass(/\bactive\b/);
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "PR" })).toHaveClass(/\bactive\b/);
   });
 
   test("clicking bubble for a different workspace from /terminal navigates and keeps sidebar populated", async ({
@@ -3278,7 +3278,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
     await expect(page).toHaveURL(new RegExp(`/terminal/${wsB.id}$`));
     await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(2);
     await expect(page.locator(".right-sidebar")).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveClass(/\bactive\b/);
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "PR" })).toHaveClass(/\bactive\b/);
   });
 
   test("clicking bubble does not bubble up to row navigation", async ({ page }) => {
@@ -4288,7 +4288,7 @@ test.describe("delayed-response navigation", () => {
     const localFilesRequest = page.waitForRequest(
       (request) => new URL(request.url()).pathname === `/api/v1/workspaces/${localWorkspace.id}/files`,
     );
-    await page.locator(".seg-btn", { hasText: "Diff" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "Diff" }).click();
     await localFilesRequest;
 
     // Switch to the member-hosted workspace; its detail is held, so the
@@ -4332,9 +4332,9 @@ test.describe("issue workspace sidebar", () => {
     });
     await page.goto("/terminal/ws-issue-7");
 
-    await expect(page.locator(".seg-btn", { hasText: "Issue" })).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveCount(0);
-    await expect(page.locator(".seg-btn", { hasText: "Reviews" })).toHaveCount(0);
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "Issue" })).toBeVisible();
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "PR" })).toHaveCount(0);
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "Reviews" })).toHaveCount(0);
   });
 
   test("manual refresh rechecks issue workspace PR association", async ({ page }) => {
@@ -4353,15 +4353,15 @@ test.describe("issue workspace sidebar", () => {
     });
     await page.goto("/terminal/ws-issue-7");
 
-    await expect(page.locator(".seg-btn", { hasText: "Issue" })).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveCount(0);
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "Issue" })).toBeVisible();
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "PR" })).toHaveCount(0);
 
-    const refreshButton = page.locator(".header-right .seg-control + .header-icon-btn");
+    const refreshButton = page.locator(".header-right .sidebar-tabs + .header-icon-btn");
     await expect(refreshButton).toHaveAttribute("aria-label", "Refresh workspace details");
     await refreshButton.click();
 
     await expect.poll(() => refreshRequests).toBe(1);
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toBeVisible();
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "PR" })).toBeVisible();
   });
 
   test("issue segment opens issue detail for issue-backed workspaces", async ({ page }) => {
@@ -4370,7 +4370,7 @@ test.describe("issue workspace sidebar", () => {
     });
     await page.goto("/terminal/ws-issue-7");
 
-    await page.locator(".seg-btn", { hasText: "Issue" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "Issue" }).click();
 
     await expect(page.locator(".right-sidebar")).toBeVisible();
     await expect(page.locator(".right-sidebar .detail-title")).toContainText("Theme toggle does not stick");
@@ -4432,7 +4432,7 @@ test.describe("issue workspace sidebar", () => {
     });
 
     await page.goto("/terminal/ws-issue-7");
-    await page.locator(".seg-btn", { hasText: "Issue" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "Issue" }).click();
 
     await expect(page.locator(".right-sidebar .detail-title")).toContainText("Mirror host issue");
     await expect.poll(() => seenHosts).toEqual(["example.com"]);
@@ -4444,9 +4444,9 @@ test.describe("issue workspace sidebar", () => {
     });
     await page.goto("/terminal/ws-issue-7");
 
-    await expect(page.locator(".seg-btn", { hasText: "Issue" })).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "Reviews" })).toHaveCount(0);
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "Issue" })).toBeVisible();
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "PR" })).toBeVisible();
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "Reviews" })).toHaveCount(0);
   });
 
   test("issue workspace PR tab hides workspace create and open actions", async ({ page }) => {
@@ -4455,7 +4455,7 @@ test.describe("issue workspace sidebar", () => {
     });
     await page.goto("/terminal/ws-issue-7");
 
-    await page.locator(".seg-btn", { hasText: "PR" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "PR" }).click();
 
     await expect(page.locator(".right-sidebar .detail-title")).toContainText("Add browser regression coverage");
     await expect(page.locator(".right-sidebar .btn--workspace")).toHaveCount(0);
@@ -4538,7 +4538,7 @@ test.describe("issue workspace sidebar", () => {
 
     await page.goto("/terminal/ws-issue-7");
 
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveCount(0);
+    await expect(page.locator(".sidebar-tab-btn", { hasText: "PR" })).toHaveCount(0);
 
     currentWorkspace = testIssueWorkspaceWithAssociatedPR;
     await page.evaluate(() => {
@@ -4549,8 +4549,8 @@ test.describe("issue workspace sidebar", () => {
       ).__emitWorkspaceStatus({ id: "ws-issue-7" });
     });
 
-    const issueButton = page.locator(".seg-btn", { hasText: "Issue" });
-    const prButton = page.locator(".seg-btn", { hasText: "PR" });
+    const issueButton = page.locator(".sidebar-tab-btn", { hasText: "Issue" });
+    const prButton = page.locator(".sidebar-tab-btn", { hasText: "PR" });
     await expect(prButton).toBeVisible();
     await expect(issueButton).toBeVisible();
 
@@ -4591,7 +4591,7 @@ test.describe("sidebar Reviews tab", () => {
     });
     await page.goto("/terminal/ws-123");
 
-    await page.locator(".seg-btn", { hasText: "Reviews" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "Reviews" }).click();
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
     await expect(page.locator('.right-sidebar .daemon-status [title="Daemon version"]')).toHaveText("v0.52.0");
@@ -4602,7 +4602,7 @@ test.describe("sidebar Reviews tab", () => {
     await page.goto("/terminal/ws-123");
 
     // Open Reviews tab
-    await page.locator(".seg-btn", { hasText: "Reviews" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "Reviews" }).click();
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
     // Job list should render the mock job
@@ -4619,7 +4619,7 @@ test.describe("sidebar Reviews tab", () => {
     await page.goto("/terminal/ws-123");
 
     // Open Reviews tab
-    await page.locator(".seg-btn", { hasText: "Reviews" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "Reviews" }).click();
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
     // Should show empty/no-reviews message
@@ -4631,7 +4631,7 @@ test.describe("sidebar Reviews tab", () => {
     await page.goto("/terminal/ws-123");
 
     // Open Reviews tab
-    await page.locator(".seg-btn", { hasText: "Reviews" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "Reviews" }).click();
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
     // Branch filter should show workspace branch
@@ -4653,7 +4653,7 @@ test.describe("sidebar Reviews tab", () => {
     await page.goto("/terminal/ws-123");
 
     // Open Reviews tab
-    await page.locator(".seg-btn", { hasText: "Reviews" }).click();
+    await page.locator(".sidebar-tab-btn", { hasText: "Reviews" }).click();
     await expect(page.locator(".right-sidebar .job-row")).toBeVisible();
 
     // Click the job row

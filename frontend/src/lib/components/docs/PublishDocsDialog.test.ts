@@ -222,6 +222,25 @@ describe("PublishDocsDialog", () => {
     expect(screen.queryByRole("button", { name: /commit & push/i })).toBeNull();
   });
 
+  test("Escape closes the dialog when no publish is in flight", async () => {
+    const onClose = vi.fn();
+    render(PublishDocsDialog, {
+      props: {
+        open: true,
+        folderID: "notes",
+        api: fakeApi(),
+        onClose,
+        onPublished: () => {},
+      },
+    });
+    await screen.findByRole("textbox", { name: /commit message/i });
+    // Same event path as the in-flight test below: the shared Modal shell
+    // listens on window, and with no header X this is the shell-owned
+    // dismissal that must keep working.
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   test("dialog cannot be closed while publishing", async () => {
     let resolvePublish: (v: GitPublishResponse) => void;
     const pendingPublish = new Promise<GitPublishResponse>((r) => {

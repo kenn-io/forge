@@ -169,6 +169,30 @@ describe("TerminalOptionsMenu", () => {
     expect(currentTerminal.value.font_size).toBe(19);
   });
 
+  it("Escape peels the font picker dialog without closing the popover", async () => {
+    render(TerminalOptionsMenu);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Terminal options" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Choose" }));
+    await screen.findByRole("dialog", { name: "Choose monospace font" });
+
+    // Both the popover and the kit modal listen for Escape on window; the
+    // popover's listener registered first, so without the modal-stack check
+    // it would close the whole popover (unmounting the font dialog with it).
+    await fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Choose monospace font" })).toBeNull();
+    });
+    expect(screen.getByRole("dialog", { name: "Terminal options" })).toBeTruthy();
+
+    // With the font dialog gone the stack is empty again, so Escape now
+    // closes the popover itself.
+    await fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Terminal options" })).toBeNull();
+    });
+  });
+
   it("omits global mode visibility from the options popover", async () => {
     render(TerminalOptionsMenu);
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import { getStores } from "@middleman/ui";
+  import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
   import type { TerminalSettings as TerminalSettingsType } from "@middleman/ui/api/types";
   import TerminalSettings from "../settings/TerminalSettings.svelte";
 
@@ -44,6 +45,10 @@
     }
     function onKeydown(ev: KeyboardEvent): void {
       if (ev.key === "Escape") {
+        // A dialog above this popover (the font picker Modal) owns Escape
+        // via the modal stack; its kit-ui handler runs after this one, so
+        // the stack — not defaultPrevented — is the signal to stand down.
+        if (getStackDepth() > 0) return;
         if (childSaving) return;
         open = false;
       }

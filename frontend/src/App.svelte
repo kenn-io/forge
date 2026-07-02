@@ -961,6 +961,10 @@
     }}
     bind:stores
   >
+  <!-- Mounted once above the focus/full-shell branching so flashes raised
+       through the shared store stay visible in every presentation, not just
+       the desktop shell. -->
+  <FlashBanner top="var(--header-height)" />
   {#if shouldUseFocusPresentation()}
     {@const r = getRoute()}
     <main
@@ -1108,7 +1112,6 @@
     {#if !isHeaderHidden()}
       <AppHeader />
     {/if}
-    <FlashBanner top="var(--header-height)" />
 
     <main class="app-main">
       {#if getPage() === "design-system"}

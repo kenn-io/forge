@@ -107,10 +107,6 @@ vi.mock("./lib/features/messages/MessagesFeature.svelte?retry2", async () => {
     default: (await import("./lib/testing/AppMessagesFeatureMock.svelte")).default,
   };
 });
-vi.mock("./lib/components/FlashBanner.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-
 vi.mock("./lib/api/kata/daemons.js", () => ({
   fetchKataDaemons: vi.fn(async () => []),
 }));
@@ -274,6 +270,30 @@ describe("App feature routes", () => {
     navigate("/docs?folder=notes&doc=guide.md");
     await waitFor(() => expect(document.querySelector(".docs-shell")?.hasAttribute("hidden")).toBe(false));
     expect(document.querySelector("[data-testid='docs-feature'] button")?.textContent).toContain("Docs count 1");
+  });
+
+  it("renders flashes raised through the shared store in the app-mounted kit banner", async () => {
+    const { default: App } = await import("./App.svelte");
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
+
+    // Import through the same facade every caller uses. This guards the
+    // single-module-instance invariant the flash unification depends on: if
+    // frontend and packages/ui ever resolve different kit-ui copies, the
+    // flash lands in a store the mounted banner does not read and this fails.
+    const { showFlash, getFlashes, dismissFlash } = await import("@middleman/ui/stores/flash");
+    try {
+      showFlash("first shared-store flash");
+      await waitFor(() => expect(screen.getByText("first shared-store flash")).toBeTruthy());
+
+      // Stacking (not latest-wins replacement) is the intended semantics of
+      // the kit store; both flashes stay visible.
+      showFlash("second shared-store flash");
+      await waitFor(() => expect(screen.getByText("second shared-store flash")).toBeTruthy());
+      expect(screen.getByText("first shared-store flash")).toBeTruthy();
+    } finally {
+      for (const flash of getFlashes()) dismissFlash(flash.id);
+    }
   });
 
   it("opens Kata linked messages before Messages capabilities resolve", async () => {

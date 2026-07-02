@@ -60,6 +60,26 @@ test("settings page uses a sidebar and scrollable content pane", async ({ page }
   await expect(page.locator("#settings-agents")).toBeInViewport();
 });
 
+test("settings shell stacks below 1024px and switches to the sidebar row at it", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.locator(".settings-page")).toBeVisible();
+
+  const shellDirection = () =>
+    page.evaluate(() => {
+      const shell = document.querySelector<HTMLElement>(".settings-shell");
+      return shell ? getComputedStyle(shell).flexDirection : null;
+    });
+
+  // Media-query rem resolves against the browser's 16px initial font size,
+  // not the app's 13px root — a misconverted 64rem-to-832px threshold would
+  // already lay out the sidebar row at tablet widths.
+  await page.setViewportSize({ width: 1023, height: 800 });
+  await expect.poll(shellDirection).toBe("column");
+
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await expect.poll(shellDirection).toBe("row");
+});
+
 test("settings sidebar order matches rendered section order", async ({ page }) => {
   await page.goto("/settings");
 

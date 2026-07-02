@@ -853,7 +853,7 @@ test.describe("terminal state icons", () => {
 
     const stateMessage = page.locator(".state-message");
     await expect(stateMessage).toContainText("Setting up workspace...");
-    await expect(stateMessage.locator(".spinner")).toBeVisible();
+    await expect(stateMessage.locator(".kit-spinner")).toBeVisible();
   });
 
   test("refresh preserves workspace diff target and commit selection", async ({ page }) => {

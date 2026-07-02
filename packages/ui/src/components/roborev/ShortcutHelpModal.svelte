@@ -123,6 +123,13 @@
     background: var(--overlay-bg);
   }
 
+  /* kit-ui KbdBadge hides itself on coarse pointers, but this modal only
+     opens from a physical keyboard (?), so its badges must stay visible
+     on touch-pointer devices that have one attached. */
+  .modal-content :global(.kit-kbd-badge) {
+    display: inline-flex;
+  }
+
   .modal-content {
     background: var(--bg-surface);
     border: 1px solid var(--border-default);

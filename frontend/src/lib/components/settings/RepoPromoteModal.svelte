@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmptyState } from "@kenn-io/kit-ui";
+  import { EmptyState, Spinner } from "@kenn-io/kit-ui";
   import { tick, untrack } from "svelte";
   import type { ConfigRepo, Settings } from "@middleman/ui/api/types";
   import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
@@ -234,7 +234,10 @@
       {/if}
 
       {#if loading}
-        <EmptyState title="Loading matches..." />
+        <div class="loading-placeholder">
+          <Spinner size={14} label="Loading matches" />
+          Loading matches...
+        </div>
       {:else if filteredRows.length > 0}
         <div class="match-list" role="radiogroup" aria-label="Wildcard matches">
           {#each filteredRows as row (promoteRowKey(row))}
@@ -308,6 +311,16 @@
 {/if}
 
 <style>
+  .loading-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-8) var(--space-6);
+    color: var(--text-muted);
+    font-size: var(--font-size-md);
+  }
+
   .modal-backdrop {
     position: fixed;
     inset: 0;

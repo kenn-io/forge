@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmptyState } from "@kenn-io/kit-ui";
+  import { EmptyState, Spinner } from "@kenn-io/kit-ui";
   import { onDestroy, type Snippet } from "svelte";
   import { getStores } from "../../context.js";
   import {
@@ -357,7 +357,10 @@
     {:else if repoResolutionError}
       <EmptyState title={repoResolutionError} />
     {:else if resolvedRootPath === null && !negativeMatch}
-      <EmptyState title="Resolving repo..." />
+      <div class="loading-placeholder">
+        <Spinner size={14} label="Resolving repo" />
+        Resolving repo...
+      </div>
     {:else if negativeMatch}
       <EmptyState title="No reviews for this worktree" />
     {:else}
@@ -380,6 +383,16 @@
 </div>
 
 <style>
+  .loading-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-8) var(--space-6);
+    color: var(--text-muted);
+    font-size: var(--font-size-md);
+  }
+
   .right-sidebar-content {
     display: flex;
     flex-direction: column;

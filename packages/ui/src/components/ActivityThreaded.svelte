@@ -797,6 +797,12 @@
     align-content: start;
   }
 
+  /* The empty state is a direct grid child; without a spanning rule it
+     would sit in the first (caret) column instead of the full width. */
+  .threaded-view > :global(.kit-empty-state) {
+    grid-column: 1 / -1;
+  }
+
   .threaded-view--grouped {
     grid-template-columns:
       var(--threaded-col-caret)

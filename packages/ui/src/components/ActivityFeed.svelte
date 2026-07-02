@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmptyState } from "@kenn-io/kit-ui";
+  import { EmptyState, Spinner } from "@kenn-io/kit-ui";
   import { onMount, onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
   import {
@@ -626,7 +626,12 @@
     </div>
   {:else if activity.getViewMode() === "threaded"}
     {#if displayItems.length === 0 && activity.isActivityLoading()}
-      <div class="table-container"><EmptyState title="Loading..." /></div>
+      <div class="table-container">
+        <div class="loading-placeholder">
+          <Spinner size={14} label="Loading activity" />
+          Loading...
+        </div>
+      </div>
     {:else}
       <ActivityThreaded
         items={displayItems}
@@ -916,6 +921,16 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+  }
+
+  .loading-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-8) var(--space-6);
+    color: var(--text-muted);
+    font-size: var(--font-size-md);
   }
 
   .controls-bar {

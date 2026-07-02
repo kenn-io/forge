@@ -4,7 +4,7 @@
   import { timeAgo } from "../../utils/time.js";
   import { repoColor } from "../../utils/repo-color.js";
   import { Chip } from "@kenn-io/kit-ui";
-  import { ColorLabel } from "@kenn-io/kit-ui";
+  import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
 
   const { issues } = getStores();
@@ -54,16 +54,7 @@
 
 <button class="issue-item" class:selected bind:this={el} onclick={onclick}>
   <p class="title">{issue.Title}</p>
-  {#if labels.length > 0}
-    <span class="labels-row">
-      {#each labels.slice(0, 2) as label (label.name)}
-        <ColorLabel size="sm" name={label.name} color={label.color} />
-      {/each}
-      {#if labels.length > 2}
-        <span class="label-more">+{labels.length - 2}</span>
-      {/if}
-    </span>
-  {/if}
+  <LabelRow {labels} compact />
   {#if showRepo}
     <div class="repo-row">
       <Chip
@@ -265,22 +256,5 @@
     border-radius: 999px;
     font-size: var(--font-size-xs);
     line-height: 1.25;
-  }
-  .labels-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .labels-row :global(.kit-color-label) {
-    max-width: 120px;
-  }
-
-  .label-more {
-    flex-shrink: 0;
-    color: var(--text-muted);
-    font-size: var(--font-size-2xs);
   }
 </style>

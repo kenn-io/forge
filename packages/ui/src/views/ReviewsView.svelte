@@ -235,7 +235,10 @@
   {#if !stores.roborevDaemon}
     <EmptyState title="Roborev integration is not configured." />
   {:else if !stores.roborevDaemon.isAvailable() && !stores.roborevDaemon.getWasEverAvailable()}
-    <EmptyState title={`Roborev daemon not reachable at ${stores.roborevDaemon.getEndpoint()}`}>
+    <EmptyState
+      title="Roborev daemon not reachable"
+      description={stores.roborevDaemon.getEndpoint()}
+    >
       <button
         class="retry-btn"
         onclick={() => stores.roborevDaemon?.checkHealth()}

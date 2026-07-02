@@ -753,6 +753,7 @@
 <style>
   .palette-backdrop {
     position: fixed;
+    /* kit-ui-check-ignore: command palette owns its overlay, query focus, and result keyboard model; a kit CommandPalette adoption is a separate migration */
     inset: 0;
     background: rgba(0, 0, 0, 0.55);
     z-index: 100;

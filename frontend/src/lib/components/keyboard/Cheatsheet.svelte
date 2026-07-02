@@ -249,6 +249,7 @@
 <style>
   .cheatsheet-backdrop {
     position: fixed;
+    /* kit-ui-check-ignore: keyboard cheatsheet is a palette-style surface with its own key handling and layout, not a kit Modal dialog */
     inset: 0;
     background: rgba(0, 0, 0, 0.55);
     z-index: 100;

@@ -384,6 +384,7 @@ a:hover {
 }
 .mermaid-viewer-lightbox {
   position: fixed;
+  /* kit-ui-check-ignore: full-screen pan/zoom diagram lightbox with its own chrome, not a dialog surface */
   inset: 0;
   z-index: 80;
   display: flex;

@@ -146,6 +146,7 @@
 <style>
   .issue-modal__backdrop {
     position: fixed;
+    /* kit-ui-check-ignore: bottom-sheet placement on narrow viewports (media query below) — kit Modal only centers; revisit if kit grows a placement prop */
     inset: 0;
     z-index: 40;
     display: grid;

@@ -6138,6 +6138,88 @@ func TestSyncOpenMRFromBulkPersistsMergedActorEventFromPullRequest(t *testing.T)
 	assert.True(events[0].CreatedAt.Equal(mergedAt))
 }
 
+func TestSyncOpenMRFromBulkSkipsMergedActorFallbackWhenAuthoredMergedEventExists(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+	existingMergedAt := now.Add(time.Minute)
+	incomingMergedAt := existingMergedAt.Add(time.Second)
+
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+
+	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     7000,
+		Number:         7,
+		URL:            "https://github.com/acme/widget/pull/7",
+		Title:          "Merged PR",
+		Author:         "alice",
+		State:          db.MergeRequestStateMerged,
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      existingMergedAt,
+		LastActivityAt: existingMergedAt,
+		MergedAt:       &existingMergedAt,
+		ClosedAt:       &existingMergedAt,
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: mrID,
+		EventType:      "merged",
+		Author:         "merge-admin",
+		Summary:        "merged this",
+		CreatedAt:      existingMergedAt,
+		DedupeKey:      "timeline-existing",
+	}}))
+
+	merged := true
+	mergedBy := "merge-admin"
+	pr := buildOpenPR(7, now)
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(incomingMergedAt)
+	pr.ClosedAt = makeTimestamp(incomingMergedAt)
+	pr.UpdatedAt = makeTimestamp(incomingMergedAt)
+	pr.MergedBy = &gh.User{Login: &mergedBy}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               pr,
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		TimelineComplete: true,
+		CIComplete:       true,
+	}, true)
+	require.NoError(err)
+
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("merged", events[0].EventType)
+	assert.Equal("merge-admin", events[0].Author)
+	assert.Equal("timeline-existing", events[0].DedupeKey)
+	assert.True(events[0].CreatedAt.Equal(existingMergedAt))
+}
+
 func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

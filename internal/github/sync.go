@@ -5841,6 +5841,9 @@ func (s *Syncer) BackfillMergedActorForDetail(
 	if err != nil || !needed {
 		return false, err
 	}
+	if s.skipMergedActorDetailBackfill(existing, time.Now()) {
+		return false, nil
+	}
 	repoRow, err := s.db.GetRepoByID(ctx, existing.RepoID)
 	if err != nil {
 		return false, fmt.Errorf(

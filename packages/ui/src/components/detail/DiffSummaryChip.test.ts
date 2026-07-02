@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile } from "../../api/types.js";
 import DiffSummaryChip from "./DiffSummaryChip.svelte";
 import { DiffSummaryFilesResult } from "./diff-summary.js";
@@ -32,6 +32,30 @@ function statLabel(additions: number, deletions: number): string {
   return `${additions} ${additionLabel}, ${deletions} ${deletionLabel}`;
 }
 
+type GlobalWithResizeObserver = { ResizeObserver?: unknown };
+let originalResizeObserver: unknown;
+let originalResizeObserverExisted = false;
+
+// kit-ui Tooltip repositions via ResizeObserver, which jsdom lacks.
+beforeAll(() => {
+  originalResizeObserverExisted = "ResizeObserver" in globalThis;
+  originalResizeObserver = (globalThis as GlobalWithResizeObserver).ResizeObserver;
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
+});
+
+afterAll(() => {
+  if (originalResizeObserverExisted) {
+    (globalThis as GlobalWithResizeObserver).ResizeObserver = originalResizeObserver;
+  } else {
+    delete (globalThis as GlobalWithResizeObserver).ResizeObserver;
+  }
+});
+
 describe("DiffSummaryChip", () => {
   afterEach(() => {
     cleanup();
@@ -58,9 +82,9 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(74, 20) }));
+    await fireEvent.focusIn(screen.getByRole("button", { name: statLabel(74, 20) }));
 
-    const popover = await screen.findByRole("status");
+    const popover = await screen.findByRole("tooltip");
     const labels = Array.from(popover.querySelectorAll(".diff-summary-row > span:first-child")).map(
       (label) => label.textContent,
     );
@@ -90,9 +114,9 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(60, 14) }));
+    await fireEvent.focusIn(screen.getByRole("button", { name: statLabel(60, 14) }));
 
-    const popover = await screen.findByRole("status");
+    const popover = await screen.findByRole("tooltip");
     expect(within(popover).getByText("Code")).toBeTruthy();
     expect(rowText(popover, "Code")).toBe("Code +40 −6");
     expect(screen.getByText("Tests")).toBeTruthy();
@@ -119,13 +143,13 @@ describe("DiffSummaryChip", () => {
     const trigger = screen.getByRole("button", {
       name: statLabel(4, 1),
     });
-    await fireEvent.mouseEnter(trigger);
+    await fireEvent.focusIn(trigger);
 
     expect(await screen.findByText("Changed files are still refreshing.")).toBeTruthy();
-    await fireEvent.mouseLeave(trigger);
-    await fireEvent.mouseEnter(trigger);
+    await fireEvent.focusOut(trigger);
+    await fireEvent.focusIn(trigger);
 
-    const popover = await screen.findByRole("status");
+    const popover = await screen.findByRole("tooltip");
     expect(within(popover).getByText("Code")).toBeTruthy();
     expect(rowText(popover, "Code")).toBe("Code +4 −1");
     expect(loadFiles).toHaveBeenCalledTimes(2);
@@ -156,7 +180,7 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(10, 0) }));
+    await fireEvent.focusIn(screen.getByRole("button", { name: statLabel(10, 0) }));
     await rerender({
       additions: 5,
       deletions: 1,
@@ -168,7 +192,7 @@ describe("DiffSummaryChip", () => {
     await waitFor(() => expect(loadFiles).toHaveBeenCalledTimes(2));
     resolveSecond?.(new DiffSummaryFilesResult(false, [file("src/new.ts", 5, 1)]));
 
-    const popover = await screen.findByRole("status");
+    const popover = await screen.findByRole("tooltip");
     expect(within(popover).getByText("Code")).toBeTruthy();
     expect(rowText(popover, "Code")).toBe("Code +5 −1");
     expect(screen.queryByText("Plans/docs")).toBeNull();
@@ -189,7 +213,7 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(10, 0) }));
+    await fireEvent.focusIn(screen.getByRole("button", { name: statLabel(10, 0) }));
     expect(await screen.findByText("Plans/docs")).toBeTruthy();
 
     await rerender({
@@ -199,7 +223,7 @@ describe("DiffSummaryChip", () => {
       loadFiles,
     });
 
-    const popover = await screen.findByRole("status");
+    const popover = await screen.findByRole("tooltip");
     expect(within(popover).getByText("Code")).toBeTruthy();
     expect(rowText(popover, "Code")).toBe("Code +5 −1");
     await waitFor(() => expect(loadFiles).toHaveBeenCalledTimes(2));

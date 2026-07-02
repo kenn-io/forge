@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Chip, Table, TableHeaderCell } from "@kenn-io/kit-ui";
   import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
   import type { RepoImportRow, SortState, StatusFilter } from "./repoImportSelection.js";
   import { rowKey } from "./repoImportSelection.js";
@@ -46,11 +47,6 @@
     onDeselectVisible,
   }: Props = $props();
 
-  function sortLabel(field: SortState["field"]): string {
-    if (sort.field !== field) return "";
-    return sort.direction === "asc" ? " ↑" : " ↓";
-  }
-
   function formatPushedAt(value: string | null): string {
     if (!value) return "Never pushed";
     return new Date(value).toLocaleString();
@@ -60,10 +56,6 @@
     return row.repo_path || `${row.owner}/${row.name}`;
   }
 
-  function ariaSort(field: SortState["field"]): "ascending" | "descending" | "none" {
-    if (sort.field !== field) return "none";
-    return sort.direction === "asc" ? "ascending" : "descending";
-  }
 </script>
 
 <div class="repo-preview-controls">
@@ -102,44 +94,50 @@
 </div>
 
 <div class="table-wrap">
-  <table class="repo-preview-table">
-    <thead>
-      <tr>
-        <th scope="col" class="select-col">Select</th>
-        <th scope="col" aria-sort={ariaSort("name")}><button type="button" class="sort-btn" onclick={() => onSort("name")}>Repository{sortLabel("name")}</button></th>
-        <th scope="col">Description</th>
-        <th scope="col" aria-sort={ariaSort("pushed_at")}><button type="button" class="sort-btn" onclick={() => onSort("pushed_at")}>Last pushed{sortLabel("pushed_at")}</button></th>
-        <th scope="col">Visibility</th>
-        <th scope="col">Status</th>
+  <Table ariaLabel="Repository import preview" zebra={false} stickyHeader={false}>
+    {#snippet header()}
+      <TableHeaderCell label="Select" class="select-col" />
+      <TableHeaderCell
+        label="Repository"
+        sortable
+        sortDirection={sort.field === "name" ? sort.direction : null}
+        onsort={() => onSort("name")}
+      />
+      <TableHeaderCell label="Description" />
+      <TableHeaderCell
+        label="Last pushed"
+        sortable
+        sortDirection={sort.field === "pushed_at" ? sort.direction : null}
+        onsort={() => onSort("pushed_at")}
+      />
+      <TableHeaderCell label="Visibility" />
+      <TableHeaderCell label="Status" />
+    {/snippet}
+    {#each rows as row (rowKey(row))}
+      {@const key = rowKey(row)}
+      <tr class={[row.already_configured && "disabled-row"]}>
+        <td>
+          <input
+            type="checkbox"
+            aria-label={`Select ${repoLabel(row)}`}
+            checked={selected.has(key)}
+            disabled={row.already_configured}
+            onclick={(event) => onToggle(row, event.currentTarget.checked, event.shiftKey)}
+          />
+        </td>
+        <td class="repo-name">{repoLabel(row)}</td>
+        <td class="description">{row.description ?? ""}</td>
+        <td>{formatPushedAt(row.pushed_at)}</td>
+        <td>
+          <Chip size="xs" tone="muted">{row.private ? "Private" : "Public"}</Chip>
+          {#if row.fork}<Chip size="xs" tone="muted">Fork</Chip>{/if}
+        </td>
+        <td>{#if row.already_configured}<Chip size="xs" tone="warning">Already added</Chip>{/if}</td>
       </tr>
-    </thead>
-    <tbody>
-      {#each rows as row (rowKey(row))}
-        {@const key = rowKey(row)}
-        <tr class={[row.already_configured && "disabled-row"]}>
-          <td>
-            <input
-              type="checkbox"
-              aria-label={`Select ${repoLabel(row)}`}
-              checked={selected.has(key)}
-              disabled={row.already_configured}
-              onclick={(event) => onToggle(row, event.currentTarget.checked, event.shiftKey)}
-            />
-          </td>
-          <td class="repo-name">{repoLabel(row)}</td>
-          <td class="description">{row.description ?? ""}</td>
-          <td>{formatPushedAt(row.pushed_at)}</td>
-          <td>
-            <span class="chip chip-muted">{row.private ? "Private" : "Public"}</span>
-            {#if row.fork}<span class="chip chip-muted">Fork</span>{/if}
-          </td>
-          <td>{#if row.already_configured}<span class="chip chip-amber">Already added</span>{/if}</td>
-        </tr>
-      {:else}
-        <tr><td colspan="6" class="empty-cell">No repositories match current filters.</td></tr>
-      {/each}
-    </tbody>
-  </table>
+    {:else}
+      <tr><td colspan="6" class="empty-cell">No repositories match current filters.</td></tr>
+    {/each}
+  </Table>
 </div>
 
 <style>
@@ -147,18 +145,15 @@
   .filter-input { flex: 1; min-width: 220px; font-size: var(--font-size-md); padding: 6px 10px; background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   .toggle-filter { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; }
   .toggle-filter input { margin: 0; }
-  .shortcut-btn, .sort-btn { font-size: var(--font-size-sm); color: var(--accent-blue); }
+  .shortcut-btn { font-size: var(--font-size-sm); color: var(--accent-blue); }
   .table-wrap { overflow: auto; border: 1px solid var(--border-muted); border-radius: var(--radius-md); }
-  .repo-preview-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
-  th, td { padding: 8px 10px; border-bottom: 1px solid var(--border-muted); text-align: left; vertical-align: middle; }
-  th { color: var(--text-muted); font-weight: 600; background: var(--bg-inset); }
+  .table-wrap :global(.kit-table) { font-size: var(--font-size-sm); }
+  .table-wrap :global(th.select-col) { width: 52px; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border-muted); text-align: left; vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
-  .select-col { width: 52px; }
   .repo-name { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
   .description { color: var(--text-secondary); min-width: 180px; }
   .disabled-row { opacity: 0.72; }
   .empty-cell { text-align: center; color: var(--text-muted); padding: 24px; }
-  .chip { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-height: 18px; margin-right: 4px; padding: 0 6px; border-radius: 9px; font-size: var(--font-size-2xs); font-weight: 600; line-height: 1; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; }
-  .chip-muted { background: var(--bg-inset); color: var(--text-muted); }
-  .chip-amber { background: color-mix(in srgb, var(--accent-amber) 15%, transparent); color: var(--accent-amber); }
+  td :global(.kit-chip) { margin-right: 4px; }
 </style>

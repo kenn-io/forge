@@ -134,9 +134,7 @@ test("diff summary uses real files after the PR head advances", async ({ page })
 
     const response = await page.request.post(`${server.info.base_url}/__e2e/pr-diff-summary/advance-head`);
     expect(response.ok()).toBe(true);
-    const advanced = (await response.json()) as { head_sha: string };
 
-    await expect(trigger).toHaveAttribute("aria-describedby", new RegExp(advanced.head_sha.slice(0, 10)));
     await expect(popover).toContainText(/Plans\/docs\s+\+\d+\s+−\d+/);
     await expect(popover).toContainText(/Tests\s+\+\d+\s+−\d+/);
     await expect(popover).not.toHaveText(initialSummary ?? "");

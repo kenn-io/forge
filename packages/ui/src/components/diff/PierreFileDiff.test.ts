@@ -469,6 +469,32 @@ describe("PierreFileDiff", () => {
     }
   });
 
+  it("logs virtualized render geometry when diff debugging is enabled", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    window.localStorage.setItem("middleman:debug:diff", "1");
+    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+
+    try {
+      render(PierreFileDiff, {
+        props: { file: makeFile(), virtualizer: { type: "simple" } as never },
+      });
+
+      const call = await waitFor(() => {
+        const found = debugSpy.mock.calls.find(
+          ([tag, message]) => tag === "[middleman:diff]" && message === "virtualized post-render",
+        );
+        expect(found).toBeTruthy();
+        return found!;
+      });
+      expect(call[2]).toMatchObject({ path: "src/foo.ts" });
+      expect(call[2]).toHaveProperty("believedTop");
+      expect(call[2]).toHaveProperty("renderRange");
+    } finally {
+      debugSpy.mockRestore();
+      window.localStorage.removeItem("middleman:debug:diff");
+    }
+  });
+
   it("passes split diff style to Pierre when side-by-side mode is enabled", async () => {
     const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
 

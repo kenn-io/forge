@@ -874,7 +874,46 @@
     return pierreDiff.render(props);
   }
 
+  // Diagnostic for the scroll-position-deterministic blank-band bug: Pierre's
+  // virtual window math places hunks by estimated line positions, and when its
+  // believed file top/height drift from the real DOM it can compute a render
+  // range that misses the viewport (blank spacer where content belongs).
+  // Logging believed-vs-real geometry on every post-render lets a ?debugDiff=1
+  // session show which quantity is off at the moment a band blanks.
+  function debugVirtualizedRenderState(): void {
+    if (!pierreDiffDebugEnabled()) return;
+    if (!host || !(pierreDiff instanceof VirtualizedFileDiff)) return;
+    const instance = pierreDiff as unknown as {
+      height?: number;
+      renderRange?: { bufferAfter: number; bufferBefore: number; startingLine: number; totalLines: number };
+      top?: number;
+    };
+    const area = host.closest(".diff-area");
+    const hostRect = host.getBoundingClientRect();
+    const areaRect = area?.getBoundingClientRect();
+    const scrollTop = area instanceof HTMLElement ? area.scrollTop : undefined;
+    const realTop = areaRect && scrollTop != null ? hostRect.top - areaRect.top + scrollTop : undefined;
+    const windowSpecs = (
+      virtualizer as unknown as { getWindowSpecs?: () => { bottom: number; top: number } } | undefined
+    )?.getWindowSpecs?.();
+    debugPierreDiff("virtualized post-render", {
+      path: renderFile.path,
+      believedTop: instance.top,
+      realTop,
+      topDrift: instance.top != null && realTop != null ? instance.top - realTop : undefined,
+      believedHeight: instance.height,
+      realHeight: hostRect.height,
+      heightDrift: instance.height != null ? instance.height - hostRect.height : undefined,
+      renderRange: instance.renderRange,
+      windowSpecs,
+      scrollTop,
+      viewportHeight: areaRect?.height,
+      hostInViewport: isHostInScrollViewport(),
+    });
+  }
+
   function finalizeRenderedDom(): boolean {
+    debugVirtualizedRenderState();
     removeStalePlaceholderPres();
     applyLineTargetAttributes();
     applyHunkHeaderLabels();

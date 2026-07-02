@@ -405,7 +405,7 @@
         {/if}
       </footer>
       {#if linkedToast}
-        <p class="link-toast" role="status">{linkedToast}</p>
+        <p class="link-status" role="status">{linkedToast}</p>
       {/if}
       {#if saveError}
         <p class="link-error" role="alert">{saveError}</p>
@@ -713,7 +713,7 @@
     cursor: not-allowed;
   }
 
-  .link-toast {
+  .link-status {
     margin: 8px 0 0;
     padding: 6px 10px;
     border-radius: var(--radius-sm, 4px);

@@ -5695,16 +5695,30 @@ func (s *Syncer) backfillMergedActorAfterUnchangedDetail(
 	if !needed {
 		return 0, false, nil
 	}
+	return s.backfillMergedActorWithKnownNeed(ctx, client, repo, existing)
+}
+
+func (s *Syncer) backfillMergedActorWithKnownNeed(
+	ctx context.Context,
+	client Client,
+	repo RepoRef,
+	existing *db.MergeRequest,
+) (int, bool, error) {
+	if s.skipMergedActorDetailBackfill(existing, time.Now()) {
+		return 0, false, nil
+	}
 	fullPR, err := client.GetPullRequest(
 		ctx, repo.Owner, repo.Name, existing.Number,
 	)
 	if err != nil {
+		s.recordMergedActorDetailBackfillRetry(existing, time.Now().Add(mergedActorDetailBackfillErrorBackoff))
 		return 1, false, fmt.Errorf(
 			"get PR #%d for merged actor backfill: %w",
 			existing.Number, err,
 		)
 	}
 	if fullPR == nil {
+		s.recordMergedActorDetailBackfillRetry(existing, time.Now().Add(mergedActorDetailBackfillErrorBackoff))
 		return 1, false, fmt.Errorf(
 			"get PR #%d for merged actor backfill: client returned nil pull request",
 			existing.Number,
@@ -5714,10 +5728,16 @@ func (s *Syncer) backfillMergedActorAfterUnchangedDetail(
 		ctx, existing.ID, fullPR, existing.MergedAt,
 	)
 	if err != nil {
+		s.recordMergedActorDetailBackfillRetry(existing, time.Now().Add(mergedActorDetailBackfillErrorBackoff))
 		return 1, false, fmt.Errorf(
 			"persist merged lifecycle event for MR #%d: %w",
 			existing.Number, err,
 		)
+	}
+	if wrote {
+		s.clearMergedActorDetailBackfillAttempt(existing)
+	} else {
+		s.recordMergedActorDetailBackfillTerminalMiss(existing)
 	}
 	return 1, wrote, nil
 }
@@ -5821,9 +5841,6 @@ func (s *Syncer) BackfillMergedActorForDetail(
 	if err != nil || !needed {
 		return false, err
 	}
-	if s.skipMergedActorDetailBackfill(existing, time.Now()) {
-		return false, nil
-	}
 	repoRow, err := s.db.GetRepoByID(ctx, existing.RepoID)
 	if err != nil {
 		return false, fmt.Errorf(
@@ -5855,19 +5872,8 @@ func (s *Syncer) BackfillMergedActorForDetail(
 			existing.Number, err,
 		)
 	}
-	calls, wrote, err := s.backfillMergedActorAfterUnchangedDetail(ctx, client, repo, existing)
-	if err != nil {
-		s.recordMergedActorDetailBackfillRetry(existing, time.Now().Add(mergedActorDetailBackfillErrorBackoff))
-		return false, err
-	}
-	if wrote {
-		s.clearMergedActorDetailBackfillAttempt(existing)
-		return true, nil
-	}
-	if calls > 0 {
-		s.recordMergedActorDetailBackfillTerminalMiss(existing)
-	}
-	return false, nil
+	_, wrote, err := s.backfillMergedActorWithKnownNeed(ctx, client, repo, existing)
+	return wrote, err
 }
 
 func (s *Syncer) fetchProviderMRDetail(

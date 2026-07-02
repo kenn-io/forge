@@ -8207,7 +8207,7 @@ func TestBackfillMergedActorForDetailRecordsRetryOnTimelineError(t *testing.T) {
 
 	wrote, err := syncer.BackfillMergedActorForDetail(ctx, existing)
 	require.Error(err)
-	assert.ErrorContains(err, "list timeline events for merged actor backfill")
+	require.ErrorContains(err, "list timeline events for merged actor backfill")
 	assert.False(wrote)
 	assert.Equal(int32(1), client.getPRCalls.Load())
 

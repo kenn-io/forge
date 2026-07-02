@@ -8654,7 +8654,7 @@ func (s *Syncer) persistMergedTransitionEvent(
 	ghPR *gh.PullRequest,
 	mergedAt *time.Time,
 ) (bool, error) {
-	if ghPR == nil || mergedAt == nil || !pullRequestWasMerged(ghPR) {
+	if ghPR == nil || mergedAt == nil {
 		return false, nil
 	}
 	mergedBy := ghPR.GetMergedBy()

@@ -152,6 +152,16 @@ body {
   height: 100%;
 }
 
+/* Icons composed into kit-ui Chip children (state chevrons, CI arrows)
+   render inside the inline .kit-chip__label span, where an svg sits on the
+   text baseline and sags below uppercase labels. Center them optically.
+   The label span itself must stay inline for text-overflow ellipsis
+   (repo chips truncate). */
+.kit-chip__label svg {
+  vertical-align: middle;
+  margin-block: -0.2em;
+}
+
 /* Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

@@ -93,6 +93,11 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 	assert.Equal("feature", pr.Labels[0].Name)
 	assert.Equal(&closed, pr.MergedAt)
 
+	unmergedPR := convertPullRequest(&giteasdk.PullRequest{
+		Index: 5,
+	}, nil)
+	assert.Empty(unmergedPR.MergedBy.UserName)
+
 	issue := convertIssue(&giteasdk.Issue{
 		ID:          7,
 		Index:       8,

@@ -103,6 +103,11 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 	assert.Equal("feature", pr.Labels[0].Name)
 	assert.Equal(&closed, pr.MergedAt)
 
+	unmergedPR := convertPullRequest(&forgejosdk.PullRequest{
+		Index: 5,
+	}, nil)
+	assert.Empty(unmergedPR.MergedBy.UserName)
+
 	issue := convertIssue(&forgejosdk.Issue{
 		ID:          7,
 		Index:       8,

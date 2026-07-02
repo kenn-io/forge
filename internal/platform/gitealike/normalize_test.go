@@ -105,6 +105,12 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert.Equal("abc123", pr.HeadSHA)
 	assert.False(pr.IsDraft)
 
+	unmergedPR := NormalizePullRequest(repo, PullRequestDTO{
+		Index: 8,
+		State: "open",
+	})
+	assert.Empty(unmergedPR.MergedBy)
+
 	draftPR := NormalizePullRequest(repo, PullRequestDTO{
 		ID:       101,
 		Index:    8,

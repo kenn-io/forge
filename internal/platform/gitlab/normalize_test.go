@@ -193,6 +193,18 @@ func TestNormalizeMergeRequestLeavesMergedByEmptyWhenGitLabOmitsMergeUser(t *tes
 	assert.Empty(t, mr.MergedBy)
 }
 
+func TestNormalizeMergeRequestUsesMergedByWhenGitLabOmitsMergeUser(t *testing.T) {
+	mr := NormalizeMergeRequest(testGitLabRepoRef(), &gitlab.BasicMergeRequest{
+		ID:    1001,
+		IID:   7,
+		State: "merged",
+		//nolint:staticcheck // Exercise GitLab < 14.7 fallback when merge_user is absent.
+		MergedBy: &gitlab.BasicUser{Username: "legacy-admin"},
+	}, nil)
+
+	assert.Equal(t, "legacy-admin", mr.MergedBy)
+}
+
 func TestNormalizeMergeRequestMapsGitLabMergeability(t *testing.T) {
 	tests := []struct {
 		name           string

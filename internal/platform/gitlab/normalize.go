@@ -184,6 +184,10 @@ func normalizeMergeRequest(
 		Assignees:          basicUsernames(mr.Assignees),
 		RequestedReviewers: basicUsernames(mr.Reviewers),
 	}
+	if out.MergedBy == "" {
+		//nolint:staticcheck // GitLab < 14.7 can populate merged_by without merge_user.
+		out.MergedBy = basicUsername(mr.MergedBy)
+	}
 	if mr.MergedAt != nil {
 		t := mr.MergedAt.UTC()
 		out.MergedAt = &t

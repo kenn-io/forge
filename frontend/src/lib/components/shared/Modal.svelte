@@ -56,19 +56,24 @@
   $effect(() => {
     if (!open) return;
     queueMicrotask(() => {
-      // Initial-focus priority: body input/textarea, then the first enabled
-      // body button, then the first enabled footer button — so confirmation
-      // dialogs land on their first action (Cancel) instead of the panel.
-      // Intentionally narrower than the old shell: custom [tabindex] controls
-      // defer to kit's focus trap (which focuses the panel, or an [autofocus]
-      // descendant if a dialog marks one).
+      // Initial-focus priority: an explicit [data-autofocus] control, then a
+      // body input/textarea, then the first enabled body button, then the
+      // first enabled footer button — so confirmation dialogs land on their
+      // first action (Cancel) instead of the panel. Intentionally narrower
+      // than the old shell: custom [tabindex] controls defer to kit's focus
+      // trap (which focuses the panel, or an [autofocus] descendant if a
+      // dialog marks one). Use data-autofocus when the preferred control is
+      // not the first body input (e.g. an input mid-form).
+      const explicit =
+        bodyEl?.querySelector<HTMLElement>("[data-autofocus]") ??
+        footEl?.querySelector<HTMLElement>("[data-autofocus]");
       const primary = bodyEl?.querySelector<HTMLElement>(
         "input:not([type='hidden']):not([disabled]), textarea:not([disabled])",
       );
       const action =
         bodyEl?.querySelector<HTMLElement>("button:not([disabled])") ??
         footEl?.querySelector<HTMLElement>("button:not([disabled])");
-      (primary ?? action)?.focus();
+      (explicit ?? primary ?? action)?.focus();
     });
   });
 </script>

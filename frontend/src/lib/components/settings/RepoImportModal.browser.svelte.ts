@@ -22,8 +22,12 @@ function controlByLabel<T extends HTMLElement>(labelText: string, selector: stri
   return control!;
 }
 
+// Mid-cycle Tab movement is native browser behavior under kit-ui's focus
+// trap (it only intercepts at the boundaries), so synthetic key events can
+// only exercise the wrap points. Option buttons staying out of the tab order
+// (tabindex="-1") is pinned in SelectDropdown's own test.
 describe("RepoImportModal focus trap (browser)", () => {
-  it("cycles Tab and Shift+Tab through controls in rendered order", async () => {
+  it("focuses the pattern input on open and wraps Tab at the trap boundaries", async () => {
     render(RepoImportModal, {
       props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
     });
@@ -31,49 +35,20 @@ describe("RepoImportModal focus trap (browser)", () => {
     await expect.element(page.getByRole("dialog", { name: "Add repositories" })).toBeVisible();
 
     const close = requireElement<HTMLButtonElement>("button[aria-label='Close']");
-    const provider = controlByLabel<HTMLButtonElement>("Provider", ".select-dropdown-trigger");
-    const host = controlByLabel<HTMLInputElement>("Host", "input");
     const pattern = controlByLabel<HTMLInputElement>("Repository pattern", "input");
     const cancel = page.getByRole("button", { name: "Cancel" }).element() as HTMLButtonElement;
 
+    // The dialog prefers its pattern input over the first tabbable control.
     await vi.waitFor(() => expect(document.activeElement).toBe(pattern));
 
-    pressKey("Tab", { shift: true }, pattern);
-    expect(document.activeElement).toBe(host);
-
-    pressKey("Tab", { shift: true }, host);
-    expect(document.activeElement).toBe(provider);
-
-    pressKey("Tab", { shift: true }, provider);
-    expect(document.activeElement).toBe(close);
-
+    // Shift+Tab from the first tabbable (the header X) wraps to the last
+    // enabled control (Cancel — the submit button is disabled with nothing
+    // selected), and Tab from there wraps forward again.
+    close.focus();
     pressKey("Tab", { shift: true }, close);
     expect(document.activeElement).toBe(cancel);
 
     pressKey("Tab", {}, cancel);
     expect(document.activeElement).toBe(close);
-  });
-
-  it("keeps Tab out of the open provider dropdown's option buttons", async () => {
-    render(RepoImportModal, {
-      props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
-    });
-
-    await expect.element(page.getByRole("dialog", { name: "Add repositories" })).toBeVisible();
-
-    const provider = controlByLabel<HTMLButtonElement>("Provider", ".select-dropdown-trigger");
-    const host = controlByLabel<HTMLInputElement>("Host", "input");
-
-    // Open the dropdown so its option buttons are rendered. They carry
-    // tabindex="-1" precisely so they stay out of the modal's tab order.
-    provider.click();
-    const option = await vi.waitFor(() => requireElement<HTMLButtonElement>(".select-dropdown-option"));
-    expect(option.getAttribute("tabindex")).toBe("-1");
-
-    // Tabbing forward from the trigger must skip the option buttons and land on
-    // the next modal control, not descend into the open dropdown.
-    provider.focus();
-    pressKey("Tab", {}, provider);
-    expect(document.activeElement).toBe(host);
   });
 });

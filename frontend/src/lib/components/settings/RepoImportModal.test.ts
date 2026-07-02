@@ -1,8 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { MockedFunction } from "vite-plus/test";
 import RepoImportModal from "./RepoImportModal.svelte";
 import { bulkAddRepos, previewRepos } from "../../api/settings.js";
+import { installOffsetParentStub, removeOffsetParentStub } from "../../../test/stubOffsetParent.js";
+
+beforeAll(installOffsetParentStub);
+afterAll(removeOffsetParentStub);
 
 vi.mock("../../api/settings.js", () => ({
   previewRepos: vi.fn(),

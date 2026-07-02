@@ -2,7 +2,7 @@
   import { EmptyState, Spinner } from "@kenn-io/kit-ui";
   import { tick, untrack } from "svelte";
   import type { ConfigRepo, Settings } from "@middleman/ui/api/types";
-  import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
+  import Modal from "../shared/Modal.svelte";
   import {
     bulkAddRepos,
     previewRepos,
@@ -68,11 +68,6 @@
     loadedRepoKey = key;
     void tick().then(() => searchInput?.focus());
     untrack(() => { void loadMatches(target); });
-  });
-
-  $effect(() => {
-    if (!open) return;
-    return untrack(() => pushModalFrame("repo-promote-modal", []));
   });
 
   function promoteRowKey(row: RepoPreviewRow): string {
@@ -179,44 +174,18 @@
     if (!submitting) onClose();
   }
 
-  function handleKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      closeIfAllowed();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const container = event.currentTarget;
-    if (!(container instanceof HTMLElement)) return;
-    const modal = container.querySelector("[role='dialog']");
-    if (!(modal instanceof HTMLElement)) return;
-    const focusable = Array.from(
-      modal.querySelectorAll<HTMLElement>(
-        "button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])",
-      ),
-    );
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (!first || !last) return;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
 </script>
 
-{#if open && repo}
-  <div class="modal-backdrop" role="presentation" onkeydown={handleKeydown}>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="repo-promote-title">
-      <header class="modal-header">
-        <div>
-          <h2 id="repo-promote-title">Promote wildcard repository</h2>
-          <p>{repo.repo_path || `${repo.owner}/${repo.name}`}</p>
-        </div>
-        <button type="button" class="close-btn" aria-label="Close" onclick={closeIfAllowed}>×</button>
-      </header>
+<Modal
+  open={open && repo !== null}
+  title="Promote wildcard repository"
+  width={760}
+  frameId="repo-promote-modal"
+  showClose
+  onClose={closeIfAllowed}
+>
+  <div class="promote-content">
+    <p class="promote-subject">{repo?.repo_path || `${repo?.owner}/${repo?.name}`}</p>
 
       <label class="search-field">
         <span>Search matches</span>
@@ -292,23 +261,22 @@
         </label>
       {/if}
 
-      <footer class="modal-footer">
-        <span>{availableCount} available of {rows.length} matches</span>
-        <div class="footer-actions">
-          <button class="secondary-btn" type="button" onclick={closeIfAllowed} disabled={submitting}>Cancel</button>
-          <button
-            class="submit-btn"
-            type="button"
-            onclick={() => void handlePromote()}
-            disabled={submitting || !selectedRow || selectedRow.already_configured || selectedPath.trim() === ""}
-          >
-            {submitting ? "Promoting..." : "Promote repository"}
-          </button>
-        </div>
-      </footer>
-    </div>
   </div>
-{/if}
+  {#snippet footer()}
+    <span class="footer-status">{availableCount} available of {rows.length} matches</span>
+    <div class="footer-actions">
+      <button class="secondary-btn" type="button" onclick={closeIfAllowed} disabled={submitting}>Cancel</button>
+      <button
+        class="submit-btn"
+        type="button"
+        onclick={() => void handlePromote()}
+        disabled={submitting || !selectedRow || selectedRow.already_configured || selectedPath.trim() === ""}
+      >
+        {submitting ? "Promoting..." : "Promote repository"}
+      </button>
+    </div>
+  {/snippet}
+</Modal>
 
 <style>
   .loading-placeholder {
@@ -321,48 +289,20 @@
     font-size: var(--font-size-md);
   }
 
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    background: color-mix(in srgb, black 38%, transparent);
-  }
-  .modal {
-    width: min(760px, 100%);
-    max-height: min(720px, 92vh);
+  .promote-content {
     display: flex;
     flex-direction: column;
     gap: 14px;
-    padding: 18px;
-    color: var(--text-primary);
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 24px 80px rgb(0 0 0 / 35%);
   }
-  .modal-header,
-  .modal-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  }
-  h2 {
+  .promote-subject {
     margin: 0;
-    font-size: var(--font-size-lg);
-  }
-  p {
-    margin: 4px 0 0;
     color: var(--text-muted);
     font-size: var(--font-size-sm);
   }
-  .close-btn {
+  .footer-status {
+    margin-right: auto;
     color: var(--text-muted);
-    font-size: var(--font-size-xl);
+    font-size: var(--font-size-sm);
   }
   .search-field,
   .path-field {

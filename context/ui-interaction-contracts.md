@@ -199,6 +199,21 @@ context.
   can anchor to a file/line position, but their compact timeline summaries
   should still use root-comment context plus newest-first replies.
 
+## Inline Review Drafts
+
+Inline diff review draft comments are local staged review state until publish.
+Editing a saved draft comment should change only the body and preserve the
+original diff range, so the PATCH path must rebuild the range from the stored
+comment rather than from whichever line is currently selected
+(`packages/ui/src/stores/diff-review-draft.svelte.ts::editComment`).
+
+Draft authoring and the sticky publish tray are gated by the repo operation
+`review_draft`, not `submit_review`. `submit_review` gates submitted review
+actions in the detail header, while Files-tab draft authoring must disappear
+when `review_draft` is unavailable and show that operation's reason instead
+(`packages/ui/src/components/diff/DiffFilesLayout.svelte:44`,
+`frontend/tests/e2e/inline-review.spec.ts:655`).
+
 ## Optional Metadata Controls
 
 Optional metadata must not reserve empty rows or placeholders when absent. Put

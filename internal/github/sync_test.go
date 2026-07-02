@@ -6055,7 +6055,7 @@ func TestRefreshTimelineSkipsMergedEventWhenAuthoredMergedEventAlreadyExists(t *
 			NodeID:    "ME_1",
 			EventType: "merged",
 			Actor:     mergedBy,
-			CreatedAt: mergedAt,
+			CreatedAt: mergedAt.Add(time.Second),
 		}},
 	}
 	syncer := NewSyncer(

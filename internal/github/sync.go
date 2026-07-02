@@ -8617,7 +8617,7 @@ func (s *Syncer) filterDuplicateMergedLifecycleEvents(
 	out := events[:0]
 	for _, event := range events {
 		if isAuthoredMergedLifecycleEvent(event) &&
-			authoredMergedLifecycleEventExistsAt(existing, event.CreatedAt) {
+			authoredMergedLifecycleEventExists(existing) {
 			continue
 		}
 		out = append(out, event)
@@ -8625,26 +8625,20 @@ func (s *Syncer) filterDuplicateMergedLifecycleEvents(
 	return out, nil
 }
 
-func (s *Syncer) authoredMergedLifecycleEventExistsAt(
+func (s *Syncer) authoredMergedLifecycleEventExists(
 	ctx context.Context,
 	mrID int64,
-	mergedAt time.Time,
 ) (bool, error) {
 	events, err := s.db.ListMREvents(ctx, mrID)
 	if err != nil {
 		return false, err
 	}
-	return authoredMergedLifecycleEventExistsAt(events, mergedAt), nil
+	return authoredMergedLifecycleEventExists(events), nil
 }
 
-func authoredMergedLifecycleEventExistsAt(
-	events []db.MREvent,
-	mergedAt time.Time,
-) bool {
-	mergedAt = mergedAt.UTC()
+func authoredMergedLifecycleEventExists(events []db.MREvent) bool {
 	for _, event := range events {
-		if isAuthoredMergedLifecycleEvent(event) &&
-			event.CreatedAt.UTC().Equal(mergedAt) {
+		if isAuthoredMergedLifecycleEvent(event) {
 			return true
 		}
 	}
@@ -8673,7 +8667,7 @@ func (s *Syncer) persistMergedTransitionEvent(
 	if actor == "" {
 		return false, nil
 	}
-	exists, err := s.authoredMergedLifecycleEventExistsAt(ctx, mrID, *mergedAt)
+	exists, err := s.authoredMergedLifecycleEventExists(ctx, mrID)
 	if err != nil {
 		return false, err
 	}

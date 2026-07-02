@@ -26131,11 +26131,17 @@ func TestWorkspaceCreateDuplicate(t *testing.T) {
 	resp1, err := client.HTTP.CreateWorkspaceWithResponse(ctx, body)
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp1.StatusCode())
+	require.NotNil(resp1.JSON202)
 
 	// Duplicate create returns 409.
 	resp2, err := client.HTTP.CreateWorkspaceWithResponse(ctx, body)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp2.StatusCode())
+
+	// Drain the first create's async setup before the test returns. Otherwise
+	// the background clone can keep writing into the bare-clone temp dir and
+	// race t.TempDir cleanup, which fails RemoveAll with "directory not empty".
+	waitForWorkspaceReady(t, ctx, client, resp1.JSON202.Id)
 }
 
 func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {

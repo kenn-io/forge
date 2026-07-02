@@ -141,6 +141,11 @@ behavior.
 
 - Use real SQLite-backed server tests for delete ordering, tmux cleanup, and
   runtime-session API behavior.
+- A server test that creates a workspace must wait for setup to reach a terminal
+  state (`waitForWorkspaceReady`) before it returns. The `202 Accepted` create
+  runs clone/setup in a background goroutine; if the test returns first, that
+  goroutine can keep writing into the test's `t.TempDir` clone path and race
+  `RemoveAll` teardown, failing intermittently with "directory not empty".
 - Use tmux wrappers/fakes for missing-session and dead-server cases.
 - Add frontend or Playwright coverage when the regression is visible in tab
   selection, shell drawer state, or workspace navigation.

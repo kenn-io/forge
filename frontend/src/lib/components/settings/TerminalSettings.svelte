@@ -1,11 +1,11 @@
 <script lang="ts">
+  import Modal from "../shared/Modal.svelte";
   import { onDestroy } from "svelte";
   import {
     DEFAULT_TERMINAL_SETTINGS,
     getStores,
     SelectDropdown,
   } from "@middleman/ui";
-  import XIcon from "@lucide/svelte/icons/x";
   import type { TerminalSettings as TerminalSettingsType } from "@middleman/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
@@ -459,34 +459,14 @@
   </div>
 </div>
 
-{#if fontDialogOpen}
-  <div
-    class="font-dialog-backdrop"
-    role="presentation"
-    onclick={(event) => {
-      if (event.currentTarget === event.target) fontDialogOpen = false;
-    }}
-  >
-    <div
-      class="font-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="terminal-font-dialog-title"
-    >
-      <div class="font-dialog-header">
-        <h2 id="terminal-font-dialog-title">Choose monospace font</h2>
-        <button
-          class="close-btn"
-          type="button"
-          aria-label="Close font picker"
-          onclick={() => {
-            fontDialogOpen = false;
-          }}
-        >
-          <XIcon size="14" strokeWidth="2" aria-hidden="true" />
-        </button>
-      </div>
-
+<Modal
+  open={fontDialogOpen}
+  title="Choose monospace font"
+  width={560}
+  showClose
+  onClose={() => (fontDialogOpen = false)}
+>
+  <div class="font-dialog-content">
       <div class="font-section">
         <div class="font-section-title">Common fonts</div>
         <div class="font-list">
@@ -540,9 +520,8 @@
           </p>
         {/if}
       </div>
-    </div>
   </div>
-{/if}
+</Modal>
 
 <style>
   .terminal-settings {
@@ -676,55 +655,16 @@
     color: var(--text-primary);
   }
 
-  .font-dialog-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 70;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background: color-mix(in srgb, black 48%, transparent);
-  }
 
-  .font-dialog {
-    width: min(560px, 100%);
-    max-height: min(680px, calc(100vh - 40px));
-    overflow: hidden;
+
+
+
+
+
+  .font-dialog-content {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 16px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    box-shadow: var(--shadow-lg);
-  }
-
-  .font-dialog-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .font-dialog-header h2 {
-    margin: 0;
-    font-size: var(--font-size-lg);
-    font-weight: 700;
-  }
-
-  .close-btn {
-    width: 26px;
-    height: 26px;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-  }
-
-  .close-btn:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
   }
 
   .font-section {

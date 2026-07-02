@@ -2395,6 +2395,64 @@ func TestAPISyncPRPersistsMergedActorInDetail(t *testing.T) {
 	assert.True(event.CreatedAt.Equal(mergedAt))
 }
 
+func TestAPIGetPullBackfillsMergedActorBeforeDetailResponse(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	mergedAt := now.Add(time.Minute)
+	mergedBy := "merge-admin"
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(1001)
+			sha := "abc123"
+			baseSHA := "def456"
+			state := "closed"
+			title := "Merged PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: mergedAt}
+			createdAt := gh.Timestamp{Time: now}
+			mergedAtTimestamp := gh.Timestamp{Time: mergedAt}
+			merged := true
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Merged:    &merged,
+				MergedAt:  &mergedAtTimestamp,
+				ClosedAt:  &mergedAtTimestamp,
+				MergedBy:  &gh.User{Login: &mergedBy},
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: new("main")},
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
+	)
+	client := setupTestClient(t, srv)
+
+	detailResp, err := client.HTTP.GetPullWithResponse(
+		ctx, "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.NotNil(detailResp.JSON200.Events)
+	require.Len(*detailResp.JSON200.Events, 1)
+	event := (*detailResp.JSON200.Events)[0]
+	assert.Equal("merged", event.EventType)
+	assert.Equal("merge-admin", event.Author)
+	assert.Equal("merged this", event.Summary)
+	assert.True(event.CreatedAt.Equal(mergedAt))
+}
+
 func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -5208,6 +5208,10 @@ func (s *Syncer) syncOpenMRFromBulk(
 			events = append(events, *event)
 		}
 	}
+	events, err = s.filterDuplicateMergedLifecycleEvents(ctx, mrID, events)
+	if err != nil {
+		return fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
+	}
 	if bulk.CommentsComplete {
 		if err := s.replacePRCommentEvents(ctx, mrID, bulk.Comments); err != nil {
 			return fmt.Errorf(
@@ -5219,6 +5223,9 @@ func (s *Syncer) syncOpenMRFromBulk(
 		return fmt.Errorf(
 			"upsert events for MR #%d: %w", number, err,
 		)
+	}
+	if err := s.persistMergedTransitionEvent(ctx, mrID, bulk.PR, normalized.MergedAt); err != nil {
+		return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
 	}
 
 	// CI status — only write if complete (don't write
@@ -5465,9 +5472,6 @@ func (s *Syncer) fetchMRDetail(
 			"upsert MR #%d: %w", number, err,
 		)
 	}
-	if err := s.persistMergedTransitionEvent(ctx, mrID, fullPR, normalized.MergedAt); err != nil {
-		return calls, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
-	}
 	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 		return calls, fmt.Errorf("persist labels for MR #%d: %w", number, err)
 	}
@@ -5519,6 +5523,9 @@ func (s *Syncer) fetchMRDetail(
 		return calls, err
 	}
 	calls += 4
+	if err := s.persistMergedTransitionEvent(ctx, mrID, fullPR, normalized.MergedAt); err != nil {
+		return calls, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+	}
 
 	ciHeadSHA := ""
 	if fullPR.GetHead() != nil {
@@ -5725,6 +5732,53 @@ func (s *Syncer) mergedActorBackfillNeeded(
 		}
 	}
 	return true, nil
+}
+
+// BackfillMergedActorForDetail fills the merge lifecycle actor for stale rows
+// before the DB-backed detail response is built. It deliberately does only the
+// one PR request needed to read GitHub's MergedBy field; full detail sync still
+// owns comments, reviews, commits, and checks.
+func (s *Syncer) BackfillMergedActorForDetail(
+	ctx context.Context,
+	existing *db.MergeRequest,
+) (bool, error) {
+	needed, err := s.mergedActorBackfillNeeded(ctx, existing)
+	if err != nil || !needed {
+		return false, err
+	}
+	repoRow, err := s.db.GetRepoByID(ctx, existing.RepoID)
+	if err != nil {
+		return false, fmt.Errorf(
+			"get repo for merged actor backfill on MR #%d: %w",
+			existing.Number, err,
+		)
+	}
+	if repoRow == nil {
+		return false, nil
+	}
+	kind := platform.Kind(repoRow.Platform)
+	if kind != platform.KindGitHub {
+		return false, nil
+	}
+	repo := RepoRef{
+		Platform:      kind,
+		PlatformHost:  repoRow.PlatformHost,
+		Owner:         repoRow.Owner,
+		Name:          repoRow.Name,
+		RepoPath:      repoRow.RepoPath,
+		WebURL:        repoRow.WebURL,
+		CloneURL:      repoRow.CloneURL,
+		DefaultBranch: repoRow.DefaultBranch,
+	}
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return false, fmt.Errorf(
+			"resolve client for merged actor backfill on MR #%d: %w",
+			existing.Number, err,
+		)
+	}
+	calls, err := s.backfillMergedActorAfterUnchangedDetail(ctx, client, repo, existing)
+	return calls > 0, err
 }
 
 func (s *Syncer) fetchProviderMRDetail(
@@ -6249,6 +6303,10 @@ func (s *Syncer) refreshTimeline(
 			continue
 		}
 		events = append(events, *event)
+	}
+	events, err = s.filterDuplicateMergedLifecycleEvents(ctx, mrID, events)
+	if err != nil {
+		return fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
 	}
 
 	if err := s.replacePRCommentEvents(ctx, mrID, comments); err != nil {
@@ -7888,11 +7946,6 @@ func (s *Syncer) syncMRForRepo(
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
-	if ghPR != nil {
-		if err := s.persistMergedTransitionEvent(ctx, mrID, ghPR, normalized.MergedAt); err != nil {
-			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
-		}
-	}
 	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
 		return err
 	}
@@ -7921,6 +7974,9 @@ func (s *Syncer) syncMRForRepo(
 
 		if err := s.refreshTimeline(ctx, repo, repoID, mrID, ghPR); err != nil {
 			return fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
+		}
+		if err := s.persistMergedTransitionEvent(ctx, mrID, ghPR, normalized.MergedAt); err != nil {
+			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
 		}
 
 		syncMRHeadSHA := ""
@@ -8451,6 +8507,67 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	return s.markClosedLinkedNotificationsDone(ctx)
 }
 
+func (s *Syncer) filterDuplicateMergedLifecycleEvents(
+	ctx context.Context,
+	mrID int64,
+	events []db.MREvent,
+) ([]db.MREvent, error) {
+	needsExisting := false
+	for _, event := range events {
+		if isAuthoredMergedLifecycleEvent(event) {
+			needsExisting = true
+			break
+		}
+	}
+	if !needsExisting {
+		return events, nil
+	}
+	existing, err := s.db.ListMREvents(ctx, mrID)
+	if err != nil {
+		return nil, err
+	}
+	out := events[:0]
+	for _, event := range events {
+		if isAuthoredMergedLifecycleEvent(event) &&
+			authoredMergedLifecycleEventExistsAt(existing, event.CreatedAt) {
+			continue
+		}
+		out = append(out, event)
+	}
+	return out, nil
+}
+
+func (s *Syncer) authoredMergedLifecycleEventExistsAt(
+	ctx context.Context,
+	mrID int64,
+	mergedAt time.Time,
+) (bool, error) {
+	events, err := s.db.ListMREvents(ctx, mrID)
+	if err != nil {
+		return false, err
+	}
+	return authoredMergedLifecycleEventExistsAt(events, mergedAt), nil
+}
+
+func authoredMergedLifecycleEventExistsAt(
+	events []db.MREvent,
+	mergedAt time.Time,
+) bool {
+	mergedAt = mergedAt.UTC()
+	for _, event := range events {
+		if isAuthoredMergedLifecycleEvent(event) &&
+			event.CreatedAt.UTC().Equal(mergedAt) {
+			return true
+		}
+	}
+	return false
+}
+
+func isAuthoredMergedLifecycleEvent(event db.MREvent) bool {
+	return event.EventType == "merged" &&
+		strings.TrimSpace(event.Author) != ""
+}
+
 func (s *Syncer) persistMergedTransitionEvent(
 	ctx context.Context,
 	mrID int64,
@@ -8466,6 +8583,13 @@ func (s *Syncer) persistMergedTransitionEvent(
 	}
 	actor := mergedBy.GetLogin()
 	if actor == "" {
+		return nil
+	}
+	exists, err := s.authoredMergedLifecycleEventExistsAt(ctx, mrID, *mergedAt)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return nil
 	}
 	event := NormalizeTimelineEvent(mrID, PullRequestTimelineEvent{

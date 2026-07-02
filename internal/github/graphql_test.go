@@ -45,6 +45,7 @@ func TestAdaptPR(t *testing.T) {
 	}
 	gql.Author.Login = "alice"
 	gql.MergedAt = &merged
+	gql.MergedBy = &struct{ Login string }{Login: "merge-admin"}
 	gql.HeadRepository = &struct{ URL string }{URL: "https://github.com/o/r"}
 
 	pr := adaptPR(&gql)
@@ -68,6 +69,7 @@ func TestAdaptPR(t *testing.T) {
 	assert.Equal("clean", pr.GetMergeableState())
 	require.NotNil(t, pr.MergedAt)
 	assert.True(pr.GetMerged())
+	assert.Equal("merge-admin", pr.GetMergedBy().GetLogin())
 }
 
 func TestAdaptComment(t *testing.T) {

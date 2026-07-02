@@ -5944,6 +5944,200 @@ func TestFetchMRDetailPersistsMergedActorEventFromPullRequest(t *testing.T) {
 	assert.True(events[0].CreatedAt.Equal(now.Add(time.Minute)))
 }
 
+func TestFetchMRDetailDoesNotDuplicateMergedTimelineEvent(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+	mergedAt := now.Add(time.Minute)
+
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+
+	merged := true
+	mergedBy := "merge-admin"
+	pr := buildOpenPR(7, now)
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.ClosedAt = makeTimestamp(mergedAt)
+	pr.UpdatedAt = makeTimestamp(mergedAt)
+	pr.MergedBy = &gh.User{Login: &mergedBy}
+	mc := &mockClient{
+		singlePR: pr,
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		timelineEvents: []PullRequestTimelineEvent{{
+			NodeID:    "ME_1",
+			EventType: "merged",
+			Actor:     mergedBy,
+			CreatedAt: mergedAt,
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7, true)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(db.MergeRequestStateMerged, got.State)
+
+	events, err := d.ListMREvents(ctx, got.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("merged", events[0].EventType)
+	assert.Equal("merge-admin", events[0].Author)
+	assert.Equal("merged this", events[0].Summary)
+	assert.True(events[0].CreatedAt.Equal(mergedAt))
+}
+
+func TestRefreshTimelineSkipsMergedEventWhenAuthoredMergedEventAlreadyExists(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+	mergedAt := now.Add(time.Minute)
+
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+
+	merged := true
+	mergedBy := "merge-admin"
+	pr := buildOpenPR(7, now)
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.ClosedAt = makeTimestamp(mergedAt)
+	pr.UpdatedAt = makeTimestamp(mergedAt)
+	pr.MergedBy = &gh.User{Login: &mergedBy}
+	normalized, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	mrID, err := d.UpsertMergeRequest(ctx, normalized)
+	require.NoError(err)
+	require.NoError(d.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: mrID,
+		EventType:      "merged",
+		Author:         mergedBy,
+		Summary:        "merged this",
+		CreatedAt:      mergedAt,
+		DedupeKey:      "timeline-fallback",
+	}}))
+
+	mc := &mockClient{
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		timelineEvents: []PullRequestTimelineEvent{{
+			NodeID:    "ME_1",
+			EventType: "merged",
+			Actor:     mergedBy,
+			CreatedAt: mergedAt,
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	require.NoError(syncer.refreshTimeline(ctx, repo, repoID, mrID, pr))
+
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("merged", events[0].EventType)
+	assert.Equal("merge-admin", events[0].Author)
+	assert.Equal("timeline-fallback", events[0].DedupeKey)
+	assert.True(events[0].CreatedAt.Equal(mergedAt))
+}
+
+func TestSyncOpenMRFromBulkPersistsMergedActorEventFromPullRequest(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+	mergedAt := now.Add(time.Minute)
+
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+
+	merged := true
+	mergedBy := "merge-admin"
+	pr := buildOpenPR(7, now)
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.ClosedAt = makeTimestamp(mergedAt)
+	pr.UpdatedAt = makeTimestamp(mergedAt)
+	pr.MergedBy = &gh.User{Login: &mergedBy}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               pr,
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		TimelineComplete: true,
+		CIComplete:       true,
+	}, true)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(db.MergeRequestStateMerged, got.State)
+
+	events, err := d.ListMREvents(ctx, got.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("merged", events[0].EventType)
+	assert.Equal("merge-admin", events[0].Author)
+	assert.Equal("merged this", events[0].Summary)
+	assert.True(events[0].CreatedAt.Equal(mergedAt))
+}
+
 func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

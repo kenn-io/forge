@@ -1980,7 +1980,7 @@
    * fixed-width number, so cap the width and ellipsize to keep the row
    * layout stable. */
   .item-bubble--kata {
-    max-width: 9rem;
+    max-width: 117px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

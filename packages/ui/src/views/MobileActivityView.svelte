@@ -543,22 +543,22 @@
 
 <style>
   .mobile-activity-inbox {
-    --mobile-type-xs: var(--font-size-mobile-xs, 1.08rem);
-    --mobile-type-sm: var(--font-size-mobile-sm, 1.17rem);
-    --mobile-type-body: var(--font-size-mobile-body, 1.24rem);
-    --mobile-type-title: var(--font-size-mobile-title, 1.54rem);
-    --mobile-type-display: var(--font-size-mobile-display, 2.15rem);
-    --mobile-type-metric: var(--font-size-mobile-metric, 1.97rem);
-    --mobile-space-2xs: 0.36rem;
-    --mobile-space-xs: 0.55rem;
-    --mobile-space-sm: 0.75rem;
-    --mobile-space-md: 1rem;
-    --mobile-space-lg: 1.35rem;
+    --mobile-type-xs: var(--font-size-xs);
+    --mobile-type-sm: var(--font-size-sm);
+    --mobile-type-body: var(--font-size-md);
+    --mobile-type-title: var(--font-size-xl);
+    --mobile-type-display: var(--font-size-2xl);
+    --mobile-type-metric: var(--font-size-2xl);
+    --mobile-space-2xs: 4.5px;
+    --mobile-space-xs: 7px;
+    --mobile-space-sm: 10px;
+    --mobile-space-md: 13px;
+    --mobile-space-lg: 17.5px;
     --mobile-radius-sm: var(--radius-md);
     --mobile-radius-md: var(--radius-lg);
-    --mobile-hit-target: 3.5rem;
+    --mobile-hit-target: 45.5px;
     container-type: inline-size;
-    font-size: var(--font-size-mobile-body);
+    font-size: var(--font-size-md);
     flex: 1;
     min-height: 0;
     overflow: hidden;
@@ -572,7 +572,7 @@
       var(--mobile-space-md)
       var(--mobile-space-sm)
       max(var(--mobile-space-lg), env(safe-area-inset-bottom));
-    font-size: var(--font-size-mobile-body);
+    font-size: var(--font-size-md);
   }
 
   .mobile-activity-hero {
@@ -582,7 +582,7 @@
   .mobile-activity-eyebrow {
     margin: 0 0 var(--mobile-space-2xs);
     color: var(--text-secondary);
-    font-size: var(--font-size-mobile-sm);
+    font-size: var(--font-size-sm);
     font-weight: 700;
     letter-spacing: 0.02em;
   }
@@ -590,7 +590,7 @@
   .mobile-activity-hero h1 {
     margin: 0;
     color: var(--text-primary);
-    font-size: var(--font-size-mobile-title);
+    font-size: var(--font-size-xl);
     line-height: 1.16;
     letter-spacing: 0;
   }
@@ -616,7 +616,7 @@
     outline: 0;
     background: transparent;
     color: var(--text-primary);
-    font-size: var(--font-size-mobile-body);
+    font-size: var(--font-size-md);
   }
 
   .mobile-activity-search .search-input::placeholder {
@@ -650,7 +650,7 @@
 
   .mobile-filter-select span {
     color: var(--text-muted);
-    font-size: var(--font-size-mobile-xs);
+    font-size: var(--font-size-xs);
     font-weight: 750;
     letter-spacing: 0.01em;
   }
@@ -667,14 +667,14 @@
     border: 0;
     background: transparent;
     color: var(--text-primary);
-    font-size: var(--font-size-mobile-sm);
+    font-size: var(--font-size-sm);
     font-weight: 750;
   }
 
   .mobile-filter-select :global(.mobile-filter-dropdown .select-dropdown-list) {
     left: 0;
     right: auto;
-    width: min(20rem, calc(100vw - (var(--mobile-space-sm) * 2)));
+    width: min(260px, calc(100vw - (var(--mobile-space-sm) * 2)));
     max-width: calc(100vw - (var(--mobile-space-sm) * 2));
     padding: var(--mobile-space-2xs);
     border-radius: var(--radius-md);
@@ -684,12 +684,12 @@
     min-height: var(--mobile-hit-target);
     padding: var(--mobile-space-xs) var(--mobile-space-sm);
     border-radius: var(--radius-sm);
-    font-size: var(--font-size-mobile-sm);
+    font-size: var(--font-size-sm);
     line-height: 1.2;
   }
 
   .mobile-filter-select :global(.mobile-filter-dropdown .select-dropdown-check) {
-    width: 1rem;
+    width: 13px;
   }
 
   .mobile-filter-toggle {
@@ -700,7 +700,7 @@
     border-radius: var(--radius-md);
     color: var(--text-secondary);
     background: var(--bg-inset);
-    font-size: var(--font-size-mobile-sm);
+    font-size: var(--font-size-sm);
     font-weight: 750;
   }
 
@@ -754,20 +754,20 @@
   .mobile-activity-card__chips :global(.chip--md) {
     min-height: calc(var(--mobile-hit-target) * 0.55);
     padding: 0 var(--mobile-space-xs);
-    font-size: var(--font-size-mobile-xs);
+    font-size: var(--font-size-xs);
   }
 
   .mobile-activity-card__top time {
     margin-left: auto;
     flex-shrink: 0;
     color: var(--text-muted);
-    font-size: var(--font-size-mobile-sm);
+    font-size: var(--font-size-sm);
     font-weight: 700;
   }
 
   .mobile-activity-number {
     color: var(--text-muted);
-    font-size: var(--font-size-mobile-sm);
+    font-size: var(--font-size-sm);
     font-weight: 700;
   }
 
@@ -775,7 +775,7 @@
     display: -webkit-box;
     overflow: hidden;
     color: var(--text-primary);
-    font-size: var(--font-size-mobile-title);
+    font-size: var(--font-size-xl);
     font-weight: 800;
     line-height: 1.22;
     letter-spacing: -0.018em;
@@ -790,7 +790,7 @@
     align-items: baseline;
     gap: var(--mobile-space-xs) var(--mobile-space-sm);
     color: var(--text-muted);
-    font-size: var(--font-size-mobile-sm);
+    font-size: var(--font-size-sm);
     line-height: 1.25;
   }
 
@@ -861,8 +861,8 @@
   }
 
   .mobile-activity-event__dot {
-    width: 0.62rem;
-    height: 0.62rem;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--accent-blue);
   }
@@ -887,7 +887,7 @@
   .mobile-activity-event__body strong {
     display: block;
     color: var(--text-primary);
-    font-size: var(--font-size-mobile-sm);
+    font-size: var(--font-size-sm);
     font-weight: 750;
   }
 
@@ -895,14 +895,14 @@
     display: block;
     overflow: hidden;
     color: var(--text-muted);
-    font-size: var(--font-size-mobile-xs);
+    font-size: var(--font-size-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .mobile-activity-event time {
     color: var(--text-muted);
-    font-size: var(--font-size-mobile-xs);
+    font-size: var(--font-size-xs);
     font-weight: 750;
   }
 
@@ -914,7 +914,7 @@
     border-radius: var(--radius-lg);
     color: var(--text-muted);
     background: var(--bg-surface);
-    font-size: var(--font-size-mobile-sm);
+    font-size: var(--font-size-sm);
     text-align: center;
   }
 

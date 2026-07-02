@@ -522,17 +522,17 @@
   }
 
   :global(.mobile-main) .pull-item {
-    min-height: calc(var(--focus-mobile-hit-target, 2.85rem) * 1.65);
-    font-size: var(--font-size-mobile-body);
-    padding: var(--focus-mobile-space-sm, 0.75rem) var(--focus-mobile-space-md, 1rem);
+    min-height: calc(var(--focus-mobile-hit-target, 37px) * 1.65);
+    font-size: var(--font-size-md);
+    padding: var(--focus-mobile-space-sm, 10px) var(--focus-mobile-space-md, 13px);
     border-bottom: thin solid var(--border-muted);
-    border-left-width: 0.25rem;
+    border-left-width: 3px;
   }
 
   :global(.mobile-main) .title {
-    gap: var(--focus-mobile-space-xs, 0.5rem);
-    margin-bottom: var(--focus-mobile-space-xs, 0.5rem);
-    font-size: var(--font-size-mobile-title);
+    gap: var(--focus-mobile-space-xs, 6px);
+    margin-bottom: var(--focus-mobile-space-xs, 6.5px);
+    font-size: var(--font-size-xl);
     line-height: 1.3;
     white-space: normal;
     display: -webkit-box;
@@ -542,36 +542,36 @@
   }
 
   :global(.mobile-main) .state-dot {
-    width: 0.75rem;
-    height: 0.75rem;
+    width: 10px;
+    height: 10px;
   }
 
   :global(.mobile-main) .repo-row {
-    margin-bottom: var(--focus-mobile-space-xs, 0.5rem);
+    margin-bottom: var(--focus-mobile-space-xs, 6.5px);
   }
 
   :global(.mobile-main) .meta-row {
-    gap: var(--focus-mobile-space-sm, 0.75rem);
+    gap: var(--focus-mobile-space-sm, 8px);
   }
 
   :global(.mobile-main) .meta-left,
   :global(.mobile-main) .time,
   :global(.mobile-main) .worktree-name {
-    font-size: var(--font-size-mobile-sm);
+    font-size: var(--font-size-sm);
     line-height: 1.35;
   }
 
   :global(.mobile-main) .meta-right {
-    gap: var(--focus-mobile-space-xs, 0.5rem);
+    gap: var(--focus-mobile-space-xs, 6px);
   }
 
   :global(.mobile-main) :global(.chip),
   :global(.mobile-main) :global(.state-chip),
   :global(.mobile-main) :global(.status-chip) {
-    min-height: calc(var(--focus-mobile-hit-target, 2.85rem) * 0.65);
-    padding: 0.2rem var(--focus-mobile-space-xs, 0.5rem);
-    border-radius: 999rem;
-    font-size: var(--font-size-mobile-xs);
+    min-height: calc(var(--focus-mobile-hit-target, 37px) * 0.65);
+    padding: 2.5px var(--focus-mobile-space-xs, 6.5px);
+    border-radius: 999px;
+    font-size: var(--font-size-xs);
     line-height: 1.25;
   }
 </style>

@@ -1788,16 +1788,16 @@
 
   @media (max-width: 640px) {
     .issue-detail {
-      --detail-mobile-type-xs: var(--mobile-type-xs, var(--font-size-mobile-xs));
-      --detail-mobile-type-sm: var(--mobile-type-sm, var(--font-size-mobile-sm));
-      --detail-mobile-type-body: var(--mobile-type-body, 1rem);
-      --detail-mobile-type-title: var(--mobile-type-title, var(--font-size-mobile-title));
-      --detail-mobile-space-xs: 0.5rem;
-      --detail-mobile-space-sm: 0.75rem;
-      --detail-mobile-space-md: 1rem;
-      --detail-mobile-hit-target: 2.85rem;
+      --detail-mobile-type-xs: var(--mobile-type-xs, var(--font-size-xs));
+      --detail-mobile-type-sm: var(--mobile-type-sm, var(--font-size-sm));
+      --detail-mobile-type-body: var(--mobile-type-body, 13px);
+      --detail-mobile-type-title: var(--mobile-type-title, var(--font-size-xl));
+      --detail-mobile-space-xs: 6.5px;
+      --detail-mobile-space-sm: 10px;
+      --detail-mobile-space-md: 13px;
+      --detail-mobile-hit-target: 37px;
       padding: var(--detail-mobile-space-md);
-      font-size: var(--font-size-mobile-body);
+      font-size: var(--font-size-md);
       line-height: 1.5;
     }
 
@@ -1811,7 +1811,7 @@
     }
 
     .detail-title {
-      font-size: var(--font-size-mobile-title);
+      font-size: var(--font-size-xl);
       line-height: 1.25;
     }
 
@@ -1838,7 +1838,7 @@
     .action-error,
     .refresh-banner,
     .loading-placeholder {
-      font-size: var(--font-size-mobile-sm);
+      font-size: var(--font-size-sm);
       line-height: 1.35;
     }
 
@@ -1852,13 +1852,13 @@
     .merge-error,
     .detail-load-error,
     :global(.markdown-body) {
-      font-size: var(--font-size-mobile-body);
+      font-size: var(--font-size-md);
       line-height: 1.55;
     }
 
     .inset-box {
       padding: var(--detail-mobile-space-sm) var(--detail-mobile-space-md);
-      border-radius: 0.75rem;
+      border-radius: 10px;
     }
 
     :global(.markdown-body pre),
@@ -1877,9 +1877,9 @@
     .issue-detail :global(.state-chip),
     .issue-detail :global(.status-chip) {
       min-height: calc(var(--detail-mobile-hit-target) * 0.65);
-      padding: 0.2rem var(--detail-mobile-space-xs);
-      border-radius: 999rem;
-      font-size: var(--font-size-mobile-xs);
+      padding: 2.5px var(--detail-mobile-space-xs);
+      border-radius: 999px;
+      font-size: var(--font-size-xs);
       line-height: 1.25;
     }
 
@@ -1891,7 +1891,7 @@
     .modal-close,
     .field-input {
       min-height: var(--detail-mobile-hit-target);
-      font-size: var(--font-size-mobile-sm);
+      font-size: var(--font-size-sm);
     }
 
     .copy-icon-btn {

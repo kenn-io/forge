@@ -87,11 +87,11 @@
 
   @media (max-width: 640px) {
     .copy-number-btn {
-      min-width: var(--detail-mobile-hit-target, 2.85rem);
-      min-height: var(--detail-mobile-hit-target, 2.85rem);
-      padding: var(--detail-mobile-space-xs, 0.5rem);
-      border-radius: 0.65rem;
-      font-size: var(--font-size-mobile-sm);
+      min-width: var(--detail-mobile-hit-target, 37px);
+      min-height: var(--detail-mobile-hit-target, 37px);
+      padding: var(--detail-mobile-space-xs, 6.5px);
+      border-radius: 8.5px;
+      font-size: var(--font-size-sm);
       line-height: 1.35;
     }
   }

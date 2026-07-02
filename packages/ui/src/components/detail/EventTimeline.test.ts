@@ -2077,7 +2077,7 @@ describe("EventTimeline", () => {
     const inlineReplyFloat = findCompiledStyleRule(".event-body--with-inline-reply .thread-reply-inline-float");
     expect(inlineReplyFloat.getPropertyValue("float")).toBe("right");
     expect(inlineReplyFloat.getPropertyValue("clear")).toBe("right");
-    expect(inlineReplyFloat.getPropertyValue("margin-left")).toBe("var(--focus-detail-space-sm, 0.77rem)");
+    expect(inlineReplyFloat.getPropertyValue("margin-left")).toBe("var(--focus-detail-space-sm, 10px)");
 
     const inlineReplyAction = findCompiledStyleRule(".event-body--with-inline-reply .thread-reply-action--inline");
     expect(inlineReplyAction.getPropertyValue("display")).toBe("inline-flex");

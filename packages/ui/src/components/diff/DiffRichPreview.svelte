@@ -805,8 +805,8 @@
 
   .markdown-rich-diff--unified :global(.markdown-diff__block) {
     display: block;
-    margin: 0.55rem 0;
-    padding: 0.45rem 0.6rem;
+    margin: 7px 0;
+    padding: 6px 8px;
     border: 1px solid transparent;
     text-decoration: none;
   }
@@ -841,7 +841,7 @@
   }
 
   .markdown-rich-diff__anchored-block--spaced {
-    margin-bottom: 1rem;
+    margin-bottom: 13px;
   }
 
   .markdown-rich-diff__anchored-block--spaced:last-child {

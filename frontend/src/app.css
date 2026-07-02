@@ -1,3 +1,8 @@
+/* Shared design tokens (palette, typography, spacing, radii, shadows,
+   breakpoints rationale) come from kit-ui; app.css only defines
+   middleman-specific tokens on top. */
+@import "@kenn-io/kit-ui/theme.css";
+
 /* Reset */
 *,
 *::before,
@@ -12,61 +17,19 @@
   scrollbar-width: thin;
 }
 
-/* Light theme */
+/* App-specific tokens — light theme */
 :root {
-  --bg-primary: #f5f6f8;
-  --bg-surface: #ffffff;
-  --bg-surface-hover: #f0f1f4;
-  --bg-inset: #ecedf2;
-  --border-default: #d8dae2;
-  --border-muted: #e4e6ec;
   --chrome-border-width: 1px;
   --chrome-active-accent-width: 2px;
   --chrome-pane-divider-width: 3px;
   --chrome-dock-resize-hit-size: 7px;
   --chrome-dock-resize-hit-outset: 4px;
   --chrome-dock-resize-stripe-offset: 2px;
-  --text-primary: #181b24;
-  --text-secondary: #555b6e;
-  --text-muted: #878ea0;
-  --accent-blue: #2563eb;
-  --accent-amber: #d97706;
-  --accent-purple: #7c3aed;
-  --accent-green: #059669;
-  --accent-red: #dc2626;
-  --accent-teal: #0d9488;
   --budget-green: #4ade80;
   --budget-yellow: #fbbf24;
   --budget-red: #f87171;
   --budget-blue: #60a5fa;
   --budget-bar-bg: #e5e7eb;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
-
-  /* Typography */
-  --font-size-2xs: 10px;
-  --font-size-xs: 11px;
-  --font-size-sm: 12px;
-  --font-size-md: 13px;
-  --font-size-lg: 14px;
-  --font-size-xl: 18px;
-  --font-size-root: var(--font-size-md);
-  --font-size-mobile-xs: 1.08rem;
-  --font-size-mobile-sm: 1.17rem;
-  --font-size-mobile-body: 1.24rem;
-  --font-size-mobile-title: 1.54rem;
-  --font-size-mobile-display: 2.15rem;
-  --font-size-mobile-metric: 1.97rem;
-
-  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.1);
-  --overlay-bg: rgba(0, 0, 0, 0.3);
-  --header-height: 44px;
-  --status-bar-height: 24px;
   --kanban-new: #78716c;
   --kanban-reviewing: var(--accent-amber);
   --kanban-waiting: var(--accent-purple);
@@ -117,51 +80,12 @@
   --mermaid-note-bg: #fff8c5;
   --mermaid-note-text: #24292f;
   --mermaid-note-border: #d4a72c;
-
-  color-scheme: light;
 }
 
-/* Dark theme */
+/* App-specific tokens — dark theme */
 :root.dark {
-  --bg-primary: #0d0d12;
-  --bg-surface: #16161e;
-  --bg-surface-hover: #1f1f2a;
-  --bg-inset: #111116;
-  --border-default: #333345;
-  --border-muted: #2a2a3a;
-  --text-primary: #ececf1;
-  --text-secondary: #b4bcd0;
-  --text-muted: #8b93a8;
-  --accent-blue: #60a5fa;
-  --accent-amber: #fbbf24;
-  --accent-purple: #a78bfa;
-  --accent-green: #4ade80;
-  --accent-red: #f87171;
-  --accent-teal: #2dd4bf;
-  --budget-green: #4ade80;
-  --budget-yellow: #fbbf24;
-  --budget-red: #f87171;
-  --budget-blue: #60a5fa;
   --budget-bar-bg: #2a2a3e;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --overlay-bg: rgba(0, 0, 0, 0.6);
   --kanban-new: #a8a29e;
-  --kanban-reviewing: var(--accent-amber);
-  --kanban-waiting: var(--accent-purple);
-  --kanban-awaiting-merge: var(--accent-green);
-
-  /* Review status colors */
-  --review-queued: var(--accent-amber);
-  --review-running: var(--accent-blue);
-  --review-done: var(--accent-green);
-  --review-failed: var(--accent-red);
-  --review-canceled: var(--text-muted);
-
-  /* Verdict colors */
-  --verdict-pass: var(--accent-green);
-  --verdict-fail: var(--accent-red);
 
   /* Diff view — dark theme (GitHub Dark palette) */
   --diff-bg: #0d1117;
@@ -197,17 +121,16 @@
   --mermaid-note-bg: #30363d;
   --mermaid-note-text: #f0f6fc;
   --mermaid-note-border: #8b949e;
-
-  color-scheme: dark;
 }
 
-/* Base */
+/* Base. The root stays at the browser default (no html font-size) so the
+   rem-based kit-ui type scale tracks the user's font-size preference; the
+   13px UI base lands on body via --font-size-root. */
 html,
 body {
   height: 100%;
   overflow: hidden;
   font-family: var(--font-sans);
-  font-size: var(--font-size-root);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   line-height: 1.5;
@@ -217,6 +140,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   font-feature-settings: "cv11", "ss01";
+}
+
+body {
+  font-size: var(--font-size-root);
 }
 
 #app {

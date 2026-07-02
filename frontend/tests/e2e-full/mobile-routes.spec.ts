@@ -46,8 +46,8 @@ async function expectReadableFocusList(page: Page, itemSelector: string): Promis
     };
   }, itemSelector);
 
-  expect(metrics.mobileTypeToken).toBe("1.24rem");
-  expect(metrics.focusHitTarget).toMatch(/rem$/);
+  expect(metrics.mobileTypeToken).toBe("1rem");
+  expect(metrics.focusHitTarget).toMatch(/px$/);
   expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
   expect(metrics.searchFontSize).toBeGreaterThanOrEqual(16);
   expect(metrics.stateButtonFontSize).toBeGreaterThanOrEqual(15);
@@ -105,9 +105,9 @@ async function expectReadableDetail(page: Page): Promise<void> {
   });
 
   expect(metrics.detailTypeToken).not.toBe("");
-  expect(metrics.detailHitTarget).toMatch(/rem$/);
-  expect(metrics.mobileTypeToken).toBe("1.24rem");
-  expect(metrics.rootFontSize).toBe(13);
+  expect(metrics.detailHitTarget).toMatch(/px$/);
+  expect(metrics.mobileTypeToken).toBe("1rem");
+  expect(metrics.rootFontSize).toBe(16);
   expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
   expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
   expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
@@ -270,9 +270,9 @@ test.describe("phone routes", () => {
     expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
     expect(metrics.searchLeft).toBeGreaterThanOrEqual(0);
     expect(metrics.searchRight).toBeLessThanOrEqual(metrics.viewportWidth);
-    expect(metrics.mobileTypeToken).toBe("1.24rem");
-    expect(metrics.titleTypeToken).toBe("1.54rem");
-    expect(metrics.rootFontSize).toBe(13);
+    expect(metrics.mobileTypeToken).toBe("1rem");
+    expect(metrics.titleTypeToken).toBe("1.25rem");
+    expect(metrics.rootFontSize).toBe(16);
     expect(metrics.cardHeight).toBeGreaterThanOrEqual(110);
     expect(metrics.touchTargetHeight).toBeGreaterThanOrEqual(44);
     expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
@@ -481,7 +481,9 @@ test.describe("high-density phone routes", () => {
     userAgent: pixel7.userAgent,
   });
 
-  test("mobile activity sizing stays rem-based and readable on high-density Android displays", async ({ page }) => {
+  test("mobile activity keeps the phone type scale and stays readable on high-density Android displays", async ({
+    page,
+  }) => {
     await page.goto("/m?range=30d&view=threaded");
 
     await expect(page.locator(".mobile-shell")).toBeVisible();
@@ -527,8 +529,8 @@ test.describe("high-density phone routes", () => {
     });
 
     expect(metrics.dpr).toBeGreaterThanOrEqual(2.5);
-    expect(metrics.mobileTypeToken).toBe("1.24rem");
-    expect(metrics.activityTypeToken).toBe("1.24rem");
+    expect(metrics.mobileTypeToken).toBe("1rem");
+    expect(metrics.activityTypeToken).toBe("1rem");
     expect(metrics.densityScale).toBe("");
     expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
     expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(16);

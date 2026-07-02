@@ -785,6 +785,7 @@
     // behavior where Escape on the activity page closed the open PR drawer.
     const cleanupActivity = registerScopedActions("app:activity-drawer", [
       {
+        // kit-ui-check-ignore: string action id, not drawer markup
         id: "activity.drawer.close",
         label: "Close activity drawer",
         scope: "global",

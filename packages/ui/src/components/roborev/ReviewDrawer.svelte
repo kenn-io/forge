@@ -8,6 +8,11 @@
   import LogViewer from "./LogViewer.svelte";
   import PromptViewer from "./PromptViewer.svelte";
 
+  // NOTE: intentionally NOT kit-ui DetailDrawer. This is a resizable bottom
+  // dock (height: 50vh; resize: vertical; accent border-top) that lives
+  // inline in the reviews layout, not a floating dimmed right side-sheet.
+  // The kit-ui-check-ignore markers below record that deliberate choice.
+
   interface Props {
     activeTab?: "review" | "log" | "prompt";
   }
@@ -85,7 +90,9 @@
 </script>
 
 {#if isOpen}
+  <!-- kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet -->
   <div class="drawer">
+    <!-- kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet -->
     <div class="drawer-header">
       <div class="header-left">
         {#if selectedJob}
@@ -174,6 +181,7 @@
       </button>
     </div>
 
+    <!-- kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet -->
     <div class="drawer-body">
       {#if activeTab === "review"}
         <ReviewContent />
@@ -192,6 +200,7 @@
       {/if}
     </div>
 
+    <!-- kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet -->
     <div class="drawer-footer">
       <div class="footer-actions">
         {#if hasReview}
@@ -239,6 +248,7 @@
 {/if}
 
 <style>
+  /* kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet */
   .drawer {
     display: flex;
     flex-direction: column;
@@ -251,6 +261,7 @@
     overflow: hidden;
   }
 
+  /* kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet */
   .drawer-header {
     display: flex;
     align-items: center;
@@ -363,6 +374,7 @@
     border-bottom-color: var(--accent-blue);
   }
 
+  /* kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet */
   .drawer-body {
     flex: 1;
     overflow-y: auto;
@@ -375,6 +387,7 @@
     border-top: 1px solid var(--border-muted);
   }
 
+  /* kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet */
   .drawer-footer {
     display: flex;
     align-items: center;

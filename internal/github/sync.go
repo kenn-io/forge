@@ -5434,17 +5434,6 @@ func (s *Syncer) fetchMRDetail(
 	calls++
 	if err == nil && fullPR == nil {
 		if notModified && existing != nil {
-			backfillCalls, _, backfillErr := s.backfillMergedActorAfterUnchangedDetail(
-				ctx, client, repo, existing,
-			)
-			calls += backfillCalls
-			if backfillErr != nil {
-				slog.Warn("merged actor backfill after unchanged detail failed",
-					"repo", repo.Owner+"/"+repo.Name,
-					"number", number,
-					"err", backfillErr,
-				)
-			}
 			return s.markUnchangedMRDetailFetched(
 				ctx, repo, repoID, number, existing, calls,
 			)
@@ -5678,150 +5667,6 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 		}
 	}
 	return calls, nil
-}
-
-func (s *Syncer) backfillMergedActorAfterUnchangedDetail(
-	ctx context.Context,
-	client Client,
-	repo RepoRef,
-	existing *db.MergeRequest,
-) (int, bool, error) {
-	needed, err := s.mergedActorBackfillNeeded(ctx, existing)
-	if err != nil {
-		return 0, false, err
-	}
-	if !needed {
-		return 0, false, nil
-	}
-	return s.backfillMergedActorWithKnownNeed(ctx, client, repo, existing)
-}
-
-func (s *Syncer) backfillMergedActorWithKnownNeed(
-	ctx context.Context,
-	client Client,
-	repo RepoRef,
-	existing *db.MergeRequest,
-) (int, bool, error) {
-	calls := 0
-	fullPR, err := client.GetPullRequest(
-		ctx, repo.Owner, repo.Name, existing.Number,
-	)
-	calls++
-	if err != nil {
-		return calls, false, fmt.Errorf(
-			"get PR #%d for merged actor backfill: %w",
-			existing.Number, err,
-		)
-	}
-	if fullPR == nil {
-		return calls, false, fmt.Errorf(
-			"get PR #%d for merged actor backfill: client returned nil pull request",
-			existing.Number,
-		)
-	}
-	wrote, err := s.persistMergedTransitionEvent(
-		ctx, existing.ID, fullPR, existing.MergedAt,
-	)
-	if err != nil {
-		return calls, false, fmt.Errorf(
-			"persist merged lifecycle event for MR #%d: %w",
-			existing.Number, err,
-		)
-	}
-	if !wrote {
-		timelineEvents, timelineErr := client.ListPullRequestTimelineEvents(
-			ctx, repo.Owner, repo.Name, existing.Number,
-		)
-		calls++
-		if timelineErr != nil {
-			return calls, false, fmt.Errorf(
-				"list timeline events for merged actor backfill on MR #%d: %w",
-				existing.Number, timelineErr,
-			)
-		}
-		wrote, err = s.persistMergedTimelineTransitionEvent(
-			ctx, existing.ID, timelineEvents,
-		)
-		if err != nil {
-			return calls, false, fmt.Errorf(
-				"persist timeline merged lifecycle event for MR #%d: %w",
-				existing.Number, err,
-			)
-		}
-	}
-	return calls, wrote, nil
-}
-
-func (s *Syncer) mergedActorBackfillNeeded(
-	ctx context.Context,
-	existing *db.MergeRequest,
-) (bool, error) {
-	if existing == nil ||
-		existing.State != db.MergeRequestStateMerged ||
-		existing.MergedAt == nil {
-		return false, nil
-	}
-	events, err := s.db.ListMREvents(ctx, existing.ID)
-	if err != nil {
-		return false, fmt.Errorf(
-			"list merged lifecycle events for MR #%d: %w",
-			existing.Number, err,
-		)
-	}
-	for _, event := range events {
-		if event.EventType == "merged" &&
-			strings.TrimSpace(event.Author) != "" {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
-// BackfillMergedActorForDetail fills the merge lifecycle actor for stale rows
-// before the DB-backed detail response is built. It reads the focused PR field
-// first, then falls back to the PR timeline when the provider omits MergedBy;
-// full detail sync still owns comments, reviews, commits, and checks.
-func (s *Syncer) BackfillMergedActorForDetail(
-	ctx context.Context,
-	existing *db.MergeRequest,
-) (bool, error) {
-	needed, err := s.mergedActorBackfillNeeded(ctx, existing)
-	if err != nil || !needed {
-		return false, err
-	}
-	repoRow, err := s.db.GetRepoByID(ctx, existing.RepoID)
-	if err != nil {
-		return false, fmt.Errorf(
-			"get repo for merged actor backfill on MR #%d: %w",
-			existing.Number, err,
-		)
-	}
-	if repoRow == nil {
-		return false, nil
-	}
-	kind := platform.Kind(repoRow.Platform)
-	if kind != platform.KindGitHub {
-		return false, nil
-	}
-	repo := RepoRef{
-		Platform:      kind,
-		PlatformHost:  repoRow.PlatformHost,
-		Owner:         repoRow.Owner,
-		Name:          repoRow.Name,
-		RepoPath:      repoRow.RepoPath,
-		WebURL:        repoRow.WebURL,
-		CloneURL:      repoRow.CloneURL,
-		DefaultBranch: repoRow.DefaultBranch,
-	}
-	client, err := s.clientFor(repo)
-	if err != nil {
-		return false, fmt.Errorf(
-			"resolve client for merged actor backfill on MR #%d: %w",
-			existing.Number, err,
-		)
-	}
-	_, wrote, err := s.backfillMergedActorWithKnownNeed(ctx, client, repo, existing)
-	return wrote, err
 }
 
 func (s *Syncer) fetchProviderMRDetail(
@@ -7915,15 +7760,6 @@ func (s *Syncer) syncMRForRepo(
 			)
 			if err == nil && ghPR == nil {
 				if notModified && existing != nil {
-					if _, _, backfillErr := s.backfillMergedActorAfterUnchangedDetail(
-						ctx, client, repo, existing,
-					); backfillErr != nil {
-						slog.Warn("merged actor backfill after unchanged detail failed",
-							"repo", owner+"/"+name,
-							"number", number,
-							"err", backfillErr,
-						)
-					}
 					_, err := s.markUnchangedMRDetailFetched(
 						ctx, repo, repoID, number, existing, 1,
 					)
@@ -8650,34 +8486,6 @@ func (s *Syncer) persistMergedActorEvent(
 		return false, err
 	}
 	return true, nil
-}
-
-func (s *Syncer) persistMergedTimelineTransitionEvent(
-	ctx context.Context,
-	mrID int64,
-	timelineEvents []PullRequestTimelineEvent,
-) (bool, error) {
-	for _, timelineEvent := range timelineEvents {
-		if timelineEvent.EventType != "merged" || strings.TrimSpace(timelineEvent.Actor) == "" {
-			continue
-		}
-		exists, err := s.authoredMergedLifecycleEventExists(ctx, mrID)
-		if err != nil {
-			return false, err
-		}
-		if exists {
-			return false, nil
-		}
-		event := NormalizeTimelineEvent(mrID, timelineEvent)
-		if event == nil {
-			return false, nil
-		}
-		if err := s.db.UpsertMREvents(ctx, []db.MREvent{*event}); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	return false, nil
 }
 
 func (s *Syncer) fetchAndUpdateClosedMergeRequest(

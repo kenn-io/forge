@@ -2490,182 +2490,7 @@ func TestAPIIndexSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
 	assert.Equal(int32(0), getPullCalls.Load())
 }
 
-func TestAPIGetPullBackfillsMergedActorBeforeDetailResponse(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx := t.Context()
-	now := time.Now().UTC().Truncate(time.Second)
-	mergedAt := now.Add(time.Minute)
-	mergedBy := "merge-admin"
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
-			id := int64(1001)
-			sha := "abc123"
-			baseSHA := "def456"
-			state := "closed"
-			title := "Merged PR"
-			url := "https://github.com/acme/widget/pull/1"
-			updatedAt := gh.Timestamp{Time: mergedAt}
-			createdAt := gh.Timestamp{Time: now}
-			mergedAtTimestamp := gh.Timestamp{Time: mergedAt}
-			merged := true
-			return &gh.PullRequest{
-				ID:        &id,
-				Number:    &number,
-				State:     &state,
-				Title:     &title,
-				HTMLURL:   &url,
-				UpdatedAt: &updatedAt,
-				CreatedAt: &createdAt,
-				Merged:    &merged,
-				MergedAt:  &mergedAtTimestamp,
-				ClosedAt:  &mergedAtTimestamp,
-				MergedBy:  &gh.User{Login: &mergedBy},
-				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
-				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: new("main")},
-			}, nil
-		},
-	}
-
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1,
-		withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
-	)
-	client := setupTestClient(t, srv)
-
-	detailResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
-	require.NotNil(detailResp.JSON200)
-	require.NotNil(detailResp.JSON200.Events)
-	require.Len(*detailResp.JSON200.Events, 1)
-	event := (*detailResp.JSON200.Events)[0]
-	assert.Equal("merged", event.EventType)
-	assert.Equal("merge-admin", event.Author)
-	assert.Equal("merged this", event.Summary)
-	assert.True(event.CreatedAt.Equal(mergedAt))
-}
-
-func TestAPIGetPullBackfillsMergedActorFromCachedMergeState(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx := t.Context()
-	now := time.Now().UTC().Truncate(time.Second)
-	mergedAt := now.Add(time.Minute)
-	mergedBy := "merge-admin"
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
-			id := int64(1001)
-			sha := "abc123"
-			baseSHA := "def456"
-			state := "closed"
-			title := "Merged PR"
-			url := "https://github.com/acme/widget/pull/1"
-			updatedAt := gh.Timestamp{Time: mergedAt}
-			createdAt := gh.Timestamp{Time: now}
-			return &gh.PullRequest{
-				ID:        &id,
-				Number:    &number,
-				State:     &state,
-				Title:     &title,
-				HTMLURL:   &url,
-				UpdatedAt: &updatedAt,
-				CreatedAt: &createdAt,
-				MergedBy:  &gh.User{Login: &mergedBy},
-				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
-				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: new("main")},
-			}, nil
-		},
-	}
-
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1,
-		withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
-	)
-	client := setupTestClient(t, srv)
-
-	detailResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
-	require.NotNil(detailResp.JSON200)
-	require.NotNil(detailResp.JSON200.Events)
-	require.Len(*detailResp.JSON200.Events, 1)
-	event := (*detailResp.JSON200.Events)[0]
-	assert.Equal("merged", event.EventType)
-	assert.Equal("merge-admin", event.Author)
-	assert.Equal("merged this", event.Summary)
-	assert.True(event.CreatedAt.Equal(mergedAt))
-}
-
-func TestAPIGetPullBackfillsMergedActorFromTimelineWhenRestActorMissing(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx := t.Context()
-	now := time.Now().UTC().Truncate(time.Second)
-	mergedAt := now.Add(time.Minute)
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
-			id := int64(1001)
-			sha := "abc123"
-			baseSHA := "def456"
-			state := "closed"
-			title := "Merged PR"
-			url := "https://github.com/acme/widget/pull/1"
-			updatedAt := gh.Timestamp{Time: mergedAt}
-			createdAt := gh.Timestamp{Time: now}
-			mergedAtTimestamp := gh.Timestamp{Time: mergedAt}
-			merged := true
-			return &gh.PullRequest{
-				ID:        &id,
-				Number:    &number,
-				State:     &state,
-				Title:     &title,
-				HTMLURL:   &url,
-				UpdatedAt: &updatedAt,
-				CreatedAt: &createdAt,
-				Merged:    &merged,
-				MergedAt:  &mergedAtTimestamp,
-				ClosedAt:  &mergedAtTimestamp,
-				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
-				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: new("main")},
-			}, nil
-		},
-		listPRTimelineEventsFn: func(_ context.Context, _ string, _ string, _ int) ([]ghclient.PullRequestTimelineEvent, error) {
-			return []ghclient.PullRequestTimelineEvent{{
-				NodeID:    "ME_merged_1",
-				EventType: "merged",
-				Actor:     "merge-admin",
-				CreatedAt: mergedAt,
-			}}, nil
-		},
-	}
-
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1,
-		withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
-	)
-	client := setupTestClient(t, srv)
-
-	detailResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
-	require.NotNil(detailResp.JSON200)
-	require.NotNil(detailResp.JSON200.Events)
-	require.Len(*detailResp.JSON200.Events, 1)
-	event := (*detailResp.JSON200.Events)[0]
-	assert.Equal("merged", event.EventType)
-	assert.Equal("merge-admin", event.Author)
-	assert.Equal("merged this", event.Summary)
-	assert.True(event.CreatedAt.Equal(mergedAt))
-}
-
-func TestAPIGetPullRetriesMergedActorBackfillUntilTimelineHasActor(t *testing.T) {
+func TestAPIGetPullDoesNotFetchProviderForMissingMergedActor(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -2674,45 +2499,13 @@ func TestAPIGetPullRetriesMergedActorBackfillUntilTimelineHasActor(t *testing.T)
 	var getPullCalls atomic.Int32
 	var timelineCalls atomic.Int32
 	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
+		getPullRequestFn: func(_ context.Context, _ string, _ string, _ int) (*gh.PullRequest, error) {
 			getPullCalls.Add(1)
-			id := int64(1001)
-			sha := "abc123"
-			baseSHA := "def456"
-			headRef := "feature"
-			baseRef := "main"
-			state := "closed"
-			title := "Merged PR"
-			url := "https://github.com/acme/widget/pull/1"
-			updatedAt := gh.Timestamp{Time: mergedAt}
-			createdAt := gh.Timestamp{Time: now}
-			mergedAtTimestamp := gh.Timestamp{Time: mergedAt}
-			merged := true
-			return &gh.PullRequest{
-				ID:        &id,
-				Number:    &number,
-				State:     &state,
-				Title:     &title,
-				HTMLURL:   &url,
-				UpdatedAt: &updatedAt,
-				CreatedAt: &createdAt,
-				Merged:    &merged,
-				MergedAt:  &mergedAtTimestamp,
-				ClosedAt:  &mergedAtTimestamp,
-				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: &headRef},
-				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &baseRef},
-			}, nil
+			return nil, errors.New("detail reads must not fetch pull request data")
 		},
 		listPRTimelineEventsFn: func(_ context.Context, _ string, _ string, _ int) ([]ghclient.PullRequestTimelineEvent, error) {
-			if timelineCalls.Add(1) == 1 {
-				return nil, nil
-			}
-			return []ghclient.PullRequestTimelineEvent{{
-				NodeID:    "ME_merged_1",
-				EventType: "merged",
-				Actor:     "merge-admin",
-				CreatedAt: mergedAt,
-			}}, nil
+			timelineCalls.Add(1)
+			return nil, errors.New("detail reads must not fetch timeline data")
 		},
 	}
 
@@ -2722,31 +2515,21 @@ func TestAPIGetPullRetriesMergedActorBackfillUntilTimelineHasActor(t *testing.T)
 	)
 	client := setupTestClient(t, srv)
 
-	first, err := client.HTTP.GetPullWithResponse(
+	detailResp, err := client.HTTP.GetPullWithResponse(
 		ctx, "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
-	require.Equal(http.StatusOK, first.StatusCode(), string(first.Body))
-	require.NotNil(first.JSON200)
-	require.NotNil(first.JSON200.Events)
-	require.Len(*first.JSON200.Events, 1)
-	assert.Empty((*first.JSON200.Events)[0].Author)
-
-	second, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, second.StatusCode(), string(second.Body))
-	require.NotNil(second.JSON200)
-	require.NotNil(second.JSON200.Events)
-	require.Len(*second.JSON200.Events, 1)
-	event := (*second.JSON200.Events)[0]
+	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.NotNil(detailResp.JSON200.Events)
+	require.Len(*detailResp.JSON200.Events, 1)
+	event := (*detailResp.JSON200.Events)[0]
 	assert.Equal("merged", event.EventType)
-	assert.Equal("merge-admin", event.Author)
+	assert.Empty(event.Author)
 	assert.Equal("merged this", event.Summary)
 	assert.True(event.CreatedAt.Equal(mergedAt))
-	assert.Equal(int32(2), getPullCalls.Load())
-	assert.Equal(int32(2), timelineCalls.Load())
+	assert.Equal(int32(0), getPullCalls.Load())
+	assert.Equal(int32(0), timelineCalls.Load())
 }
 
 func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {

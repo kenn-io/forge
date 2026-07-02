@@ -1494,24 +1494,6 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 	if mr == nil {
 		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
-	if s.syncer != nil {
-		refreshed, backfillErr := s.syncer.BackfillMergedActorForDetail(ctx, mr)
-		if backfillErr != nil {
-			slog.Warn("merged actor backfill before detail response failed",
-				"repo_id", repo.ID,
-				"number", input.Number,
-				"err", backfillErr,
-			)
-		} else if refreshed {
-			mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
-			if err != nil {
-				return nil, problemInternal("get pull request failed")
-			}
-			if mr == nil {
-				return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
-			}
-		}
-	}
 
 	body, err := s.buildPullDetailResponse(ctx, mr)
 	if err != nil {

@@ -8381,10 +8381,14 @@ func (s *Syncer) persistMergedTransitionEvent(
 	ghPR *gh.PullRequest,
 	mergedAt *time.Time,
 ) error {
-	if !pullRequestWasMerged(ghPR) || mergedAt == nil {
+	if ghPR == nil || mergedAt == nil || !pullRequestWasMerged(ghPR) {
 		return nil
 	}
-	actor := ghPR.GetMergedBy().GetLogin()
+	mergedBy := ghPR.GetMergedBy()
+	if mergedBy == nil {
+		return nil
+	}
+	actor := mergedBy.GetLogin()
 	if actor == "" {
 		return nil
 	}

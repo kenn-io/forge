@@ -59,6 +59,13 @@ func writeMintedToken(path string) (string, error) {
 		return "", fmt.Errorf("generate auth token: %w", err)
 	}
 	token := hex.EncodeToString(raw)
+	// os.WriteFile applies the mode only when creating the file, so an
+	// existing token file with looser permissions would keep them across
+	// rotation. Remove it first so the new token is never written to a
+	// permissive inode.
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("replace auth token: %w", err)
+	}
 	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
 		return "", fmt.Errorf("write auth token: %w", err)
 	}

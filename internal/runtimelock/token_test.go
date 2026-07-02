@@ -52,6 +52,9 @@ func TestEnsureAuthTokenRestrictsExistingMode(t *testing.T) {
 	require.NoError(os.WriteFile(
 		AuthTokenPath(dir), []byte("tok\n"), 0o644,
 	))
+	// The create mode above is narrowed by umask on some machines;
+	// chmod is not, so this pins the permissive starting point.
+	require.NoError(os.Chmod(AuthTokenPath(dir), 0o644))
 
 	token, err := EnsureAuthToken(dir)
 	require.NoError(err)
@@ -98,4 +101,26 @@ func TestRotateAuthToken(t *testing.T) {
 	read, err := ReadAuthToken(dir)
 	require.NoError(err)
 	assert.Equal(rotated, read, "rotation persists the new token")
+}
+
+// TestRotateAuthTokenRestrictsExistingMode pins that rotating over a
+// pre-existing permissive token file leaves the new token at 0600:
+// os.WriteFile only applies its mode on create, so rotation must not
+// inherit the old file's looser permissions.
+func TestRotateAuthTokenRestrictsExistingMode(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	require.NoError(os.WriteFile(
+		AuthTokenPath(dir), []byte("tok\n"), 0o644,
+	))
+	// The create mode above is narrowed by umask on some machines;
+	// chmod is not, so this pins the permissive starting point.
+	require.NoError(os.Chmod(AuthTokenPath(dir), 0o644))
+
+	rotated, err := RotateAuthToken(dir)
+	require.NoError(err)
+	require.Len(rotated, 64)
+	info, err := os.Stat(AuthTokenPath(dir))
+	require.NoError(err)
+	require.Equal(os.FileMode(0o600), info.Mode().Perm())
 }

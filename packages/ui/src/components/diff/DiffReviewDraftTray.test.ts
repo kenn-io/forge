@@ -1,35 +1,91 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { STORES_KEY } from "../../context.js";
+import type { MiddlemanClient } from "../../types.js";
+import type { ProviderRouteRef } from "../../api/provider-routes.js";
+import { createDiffReviewDraftStore } from "../../stores/diff-review-draft.svelte.js";
+import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
 import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
 
-function renderTray(publishResult: boolean) {
-  const publish = vi.fn(() => Promise.resolve(publishResult));
-  const editComment = vi.fn(() => Promise.resolve(true));
-  const diffReviewDraft = {
-    getComments: () => [
-      {
-        id: "1",
-        body: "Draft note",
-        path: "src/foo.ts",
-        line: 12,
-      },
-    ],
-    getDraft: () => ({
-      supported_actions: ["comment"],
-    }),
-    isSubmitting: () => false,
-    getError: () => (publishResult ? null : "publish failed"),
-    publish,
-    discard: () => Promise.resolve(true),
-    deleteComment: () => Promise.resolve(true),
-    editComment,
+function providerRef(): ProviderRouteRef {
+  return {
+    provider: "github",
+    platformHost: "github.com",
+    owner: "acme",
+    name: "widgets",
+    repoPath: "acme/widgets",
   };
-  const rendered = render(DiffReviewDraftTray, {
-    context: new Map([[STORES_KEY, { diffReviewDraft }]]),
+}
+
+function draftComment() {
+  return {
+    id: "1",
+    body: "Draft note",
+    path: "src/foo.ts",
+    side: "right",
+    line: 12,
+    new_line: 12,
+    line_type: "add",
+    diff_head_sha: "head-sha",
+    created_at: "2026-03-30T14:01:00Z",
+    updated_at: "2026-03-30T14:01:00Z",
+  };
+}
+
+async function renderTray(publishResult: boolean) {
+  const publish = vi.fn(() => Promise.resolve(publishResult));
+  const discard = vi.fn(() => Promise.resolve(true));
+  const editComment = vi.fn(() => Promise.resolve(true));
+  const comment = draftComment();
+  const client = {
+    GET: vi.fn(() =>
+      Promise.resolve({
+        data: {
+          comments: [comment],
+          supported_actions: ["comment"],
+          native_multiline_ranges: true,
+        },
+        response: { ok: true, status: 200 },
+      }),
+    ),
+    POST: vi.fn((_path: string, opts: { body?: { action?: string; body?: string } }) => {
+      publish(opts.body?.action, opts.body?.body);
+      if (publishResult) {
+        return Promise.resolve({
+          data: { status: "published" },
+          response: { ok: true, status: 200 },
+        });
+      }
+      return Promise.resolve({
+        error: { title: "publish failed" },
+        response: { ok: false, status: 500 },
+      });
+    }),
+    PATCH: vi.fn((_path: string, opts: { body?: { body?: string } }) => {
+      editComment(comment, opts.body?.body);
+      return Promise.resolve({
+        data: { ...comment, body: opts.body?.body ?? comment.body },
+        response: { ok: true, status: 200 },
+      });
+    }),
+    DELETE: vi.fn(() => {
+      discard();
+      return Promise.resolve({
+        response: { ok: true, status: 200 },
+      });
+    }),
+  } as unknown as MiddlemanClient;
+  const diffReviewDraft = createDiffReviewDraftStore({ client });
+  diffReviewDraft.setContext(providerRef(), 12, true, "head-sha");
+  await waitFor(() => {
+    expect(diffReviewDraft.getComments()).toHaveLength(1);
   });
-  return { ...rendered, editComment, publish };
+  const context = new Map([[STORES_KEY, { diffReviewDraft }]]);
+  const rendered = render(DiffReviewDraftTray, {
+    context,
+  });
+  return { ...rendered, context, diffReviewDraft, discard, editComment, publish };
 }
 
 describe("DiffReviewDraftTray", () => {
@@ -38,7 +94,7 @@ describe("DiffReviewDraftTray", () => {
   });
 
   it("keeps review summary text when publishing fails", async () => {
-    const { publish } = renderTray(false);
+    const { publish } = await renderTray(false);
     const summary = screen.getByPlaceholderText("Review summary") as HTMLTextAreaElement;
 
     await fireEvent.input(summary, {
@@ -51,7 +107,7 @@ describe("DiffReviewDraftTray", () => {
   });
 
   it("lets a draft comment body be edited before publishing", async () => {
-    const { editComment } = renderTray(true);
+    const { editComment } = await renderTray(true);
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit draft comment" }));
     const editor = screen.getByLabelText("Draft comment body") as HTMLTextAreaElement;
@@ -66,6 +122,61 @@ describe("DiffReviewDraftTray", () => {
       expect.objectContaining({ id: "1", body: "Draft note" }),
       "Updated draft note",
     );
-    expect(screen.queryByLabelText("Draft comment body")).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Draft comment body")).toBeNull();
+    });
+  });
+
+  it("keeps publish and discard unavailable while a draft comment edit is open", async () => {
+    const { discard, publish } = await renderTray(true);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit draft comment" }));
+    const editor = screen.getByLabelText("Draft comment body") as HTMLTextAreaElement;
+    await fireEvent.input(editor, {
+      target: { value: "Visible unsaved edit" },
+    });
+
+    const publishButton = screen.getByRole("button", { name: "Publish review" }) as HTMLButtonElement;
+    const discardButton = screen.getByRole("button", { name: "Discard review draft" }) as HTMLButtonElement;
+    expect(publishButton.disabled).toBe(true);
+    expect(discardButton.disabled).toBe(true);
+
+    await fireEvent.click(publishButton);
+    await fireEvent.click(discardButton);
+
+    expect(publish).not.toHaveBeenCalled();
+    expect(discard).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel editing draft comment" }));
+
+    expect(publishButton.disabled).toBe(false);
+    expect(discardButton.disabled).toBe(false);
+  });
+
+  it("keeps publish and discard unavailable while an inline draft comment edit is open", async () => {
+    const { context, diffReviewDraft, discard, publish } = await renderTray(true);
+    render(DiffReviewDraftInlineComment, {
+      props: { comment: diffReviewDraft.getComments()[0] },
+      context,
+    });
+    const inlineComment = document.querySelector("[data-draft-comment-id='1']");
+    expect(inlineComment).not.toBeNull();
+
+    await fireEvent.click(within(inlineComment as HTMLElement).getByRole("button", { name: "Edit draft comment" }));
+    const editor = within(inlineComment as HTMLElement).getByLabelText("Draft comment body") as HTMLTextAreaElement;
+    await fireEvent.input(editor, {
+      target: { value: "Inline visible unsaved edit" },
+    });
+
+    const publishButton = screen.getByRole("button", { name: "Publish review" }) as HTMLButtonElement;
+    const discardButton = screen.getByRole("button", { name: "Discard review draft" }) as HTMLButtonElement;
+    expect(publishButton.disabled).toBe(true);
+    expect(discardButton.disabled).toBe(true);
+
+    await fireEvent.click(publishButton);
+    await fireEvent.click(discardButton);
+
+    expect(publish).not.toHaveBeenCalled();
+    expect(discard).not.toHaveBeenCalled();
   });
 });

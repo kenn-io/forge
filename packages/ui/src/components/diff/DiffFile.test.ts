@@ -280,6 +280,8 @@ function renderDiffFile(
     getError: () => null,
     createComment: options.createComment ?? (() => Promise.resolve(true)),
     deleteComment: () => Promise.resolve(true),
+    editComment: () => Promise.resolve(true),
+    setCommentEditState: vi.fn(),
   };
   const owner = options.owner ?? uniqueOwner();
   const result = render(DiffFile, {

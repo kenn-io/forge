@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import XIcon from "@lucide/svelte/icons/x";
-  import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
+  import type {
+    DiffReviewDraftComment,
+    DiffReviewDraftCommentEditState,
+  } from "../../stores/diff-review-draft.svelte.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
   interface Props {
@@ -13,9 +16,10 @@
     onjump?: ((comment: DiffReviewDraftComment) => void) | undefined;
     ondelete: (id: string) => void;
     onsave: (comment: DiffReviewDraftComment, body: string) => Promise<boolean> | boolean;
+    oneditstatechange: (id: string, state: DiffReviewDraftCommentEditState) => void;
   }
 
-  const { comment, location, disabled, onjump, ondelete, onsave }: Props = $props();
+  const { comment, location, disabled, onjump, ondelete, onsave, oneditstatechange }: Props = $props();
 
   let expanded = $state(false);
   let editing = $state(false);
@@ -25,6 +29,7 @@
   let bodyElement: HTMLParagraphElement | undefined = $state();
   let editorElement: HTMLTextAreaElement | undefined = $state();
   let measureFrame: number | undefined;
+  const editStateID = $derived(`tray:${comment.id}`);
   const editDisabled = $derived(disabled || saving);
   const saveDisabled = $derived(editDisabled || draftBody.trim() === "");
 
@@ -52,9 +57,21 @@
     void tick().then(queueMeasure);
   }
 
+  function draftDirty(body: string): boolean {
+    return body.trim() !== comment.body;
+  }
+
+  function reportEditState(active: boolean, body = draftBody): void {
+    oneditstatechange(editStateID, {
+      active,
+      dirty: active && draftDirty(body),
+    });
+  }
+
   function beginEdit(): void {
     draftBody = comment.body;
     editing = true;
+    reportEditState(true);
     expanded = true;
     void tick().then(() => editorElement?.focus());
   }
@@ -62,6 +79,12 @@
   function cancelEdit(): void {
     draftBody = comment.body;
     editing = false;
+    reportEditState(false);
+  }
+
+  function handleDraftBodyInput(event: Event): void {
+    draftBody = (event.currentTarget as HTMLTextAreaElement).value;
+    reportEditState(true);
   }
 
   async function saveEdit(): Promise<void> {
@@ -69,6 +92,7 @@
     if (!nextBody || saveDisabled) return;
     if (nextBody === comment.body) {
       editing = false;
+      reportEditState(false);
       return;
     }
     saving = true;
@@ -76,6 +100,7 @@
       const ok = await onsave(comment, nextBody);
       if (ok) {
         editing = false;
+        reportEditState(false);
       }
     } finally {
       saving = false;
@@ -101,6 +126,10 @@
     };
   });
 
+  onDestroy(() => {
+    reportEditState(false);
+  });
+
   $effect(() => scheduleMeasure(comment.body, expanded));
 </script>
 
@@ -116,11 +145,12 @@
     {#if editing}
       <textarea
         bind:this={editorElement}
-        bind:value={draftBody}
+        value={draftBody}
         class="draft-editor"
         aria-label="Draft comment body"
         rows="3"
         disabled={editDisabled}
+        oninput={handleDraftBodyInput}
       ></textarea>
     {:else}
       <p

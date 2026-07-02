@@ -147,6 +147,8 @@ function renderDiffFile(file: DiffFileType) {
     getError: () => null,
     createComment: (_body: string, _range: DiffReviewLineRange) => Promise.resolve(true),
     deleteComment: () => Promise.resolve(true),
+    editComment: () => Promise.resolve(true),
+    setCommentEditState: vi.fn(),
   };
 
   return render(DiffFile, {

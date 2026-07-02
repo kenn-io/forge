@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import XIcon from "@lucide/svelte/icons/x";
@@ -17,6 +17,7 @@
   let draftBody = $state("");
   let saving = $state(false);
   let editorElement: HTMLTextAreaElement | undefined = $state();
+  const editStateID = $derived(`inline:${comment.id}`);
   const editDisabled = $derived(submitting || saving);
   const saveDisabled = $derived(editDisabled || draftBody.trim() === "");
 
@@ -30,12 +31,30 @@
   function beginEdit(): void {
     draftBody = comment.body;
     editing = true;
+    reportEditState(true);
     void tick().then(() => editorElement?.focus());
   }
 
   function cancelEdit(): void {
     draftBody = comment.body;
     editing = false;
+    reportEditState(false);
+  }
+
+  function draftDirty(body: string): boolean {
+    return body.trim() !== comment.body;
+  }
+
+  function reportEditState(active: boolean, body = draftBody): void {
+    diffReviewDraft.setCommentEditState(editStateID, {
+      active,
+      dirty: active && draftDirty(body),
+    });
+  }
+
+  function handleDraftBodyInput(event: Event): void {
+    draftBody = (event.currentTarget as HTMLTextAreaElement).value;
+    reportEditState(true);
   }
 
   async function saveEdit(): Promise<void> {
@@ -43,6 +62,7 @@
     if (!nextBody || saveDisabled) return;
     if (nextBody === comment.body) {
       editing = false;
+      reportEditState(false);
       return;
     }
     saving = true;
@@ -50,11 +70,16 @@
       const ok = await diffReviewDraft.editComment(comment, nextBody);
       if (ok) {
         editing = false;
+        reportEditState(false);
       }
     } finally {
       saving = false;
     }
   }
+
+  onDestroy(() => {
+    reportEditState(false);
+  });
 </script>
 
 <div
@@ -114,11 +139,12 @@
   {#if editing}
     <textarea
       bind:this={editorElement}
-      bind:value={draftBody}
+      value={draftBody}
       class="draft-comment-editor"
       aria-label="Draft comment body"
       rows="3"
       disabled={editDisabled}
+      oninput={handleDraftBodyInput}
     ></textarea>
   {:else}
     <p class="draft-comment-body">{comment.body}</p>

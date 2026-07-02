@@ -7,6 +7,11 @@ export type DiffReviewDraft = components["schemas"]["DiffReviewDraftResponse"];
 export type DiffReviewDraftComment = components["schemas"]["DiffReviewDraftComment"];
 export type DiffReviewLineRange = components["schemas"]["DiffReviewLineRange"];
 
+export interface DiffReviewDraftCommentEditState {
+  active: boolean;
+  dirty: boolean;
+}
+
 export interface DiffReviewDraftStoreOptions {
   client: MiddlemanClient;
   onPublished?: (ref: ProviderRouteRef, number: number) => Promise<void> | void;
@@ -29,6 +34,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
   let submitting = $state(false);
   let storeError = $state<string | null>(null);
   let storeWarning = $state<string | null>(null);
+  let commentEditStates = $state<Record<string, DiffReviewDraftCommentEditState>>({});
   let wasEnabled = false;
   let draftVersion = 0;
   let submitVersion = 0;
@@ -59,6 +65,35 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
 
   function getWarning(): string | null {
     return storeWarning;
+  }
+
+  function setCommentEditState(editID: string, state: DiffReviewDraftCommentEditState): void {
+    if (!state.active && !state.dirty) {
+      clearCommentEditState(editID);
+      return;
+    }
+    commentEditStates = {
+      ...commentEditStates,
+      [editID]: {
+        active: state.active,
+        dirty: state.dirty,
+      },
+    };
+  }
+
+  function clearCommentEditState(editID: string): void {
+    if (commentEditStates[editID] === undefined) return;
+    const next = { ...commentEditStates };
+    delete next[editID];
+    commentEditStates = next;
+  }
+
+  function clearCommentEditStates(): void {
+    commentEditStates = {};
+  }
+
+  function hasPendingCommentEdits(): boolean {
+    return Object.values(commentEditStates).some((state) => state.active || state.dirty);
   }
 
   function currentParams() {
@@ -137,12 +172,14 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       draft = null;
       storeError = null;
       storeWarning = null;
+      clearCommentEditStates();
       cancelSubmit();
       return;
     }
     if (changed || enabling) {
       draft = null;
       storeWarning = null;
+      clearCommentEditStates();
       cancelSubmit();
       void loadDraft();
     }
@@ -160,6 +197,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (changed) {
       draftVersion += 1;
       cancelSubmit();
+      clearCommentEditStates();
       storeError = null;
       storeWarning = null;
     }
@@ -182,6 +220,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     loading = false;
     storeError = null;
     storeWarning = null;
+    clearCommentEditStates();
   }
 
   async function loadDraft(): Promise<void> {
@@ -344,6 +383,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
 
   async function publish(action: string, body = ""): Promise<boolean> {
     if (!enabled || !ref) return false;
+    if (hasPendingCommentEdits()) return false;
     const params = currentParams();
     if (!params) return false;
     const publishedRef = ref;
@@ -399,6 +439,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
 
   async function discard(): Promise<boolean> {
     if (!enabled || !ref) return false;
+    if (hasPendingCommentEdits()) return false;
     const params = currentParams();
     if (!params) return false;
     const key = requestKey();
@@ -470,6 +511,8 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     isSubmitting,
     getError,
     getWarning,
+    hasPendingCommentEdits,
+    setCommentEditState,
     setContext,
     setRouteContext,
     clear,

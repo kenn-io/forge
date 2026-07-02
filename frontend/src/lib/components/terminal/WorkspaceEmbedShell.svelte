@@ -31,7 +31,7 @@
   import WorkspaceEmbedEmptyState from "./WorkspaceEmbedEmptyState.svelte";
   import WorkspaceFirstRunPanel from "./WorkspaceFirstRunPanel.svelte";
   import WorkspaceProjectCard from "./WorkspaceProjectCard.svelte";
-  import { showFlash } from "../../stores/flash.svelte.js";
+  import { showFlash } from "@middleman/ui/stores/flash";
 
   let stores = $state<StoreInstances | undefined>();
 

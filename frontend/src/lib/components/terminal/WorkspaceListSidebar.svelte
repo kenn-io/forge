@@ -8,7 +8,7 @@
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import SearchIcon from "@lucide/svelte/icons/search";
   import { apiErrorMessage, client } from "../../api/runtime.js";
-  import { showFlash } from "../../stores/flash.svelte.js";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import type { components } from "@middleman/ui/api/schema";
   import {
     DiffStats,

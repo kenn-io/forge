@@ -27,7 +27,7 @@ vi.mock("../../api/runtime.js", () => ({
   apiErrorMessage: (_err: unknown, fallback: string) => fallback,
 }));
 
-vi.mock("../../stores/flash.svelte.js", () => ({
+vi.mock("@middleman/ui/stores/flash", () => ({
   showFlash: mocks.showFlash,
 }));
 

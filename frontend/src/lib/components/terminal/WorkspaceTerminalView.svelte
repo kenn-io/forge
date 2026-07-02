@@ -79,7 +79,7 @@
   } from "../../icons.ts";
   import { apiErrorMessage, client } from "../../api/runtime.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
-  import { showFlash } from "../../stores/flash.svelte.js";
+  import { showFlash } from "@middleman/ui/stores/flash";
 
   interface Workspace {
     id: string;

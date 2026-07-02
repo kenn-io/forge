@@ -42,10 +42,9 @@
   import type { KataTaskViewName } from "./lib/api/kata/taskTypes.js";
   import { createDocsAPI } from "./lib/api/docs/api.js";
   import { createMessageIssueLinker } from "./lib/messages/kataMessageLinker.js";
-  import FlashBanner from "./lib/components/FlashBanner.svelte";
-  import { Spinner } from "@kenn-io/kit-ui";
+  import { FlashBanner, Spinner } from "@kenn-io/kit-ui";
   import { MonitorIcon } from "./lib/icons.ts";
-  import { showFlash } from "./lib/stores/flash.svelte.js";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
@@ -1109,7 +1108,7 @@
     {#if !isHeaderHidden()}
       <AppHeader />
     {/if}
-    <FlashBanner />
+    <FlashBanner top="var(--header-height)" />
 
     <main class="app-main">
       {#if getPage() === "design-system"}

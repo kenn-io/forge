@@ -30,7 +30,7 @@ func (s *Server) getDiffReviewDraft(
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get review draft failed")
 	}
-	return &getDiffReviewDraftOutput{Body: s.diffReviewDraftResponse(*repo, draft)}, nil
+	return &getDiffReviewDraftOutput{Body: s.diffReviewDraftResponse(ctx, *repo, *mr, draft)}, nil
 }
 
 func (s *Server) createDiffReviewDraftComment(
@@ -547,13 +547,22 @@ func (s *Server) ingestDiffReviewThreads(
 }
 
 func (s *Server) diffReviewDraftResponse(
+	ctx context.Context,
 	repo db.Repo,
+	mr db.MergeRequest,
 	draft *db.MRReviewDraft,
 ) diffReviewDraftResponse {
 	caps := s.capabilitiesForRepo(repo)
+	supportedActions := caps.SupportedReviewActions
+	// A viewer cannot approve their own pull request, and the publish
+	// endpoint rejects such approvals. Drop approve from the advertised
+	// actions so the draft tray never offers an action that fails on submit.
+	if s.mergeRequestAuthoredByViewer(ctx, repo, mr) {
+		supportedActions = reviewActionsExcludingApprove(supportedActions)
+	}
 	resp := diffReviewDraftResponse{
 		Comments:              []diffReviewDraftComment{},
-		SupportedActions:      caps.SupportedReviewActions,
+		SupportedActions:      supportedActions,
 		NativeMultilineRanges: caps.NativeMultilineRanges,
 	}
 	if draft == nil {
@@ -784,4 +793,18 @@ func parseReviewAction(value string) (platform.ReviewAction, error) {
 
 func reviewActionSupported(caps providerCapabilitiesResponse, action platform.ReviewAction) bool {
 	return slices.Contains(caps.SupportedReviewActions, string(action))
+}
+
+// reviewActionsExcludingApprove returns a copy of actions with the approve
+// action removed. Used when the viewer authored the merge request so the
+// draft tray does not advertise an approval the publish endpoint will reject.
+func reviewActionsExcludingApprove(actions []string) []string {
+	filtered := make([]string, 0, len(actions))
+	for _, action := range actions {
+		if action == string(platform.ReviewActionApprove) {
+			continue
+		}
+		filtered = append(filtered, action)
+	}
+	return filtered
 }

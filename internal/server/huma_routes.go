@@ -2818,6 +2818,9 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	if mr == nil {
 		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
+	if s.mergeRequestAuthoredByViewer(ctx, *repo, *mr) {
+		return nil, selfApprovalProblem(*repo)
+	}
 
 	expectedHeadSHA := approvalReviewHeadSHA(mr, input.Body.ExpectedHeadSHA)
 

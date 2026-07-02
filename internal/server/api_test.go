@@ -13482,6 +13482,75 @@ func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing
 	assert.NotNil(storedDraft, "rejected self-approval must leave the local draft intact")
 }
 
+func TestAPIGitHubReviewDraftHidesApproveForSelfAuthoredPR(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mock := &mockGH{
+		authenticatedViewerLoginFn: func(context.Context) (string, error) {
+			return "marius", nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 42, withSeedPRAuthor("marius"))
+	seedPR(t, database, "acme", "widget", 43, withSeedPRAuthor("someone-else"))
+
+	selfRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/42/review-draft", nil)
+	require.Equal(http.StatusOK, selfRR.Code, selfRR.Body.String())
+	var selfDraft map[string]any
+	require.NoError(json.NewDecoder(selfRR.Body).Decode(&selfDraft))
+	assert.Equal(
+		[]any{"comment", "request_changes"},
+		selfDraft["supported_actions"],
+		"self-authored PR draft must not advertise approve",
+	)
+
+	otherRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/43/review-draft", nil)
+	require.Equal(http.StatusOK, otherRR.Code, otherRR.Body.String())
+	var otherDraft map[string]any
+	require.NoError(json.NewDecoder(otherRR.Body).Decode(&otherDraft))
+	assert.Equal(
+		[]any{"comment", "approve", "request_changes"},
+		otherDraft["supported_actions"],
+		"other-authored PR draft must still advertise approve",
+	)
+}
+
+func TestAPIGitHubApprovePullRejectsSelfApprovalBeforeProvider(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var providerCalled atomic.Bool
+	mock := &mockGH{
+		authenticatedViewerLoginFn: func(context.Context) (string, error) {
+			return "marius", nil
+		},
+		createReviewWithCommentsFn: func(
+			context.Context,
+			string, string,
+			int,
+			string, string, string,
+			[]*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			providerCalled.Store(true)
+			return nil, errors.New("provider should not be called")
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 42, withSeedPRAuthor("marius"))
+
+	approveRR := doJSON(
+		t, srv, http.MethodPost,
+		"/api/v1/pulls/gh/acme/widget/42/approve",
+		map[string]any{"body": ""},
+	)
+	require.Equal(http.StatusForbidden, approveRR.Code, approveRR.Body.String())
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(approveRR.Body).Decode(&problem))
+	assert.Equal("forbidden", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal(availabilityCodeSelfApproval, problem.Details["reason"])
+	assert.False(providerCalled.Load(), "self-approval must be rejected before the provider call")
+}
+
 func TestAPIPublishReviewDraftRejectsStoredCommentWithoutDiffHeadSHA(t *testing.T) {
 	require := require.New(t)
 	caps := platform.Capabilities{

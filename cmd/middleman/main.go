@@ -410,11 +410,11 @@ func run(opts serve.Options) error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
-	if ip := net.ParseIP(cfg.Host); ip != nil && !ip.IsLoopback() {
+	if ip := net.ParseIP(cfg.Host); ip != nil && !ip.IsLoopback() && enforcedToken == "" {
 		slog.Warn(
 			"binding a non-loopback address: the API has no"+
-				" authentication, so the bound network is the trust"+
-				" boundary (e.g. a tailnet with ACLs)",
+				" authentication ([api].require_auth is off), so the bound"+
+				" network is the trust boundary (e.g. a tailnet with ACLs)",
 			"host", cfg.Host,
 		)
 	}

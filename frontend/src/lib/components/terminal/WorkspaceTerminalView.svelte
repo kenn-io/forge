@@ -495,7 +495,7 @@
     writeLocalStorage(WORKFLOW_PRESETS_KEY, JSON.stringify(workflowPresets));
   });
 
-  function handleSegmentClick(tab: SidebarTab): void {
+  function handleSidebarToggleClick(tab: SidebarTab): void {
     if (actionsBlocked) return;
     if (sidebarOpen && sidebarTab === tab) {
       sidebarOpen = false;
@@ -528,7 +528,7 @@
       return;
     }
 
-    handleSegmentClick(tab);
+    handleSidebarToggleClick(tab);
   }
 
   function toggleRightSidebar(): void {
@@ -2633,7 +2633,7 @@
                   class="sidebar-toggle-btn"
                   class:active={sidebarOpen && sidebarTab === "diff"}
                   disabled={actionsBlocked}
-                  onclick={() => handleSegmentClick("diff")}
+                  onclick={() => handleSidebarToggleClick("diff")}
                 >
                   Diff
                 </button>
@@ -2642,7 +2642,7 @@
                     class="sidebar-toggle-btn"
                     class:active={sidebarOpen && sidebarTab === "issue"}
                     disabled={actionsBlocked}
-                    onclick={() => handleSegmentClick("issue")}
+                    onclick={() => handleSidebarToggleClick("issue")}
                   >
                     Issue
                   </button>
@@ -2652,7 +2652,7 @@
                     class="sidebar-toggle-btn"
                     class:active={sidebarOpen && sidebarTab === "kata_task"}
                     disabled={actionsBlocked}
-                    onclick={() => handleSegmentClick("kata_task")}
+                    onclick={() => handleSidebarToggleClick("kata_task")}
                   >
                     Kata task
                   </button>
@@ -2662,7 +2662,7 @@
                     class="sidebar-toggle-btn"
                     class:active={sidebarOpen && sidebarTab === "pr"}
                     disabled={actionsBlocked}
-                    onclick={() => handleSegmentClick("pr")}
+                    onclick={() => handleSidebarToggleClick("pr")}
                   >
                     PR
                   </button>
@@ -2672,7 +2672,7 @@
                     class="sidebar-toggle-btn"
                     class:active={sidebarOpen && sidebarTab === "reviews"}
                     disabled={actionsBlocked}
-                    onclick={() => handleSegmentClick("reviews")}
+                    onclick={() => handleSidebarToggleClick("reviews")}
                   >
                     Reviews
                   </button>

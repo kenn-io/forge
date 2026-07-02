@@ -18,7 +18,10 @@
     // Header close (X) button, off by default. Dialogs here provide an explicit
     // Cancel/close in their footer, so an X would duplicate it and add a stop to
     // the focus trap. Opt in with showClose only for content-only dialogs that
-    // have no other dismiss control (Escape and backdrop click always close).
+    // have no other dismiss control. kit Modal's `closable` prop gates ONLY the
+    // header X; Escape (escapeCloses) and backdrop click (closeOnOverlayClick,
+    // left at its default true) are independent of it, so every dialog stays
+    // dismissable regardless of showClose.
     showClose?: boolean;
     onClose: () => void;
     children: Snippet;
@@ -53,9 +56,12 @@
   $effect(() => {
     if (!open) return;
     queueMicrotask(() => {
-      // Prefer a body input, then a body or footer control, so confirmation
-      // dialogs land on their first action (Cancel) instead of the panel
-      // itself; kit's focus trap already handles the no-focusable fallback.
+      // Initial-focus priority: body input/textarea, then the first enabled
+      // body button, then the first enabled footer button — so confirmation
+      // dialogs land on their first action (Cancel) instead of the panel.
+      // Intentionally narrower than the old shell: custom [tabindex] controls
+      // defer to kit's focus trap (which focuses the panel, or an [autofocus]
+      // descendant if a dialog marks one).
       const primary = bodyEl?.querySelector<HTMLElement>(
         "input:not([type='hidden']):not([disabled]), textarea:not([disabled])",
       );

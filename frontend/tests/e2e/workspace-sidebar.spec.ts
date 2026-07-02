@@ -2595,7 +2595,7 @@ test.describe("sidebar toggle behavior", () => {
     expect(terminalWidth).toBeGreaterThanOrEqual(300);
   });
 
-  test("segmented control visible in terminal header", async ({ page }) => {
+  test("sidebar toggle group visible in terminal header", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 
     const segControl = page.locator(".sidebar-toggle-group");
@@ -2608,7 +2608,7 @@ test.describe("sidebar toggle behavior", () => {
     ).toBeVisible();
   });
 
-  test("clicking PR segment opens sidebar with PR content", async ({ page }) => {
+  test("clicking the PR toggle opens sidebar with PR content", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 
     const prBtn = page.locator(".sidebar-toggle-btn", {
@@ -2685,7 +2685,7 @@ test.describe("sidebar toggle behavior", () => {
     expect(topElementIsModal).toBe(true);
   });
 
-  test("clicking active segment closes sidebar", async ({ page }) => {
+  test("clicking the active toggle closes the sidebar", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 
     const prBtn = page.locator(".sidebar-toggle-btn", {
@@ -2695,7 +2695,7 @@ test.describe("sidebar toggle behavior", () => {
     await prBtn.click();
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
-    // Click same segment again — should close
+    // Click the same toggle again — should close
     await prBtn.click();
     await expect(page.locator(".right-sidebar")).toHaveCount(0);
     await expect(prBtn).not.toHaveClass(/active/);
@@ -4326,7 +4326,7 @@ test.describe("issue workspace sidebar", () => {
     });
   });
 
-  test("issue workspaces show an Issue segment instead of PR and Reviews when no PR is linked", async ({ page }) => {
+  test("issue workspaces show an Issue toggle instead of PR and Reviews when no PR is linked", async ({ page }) => {
     await setupTerminalMocks(page, {
       workspace: testIssueWorkspace,
     });
@@ -4364,7 +4364,7 @@ test.describe("issue workspace sidebar", () => {
     await expect(page.locator(".sidebar-toggle-btn", { hasText: "PR" })).toBeVisible();
   });
 
-  test("issue segment opens issue detail for issue-backed workspaces", async ({ page }) => {
+  test("issue toggle opens issue detail for issue-backed workspaces", async ({ page }) => {
     await setupTerminalMocks(page, {
       workspace: testIssueWorkspace,
     });
@@ -4376,7 +4376,7 @@ test.describe("issue workspace sidebar", () => {
     await expect(page.locator(".right-sidebar .detail-title")).toContainText("Theme toggle does not stick");
   });
 
-  test("issue segment includes workspace platform_host in detail requests", async ({ page }) => {
+  test("issue toggle includes workspace platform_host in detail requests", async ({ page }) => {
     const mirroredWorkspace = {
       ...testIssueWorkspace,
       platform_host: "example.com",

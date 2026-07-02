@@ -20,6 +20,12 @@
     loadFiles,
   }: Props = $props();
 
+  /* kit Tooltip sets aria-describedby on its non-focusable wrapper span, not
+     on the real trigger. Reference the tooltip content from the button
+     directly: while closed the id resolves to nothing (ignored by AT), while
+     open it resolves to the summary. */
+  const summaryContentId = $props.id();
+
   /* Whether the pointer/focus is on the trigger — drives lazy loading and
      the refetch-on-rekey behavior while the tooltip is held open. */
   let active = false;
@@ -112,7 +118,7 @@
     <!-- The summary loads after the tooltip is already described to
          assistive tech; a live region announces the async transition
          from Loading to the totals (or an error). -->
-    <div aria-live="polite">
+    <div id={summaryContentId} aria-live="polite">
       {#if error}
         <div class="diff-summary-state diff-summary-state--error">
           {error}
@@ -137,6 +143,7 @@
   <button
     type="button"
     class="diff-summary-trigger"
+    aria-describedby={summaryContentId}
     onmouseenter={handleEnter}
     onmouseleave={handleLeave}
     onfocusin={handleEnter}

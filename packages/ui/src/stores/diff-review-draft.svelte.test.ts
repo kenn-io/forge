@@ -14,7 +14,7 @@ interface MockDraftLoad {
 }
 
 interface MockMutation {
-  data?: { status?: string };
+  data?: Record<string, unknown>;
   error?: { code?: string; detail?: string; title?: string; details?: Record<string, unknown> };
   response: { status: number; ok: boolean };
 }
@@ -67,11 +67,31 @@ function failedMutation(): MockMutation {
   });
 }
 
+function draftComment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "draft-1",
+    body: "needs work",
+    path: "src/main.ts",
+    side: "right",
+    line: 7,
+    new_line: 7,
+    line_type: "add",
+    diff_head_sha: "head-sha",
+    created_at: "2026-03-30T14:01:00Z",
+    updated_at: "2026-03-30T14:01:00Z",
+    ...overrides,
+  };
+}
+
 function mockGet(result: MockDraftLoad | Promise<MockDraftLoad> = draftLoad()) {
   return vi.fn(() => Promise.resolve(result));
 }
 
 function mockPost(result: MockMutation | Promise<MockMutation> = mutation()) {
+  return vi.fn(() => Promise.resolve(result));
+}
+
+function mockPatch(result: MockMutation | Promise<MockMutation> = mutation()) {
   return vi.fn(() => Promise.resolve(result));
 }
 
@@ -82,13 +102,15 @@ function mockDelete(result: MockMutation | Promise<MockMutation> = mutation()) {
 function mockClient({
   GET = mockGet(),
   POST = mockPost(),
+  PATCH = mockPatch(),
   DELETE = mockDelete(),
 }: {
   GET?: ReturnType<typeof vi.fn>;
   POST?: ReturnType<typeof vi.fn>;
+  PATCH?: ReturnType<typeof vi.fn>;
   DELETE?: ReturnType<typeof vi.fn>;
 } = {}): MiddlemanClient {
-  return { GET, POST, DELETE } as unknown as MiddlemanClient;
+  return { GET, POST, PATCH, DELETE } as unknown as MiddlemanClient;
 }
 
 function deferred<T>() {
@@ -214,6 +236,56 @@ describe("createDiffReviewDraftStore", () => {
 
     expect(store.getComments()).toEqual([{ id: "new", body: "new draft" }]);
     expect(store.isLoading()).toBe(false);
+  });
+
+  it("patches a draft comment body while preserving its review range", async () => {
+    const original = draftComment({ id: "draft-7", body: "before" });
+    const updated = draftComment({
+      id: "draft-7",
+      body: "after",
+      updated_at: "2026-03-30T14:02:00Z",
+    });
+    const client = mockClient({
+      GET: vi
+        .fn()
+        .mockResolvedValueOnce(draftLoad({ comments: [original] }))
+        .mockResolvedValueOnce(draftLoad({ comments: [updated] })),
+      PATCH: mockPatch(mutation({ data: updated })),
+    });
+    const store = createDiffReviewDraftStore({ client });
+    const ref = providerRef();
+
+    store.setContext(ref, 42, true);
+    await Promise.resolve();
+    const comment = store.getComments()[0];
+
+    await expect(store.editComment(comment, "after")).resolves.toBe(true);
+    expect(client.PATCH).toHaveBeenCalledWith(
+      "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}",
+      {
+        params: {
+          path: {
+            provider: "forgejo",
+            owner: "acme",
+            name: "widgets",
+            number: 42,
+            draft_comment_id: "draft-7",
+          },
+        },
+        body: {
+          body: "after",
+          range: {
+            path: "src/main.ts",
+            side: "right",
+            line: 7,
+            new_line: 7,
+            line_type: "add",
+            diff_head_sha: "head-sha",
+          },
+        },
+      },
+    );
+    expect(store.getComments()).toEqual([updated]);
   });
 
   it("surfaces partial publish status while clearing the draft", async () => {

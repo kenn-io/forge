@@ -555,6 +555,40 @@ async function mockInlineReviewAPI(
     ];
     await fulfillJson(route, draftComments[0], 201);
   });
+  await page.route(`**${path}/review-draft/comments/*`, async (route) => {
+    const request = route.request();
+    const commentID = new URL(request.url()).pathname.split("/").pop();
+    if (request.method() === "PATCH") {
+      const body = JSON.parse(request.postData() ?? "{}") as {
+        body: string;
+        range: Record<string, unknown>;
+      };
+      const updated = {
+        id: commentID,
+        body: body.body,
+        path: body.range.path,
+        side: body.range.side,
+        line: body.range.line,
+        new_line: body.range.new_line,
+        old_line: body.range.old_line,
+        start_line: body.range.start_line,
+        start_side: body.range.start_side,
+        line_type: body.range.line_type,
+        diff_head_sha: body.range.diff_head_sha,
+        created_at: "2026-03-30T14:01:00Z",
+        updated_at: "2026-03-30T14:03:00Z",
+      };
+      draftComments = draftComments.map((comment) => (comment.id === commentID ? updated : comment));
+      await fulfillJson(route, updated);
+      return;
+    }
+    if (request.method() === "DELETE") {
+      draftComments = draftComments.filter((comment) => comment.id !== commentID);
+      await fulfillJson(route, { status: "ok" });
+      return;
+    }
+    await route.fallback();
+  });
   await page.route(`**${path}/review-draft/publish`, async (route) => {
     draftComments = options.remainingDraftComments ?? [];
     await fulfillJson(route, {
@@ -586,7 +620,7 @@ test.beforeEach(async ({ page }) => {
 
 test("unavailable operations disable inline review authoring and thread replies", async ({ page }) => {
   // A GitHub App split host with no user write credential reports
-  // submit_review and reply_review_thread unavailable; the Files tab
+  // review_draft and reply_review_thread unavailable; the Files tab
   // must not offer inline review authoring or thread replies that
   // would fail at publish/reply time.
   const unavailableOp = {
@@ -603,7 +637,7 @@ test("unavailable operations disable inline review authoring and thread replies"
     }
   });
   await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", diffResponse, undefined, {
-    operations: { submit_review: unavailableOp, reply_review_thread: unavailableOp },
+    operations: { review_draft: unavailableOp, reply_review_thread: unavailableOp },
   });
 
   await page.goto("/pulls/github/acme/widgets/42/files");
@@ -618,9 +652,9 @@ test("unavailable operations disable inline review authoring and thread replies"
   expect(replyCalls).toEqual([]);
 });
 
-test("a loaded draft becomes unpublishable when submit_review flips unavailable", async ({ page }) => {
+test("a loaded draft becomes unpublishable when review_draft flips unavailable", async ({ page }) => {
   // The riskiest Files-tab path: a draft that is already loaded and
-  // publishable must lose its publish affordance when submit_review
+  // publishable must lose its publish affordance when review_draft
   // becomes unavailable while the diff stays mounted. Split view
   // keeps the conversation pane (which polls the detail payload) and
   // the files pane mounted together, so the flip arrives through the
@@ -654,8 +688,8 @@ test("a loaded draft becomes unpublishable when submit_review flips unavailable"
     ],
   });
   // Override the detail route (last registered wins) so the test can
-  // flip submit_review availability between detail polls.
-  let submitReviewOp: Record<string, unknown> | undefined;
+  // flip review_draft availability between detail polls.
+  let reviewDraftOp: Record<string, unknown> | undefined;
   let detailGets = 0;
   await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {
     if (route.request().method() !== "GET") {
@@ -663,7 +697,7 @@ test("a loaded draft becomes unpublishable when submit_review flips unavailable"
       return;
     }
     detailGets += 1;
-    const operations = submitReviewOp !== undefined ? { submit_review: submitReviewOp } : undefined;
+    const operations = reviewDraftOp !== undefined ? { review_draft: reviewDraftOp } : undefined;
     await fulfillJson(route, pullDetail(false, baseCapabilities, "github", "github.com", operations));
   });
 
@@ -676,7 +710,7 @@ test("a loaded draft becomes unpublishable when submit_review flips unavailable"
 
   // Flip off: the next detail poll delivers the exhausted budget and
   // the mounted diff swaps the publishable tray for the reason.
-  submitReviewOp = {
+  reviewDraftOp = {
     available: false,
     code: "rate_limited",
     unavailable_reason: rateLimitedReason,
@@ -690,7 +724,7 @@ test("a loaded draft becomes unpublishable when submit_review flips unavailable"
 
   // Flip back: the server-side draft survived the gated window and
   // the view restores it, publishable again.
-  submitReviewOp = undefined;
+  reviewDraftOp = undefined;
   getsBefore = detailGets;
   await page.clock.fastForward(61_000);
   await expect.poll(() => detailGets).toBeGreaterThan(getsBefore);
@@ -717,6 +751,52 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Show full comment" })).toHaveCount(0);
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(page.getByText("1 draft comment")).toBeHidden();
+});
+
+test("edits an existing inline draft review comment before publishing", async ({ page }) => {
+  await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", diffResponse, undefined, {
+    initialDraftComments: [
+      {
+        id: "draft-1",
+        body: "Please cover this line.",
+        path: "src/main.ts",
+        side: "right",
+        line: 2,
+        new_line: 2,
+        line_type: "add",
+        diff_head_sha: "diff-head",
+        created_at: "2026-03-30T14:01:00Z",
+        updated_at: "2026-03-30T14:01:00Z",
+      },
+    ],
+  });
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  const inlineDraft = page.locator(".inline-draft-comment");
+  await expect(inlineDraft).toContainText("Please cover this line.");
+
+  await page.getByRole("button", { name: "Edit draft comment" }).first().click();
+  const editor = page.getByLabel("Draft comment body").first();
+  await expect(editor).toHaveValue("Please cover this line.");
+  await editor.fill("Please cover this line and the nearby branch.");
+
+  const patchRequest = page.waitForRequest((request) => {
+    const path = new URL(request.url()).pathname;
+    return request.method() === "PATCH" && path.endsWith("/review-draft/comments/draft-1");
+  });
+  await page.getByRole("button", { name: "Save draft comment" }).first().click();
+  expect((await patchRequest).postDataJSON()).toMatchObject({
+    body: "Please cover this line and the nearby branch.",
+    range: {
+      path: "src/main.ts",
+      side: "right",
+      line: 2,
+      line_type: "add",
+      diff_head_sha: "diff-head",
+    },
+  });
+
+  await expect(inlineDraft).toContainText("Please cover this line and the nearby branch.");
 });
 
 test("keeps split-mode inline composers on trailing right-side hunk lines", async ({ page }) => {

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { tick } from "svelte";
+  import CheckIcon from "@lucide/svelte/icons/check";
+  import PencilIcon from "@lucide/svelte/icons/pencil";
   import XIcon from "@lucide/svelte/icons/x";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import { getStores } from "../../context.js";
@@ -10,12 +13,47 @@
   const { comment }: Props = $props();
   const { diffReviewDraft } = getStores();
   const submitting = $derived(diffReviewDraft.isSubmitting());
+  let editing = $state(false);
+  let draftBody = $state("");
+  let saving = $state(false);
+  let editorElement: HTMLTextAreaElement | undefined = $state();
+  const editDisabled = $derived(submitting || saving);
+  const saveDisabled = $derived(editDisabled || draftBody.trim() === "");
 
   function lineLabel(comment: DiffReviewDraftComment): string {
     if (comment.start_line != null && comment.start_line !== comment.line) {
       return `${comment.path}:${comment.start_line}-${comment.line}`;
     }
     return `${comment.path}:${comment.line}`;
+  }
+
+  function beginEdit(): void {
+    draftBody = comment.body;
+    editing = true;
+    void tick().then(() => editorElement?.focus());
+  }
+
+  function cancelEdit(): void {
+    draftBody = comment.body;
+    editing = false;
+  }
+
+  async function saveEdit(): Promise<void> {
+    const nextBody = draftBody.trim();
+    if (!nextBody || saveDisabled) return;
+    if (nextBody === comment.body) {
+      editing = false;
+      return;
+    }
+    saving = true;
+    try {
+      const ok = await diffReviewDraft.editComment(comment, nextBody);
+      if (ok) {
+        editing = false;
+      }
+    } finally {
+      saving = false;
+    }
   }
 </script>
 
@@ -27,17 +65,64 @@
   <div class="draft-comment-header">
     <span class="draft-comment-state">Draft</span>
     <span class="draft-comment-location">{lineLabel(comment)}</span>
-    <button
-      class="draft-comment-delete"
-      title="Delete draft comment"
-      aria-label="Delete draft comment"
-      onclick={() => void diffReviewDraft.deleteComment(comment.id)}
-      disabled={submitting}
-    >
-      <XIcon size={13} />
-    </button>
+    <div class="draft-comment-actions">
+      {#if editing}
+        <button
+          class="draft-comment-action"
+          type="button"
+          title="Save draft comment"
+          aria-label="Save draft comment"
+          onclick={() => void saveEdit()}
+          disabled={saveDisabled}
+        >
+          <CheckIcon size={13} />
+        </button>
+        <button
+          class="draft-comment-action"
+          type="button"
+          title="Cancel editing draft comment"
+          aria-label="Cancel editing draft comment"
+          onclick={cancelEdit}
+          disabled={editDisabled}
+        >
+          <XIcon size={13} />
+        </button>
+      {:else}
+        <button
+          class="draft-comment-action"
+          type="button"
+          title="Edit draft comment"
+          aria-label="Edit draft comment"
+          onclick={beginEdit}
+          disabled={submitting}
+        >
+          <PencilIcon size={13} />
+        </button>
+        <button
+          class="draft-comment-action"
+          type="button"
+          title="Delete draft comment"
+          aria-label="Delete draft comment"
+          onclick={() => void diffReviewDraft.deleteComment(comment.id)}
+          disabled={submitting}
+        >
+          <XIcon size={13} />
+        </button>
+      {/if}
+    </div>
   </div>
-  <p class="draft-comment-body">{comment.body}</p>
+  {#if editing}
+    <textarea
+      bind:this={editorElement}
+      bind:value={draftBody}
+      class="draft-comment-editor"
+      aria-label="Draft comment body"
+      rows="3"
+      disabled={editDisabled}
+    ></textarea>
+  {:else}
+    <p class="draft-comment-body">{comment.body}</p>
+  {/if}
 </div>
 
 <style>
@@ -95,14 +180,19 @@
     white-space: nowrap;
   }
 
-  .draft-comment-delete {
+  .draft-comment-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 4px;
+    margin-left: auto;
+  }
+
+  .draft-comment-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
     width: 24px;
     height: 24px;
-    margin-left: auto;
     padding: 0;
     border: 1px solid var(--border-muted);
     border-radius: 4px;
@@ -111,7 +201,7 @@
     cursor: pointer;
   }
 
-  .draft-comment-delete:disabled {
+  .draft-comment-action:disabled {
     opacity: 0.55;
     cursor: default;
   }
@@ -122,5 +212,21 @@
     font-size: var(--font-size-sm);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .draft-comment-editor {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 76px;
+    margin-top: 6px;
+    resize: vertical;
+    padding: 7px 8px;
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    background: var(--bg-inset);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    line-height: 1.42;
   }
 </style>

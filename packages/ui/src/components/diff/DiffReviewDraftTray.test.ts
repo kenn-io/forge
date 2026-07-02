@@ -6,6 +6,7 @@ import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
 
 function renderTray(publishResult: boolean) {
   const publish = vi.fn(() => Promise.resolve(publishResult));
+  const editComment = vi.fn(() => Promise.resolve(true));
   const diffReviewDraft = {
     getComments: () => [
       {
@@ -23,11 +24,12 @@ function renderTray(publishResult: boolean) {
     publish,
     discard: () => Promise.resolve(true),
     deleteComment: () => Promise.resolve(true),
+    editComment,
   };
   const rendered = render(DiffReviewDraftTray, {
     context: new Map([[STORES_KEY, { diffReviewDraft }]]),
   });
-  return { ...rendered, publish };
+  return { ...rendered, editComment, publish };
 }
 
 describe("DiffReviewDraftTray", () => {
@@ -46,5 +48,24 @@ describe("DiffReviewDraftTray", () => {
 
     expect(publish).toHaveBeenCalledWith("comment", "Keep this summary");
     expect(summary.value).toBe("Keep this summary");
+  });
+
+  it("lets a draft comment body be edited before publishing", async () => {
+    const { editComment } = renderTray(true);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit draft comment" }));
+    const editor = screen.getByLabelText("Draft comment body") as HTMLTextAreaElement;
+    expect(editor.value).toBe("Draft note");
+
+    await fireEvent.input(editor, {
+      target: { value: "Updated draft note" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save draft comment" }));
+
+    expect(editComment).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "1", body: "Draft note" }),
+      "Updated draft note",
+    );
+    expect(screen.queryByLabelText("Draft comment body")).toBeNull();
   });
 });

@@ -77,6 +77,7 @@
           disabled={submitting}
           {onjump}
           ondelete={(id) => void diffReviewDraft.deleteComment(id)}
+          onsave={(draftComment, draftBody) => diffReviewDraft.editComment(draftComment, draftBody)}
         />
       {/each}
     </div>

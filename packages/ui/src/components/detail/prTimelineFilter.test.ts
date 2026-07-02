@@ -278,7 +278,7 @@ describe("DetailActivityViewMenu", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /compact/i }));
     expect(onViewChange).toHaveBeenCalledWith("compact");
-    expect(document.querySelector(".filter-dropdown")).toBeNull();
+    expect(document.querySelector(".kit-filter-dropdown__panel")).toBeNull();
   });
 
   it("adds PR filter controls when filter state is provided", async () => {
@@ -299,7 +299,7 @@ describe("DetailActivityViewMenu", () => {
       ...DEFAULT_PR_TIMELINE_FILTER,
       showMessages: false,
     });
-    expect(document.querySelector(".filter-dropdown")).toBeTruthy();
+    expect(document.querySelector(".kit-filter-dropdown__panel")).toBeTruthy();
   });
 
   it("shows active PR filter count and reset without counting layout mode", async () => {

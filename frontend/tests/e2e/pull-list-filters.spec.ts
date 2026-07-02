@@ -87,9 +87,9 @@ async function openPrFilters(page: Page): Promise<void> {
   if (await standaloneTrigger.isVisible()) {
     await standaloneTrigger.click();
   } else {
-    await page.locator(".compact-filter-menu .filter-btn").click();
+    await page.locator(".compact-filter-menu .kit-filter-dropdown__btn").click();
   }
-  await expect(page.locator(".filter-dropdown")).toBeVisible();
+  await expect(page.locator(".kit-filter-dropdown__panel")).toBeVisible();
 }
 
 test("PR filters stack attributes and allow multiple kanban statuses", async ({ page }) => {
@@ -100,20 +100,20 @@ test("PR filters stack attributes and allow multiple kanban statuses", async ({ 
   await expect(rows).toHaveCount(4);
 
   await openPrFilters(page);
-  await page.locator(".filter-dropdown").getByRole("button", { name: "Ready for review" }).click();
-  await page.locator(".filter-dropdown").getByRole("button", { name: "Reviewing" }).click();
-  await page.locator(".filter-dropdown").getByRole("button", { name: "Awaiting merge" }).click();
+  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Ready for review" }).click();
+  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Reviewing" }).click();
+  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Awaiting merge" }).click();
 
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);
 
-  await page.locator(".filter-dropdown").getByRole("button", { name: "Failed CI" }).click();
+  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Failed CI" }).click();
   await expect(rows).toHaveText([/Ready failed workflow/]);
 
   await page
-    .locator(".filter-dropdown")
+    .locator(".kit-filter-dropdown__panel")
     .getByRole("button", { name: /^(Clear filters|Reset view)$/ })
     .click();
-  await page.locator(".filter-dropdown").getByRole("button", { name: "Merge conflicts" }).click();
+  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Merge conflicts" }).click();
 
   await expect(rows).toHaveText([/Ready conflict resolver/]);
 });

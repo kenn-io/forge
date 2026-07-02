@@ -2,7 +2,7 @@
   import { getStores, getNavigate, getSidebar } from "../../context.js";
   import IssueItem from "./IssueItem.svelte";
   import { Chip } from "@kenn-io/kit-ui";
-  import FilterDropdown from "../shared/FilterDropdown.svelte";
+  import { FilterDropdown } from "@kenn-io/kit-ui";
   import LeftSidebarToggle from "../shared/LeftSidebarToggle.svelte";
   import type { Issue } from "../../api/types.js";
   import {
@@ -516,14 +516,14 @@
     transform-origin: left center;
   }
 
-  .compact-filter-menu :global(.filter-btn) {
+  .compact-filter-menu :global(.kit-filter-dropdown__btn) {
     width: 26px;
     justify-content: center;
     padding: 3px;
   }
 
-  .compact-filter-menu :global(.filter-trigger-label),
-  .compact-filter-menu :global(.filter-trigger-detail) {
+  .compact-filter-menu :global(.kit-filter-dropdown__trigger-label),
+  .compact-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
     display: none;
   }
 

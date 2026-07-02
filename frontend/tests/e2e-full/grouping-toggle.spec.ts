@@ -25,7 +25,7 @@ async function selectPullGrouping(page: Page, label: string | RegExp): Promise<v
 
   const compactLabel = compactPullGroupingLabel(label);
   await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: compactLabel }).click();
+  await page.locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: compactLabel }).click();
 }
 
 function compactPullGroupingLabel(label: string | RegExp): string | RegExp {

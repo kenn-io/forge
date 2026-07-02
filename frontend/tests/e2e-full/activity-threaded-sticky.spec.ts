@@ -6,18 +6,18 @@ import { expect, test, type Page } from "@playwright/test";
 // threaded mode has multiple sections that the scroll behavior can exercise.
 
 async function openActivityViewDropdown(page: Page) {
-  const dropdown = page.locator(".activity-feed .filter-dropdown");
+  const dropdown = page.locator(".activity-feed .kit-filter-dropdown__panel");
   if (await dropdown.isVisible()) {
     return dropdown;
   }
-  await page.locator(".activity-feed .filter-btn", { hasText: "View" }).click();
+  await page.locator(".activity-feed .kit-filter-dropdown__btn", { hasText: "View" }).click();
   await expect(dropdown).toBeVisible();
   return dropdown;
 }
 
 async function selectActivityViewItem(page: Page, label: string): Promise<void> {
   const dropdown = await openActivityViewDropdown(page);
-  await dropdown.locator(".filter-item", { hasText: label }).click();
+  await dropdown.locator(".kit-filter-dropdown__item", { hasText: label }).click();
 }
 
 async function gotoThreadedGrouped(page: Page): Promise<void> {

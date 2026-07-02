@@ -1,5 +1,5 @@
 <script lang="ts">
-  import FilterDropdown from "../shared/FilterDropdown.svelte";
+  import { FilterDropdown } from "@kenn-io/kit-ui";
   import type { DetailActivityViewMode } from "../../stores/detail-activity-view.svelte.js";
   import {
     activePRTimelineFilterCount,

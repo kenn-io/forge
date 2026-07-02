@@ -614,9 +614,9 @@ test.describe("activity split view and detail drawers", () => {
     const repoLabel = row.locator(".compact-meta > span").first();
     await expect(repoLabel).toHaveText("acme/widgets");
 
-    await page.locator(".activity-feed .filter-btn", { hasText: "View" }).click();
+    await page.locator(".activity-feed .kit-filter-dropdown__btn", { hasText: "View" }).click();
     await page
-      .locator(".activity-feed .filter-dropdown .filter-item", {
+      .locator(".activity-feed .kit-filter-dropdown__panel .kit-filter-dropdown__item", {
         hasText: "Hide org name",
       })
       .click();
@@ -1263,11 +1263,11 @@ test.describe("activity split view and detail drawers", () => {
     await openActivityPRSplit(page);
 
     const rail = page.locator(".activity-pane");
-    const viewButton = rail.locator(".filter-btn", { hasText: "View" });
+    const viewButton = rail.locator(".kit-filter-dropdown__btn", { hasText: "View" });
     await expect(viewButton).toBeVisible();
     await viewButton.click();
 
-    const dropdown = page.locator(".activity-feed .filter-dropdown");
+    const dropdown = page.locator(".activity-feed .kit-filter-dropdown__panel");
     await expect(dropdown).toBeVisible();
 
     const railBox = await rail.boundingBox();
@@ -1281,7 +1281,7 @@ test.describe("activity split view and detail drawers", () => {
     const itemBeyondRail = await page.evaluate(
       ({ x, y }) => {
         const element = document.elementFromPoint(x, y);
-        return element?.closest(".filter-dropdown") !== null;
+        return element?.closest(".kit-filter-dropdown__panel") !== null;
       },
       {
         x: railRight + 8,

@@ -1262,7 +1262,7 @@
   {@const actionBusy = workspaceAction !== null}
   {@const actionDisabled = actionBusy || workspaceActionsDisabled(menuWorkspace)}
   <div
-    class="workspace-context-menu filter-dropdown"
+    class="workspace-context-menu kit-filter-dropdown__panel"
     bind:this={contextMenuEl}
     style={contextMenuStyle}
     role="menu"
@@ -1279,10 +1279,10 @@
       </div>
     </div>
 
-    <div class="filter-section-title">Sync branch</div>
+    <div class="kit-filter-dropdown__section-title">Sync branch</div>
     {#if canPush(menuWorkspace)}
       <button
-        class="filter-item active"
+        class="kit-filter-dropdown__item active"
         role="menuitem"
         type="button"
         disabled={actionDisabled}
@@ -1290,13 +1290,13 @@
           void syncWorkspaceBranch(menuWorkspace, "push");
         }}
       >
-        <span class="filter-dot filter-dot--success"></span>
-        <span class="filter-label">{workspaceActionMatches(menuWorkspace, "push") ? "Pushing..." : "Push branch"}</span>
+        <span class="kit-filter-dropdown__dot filter-dot--success"></span>
+        <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "push") ? "Pushing..." : "Push branch"}</span>
         <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
       </button>
     {:else if canPull(menuWorkspace)}
       <button
-        class="filter-item active"
+        class="kit-filter-dropdown__item active"
         role="menuitem"
         type="button"
         disabled={actionDisabled}
@@ -1304,13 +1304,13 @@
           void syncWorkspaceBranch(menuWorkspace, "pull");
         }}
       >
-        <span class="filter-dot filter-dot--warning"></span>
-        <span class="filter-label">{workspaceActionMatches(menuWorkspace, "pull") ? "Pulling..." : "Pull remote changes"}</span>
+        <span class="kit-filter-dropdown__dot filter-dot--warning"></span>
+        <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "pull") ? "Pulling..." : "Pull remote changes"}</span>
         <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
       </button>
     {/if}
     <button
-      class="filter-item active"
+      class="kit-filter-dropdown__item active"
       role="menuitem"
       type="button"
       disabled={actionDisabled}
@@ -1318,13 +1318,13 @@
         void refreshWorkspaceStatus(menuWorkspace);
       }}
     >
-      <span class="filter-dot"></span>
-      <span class="filter-label">Refresh git status</span>
+      <span class="kit-filter-dropdown__dot"></span>
+      <span class="kit-filter-dropdown__label">Refresh git status</span>
     </button>
 
-    <div class="filter-divider"></div>
+    <div class="kit-filter-dropdown__divider"></div>
     <button
-      class="filter-item active"
+      class="kit-filter-dropdown__item active"
       role="menuitem"
       type="button"
       disabled={actionBusy}
@@ -1335,12 +1335,12 @@
         );
       }}
     >
-      <span class="filter-dot"></span>
-      <span class="filter-label">Copy branch name</span>
+      <span class="kit-filter-dropdown__dot"></span>
+      <span class="kit-filter-dropdown__label">Copy branch name</span>
     </button>
     {#if localWorkspace}
       <button
-        class="filter-item active"
+        class="kit-filter-dropdown__item active"
         role="menuitem"
         type="button"
         disabled={actionBusy}
@@ -1351,11 +1351,11 @@
           );
         }}
       >
-        <span class="filter-dot"></span>
-        <span class="filter-label">Copy worktree path</span>
+        <span class="kit-filter-dropdown__dot"></span>
+        <span class="kit-filter-dropdown__label">Copy worktree path</span>
       </button>
       <button
-        class="filter-item active"
+        class="kit-filter-dropdown__item active"
         role="menuitem"
         type="button"
         disabled={actionDisabled}
@@ -1363,38 +1363,38 @@
           void revealWorkspacePath(menuWorkspace);
         }}
       >
-        <span class="filter-dot"></span>
-        <span class="filter-label">{workspaceActionMatches(menuWorkspace, "reveal") ? "Opening..." : revealLabel(menuWorkspace)}</span>
+        <span class="kit-filter-dropdown__dot"></span>
+        <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "reveal") ? "Opening..." : revealLabel(menuWorkspace)}</span>
       </button>
     {/if}
 
     {#if itemURL}
-      <div class="filter-divider"></div>
+      <div class="kit-filter-dropdown__divider"></div>
       <button
-        class="filter-item active"
+        class="kit-filter-dropdown__item active"
         role="menuitem"
         type="button"
         disabled={actionBusy}
         onclick={() => openProviderItem(menuWorkspace)}
       >
-        <span class="filter-dot"></span>
-        <span class="filter-label">{providerLabel(menuWorkspace)}</span>
+        <span class="kit-filter-dropdown__dot"></span>
+        <span class="kit-filter-dropdown__label">{providerLabel(menuWorkspace)}</span>
       </button>
       <button
-        class="filter-item active"
+        class="kit-filter-dropdown__item active"
         role="menuitem"
         type="button"
         disabled={actionBusy}
         onclick={() => copyProviderItemURL(menuWorkspace)}
       >
-        <span class="filter-dot"></span>
-        <span class="filter-label">Copy item URL</span>
+        <span class="kit-filter-dropdown__dot"></span>
+        <span class="kit-filter-dropdown__label">Copy item URL</span>
       </button>
     {/if}
 
-    <div class="filter-divider"></div>
+    <div class="kit-filter-dropdown__divider"></div>
     <button
-      class="filter-item active workspace-context-danger"
+      class="kit-filter-dropdown__item active workspace-context-danger"
       role="menuitem"
       type="button"
       disabled={actionDisabled}
@@ -1402,8 +1402,8 @@
         openDeleteWorkspaceDialog(menuWorkspace);
       }}
     >
-      <span class="filter-dot filter-dot--danger"></span>
-      <span class="filter-label">{workspaceActionMatches(menuWorkspace, "delete") ? "Deleting..." : "Delete workspace..."}</span>
+      <span class="kit-filter-dropdown__dot filter-dot--danger"></span>
+      <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "delete") ? "Deleting..." : "Delete workspace..."}</span>
     </button>
   </div>
 {/if}
@@ -1489,7 +1489,7 @@
     flex-shrink: 0;
   }
 
-  .workspace-sort :global(.filter-btn) {
+  .workspace-sort :global(.kit-filter-dropdown__btn) {
     /* Borderless inside the 28px header rail; the dropdown trigger
      * reads as header chrome rather than a standalone button. */
     min-height: 22px;
@@ -1498,7 +1498,7 @@
     background: transparent;
   }
 
-  .workspace-sort :global(.filter-btn:hover:not(:disabled)) {
+  .workspace-sort :global(.kit-filter-dropdown__btn:hover:not(:disabled)) {
     border-color: var(--border-muted);
   }
 
@@ -2064,7 +2064,7 @@
     font-size: var(--font-size-2xs);
   }
 
-  .filter-section-title {
+  .kit-filter-dropdown__section-title {
     padding: 4px 12px;
     font-size: 0.9em;
     font-weight: 600;
@@ -2073,13 +2073,13 @@
     letter-spacing: 0.04em;
   }
 
-  .filter-divider {
+  .kit-filter-dropdown__divider {
     height: 1px;
     background: var(--border-muted);
     margin: 4px 8px;
   }
 
-  .filter-item {
+  .kit-filter-dropdown__item {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -2094,19 +2094,19 @@
     border: 0;
   }
 
-  .filter-item:hover:not(:disabled) {
+  .kit-filter-dropdown__item:hover:not(:disabled) {
     background: var(--bg-surface-hover);
   }
 
-  .filter-item:not(.active) {
+  .kit-filter-dropdown__item:not(.active) {
     opacity: 0.5;
   }
 
-  .filter-item:disabled {
+  .kit-filter-dropdown__item:disabled {
     cursor: default;
   }
 
-  .filter-dot {
+  .kit-filter-dropdown__dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
@@ -2126,7 +2126,7 @@
     background: var(--accent-red);
   }
 
-  .filter-label {
+  .kit-filter-dropdown__label {
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -2164,7 +2164,7 @@
   /* The sort trigger collapses to its icon before the filter input
    * is squeezed into uselessness. */
   @container workspace-rail (max-width: 240px) {
-    .workspace-sort :global(.filter-trigger-label) {
+    .workspace-sort :global(.kit-filter-dropdown__trigger-label) {
       display: none;
     }
   }

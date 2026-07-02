@@ -644,7 +644,7 @@
     justify-self: end;
   }
 
-  .repo-page__sort-dropdown :global(.filter-btn) {
+  .repo-page__sort-dropdown :global(.kit-filter-dropdown__btn) {
     width: 148px;
     min-height: 34px;
     padding: 0 12px;
@@ -656,7 +656,7 @@
     font-size: var(--font-size-md);
   }
 
-  .repo-page__sort-dropdown :global(.filter-trigger-label) {
+  .repo-page__sort-dropdown :global(.kit-filter-dropdown__trigger-label) {
     flex: 1;
     overflow: hidden;
     color: var(--text-primary);

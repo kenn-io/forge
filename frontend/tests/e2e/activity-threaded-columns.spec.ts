@@ -208,7 +208,7 @@ test.describe("threaded activity columns", () => {
 
     // Toggle "Hide org name" via the View dropdown.
     await page.getByRole("button", { name: "View", exact: true }).click();
-    await page.locator(".filter-item", { hasText: "Hide org name" }).click();
+    await page.locator(".kit-filter-dropdown__item", { hasText: "Hide org name" }).click();
     await page.keyboard.press("Escape");
 
     await expect(repoLabel).toHaveText("widgets");

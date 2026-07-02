@@ -4,7 +4,7 @@
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import PullItem from "./PullItem.svelte";
   import { Chip } from "@kenn-io/kit-ui";
-  import FilterDropdown from "../shared/FilterDropdown.svelte";
+  import { FilterDropdown } from "@kenn-io/kit-ui";
   import LeftSidebarToggle from "../shared/LeftSidebarToggle.svelte";
   import type { KanbanStatus, PullRequest } from "../../api/types.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
@@ -787,36 +787,36 @@
     flex-shrink: 0;
   }
 
-  .local-filter-menu--icon-only :global(.filter-btn) {
+  .local-filter-menu--icon-only :global(.kit-filter-dropdown__btn) {
     width: 34px;
     justify-content: center;
     gap: 0;
     padding-inline: 0;
   }
 
-  .local-filter-menu--icon-only :global(.filter-trigger-label) {
+  .local-filter-menu--icon-only :global(.kit-filter-dropdown__trigger-label) {
     display: none;
   }
 
-  .local-filter-menu--icon-only :global(.filter-badge) {
+  .local-filter-menu--icon-only :global(.kit-filter-dropdown__badge) {
     position: absolute;
     top: -5px;
     right: -5px;
   }
 
-  .compact-filter-menu :global(.filter-btn) {
+  .compact-filter-menu :global(.kit-filter-dropdown__btn) {
     width: 34px;
     justify-content: center;
     gap: 0;
     padding-inline: 0;
   }
 
-  .compact-filter-menu :global(.filter-trigger-label),
-  .compact-filter-menu :global(.filter-trigger-detail) {
+  .compact-filter-menu :global(.kit-filter-dropdown__trigger-label),
+  .compact-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
     display: none;
   }
 
-  .compact-filter-menu :global(.filter-badge) {
+  .compact-filter-menu :global(.kit-filter-dropdown__badge) {
     position: absolute;
     top: -5px;
     right: -5px;

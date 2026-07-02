@@ -33,8 +33,8 @@ test.describe.serial("Roborev", () => {
   });
 
   async function selectStatusFilter(page: Page, label: string): Promise<void> {
-    await page.locator(".filter-btn", { hasText: "Status" }).click();
-    await page.locator(".filter-item", { hasText: label }).click();
+    await page.locator(".kit-filter-dropdown__btn", { hasText: "Status" }).click();
+    await page.locator(".kit-filter-dropdown__item", { hasText: label }).click();
   }
 
   // -------------------------------------------------------

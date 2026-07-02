@@ -277,18 +277,21 @@ function eventTypeCount(label: string): number {
 }
 
 function viewButton(): Element {
-  return inDetail(".filter-btn").find((el) => (el.textContent ?? "").includes("View"))!;
+  return inDetail(".kit-filter-dropdown__btn").find((el) => (el.textContent ?? "").includes("View"))!;
 }
 
 function filterItem(label: string): Element {
-  return Array.from(document.querySelectorAll(".pull-detail .filter-dropdown .filter-item")).find((el) =>
-    (el.textContent ?? "").includes(label),
-  )!;
+  return Array.from(
+    document.querySelectorAll(".pull-detail .kit-filter-dropdown__panel .kit-filter-dropdown__item"),
+  ).find((el) => (el.textContent ?? "").includes(label))!;
 }
 
 async function openViewMenu(): Promise<void> {
   await page.elementLocator(viewButton()).click();
-  await vi.waitFor(() => expect(document.querySelector(".pull-detail .filter-dropdown")).not.toBeNull(), WAIT);
+  await vi.waitFor(
+    () => expect(document.querySelector(".pull-detail .kit-filter-dropdown__panel")).not.toBeNull(),
+    WAIT,
+  );
 }
 
 async function toggleBucket(label: string): Promise<void> {

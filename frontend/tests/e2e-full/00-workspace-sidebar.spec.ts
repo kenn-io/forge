@@ -285,7 +285,7 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(headers).toHaveCount(2);
 
       await page.getByTitle("View workspace options").click();
-      await page.locator(".filter-dropdown .filter-item", { hasText: "Created" }).click();
+      await page.locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: "Created" }).click();
 
       // Flat list ordered by the real created_at column: the
       // gitlab workspace was created last, so it sorts first.
@@ -305,7 +305,9 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(rows.first().locator(".repo-context")).toContainText("group/project");
 
       await page.getByTitle("View workspace options").click();
-      await page.locator(".filter-dropdown .filter-item", { hasText: "Item activity" }).click();
+      await page
+        .locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: "Item activity" })
+        .click();
 
       await expect(headers).toHaveCount(0);
       await expect(rows).toHaveCount(2);
@@ -371,7 +373,7 @@ test.describe("workspace sidebar full-stack", () => {
       const groupLabel = page.locator(".workspace-list-sidebar .group-header .group-label");
       const diffStats = page.locator(".workspace-list-sidebar .workspace-diff-stats");
       const viewTrigger = page.getByTitle("View workspace options");
-      const viewBadge = viewTrigger.locator(".filter-badge");
+      const viewBadge = viewTrigger.locator(".kit-filter-dropdown__badge");
 
       // Defaults: org name shown in the repo label, diff stats visible.
       await expect(groupLabel).toHaveText("acme/widgets");
@@ -382,8 +384,12 @@ test.describe("workspace sidebar full-stack", () => {
       // Visibility toggles do not close the menu, so both can be flipped
       // in a single pass before dismissing it.
       await viewTrigger.click();
-      await page.locator(".filter-dropdown .filter-item", { hasText: "Show org names" }).click();
-      await page.locator(".filter-dropdown .filter-item", { hasText: "Show PR diff stats" }).click();
+      await page
+        .locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: "Show org names" })
+        .click();
+      await page
+        .locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: "Show PR diff stats" })
+        .click();
       await page.keyboard.press("Escape");
 
       await expect(groupLabel).toHaveText("widgets");

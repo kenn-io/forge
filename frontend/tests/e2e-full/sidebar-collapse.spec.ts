@@ -88,7 +88,7 @@ async function expectCompactFiltersAtMinimumWidth(
   await expect.poll(async () => sidebarWidth(sidebar)).toBe(200);
 
   const filterBar = sidebar.locator(".filter-bar").first();
-  const compactFilters = filterBar.locator(".compact-filter-menu .filter-btn");
+  const compactFilters = filterBar.locator(".compact-filter-menu .kit-filter-dropdown__btn");
   await expect(compactFilters).toBeVisible();
   await expect(filterBar.locator(".state-toggle")).toBeHidden();
   await expect(filterBar.locator(".group-toggle")).toBeHidden();
@@ -112,7 +112,7 @@ async function expectCompactFiltersInNarrowViewport(
 
   const sidebar = page.locator(".sidebar").first();
   const filterBar = sidebar.locator(".filter-bar").first();
-  await expect(filterBar.locator(".compact-filter-menu .filter-btn")).toBeVisible();
+  await expect(filterBar.locator(".compact-filter-menu .kit-filter-dropdown__btn")).toBeVisible();
   await expect(filterBar.locator(".state-toggle")).toBeHidden();
   await expect(filterBar.locator(".group-toggle")).toBeHidden();
 }
@@ -134,22 +134,22 @@ async function setPersistedSidebarWidth(
 }
 
 async function expectCompactFilterBar(filterBar: Locator): Promise<void> {
-  await expect(filterBar.locator(".compact-filter-menu .filter-btn")).toBeVisible();
-  await expect(filterBar.locator(".local-filter-menu .filter-btn")).toBeHidden();
+  await expect(filterBar.locator(".compact-filter-menu .kit-filter-dropdown__btn")).toBeVisible();
+  await expect(filterBar.locator(".local-filter-menu .kit-filter-dropdown__btn")).toBeHidden();
   await expect(filterBar.locator(".state-toggle")).toBeHidden();
   await expect(filterBar.locator(".group-toggle")).toBeHidden();
   await expectFastAnimation(filterBar.locator(".compact-filter-menu"));
 }
 
 async function openCompactFilters(filterBar: Locator): Promise<Locator> {
-  await filterBar.locator(".compact-filter-menu .filter-btn").click();
-  const dropdown = filterBar.page().locator(".filter-dropdown");
+  await filterBar.locator(".compact-filter-menu .kit-filter-dropdown__btn").click();
+  const dropdown = filterBar.page().locator(".kit-filter-dropdown__panel");
   await expect(dropdown).toBeVisible();
   return dropdown;
 }
 
 async function expectExpandedFilterBar(filterBar: Locator): Promise<void> {
-  await expect(filterBar.locator(".compact-filter-menu .filter-btn")).toBeHidden();
+  await expect(filterBar.locator(".compact-filter-menu .kit-filter-dropdown__btn")).toBeHidden();
   await expect(filterBar.locator(".state-toggle")).toBeVisible();
   await expect(filterBar.locator(".group-toggle")).toBeVisible();
   await expectFastAnimation(filterBar.locator(".state-toggle"));
@@ -165,10 +165,10 @@ async function expectPullLocalFilterIconOnly(filterBar: Locator): Promise<void> 
   await expect(filterBar.locator(".state-toggle")).toBeVisible();
   await expect(filterBar.locator(".group-toggle")).toBeVisible();
   await expect(filterBar.locator(".compact-filter-menu")).toBeHidden();
-  await expect(localFilter.locator(".filter-trigger-label")).toHaveCSS("display", "none");
+  await expect(localFilter.locator(".kit-filter-dropdown__trigger-label")).toHaveCSS("display", "none");
 
   const triggerWidth = await localFilter
-    .locator(".filter-btn")
+    .locator(".kit-filter-dropdown__btn")
     .evaluate((node) => Math.round(node.getBoundingClientRect().width));
   expect(triggerWidth).toBe(34);
 
@@ -182,8 +182,8 @@ async function expectPullLocalFilterIconOnly(filterBar: Locator): Promise<void> 
 async function expectPullLocalFilterLabeled(filterBar: Locator): Promise<void> {
   await expectExpandedFilterBar(filterBar);
   const localFilter = filterBar.locator(".local-filter-menu");
-  await expect(localFilter.locator(".filter-trigger-label")).toHaveText("PR filters");
-  await expect(localFilter.locator(".filter-trigger-label")).not.toHaveCSS("display", "none");
+  await expect(localFilter.locator(".kit-filter-dropdown__trigger-label")).toHaveText("PR filters");
+  await expect(localFilter.locator(".kit-filter-dropdown__trigger-label")).not.toHaveCSS("display", "none");
 }
 
 async function expectFastAnimation(locator: Locator): Promise<void> {
@@ -325,13 +325,13 @@ test.describe("collapsible sidebar", () => {
     await expectCompactFilterBar(filterBar);
 
     const dropdown = await openCompactFilters(filterBar);
-    await expect(dropdown.locator(".filter-section-title", { hasText: "PR" })).toBeVisible();
-    await expect(dropdown.locator(".filter-section-title", { hasText: "Kanban" })).toBeVisible();
-    await dropdown.locator(".filter-item", { hasText: "Closed" }).click();
+    await expect(dropdown.locator(".kit-filter-dropdown__section-title", { hasText: "PR" })).toBeVisible();
+    await expect(dropdown.locator(".kit-filter-dropdown__section-title", { hasText: "Kanban" })).toBeVisible();
+    await dropdown.locator(".kit-filter-dropdown__item", { hasText: "Closed" }).click();
     await expect(filterBar.page().locator(".state-note")).toBeVisible();
     await expect(dropdown).toBeVisible();
 
-    await dropdown.locator(".filter-item", { hasText: "Flat list" }).click();
+    await dropdown.locator(".kit-filter-dropdown__item", { hasText: "Flat list" }).click();
     await expect(dropdown).toBeVisible();
     await expect(page.locator(".repo-header")).toHaveCount(0, {
       timeout: 5_000,
@@ -407,11 +407,11 @@ test.describe("collapsible sidebar", () => {
     await expectCompactFilterBar(filterBar);
 
     const dropdown = await openCompactFilters(filterBar);
-    await dropdown.locator(".filter-item", { hasText: "Closed" }).click();
+    await dropdown.locator(".kit-filter-dropdown__item", { hasText: "Closed" }).click();
     await expect(filterBar.page().locator(".state-note")).toBeVisible();
     await expect(dropdown).toBeVisible();
 
-    await dropdown.locator(".filter-item", { hasText: "All" }).last().click();
+    await dropdown.locator(".kit-filter-dropdown__item", { hasText: "All" }).last().click();
     await expect(dropdown).toBeVisible();
     await expect(page.locator(".repo-header")).toHaveCount(0, {
       timeout: 5_000,

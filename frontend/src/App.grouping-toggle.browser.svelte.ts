@@ -206,13 +206,22 @@ async function selectPullGrouping(label: string): Promise<void> {
   // inline group buttons are CSS-hidden and grouping lives in the "Filters"
   // compact dropdown. The "Group" section is last, so pick the last item whose
   // label matches (the State section may also expose an "All" entry).
-  await vi.waitFor(() => expect(document.querySelector(".compact-filter-menu .filter-btn")).not.toBeNull(), WAIT);
-  const filtersBtn = document.querySelector(".compact-filter-menu .filter-btn")!;
+  await vi.waitFor(
+    () => expect(document.querySelector(".compact-filter-menu .kit-filter-dropdown__btn")).not.toBeNull(),
+    WAIT,
+  );
+  const filtersBtn = document.querySelector(".compact-filter-menu .kit-filter-dropdown__btn")!;
   await page.elementLocator(filtersBtn).click();
-  await vi.waitFor(() => expect(document.querySelector(".compact-filter-menu .filter-dropdown")).not.toBeNull(), WAIT);
+  await vi.waitFor(
+    () => expect(document.querySelector(".compact-filter-menu .kit-filter-dropdown__panel")).not.toBeNull(),
+    WAIT,
+  );
   const compactLabel = compactPullGroupingLabel(label);
-  const items = Array.from(document.querySelectorAll(".compact-filter-menu .filter-dropdown .filter-item")).filter(
-    (el) => (el.querySelector(".filter-label")?.textContent ?? el.textContent ?? "").trim() === compactLabel,
+  const items = Array.from(
+    document.querySelectorAll(".compact-filter-menu .kit-filter-dropdown__panel .kit-filter-dropdown__item"),
+  ).filter(
+    (el) =>
+      (el.querySelector(".kit-filter-dropdown__label")?.textContent ?? el.textContent ?? "").trim() === compactLabel,
   );
   const item = items[items.length - 1];
   expect(item).toBeDefined();
@@ -227,27 +236,30 @@ function compactPullGroupingLabel(label: string): string {
 }
 
 function activityViewBtn(): Element {
-  return Array.from(document.querySelectorAll(".activity-feed .filter-btn")).find((b) =>
+  return Array.from(document.querySelectorAll(".activity-feed .kit-filter-dropdown__btn")).find((b) =>
     (b.textContent ?? "").includes("View"),
   )!;
 }
 
 async function selectActivityViewItem(label: string): Promise<void> {
   // Open the activity feed's View dropdown fresh, then click the labelled item.
-  if (!document.querySelector(".activity-feed .filter-dropdown")) {
+  if (!document.querySelector(".activity-feed .kit-filter-dropdown__panel")) {
     await page.elementLocator(activityViewBtn()).click();
-    await vi.waitFor(() => expect(document.querySelector(".activity-feed .filter-dropdown")).not.toBeNull(), WAIT);
+    await vi.waitFor(
+      () => expect(document.querySelector(".activity-feed .kit-filter-dropdown__panel")).not.toBeNull(),
+      WAIT,
+    );
   }
-  const item = Array.from(document.querySelectorAll(".activity-feed .filter-dropdown .filter-item")).find((el) =>
-    (el.textContent ?? "").includes(label),
-  )!;
+  const item = Array.from(
+    document.querySelectorAll(".activity-feed .kit-filter-dropdown__panel .kit-filter-dropdown__item"),
+  ).find((el) => (el.textContent ?? "").includes(label))!;
   await page.elementLocator(item).click();
 }
 
 function activityDropdownHas(label: string): boolean {
-  return Array.from(document.querySelectorAll(".activity-feed .filter-dropdown .filter-item")).some((el) =>
-    (el.textContent ?? "").includes(label),
-  );
+  return Array.from(
+    document.querySelectorAll(".activity-feed .kit-filter-dropdown__panel .kit-filter-dropdown__item"),
+  ).some((el) => (el.textContent ?? "").includes(label));
 }
 
 describe("grouping toggle", () => {
@@ -354,13 +366,19 @@ describe("grouping toggle", () => {
     await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
 
     await page.elementLocator(activityViewBtn()).click();
-    await vi.waitFor(() => expect(document.querySelector(".activity-feed .filter-dropdown")).not.toBeNull(), WAIT);
+    await vi.waitFor(
+      () => expect(document.querySelector(".activity-feed .kit-filter-dropdown__panel")).not.toBeNull(),
+      WAIT,
+    );
     expect(activityDropdownHas("By repo")).toBe(false);
 
     await selectActivityViewItem("Threaded");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view")).not.toBeNull(), WAIT);
     await page.elementLocator(activityViewBtn()).click();
-    await vi.waitFor(() => expect(document.querySelector(".activity-feed .filter-dropdown")).not.toBeNull(), WAIT);
+    await vi.waitFor(
+      () => expect(document.querySelector(".activity-feed .kit-filter-dropdown__panel")).not.toBeNull(),
+      WAIT,
+    );
     expect(activityDropdownHas("By repo")).toBe(true);
   });
 

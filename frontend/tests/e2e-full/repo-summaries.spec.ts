@@ -82,7 +82,7 @@ test.describe("repository summaries", () => {
     await page.getByPlaceholder("Filter repositories").fill("acme");
     await page.getByRole("button", { name: "Has issues" }).click();
     await page.locator(".repo-page__sort-dropdown").getByRole("button", { name: "Name" }).click();
-    await page.locator(".filter-dropdown").getByRole("button", { name: "Open issues" }).click();
+    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Open issues" }).click();
 
     const repoCards = page.locator(".repo-card");
     await expect(repoCards).toHaveCount(2);

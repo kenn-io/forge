@@ -127,7 +127,8 @@ export { default as ItemStateChip } from "./components/shared/ItemStateChip.svel
 export { default as CollapsibleResizableSidebar } from "./components/shared/CollapsibleResizableSidebar.svelte";
 export { default as LeftSidebarToggle } from "./components/shared/LeftSidebarToggle.svelte";
 export { DiffStats } from "@kenn-io/kit-ui";
-export { default as FilterDropdown } from "./components/shared/FilterDropdown.svelte";
+export { FilterDropdown } from "@kenn-io/kit-ui";
+export type { FilterDropdownItem, FilterDropdownSection } from "@kenn-io/kit-ui";
 export { SelectDropdown } from "@kenn-io/kit-ui";
 export type { SelectDropdownOption } from "@kenn-io/kit-ui";
 export { default as SplitResizeHandle } from "./components/shared/SplitResizeHandle.svelte";

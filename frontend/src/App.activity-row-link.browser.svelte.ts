@@ -119,9 +119,14 @@ function findInActivityFeed(selector: string, text: string): Element {
 async function switchToThreaded(): Promise<void> {
   // Once the split detail pane is open there are two "View" filter buttons (feed
   // and detail); scope to the activity feed's button and dropdown.
-  await page.elementLocator(findInActivityFeed(".filter-btn", "View")).click();
-  await vi.waitFor(() => expect(document.querySelector(".activity-feed .filter-dropdown")).not.toBeNull(), WAIT);
-  await page.elementLocator(findInActivityFeed(".filter-dropdown .filter-item", "Threaded")).click();
+  await page.elementLocator(findInActivityFeed(".kit-filter-dropdown__btn", "View")).click();
+  await vi.waitFor(
+    () => expect(document.querySelector(".activity-feed .kit-filter-dropdown__panel")).not.toBeNull(),
+    WAIT,
+  );
+  await page
+    .elementLocator(findInActivityFeed(".kit-filter-dropdown__panel .kit-filter-dropdown__item", "Threaded"))
+    .click();
   await vi.waitFor(() => expect(document.querySelector(".threaded-view .item-row")).not.toBeNull(), WAIT);
 }
 

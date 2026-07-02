@@ -10,7 +10,7 @@
   } from "../stores/activity.svelte.js";
   import { getStores, getNavigate, getSidebar } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
-  import FilterDropdown from "./shared/FilterDropdown.svelte";
+  import { FilterDropdown } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,
     isDefaultBranchCommitActivity,
@@ -1018,7 +1018,7 @@
     display: none;
   }
 
-  .activity-feed--compact :global(.filter-wrap) {
+  .activity-feed--compact :global(.kit-filter-dropdown) {
     order: 3;
     flex-shrink: 0;
   }

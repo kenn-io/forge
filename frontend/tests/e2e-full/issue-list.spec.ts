@@ -20,7 +20,7 @@ async function selectIssueState(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: label }).first().click();
+  await page.locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: label }).first().click();
 }
 
 async function selectIssueGrouping(page: Page, label: string): Promise<void> {
@@ -31,7 +31,7 @@ async function selectIssueGrouping(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: label }).last().click();
+  await page.locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: label }).last().click();
 }
 
 const longRepoName = "widgets-with-an-extremely-long-repository-name";

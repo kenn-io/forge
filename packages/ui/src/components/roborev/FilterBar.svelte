@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
-  import FilterDropdown from "../shared/FilterDropdown.svelte";
+  import { FilterDropdown } from "@kenn-io/kit-ui";
   import RepoTreePicker from "./RepoTreePicker.svelte";
 
   interface Props {

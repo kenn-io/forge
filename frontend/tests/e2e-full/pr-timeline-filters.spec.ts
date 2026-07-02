@@ -59,7 +59,7 @@ async function openActivityViewMenu(
   surface: ".pull-detail" | ".issue-detail" = ".pull-detail",
 ): Promise<Locator> {
   await page.locator(surface).getByRole("button", { name: "View", exact: true }).click();
-  const menu = page.locator(".filter-dropdown");
+  const menu = page.locator(".kit-filter-dropdown__panel");
   await expect(menu).toBeVisible();
   return menu;
 }
@@ -183,7 +183,7 @@ test.describe("PR timeline filters", () => {
       "Compact",
     );
     await openActivityViewMenu(page, ".issue-detail");
-    await expect(page.locator(".filter-dropdown").getByRole("button", { name: "Messages" })).toHaveCount(0);
+    await expect(page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Messages" })).toHaveCount(0);
   });
 
   test("keeps normal reply composer open when refreshed detail regroups a review thread", async ({ page }) => {

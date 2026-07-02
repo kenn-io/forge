@@ -15,9 +15,9 @@ async function waitForTable(page: Page): Promise<void> {
 }
 
 async function selectActivityFilterItem(page: Page, label: string): Promise<void> {
-  await page.locator(".filter-btn").click();
-  await page.locator(".filter-dropdown").waitFor({ state: "visible" });
-  await page.locator(".filter-item", { hasText: label }).click();
+  await page.locator(".kit-filter-dropdown__btn").click();
+  await page.locator(".kit-filter-dropdown__panel").waitFor({ state: "visible" });
+  await page.locator(".kit-filter-dropdown__item", { hasText: label }).click();
 }
 
 // Verify every badge in the activity table matches the expected text.

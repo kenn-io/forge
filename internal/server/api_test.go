@@ -1833,6 +1833,79 @@ func TestAPIListPullsPreservesNewerActivityAfterIndexSync(t *testing.T) {
 	assert.Equal(int64(2), (*resp.JSON200)[1].Number)
 }
 
+func TestAPISyncPRUsesForcePushTimelineForPullListActivity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	forcePushAt := base.Add(3 * time.Hour)
+	otherActivity := base.Add(2 * time.Hour)
+	headSHA := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+	str := func(v string) *string { return &v }
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(1001)
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				Title:     str("Force push activity"),
+				State:     str("open"),
+				HTMLURL:   str("https://github.com/acme/widget/pull/1"),
+				User:      &gh.User{Login: str("octocat")},
+				CreatedAt: &gh.Timestamp{Time: base.Add(-time.Hour)},
+				UpdatedAt: &gh.Timestamp{Time: base},
+				Head:      &gh.PullRequestBranch{Ref: str("feature"), SHA: &headSHA},
+				Base:      &gh.PullRequestBranch{Ref: str("main")},
+			}, nil
+		},
+		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+			return nil, nil
+		},
+		listPRTimelineEventsFn: func(context.Context, string, string, int) ([]ghclient.PullRequestTimelineEvent, error) {
+			return []ghclient.PullRequestTimelineEvent{{
+				EventType: "force_push",
+				Actor:     "octocat",
+				BeforeSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				AfterSHA:  headSHA,
+				Ref:       "feature",
+				CreatedAt: forcePushAt,
+			}}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRTitle("Force push activity"),
+		withSeedPRTimes(base.Add(-time.Hour), base, base),
+	)
+	seedPR(t, database, "acme", "widget", 2,
+		withSeedPRTitle("Other activity"),
+		withSeedPRTimes(base.Add(-time.Hour), otherActivity, otherActivity),
+	)
+	client := setupTestClient(t, srv)
+
+	syncResp, err := client.HTTP.SyncPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, syncResp.StatusCode(), string(syncResp.Body))
+	require.NotNil(syncResp.JSON200)
+	assert.Equal(forcePushAt, syncResp.JSON200.MergeRequest.LastActivityAt.UTC())
+
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	assert.Equal(forcePushAt, detailResp.JSON200.MergeRequest.LastActivityAt.UTC())
+
+	listResp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode(), string(listResp.Body))
+	require.NotNil(listResp.JSON200)
+	require.Len(*listResp.JSON200, 2)
+	assert.Equal(int64(1), (*listResp.JSON200)[0].Number)
+	assert.Equal(forcePushAt, (*listResp.JSON200)[0].LastActivityAt.UTC())
+	assert.Equal(int64(2), (*listResp.JSON200)[1].Number)
+}
+
 func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

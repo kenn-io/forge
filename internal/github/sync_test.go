@@ -3557,6 +3557,64 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 	assert.Contains(commit.MetadataJSON, `"commit_order":1`)
 }
 
+func TestRefreshTimelineUsesForcePushForLastActivity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	forcePushAt := now.Add(30 * time.Minute)
+	commitSHA := "abc123def456"
+	commitMsg := "fix: tighten validation"
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     1,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/pull/1",
+		Title:          "force push activity",
+		Author:         "dev",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      now.Add(-3 * time.Hour),
+		UpdatedAt:      now.Add(-2 * time.Hour),
+		LastActivityAt: now.Add(-2 * time.Hour),
+	})
+	require.NoError(err)
+
+	mc := &mockClient{
+		commits: []*gh.RepositoryCommit{{
+			SHA: &commitSHA,
+			Commit: &gh.Commit{
+				Message: &commitMsg,
+				Author:  &gh.CommitAuthor{Name: new("dev"), Date: makeTimestamp(now.Add(-1 * time.Hour))},
+			},
+		}},
+		timelineEvents: []PullRequestTimelineEvent{{
+			EventType: "force_push",
+			Actor:     "alice",
+			BeforeSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			AfterSHA:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			Ref:       "feature",
+			CreatedAt: forcePushAt,
+		}},
+		reviews:  []*gh.PullRequestReview{},
+		comments: []*gh.IssueComment{},
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
+	require.NoError(syncer.refreshTimeline(ctx, repo, repoID, mrID, buildOpenPR(1, now.Add(-2*time.Hour))))
+
+	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal(forcePushAt, pr.LastActivityAt)
+}
+
 func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -11375,7 +11433,7 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(mr)
 	require.NotNil(mr.DetailFetchedAt)
-	assert.Equal(now.UTC(), mr.LastActivityAt.UTC())
+	assert.Equal(timelineAt.Add(time.Minute).UTC(), mr.LastActivityAt.UTC())
 
 	events, err := d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)

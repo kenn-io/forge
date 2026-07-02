@@ -5262,7 +5262,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// a full REST fetch. Derived fields from truncated data would
 	// overwrite correct values with partial counts.
 	if bulk.CommentsComplete {
-		lastActivity := computeLastActivity(bulk.PR, bulk.Comments, nil, nil)
+		lastActivity := computeLastActivity(bulk.PR, bulk.Comments, nil, nil, nil)
 		// When reviews/commits are truncated this cycle, any stored
 		// review/commit/force-push event with a newer timestamp must
 		// still win so the dashboard ordering doesn't regress.
@@ -5297,7 +5297,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	if allComplete {
 		reviewDecision := DeriveReviewDecision(bulk.Reviews)
 		lastActivity := computeLastActivity(
-			bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits,
+			bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits, bulk.TimelineEvents,
 		)
 		if err := s.db.UpdateMRDerivedFields(
 			ctx, repoID, number, db.MRDerivedFields{
@@ -6215,7 +6215,7 @@ func (s *Syncer) refreshTimeline(
 	}
 
 	reviewDecision := DeriveReviewDecision(reviews)
-	lastActivityAt := computeLastActivity(ghPR, comments, reviews, commits)
+	lastActivityAt := computeLastActivity(ghPR, comments, reviews, commits, timelineEvents)
 
 	return s.db.UpdateMRDerivedFields(ctx, repoID, number, db.MRDerivedFields{
 		ReviewDecision: reviewDecision,
@@ -6470,6 +6470,7 @@ func computeLastActivity(
 	comments []*gh.IssueComment,
 	reviews []*gh.PullRequestReview,
 	commits []*gh.RepositoryCommit,
+	timelineEvents []PullRequestTimelineEvent,
 ) time.Time {
 	latest := time.Time{}
 	if ghPR.UpdatedAt != nil {
@@ -6491,6 +6492,11 @@ func computeLastActivity(
 			c.GetCommit().Author.Date != nil &&
 			c.GetCommit().Author.Date.After(latest) {
 			latest = c.GetCommit().Author.Date.Time
+		}
+	}
+	for _, event := range timelineEvents {
+		if event.CreatedAt.After(latest) {
+			latest = event.CreatedAt
 		}
 	}
 	return latest

@@ -165,6 +165,18 @@ into each test's `t.TempDir`, and opens the copy with `OpenPreparedForTest`.
 That preserves per-test isolation without paying migration setup for every
 fixture.
 
+### File Permission Fixtures
+
+A fixture that needs a deliberately permissive file mode (for example a 0644
+`auth_token` to prove the code narrows it to 0600) must `os.Chmod` after
+creating the file. Create modes in `os.WriteFile`/`os.OpenFile` are narrowed
+by the process umask — on a umask-077 machine a "0644" fixture is silently
+created 0600 and the test passes against broken code. Chmod is not
+umask-masked. The same applies in production code: `os.WriteFile` only applies
+its mode when creating the file, so overwriting an existing file keeps that
+file's old permissions (see `runtimelock.writeMintedToken`, which removes the
+old token file first for exactly this reason).
+
 ### Sleep And Timer Tests
 
 Do not add sleeps as a synchronization mechanism. Prefer a channel closed by

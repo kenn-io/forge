@@ -113,6 +113,14 @@ Components may still display `detail` as user-facing text, but behavior must use
 the typed code. Examples: disable or explain unavailable provider operations
 from `unsupportedCapability`, and show retry timing from `rateLimited`.
 
+Wrappers in the shared API fetch pipeline (`createRuntimeClient` in
+`frontend/src/lib/api/runtime.ts`) must be timing-transparent: return the
+inner promise unchanged and observe it on a side branch, never
+`async`/`await` the response before handing it back. An extra await inserts a
+microtask into every API response, which shifts when data lands relative to
+user interactions and breaks response-ordering-sensitive components and tests
+(see `detectUnauthorized`, which flips the auth store on 401 this way).
+
 ## Tests
 
 Use wire-level server tests with real SQLite for API error contracts. Coverage

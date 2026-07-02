@@ -425,8 +425,11 @@ func run(opts serve.Options) error {
 		slog.Warn("write runtime metadata", "err", err)
 	}
 
+	// The startup handler must already enforce the auth token: runtime
+	// metadata is written above, so `middleman auth url` can hand out a
+	// bootstrap link before the full server swaps in.
 	startupHandler := server.NewStartupHandler(
-		assets, cfg, server.ServerOptions{}, ln,
+		assets, cfg, server.ServerOptions{APIAuthToken: enforcedToken}, ln,
 	)
 	switcher := server.NewSwitchHandler(startupHandler)
 	httpSrv := &http.Server{

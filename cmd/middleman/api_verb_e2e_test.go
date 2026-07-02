@@ -54,17 +54,18 @@ func TestAPIVerbE2E(t *testing.T) {
 	waitForFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
 	waitForFile(t, runtimelock.AuthTokenPath(dataDir), 10*time.Second)
 
+	// Readiness: /healthz is auth-exempt and flips from the startup
+	// 503 to 200 once the full server swaps in. Unauthenticated /api
+	// requests 401 in both phases, so they cannot signal readiness.
+	waitForDaemonReady(t, port)
+
 	// Enforcement proof: a credential-less request is rejected.
-	require.Eventually(func() bool {
-		resp, err := http.Get(fmt.Sprintf(
-			"http://127.0.0.1:%d/api/v1/snapshot", port,
-		))
-		if err != nil {
-			return false
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode == http.StatusUnauthorized
-	}, 10*time.Second, 100*time.Millisecond,
+	resp, err := http.Get(fmt.Sprintf(
+		"http://127.0.0.1:%d/api/v1/snapshot", port,
+	))
+	require.NoError(err)
+	resp.Body.Close()
+	require.Equal(http.StatusUnauthorized, resp.StatusCode,
 		"credential-less API request must 401")
 
 	run := func(args ...string) (string, string, int) {
@@ -124,6 +125,21 @@ func TestAPIVerbE2E(t *testing.T) {
 	assert.Equal(2, code)
 	assert.Empty(out)
 	assert.Contains(errOut, "no middleman daemon is running")
+}
+
+// waitForDaemonReady polls /healthz until the full server has swapped
+// in. /healthz is auth-exempt and reports 503 during the startup
+// window, so a 200 means the daemon is fully ready.
+func waitForDaemonReady(t *testing.T, port int) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, 30*time.Second, 100*time.Millisecond, "daemon must become ready")
 }
 
 func appendConfig(t *testing.T, path, extra string) {

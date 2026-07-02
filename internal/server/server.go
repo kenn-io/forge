@@ -198,8 +198,9 @@ type Server struct {
 	toolingStatus toolingStatusCache
 	toolingRun    toolingRunner
 
-	// apiAuthToken gates /api routes when non-empty (api_auth.go).
-	apiAuthToken string
+	// auth runs the auth-session routes and gates /api routes when its
+	// token is non-empty (api_auth.go).
+	auth authGate
 
 	// sshFleet relays API exchanges to fleet peers reached over
 	// ssh(1); nil when no ssh peers are configured (fleet_ssh.go).
@@ -688,7 +689,7 @@ func newServer(
 		bootCfgSnapshot:         snapshotStartupConfig(cfg),
 		runtimeStripEnvVars:     initialRuntimeStripEnvNames(cfg),
 		options:                 options,
-		apiAuthToken:            options.APIAuthToken,
+		auth:                    authGate{basePath: basePath, token: options.APIAuthToken},
 		now:                     time.Now,
 		hub:                     NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		tmuxActivity:            newTmuxActivityTracker(nil),
@@ -1110,19 +1111,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.checkHost(w, r) {
 		return
 	}
-	if s.handleLogout(w, r) {
+	if s.auth.serveAuthRoutes(w, r) {
 		return
-	}
-	if s.apiAuthToken != "" {
-		if s.handleAuthBootstrap(w, r) {
-			return
-		}
-		if s.handleLogin(w, r) {
-			return
-		}
-		if s.isGatedAPIRequest(r) && !s.authorizeAPIRequest(w, r) {
-			return
-		}
 	}
 	if r.Method != http.MethodGet && s.isMutatingAPIRequest(r) {
 		if !checkCSRF(w, r, s.isKataProxyAPIRequest(r)) {

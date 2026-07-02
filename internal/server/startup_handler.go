@@ -43,13 +43,18 @@ type startupHandler struct {
 	hostOpts     HostCheckOptions
 	allowedHosts map[string]struct{}
 	basePath     string
+	auth         authGate
 	spa          http.Handler
 }
 
 // NewStartupHandler returns a minimal handler for the window between listener
 // bind and full backend readiness. It serves the real SPA shell and frontend
 // assets immediately, while API and websocket routes report service unavailable
-// until the full server is swapped in.
+// until the full server is swapped in. The auth-session routes and token gate
+// (options.APIAuthToken) are live from the start: `middleman auth url` prints
+// a bootstrap link as soon as runtime metadata exists, which is before the
+// swap, so the link must already exchange the token for a cookie instead of
+// falling through to the SPA with ?auth_token= left in the location bar.
 func NewStartupHandler(
 	frontend fs.FS,
 	cfg *config.Config,
@@ -78,6 +83,7 @@ func NewStartupHandler(
 		hostOpts:     hostOpts,
 		allowedHosts: allowedHostsForListener(ln),
 		basePath:     basePath,
+		auth:         authGate{basePath: basePath, token: options.APIAuthToken},
 		spa:          spa,
 	}
 }
@@ -96,6 +102,9 @@ func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !checkListenerHost(w, r, h.allowedHosts) {
+		return
+	}
+	if h.auth.serveAuthRoutes(w, r) {
 		return
 	}
 	h.serve(w, r)

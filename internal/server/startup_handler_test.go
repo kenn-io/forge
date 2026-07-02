@@ -95,6 +95,107 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 	assert.Equal("public, max-age=31536000, immutable", assetRR.Header().Get("Cache-Control"))
 }
 
+// TestStartupHandlerServesAuthDuringStartup pins the startup window:
+// `middleman auth url` prints a bootstrap link as soon as runtime
+// metadata exists, which is before the full server swaps in, so the
+// startup handler must already exchange ?auth_token= for the session
+// cookie (instead of serving the SPA with the token stuck in the URL),
+// honor POST /auth/login and /auth/logout, and 401 unauthenticated API
+// requests rather than leak the unauthenticated 503 contract.
+func TestStartupHandlerServesAuthDuringStartup(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
+		},
+	}
+	cfg := &config.Config{
+		Host:     "127.0.0.1",
+		Port:     8091,
+		BasePath: "/",
+	}
+	handler := NewStartupHandler(
+		frontend,
+		cfg,
+		ServerOptions{APIAuthToken: "secret-token"},
+		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
+	)
+	do := func(req *http.Request) *httptest.ResponseRecorder {
+		req.Host = "127.0.0.1:8091"
+		req.RemoteAddr = "127.0.0.1:1234"
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		return rr
+	}
+
+	rr := do(httptest.NewRequest(http.MethodGet, "/?auth_token=secret-token", nil))
+	require.Equal(http.StatusSeeOther, rr.Code,
+		"the bootstrap link must not fall through to the SPA during startup")
+	assert.Equal("/", rr.Header().Get("Location"),
+		"token must be stripped from the redirect target")
+	cookies := rr.Result().Cookies()
+	require.Len(cookies, 1)
+	assert.Equal("middleman_auth", cookies[0].Name)
+
+	loginReq := httptest.NewRequest(
+		http.MethodPost, "/auth/login", strings.NewReader(`{"token":"secret-token"}`),
+	)
+	loginReq.Header.Set("Content-Type", "application/json")
+	rr = do(loginReq)
+	assert.Equal(http.StatusNoContent, rr.Code)
+	assert.Len(rr.Result().Cookies(), 1)
+
+	rr = do(httptest.NewRequest(http.MethodGet, "/auth/logout", nil))
+	require.Equal(http.StatusSeeOther, rr.Code)
+	logoutCookies := rr.Result().Cookies()
+	require.Len(logoutCookies, 1)
+	assert.Negative(logoutCookies[0].MaxAge, "cookie must be expired")
+
+	rr = do(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
+	assert.Equal(http.StatusUnauthorized, rr.Code,
+		"unauthenticated API requests are 401 during startup, same as after")
+
+	apiReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
+	apiReq.Header.Set("Authorization", "Bearer secret-token")
+	rr = do(apiReq)
+	assert.Equal(http.StatusServiceUnavailable, rr.Code,
+		"authenticated API requests still see the starting contract")
+}
+
+// TestStartupHandlerServesAuthUnderBasePath pins the same startup
+// bootstrap when middleman is mounted under a base path, matching the
+// URL `middleman auth url` prints for proxied setups.
+func TestStartupHandlerServesAuthUnderBasePath(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cfg := &config.Config{
+		Host:     "127.0.0.1",
+		Port:     8091,
+		BasePath: "/middleman/",
+	}
+	handler := NewStartupHandler(
+		fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte(`<html></html>`)}},
+		cfg,
+		ServerOptions{APIAuthToken: "secret-token"},
+		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
+	)
+
+	target := strings.TrimPrefix(
+		AuthBootstrapURL("http://127.0.0.1:8091/middleman", "secret-token"),
+		"http://127.0.0.1:8091",
+	)
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Host = "127.0.0.1:8091"
+	req.RemoteAddr = "127.0.0.1:1234"
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusSeeOther, rr.Code)
+	assert.Equal("/middleman/", rr.Header().Get("Location"))
+	assert.Len(rr.Result().Cookies(), 1)
+}
+
 func TestStartupHandlerUsesHostValidation(t *testing.T) {
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{

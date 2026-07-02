@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { Button } from "@kenn-io/kit-ui";
   import SendIcon from "@lucide/svelte/icons/send";
   import XIcon from "@lucide/svelte/icons/x";
   import { tick } from "svelte";
   import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
   import { getStores } from "../../context.js";
-  import ActionButton from "../shared/ActionButton.svelte";
 
   interface Props {
     range: DiffReviewLineRange;
@@ -87,7 +87,7 @@
     <p class="composer-error">{error}</p>
   {/if}
   <div class="composer-actions">
-    <ActionButton
+    <Button
       class="composer-btn"
       size="sm"
       onclick={onclose}
@@ -95,8 +95,8 @@
     >
       <XIcon size={14} />
       Cancel
-    </ActionButton>
-    <ActionButton
+    </Button>
+    <Button
       class="composer-btn composer-btn--primary"
       tone="info"
       surface="solid"
@@ -106,7 +106,7 @@
     >
       <SendIcon size={14} />
       {submitting ? "Saving..." : "Add comment"}
-    </ActionButton>
+    </Button>
   </div>
 </div>
 
@@ -174,11 +174,11 @@
     margin-top: 8px;
   }
 
-  :global(.composer-btn.action-button) {
+  :global(.composer-btn.kit-button) {
     min-height: 28px;
   }
 
-  :global(.composer-btn--primary.action-button) {
+  :global(.composer-btn--primary.kit-button) {
     border-color: var(--accent-blue);
     background: var(--accent-blue);
     color: #fff;

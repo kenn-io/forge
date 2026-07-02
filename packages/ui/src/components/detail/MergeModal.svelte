@@ -1,11 +1,11 @@
 <script lang="ts">
+  import { Button } from "@kenn-io/kit-ui";
   import { onMount, untrack } from "svelte";
 
   import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
-  import ActionButton from "../shared/ActionButton.svelte";
 
   const client = getClient();
 
@@ -295,7 +295,7 @@
     {/if}
 
     <div class="modal-footer">
-      <ActionButton
+      <Button
         class="btn btn--secondary"
         onclick={onclose}
         disabled={merging}
@@ -303,8 +303,8 @@
         surface="outline"
       >
         Cancel
-      </ActionButton>
-      <ActionButton
+      </Button>
+      <Button
         class="btn btn--primary btn--green"
         onclick={handleMerge}
         disabled={merging || headPinMissing}
@@ -312,9 +312,9 @@
         surface="solid"
       >
         {primaryButtonLabel()}
-      </ActionButton>
+      </Button>
       {#if deferUntilChecksPass}
-        <ActionButton
+        <Button
           class="btn btn--merge-anyway"
           onclick={handleMergeAnyway}
           disabled={merging || headPinMissing}
@@ -322,7 +322,7 @@
           surface="soft"
         >
           {mergeAnywayButtonLabel()}
-        </ActionButton>
+        </Button>
       {/if}
     </div>
   </div>

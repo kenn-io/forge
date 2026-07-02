@@ -418,10 +418,10 @@ test.describe("detail action buttons", () => {
     await expect(merge).toBeVisible();
     await expect(close).toBeVisible();
 
-    // All action buttons use the shared action-button base class
+    // All action buttons use the shared kit-button base class
     for (const btn of [approve, merge, close]) {
       const classes = await btn.getAttribute("class");
-      expect(classes).toContain("action-button");
+      expect(classes).toContain("kit-button");
     }
   });
 

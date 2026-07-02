@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ActionButton } from "@middleman/ui";
+  import { Button } from "@middleman/ui";
 
   interface Props {
     title: string;
@@ -22,9 +22,9 @@
   <h2>{title}</h2>
   <p>{message}</p>
   {#if actionLabel && onaction}
-    <ActionButton tone="info" surface="soft" onclick={onaction}>
+    <Button tone="info" surface="soft" onclick={onaction}>
       {actionLabel}
-    </ActionButton>
+    </Button>
   {/if}
 </div>
 

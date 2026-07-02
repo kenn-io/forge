@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { Button } from "@kenn-io/kit-ui";
   import SendIcon from "@lucide/svelte/icons/send";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import { getStores } from "../../context.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
-  import ActionButton from "../shared/ActionButton.svelte";
-  import SelectDropdown from "../shared/SelectDropdown.svelte";
+    import SelectDropdown from "../shared/SelectDropdown.svelte";
   import DiffReviewDraftTrayItem from "./DiffReviewDraftTrayItem.svelte";
 
   interface Props {
@@ -61,7 +61,7 @@
   <section class="draft-tray" aria-label="Draft review comments">
     <div class="tray-header">
       <strong>{comments.length} draft {comments.length === 1 ? "comment" : "comments"}</strong>
-      <ActionButton
+      <Button
         class="icon-btn"
         title="Discard review draft"
         ariaLabel="Discard review draft"
@@ -70,7 +70,7 @@
         disabled={draftActionDisabled}
       >
         <TrashIcon size={14} />
-      </ActionButton>
+      </Button>
     </div>
     <div class="draft-list">
       {#each comments as comment (comment.id)}
@@ -103,7 +103,7 @@
         title="Review action"
         disabled={submitting || supportedActions.length === 0}
       />
-      <ActionButton
+      <Button
         class="publish-btn"
         tone="info"
         surface="solid"
@@ -114,7 +114,7 @@
       >
         <SendIcon size={14} />
         {submitting ? "Publishing..." : "Publish review"}
-      </ActionButton>
+      </Button>
     </div>
   </section>
 {/if}
@@ -183,12 +183,12 @@
   }
 
   :global(.review-action-select .select-dropdown-trigger),
-  :global(.publish-btn.action-button) {
+  :global(.publish-btn.kit-button) {
     min-height: 28px;
     font-size: var(--font-size-sm);
   }
 
-  :global(.publish-btn.action-button) {
+  :global(.publish-btn.kit-button) {
     border-color: var(--accent-blue);
     background: var(--accent-blue);
     color: var(--bg-surface);
@@ -210,7 +210,7 @@
       flex: 1 1 150px;
     }
 
-    :global(.publish-btn.action-button) {
+    :global(.publish-btn.kit-button) {
       flex: 1 1 170px;
     }
   }

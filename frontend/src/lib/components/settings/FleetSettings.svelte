@@ -2,7 +2,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import { ActionButton } from "@middleman/ui";
+  import { Button } from "@middleman/ui";
   import type {
     FleetPeer,
     FleetSSHPeer,
@@ -306,7 +306,7 @@
         <h3>HTTP peers</h3>
         <p>Use only on a trusted network boundary; hub credentials are not forwarded.</p>
       </div>
-      <ActionButton
+      <Button
         size="sm"
         type="button"
         onclick={addHTTPPeer}
@@ -314,7 +314,7 @@
       >
         <PlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         Add HTTP peer
-      </ActionButton>
+      </Button>
     </div>
 
     {#if httpPeerDrafts.length === 0}
@@ -362,7 +362,7 @@
                   />
                 </td>
                 <td class="action-cell">
-                  <ActionButton
+                  <Button
                     size="sm"
                     tone="danger"
                     surface="outline"
@@ -373,7 +373,7 @@
                     title={`Remove HTTP peer ${label}`}
                   >
                     <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  </ActionButton>
+                  </Button>
                 </td>
               </tr>
             {/each}
@@ -389,7 +389,7 @@
         <h3>SSH peers</h3>
         <p>Private relay members reached by running the peer CLI remotely.</p>
       </div>
-      <ActionButton
+      <Button
         size="sm"
         type="button"
         onclick={addSSHPeer}
@@ -397,7 +397,7 @@
       >
         <PlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         Add SSH peer
-      </ActionButton>
+      </Button>
     </div>
 
     {#if sshPeerDrafts.length === 0}
@@ -478,7 +478,7 @@
                   />
                 </td>
                 <td class="action-cell">
-                  <ActionButton
+                  <Button
                     size="sm"
                     tone="danger"
                     surface="outline"
@@ -489,7 +489,7 @@
                     title={`Remove SSH peer ${label}`}
                   >
                     <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  </ActionButton>
+                  </Button>
                 </td>
               </tr>
             {/each}
@@ -500,7 +500,7 @@
   </section>
 
   <div class="settings-actions">
-    <ActionButton
+    <Button
       size="sm"
       type="button"
       onclick={resetDraft}
@@ -508,8 +508,8 @@
     >
       <RotateCcwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
       Reset
-    </ActionButton>
-    <ActionButton
+    </Button>
+    <Button
       tone="info"
       surface="solid"
       type="button"
@@ -517,7 +517,7 @@
       disabled={!canSave}
     >
       Save fleet federation
-    </ActionButton>
+    </Button>
   </div>
 </div>
 

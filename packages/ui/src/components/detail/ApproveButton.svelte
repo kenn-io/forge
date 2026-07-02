@@ -1,9 +1,9 @@
 <script lang="ts">
+  import { Button } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
   import { tick } from "svelte";
   import { getClient, getStores } from "../../context.js";
-  import ActionButton from "../shared/ActionButton.svelte";
-  import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
+    import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
 
   const client = getClient();
   const { detail, pulls } = getStores();
@@ -132,7 +132,7 @@
 </script>
 
 <div class={["approve-section", expanded && "approve-section--open"]}>
-  <ActionButton
+  <Button
     class="btn btn--approve"
     onclick={() => {
       if (disabled || submitting) return;
@@ -151,7 +151,7 @@
     {size}
   >
     <CheckIcon size="14" strokeWidth="2.4" aria-hidden="true" />
-  </ActionButton>
+  </Button>
 
   {#if expanded}
     <div class="approve-popover" role="dialog" aria-label="Approve pull request">
@@ -166,7 +166,7 @@
         <p class="approve-error">{error}</p>
       {/if}
       <div class="approve-actions">
-        <ActionButton
+        <Button
           class="btn btn--secondary"
           onclick={() => { expanded = false; }}
           disabled={submitting}
@@ -174,8 +174,8 @@
           surface="outline"
         >
           Cancel
-        </ActionButton>
-        <ActionButton
+        </Button>
+        <Button
           class="btn btn--primary btn--green"
           onclick={() => void handleApprove()}
           disabled={submitting || disabled}
@@ -184,7 +184,7 @@
           title="Submit an approving code review on this pull request"
         >
           {submitting ? "Approving\u2026" : "Approve"}
-        </ActionButton>
+        </Button>
       </div>
     </div>
   {/if}

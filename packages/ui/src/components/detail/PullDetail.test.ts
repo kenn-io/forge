@@ -560,7 +560,7 @@ describe("PullDetail approvals", () => {
     const labelsIcon = labelsAction.querySelector("svg");
     const labelsItem = labelsAction.closest(".actions-menu-popover__item--labels");
 
-    expect(labelsAction.classList.contains("action-button--sm")).toBe(true);
+    expect(labelsAction.classList.contains("kit-button--sm")).toBe(true);
     expect(labelsAction.parentElement).toBe(labelsItem);
     expect(labelsItem?.classList.contains("label-editor-anchor")).toBe(true);
     expect(labelsIcon?.getAttribute("width")).toBe("14");

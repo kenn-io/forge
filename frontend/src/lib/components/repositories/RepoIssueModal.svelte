@@ -1,10 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import {
-    ActionButton,
-    Chip,
-    CommentEditor,
-  } from "@middleman/ui";
+  import { Button, Chip,
+    CommentEditor, } from "@middleman/ui";
   import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import {
     repoKey,
@@ -92,9 +89,9 @@
             </Chip>
           {/if}
         </div>
-        <ActionButton size="sm" type="button" onclick={oncancel}>
+        <Button size="sm" type="button" onclick={oncancel}>
           Cancel
-        </ActionButton>
+        </Button>
       </header>
 
       <div class="issue-modal__body">
@@ -133,14 +130,14 @@
       </div>
 
       <footer class="issue-modal__footer">
-        <ActionButton
+        <Button
           type="submit"
           tone="info"
           surface="soft"
           disabled={submitting}
         >
           {submitting ? "Creating..." : "Create issue"}
-        </ActionButton>
+        </Button>
       </footer>
     </form>
   </div>

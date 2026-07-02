@@ -4,7 +4,7 @@
   import FlagIcon from "@lucide/svelte/icons/flag";
   import UserIcon from "@lucide/svelte/icons/user-round";
   import XIcon from "@lucide/svelte/icons/x";
-  import { ActionButton, Chip, SelectDropdown } from "@middleman/ui";
+  import { Button, Chip, SelectDropdown } from "@middleman/ui";
   import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
   import DatePicker from "../shared/DatePicker.svelte";
   import TypeaheadTrigger, { type TypeaheadOption } from "../shared/TypeaheadTrigger.svelte";
@@ -324,9 +324,9 @@
     />
   {:else}
     <div class="label-actions">
-      <ActionButton size="sm" surface="outline" label="Add label" onclick={() => { addingLabel = true; }} />
+      <Button size="sm" surface="outline" label="Add label" onclick={() => { addingLabel = true; }} />
       {#if issue.labels.length > 0}
-        <ActionButton
+        <Button
           size="sm"
           surface="outline"
           label={editingLabels ? "Done" : "Edit labels"}

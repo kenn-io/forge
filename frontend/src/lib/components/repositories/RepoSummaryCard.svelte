@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ActionButton, Chip, operationGate } from "@middleman/ui";
+  import { Button, Chip, operationGate } from "@middleman/ui";
   import type { ChipTone } from "@kenn-io/kit-ui";
   import { timeAgo } from "@middleman/ui/utils/time";
   import { ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
@@ -226,7 +226,7 @@
     </div>
 
     <div class="repo-card__actions">
-      <ActionButton
+      <Button
         size="sm"
         tone="neutral"
         surface="outline"
@@ -235,10 +235,10 @@
       >
         <FolderTreeIcon size="14" strokeWidth="2" aria-hidden="true" />
         View repo
-      </ActionButton>
+      </Button>
       {#if summary.repo.capabilities.issue_mutation}
         {@const createIssueGate = operationGate(summary.operations?.create_issue)}
-        <ActionButton
+        <Button
           size="sm"
           tone="neutral"
           surface="outline"
@@ -247,7 +247,7 @@
           onclick={onopencomposer}
         >
           New issue
-        </ActionButton>
+        </Button>
       {/if}
     </div>
   </div>

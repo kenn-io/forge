@@ -16,8 +16,7 @@
   import EventTimeline from "./EventTimeline.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
-  import ActionButton from "../shared/ActionButton.svelte";
-  import { Chip } from "@kenn-io/kit-ui";
+    import { Button, Chip } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import LabelPicker from "./LabelPicker.svelte";
@@ -945,7 +944,7 @@
           <LabelRow {labels} />
           {#if capabilities.read_labels && capabilities.label_mutation}
             <div class="label-editor-anchor" bind:this={labelPickerAnchor}>
-              <ActionButton
+              <Button
                 class="btn--labels"
                 label="Labels"
                 shortLabel="Labels"
@@ -957,7 +956,7 @@
                 onclick={openLabelPicker}
               >
                 <TagsIcon size="16" aria-hidden="true" />
-              </ActionButton>
+              </Button>
               {#if labelPickerOpen}
                 <div class="label-editor-popover" style={labelPickerStyle} bind:this={labelPickerPopover}>
                   <LabelPicker
@@ -1037,7 +1036,7 @@
       <!-- Actions -->
       <div class="actions-row">
         {#if workspace}
-          <ActionButton
+          <Button
             class="btn--workspace"
             disabled={staleIssue}
             onclick={() => {
@@ -1051,9 +1050,9 @@
             shortLabel="Workspace"
           >
             <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
+          </Button>
         {:else}
-          <ActionButton
+          <Button
             class="btn--workspace"
             disabled={workspaceCreating || staleIssue}
             onclick={() => void createWorkspace()}
@@ -1068,7 +1067,7 @@
             shortLabel={workspaceCreating ? "Creating..." : "Create Workspace"}
           >
             <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
+          </Button>
         {/if}
         {#if !workspace}
           <span id={createWorkspaceDescriptionId} class="sr-only">
@@ -1079,7 +1078,7 @@
         {/if}
         {#if issue.State === "open" && capabilities.state_mutation}
           {@const closeGate = operationGate(repoOperations?.close_issue)}
-          <ActionButton
+          <Button
             class="btn--close"
             disabled={stateSubmitting || staleIssue || closeGate.unavailable}
             title={closeGate.unavailable ? closeGate.reason : undefined}
@@ -1094,10 +1093,10 @@
             shortLabel={stateSubmitting ? "Closing..." : "Close"}
           >
             <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
+          </Button>
         {:else if capabilities.state_mutation}
           {@const reopenGate = operationGate(repoOperations?.reopen_issue)}
-          <ActionButton
+          <Button
             class="btn--reopen"
             disabled={stateSubmitting || staleIssue || reopenGate.unavailable}
             title={reopenGate.unavailable ? reopenGate.reason : undefined}
@@ -1112,13 +1111,13 @@
             shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
           >
             <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
+          </Button>
         {/if}
         {#if workspaceError}
           <span class="action-error">{workspaceError}</span>
         {/if}
         {#each actions.issue ?? [] as action (action.id)}
-          <ActionButton
+          <Button
             class="btn--embedding-action"
             onclick={() => {
               if (staleIssue) return;
@@ -1132,7 +1131,7 @@
             size="sm"
           >
             {action.label}
-          </ActionButton>
+          </Button>
         {/each}
         {#if stateError}
           <span class="action-error">{stateError}</span>
@@ -1248,7 +1247,7 @@
                   Reopen the workspace on the branch that is already present in the local clone.
                 </div>
               </div>
-              <ActionButton
+              <Button
                 class="btn btn--primary"
                 onclick={() => void createWorkspace({
                   gitHeadRef: conflict.existingBranch,
@@ -1261,7 +1260,7 @@
                 size="sm"
               >
                 {workspaceCreating ? "Creating..." : "Use Existing Branch"}
-              </ActionButton>
+              </Button>
             </div>
 
             <div class="field">
@@ -1293,7 +1292,7 @@
           </div>
 
           <div class="modal-footer">
-            <ActionButton
+            <Button
               class="btn btn--secondary"
               onclick={closeBranchConflictDialog}
               disabled={workspaceCreating}
@@ -1301,8 +1300,8 @@
               surface="outline"
             >
               Cancel
-            </ActionButton>
-            <ActionButton
+            </Button>
+            <Button
               class="btn btn--primary btn--green"
               onclick={() => void createWorkspace({
                 gitHeadRef: conflict.branchInput,
@@ -1313,7 +1312,7 @@
               surface="solid"
             >
               {workspaceCreating ? "Creating..." : "Create New Branch"}
-            </ActionButton>
+            </Button>
           </div>
         </div>
       </div>
@@ -1874,7 +1873,7 @@
       gap: var(--detail-mobile-space-sm);
     }
 
-    .actions-row :global(.action-button),
+    .actions-row :global(.kit-button),
     .modal-close,
     .field-input {
       min-height: var(--detail-mobile-hit-target);

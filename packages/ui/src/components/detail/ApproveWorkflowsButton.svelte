@@ -1,8 +1,8 @@
 <script lang="ts">
+  import { Button } from "@kenn-io/kit-ui";
   import WorkflowIcon from "@lucide/svelte/icons/workflow";
   import { getClient, getStores } from "../../context.js";
-  import ActionButton from "../shared/ActionButton.svelte";
-  import {
+    import {
     runApproveWorkflows, type PRDetailActionInput,
   } from "./keyboard-actions.js";
 
@@ -82,7 +82,7 @@
 </script>
 
 <div class="workflow-approval-section">
-  <ActionButton
+  <Button
     class="btn btn--workflow-approval"
     onclick={() => void handleApproveWorkflows()}
     disabled={submitting || disabled}
@@ -94,7 +94,7 @@
     {size}
   >
     <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-  </ActionButton>
+  </Button>
   {#if error}
     <p class="workflow-approval-error">{error}</p>
   {/if}

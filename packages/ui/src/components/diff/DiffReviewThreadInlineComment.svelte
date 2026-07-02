@@ -1,11 +1,11 @@
 <script lang="ts">
+  import { Button } from "@kenn-io/kit-ui";
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
   import SendIcon from "@lucide/svelte/icons/send";
   import XIcon from "@lucide/svelte/icons/x";
   import { tick } from "svelte";
   import type { ReviewThread } from "./review-thread-context.js";
   import { reviewThreadLineLabel } from "./review-thread-context.js";
-  import ActionButton from "../shared/ActionButton.svelte";
 
   interface Props {
     thread: ReviewThread;
@@ -165,7 +165,7 @@
           <p class="review-thread-error">{error}</p>
         {/if}
         <div class="review-thread-actions">
-          <ActionButton
+          <Button
             class="review-thread-btn"
             size="sm"
             onclick={cancelReply}
@@ -173,8 +173,8 @@
           >
             <XIcon size={14} />
             Cancel
-          </ActionButton>
-          <ActionButton
+          </Button>
+          <Button
             class="review-thread-btn review-thread-btn--primary"
             tone="info"
             surface="solid"
@@ -184,12 +184,12 @@
           >
             <SendIcon size={14} />
             {submitting ? "Replying..." : "Reply"}
-          </ActionButton>
+          </Button>
         </div>
       </div>
     {:else}
       <div class="review-thread-actions review-thread-actions--idle">
-        <ActionButton
+        <Button
           class="review-thread-btn"
           size="sm"
           surface="soft"
@@ -198,7 +198,7 @@
         >
           <MessageSquareReplyIcon size={14} />
           Reply
-        </ActionButton>
+        </Button>
       </div>
     {/if}
   {/if}
@@ -350,11 +350,11 @@
     }
   }
 
-  :global(.review-thread-btn.action-button) {
+  :global(.review-thread-btn.kit-button) {
     min-height: 28px;
   }
 
-  :global(.review-thread-btn--primary.action-button) {
+  :global(.review-thread-btn--primary.kit-button) {
     border-color: var(--accent-blue);
     background: var(--accent-blue);
     color: #fff;

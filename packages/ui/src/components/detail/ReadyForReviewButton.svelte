@@ -1,8 +1,8 @@
 <script lang="ts">
+  import { Button } from "@kenn-io/kit-ui";
   import SendHorizontalIcon from "@lucide/svelte/icons/send-horizontal";
   import { getClient, getStores } from "../../context.js";
-  import ActionButton from "../shared/ActionButton.svelte";
-  import { runMarkReady, type PRDetailActionInput } from "./keyboard-actions.js";
+    import { runMarkReady, type PRDetailActionInput } from "./keyboard-actions.js";
 
   const client = getClient();
   const { detail, pulls } = getStores();
@@ -69,7 +69,7 @@
 </script>
 
 <div class="ready-section">
-  <ActionButton
+  <Button
     class="btn btn--ready"
     onclick={() => void handleReadyForReview()}
     disabled={submitting || disabled}
@@ -81,7 +81,7 @@
     {size}
   >
     <SendHorizontalIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-  </ActionButton>
+  </Button>
   {#if error}
     <p class="ready-error">{error}</p>
   {/if}

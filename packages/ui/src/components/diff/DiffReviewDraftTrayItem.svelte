@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from "@kenn-io/kit-ui";
   import { onDestroy, onMount, tick } from "svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import PencilIcon from "@lucide/svelte/icons/pencil";
@@ -7,7 +8,6 @@
     DiffReviewDraftComment,
     DiffReviewDraftCommentEditState,
   } from "../../stores/diff-review-draft.svelte.js";
-  import ActionButton from "../shared/ActionButton.svelte";
 
   interface Props {
     comment: DiffReviewDraftComment;
@@ -168,7 +168,7 @@
   </div>
   <div class="draft-actions">
     {#if editing}
-      <ActionButton
+      <Button
         class="icon-btn"
         title="Save draft comment"
         ariaLabel="Save draft comment"
@@ -177,8 +177,8 @@
         disabled={saveDisabled}
       >
         <CheckIcon size={13} />
-      </ActionButton>
-      <ActionButton
+      </Button>
+      <Button
         class="icon-btn"
         title="Cancel editing draft comment"
         ariaLabel="Cancel editing draft comment"
@@ -187,9 +187,9 @@
         disabled={editDisabled}
       >
         <XIcon size={13} />
-      </ActionButton>
+      </Button>
     {:else}
-      <ActionButton
+      <Button
         class="icon-btn"
         title="Edit draft comment"
         ariaLabel="Edit draft comment"
@@ -198,8 +198,8 @@
         disabled={disabled}
       >
         <PencilIcon size={13} />
-      </ActionButton>
-      <ActionButton
+      </Button>
+      <Button
         class="icon-btn"
         title="Delete draft comment"
         ariaLabel="Delete draft comment"
@@ -208,7 +208,7 @@
         disabled={disabled}
       >
         <XIcon size={13} />
-      </ActionButton>
+      </Button>
     {/if}
   </div>
 </div>
@@ -309,7 +309,7 @@
     gap: 4px;
   }
 
-  :global(.icon-btn.action-button) {
+  :global(.icon-btn.kit-button) {
     width: 26px;
     height: 26px;
     min-height: 26px;

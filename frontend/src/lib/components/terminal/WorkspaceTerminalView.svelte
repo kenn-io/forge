@@ -69,13 +69,10 @@
     clearActiveTerminalDrag,
     readRuntimeSessionDrag,
   } from "./terminal-drag";
-  import {
-    ActionButton,
-    CollapsibleResizableSidebar,
+  import { Button, CollapsibleResizableSidebar,
     SplitResizeHandle,
     WorkspaceRightSidebar,
-    type SplitResizeEvent,
-  } from "@middleman/ui";
+    type SplitResizeEvent, } from "@middleman/ui";
   import {
     AlertIcon,
     RefreshIcon,
@@ -2494,7 +2491,7 @@
                   class="workspace-zero-inline-action"
                   aria-label="Create Workspace example"
                 >
-                  <ActionButton
+                  <Button
                     class="workspace-zero-create-button"
                     disabled
                     tone="info"
@@ -2509,7 +2506,7 @@
                       strokeWidth="2.2"
                       aria-hidden="true"
                     />
-                  </ActionButton>
+                  </Button>
                 </span>
                 button to launch a workspace.
               </p>

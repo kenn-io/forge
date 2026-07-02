@@ -2,7 +2,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import { ActionButton, SelectDropdown } from "@middleman/ui";
+  import { Button, SelectDropdown } from "@middleman/ui";
   import type {
     ConfigRepo,
     KataProjectRepoMapping,
@@ -185,7 +185,7 @@
         <h3>Manual mappings</h3>
         <p>Automatic `.kata.toml` matches are used when no row is configured here.</p>
       </div>
-      <ActionButton
+      <Button
         size="sm"
         type="button"
         onclick={addMapping}
@@ -193,7 +193,7 @@
       >
         <PlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         Add mapping
-      </ActionButton>
+      </Button>
     </div>
 
     {#if repoOptions.length === 0}
@@ -246,7 +246,7 @@
                   />
                 </td>
                 <td class="action-cell">
-                  <ActionButton
+                  <Button
                     size="sm"
                     tone="danger"
                     surface="outline"
@@ -257,7 +257,7 @@
                     title={`Remove Kata project mapping ${label}`}
                   >
                     <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  </ActionButton>
+                  </Button>
                 </td>
               </tr>
             {/each}
@@ -268,7 +268,7 @@
   </section>
 
   <div class="settings-actions">
-    <ActionButton
+    <Button
       size="sm"
       type="button"
       onclick={resetDraft}
@@ -276,8 +276,8 @@
     >
       <RotateCcwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
       Reset
-    </ActionButton>
-    <ActionButton
+    </Button>
+    <Button
       tone="info"
       surface="solid"
       type="button"
@@ -285,7 +285,7 @@
       disabled={!canSave}
     >
       Save Kata mappings
-    </ActionButton>
+    </Button>
   </div>
 </div>
 

@@ -1551,7 +1551,7 @@
   .focus-layout--phone :global(.gh-link),
   .focus-layout--phone :global(.copy-icon-btn),
   .focus-layout--phone :global(.copy-number-btn),
-  .focus-layout--phone :global(.action-button),
+  .focus-layout--phone :global(.kit-button),
   .focus-layout--phone :global(.detail-tab),
   .focus-layout--phone :global(.add-description-btn) {
     min-width: var(--focus-detail-hit-target);
@@ -1564,7 +1564,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .focus-layout--phone :global(.actions-row .action-button) {
+  .focus-layout--phone :global(.actions-row .kit-button) {
     width: 100%;
     justify-content: center;
   }

@@ -35,8 +35,7 @@
     runOpenMerge,
     type PRDetailActionInput,
   } from "./keyboard-actions.js";
-  import ActionButton from "../shared/ActionButton.svelte";
-  import SelectDropdown from "../shared/SelectDropdown.svelte";
+    import SelectDropdown from "../shared/SelectDropdown.svelte";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
@@ -46,7 +45,7 @@
   import UserCheckIcon from "@lucide/svelte/icons/user-check";
   import UsersIcon from "@lucide/svelte/icons/users";
   import XIcon from "@lucide/svelte/icons/x";
-  import { Chip } from "@kenn-io/kit-ui";
+  import { Button, Chip } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import LabelPicker from "./LabelPicker.svelte";
@@ -1477,7 +1476,7 @@
             class:pull-detail-content--has-compact-actions={pr.State !== "merged" && !stalePR}
           >
             {#snippet labelActionButton(iconSize = 16)}
-              <ActionButton
+              <Button
                 class="btn--labels"
                 label="Labels"
                 shortLabel="Labels"
@@ -1489,7 +1488,7 @@
                 onclick={openLabelPicker}
               >
                 <TagsIcon size={iconSize} aria-hidden="true" />
-              </ActionButton>
+              </Button>
             {/snippet}
 
       {#if detailStore.isStaleRefreshing()}
@@ -1893,7 +1892,7 @@
                 : mergeOpUnavailable
                   ? mergeOp?.unavailable_reason ?? ""
                   : ""}
-            <ActionButton
+            <Button
               class="btn--merge"
               disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
               title={mergeTitle}
@@ -1913,11 +1912,11 @@
                   <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
                 {/if}
               {/snippet}
-            </ActionButton>
+            </Button>
           {/if}
           {#if capabilities.state_mutation}
             {@const closeGate = operationGate(repoOperations?.close_pr)}
-            <ActionButton
+            <Button
               class="btn--close"
               disabled={stateSubmitting || stalePR || closeGate.unavailable}
               title={closeGate.unavailable ? closeGate.reason : undefined}
@@ -1933,12 +1932,12 @@
               shortLabel={stateSubmitting ? "Closing..." : "Close"}
             >
               <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </ActionButton>
+            </Button>
           {/if}
         {:else if pr.State === "closed"}
           {#if capabilities.state_mutation}
             {@const reopenGate = operationGate(repoOperations?.reopen_pr)}
-            <ActionButton
+            <Button
               class="btn--reopen"
               disabled={stateSubmitting || stalePR || reopenGate.unavailable}
               title={reopenGate.unavailable ? reopenGate.reason : undefined}
@@ -1954,14 +1953,14 @@
               shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
             >
               <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </ActionButton>
+            </Button>
           {/if}
         {/if}
       {/snippet}
 
       {#snippet workspaceActionButton()}
         {#if workspace}
-          <ActionButton
+          <Button
             class="btn--workspace"
             disabled={stalePR}
             onclick={() => {
@@ -1976,9 +1975,9 @@
             shortLabel="Workspace"
           >
             <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
+          </Button>
         {:else}
-          <ActionButton
+          <Button
             class="btn--workspace"
             disabled={wsCreating || stalePR}
             onclick={() => void createWorkspace()}
@@ -1993,7 +1992,7 @@
             shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
           >
             <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
+          </Button>
         {/if}
       {/snippet}
 
@@ -2076,7 +2075,7 @@
 
       {#if !hasWorktreeLinks && importAction}
         <div class="actions-row">
-          <ActionButton
+          <Button
             class="btn--embedding-action"
             onclick={() => {
               if (stalePR) return;
@@ -2090,13 +2089,13 @@
             size="sm"
           >
             {importAction.label}
-          </ActionButton>
+          </Button>
         </div>
       {/if}
       {#if hasWorktreeLinks && navigateAction}
         <div class="actions-row">
           {#each worktreeLinks as link (link.worktree_key)}
-            <ActionButton
+            <Button
               class="btn--embedding-action"
               onclick={() => {
                 if (stalePR) return;
@@ -2114,14 +2113,14 @@
               size="sm"
             >
               {navigateAction.label}: {link.worktree_key}
-            </ActionButton>
+            </Button>
           {/each}
         </div>
       {/if}
       {#if otherActions.length > 0}
         <div class="actions-row">
           {#each otherActions as action (action.id)}
-            <ActionButton
+            <Button
               class="btn--embedding-action"
               onclick={() => {
                 if (stalePR) return;
@@ -2135,7 +2134,7 @@
               size="sm"
             >
               {action.label}
-            </ActionButton>
+            </Button>
           {/each}
         </div>
       {/if}
@@ -2769,7 +2768,7 @@
     min-width: 0;
   }
 
-  .actions-row :global(.action-button) {
+  .actions-row :global(.kit-button) {
     max-width: 100%;
   }
 
@@ -2778,8 +2777,8 @@
     min-width: 0;
   }
 
-  .actions-row :global(.action-button__label),
-  .actions-row :global(.action-button__short-label) {
+  .actions-row :global(.kit-button__label),
+  .actions-row :global(.kit-button__short-label) {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2834,7 +2833,7 @@
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
   }
 
-  .actions-menu-popover :global(.action-button) {
+  .actions-menu-popover :global(.kit-button) {
     width: 100%;
     justify-content: flex-start;
   }
@@ -2872,7 +2871,7 @@
     flex-wrap: wrap;
   }
 
-  .actions-menu-popover :global(.action-button__short-label) {
+  .actions-menu-popover :global(.kit-button__short-label) {
     display: none;
   }
 
@@ -2887,13 +2886,13 @@
   }
 
   @container pull-detail (max-width: 520px) {
-    .actions-row--primary :global(.action-button__label),
-    .actions-row--workspace :global(.action-button__label) {
+    .actions-row--primary :global(.kit-button__label),
+    .actions-row--workspace :global(.kit-button__label) {
       display: none;
     }
 
-    .actions-row--primary :global(.action-button__short-label),
-    .actions-row--workspace :global(.action-button__short-label) {
+    .actions-row--primary :global(.kit-button__short-label),
+    .actions-row--workspace :global(.kit-button__short-label) {
       display: inline;
     }
   }
@@ -3331,7 +3330,7 @@
       line-height: 1.25;
     }
 
-    .actions-row :global(.action-button),
+    .actions-row :global(.kit-button),
     .actions-menu-trigger,
     .detail-tab,
     .title-edit-save,

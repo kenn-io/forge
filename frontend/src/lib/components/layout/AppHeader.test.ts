@@ -230,7 +230,10 @@ describe("AppHeader", () => {
     render(AppHeader);
 
     expect(document.documentElement.classList.contains("dark")).toBe(true);
-    expect(localStorage.getItem("middleman-theme")).toBeNull();
+    // kit-ui's store leaves the invalid value in place (it resolves to
+    // "system" on every read); the old store deleted it. Either way the next
+    // explicit toggle overwrites it, so only the fallback is contractual.
+    localStorage.removeItem("middleman-theme");
   });
 
   it("falls back to system preference when localStorage throws", () => {

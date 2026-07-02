@@ -1,4 +1,26 @@
+import {
+  cleanupTheme as kitCleanupTheme,
+  initTheme as kitInitTheme,
+  isDark as kitIsDark,
+  setThemeMode,
+} from "@kenn-io/kit-ui";
 import { getThemeMode, getThemeColors, getThemeFonts, getThemeRadii } from "./embed-config.svelte.js";
+
+/*
+ * Adapter over kit-ui's theme store. Standalone dark/light resolution,
+ * persistence, and the `dark` root class are kit's; the storage key stays
+ * "middleman-theme" and kit reads the same "dark"/"light" values the old
+ * store wrote, so existing preferences carry over (kit adds "system" as a
+ * persistable mode).
+ *
+ * What stays app-side, and why:
+ * - Embed hosts can FORCE a mode through embed-config. kit's setThemeMode
+ *   always persists, which would let a host's config overwrite the user's
+ *   standalone preference — so the forced path applies classes directly and
+ *   never touches kit's storage.
+ * - applyThemeOverrides: embed-config color/font/radius CSS variable
+ *   injection is a middleman embed feature, not a kit concern.
+ */
 
 const THEME_KEY = "middleman-theme";
 
@@ -39,120 +61,82 @@ const RADII_MAP: Record<string, string> = {
   lg: "--radius-lg",
 };
 
-let dark = $state(false);
-let mediaCleanup: (() => void) | null = null;
-// In-memory manual override — survives when localStorage is blocked.
-let manualDark: boolean | null = null;
+// Non-null while an embed-config mode is forced; kit owns the theme
+// otherwise. Svelte state so isDark() stays reactive on the forced path.
+let forcedDark = $state<boolean | null>(null);
+let forcedCleanup: (() => void) | null = null;
+// The user's manual choice this session. Re-asserted through kit's
+// setThemeMode on reapply so it survives blocked storage (the old store's
+// manualDark fallback) and wins over a stale stored value kit would re-read.
+let manualMode: "light" | "dark" | null = null;
+
 // Track which CSS variables we've set so we can clear them on reset.
 const appliedVars = new Set<string>();
 
-function storedTheme(): string | null {
-  try {
-    const v = localStorage.getItem(THEME_KEY);
-    if (v === "dark" || v === "light") return v;
-    if (v !== null) localStorage.removeItem(THEME_KEY);
-  } catch {
-    // Storage blocked
-  }
-  return null;
-}
-
 function applyDarkClass(isDarkMode: boolean): void {
   document.documentElement.classList.toggle("dark", isDarkMode);
-  document.documentElement.style.setProperty("color-scheme", isDarkMode ? "dark" : "light");
+}
+
+function applyForcedMode(configMode: string): void {
+  if (configMode === "system") {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    forcedDark = mq.matches;
+    const handler = (e: MediaQueryListEvent) => {
+      forcedDark = e.matches;
+      applyDarkClass(e.matches);
+    };
+    mq.addEventListener("change", handler);
+    forcedCleanup = () => mq.removeEventListener("change", handler);
+  } else {
+    forcedDark = configMode === "dark";
+  }
+  applyDarkClass(forcedDark === true);
+}
+
+function resolveTheme(): void {
+  forcedCleanup?.();
+  forcedCleanup = null;
+  forcedDark = null;
+  kitCleanupTheme();
+
+  const configMode = getThemeMode();
+  if (configMode) {
+    // Initialize kit even on the forced path so its storage key is bound
+    // (a later toggle persists to the right place), then immediately drop
+    // its OS listener and override the classes with the forced mode.
+    kitInitTheme({ storageKey: THEME_KEY });
+    kitCleanupTheme();
+    applyForcedMode(configMode);
+  } else if (manualMode !== null) {
+    // Re-assert the session's manual choice instead of re-reading storage:
+    // when storage is blocked, kit's re-init would fall back to "system"
+    // and lose the toggle.
+    setThemeMode(manualMode);
+  } else {
+    // kit re-reads storage and re-arms its own OS-preference listener.
+    kitInitTheme({ storageKey: THEME_KEY });
+  }
+
+  applyThemeOverrides(getThemeColors(), getThemeFonts(), getThemeRadii());
 }
 
 export function initTheme(): void {
-  const configMode = getThemeMode();
-
-  if (configMode) {
-    if (configMode === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      dark = mq.matches;
-      const handler = (e: MediaQueryListEvent) => {
-        dark = e.matches;
-        applyDarkClass(dark);
-      };
-      mq.addEventListener("change", handler);
-      mediaCleanup = () => mq.removeEventListener("change", handler);
-    } else {
-      dark = configMode === "dark";
-    }
-  } else {
-    const stored = storedTheme();
-    if (stored !== null) {
-      dark = stored === "dark";
-    } else {
-      // No stored preference — follow OS and track changes until
-      // the user manually toggles.
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      dark = mq.matches;
-      const handler = (e: MediaQueryListEvent) => {
-        dark = e.matches;
-        applyDarkClass(dark);
-      };
-      mq.addEventListener("change", handler);
-      mediaCleanup = () => mq.removeEventListener("change", handler);
-    }
-  }
-
-  applyDarkClass(dark);
-
-  applyThemeOverrides(getThemeColors(), getThemeFonts(), getThemeRadii());
+  resolveTheme();
 }
 
 export function reapplyTheme(): void {
-  // Tear down any existing matchMedia listener before re-evaluating.
-  mediaCleanup?.();
-  mediaCleanup = null;
-
-  const configMode = getThemeMode();
-  if (configMode) {
-    if (configMode === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      dark = mq.matches;
-      const handler = (e: MediaQueryListEvent) => {
-        dark = e.matches;
-        applyDarkClass(dark);
-      };
-      mq.addEventListener("change", handler);
-      mediaCleanup = () => mq.removeEventListener("change", handler);
-    } else {
-      dark = configMode === "dark";
-    }
-  } else {
-    // Mode removed — restore standalone behavior. Check in order:
-    // 1. localStorage preference
-    // 2. In-memory manual toggle (survives storage-blocked contexts)
-    // 3. OS system preference with live listener
-    const stored = storedTheme();
-    if (stored !== null) {
-      dark = stored === "dark";
-    } else if (manualDark !== null) {
-      dark = manualDark;
-    } else {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      dark = mq.matches;
-      const handler = (e: MediaQueryListEvent) => {
-        dark = e.matches;
-        applyDarkClass(dark);
-      };
-      mq.addEventListener("change", handler);
-      mediaCleanup = () => mq.removeEventListener("change", handler);
-    }
-  }
-
-  applyDarkClass(dark);
-  applyThemeOverrides(getThemeColors(), getThemeFonts(), getThemeRadii());
+  resolveTheme();
 }
 
 export function cleanupTheme(): void {
-  mediaCleanup?.();
-  mediaCleanup = null;
+  forcedCleanup?.();
+  forcedCleanup = null;
+  manualMode = null;
+  kitCleanupTheme();
 }
 
 export function isDark(): boolean {
-  return dark;
+  return forcedDark ?? kitIsDark();
 }
 
 export function isThemeToggleVisible(): boolean {
@@ -160,18 +144,16 @@ export function isThemeToggleVisible(): boolean {
 }
 
 export function toggleTheme(): void {
-  // User took manual control — stop following OS preference.
-  mediaCleanup?.();
-  mediaCleanup = null;
-
-  dark = !dark;
-  manualDark = dark;
-  applyDarkClass(dark);
-  try {
-    localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
-  } catch {
-    // Storage blocked — manualDark preserves the choice in memory
-  }
+  // Manual control beats a forced embed mode until the next reapply (the
+  // keyboard shortcut can fire even while the header toggle is hidden), and
+  // persisting an explicit mode stops OS-preference tracking — both matching
+  // the old store's manual-override behavior.
+  const next = isDark() ? "light" : "dark";
+  forcedCleanup?.();
+  forcedCleanup = null;
+  forcedDark = null;
+  manualMode = next;
+  setThemeMode(next);
 }
 
 export function applyThemeOverrides(

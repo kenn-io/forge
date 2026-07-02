@@ -181,6 +181,7 @@
     onblur={handleBlur}
   ></textarea>
   {#if open}
+    <!-- kit-ui-check-ignore: caret-anchored mention autocomplete over a textarea; kit has no editor-autocomplete primitive (kit-ui#zdn0) -->
     <div class="reference-menu" role="listbox" aria-label="Insert task reference">
       {#if searching && results.length === 0}
         <div class="reference-empty">Searching...</div>

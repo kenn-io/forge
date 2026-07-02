@@ -177,6 +177,7 @@
           onkeydown={handleKeydown}
         />
       </div>
+      <!-- kit-ui-check-ignore: command-palette-style jump list with rich rows and active-file state, not a form dropdown -->
       <div class="file-jump-list" role="listbox" aria-label="Changed files">
         {#each filteredFiles as file, index (file.path)}
           {@const dir = directory(file.path)}

@@ -338,6 +338,7 @@
       aria-label="Filter repos"
       autocomplete="off"
     />
+    <!-- kit-ui-check-ignore: grouped provider tree with expand/collapse + cheatsheet-registered keys; kit Typeahead is flat (kit-ui#t662) -->
     <ul class="typeahead-list kit-popover-card" role="listbox" onmousedown={preventBlur}>
       <li
         class="typeahead-option"

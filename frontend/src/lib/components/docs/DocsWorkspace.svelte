@@ -980,6 +980,7 @@
         {/if}
       {/if}
       {#if folderMenuOpen}
+        <!-- kit-ui-check-ignore: folder switcher renders error/empty message rows kit SelectDropdown lacks (kit-ui#ry18) -->
         <ul class="folder-menu" role="listbox" aria-label="Folders">
           {#if foldersError}
             <li class="folder-menu-msg error">{foldersError}</li>

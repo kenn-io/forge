@@ -654,10 +654,10 @@
     <div class="repo-browser__actions">
       <div class="repo-browser__ref-picker typeahead" bind:this={refPickerRootEl}>
         {#if refPickerOpen}
-          <input
+          <!-- kit-ui-check-ignore: ref picker needs a Branches/Tags tab switcher inside the menu and async loading rows; kit Typeahead has no menu-header snippet (kit-ui#ry18) -->
+          <input role="combobox"
             bind:this={refPickerInputEl}
             class="typeahead-input"
-            role="combobox"
             aria-label="Search repository refs"
             aria-expanded="true"
             aria-controls={refPickerListID}
@@ -690,10 +690,10 @@
                 onclick={() => setRefPickerType("tag")}
               >Tags {tagRefs.length}</button>
             </div>
-            <ul
+            <!-- kit-ui-check-ignore: same ref-picker gap set as the combobox above (kit-ui#ry18) -->
+            <ul role="listbox"
               id={refPickerListID}
               class="repo-browser__ref-list"
-              role="listbox"
               tabindex="-1"
               aria-label="Repository ref options"
             >

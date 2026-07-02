@@ -132,6 +132,7 @@
         {query.trim() === "" ? "Type to search open tasks." : "No matches."}
       </div>
     {:else}
+      <!-- kit-ui-check-ignore: async search-results list inside a dialog, not a dropdown -->
       <ul class="picker-results" role="listbox" aria-label="Matching tasks">
         {#each visible as r (r.uid)}
           <li role="option" aria-selected={selected?.uid === r.uid}>

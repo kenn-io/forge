@@ -146,10 +146,10 @@
 
 <div class="typeahead" bind:this={rootEl}>
   {#if open}
-    <input
+    <!-- kit-ui-check-ignore: clear row, custom values, top placement, veto onChange, meta text; kit Typeahead lacks these (kit-ui#ry18) -->
+    <input role="combobox"
       bind:this={inputEl}
       class="typeahead-input"
-      role="combobox"
       aria-label={ariaLabel}
       aria-expanded="true"
       aria-controls={listboxID}
@@ -162,12 +162,12 @@
       onkeydown={handleKeydown}
       onblur={handleBlur}
     />
-    <ul
+    <!-- kit-ui-check-ignore: same TypeaheadTrigger gap set as the combobox above (kit-ui#ry18) -->
+    <ul role="listbox"
       id={listboxID}
       class="typeahead-list"
       class:typeahead-list--top={placement === "top"}
       data-surface="solid"
-      role="listbox"
       aria-label={`${ariaLabel} options`}
       onmousedown={preventBlur}
     >

@@ -219,6 +219,7 @@
         </button>
       </div>
 
+      <!-- kit-ui-check-ignore: directory browser (navigate-into-subfolder rows inside a dialog), not a dropdown -->
       <ul class="picker-list" role="listbox" aria-label="Subfolders">
         {#if browseError}
           <li class="picker-msg error">{browseError}</li>

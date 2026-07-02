@@ -1,7 +1,23 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import ConfirmDialog from "./ConfirmDialog.svelte";
+
+// kit-ui's focus trap skips elements whose offsetParent is null (hidden
+// subtrees). jsdom has no layout, so offsetParent is always null; report the
+// parent element so the trap sees the dialog's buttons as tabbable.
+beforeAll(() => {
+  Object.defineProperty(HTMLElement.prototype, "offsetParent", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.parentElement;
+    },
+  });
+});
+
+afterAll(() => {
+  delete (HTMLElement.prototype as unknown as Record<string, unknown>)["offsetParent"];
+});
 
 afterEach(() => cleanup());
 

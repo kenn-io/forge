@@ -5421,6 +5421,13 @@ func (s *Syncer) fetchMRDetail(
 	calls++
 	if err == nil && fullPR == nil {
 		if notModified && existing != nil {
+			backfillCalls, backfillErr := s.backfillMergedActorAfterUnchangedDetail(
+				ctx, client, repo, existing,
+			)
+			calls += backfillCalls
+			if backfillErr != nil {
+				return calls, backfillErr
+			}
 			return s.markUnchangedMRDetailFetched(
 				ctx, repo, repoID, number, existing, calls,
 			)
@@ -5654,6 +5661,70 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 		}
 	}
 	return calls, nil
+}
+
+func (s *Syncer) backfillMergedActorAfterUnchangedDetail(
+	ctx context.Context,
+	client Client,
+	repo RepoRef,
+	existing *db.MergeRequest,
+) (int, error) {
+	needed, err := s.mergedActorBackfillNeeded(ctx, existing)
+	if err != nil {
+		return 0, err
+	}
+	if !needed {
+		return 0, nil
+	}
+	fullPR, err := client.GetPullRequest(
+		ctx, repo.Owner, repo.Name, existing.Number,
+	)
+	if err != nil {
+		return 1, fmt.Errorf(
+			"get PR #%d for merged actor backfill: %w",
+			existing.Number, err,
+		)
+	}
+	if fullPR == nil {
+		return 1, fmt.Errorf(
+			"get PR #%d for merged actor backfill: client returned nil pull request",
+			existing.Number,
+		)
+	}
+	if err := s.persistMergedTransitionEvent(
+		ctx, existing.ID, fullPR, existing.MergedAt,
+	); err != nil {
+		return 1, fmt.Errorf(
+			"persist merged lifecycle event for MR #%d: %w",
+			existing.Number, err,
+		)
+	}
+	return 1, nil
+}
+
+func (s *Syncer) mergedActorBackfillNeeded(
+	ctx context.Context,
+	existing *db.MergeRequest,
+) (bool, error) {
+	if existing == nil ||
+		existing.State != db.MergeRequestStateMerged ||
+		existing.MergedAt == nil {
+		return false, nil
+	}
+	events, err := s.db.ListMREvents(ctx, existing.ID)
+	if err != nil {
+		return false, fmt.Errorf(
+			"list merged lifecycle events for MR #%d: %w",
+			existing.Number, err,
+		)
+	}
+	for _, event := range events {
+		if event.EventType == "merged" &&
+			strings.TrimSpace(event.Author) != "" {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (s *Syncer) fetchProviderMRDetail(
@@ -7739,6 +7810,11 @@ func (s *Syncer) syncMRForRepo(
 			)
 			if err == nil && ghPR == nil {
 				if notModified && existing != nil {
+					if _, backfillErr := s.backfillMergedActorAfterUnchangedDetail(
+						ctx, client, repo, existing,
+					); backfillErr != nil {
+						return backfillErr
+					}
 					_, err := s.markUnchangedMRDetailFetched(
 						ctx, repo, repoID, number, existing, 1,
 					)

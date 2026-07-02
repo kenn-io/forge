@@ -69,6 +69,16 @@ in the kit-ui repo. The parts middleman depends on as stable API:
   on its `text-overflow` ellipsis.
 - The dark/high-contrast mechanism: `dark` / `high-contrast` classes on
   `<html>`.
+- Theme resolution: kit's theme store owns standalone dark/light/system
+  resolution and persistence under the `middleman-theme` storage key
+  (`frontend/src/lib/stores/theme.svelte.ts` is an adapter over it). Two
+  things intentionally stay app-side there: embed-config-forced modes apply
+  classes directly and never call kit `setThemeMode` (it always persists,
+  and a host's forced mode must not overwrite the user's standalone
+  preference), and `applyThemeOverrides` injects embed-config CSS
+  variables. Relative timestamps come from kit `formatRelativeTime`;
+  `parseAPITimestamp`/`localDate*Label` stay app-side for the UTC-instant
+  contract.
 - Dialog and Escape layering: every dialog registers a keyboard modal-stack
   frame while open (the shared `frontend/src/lib/components/shared/Modal.svelte`
   shell does this for all its consumers; direct kit `Modal` users push their

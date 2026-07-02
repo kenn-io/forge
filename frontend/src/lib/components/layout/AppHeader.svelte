@@ -498,9 +498,10 @@
     line-height: 1;
   }
 
-  /* kit-ui-check-ignore: busy state spins the sync affordance icon itself
-     (kit-ui RefreshControl's pattern); AppHeader is replaced by TopBar +
+  /* Busy state spins the sync affordance icon itself (kit-ui
+     RefreshControl's pattern); AppHeader is replaced by TopBar +
      RefreshControl in the overlays/layout migration stage. */
+  /* kit-ui-check-ignore: RefreshControl-style icon spin, migrates with TopBar */
   @keyframes header-spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }

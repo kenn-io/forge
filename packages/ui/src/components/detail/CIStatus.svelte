@@ -436,8 +436,9 @@
     animation: spin 0.9s linear infinite;
   }
 
-  /* kit-ui-check-ignore: pending-status loader icon tinted by row-icon-amber;
-     kit-ui Spinner has no tone and would drop the semantic color. */
+  /* Pending-status loader icon tinted by row-icon-amber; kit-ui Spinner
+     has no tone and would drop the semantic color. */
+  /* kit-ui-check-ignore: status-colored loader icon spin */
   @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }

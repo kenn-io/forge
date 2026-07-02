@@ -5776,6 +5776,10 @@ func (s *Syncer) syncProviderMRDetailExtras(
 		if err := s.db.DeleteMissingMRCommentEvents(ctx, mrID, commentDedupeKeys); err != nil {
 			return calls, false, fmt.Errorf("delete missing comment events for MR #%d: %w", number, err)
 		}
+		dbEvents, err = s.filterDuplicateMergedLifecycleEvents(ctx, mrID, dbEvents)
+		if err != nil {
+			return calls, false, fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
+		}
 		if err := s.db.UpsertMREvents(ctx, dbEvents); err != nil {
 			return calls, false, fmt.Errorf("upsert events for MR #%d: %w", number, err)
 		}

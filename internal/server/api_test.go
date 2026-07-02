@@ -4187,6 +4187,123 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	assert.Equal("merge-admin", (*detailResp.JSON200.Events)[0].Author)
 }
 
+func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	mergedAt := now.Add(time.Minute)
+
+	database := dbtest.Open(t)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	openMR := platform.MergeRequest{
+		Repo:               ref,
+		PlatformID:         7001,
+		PlatformExternalID: "gid://gitlab/MergeRequest/7001",
+		Number:             7,
+		URL:                "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Title:              "GitLab provider MR",
+		Author:             "ada",
+		State:              "open",
+		HeadBranch:         "feature/gitlab",
+		BaseBranch:         "main",
+		HeadSHA:            "abc123",
+		BaseSHA:            "def456",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+		LastActivityAt:     now,
+	}
+	mergedMR := openMR
+	mergedMR.State = "merged"
+	mergedMR.MergedAt = &mergedAt
+	mergedMR.ClosedAt = &mergedAt
+	mergedMR.MergedBy = "merge-admin"
+	mergedMR.UpdatedAt = mergedAt
+	mergedMR.LastActivityAt = mergedAt
+	provider := &apiTestGitLabProvider{
+		ref:                ref,
+		mergeRequests:      []platform.MergeRequest{openMR},
+		mergeRequestDetail: map[int]platform.MergeRequest{7: mergedMR},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              ref.Owner,
+		Name:               ref.Name,
+		PlatformHost:       ref.Host,
+		RepoPath:           ref.RepoPath,
+		PlatformRepoID:     ref.PlatformID,
+		PlatformExternalID: ref.PlatformExternalID,
+		WebURL:             ref.WebURL,
+		CloneURL:           ref.CloneURL,
+		DefaultBranch:      ref.DefaultBranch,
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+	provider.mergeRequests = nil
+	syncer.RunOnce(ctx)
+
+	stored, err := database.GetMergeRequest(
+		ctx, string(ref.Platform), ref.Host, ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.NotNil(stored)
+	events, err := database.ListMREvents(ctx, stored.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal("merged", events[0].EventType)
+	require.Equal("merge-admin", events[0].Author)
+
+	provider.mergeRequestEvents = map[int][]platform.MergeRequestEvent{7: {{
+		Repo:               ref,
+		PlatformID:         9001,
+		PlatformExternalID: "gid://gitlab/Note/9001",
+		MergeRequestNumber: 7,
+		EventType:          "merged",
+		Author:             "merge-admin",
+		Summary:            "merged this",
+		CreatedAt:          mergedAt,
+		DedupeKey:          "gitlab:merged-note:9001",
+	}}}
+	syncResp, err := client.HTTP.SyncPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, syncResp.StatusCode(), string(syncResp.Body))
+	require.NotNil(syncResp.JSON200)
+	require.NotNil(syncResp.JSON200.Events)
+	require.Len(*syncResp.JSON200.Events, 1)
+	assert.Equal("merged", (*syncResp.JSON200.Events)[0].EventType)
+	assert.Equal("merge-admin", (*syncResp.JSON200.Events)[0].Author)
+
+	events, err = database.ListMREvents(ctx, stored.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("merged", events[0].EventType)
+	assert.Equal("merge-admin", events[0].Author)
+	assert.Equal("merged this", events[0].Summary)
+}
+
 func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

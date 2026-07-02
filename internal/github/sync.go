@@ -5445,7 +5445,11 @@ func (s *Syncer) fetchMRDetail(
 			)
 			calls += backfillCalls
 			if backfillErr != nil {
-				return calls, backfillErr
+				slog.Warn("merged actor backfill after unchanged detail failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", number,
+					"err", backfillErr,
+				)
 			}
 			return s.markUnchangedMRDetailFetched(
 				ctx, repo, repoID, number, existing, calls,
@@ -7994,7 +7998,11 @@ func (s *Syncer) syncMRForRepo(
 					if _, _, backfillErr := s.backfillMergedActorAfterUnchangedDetail(
 						ctx, client, repo, existing,
 					); backfillErr != nil {
-						return backfillErr
+						slog.Warn("merged actor backfill after unchanged detail failed",
+							"repo", owner+"/"+name,
+							"number", number,
+							"err", backfillErr,
+						)
 					}
 					_, err := s.markUnchangedMRDetailFetched(
 						ctx, repo, repoID, number, existing, 1,

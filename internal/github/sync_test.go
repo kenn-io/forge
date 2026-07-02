@@ -8026,6 +8026,82 @@ func TestFetchMRDetailDoesNotRepeatNoActorBackfillOn304(t *testing.T) {
 	assert.Empty(events)
 }
 
+func TestFetchMRDetailKeeps304FreshWhenMergedActorTimelineBackfillFails(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	mergedAt := updatedAt.Add(time.Minute)
+	detailFetchedAt := updatedAt.Add(-time.Hour)
+	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1000,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "test PR",
+		Author:          "alice",
+		State:           db.MergeRequestStateMerged,
+		HeadBranch:      "feature-branch",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "abc123def456",
+		CreatedAt:       updatedAt,
+		UpdatedAt:       updatedAt,
+		LastActivityAt:  updatedAt,
+		MergedAt:        &mergedAt,
+		ClosedAt:        &mergedAt,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"pull_request", 1, `"etag-v1"`,
+	))
+
+	merged := true
+	pr := buildOpenPR(1, updatedAt)
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.ClosedAt = makeTimestamp(mergedAt)
+	mc := &conditionalPRTrackingClient{
+		detailTrackingClient: detailTrackingClient{
+			mockClient: mockClient{
+				singlePR:          pr,
+				timelineEventsErr: errors.New("graphql unavailable"),
+			},
+		},
+		notModified: true,
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	calls, err := syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	require.NoError(err)
+	assert.Equal(3, calls)
+
+	calls, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	require.NoError(err)
+	assert.Equal(1, calls)
+	assert.Equal(int32(2), mc.conditionalCalls.Load())
+	assert.Equal(int32(1), mc.getPRCalls.Load())
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	assert.Empty(events)
+	fresh, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(fresh)
+	require.NotNil(fresh.DetailFetchedAt)
+	assert.True(fresh.DetailFetchedAt.After(detailFetchedAt))
+}
+
 func TestMergedActorDetailBackfillRetryExpires(t *testing.T) {
 	assert := assert.New(t)
 	mergedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
@@ -8079,6 +8155,66 @@ func TestBackfillMergedActorForDetailSkipsThrottledBeforeClientLookup(t *testing
 	wrote, err := syncer.BackfillMergedActorForDetail(ctx, existing)
 	require.NoError(err)
 	assert.False(wrote)
+}
+
+func TestBackfillMergedActorForDetailRecordsRetryOnTimelineError(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	now := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	mergedAt := now.Add(time.Minute)
+	existing := &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     1000,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/pull/1",
+		Title:          "test PR",
+		Author:         "alice",
+		State:          db.MergeRequestStateMerged,
+		HeadBranch:     "feature-branch",
+		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      mergedAt,
+		LastActivityAt: mergedAt,
+		MergedAt:       &mergedAt,
+		ClosedAt:       &mergedAt,
+	}
+	existing.ID, err = d.UpsertMergeRequest(ctx, existing)
+	require.NoError(err)
+
+	merged := true
+	pr := buildOpenPR(1, now)
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.ClosedAt = makeTimestamp(mergedAt)
+	client := &detailTrackingClient{
+		mockClient: mockClient{
+			singlePR:          pr,
+			timelineEventsErr: errors.New("graphql unavailable"),
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	wrote, err := syncer.BackfillMergedActorForDetail(ctx, existing)
+	require.Error(err)
+	assert.ErrorContains(err, "list timeline events for merged actor backfill")
+	assert.False(wrote)
+	assert.Equal(int32(1), client.getPRCalls.Load())
+
+	wrote, err = syncer.BackfillMergedActorForDetail(ctx, existing)
+	require.NoError(err)
+	assert.False(wrote)
+	assert.Equal(int32(1), client.getPRCalls.Load())
 }
 
 func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
@@ -8208,6 +8344,82 @@ func TestWatchedSyncMRBackfillsMergedActorOn304(t *testing.T) {
 	assert.Equal("merged", events[0].EventType)
 	assert.Equal("merge-admin", events[0].Author)
 	assert.True(events[0].CreatedAt.Equal(mergedAt))
+}
+
+func TestWatchedSyncMRKeeps304FreshWhenMergedActorTimelineBackfillFails(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	mergedAt := updatedAt.Add(time.Minute)
+	detailFetchedAt := updatedAt.Add(-time.Hour)
+	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1000,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "test PR",
+		Author:          "alice",
+		State:           db.MergeRequestStateMerged,
+		HeadBranch:      "feature-branch",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "abc123def456",
+		CreatedAt:       updatedAt,
+		UpdatedAt:       updatedAt,
+		LastActivityAt:  updatedAt,
+		MergedAt:        &mergedAt,
+		ClosedAt:        &mergedAt,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"pull_request", 1, `"etag-v1"`,
+	))
+
+	merged := true
+	pr := buildOpenPR(1, updatedAt)
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.ClosedAt = makeTimestamp(mergedAt)
+	mc := &conditionalPRTrackingClient{
+		detailTrackingClient: detailTrackingClient{
+			mockClient: mockClient{
+				singlePR:          pr,
+				timelineEventsErr: errors.New("graphql unavailable"),
+			},
+		},
+		notModified: true,
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	require.NoError(syncer.syncMRWithWatchedRef(ctx, WatchedMR{
+		Owner: "owner", Name: "repo", Number: 1, PlatformHost: "github.com",
+	}))
+
+	assert.Equal(int32(1), mc.conditionalCalls.Load())
+	assert.Equal(`"etag-v1"`, mc.receivedETag)
+	assert.Equal(int32(1), mc.getPRCalls.Load())
+	assert.Zero(int(mc.listIssueCommentsCalled.Load()),
+		"304 backfill should not run a timeline refresh")
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	assert.Empty(events)
+	fresh, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(fresh)
+	require.NotNil(fresh.DetailFetchedAt)
+	assert.True(fresh.DetailFetchedAt.After(detailFetchedAt))
 }
 
 func TestSyncMRBypassesPersistedPullRequestETag(t *testing.T) {

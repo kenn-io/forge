@@ -1620,6 +1620,9 @@
           {@const markDraftGate = operationGate(repoOperations?.mark_draft)}
           {@const canOpenStateMenu = pr.State === "open" && !pr.IsDraft && capabilities.draft_mutation}
           <span class="state-menu-wrap" bind:this={stateMenuWrapEl}>
+            {#snippet stateChevron()}
+              <ChevronDownIcon size="12" strokeWidth="2.2" aria-hidden="true" />
+            {/snippet}
             <Chip size="sm"
               tone={visiblePRState(pr) === "merged"
                 ? "merged"
@@ -1634,11 +1637,9 @@
               title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
               ariaLabel={canOpenStateMenu ? `State: ${stateLabel}` : undefined}
               onclick={canOpenStateMenu ? toggleStateMenu : undefined}
+              trailing={canOpenStateMenu ? stateChevron : undefined}
             >
               {stateLabel}
-              {#if canOpenStateMenu}
-                <ChevronDownIcon size="12" strokeWidth="2.2" aria-hidden="true" />
-              {/if}
             </Chip>
             {#if canOpenStateMenu && stateMenuOpen}
               <div class="state-menu" role="menu" aria-label="Pull request state">

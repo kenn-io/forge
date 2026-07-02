@@ -216,12 +216,14 @@
         >
           <span class="ci-label">CI</span>
           <CITokenCluster {bucketed} size="default" />
-          <ChevronDownIcon
-            class={["chip-chevron", expanded && "chip-chevron--open"].filter(Boolean).join(" ")}
-            size={12}
-            strokeWidth={2.4}
-            aria-hidden="true"
-          />
+          {#snippet trailing()}
+            <ChevronDownIcon
+              class={["chip-chevron", expanded && "chip-chevron--open"].filter(Boolean).join(" ")}
+              size={12}
+              strokeWidth={2.4}
+              aria-hidden="true"
+            />
+          {/snippet}
         </Chip>
       {/if}
     {/if}

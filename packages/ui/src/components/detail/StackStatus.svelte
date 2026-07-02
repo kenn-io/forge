@@ -290,12 +290,14 @@
             <span>{downstackBlockerCount}</span>
           </span>
         {/if}
-        <ChevronDownIcon
-          class={["chip-chevron", expanded && "chip-chevron--open"].filter(Boolean).join(" ")}
-          size={12}
-          strokeWidth={2.4}
-          aria-hidden="true"
-        />
+        {#snippet trailing()}
+          <ChevronDownIcon
+            class={["chip-chevron", expanded && "chip-chevron--open"].filter(Boolean).join(" ")}
+            size={12}
+            strokeWidth={2.4}
+            aria-hidden="true"
+          />
+        {/snippet}
       </Chip>
     {/if}
 
@@ -357,12 +359,6 @@
 <style>
   .stack-status {
     display: contents;
-  }
-
-  :global(.stack-status .kit-chip__label) {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
   }
 
   .stack-chip-label {

@@ -18,7 +18,7 @@
         "@codemirror/lang-markdown": "^6.5.0",
         "@codemirror/state": "^6.6.0",
         "@codemirror/view": "^6.43.0",
-        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#6cb9b01523655976c97fd553a8d6dbfd8e46b4eb",
+        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#465f18349eef3834bee9e9077378024613f7bf62",
         "@lucide/svelte": "1.21.0",
         "@middleman/ui": "workspace:*",
         "@pierre/diffs": "1.2.11",
@@ -71,7 +71,7 @@
       "name": "@middleman/ui",
       "version": "0.0.1",
       "dependencies": {
-        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#6cb9b01523655976c97fd553a8d6dbfd8e46b4eb",
+        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#465f18349eef3834bee9e9077378024613f7bf62",
         "@lucide/svelte": "1.21.0",
         "@pierre/diffs": "1.2.11",
         "@pierre/trees": "1.0.0-beta.4",
@@ -229,7 +229,7 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@kenn-io/kit-ui": ["@kenn-io/kit-ui@github:kenn-io/kit-ui#6cb9b01", { "peerDependencies": { "@lucide/svelte": ">=1.0.0", "dompurify": "^3.2.0", "marked": "^18.0.0", "shiki": "^4.0.0", "svelte": "^5.29.0" }, "bin": { "kit-ui-check": "./bin/kit-ui-check.mjs" } }, "kenn-io-kit-ui-6cb9b01", "sha512-8u4lhvNJdFKm2mhp+1BPmd0MTg0na27nc2W38NiGjLgeMejyHVIx4u7CwZHoWiphE/3DbKsFtr4QdsSW1wEWfg=="],
+    "@kenn-io/kit-ui": ["@kenn-io/kit-ui@github:kenn-io/kit-ui#465f183", { "peerDependencies": { "@lucide/svelte": ">=1.0.0", "dompurify": "^3.2.0", "marked": "^18.0.0", "shiki": "^4.0.0", "svelte": "^5.29.0" }, "bin": { "kit-ui-check": "./bin/kit-ui-check.mjs" } }, "kenn-io-kit-ui-465f183", "sha512-OlLwqj6qP8jA/2uXTYJ6ajJmwSkF2dO00/ArcElFK4wloiPNR5fi8Uo45b9hKI5KB76VW2KshnaqeBk1KU289g=="],
 
     "@lezer/common": ["@lezer/common@1.5.2", "", {}, "sha512-sxQE460fPZyU3sdc8lafxiPwJHBzZRy/udNFynGQky1SePYBdhkBl1kOagA9uT3pxR8K09bOrmTUqA9wb/PjSQ=="],
 

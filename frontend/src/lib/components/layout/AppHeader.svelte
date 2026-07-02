@@ -559,7 +559,7 @@
     min-width: 0;
   }
 
-  :global(#app.container-medium .nav-select .select-dropdown-trigger) {
+  :global(#app.container-medium .nav-select .kit-select-dropdown__trigger) {
     border-color: var(--border-muted);
     background: var(--bg-inset);
   }
@@ -628,7 +628,7 @@
     min-width: 0;
   }
 
-  :global(#app.container-narrow .nav-select .select-dropdown-trigger) {
+  :global(#app.container-narrow .nav-select .kit-select-dropdown__trigger) {
     min-height: 32px;
     font-size: var(--font-size-md);
   }

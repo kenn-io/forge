@@ -128,8 +128,8 @@ export { default as CollapsibleResizableSidebar } from "./components/shared/Coll
 export { default as LeftSidebarToggle } from "./components/shared/LeftSidebarToggle.svelte";
 export { DiffStats } from "@kenn-io/kit-ui";
 export { default as FilterDropdown } from "./components/shared/FilterDropdown.svelte";
-export { default as SelectDropdown } from "./components/shared/SelectDropdown.svelte";
-export type { SelectDropdownOption } from "./components/shared/select-dropdown.js";
+export { SelectDropdown } from "@kenn-io/kit-ui";
+export type { SelectDropdownOption } from "@kenn-io/kit-ui";
 export { default as SplitResizeHandle } from "./components/shared/SplitResizeHandle.svelte";
 export type { SplitResizeEvent } from "./components/shared/split-resize.js";
 export { default as TabbedPanelTree } from "./components/shared/TabbedPanelTree.svelte";

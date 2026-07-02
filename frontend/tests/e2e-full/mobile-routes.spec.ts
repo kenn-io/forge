@@ -501,13 +501,15 @@ test.describe("high-density phone routes", () => {
       const tokenValue = (node: Element | null, name: string): string =>
         node ? getComputedStyle(node).getPropertyValue(name).trim() : "";
       const filterControls = [
-        ...document.querySelectorAll(".mobile-activity-filter-grid .select-dropdown-trigger, .mobile-filter-toggle"),
+        ...document.querySelectorAll(
+          ".mobile-activity-filter-grid .kit-select-dropdown__trigger, .mobile-filter-toggle",
+        ),
       ]
         .map((control) => control.getBoundingClientRect())
         .map((rect) => ({ left: rect.left, right: rect.right }));
       const search = document.querySelector(".search-input")?.getBoundingClientRect();
       const firstOption = document
-        .querySelector(".mobile-filter-dropdown .select-dropdown-option")
+        .querySelector(".mobile-filter-dropdown .kit-select-dropdown__option")
         ?.getBoundingClientRect();
       return {
         dpr: window.devicePixelRatio,
@@ -517,8 +519,8 @@ test.describe("high-density phone routes", () => {
         activityTypeToken: tokenValue(inbox, "--mobile-type-body"),
         densityScale: tokenValue(inbox, "--mobile-device-density-scale"),
         bodyFontSize: fontSize(".mobile-activity-inbox"),
-        filterFontSize: fontSize(".mobile-activity-filter-grid .select-dropdown-trigger"),
-        filterOptionFontSize: fontSize(".mobile-filter-dropdown .select-dropdown-option"),
+        filterFontSize: fontSize(".mobile-activity-filter-grid .kit-select-dropdown__trigger"),
+        filterOptionFontSize: fontSize(".mobile-filter-dropdown .kit-select-dropdown__option"),
         filterOptionHeight: firstOption?.height ?? 0,
         tabFontSize: fontSize(".mobile-tabs a"),
         searchHeight: search?.height ?? 0,

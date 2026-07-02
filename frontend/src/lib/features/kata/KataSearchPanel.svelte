@@ -223,7 +223,7 @@
     background: var(--bg-primary);
   }
 
-  .filter-control-status :global(.select-dropdown) {
+  .filter-control-status :global(.kit-select-dropdown) {
     width: 102px;
   }
 

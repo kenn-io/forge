@@ -383,12 +383,12 @@
     background: var(--bg-inset);
   }
 
-  .mapping-table :global(.select-dropdown) {
+  .mapping-table :global(.kit-select-dropdown) {
     width: 100%;
     min-width: 0;
   }
 
-  .mapping-table :global(.select-dropdown-trigger) {
+  .mapping-table :global(.kit-select-dropdown__trigger) {
     height: 30px;
     font-size: var(--font-size-sm);
     font-weight: 400;

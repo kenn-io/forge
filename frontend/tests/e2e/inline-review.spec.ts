@@ -1374,8 +1374,8 @@ test("opens the sticky draft review action menu upward", async ({ page }) => {
   await expect(page.getByText("1 draft comment")).toBeVisible();
   await page.getByRole("combobox", { name: "Review action: Comment" }).click();
 
-  const triggerBox = await page.locator(".review-action-select .select-dropdown-trigger").boundingBox();
-  const listBox = await page.locator(".review-action-select .select-dropdown-list").boundingBox();
+  const triggerBox = await page.locator(".review-action-select .kit-select-dropdown__trigger").boundingBox();
+  const listBox = await page.locator(".review-action-select .kit-select-dropdown__list").boundingBox();
 
   expect(triggerBox).not.toBeNull();
   expect(listBox).not.toBeNull();

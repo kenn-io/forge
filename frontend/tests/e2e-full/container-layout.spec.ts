@@ -66,12 +66,12 @@ test.describe("container-aware layout", () => {
       };
     });
 
-    await page.locator(".nav-select .select-dropdown-trigger").click();
-    const navList = page.locator(".nav-select .select-dropdown-list");
+    await page.locator(".nav-select .kit-select-dropdown__trigger").click();
+    const navList = page.locator(".nav-select .kit-select-dropdown__list");
     await expect(navList).toBeVisible();
     await expect(navList.getByRole("option", { name: "PRs" })).toBeVisible();
     const navMenuStyle = await page.evaluate(() => {
-      const list = document.querySelector(".nav-select .select-dropdown-list");
+      const list = document.querySelector(".nav-select .kit-select-dropdown__list");
       const style = list ? getComputedStyle(list) : null;
       return {
         background: style?.backgroundColor ?? "",

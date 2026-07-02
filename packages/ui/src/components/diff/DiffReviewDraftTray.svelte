@@ -4,7 +4,7 @@
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import { getStores } from "../../context.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
-    import SelectDropdown from "../shared/SelectDropdown.svelte";
+    import { SelectDropdown } from "@kenn-io/kit-ui";
   import DiffReviewDraftTrayItem from "./DiffReviewDraftTrayItem.svelte";
 
   interface Props {
@@ -175,14 +175,7 @@
     min-width: 150px;
   }
 
-  :global(.review-action-select .select-dropdown-list) {
-    top: auto;
-    bottom: 100%;
-    margin-top: 0;
-    margin-bottom: 4px;
-  }
-
-  :global(.review-action-select .select-dropdown-trigger),
+  :global(.review-action-select .kit-select-dropdown__trigger),
   :global(.publish-btn.kit-button) {
     min-height: 28px;
     font-size: var(--font-size-sm);

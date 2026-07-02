@@ -11,7 +11,7 @@
   import { Chip } from "@kenn-io/kit-ui";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
-  import SelectDropdown from "../components/shared/SelectDropdown.svelte";
+  import { SelectDropdown } from "@kenn-io/kit-ui";
   import WorkspaceIndicator from "../components/shared/WorkspaceIndicator.svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import {
@@ -660,7 +660,7 @@
     min-width: 0;
   }
 
-  .mobile-filter-select :global(.mobile-filter-dropdown .select-dropdown-trigger) {
+  .mobile-filter-select :global(.mobile-filter-dropdown .kit-select-dropdown__trigger) {
     height: auto;
     min-height: calc(var(--mobile-hit-target) - var(--mobile-space-sm));
     padding: 0;
@@ -671,7 +671,7 @@
     font-weight: 750;
   }
 
-  .mobile-filter-select :global(.mobile-filter-dropdown .select-dropdown-list) {
+  .mobile-filter-select :global(.mobile-filter-dropdown .kit-select-dropdown__list) {
     left: 0;
     right: auto;
     width: min(260px, calc(100vw - (var(--mobile-space-sm) * 2)));
@@ -680,7 +680,7 @@
     border-radius: var(--radius-md);
   }
 
-  .mobile-filter-select :global(.mobile-filter-dropdown .select-dropdown-option) {
+  .mobile-filter-select :global(.mobile-filter-dropdown .kit-select-dropdown__option) {
     min-height: var(--mobile-hit-target);
     padding: var(--mobile-space-xs) var(--mobile-space-sm);
     border-radius: var(--radius-sm);
@@ -688,7 +688,7 @@
     line-height: 1.2;
   }
 
-  .mobile-filter-select :global(.mobile-filter-dropdown .select-dropdown-check) {
+  .mobile-filter-select :global(.mobile-filter-dropdown .kit-select-dropdown__check) {
     width: 13px;
   }
 

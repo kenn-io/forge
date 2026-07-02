@@ -357,12 +357,12 @@
     border-color: var(--border-focus);
   }
 
-  .modal-field :global(.select-dropdown) {
+  .modal-field :global(.kit-select-dropdown) {
     width: 100%;
     min-width: 0;
   }
 
-  .modal-field :global(.select-dropdown-trigger) {
+  .modal-field :global(.kit-select-dropdown__trigger) {
     height: 32px;
     font-size: var(--font-size-sm);
     font-weight: 400;

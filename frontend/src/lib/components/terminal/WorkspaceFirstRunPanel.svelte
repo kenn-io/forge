@@ -690,12 +690,12 @@
     opacity: 0.6;
   }
 
-  .first-run-field :global(.select-dropdown) {
+  .first-run-field :global(.kit-select-dropdown) {
     width: 100%;
     min-width: 0;
   }
 
-  .first-run-field :global(.select-dropdown-trigger) {
+  .first-run-field :global(.kit-select-dropdown__trigger) {
     height: 36px;
     font-size: var(--font-size-sm);
     font-weight: 400;

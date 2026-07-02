@@ -338,7 +338,7 @@
       aria-label="Filter repos"
       autocomplete="off"
     />
-    <ul class="typeahead-list" role="listbox" onmousedown={preventBlur}>
+    <ul class="typeahead-list kit-popover-card" role="listbox" onmousedown={preventBlur}>
       <li
         class="typeahead-option"
         class:highlighted={highlightIndex === 0}
@@ -457,10 +457,8 @@
     margin-top: 2px;
     max-height: 50vh;
     overflow-y: auto;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-md);
+    /* Surface chrome comes from the shared kit-popover-card class so this
+       menu reads as the same family as the kit nav dropdown beside it. */
     z-index: 100;
     list-style: none;
     padding: 2px;

@@ -35,7 +35,7 @@
     runOpenMerge,
     type PRDetailActionInput,
   } from "./keyboard-actions.js";
-    import SelectDropdown from "../shared/SelectDropdown.svelte";
+    import { SelectDropdown } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
@@ -2717,19 +2717,19 @@
     display: none;
   }
 
-  :global(.kanban-select--new .select-dropdown-trigger) {
+  :global(.kanban-select--new .kit-select-dropdown__trigger) {
     color: var(--kanban-new);
   }
 
-  :global(.kanban-select--reviewing .select-dropdown-trigger) {
+  :global(.kanban-select--reviewing .kit-select-dropdown__trigger) {
     color: var(--accent-amber);
   }
 
-  :global(.kanban-select--waiting .select-dropdown-trigger) {
+  :global(.kanban-select--waiting .kit-select-dropdown__trigger) {
     color: var(--accent-purple);
   }
 
-  :global(.kanban-select--awaiting-merge .select-dropdown-trigger) {
+  :global(.kanban-select--awaiting-merge .kit-select-dropdown__trigger) {
     color: var(--accent-green);
   }
 

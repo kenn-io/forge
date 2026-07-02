@@ -199,6 +199,17 @@ that call `t.Run`, `t.Parallel`, or `t.Deadline` inside the bubble.
 `synctest.Wait` is race-detector synchronization, so it is useful under
 `go test -race` when the test is structurally eligible.
 
+### Daemon Readiness In Subprocess E2E
+
+Built-binary e2e tests (`cmd/middleman`, e.g. `TestAPIVerbE2E`) must detect
+full-server readiness by polling `/healthz` for 200 — it is auth-exempt and
+returns 503 until the full server replaces the startup handler (use the
+`waitForDaemonReady` helper). Do not infer readiness from an unauthenticated
+/api request returning 401: the startup handler enforces the same auth
+contract as the full server, so a 401 arrives during the startup window too.
+Runtime metadata and the auth token file also exist before readiness — the
+auth bootstrap link works in that window by design, but /api still 503s.
+
 ## HTTP testing discipline
 
 A test of user-visible HTTP behavior is **wire-level** when the request flows

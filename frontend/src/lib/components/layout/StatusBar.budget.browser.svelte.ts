@@ -123,7 +123,7 @@ describe("budget display", () => {
   beforeEach(async () => {
     // The status bar lives in the desktop app shell; size the real Chromium
     // viewport to a desktop width so the standard layout (and the budget area
-    // in status-right) renders deterministically.
+    // in the status bar right section) renders deterministically.
     await page.viewport(1280, 900);
   });
 

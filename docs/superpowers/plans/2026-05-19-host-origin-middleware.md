@@ -133,32 +133,28 @@ git commit -m "feat(server): add Host validation middleware (no wiring yet)"
   - Update `newServer` to derive `hostOpts` as follows:
     The rule for deriving `s.hostOpts` is single-pass and uses
     strict precedence (no field-by-field merging — avoids the
-    "intentional zero vs omitted" ambiguity):
-    1. **Caller override.** If `ServerOptions.HostCheck.Valid()`
-       (Bind is fully populated), use the entire override
-       as-is. Done.
-    2. **Production path.** Else if `cfg != nil` and
-       `cfg.BindHostKey().Valid()` (cfg was loaded via
-       `config.Load` so `Validate()` cached the bind key), derive
-       the entire option set from cfg —
-       `HostCheckOptions{Bind: cfg.BindHostKey(), Allowed:
+    "intentional zero vs omitted" ambiguity): 1. **Caller override.** If `ServerOptions.HostCheck.Valid()`
+    (Bind is fully populated), use the entire override
+    as-is. Done. 2. **Production path.** Else if `cfg != nil` and
+    `cfg.BindHostKey().Valid()` (cfg was loaded via
+    `config.Load` so `Validate()` cached the bind key), derive
+    the entire option set from cfg —
+    `HostCheckOptions{Bind: cfg.BindHostKey(), Allowed:
 cfg.ParsedAllowedHosts(), TrustReverseProxy:
-cfg.TrustReverseProxy}`. Done.
-    3. **Test-friendly default.** Else if `cfg == nil` AND
-       `ServerOptions.HostCheck` is zero, install the documented
-       fallback:
-       `HostCheckOptions{Bind: {127.0.0.1, 8091}, Allowed:
+cfg.TrustReverseProxy}`. Done. 3. **Test-friendly default.** Else if `cfg == nil` AND
+    `ServerOptions.HostCheck` is zero, install the documented
+    fallback:
+    `HostCheckOptions{Bind: {127.0.0.1, 8091}, Allowed:
 [{example.com, ""}, {middleman.test, ""}],
 TrustReverseProxy: false}`. This exists so the dozens of
-       pre-existing test helpers that construct servers with
-       `cfg = nil` keep working without per-test churn. The
-       default does NOT accept `attacker.example` or other
-       rebinding-style hosts. Security tests in Task 5 and Task 6
-       use explicit options (step 1).
-    4. **Fail-fast.** Else (`cfg != nil` but partial — Host/Port
-       not set, Validate never ran — and no override was
-       provided), panic with a programming-error message:
-       `"server: cannot construct without HostCheck options or a validated config"`. This forces partial-cfg test sites to pass an explicit `ServerOptions.HostCheck`.
+    pre-existing test helpers that construct servers with
+    `cfg = nil` keep working without per-test churn. The
+    default does NOT accept `attacker.example` or other
+    rebinding-style hosts. Security tests in Task 5 and Task 6
+    use explicit options (step 1). 4. **Fail-fast.** Else (`cfg != nil` but partial — Host/Port
+    not set, Validate never ran — and no override was
+    provided), panic with a programming-error message:
+    `"server: cannot construct without HostCheck options or a validated config"`. This forces partial-cfg test sites to pass an explicit `ServerOptions.HostCheck`.
 - Emit `slog.Warn("cfg=nil server.New used without ServerOptions.HostCheck; using httptest-compatible Host defaults. Production callers must pass a validated config or explicit HostCheck options.")` exactly when step 3 fires (single intended log site).
 - `Server.ServeHTTP` becomes (in order):
   1. `if !checkHost(w, r, s.hostOpts) { return }` — unconditional

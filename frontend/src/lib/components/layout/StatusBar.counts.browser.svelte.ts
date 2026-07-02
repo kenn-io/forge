@@ -211,7 +211,9 @@ async function mountStatusBar(path: string, overrides: MockRouteOverride[]): Pro
 }
 
 function statusItemTexts(): (string | undefined)[] {
-  return Array.from(document.querySelectorAll(".status-left .status-item")).map((item) => item.textContent?.trim());
+  return Array.from(document.querySelectorAll(".kit-status-bar__section--left .status-item")).map((item) =>
+    item.textContent?.trim(),
+  );
 }
 
 describe("status bar counts", () => {
@@ -238,7 +240,7 @@ describe("status bar counts", () => {
       expect(paths).toContain("/api/v1/pulls");
       expect(paths).toContain("/api/v1/issues");
     }, WAIT);
-    await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
+    await vi.waitFor(() => expect(document.querySelector(".kit-status-bar")).not.toBeNull(), WAIT);
 
     await vi.waitFor(() => {
       expect(statusItemTexts()).toEqual(["2 PRs", "1 issues", "1 repos"]);
@@ -256,7 +258,7 @@ describe("status bar counts", () => {
       expect(paths).toContain("/api/v1/issues");
       expect(paths).toContain("/api/v1/activity");
     }, WAIT);
-    await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
+    await vi.waitFor(() => expect(document.querySelector(".kit-status-bar")).not.toBeNull(), WAIT);
 
     await vi.waitFor(() => {
       expect(statusItemTexts()).toEqual(["3 PRs", "2 issues", "3 repos"]);
@@ -276,7 +278,7 @@ describe("status bar counts", () => {
       expect(paths).toContain("/api/v1/issues");
       expect(paths).toContain("/api/v1/activity");
     }, WAIT);
-    await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
+    await vi.waitFor(() => expect(document.querySelector(".kit-status-bar")).not.toBeNull(), WAIT);
 
     await vi.waitFor(() => {
       expect(statusItemTexts()).toEqual(["3 PRs", "2 issues", "3 repos"]);
@@ -292,7 +294,7 @@ describe("status bar counts", () => {
       const paths = mounted?.api.requests.map((req) => req.url.pathname) ?? [];
       expect(paths).toContain("/api/v1/activity");
     }, WAIT);
-    await vi.waitFor(() => expect(document.querySelector(".status-bar")).not.toBeNull(), WAIT);
+    await vi.waitFor(() => expect(document.querySelector(".kit-status-bar")).not.toBeNull(), WAIT);
 
     await vi.waitFor(() => {
       expect(statusItemTexts()).toEqual(["1 PRs", "1 issues", "1 repos"]);

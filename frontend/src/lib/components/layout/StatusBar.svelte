@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { StatusBar as KitStatusBar } from "@kenn-io/kit-ui";
   import { getStores } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
   import BudgetBars from "./BudgetBars.svelte";
@@ -160,15 +161,15 @@
   let hasHosts = $derived(Object.keys(rateLimitHosts).length > 0);
 </script>
 
-<footer class="status-bar">
-  <div class="status-left">
+<KitStatusBar>
+  {#snippet left()}
     <span class="status-item">{counts.pullRequests} PRs</span>
     <span class="status-sep">&middot;</span>
     <span class="status-item">{counts.issues} issues</span>
     <span class="status-sep">&middot;</span>
     <span class="status-item">{counts.repos} repos</span>
-  </div>
-  <div class="status-right">
+  {/snippet}
+  {#snippet right()}
     {#if hasHosts}
       <span class="budget-wrapper">
         <BudgetBars hosts={rateLimitHosts} onclick={togglePopover} expanded={popoverOpen} />
@@ -192,27 +193,10 @@
       <span class="status-sep">&middot;</span>
       <span class="status-item status-item--version">{appVersion}</span>
     {/if}
-  </div>
-</footer>
+  {/snippet}
+</KitStatusBar>
 
 <style>
-  .status-bar {
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 12px;
-    background: var(--bg-surface);
-    border-top: 1px solid var(--border-muted);
-    flex-shrink: 0;
-    font-size: var(--font-size-2xs);
-    color: var(--text-muted);
-  }
-  .status-left, .status-right {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
   .status-sep {
     color: var(--border-default);
   }

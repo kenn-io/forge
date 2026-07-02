@@ -109,25 +109,30 @@
 
 <Tooltip class="diff-summary-popover" align="start" openDelayMs={0}>
   {#snippet content()}
-    {#if error}
-      <div class="diff-summary-state diff-summary-state--error">
-        {error}
-      </div>
-    {:else if summary}
-      <div class="diff-summary-rows">
-        {#each visibleRows as row (row.key)}
-          <div class="diff-summary-row">
-            <span>{row.label}</span>
-            <DiffStats
-              additions={summary[row.key].additions}
-              deletions={summary[row.key].deletions}
-            />
-          </div>
-        {/each}
-      </div>
-    {:else}
-      <div class="diff-summary-state">Loading...</div>
-    {/if}
+    <!-- The summary loads after the tooltip is already described to
+         assistive tech; a live region announces the async transition
+         from Loading to the totals (or an error). -->
+    <div aria-live="polite">
+      {#if error}
+        <div class="diff-summary-state diff-summary-state--error">
+          {error}
+        </div>
+      {:else if summary}
+        <div class="diff-summary-rows">
+          {#each visibleRows as row (row.key)}
+            <div class="diff-summary-row">
+              <span>{row.label}</span>
+              <DiffStats
+                additions={summary[row.key].additions}
+                deletions={summary[row.key].deletions}
+              />
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <div class="diff-summary-state">Loading...</div>
+      {/if}
+    </div>
   {/snippet}
   <button
     type="button"

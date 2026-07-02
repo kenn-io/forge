@@ -35,9 +35,6 @@
     "./utils/markdown": {
       "default": "./src/utils/markdown.ts"
     },
-    "./utils/clipboard": {
-      "default": "./src/utils/clipboard.ts"
-    },
     "./utils/repo-color": {
       "default": "./src/utils/repo-color.ts"
     },

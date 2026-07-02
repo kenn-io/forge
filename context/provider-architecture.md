@@ -79,6 +79,16 @@ Rules:
   item-level gates in repo settings or list summaries
   (`internal/server/operation_availability.go::repoOperations`,
   `internal/server/operation_availability.go::repoOperationsForMergeRequest`).
+- An item-level gate such as self-approval must be applied at every mutation
+  entry point that can reach the guarded action and every response the UI reads
+  to decide whether to offer it — not only the detail operations response.
+  Availability alone does not protect direct API callers or stale clients, and a
+  server-side rejection alone still lets the UI advertise an action that fails on
+  submit. For self-approval that means: reject with `selfApprovalProblem` in both
+  review-draft publish and the direct `/approve` handler before calling the
+  review mutator, and drop `approve` from the advertised actions in both the
+  detail operations (`selfApprovalUnavailable`) and the review-draft response's
+  `supported_actions`, keeping `comment` and `request_changes`.
 - Read sync should continue for supported resources if optional resources such
   as releases, tags, CI, or comments fail or are unsupported.
 - Do not fake GitHub behavior for another provider. Add provider-specific

@@ -21,9 +21,17 @@ export const querySerializer: QuerySerializerOptions = {
 };
 
 export function detectUnauthorized(inner: FetchFn): FetchFn {
-  return async (input, init) => {
-    const response = await inner(input, init);
-    if (response.status === 401) setUnauthenticated();
+  return (input, init) => {
+    const response = inner(input, init);
+    // Observe the status without inserting an await between the caller
+    // and the response: an extra microtask here delays every API
+    // response tick and perturbs response-ordering-sensitive callers.
+    void response.then(
+      (r) => {
+        if (r.status === 401) setUnauthenticated();
+      },
+      () => {},
+    );
     return response;
   };
 }

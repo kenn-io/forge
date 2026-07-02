@@ -286,6 +286,42 @@ func TestClientGetMergeRequestPropagatesTransientForkHeadRepoLookupFailures(t *t
 	assert.Equal("get_source_project", platformErr.Capability)
 }
 
+func TestClientGetMergeRequestUsesMergedByFallback(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/merge_requests/7":
+			writeJSON(w, `{
+				"id": 1001,
+				"iid": 7,
+				"project_id": 42,
+				"title": "Merged legacy MR",
+				"state": "merged",
+				"web_url": "https://gitlab.example.com/group/project/-/merge_requests/7",
+				"author": {"username": "ada"},
+				"source_branch": "feature",
+				"target_branch": "main",
+				"sha": "abc",
+				"created_at": "2026-04-01T10:00:00Z",
+				"updated_at": "2026-04-02T10:00:00Z",
+				"merged_at": "2026-04-02T10:00:00Z",
+				"merged_by": {"username": "legacy-admin"}
+			}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", PlatformID: 42}
+
+	mr, err := client.GetMergeRequest(context.Background(), ref, 7)
+	require.NoError(err)
+	assert.Equal("legacy-admin", mr.MergedBy)
+}
+
 func TestClientRecordsRateLimitRequests(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

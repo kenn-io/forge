@@ -207,6 +207,16 @@ original diff range, so the PATCH path must rebuild the range from the stored
 comment rather than from whichever line is currently selected
 (`packages/ui/src/stores/diff-review-draft.svelte.ts::editComment`).
 
+An open saved-draft comment editor is also pending local state, even before its
+body differs from the saved text. Review-level publish and discard must stay
+unavailable until every draft comment editor is saved or canceled; otherwise the
+provider mutation can submit the old saved body while the UI still shows an
+unsaved edit. Track that state in the draft-review store and have both tray and
+inline editors clear it on save, cancel, and unmount
+(`packages/ui/src/stores/diff-review-draft.svelte.ts::hasPendingCommentEdits`,
+`packages/ui/src/components/diff/DiffReviewDraftTray.svelte::publish`,
+`packages/ui/src/components/diff/DiffReviewDraftInlineComment.svelte::reportEditState`).
+
 Draft authoring and the sticky publish tray are gated by the repo operation
 `review_draft`, not `submit_review`. `submit_review` gates submitted review
 actions in the detail header, while Files-tab draft authoring must disappear

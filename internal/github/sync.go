@@ -5871,6 +5871,9 @@ func (s *Syncer) fetchProviderMRDetail(
 	if err != nil {
 		return calls, err
 	}
+	if _, err := s.persistMergedActorEvent(ctx, mrID, mr.MergedBy, normalized.MergedAt); err != nil {
+		return calls, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+	}
 
 	if err := s.updateMRDetailFetchedByRepoID(ctx, repoID, number, pending); err != nil {
 		return calls, fmt.Errorf("mark detail fetched for MR #%d: %w", number, err)
@@ -7899,6 +7902,7 @@ func (s *Syncer) syncMRForRepo(
 	}
 
 	var ghPR *gh.PullRequest
+	var platformMR platform.MergeRequest
 	var normalized *db.MergeRequest
 	var newETag string
 	if rawReader, ok := mrReader.(interface {
@@ -7931,14 +7935,12 @@ func (s *Syncer) syncMRForRepo(
 				normalized, err = NormalizePR(repoID, ghPR)
 			}
 		} else {
-			var platformMR platform.MergeRequest
 			ghPR, platformMR, err = rawReader.GetGitHubPullRequest(ctx, platformRepoRef(repo), number)
 			if err == nil {
 				normalized = platform.DBMergeRequest(repoID, platformMR)
 			}
 		}
 	} else {
-		var platformMR platform.MergeRequest
 		platformMR, err = mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
 		if err == nil {
 			normalized = platform.DBMergeRequest(repoID, platformMR)
@@ -8064,6 +8066,9 @@ func (s *Syncer) syncMRForRepo(
 		)
 		if err != nil {
 			return err
+		}
+		if _, err := s.persistMergedActorEvent(ctx, mrID, platformMR.MergedBy, normalized.MergedAt); err != nil {
+			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
 		}
 		if err := s.updateMRDetailFetchedByRepoID(ctx, repoID, number, pending); err != nil {
 			return fmt.Errorf("mark detail fetched for MR #%d: %w", number, err)

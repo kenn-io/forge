@@ -5989,6 +5989,69 @@ func TestFetchMRDetailPersistsMergedActorEventFromPullRequest(t *testing.T) {
 	assert.True(events[0].CreatedAt.Equal(now.Add(time.Minute)))
 }
 
+func TestFetchProviderMRDetailPersistsMergedActorEventFromMergeRequest(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+	mergedAt := now.Add(time.Minute)
+
+	repo := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+		RepoPath:     "group/project",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{kind: platform.KindGitLab, host: "gitlab.example.com"},
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           platformRepoRef(repo),
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Merged GitLab MR",
+			Author:         "ada",
+			State:          "merged",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CreatedAt:      now,
+			UpdatedAt:      mergedAt,
+			LastActivityAt: mergedAt,
+			MergedAt:       &mergedAt,
+			ClosedAt:       &mergedAt,
+			MergedBy:       "merge-admin",
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7, true)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(db.MergeRequestStateMerged, got.State)
+
+	events, err := d.ListMREvents(ctx, got.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("merged", events[0].EventType)
+	assert.Equal("merge-admin", events[0].Author)
+	assert.Equal("merged this", events[0].Summary)
+	assert.True(events[0].CreatedAt.Equal(mergedAt))
+}
+
 func TestFetchMRDetailDoesNotDuplicateMergedTimelineEvent(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

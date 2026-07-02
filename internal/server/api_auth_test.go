@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -134,6 +135,43 @@ func TestAPIAuthCookieBootstrap(t *testing.T) {
 	resp = authGet(t, ts, "/?auth_token=wrong", nil)
 	assert.Equal(http.StatusForbidden, resp.StatusCode)
 	assert.Empty(resp.Cookies())
+}
+
+// TestAuthBootstrapURLRoundTrip pins the glue between the CLI and the
+// server: the exact URL `middleman auth url` prints (AuthBootstrapURL)
+// must bootstrap a session cookie that authorizes the API, at the root
+// and under a base path. The other bootstrap tests hand-build the URL,
+// so they would not catch AuthBootstrapURL drifting from the handler.
+func TestAuthBootstrapURLRoundTrip(t *testing.T) {
+	for _, basePath := range []string{"/", "/middleman/"} {
+		t.Run("basePath="+basePath, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			srv := New(dbtest.Open(t), nil, nil, basePath, nil, ServerOptions{
+				APIAuthToken: "secret-token",
+			})
+			ts := httptest.NewServer(srv)
+			t.Cleanup(ts.Close)
+
+			base := ts.URL + strings.TrimSuffix(basePath, "/")
+			bootstrap := AuthBootstrapURL(base, "secret-token")
+			resp := authGet(t, ts, strings.TrimPrefix(bootstrap, ts.URL), nil)
+			require.Equal(http.StatusSeeOther, resp.StatusCode)
+			assert.Equal(basePath, resp.Header.Get("Location"),
+				"token must be stripped from the redirect target")
+			cookies := resp.Cookies()
+			require.Len(cookies, 1)
+
+			apiPath := strings.TrimSuffix(basePath, "/") + "/api/v1/snapshot"
+			resp = authGet(t, ts, apiPath, nil)
+			require.Equal(http.StatusUnauthorized, resp.StatusCode)
+			resp = authGet(t, ts, apiPath, func(r *http.Request) {
+				r.AddCookie(cookies[0])
+			})
+			assert.Equal(http.StatusOK, resp.StatusCode,
+				"the CLI-printed URL must yield a cookie that authorizes the API")
+		})
+	}
 }
 
 // TestAPIAuthDisabledByDefault pins the default: with no token

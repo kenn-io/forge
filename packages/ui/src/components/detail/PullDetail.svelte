@@ -2412,6 +2412,7 @@
 
   .label-editor-backdrop {
     position: fixed;
+    /* kit-ui-check-ignore: dimmed click-catcher behind the label-editor popover, not a dialog surface */
     inset: 0;
     z-index: 55;
     background: rgba(128, 128, 128, 0.3);

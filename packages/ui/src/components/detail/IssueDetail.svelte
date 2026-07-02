@@ -16,7 +16,7 @@
   import EventTimeline from "./EventTimeline.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
-    import { Button, Chip } from "@kenn-io/kit-ui";
+    import { Button, Chip, Modal } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import LabelPicker from "./LabelPicker.svelte";
@@ -1188,52 +1188,13 @@
 
     {#if branchConflict}
       {@const conflict = branchConflict}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="modal-overlay"
-        onclick={closeBranchConflictDialog}
-        onkeydown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            closeBranchConflictDialog();
-          }
-        }}
+      <Modal
+        title="Branch Name Conflict"
+        width="min(560px, 92vw)"
+        maxWidth="min(560px, 92vw)"
+        onclose={closeBranchConflictDialog}
       >
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="issue-workspace-branch-conflict-title"
-          tabindex="-1"
-          onclick={(event) => event.stopPropagation()}
-        >
-          <div class="modal-header">
-            <h3
-              id="issue-workspace-branch-conflict-title"
-              class="modal-title"
-            >
-              Branch Name Conflict
-            </h3>
-            <button
-              class="modal-close"
-              onclick={closeBranchConflictDialog}
-              title="Cancel (Esc)"
-              disabled={workspaceCreating}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="currentColor"
-              >
-                <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
-              </svg>
-            </button>
-          </div>
-
-          <div class="modal-body">
+          <div class="conflict-body">
             <p class="modal-copy">
               The branch <code>{conflict.existingBranch}</code> already exists locally.
             </p>
@@ -1291,31 +1252,30 @@
             {/if}
           </div>
 
-          <div class="modal-footer">
-            <Button
-              class="btn btn--secondary"
-              onclick={closeBranchConflictDialog}
-              disabled={workspaceCreating}
-              tone="neutral"
-              surface="outline"
-            >
-              Cancel
-            </Button>
-            <Button
-              class="btn btn--primary btn--green"
-              onclick={() => void createWorkspace({
-                gitHeadRef: conflict.branchInput,
-                fromConflictDialog: true,
-              })}
-              disabled={workspaceCreating}
-              tone="success"
-              surface="solid"
-            >
-              {workspaceCreating ? "Creating..." : "Create New Branch"}
-            </Button>
-          </div>
-        </div>
-      </div>
+        {#snippet footer()}
+          <Button
+            class="btn btn--secondary"
+            onclick={closeBranchConflictDialog}
+            disabled={workspaceCreating}
+            tone="neutral"
+            surface="outline"
+          >
+            Cancel
+          </Button>
+          <Button
+            class="btn btn--primary btn--green"
+            onclick={() => void createWorkspace({
+              gitHeadRef: conflict.branchInput,
+              fromConflictDialog: true,
+            })}
+            disabled={workspaceCreating}
+            tone="success"
+            surface="solid"
+          >
+            {workspaceCreating ? "Creating..." : "Create New Branch"}
+          </Button>
+        {/snippet}
+      </Modal>
     {/if}
   {/if}
 {/if}
@@ -1631,71 +1591,7 @@
     color: var(--text-muted);
   }
 
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--overlay-bg);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-    animation: fade-in 0.12s ease-out;
-  }
-
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  .modal {
-    width: min(560px, 92vw);
-    background: var(--bg-surface);
-    border: 1px solid var(--border-muted);
-    border-radius: 12px;
-    box-shadow: var(--shadow-lg);
-    overflow: hidden;
-  }
-
-  .modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border-muted);
-  }
-
-  .modal-title {
-    margin: 0;
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .modal-close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-
-  .modal-close:hover:not(:disabled) {
-    background: var(--bg-inset);
-    color: var(--text-primary);
-  }
-
-  .modal-close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .modal-body {
-    padding: 16px;
+  .conflict-body {
     display: grid;
     gap: 14px;
   }
@@ -1762,14 +1658,6 @@
     margin: 0;
     font-size: var(--font-size-sm);
     color: var(--accent-red, #d73a49);
-  }
-
-  .modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 14px 16px;
-    border-top: 1px solid var(--border-muted);
   }
 
   @media (max-width: 640px) {
@@ -1874,7 +1762,6 @@
     }
 
     .actions-row :global(.kit-button),
-    .modal-close,
     .field-input {
       min-height: var(--detail-mobile-hit-target);
       font-size: var(--font-size-sm);

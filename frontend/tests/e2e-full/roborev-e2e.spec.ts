@@ -747,9 +747,9 @@ test.describe.serial("Roborev", () => {
 
       // Open help modal
       await page.keyboard.press("Shift+?");
-      const modal = page.locator(".modal-backdrop");
+      const modal = page.getByRole("dialog", { name: "Keyboard Shortcuts" });
       await expect(modal).toBeVisible();
-      await expect(page.locator(".modal-content")).toContainText("Keyboard Shortcuts");
+      await expect(modal).toContainText("Move selection down / up");
 
       // Close with Escape
       await page.keyboard.press("Escape");

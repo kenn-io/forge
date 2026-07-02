@@ -8637,12 +8637,7 @@ func (s *Syncer) authoredMergedLifecycleEventExists(
 }
 
 func authoredMergedLifecycleEventExists(events []db.MREvent) bool {
-	for _, event := range events {
-		if isAuthoredMergedLifecycleEvent(event) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(events, isAuthoredMergedLifecycleEvent)
 }
 
 func isAuthoredMergedLifecycleEvent(event db.MREvent) bool {

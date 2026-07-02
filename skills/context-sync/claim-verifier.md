@@ -33,8 +33,8 @@ These are middleman's load-bearing cross-cutting rules. When a document touches 
 re-check it directly against code rather than trusting the prose:
 
 - **Provider identity tuple.** Claim that identity is `(platform, platform_host, owner,
-name)` everywhere and routes are provider-aware (`/pulls/{provider}/{owner}/{name}/
-{number}`, `/host/{platform_host}/...`). Re-check `internal/platform/` (registry,
+  name)` everywhere and routes are provider-aware (`/pulls/{provider}/{owner}/{name}/
+  {number}`, `/host/{platform_host}/...`). Re-check `internal/platform/` (registry,
   types, persist) and representative `internal/server/` route registrations.
 - **Capability gating.** Claim that provider differences go through `Capabilities()` and
   return typed `unsupported_capability` errors with no silent GitHub-only fallback.

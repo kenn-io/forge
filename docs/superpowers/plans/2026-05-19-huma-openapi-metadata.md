@@ -17,7 +17,6 @@
 This task drafts the contract test so subsequent backfill tasks have a concrete acceptance criterion to drive off. The test is not committed yet: a single commit at this point would either (a) break `go test ./...` and refuse to land in any environment with a `make test-short` pre-commit hook, or (b) require an awkward `t.Skip` that adds churn to a later removal commit. Instead, the working file lives uncommitted alongside the backfill tasks and lands in Task 4 once the live OpenAPI document already satisfies it.
 
 **Files:**
-
 - Create (uncommitted for now): `internal/server/route_metadata_test.go`
 
 - [ ] **Step 1: Write the contract test and negative-case smoke test**
@@ -177,7 +176,6 @@ Leave the test file uncommitted. It will be committed in Task 6 once the backfil
 This task adds the `documentOperation` helper and uses it on every route in `registerAPI` (excluding `registerProviderRepoAPI` and `registerSettingsAPI`, which are separate tasks). The helper and its first use go in the same commit so `golangci-lint`'s `unused` check does not reject a stand-alone helper definition.
 
 **Files:**
-
 - Modify: `internal/server/huma_routes.go` (lines 413-575 approximately)
 
 - [ ] **Step 1: Add the documentOperation helper next to apiConfig**
@@ -659,7 +657,6 @@ EOF
 This task covers everything registered inside `registerProviderRepoAPI` (roughly lines 577-661 in `huma_routes.go`). The inline `huma.Register(api, huma.Operation{...})` calls keep their structure; they just gain `Summary` and `Tags` fields. The convenience-helper calls (`huma.Get`/`huma.Post`) gain a `documentOperation(...)` argument. Several existing OperationIDs already conform to the kebab-case `verb-resource[-qualifier]` convention and stay as-is; the rest follow the conventions in the spec.
 
 **Files:**
-
 - Modify: `internal/server/huma_routes.go` (lines 577-661 approximately)
 
 - [ ] **Step 1: Backfill PR detail, kanban-state, content, comments, and labels**
@@ -939,7 +936,6 @@ EOF
 After this task the contract test passes; the final settings backfill plus the previously-uncommitted `route_metadata_test.go` from Task 1 land in one atomic commit that flips the OpenAPI document from un-tagged to fully tagged and locks the new invariant in.
 
 **Files:**
-
 - Modify: `internal/server/settings_routes.go`
 - Add (from Task 1): `internal/server/route_metadata_test.go`
 
@@ -1050,7 +1046,6 @@ EOF
 ### Task 5: Regenerate Checked-In API Artifacts
 
 **Files:**
-
 - Modify: `frontend/openapi/openapi.yaml`
 - Modify: `internal/apiclient/generated/client.gen.go`
 - Modify: `packages/ui/src/api/generated/schema.ts`
@@ -1104,31 +1099,31 @@ nix run 'nixpkgs#ripgrep' -- "client\.HTTP\.(Get|Post|Put|Patch|Delete)(Pulls|Is
 
 For each match, rewrite the call site to the new OperationID-derived method name. The mapping is mechanical: a route with OperationID `approve-pull` produces `ApprovePullWithResponse`. Lookups in the regenerated `internal/apiclient/generated/client.gen.go` resolve any uncertainty. Concrete renames most likely to appear:
 
-| Old method (post-regen: gone)                                                     | New method                           |
-| --------------------------------------------------------------------------------- | ------------------------------------ |
-| `PostPullsByProviderByOwnerByNameByNumberApproveWithResponse`                     | `ApprovePullWithResponse`            |
-| `PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithResponse`   | `ApprovePullOnHostWithResponse`      |
-| `PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse`            | `ApprovePullWorkflowsWithResponse`   |
-| `PostPullsByProviderByOwnerByNameByNumberMergeWithResponse`                       | `MergePullWithResponse`              |
-| `PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse`     | `MergePullOnHostWithResponse`        |
-| `PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse`              | `MarkPullReadyForReviewWithResponse` |
-| `PostPullsByProviderByOwnerByNameByNumberSyncWithResponse`                        | `SyncPullWithResponse`               |
-| `PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse`      | `SyncPullOnHostWithResponse`         |
-| `PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse`                   | `RefreshPullCiWithResponse`          |
-| `PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse` | `RefreshPullCiOnHostWithResponse`    |
-| `GetPullsByProviderByOwnerByNameByNumberWithResponse`                             | `GetPullWithResponse`                |
-| `GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse`           | `GetPullOnHostWithResponse`          |
-| `GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse`                      | `GetPullCommitsWithResponse`         |
-| `GetPullsByProviderByOwnerByNameByNumberDiffWithResponse`                         | `GetPullDiffWithResponse`            |
-| `GetPullsByProviderByOwnerByNameByNumberFilesWithResponse`                        | `GetPullFilesWithResponse`           |
-| `GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse`                  | `GetPullFilePreviewWithResponse`     |
-| `GetPullsByProviderByOwnerByNameByNumberStackWithResponse`                        | `GetPullStackWithResponse`           |
-| `GetIssuesByProviderByOwnerByNameByNumberWithResponse`                            | `GetIssueWithResponse`               |
-| `GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse`          | `GetIssueOnHostWithResponse`         |
-| `PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse`                       | `SyncIssueWithResponse`              |
-| `PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse`     | `SyncIssueOnHostWithResponse`        |
-| `PostRepoByProviderByOwnerByNameResolveByNumberWithResponse`                      | `ResolveRepoItemWithResponse`        |
-| `GetActivityWithResponse`                                                         | `ListActivityWithResponse`           |
+| Old method (post-regen: gone) | New method |
+|---|---|
+| `PostPullsByProviderByOwnerByNameByNumberApproveWithResponse` | `ApprovePullWithResponse` |
+| `PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithResponse` | `ApprovePullOnHostWithResponse` |
+| `PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse` | `ApprovePullWorkflowsWithResponse` |
+| `PostPullsByProviderByOwnerByNameByNumberMergeWithResponse` | `MergePullWithResponse` |
+| `PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse` | `MergePullOnHostWithResponse` |
+| `PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse` | `MarkPullReadyForReviewWithResponse` |
+| `PostPullsByProviderByOwnerByNameByNumberSyncWithResponse` | `SyncPullWithResponse` |
+| `PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse` | `SyncPullOnHostWithResponse` |
+| `PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse` | `RefreshPullCiWithResponse` |
+| `PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse` | `RefreshPullCiOnHostWithResponse` |
+| `GetPullsByProviderByOwnerByNameByNumberWithResponse` | `GetPullWithResponse` |
+| `GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse` | `GetPullOnHostWithResponse` |
+| `GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse` | `GetPullCommitsWithResponse` |
+| `GetPullsByProviderByOwnerByNameByNumberDiffWithResponse` | `GetPullDiffWithResponse` |
+| `GetPullsByProviderByOwnerByNameByNumberFilesWithResponse` | `GetPullFilesWithResponse` |
+| `GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse` | `GetPullFilePreviewWithResponse` |
+| `GetPullsByProviderByOwnerByNameByNumberStackWithResponse` | `GetPullStackWithResponse` |
+| `GetIssuesByProviderByOwnerByNameByNumberWithResponse` | `GetIssueWithResponse` |
+| `GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse` | `GetIssueOnHostWithResponse` |
+| `PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse` | `SyncIssueWithResponse` |
+| `PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse` | `SyncIssueOnHostWithResponse` |
+| `PostRepoByProviderByOwnerByNameResolveByNumberWithResponse` | `ResolveRepoItemWithResponse` |
+| `GetActivityWithResponse` | `ListActivityWithResponse` |
 
 If the same line carries a `JSONRequestBody` type that was also renamed (for example `PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody` → `MergePullJSONRequestBody`), rename that too.
 
@@ -1214,7 +1209,6 @@ If `git add` of an `internal/server/apitest/` or `workspacetest/` path fails bec
 ### Task 6: Final Lint And Vet Pass
 
 **Files:**
-
 - None (verification only).
 
 - [ ] **Step 1: Run go vet across the workspace**

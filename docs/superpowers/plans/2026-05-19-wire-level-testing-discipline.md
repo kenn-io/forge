@@ -15,7 +15,6 @@
 **Spec reference:** Worked example 1.
 
 **Files:**
-
 - Create: `internal/server/e2etest/sse_contract_test.go`
 
 This test exercises the SSE endpoint over a real socket via `httptest.NewServer`. It pre-broadcasts a `sync_status` event before starting the server, then asserts that the first frame on the wire carries the cached payload, with the response headers (`Content-Type: text/event-stream`, `Cache-Control: no-cache`) intact. It does not assert `Connection` (hop-by-hop and absent under HTTP/2).
@@ -151,7 +150,6 @@ and the first cached sync_status frame on the wire."
 **Spec reference:** Worked example 2.
 
 **Files:**
-
 - Create: `internal/server/apitest/mutation_guard_test.go`
 
 This test deliberately violates a precondition the generated client always satisfies (a `Content-Type` other than `application/json` on a mutating route). The generated client cannot construct this request, so the test uses a raw `http.Request` sent through `srv.ServeHTTP` via `httptest.NewRecorder`. The full middleware chain runs; a handler-internal test calling the handler directly would never trigger the mutation guard.
@@ -258,7 +256,6 @@ application/json response header, and the writeError body shape."
 **Spec reference:** Worked example 3.
 
 **Files:**
-
 - Modify: `internal/server/workspacetest/fixtures_test.go`
 - Create: `internal/server/workspacetest/issue_workspace_conflict_test.go`
 
@@ -468,7 +465,6 @@ shape, not a coverage replacement."
 **Spec reference:** "Where the doctrine lives" and acceptance criteria.
 
 **Files:**
-
 - Modify: `context/testing.md`
 - Modify: `CLAUDE.md`
 
@@ -545,14 +541,14 @@ compose into a handler.
 
 The bug classes wire-level tests catch:
 
-| Bug class                                             | Assertion target                                                                                                        |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Time field serialization (`Z` vs `+00:00`)            | Raw response body; handler-internal tests inspect `time.Time` values before marshaling.                                 |
-| Error code missing from OpenAPI doc                   | `apitest/` generated client surfaces unknown status variants and schema mismatches against `generated.ErrorModel`.      |
-| Header set in handler but stripped by middleware      | `resp.Header`, not the handler's `w.Header()` before middleware ran.                                                    |
-| Status code overridden by middleware                  | `resp.StatusCode`, not the handler's return.                                                                            |
+| Bug class | Assertion target |
+|-----------|------------------|
+| Time field serialization (`Z` vs `+00:00`) | Raw response body; handler-internal tests inspect `time.Time` values before marshaling. |
+| Error code missing from OpenAPI doc | `apitest/` generated client surfaces unknown status variants and schema mismatches against `generated.ErrorModel`. |
+| Header set in handler but stripped by middleware | `resp.Header`, not the handler's `w.Header()` before middleware ran. |
+| Status code overridden by middleware | `resp.StatusCode`, not the handler's return. |
 | Mutation guard short-circuits before handler dispatch | `srv.ServeHTTP` runs the full middleware chain; handler-internal tests calling the handler directly miss this entirely. |
-| SSE Content-Type / Cache-Control drift                | Real-socket read; the recorder does not faithfully simulate what a real client sees on a buffered stream.               |
+| SSE Content-Type / Cache-Control drift | Real-socket read; the recorder does not faithfully simulate what a real client sees on a buffered stream. |
 
 Three worked examples ship the discipline:
 
@@ -594,7 +590,6 @@ git diff --check context/testing.md CLAUDE.md
 Expected: no whitespace errors.
 
 Re-read both files to confirm:
-
 - `context/testing.md` has the new `## HTTP testing discipline` section between `## Race test runtime` and `## Related context`.
 - The bug-class table renders as a markdown table.
 - `CLAUDE.md` has exactly one new bullet, positioned after the apiclient bullet under `### Test Guidelines`.
@@ -676,7 +671,6 @@ Expected: working tree clean. All four commits (Tasks 1-4) on the current branch
 ## Self-Review
 
 **Spec coverage:**
-
 - "Operational definition" — covered by the new `## HTTP testing discipline` section in `context/testing.md` (Task 4 Step 1).
 - "When to write what shape" — same section, the per-shape guidance bullet list.
 - "Bug classes" — same section, the bug-class table.
@@ -691,7 +685,6 @@ Expected: working tree clean. All four commits (Tasks 1-4) on the current branch
 **Placeholder scan:** no "TBD", "TODO", "implement later", "similar to Task N", or hand-wave steps. Every code block is complete and self-contained.
 
 **Type consistency:**
-
 - `generated.CreateIssueWorkspaceInputBody{}` matches the type at `internal/apiclient/generated/client.gen.go:279`.
 - `generated.ErrorModel` matches `internal/apiclient/generated/client.gen.go:391`.
 - `ErrorModel.Errors` is `*[]ErrorDetail` (per the generated source), so the test dereferences with `*problem.Errors` and ranges over the slice — matches the code in Task 3 Step 3.

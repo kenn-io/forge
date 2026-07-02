@@ -12,27 +12,26 @@
 
 ## File Structure
 
-| File                                                           | Purpose                                                 |
-| -------------------------------------------------------------- | ------------------------------------------------------- |
-| `internal/db/migrations/000025_gitlab_discussion_ids.up.sql`   | Add discussion columns to event tables                  |
-| `internal/db/migrations/000025_gitlab_discussion_ids.down.sql` | Rollback migration                                      |
-| `internal/db/types.go`                                         | Extend MREvent and IssueEvent structs                   |
-| `internal/db/queries.go`                                       | Update upsert/select queries for new columns            |
-| `internal/platform/types.go`                                   | Extend platform event types and capabilities            |
-| `internal/platform/client.go`                                  | Add DiscussionReplier and DiscussionResolver interfaces |
-| `internal/platform/persist.go`                                 | Map new platform fields to DB fields                    |
-| `internal/platform/gitlab/normalize.go`                        | New discussion normalization functions                  |
-| `internal/platform/gitlab/client.go`                           | Switch to Discussions API, update capabilities          |
-| `internal/platform/gitlab/mutation.go`                         | New file for reply/resolve mutations                    |
-| `internal/server/huma_routes.go`                               | New discussion reply/resolve endpoints                  |
-| `internal/server/api_types.go`                                 | Update capability response type                         |
+| File | Purpose |
+|------|---------|
+| `internal/db/migrations/000025_gitlab_discussion_ids.up.sql` | Add discussion columns to event tables |
+| `internal/db/migrations/000025_gitlab_discussion_ids.down.sql` | Rollback migration |
+| `internal/db/types.go` | Extend MREvent and IssueEvent structs |
+| `internal/db/queries.go` | Update upsert/select queries for new columns |
+| `internal/platform/types.go` | Extend platform event types and capabilities |
+| `internal/platform/client.go` | Add DiscussionReplier and DiscussionResolver interfaces |
+| `internal/platform/persist.go` | Map new platform fields to DB fields |
+| `internal/platform/gitlab/normalize.go` | New discussion normalization functions |
+| `internal/platform/gitlab/client.go` | Switch to Discussions API, update capabilities |
+| `internal/platform/gitlab/mutation.go` | New file for reply/resolve mutations |
+| `internal/server/huma_routes.go` | New discussion reply/resolve endpoints |
+| `internal/server/api_types.go` | Update capability response type |
 
 ---
 
 ## Task 1: Database Migration
 
 **Files:**
-
 - Create: `internal/db/migrations/000025_gitlab_discussion_ids.up.sql`
 - Create: `internal/db/migrations/000025_gitlab_discussion_ids.down.sql`
 
@@ -82,7 +81,6 @@ git commit -m "feat(db): add discussion_id columns to event tables"
 ## Task 2: DB Types Extension
 
 **Files:**
-
 - Modify: `internal/db/types.go`
 
 - [ ] **Step 1: Extend MREvent struct**
@@ -147,7 +145,6 @@ git commit -m "feat(db): extend MREvent and IssueEvent with discussion fields"
 ## Task 3: Platform Types Extension
 
 **Files:**
-
 - Modify: `internal/platform/types.go`
 
 - [ ] **Step 1: Extend MergeRequestEvent struct**
@@ -238,7 +235,6 @@ git commit -m "feat(platform): extend event types and capabilities for discussio
 ## Task 4: Platform Interfaces
 
 **Files:**
-
 - Modify: `internal/platform/client.go`
 
 - [ ] **Step 1: Add DiscussionReplier interface**
@@ -290,7 +286,6 @@ git commit -m "feat(platform): add DiscussionReplier and DiscussionResolver inte
 ## Task 5: Persistence Layer Update
 
 **Files:**
-
 - Modify: `internal/platform/persist.go`
 
 - [ ] **Step 1: Update DBMREvent function**
@@ -369,7 +364,6 @@ git commit -m "feat(platform): map discussion fields in persistence layer"
 ## Task 6: DB Queries Update
 
 **Files:**
-
 - Modify: `internal/db/queries.go`
 - Test: `internal/db/queries_test.go`
 
@@ -529,7 +523,6 @@ git commit -m "feat(db): add discussion fields to MR event queries"
 ## Task 7: Issue Event Queries Update
 
 **Files:**
-
 - Modify: `internal/db/queries.go`
 - Test: `internal/db/queries_test.go`
 
@@ -698,7 +691,6 @@ git commit -m "feat(db): add discussion_id to issue event queries"
 ## Task 8: GitLab Discussion Normalization
 
 **Files:**
-
 - Modify: `internal/platform/gitlab/normalize.go`
 - Test: `internal/platform/gitlab/normalize_test.go`
 
@@ -878,7 +870,6 @@ git commit -m "feat(gitlab): add NormalizeMergeRequestDiscussions function"
 ## Task 9: GitLab Issue Discussion Normalization
 
 **Files:**
-
 - Modify: `internal/platform/gitlab/normalize.go`
 - Test: `internal/platform/gitlab/normalize_test.go`
 
@@ -980,7 +971,6 @@ git commit -m "feat(gitlab): add NormalizeIssueDiscussions function"
 ## Task 10: GitLab Client - Switch to Discussions API
 
 **Files:**
-
 - Modify: `internal/platform/gitlab/client.go`
 - Test: `internal/platform/gitlab/client_test.go`
 
@@ -1103,7 +1093,6 @@ git commit -m "feat(gitlab): switch from Notes to Discussions API"
 ## Task 11: GitLab Capabilities and Mutations
 
 **Files:**
-
 - Modify: `internal/platform/gitlab/client.go`
 - Create: `internal/platform/gitlab/mutation.go`
 
@@ -1242,7 +1231,6 @@ git commit -m "feat(gitlab): add discussion reply and resolve mutations"
 ## Task 12: API Types Update
 
 **Files:**
-
 - Modify: `internal/server/api_types.go`
 
 - [ ] **Step 1: Add discussion capabilities to response type**
@@ -1288,7 +1276,6 @@ git commit -m "feat(api): add discussion capabilities to response type"
 ## Task 13: Discussion Reply Endpoint
 
 **Files:**
-
 - Modify: `internal/server/huma_routes.go`
 - Test: `internal/server/e2etest/gitlab_discussions_test.go`
 
@@ -1428,7 +1415,6 @@ git commit -m "feat(api): add discussion endpoint types and e2e test for discuss
 ## Task 14: Register Discussion Endpoints
 
 **Files:**
-
 - Modify: `internal/server/huma_routes.go`
 
 - [ ] **Step 1: Add reply to discussion handler**
@@ -1555,7 +1541,6 @@ git commit -m "feat(api): register discussion reply and resolve endpoints"
 ## Task 15: Capability Mapping Update
 
 **Files:**
-
 - Modify: `internal/server/huma_routes.go` (or wherever capabilities are mapped)
 
 - [ ] **Step 1: Find and update capability mapping function**
@@ -1603,7 +1588,6 @@ git commit -m "feat(api): map discussion capabilities in response"
 ## Task 16: E2E Test for Discussion Capabilities
 
 **Files:**
-
 - Modify: `internal/server/e2etest/gitlab_discussions_test.go`
 
 - [ ] **Step 1: Add test for GitLab capabilities including discussion support**

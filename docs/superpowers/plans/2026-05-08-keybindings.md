@@ -67,7 +67,6 @@ When a task below shows an import like `import { pushModalFrame } from "../../..
 ## Task 1: Shared types
 
 **Files:**
-
 - Create: `frontend/src/lib/stores/keyboard/types.ts`
 
 - [ ] **Step 1: Write the types file**
@@ -78,7 +77,10 @@ import type { PullSelection } from "@middleman/ui/stores/pulls";
 import type { IssueSelection } from "@middleman/ui/stores/issues";
 import type { RoutedItemRef } from "@middleman/ui/routes";
 
-export type ScopeTag = "global" | "view-pulls" | "view-issues" | "detail-pr" | "detail-issue";
+export type ScopeTag =
+  | "global"
+  | "view-pulls" | "view-issues"
+  | "detail-pr" | "detail-issue";
 
 export interface KeySpec {
   key: string;
@@ -149,7 +151,6 @@ git commit -m "feat(keyboard): add shared action/context/recents types"
 ## Task 2: Registry store
 
 **Files:**
-
 - Create: `frontend/src/lib/stores/keyboard/registry.svelte.ts`
 - Test: `frontend/src/lib/stores/keyboard/registry.svelte.test.ts`
 
@@ -208,11 +209,7 @@ describe("registry", () => {
   it("getAllActions flattens entries across owners", () => {
     registerScopedActions("owner-a", [action("a.one")]);
     registerScopedActions("owner-b", [action("b.one")]);
-    expect(
-      getAllActions()
-        .map((a) => a.id)
-        .sort(),
-    ).toEqual(["a.one", "b.one"]);
+    expect(getAllActions().map((a) => a.id).sort()).toEqual(["a.one", "b.one"]);
   });
 
   it("registerCheatsheetEntries supports owner-based replacement", () => {
@@ -224,11 +221,7 @@ describe("registry", () => {
     });
     registerCheatsheetEntries("ce-a", [entry("a")]);
     registerCheatsheetEntries("ce-b", [entry("b")]);
-    expect(
-      getAllCheatsheetEntries()
-        .map((e) => e.id)
-        .sort(),
-    ).toEqual(["a", "b"]);
+    expect(getAllCheatsheetEntries().map((e) => e.id).sort()).toEqual(["a", "b"]);
     registerCheatsheetEntries("ce-a", []);
     expect(getAllCheatsheetEntries().map((e) => e.id)).toEqual(["b"]);
   });
@@ -248,7 +241,10 @@ import type { Action, CheatsheetEntry } from "./types.js";
 let actionsByOwner = $state<Map<string, Action[]>>(new Map());
 let cheatsheetByOwner = $state<Map<string, CheatsheetEntry[]>>(new Map());
 
-export function registerScopedActions(ownerId: string, actions: Action[]): () => void {
+export function registerScopedActions(
+  ownerId: string,
+  actions: Action[],
+): () => void {
   actionsByOwner = new Map(actionsByOwner.set(ownerId, [...actions]));
   return () => {
     if (actionsByOwner.has(ownerId)) {
@@ -259,7 +255,10 @@ export function registerScopedActions(ownerId: string, actions: Action[]): () =>
   };
 }
 
-export function registerCheatsheetEntries(ownerId: string, entries: CheatsheetEntry[]): () => void {
+export function registerCheatsheetEntries(
+  ownerId: string,
+  entries: CheatsheetEntry[],
+): () => void {
   cheatsheetByOwner = new Map(cheatsheetByOwner.set(ownerId, [...entries]));
   return () => {
     if (cheatsheetByOwner.has(ownerId)) {
@@ -309,7 +308,6 @@ git commit -m "feat(keyboard): add owner-scoped action and cheatsheet registry"
 ## Task 3: Conflict assertion
 
 **Files:**
-
 - Modify: `frontend/src/lib/stores/keyboard/registry.svelte.ts`
 - Test: `frontend/src/lib/stores/keyboard/registry.svelte.test.ts`
 
@@ -322,15 +320,25 @@ describe("conflict assertion", () => {
   beforeEach(() => resetRegistry());
 
   it("throws when two actions share (binding, scope, priority)", () => {
-    const collide: Action[] = [{ ...action("a.one"), binding: { key: "k", ctrlOrMeta: true } }];
-    const collide2: Action[] = [{ ...action("a.two"), binding: { key: "k", ctrlOrMeta: true } }];
+    const collide: Action[] = [
+      { ...action("a.one"), binding: { key: "k", ctrlOrMeta: true } },
+    ];
+    const collide2: Action[] = [
+      { ...action("a.two"), binding: { key: "k", ctrlOrMeta: true } },
+    ];
     registerScopedActions("o1", collide);
-    expect(() => registerScopedActions("o2", collide2)).toThrow(/conflict/i);
+    expect(() => registerScopedActions("o2", collide2)).toThrow(
+      /conflict/i,
+    );
   });
 
   it("allows different scopes with the same binding", () => {
-    registerScopedActions("o1", [{ ...action("a", "view-pulls"), binding: { key: "j" } }]);
-    registerScopedActions("o2", [{ ...action("b", "view-issues"), binding: { key: "j" } }]);
+    registerScopedActions("o1", [
+      { ...action("a", "view-pulls"), binding: { key: "j" } },
+    ]);
+    registerScopedActions("o2", [
+      { ...action("b", "view-issues"), binding: { key: "j" } },
+    ]);
     expect(getAllActions()).toHaveLength(2);
   });
 });
@@ -346,7 +354,10 @@ Expected: 2 new tests FAIL.
 In `registry.svelte.ts`, replace the body of `registerScopedActions` with:
 
 ```ts
-export function registerScopedActions(ownerId: string, actions: Action[]): () => void {
+export function registerScopedActions(
+  ownerId: string,
+  actions: Action[],
+): () => void {
   const next = new Map(actionsByOwner);
   next.set(ownerId, [...actions]);
   assertNoConflicts(next);
@@ -404,7 +415,6 @@ git commit -m "feat(keyboard): assert no duplicate (binding, scope, priority) tu
 ## Task 4: Modal stack store
 
 **Files:**
-
 - Create: `frontend/src/lib/stores/keyboard/modal-stack.svelte.ts`
 - Test: `frontend/src/lib/stores/keyboard/modal-stack.svelte.test.ts`
 
@@ -413,7 +423,12 @@ git commit -m "feat(keyboard): assert no duplicate (binding, scope, priority) tu
 ```ts
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { pushModalFrame, getTopFrame, getStackDepth, resetModalStack } from "./modal-stack.svelte.js";
+import {
+  pushModalFrame,
+  getTopFrame,
+  getStackDepth,
+  resetModalStack,
+} from "./modal-stack.svelte.js";
 
 describe("modal stack", () => {
   beforeEach(() => resetModalStack());
@@ -459,7 +474,10 @@ interface ModalFrame {
 
 let stack = $state<ModalFrame[]>([]);
 
-export function pushModalFrame(frameId: string, actions: Action[]): () => void {
+export function pushModalFrame(
+  frameId: string,
+  actions: Action[],
+): () => void {
   stack = [...stack, { frameId, actions }];
   return () => {
     stack = stack.filter((f) => f.frameId !== frameId);
@@ -500,7 +518,6 @@ git commit -m "feat(keyboard): add input-capturing modal frame stack"
 ## Task 5: Context object
 
 **Files:**
-
 - Create: `frontend/src/lib/stores/keyboard/context.svelte.ts`
 - Test: `frontend/src/lib/stores/keyboard/context.svelte.test.ts`
 
@@ -535,7 +552,12 @@ Expected: FAIL.
 - [ ] **Step 3: Implement context**
 
 ```ts
-import { getRoute, getPage, getDetailTab, isDiffView } from "../router.svelte.js";
+import {
+  getRoute,
+  getPage,
+  getDetailTab,
+  isDiffView,
+} from "../router.svelte.js";
 import type { Context } from "./types.js";
 import type { PullSelection } from "@middleman/ui/stores/pulls";
 import type { IssueSelection } from "@middleman/ui/stores/issues";
@@ -574,7 +596,6 @@ git commit -m "feat(keyboard): build dispatch context from existing stores"
 ## Task 6: Dispatcher — basic match and conflict-free dispatch
 
 **Files:**
-
 - Create: `frontend/src/lib/stores/keyboard/dispatch.svelte.ts`
 - Test: `frontend/src/lib/stores/keyboard/dispatch.svelte.test.ts`
 
@@ -584,7 +605,10 @@ git commit -m "feat(keyboard): build dispatch context from existing stores"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { dispatchKeydown } from "./dispatch.svelte.js";
-import { registerScopedActions, resetRegistry } from "./registry.svelte.js";
+import {
+  registerScopedActions,
+  resetRegistry,
+} from "./registry.svelte.js";
 import { resetModalStack } from "./modal-stack.svelte.js";
 import type { Action, Context } from "./types.js";
 
@@ -670,7 +694,10 @@ const SCOPE_SPECIFICITY: Record<Action["scope"], number> = {
   global: 10,
 };
 
-export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Context): void {
+export function dispatchKeydown(
+  event: KeyboardEvent,
+  contextProvider: () => Context,
+): void {
   const stack = getStack();
   if (stack.length > 0) {
     for (let i = stack.length - 1; i >= 0; i--) {
@@ -692,7 +719,11 @@ export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Con
   const editable = shouldIgnoreGlobalShortcutTarget(event.target);
   const ctx = contextProvider();
   const matchingActions = getAllActions().filter(
-    (a) => a.binding !== null && matches(a.binding, event) && a.when(ctx) && (!editable || hasModifier(a.binding)),
+    (a) =>
+      a.binding !== null &&
+      matches(a.binding, event) &&
+      a.when(ctx) &&
+      (!editable || hasModifier(a.binding)),
   );
   if (matchingActions.length === 0) return;
 
@@ -742,7 +773,6 @@ git commit -m "feat(keyboard): single window-level dispatcher with scope sort"
 ## Task 7: Dispatcher — modal stack isolation, reserved keys, error handling
 
 **Files:**
-
 - Modify: `frontend/src/lib/stores/keyboard/dispatch.svelte.ts`
 - Test: `frontend/src/lib/stores/keyboard/dispatch.svelte.test.ts`
 
@@ -764,15 +794,7 @@ describe("dispatchKeydown — modal stack", () => {
   it("blocks global handlers when modal stack is non-empty", () => {
     const globalHandler = vi.fn();
     registerScopedActions("g", [
-      {
-        id: "g.next",
-        label: "x",
-        scope: "view-pulls",
-        binding: { key: "j" },
-        priority: 0,
-        when: () => true,
-        handler: globalHandler,
-      },
+      { id: "g.next", label: "x", scope: "view-pulls", binding: { key: "j" }, priority: 0, when: () => true, handler: globalHandler },
     ]);
     pushModalFrame("modal", []);
     dispatchKeydown(event({ key: "j" }), () => ctx);
@@ -873,7 +895,6 @@ git commit -m "feat(keyboard): isolate modal stack, route handler errors to flas
 ## Task 8: In-flight de-duplication
 
 **Files:**
-
 - Modify: `frontend/src/lib/stores/keyboard/dispatch.svelte.ts`
 - Test: `frontend/src/lib/stores/keyboard/dispatch.svelte.test.ts`
 
@@ -888,12 +909,7 @@ describe("dispatchKeydown — in-flight de-dup", () => {
 
   it("does not re-invoke an in-flight async action", async () => {
     let resolve!: () => void;
-    const handler = vi.fn(
-      () =>
-        new Promise<void>((r) => {
-          resolve = r;
-        }),
-    );
+    const handler = vi.fn(() => new Promise<void>((r) => { resolve = r; }));
     registerScopedActions("a", [
       { id: "slow", label: "x", scope: "global", binding: { key: "j" }, priority: 0, when: () => true, handler },
     ]);
@@ -953,33 +969,32 @@ git commit -m "feat(keyboard): suppress concurrent invocations of in-flight acti
 ## Task 9: Default action catalog
 
 **Files:**
-
 - Create: `frontend/src/lib/stores/keyboard/actions.ts`
 - Test: `frontend/src/lib/stores/keyboard/actions.test.ts`
 - Modify: `frontend/src/lib/stores/keyboard/types.ts` (add `StoreInstances` import re-export so the catalog can call store methods)
 
 **Migration parity matrix (transcribed from current `frontend/src/App.svelte` `handleKeydown`):**
 
-| Action id           | Binding                          | Scope         | when (predicate)                                             | Handler                                                 |
-| ------------------- | -------------------------------- | ------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
-| `go.next`           | `j`                              | `view-pulls`  | `page === "pulls"` && !isDiffView && !boardView && !isIssues | `pulls.selectNextPR(); navigateToSelectedPR()`          |
-| `go.prev`           | `k`                              | `view-pulls`  | same as `go.next`                                            | `pulls.selectPrevPR(); navigateToSelectedPR()`          |
-| `go.next.issues`    | `j`                              | `view-issues` | `page === "issues"`                                          | `issues.selectNextIssue()`                              |
-| `go.prev.issues`    | `k`                              | `view-issues` | `page === "issues"`                                          | `issues.selectPrevIssue()`                              |
-| `tab.toggle`        | `f`                              | `view-pulls`  | `page === "pulls"` && PR selected                            | navigate between conversation/files routes              |
-| `escape.list`       | `Escape`                         | `view-pulls`  | drawer open or detail open and not boardView                 | `navigate("/pulls")` (or `/issues`)                     |
-| `nav.pulls.list`    | `1`                              | `global`      | always                                                       | `navigate("/pulls")`                                    |
-| `nav.pulls.board`   | `2`                              | `global`      | always                                                       | `navigate("/pulls/board")`                              |
-| `sidebar.toggle`    | `Cmd/Ctrl+[` (`ctrlOrMeta=true`) | `global`      | `isSidebarToggleEnabled()`                                   | `toggleSidebar()`                                       |
-| `palette.open`      | `Cmd/Ctrl+K` AND `Cmd/Ctrl+P`    | `global`      | always                                                       | `openPalette()` (defined in palette-state from Task 17) |
-| `cheatsheet.open`   | `?`                              | `global`      | always                                                       | `openCheatsheet()` (Task 24)                            |
-| `sync.repos`        | `null` (palette-only)            | `global`      | always                                                       | `stores.sync.triggerSync()`                             |
-| `theme.toggle`      | `null` (palette-only)            | `global`      | always                                                       | `toggleTheme()`                                         |
-| `nav.settings`      | `null`                           | `global`      | always                                                       | `navigate("/settings")`                                 |
-| `nav.repos`         | `null`                           | `global`      | always                                                       | `navigate("/repos")`                                    |
-| `nav.reviews`       | `null`                           | `global`      | always                                                       | `navigate("/reviews")`                                  |
-| `nav.workspaces`    | `null`                           | `global`      | always                                                       | `navigate("/workspaces")`                               |
-| `nav.design-system` | `null`                           | `global`      | always                                                       | `navigate("/design-system")`                            |
+| Action id            | Binding                   | Scope         | when (predicate)                                            | Handler                              |
+|----------------------|---------------------------|---------------|-------------------------------------------------------------|--------------------------------------|
+| `go.next`            | `j`                       | `view-pulls`  | `page === "pulls"` && !isDiffView && !boardView && !isIssues | `pulls.selectNextPR(); navigateToSelectedPR()` |
+| `go.prev`            | `k`                       | `view-pulls`  | same as `go.next`                                           | `pulls.selectPrevPR(); navigateToSelectedPR()` |
+| `go.next.issues`     | `j`                       | `view-issues` | `page === "issues"`                                         | `issues.selectNextIssue()`           |
+| `go.prev.issues`     | `k`                       | `view-issues` | `page === "issues"`                                         | `issues.selectPrevIssue()`           |
+| `tab.toggle`         | `f`                       | `view-pulls`  | `page === "pulls"` && PR selected                           | navigate between conversation/files routes |
+| `escape.list`        | `Escape`                  | `view-pulls`  | drawer open or detail open and not boardView                | `navigate("/pulls")` (or `/issues`)  |
+| `nav.pulls.list`     | `1`                       | `global`      | always                                                       | `navigate("/pulls")`                 |
+| `nav.pulls.board`    | `2`                       | `global`      | always                                                       | `navigate("/pulls/board")`           |
+| `sidebar.toggle`     | `Cmd/Ctrl+[` (`ctrlOrMeta=true`) | `global` | `isSidebarToggleEnabled()`                                  | `toggleSidebar()`                     |
+| `palette.open`       | `Cmd/Ctrl+K` AND `Cmd/Ctrl+P` | `global` | always                                                       | `openPalette()` (defined in palette-state from Task 17) |
+| `cheatsheet.open`    | `?`                       | `global`      | always                                                       | `openCheatsheet()` (Task 24)         |
+| `sync.repos`         | `null` (palette-only)     | `global`      | always                                                       | `stores.sync.triggerSync()`          |
+| `theme.toggle`       | `null` (palette-only)     | `global`      | always                                                       | `toggleTheme()`                       |
+| `nav.settings`       | `null`                    | `global`      | always                                                       | `navigate("/settings")`              |
+| `nav.repos`          | `null`                    | `global`      | always                                                       | `navigate("/repos")`                 |
+| `nav.reviews`        | `null`                    | `global`      | always                                                       | `navigate("/reviews")`               |
+| `nav.workspaces`     | `null`                    | `global`      | always                                                       | `navigate("/workspaces")`            |
+| `nav.design-system`  | `null`                    | `global`      | always                                                       | `navigate("/design-system")`         |
 
 This matrix is the parity contract: every row's behavior must match the pre-migration `handleKeydown` exactly. Stage 2 e2e covers each row that has a binding.
 
@@ -989,9 +1004,7 @@ This matrix is the parity contract: every row's behavior must match the pre-migr
 import type { StoreInstances } from "@middleman/ui";
 
 let storesGetter: (() => StoreInstances) | null = null;
-export function setStoreInstances(getter: () => StoreInstances): void {
-  storesGetter = getter;
-}
+export function setStoreInstances(getter: () => StoreInstances): void { storesGetter = getter; }
 function stores(): StoreInstances {
   if (!storesGetter) throw new Error("setStoreInstances has not been called");
   return storesGetter();
@@ -1061,48 +1074,25 @@ import type { StoreInstances } from "@middleman/ui";
 // setStoreInstances + stores() are defined just above per the StoreInstances injection block.
 
 const always = () => true;
-const onPullsList = (ctx: Context) => ctx.page === "pulls" && !ctx.isDiffView; // board view filter applied per-action below
+const onPullsList = (ctx: Context) =>
+  ctx.page === "pulls" && !ctx.isDiffView; // board view filter applied per-action below
 const onPullsListNotBoard = (ctx: Context) =>
   onPullsList(ctx) && !("view" in ctx.route && (ctx.route as { view?: string }).view === "board");
 const onIssuesList = (ctx: Context) => ctx.page === "issues";
 
 export const defaultActions: Action[] = [
-  {
-    id: "go.next",
-    label: "Next pull request",
-    scope: "view-pulls",
-    binding: { key: "j" },
-    priority: 0,
-    when: onPullsListNotBoard,
-    handler: () => stores().pulls.selectNextPR(),
-  },
-  {
-    id: "go.prev",
-    label: "Previous pull request",
-    scope: "view-pulls",
-    binding: { key: "k" },
-    priority: 0,
-    when: onPullsListNotBoard,
-    handler: () => stores().pulls.selectPrevPR(),
-  },
-  {
-    id: "go.next.issues",
-    label: "Next issue",
-    scope: "view-issues",
-    binding: { key: "j" },
-    priority: 0,
-    when: onIssuesList,
-    handler: () => stores().issues.selectNextIssue(),
-  },
-  {
-    id: "go.prev.issues",
-    label: "Previous issue",
-    scope: "view-issues",
-    binding: { key: "k" },
-    priority: 0,
-    when: onIssuesList,
-    handler: () => stores().issues.selectPrevIssue(),
-  },
+  { id: "go.next", label: "Next pull request", scope: "view-pulls",
+    binding: { key: "j" }, priority: 0, when: onPullsListNotBoard,
+    handler: () => stores().pulls.selectNextPR() },
+  { id: "go.prev", label: "Previous pull request", scope: "view-pulls",
+    binding: { key: "k" }, priority: 0, when: onPullsListNotBoard,
+    handler: () => stores().pulls.selectPrevPR() },
+  { id: "go.next.issues", label: "Next issue", scope: "view-issues",
+    binding: { key: "j" }, priority: 0, when: onIssuesList,
+    handler: () => stores().issues.selectNextIssue() },
+  { id: "go.prev.issues", label: "Previous issue", scope: "view-issues",
+    binding: { key: "k" }, priority: 0, when: onIssuesList,
+    handler: () => stores().issues.selectPrevIssue() },
   // tab.toggle, escape.list, nav.pulls.list, nav.pulls.board, sidebar.toggle,
   // palette.open, cheatsheet.open, sync.repos, theme.toggle, nav.* — implement
   // each by mirroring the matching matrix row above.
@@ -1128,7 +1118,6 @@ git commit -m "feat(keyboard): default action catalog matching pre-migration han
 ## Task 10: Migrate App.svelte handleKeydown
 
 **Files:**
-
 - Modify: `frontend/src/App.svelte`
 - Test: `frontend/tests/e2e/keyboard-shortcuts-migration.spec.ts`
 
@@ -1138,9 +1127,7 @@ git commit -m "feat(keyboard): default action catalog matching pre-migration han
 import { expect, test } from "@playwright/test";
 import { mockApi } from "./support/mockApi";
 
-test.beforeEach(async ({ page }) => {
-  await mockApi(page);
-});
+test.beforeEach(async ({ page }) => { await mockApi(page); });
 
 test.describe("migrated global shortcuts", () => {
   test("j and k navigate the PR list", async ({ page }) => {
@@ -1157,7 +1144,10 @@ test.describe("migrated global shortcuts", () => {
     const sidebar = page.locator("[data-test='sidebar']");
     const wasCollapsed = (await sidebar.getAttribute("data-collapsed")) === "true";
     await page.keyboard.press("Meta+BracketLeft");
-    await expect(sidebar).toHaveAttribute("data-collapsed", (!wasCollapsed).toString());
+    await expect(sidebar).toHaveAttribute(
+      "data-collapsed",
+      (!wasCollapsed).toString(),
+    );
   });
 });
 ```
@@ -1210,7 +1200,6 @@ git commit -m "feat(keyboard): migrate App.svelte handleKeydown to registry+disp
 ## Task 11: Wire MergeModal to push/pop modal frame
 
 **Files:**
-
 - Modify: `packages/ui/src/components/detail/MergeModal.svelte`
 - Test: `packages/ui/src/components/detail/MergeModal.svelte.test.ts`
 
@@ -1233,11 +1222,7 @@ describe("MergeModal modal frame integration", () => {
 
   it("pushes a frame on mount and pops on unmount", () => {
     expect(getStackDepth()).toBe(0);
-    const { unmount } = render(MergeModal, {
-      props: {
-        /* … minimal props */
-      },
-    });
+    const { unmount } = render(MergeModal, { props: { /* … minimal props */ } });
     expect(getStackDepth()).toBe(1);
     unmount();
     expect(getStackDepth()).toBe(0);
@@ -1302,7 +1287,6 @@ Each gets a small component test in the same style as Task 11's. Commit each mod
 ## Task 13: Modal isolation e2e
 
 **Files:**
-
 - Test: `frontend/tests/e2e/keyboard-modal-isolation.spec.ts`
 
 - [ ] **Step 1: Write the table-driven Playwright test**
@@ -1312,24 +1296,12 @@ import { expect, test } from "@playwright/test";
 import { mockApi } from "./support/mockApi";
 
 const MODAL_OPENERS: Array<{ name: string; open: (page: import("@playwright/test").Page) => Promise<void> }> = [
-  {
-    name: "merge",
-    open: async (page) => {
-      await page.goto("/pulls"); /* navigate, click merge button */
-    },
-  },
-  {
-    name: "repo-import",
-    open: async (page) => {
-      await page.goto("/settings"); /* click "Add repo" */
-    },
-  },
+  { name: "merge", open: async (page) => { await page.goto("/pulls"); /* navigate, click merge button */ } },
+  { name: "repo-import", open: async (page) => { await page.goto("/settings"); /* click "Add repo" */ } },
   // … one row per modal in the inventory
 ];
 
-test.beforeEach(async ({ page }) => {
-  await mockApi(page);
-});
+test.beforeEach(async ({ page }) => { await mockApi(page); });
 
 for (const m of MODAL_OPENERS) {
   test(`${m.name} modal blocks background j/k`, async ({ page }) => {
@@ -1359,7 +1331,6 @@ git commit -m "test(keyboard): modal frame blocks background shortcuts (table-dr
 ## Task 14: registerCheatsheetEntries on RepoTypeahead
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/RepoTypeahead.svelte`
 - Test: `frontend/src/lib/components/RepoTypeahead.svelte.test.ts`
 
@@ -1370,7 +1341,10 @@ import { cleanup, render } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 
 import RepoTypeahead from "./RepoTypeahead.svelte";
-import { getAllCheatsheetEntries, resetRegistry } from "../stores/keyboard/registry.svelte.js";
+import {
+  getAllCheatsheetEntries,
+  resetRegistry,
+} from "../stores/keyboard/registry.svelte.js";
 
 describe("RepoTypeahead cheatsheet entries", () => {
   afterEach(() => {
@@ -1424,7 +1398,6 @@ git commit -m "feat(keyboard): RepoTypeahead registers its arrow-nav as cheatshe
 ## Task 15: KbdBadge component
 
 **Files:**
-
 - Create: `packages/ui/src/components/keyboard/KbdBadge.svelte`
 - Create: `packages/ui/src/components/keyboard/useKbdLabel.ts`
 - Test: `packages/ui/src/components/keyboard/KbdBadge.test.ts`
@@ -1472,7 +1445,8 @@ Expected: FAIL.
 import type { KeySpec } from "../../stores/keyboard/keyspec.js";
 
 const isMac =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
+  typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
 
 export function kbdGlyph(spec: KeySpec): string {
   const parts: string[] = [];
@@ -1555,7 +1529,6 @@ git commit -m "feat(keyboard): add KbdBadge primitive with platform-aware glyph"
 ## Task 16: Use KbdBadge in AppHeader
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/layout/AppHeader.svelte`
 - Test: `frontend/tests/e2e/keyboard-inline-hints.spec.ts`
 
@@ -1565,9 +1538,7 @@ git commit -m "feat(keyboard): add KbdBadge primitive with platform-aware glyph"
 import { expect, test } from "@playwright/test";
 import { mockApi } from "./support/mockApi";
 
-test.beforeEach(async ({ page }) => {
-  await mockApi(page);
-});
+test.beforeEach(async ({ page }) => { await mockApi(page); });
 
 test("Sync button shows kbd badge on pointer device", async ({ page }) => {
   await page.goto("/pulls");
@@ -1615,7 +1586,6 @@ git commit -m "feat(keyboard): render KbdBadge next to chrome buttons"
 ## Task 17: Palette shell and open/close
 
 **Files:**
-
 - Create: `frontend/src/lib/components/keyboard/Palette.svelte`
 - Create: `frontend/src/lib/stores/keyboard/palette-state.svelte.ts`
 - Test: `frontend/src/lib/components/keyboard/Palette.svelte.test.ts`
@@ -1628,18 +1598,10 @@ import { cleanup, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 
 import Palette from "./Palette.svelte";
-import {
-  openPalette,
-  closePalette,
-  isPaletteOpen,
-  resetPaletteState,
-} from "../../stores/keyboard/palette-state.svelte.js";
+import { openPalette, closePalette, isPaletteOpen, resetPaletteState } from "../../stores/keyboard/palette-state.svelte.js";
 
 describe("Palette", () => {
-  afterEach(() => {
-    cleanup();
-    resetPaletteState();
-  });
+  afterEach(() => { cleanup(); resetPaletteState(); });
 
   it("renders only when isPaletteOpen is true", () => {
     const { rerender } = render(Palette, { props: {} });
@@ -1678,13 +1640,8 @@ export function togglePalette(): void {
   open ? closePalette() : openPalette();
 }
 
-export function isPaletteOpen(): boolean {
-  return open;
-}
-export function resetPaletteState(): void {
-  open = false;
-  lastFocusedElement = null;
-}
+export function isPaletteOpen(): boolean { return open; }
+export function resetPaletteState(): void { open = false; lastFocusedElement = null; }
 ```
 
 `Palette.svelte` (shell):
@@ -1769,7 +1726,6 @@ git commit -m "feat(keyboard): palette shell with open/close toggle and focus re
 ## Task 18: Palette focus trap
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/keyboard/Palette.svelte`
 - Test: `frontend/tests/e2e/palette-focus-trap.spec.ts`
 
@@ -1826,7 +1782,6 @@ git commit -m "feat(keyboard): trap focus inside the open palette"
 ## Task 19: Palette search and result groups
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/keyboard/Palette.svelte`
 - Create: `frontend/src/lib/stores/keyboard/palette-search.svelte.ts`
 - Test: `frontend/src/lib/stores/keyboard/palette-search.svelte.test.ts`
@@ -1896,7 +1851,6 @@ git commit -m "feat(keyboard): palette search with prefix parsing and grouped re
 ## Task 20: Palette preview pane
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/keyboard/Palette.svelte`
 - Test: `frontend/src/lib/components/keyboard/Palette.svelte.test.ts`
 
@@ -1929,7 +1883,6 @@ git commit -m "feat(keyboard): palette preview pane reflects highlighted result"
 ## Task 21: Palette command e2e (`>` prefix + safe global)
 
 **Files:**
-
 - Test: `frontend/tests/e2e/palette-commands.spec.ts`
 
 - [ ] **Step 1: Write the e2e**
@@ -1977,7 +1930,6 @@ git commit -m "test(keyboard): palette command filtering and dispatch isolation 
 ## Task 22: Recents persistence
 
 **Files:**
-
 - Create: `frontend/src/lib/stores/keyboard/recents.svelte.ts`
 - Test: `frontend/src/lib/stores/keyboard/recents.svelte.test.ts`
 
@@ -2015,20 +1967,10 @@ describe("recents", () => {
   });
 
   it("drops items with kinds outside pr|issue", () => {
-    localStorage.setItem(
-      "middleman-palette-recents",
-      JSON.stringify({
-        version: 1,
-        items: [
-          {
-            kind: "pr",
-            ref: { itemType: "pr", provider: "g", owner: "a", name: "b", repoPath: "a/b", number: 1 },
-            lastSelectedAt: "2026-01-01T00:00:00Z",
-          },
-          { kind: "future-kind", ref: {}, lastSelectedAt: "2026-01-01T00:00:00Z" },
-        ],
-      }),
-    );
+    localStorage.setItem("middleman-palette-recents", JSON.stringify({ version: 1, items: [
+      { kind: "pr", ref: { itemType: "pr", provider: "g", owner: "a", name: "b", repoPath: "a/b", number: 1 }, lastSelectedAt: "2026-01-01T00:00:00Z" },
+      { kind: "future-kind", ref: {}, lastSelectedAt: "2026-01-01T00:00:00Z" },
+    ]}));
     expect(readRecents().items).toHaveLength(1);
   });
 });
@@ -2053,7 +1995,9 @@ export function readRecents(): RecentsState {
       localStorage.setItem(KEY, JSON.stringify(empty));
       return empty;
     }
-    parsed.items = parsed.items.filter((i: { kind: unknown }) => i.kind === "pr" || i.kind === "issue");
+    parsed.items = parsed.items.filter(
+      (i: { kind: unknown }) => i.kind === "pr" || i.kind === "issue",
+    );
     return parsed as RecentsState;
   } catch {
     const empty = { version: 1, items: [] } as RecentsState;
@@ -2095,7 +2039,6 @@ git commit -m "feat(keyboard): recents store with malformed-JSON handling and st
 ## Task 23: Empty-state palette renders recents + commands
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/keyboard/Palette.svelte`
 - Test: `frontend/tests/e2e/palette-recents.spec.ts`
 
@@ -2132,7 +2075,6 @@ git commit -m "feat(keyboard): empty-state palette shows recents + applicable co
 ## Task 24: Cheatsheet modal
 
 **Files:**
-
 - Create: `frontend/src/lib/components/keyboard/Cheatsheet.svelte`
 - Create: `frontend/src/lib/stores/keyboard/cheatsheet-state.svelte.ts`
 - Test: `frontend/src/lib/components/keyboard/Cheatsheet.svelte.test.ts`
@@ -2199,7 +2141,6 @@ git commit -m "feat(keyboard): cheatsheet modal with category grouping and filte
 ## Task 25: Extract PR detail action closures
 
 **Files:**
-
 - Create: `packages/ui/src/components/detail/keyboard-actions.ts` (in `@middleman/ui` so the buttons can import it)
 - Modify: `packages/ui/src/components/detail/ApproveButton.svelte`
 - Modify: `packages/ui/src/components/detail/MergeModal.svelte`
@@ -2305,7 +2246,6 @@ git commit -m "refactor(keyboard): extract shared canX/runX closures from PR det
 ## Task 26: Register PR detail palette commands
 
 **Files:**
-
 - Modify: PR detail view component (the route's `pulls/detail` page mount)
 - Test: `frontend/tests/e2e/palette-pr-detail-commands.spec.ts`
 
@@ -2372,7 +2312,6 @@ git commit -m "feat(keyboard): register PR detail palette commands gated by exis
 ## Task 27: Coverage harmonization (only if gaps surface)
 
 **Files:**
-
 - Test: `frontend/tests/e2e/keyboard-cross-stage.spec.ts`
 
 - [ ] **Step 1: Add only the cross-stage tests that did not fit earlier**

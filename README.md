@@ -58,11 +58,11 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 
 ### Keyboard navigation
 
-| Key       | Action                                                |
-| --------- | ----------------------------------------------------- |
+| Key | Action |
+|-----|--------|
 | `j` / `k` | Move through the list (or between files in diff view) |
-| `1` / `2` | Switch between list and kanban views                  |
-| `Escape`  | Close detail view / clear selection                   |
+| `1` / `2` | Switch between list and kanban views |
+| `Escape` | Close detail view / clear selection |
 
 ### Other
 
@@ -151,21 +151,21 @@ make install   # installs to ~/.local/bin
 
 All fields are optional. Repos can be added in the config file or through the Settings UI.
 
-| Field                                    | Default                    | Description                                             |
-| ---------------------------------------- | -------------------------- | ------------------------------------------------------- |
-| `sync_interval`                          | `"5m"`                     | How often to pull from configured providers             |
-| `github_token_env`                       | `"MIDDLEMAN_GITHUB_TOKEN"` | Env var holding the default GitHub token                |
-| `default_platform_host`                  | `"github.com"`             | Host treated as implicit in repository UI labels        |
-| `host`                                   | `"127.0.0.1"`              | Listen address                                          |
-| `port`                                   | `8091`                     | Listen port, from 1 to 65535                            |
-| `base_path`                              | `"/"`                      | URL prefix for reverse proxy deployments                |
-| `data_dir`                               | `"~/.config/middleman"`    | Directory for the SQLite database                       |
-| `activity.view_mode`                     | `"threaded"`               | `"flat"` or `"threaded"`                                |
-| `activity.time_range`                    | `"7d"`                     | `"24h"`, `"7d"`, `"30d"`, or `"90d"`                    |
-| `activity.hide_closed`                   | `false`                    | Hide closed/merged items in the feed                    |
-| `activity.hide_bots`                     | `false`                    | Hide bot activity                                       |
-| `activity.default_branch_retention_days` | `90`                       | Days of default-branch commits to keep for Activity     |
-| `activity.default_branch_max_commits`    | `5000`                     | Maximum default-branch commit rows kept per repo branch |
+| Field | Default | Description |
+|-------|---------|-------------|
+| `sync_interval` | `"5m"` | How often to pull from configured providers |
+| `github_token_env` | `"MIDDLEMAN_GITHUB_TOKEN"` | Env var holding the default GitHub token |
+| `default_platform_host` | `"github.com"` | Host treated as implicit in repository UI labels |
+| `host` | `"127.0.0.1"` | Listen address |
+| `port` | `8091` | Listen port, from 1 to 65535 |
+| `base_path` | `"/"` | URL prefix for reverse proxy deployments |
+| `data_dir` | `"~/.config/middleman"` | Directory for the SQLite database |
+| `activity.view_mode` | `"threaded"` | `"flat"` or `"threaded"` |
+| `activity.time_range` | `"7d"` | `"24h"`, `"7d"`, `"30d"`, or `"90d"` |
+| `activity.hide_closed` | `false` | Hide closed/merged items in the feed |
+| `activity.hide_bots` | `false` | Hide bot activity |
+| `activity.default_branch_retention_days` | `90` | Days of default-branch commits to keep for Activity |
+| `activity.default_branch_max_commits` | `5000` | Maximum default-branch commit rows kept per repo branch |
 
 The integration branch also adds docs-folder and msgvault configuration. Kata
 daemon definitions are intentionally not stored in middleman config; middleman
@@ -369,7 +369,6 @@ mise run dev-compose-down  # docker compose down
 ```
 
 Compose behavior:
-
 - Uses repo-local `docker/dev-config.toml` so compose config stays isolated from native runs
 - Stores SQLite state in Docker volume as `/data/middleman.db` via `data_dir = "/data"`
 - Exposes backend on `http://127.0.0.1:18090` and frontend dev server on `http://127.0.0.1:15173`

@@ -166,6 +166,14 @@ describe("budget display", () => {
     expect(eagerLabel).not.toBeNull();
     expect(eagerValue).not.toBeNull();
     expect(Math.abs(eagerLabel!.getBoundingClientRect().top - eagerValue!.getBoundingClientRect().top)).toBeLessThan(2);
+
+    // The popover lives inside a kit StatusBar section with overflow:hidden;
+    // it must escape that clip (fixed positioning) and open fully above the
+    // 24px bar rather than being cut to the section's height.
+    const popoverRect = popover.getBoundingClientRect();
+    const barRect = document.querySelector(".kit-status-bar")!.getBoundingClientRect();
+    expect(popoverRect.height).toBeGreaterThan(100);
+    expect(popoverRect.bottom).toBeLessThanOrEqual(barRect.top);
   });
 
   it("marks sync budget spend that exceeds the configured limit", async () => {

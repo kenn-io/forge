@@ -24,7 +24,6 @@
 ## Task 1: Catalog Types And Tests
 
 **Files:**
-
 - Create: `internal/kata/types.go`
 - Create: `internal/kata/paths.go`
 - Create: `internal/kata/catalog.go`
@@ -89,7 +88,6 @@ git commit -m "feat: read kata daemon catalog"
 ## Task 2: Runtime Discovery
 
 **Files:**
-
 - Modify: `internal/kata/types.go`
 - Modify: `internal/kata/paths.go`
 - Create: `internal/kata/runtime.go`
@@ -158,7 +156,6 @@ git commit -m "feat: discover kata runtime daemons"
 ## Task 3: Target Validation And Redaction
 
 **Files:**
-
 - Create: `internal/kata/validation.go`
 - Test: `internal/kata/validation_test.go`
 
@@ -218,7 +215,6 @@ git commit -m "feat: validate kata daemon targets"
 ## Task 4: Package Verification And Documentation
 
 **Files:**
-
 - Modify: `CLAUDE.md`
 - Modify: `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md`
 

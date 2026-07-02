@@ -38,7 +38,7 @@ await context.close();
 const videoPath = await page.video()?.path();
 ```
 
-5. **Stop here by default.** Report the local artifact path to the user and open the image / video using `open` or `xdg-open` so that user can see the image. Only proceed to upload if the user explicitly requests it.
+5. **Stop here by default.** Report the local artifact path to the user and open the image / video using `open` or `xdg-open` so that user can see the image.  Only proceed to upload if the user explicitly requests it.
 
 6. **If the user approves upload**, confirm the target PR or issue number first. Never upload without attaching to a specific PR or issue. Upload the file with `gh image` (the command prints a markdown snippet whose links already point at the uploaded content), then immediately attach it to the PR or issue via a comment — `gh image` alone does not bind the upload to any target:
 
@@ -83,7 +83,6 @@ Tell the user to sign in to GitHub in Chrome, Brave, Edge, or Chromium on that m
 ## Output
 
 Return:
-
 - the local artifact path (always)
 - if uploaded: the markdown link(s) printed by `gh image` and the target PR/issue
 - for video uploads, the normalized plain-link form to paste into a PR description or comment

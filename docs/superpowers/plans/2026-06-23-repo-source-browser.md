@@ -64,7 +64,6 @@ Do not use `git rebase` directly on this stack.
 ## Task 1: Backend Repo-Code API (`k7c7`, branch `repo-browser-api`)
 
 **Files:**
-
 - Create: `internal/gitclone/repo_browser.go`
 - Create: `internal/gitclone/repo_browser_test.go`
 - Modify: `internal/gitclone/clone.go`
@@ -384,7 +383,6 @@ git-spice upstack restack --no-prompt
 ## Task 2: Route, Store, And Shared File UI (`99qr`, `e2jb`, branch `repo-browser-state-file-ui`)
 
 **Files:**
-
 - Modify: `frontend/src/lib/stores/router.svelte.ts`
 - Modify: `frontend/src/lib/stores/router.test.ts`
 - Create: `packages/ui/src/stores/repo-browser.svelte.ts`
@@ -439,7 +437,6 @@ git-spice upstack restack --no-prompt
 ## Task 3: Main Browser UI (`n514`, `10yn`, `5v83`, branch `repo-browser-main-ui`)
 
 **Files:**
-
 - Create: `packages/ui/src/components/repo-browser/RepoBrowserSidebar.svelte`
 - Create: `packages/ui/src/components/repo-browser/RepoBrowserSidebar.test.ts`
 - Create: `packages/ui/src/components/repo-browser/RepoBrowserView.svelte`
@@ -488,7 +485,6 @@ git-spice upstack restack --no-prompt
 ## Task 4: Entry Points And Final Verification (`9vbw`, `aatz`, branch `repo-browser-entry-verify`)
 
 **Files:**
-
 - Modify: `frontend/src/App.svelte`
 - Modify: `frontend/src/App.test.ts`
 - Modify: `frontend/src/lib/components/repositories/RepoSummaryCard.svelte`

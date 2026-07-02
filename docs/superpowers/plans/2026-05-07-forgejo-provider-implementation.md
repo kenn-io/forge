@@ -44,22 +44,22 @@ GitHub is the user-visible behavior baseline for these providers. Forgejo and Gi
 
 Rows marked `Target yes` for mutations are post-MVP parity targets, not MVP acceptance requirements.
 
-| GitHub provider feature                                 | Forgejo target           | Gitea target             | Implementation spec                                                                                                                                                                                                                                                            |
-| ------------------------------------------------------- | ------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ReadRepositories`                                      | Yes                      | Yes                      | Shared `gitealike.Provider.GetRepository` and `ListRepositories`; SDK adapters cover user-first then org fallback.                                                                                                                                                             |
-| `ReadMergeRequests`                                     | Yes                      | Yes                      | Shared pull request listing/get/detail normalization into `platform.MergeRequest`, including draft/WIP detection only after SDK field behavior is proven.                                                                                                                      |
-| `ReadIssues`                                            | Yes                      | Yes                      | Shared issue listing/get normalization, with tests that exclude pull requests from issue lists when the API returns mixed issue records.                                                                                                                                       |
-| `ReadComments`                                          | Yes                      | Yes                      | Shared issue-comment, pull-review, and pull-commit event import where endpoints exist. Any missing GitHub timeline event kinds must be documented in tests and normalized to the closest stable Middleman event type instead of silently inventing data.                       |
-| `ReadReleases`                                          | Yes                      | Yes                      | Shared release and tag readers with SDK pagination and normalization.                                                                                                                                                                                                          |
-| `ReadCI`                                                | Yes                      | Yes                      | Both providers start with commit statuses. Forgejo may merge Actions runs into CI checks through Forgejo SDK Actions APIs. Gitea remains status-only until the Gitea SDK and fixture prove equivalent Actions data.                                                            |
-| `CommentMutation` / `platform.CommentMutator`           | Target yes               | Target yes               | Use shared comment mutation over issue-comment APIs for PR and issue comments. Capability is true only after create/edit comment tests pass for that provider.                                                                                                                 |
-| `StateMutation` / `platform.StateMutator`               | Target yes               | Target yes               | Use shared close/reopen orchestration over issue and pull request edit endpoints. Capability is true only after both issue and PR state tests pass.                                                                                                                            |
-| `MergeMutation` / `platform.MergeMutator`               | Target yes               | Target yes               | Use provider merge-pull-request endpoints and map Middleman merge methods to provider method values in tested tables.                                                                                                                                                          |
-| `ReviewMutation` / `platform.ReviewMutator`             | Target yes               | Target yes               | Enable approval review only after the SDK and fixture prove the provider accepts approval reviews and returns data that can normalize to `MergeRequestEvent`.                                                                                                                  |
-| `IssueMutation` / `platform.IssueMutator`               | Target yes               | Target yes               | Use shared create issue orchestration and tests for title/body creation.                                                                                                                                                                                                       |
-| `MergeRequestContentMutator`                            | Target yes               | Target yes               | There is no separate `platform.Capabilities` bool today; server PR title/body routes are gated by `state_mutation` and then require this interface from the registry. Tests must cover both the capability flag and the interface lookup.                                      |
-| `WorkflowApproval` / `platform.WorkflowApprovalMutator` | Research before enabling | Research before enabling | GitHub has a first-class workflow approval path. Forgejo Actions exposes run/task/job data, but approval mutation must remain false until an approval endpoint is proven. Gitea must also remain false until an equivalent endpoint is proven.                                 |
-| `ReadyForReview` / `platform.ReadyForReviewMutator`     | Research before enabling | Research before enabling | GitHub has a first-class ready-for-review mutation. Forgejo/Gitea should only set this true if a stable draft-to-ready endpoint or SDK field exists; title-prefix edits are not enough unless the provider documents them as the supported mechanism and tests prove behavior. |
+| GitHub provider feature | Forgejo target | Gitea target | Implementation spec |
+| --- | --- | --- | --- |
+| `ReadRepositories` | Yes | Yes | Shared `gitealike.Provider.GetRepository` and `ListRepositories`; SDK adapters cover user-first then org fallback. |
+| `ReadMergeRequests` | Yes | Yes | Shared pull request listing/get/detail normalization into `platform.MergeRequest`, including draft/WIP detection only after SDK field behavior is proven. |
+| `ReadIssues` | Yes | Yes | Shared issue listing/get normalization, with tests that exclude pull requests from issue lists when the API returns mixed issue records. |
+| `ReadComments` | Yes | Yes | Shared issue-comment, pull-review, and pull-commit event import where endpoints exist. Any missing GitHub timeline event kinds must be documented in tests and normalized to the closest stable Middleman event type instead of silently inventing data. |
+| `ReadReleases` | Yes | Yes | Shared release and tag readers with SDK pagination and normalization. |
+| `ReadCI` | Yes | Yes | Both providers start with commit statuses. Forgejo may merge Actions runs into CI checks through Forgejo SDK Actions APIs. Gitea remains status-only until the Gitea SDK and fixture prove equivalent Actions data. |
+| `CommentMutation` / `platform.CommentMutator` | Target yes | Target yes | Use shared comment mutation over issue-comment APIs for PR and issue comments. Capability is true only after create/edit comment tests pass for that provider. |
+| `StateMutation` / `platform.StateMutator` | Target yes | Target yes | Use shared close/reopen orchestration over issue and pull request edit endpoints. Capability is true only after both issue and PR state tests pass. |
+| `MergeMutation` / `platform.MergeMutator` | Target yes | Target yes | Use provider merge-pull-request endpoints and map Middleman merge methods to provider method values in tested tables. |
+| `ReviewMutation` / `platform.ReviewMutator` | Target yes | Target yes | Enable approval review only after the SDK and fixture prove the provider accepts approval reviews and returns data that can normalize to `MergeRequestEvent`. |
+| `IssueMutation` / `platform.IssueMutator` | Target yes | Target yes | Use shared create issue orchestration and tests for title/body creation. |
+| `MergeRequestContentMutator` | Target yes | Target yes | There is no separate `platform.Capabilities` bool today; server PR title/body routes are gated by `state_mutation` and then require this interface from the registry. Tests must cover both the capability flag and the interface lookup. |
+| `WorkflowApproval` / `platform.WorkflowApprovalMutator` | Research before enabling | Research before enabling | GitHub has a first-class workflow approval path. Forgejo Actions exposes run/task/job data, but approval mutation must remain false until an approval endpoint is proven. Gitea must also remain false until an equivalent endpoint is proven. |
+| `ReadyForReview` / `platform.ReadyForReviewMutator` | Research before enabling | Research before enabling | GitHub has a first-class ready-for-review mutation. Forgejo/Gitea should only set this true if a stable draft-to-ready endpoint or SDK field exists; title-prefix edits are not enough unless the provider documents them as the supported mechanism and tests prove behavior. |
 
 Capability tests must compare this table against `Capabilities()` for Forgejo and Gitea. For every true mutation capability, tests must also assert the provider implements the corresponding `platform.*Mutator` interface. For every false capability, server API tests must assert `unsupported_capability` with the provider kind and host.
 
@@ -100,7 +100,6 @@ Capability tests must compare this table against `Capabilities()` for Forgejo an
 ## Task 1: Provider Metadata And Config Defaults
 
 **Files:**
-
 - Modify: `internal/platform/types.go`
 - Modify: `internal/platform/metadata.go`
 - Modify: `internal/platform/metadata_test.go`
@@ -484,7 +483,6 @@ git commit -m "feat: recognize Forgejo and Gitea provider configuration" -m "Add
 ## Task 2: Forgejo And Gitea SDK Client Skeletons And Auth
 
 **Files:**
-
 - Create: `internal/platform/forgejo/client.go`
 - Create: `internal/platform/forgejo/client_test.go`
 - Create: `internal/platform/gitea/client.go`
@@ -607,7 +605,6 @@ git commit -m "feat: add Forgejo and Gitea SDK client skeletons" -m "Introduces 
 ## Task 3: Shared Gitea-Like Core And SDK Conversion
 
 **Files:**
-
 - Create: `internal/platform/gitealike/types.go`
 - Create: `internal/platform/gitealike/provider.go`
 - Create: `internal/platform/gitealike/normalize.go`
@@ -794,7 +791,6 @@ git commit -m "feat: share Forgejo and Gitea provider core" -m "Adds a shared gi
 ## Task 4: Forgejo And Gitea Read APIs, Pagination, And Error Mapping
 
 **Files:**
-
 - Modify: `internal/platform/forgejo/client.go`
 - Modify: `internal/platform/forgejo/client_test.go`
 - Modify: `internal/platform/gitea/client.go`
@@ -884,7 +880,6 @@ git commit -m "feat: read Forgejo and Gitea through shared provider core" -m "Co
 ## Task 5: Startup, Registry, Settings, And UI Provider List
 
 **Files:**
-
 - Modify: `cmd/middleman/provider_startup.go`
 - Modify: `cmd/middleman/main_test.go`
 - Modify: `internal/server/settings_test.go`
@@ -1018,7 +1013,6 @@ git commit -m "feat: wire Forgejo and Gitea provider startup" -m "Registers Forg
 ## Task 6: Optional Forgejo And Gitea Container E2E Fixtures
 
 **Files:**
-
 - Create: `scripts/e2e/forgejo/docker-compose.yml`
 - Create: `scripts/e2e/forgejo/wait.sh`
 - Create: `scripts/e2e/forgejo/bootstrap.sh`
@@ -1142,7 +1136,6 @@ git commit -m "test: cover Forgejo and Gitea sync against real instances" -m "Ad
 ## Task 7: GitHub-Parity Mutations And Capability Gating
 
 **Files:**
-
 - Modify: `internal/platform/gitealike/provider.go`
 - Modify: `internal/platform/gitealike/provider_test.go`
 - Modify: `internal/platform/forgejo/client.go`
@@ -1216,7 +1209,6 @@ git commit -m "feat: enable supported Forgejo and Gitea actions" -m "Adds provid
 ## Task 8: Documentation And Final Verification
 
 **Files:**
-
 - Modify: `README.md`
 - Modify: `config.example.toml`
 - Modify: `context/platform-sync-invariants.md`

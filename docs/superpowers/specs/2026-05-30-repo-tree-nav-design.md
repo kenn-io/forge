@@ -85,7 +85,6 @@ than re-parsing the value string.
 Parsing each option (use the threaded `platformHost` field as the source of truth,
 not the value's first segment). Note `value` is `${platformHost}/${repoPath}` today,
 where the host has no slashes and `repoPath` may have several (GitLab groups):
-
 - split `value` on the first slash: the head is the host, the tail is `repoPath`
   (equivalently, drop the known `platformHost` prefix). Do not split on all slashes.
 - repo name = last segment of `repoPath`.
@@ -101,12 +100,8 @@ Output types:
 type RepoLeaf = { kind: "repo"; id: string; label: string; value: string };
 type OwnerNode = { kind: "owner"; id: string; label: string; children: RepoLeaf[] };
 type HostNode = {
-  kind: "host";
-  id: string;
-  label: string;
-  provider: string;
-  platformHost: string;
-  children: OwnerNode[];
+  kind: "host"; id: string; label: string; provider: string;
+  platformHost: string; children: OwnerNode[];
 };
 ```
 
@@ -116,7 +111,6 @@ type HostNode = {
 
 Auto-flatten reduces pointless single-child nesting. Two independent rules, each keyed
 on a different count:
-
 - **Single host (keyed on host count):** when only one host exists, omit the host node
   entirely (no logo row) and render its owners at the top level, however many owners
   there are. With two or more hosts, every host node is shown.
@@ -141,7 +135,7 @@ somehow mixes providers, the first canonical provider wins; document it.
 ### Expansion-state store
 
 `frontend/src/lib/stores/repoTreeExpansion.svelte.ts`, mirroring
-`collapsedRepos.svelte.ts` directly: a `$state<Set<string>>` of _collapsed_ node ids
+`collapsedRepos.svelte.ts` directly: a `$state<Set<string>>` of *collapsed* node ids
 persisted to localStorage key `middleman:repoTreeCollapsed`, with `isCollapsed(id)`
 and `toggle(id)`, wrapped in try/catch. Tracking collapsed ids (not expanded) means an
 empty set on first run reads as fully expanded, so the tree looks like a tree
@@ -171,14 +165,12 @@ Selection state is derived from the active leaf set, never stored separately.
 ## Interaction
 
 ### Mouse
-
 - Interior name or caret: toggle expand/collapse.
 - Interior checkbox: toggle subtree selection (tri-state).
 - Leaf name or checkbox: toggle that repo's selection.
 
 ### Keyboard (extends the existing handler)
-
-- `ArrowUp` / `ArrowDown`: move highlight across currently _visible_ rows (the
+- `ArrowUp` / `ArrowDown`: move highlight across currently *visible* rows (the
   flattened, expansion-aware, filter-aware row list).
 - `ArrowRight` / `ArrowLeft`: expand / collapse the focused node; on a leaf,
   `ArrowLeft` moves focus to its parent.
@@ -189,7 +181,6 @@ Selection state is derived from the active leaf set, never stored separately.
   bindings via `registerCheatsheetEntries`.
 
 ### Filter (prune and auto-expand)
-
 - Substring match on leaf `value` (reuse current lowercase `includes`).
 - A host/owner with at least one surviving descendant stays and force-expands so
   matches are visible; groups with no match are hidden.
@@ -243,7 +234,7 @@ Per the repo's e2e-non-negotiable rule and `context/testing.md`.
   (`playwright-e2e.config.ts`) boots the real server, unlike the mocked `tests/e2e/`
   suite. The tree is client-side, so this is the vehicle, not a Go server e2e.
 
-Checkbox/glyph _visual_ assertions are intentionally minimal: test the three logical
+Checkbox/glyph *visual* assertions are intentionally minimal: test the three logical
 states are distinguishable (e.g. by attribute / class / `indeterminate` property), not
 exact pixels, since styling is deferred.
 

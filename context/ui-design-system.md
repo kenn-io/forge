@@ -87,6 +87,19 @@ in the kit-ui repo. The parts middleman depends on as stable API:
   `frontend/src/test/stubOffsetParent.ts` helper. Synthetic Tab key events
   only exercise kit's trap at the wrap boundaries — mid-cycle movement is
   native browser behavior that jsdom/synthetic events cannot drive.
+- Sidebar layout (`CollapsibleSidebar`): middleman relies on the
+  `kit-sidebar-layout` / `__sidebar` / `__sidebar--collapsed` / `__main` BEM
+  classes and the `data-collapsed` attribute (keyboard context predicate,
+  browser-tier shortcut tests, Playwright selectors, and the
+  `#app.container-narrow` overlay CSS in `app.css`), the `SplitResizeEvent`
+  shape, and `SidebarToggle`'s `kit-sidebar-toggle--compact/--push` modifier
+  hooks. Protected by `App.keyboard-shortcuts.browser.svelte.ts`,
+  `sidebar-collapse` / `container-layout` / `focus-mode` e2e specs, and the
+  keybindings tour.
+- Status bar (`StatusBar`): middleman relies on the `kit-status-bar` and
+  `kit-status-bar__section--left/--right` classes and the
+  `--status-bar-height` token (DetailDrawer offsets against it). Protected
+  by the StatusBar counts/budget browser suites and the focus-mode e2e spec.
 
 kit-ui component swaps must not keep local copies of replaced components;
 `kit-ui-check` (run with `--warn` during migration) tracks hand-rolled

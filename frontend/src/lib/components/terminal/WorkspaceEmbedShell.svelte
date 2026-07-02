@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { FlashBanner } from "@kenn-io/kit-ui";
   import { Provider, WorkspaceRightSidebar } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
 
@@ -102,6 +103,11 @@
   bind:stores
 >
   {@const r = getRoute()}
+  <!-- Embed routes have no app header, so the shared flash banner pins to the
+       top of the pane. Without this mount, showFlash from embed surfaces
+       (provider errors, workspace actions) lands in the shared store with no
+       banner to render it. -->
+  <FlashBanner top="0" />
   <main class="embed-layout">
     {#if r.page === "embed-workspace-list"}
       <WorkspaceListSidebar selectedId="" />

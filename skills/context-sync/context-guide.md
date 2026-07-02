@@ -23,7 +23,7 @@ owner, name)`; code that keys repos by `owner/name/number` alone will silently c
 across hosts once a self-hosted Forgejo and github.com share an owner."
 
 BAD (greppable): "`internal/github/graphql.go` has a `BulkFetch` function."
-GOOD (not greppable): "GitHub GraphQL bulk fetch is an optimization layered _around_ the
+GOOD (not greppable): "GitHub GraphQL bulk fetch is an optimization layered *around* the
 neutral persistence path, not through it — keep it optional so other providers keep
 working when the GraphQL path is skipped."
 
@@ -43,10 +43,10 @@ durable, dated decisions live under `docs/adr/`.
 
 ### The Sorting Test
 
-When a new fact arrives, ask: does it describe the _whole project's_ shape or workflow
-(→ root `CLAUDE.md`), one _concern in depth_ (→ the matching `context/*.md`), a _dated
-decision_ you chose between alternatives (→ `docs/adr/`), or a _feature still being
-designed_ (→ `docs/superpowers/specs/`)? Put it in exactly one home and route to it.
+When a new fact arrives, ask: does it describe the *whole project's* shape or workflow
+(→ root `CLAUDE.md`), one *concern in depth* (→ the matching `context/*.md`), a *dated
+decision* you chose between alternatives (→ `docs/adr/`), or a *feature still being
+designed* (→ `docs/superpowers/specs/`)? Put it in exactly one home and route to it.
 
 ## Anchored Claims
 
@@ -54,7 +54,6 @@ Every factual claim in `context/*.md` and in fact-bearing sections of `CLAUDE.md
 cite a code location so it can be verified and so drift is detectable.
 
 **Format:**
-
 - `` `path/to/file.go::SymbolName` `` — preferred; symbol anchors survive reformatting
   and line shifts. Works for Go (`registry.go::Registry`), TypeScript, and Svelte.
 - `` `path/to/file.go:123` `` — only when the target is genuinely nameless (a specific
@@ -113,21 +112,21 @@ Silencing a failing guard without recording the decision is forbidden.
 
 ## Where to Store Context
 
-| Content type                                                       | Store in                                                               | Why                                |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------- |
-| Project shape, canonical provider list, modes, key files, workflow | root `CLAUDE.md`                                                       | The always-loaded hub              |
-| Provider-neutral sync identity, tokens, freshness, route shape     | `context/platform-sync-invariants.md`                                  | Cross-provider invariants          |
-| New-provider checklist, package layout                             | `context/provider-architecture.md`                                     | Onboarding a provider              |
-| GitHub-only sync behavior (GraphQL, ETag)                          | `context/github-sync-invariants.md`                                    | Isolated optimization              |
-| Schema evolution rules                                             | `context/db-migrations.md`                                             | Migrations are the source of truth |
-| API error envelopes + frontend branching                           | `context/error-handling.md`                                            | Stable contract                    |
-| Retry/backoff/single-flight                                        | `context/retries-and-backoffs.md`                                      | Upstream flakiness                 |
-| HTTP test discipline (apitest vs e2etest)                          | `context/testing.md`                                                   | Wire-level testing                 |
-| UI/TS/Svelte conventions, interaction contracts                    | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`   | Frontend consistency               |
-| Phone-first mobile workflow                                        | `context/mobile-ux.md`                                                 | `/m` is its own UX                 |
-| Kata / Docs / Messages mode integration                            | `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` | Until dedicated docs exist         |
-| A decision chosen over an alternative                              | `docs/adr/NNNN-title.md`                                               | Dated, durable rationale           |
-| A feature still being designed                                     | `docs/superpowers/specs/YYYY-MM-DD-topic-design.md`                    | Loaded only when needed            |
+| Content type | Store in | Why |
+|--------------|----------|-----|
+| Project shape, canonical provider list, modes, key files, workflow | root `CLAUDE.md` | The always-loaded hub |
+| Provider-neutral sync identity, tokens, freshness, route shape | `context/platform-sync-invariants.md` | Cross-provider invariants |
+| New-provider checklist, package layout | `context/provider-architecture.md` | Onboarding a provider |
+| GitHub-only sync behavior (GraphQL, ETag) | `context/github-sync-invariants.md` | Isolated optimization |
+| Schema evolution rules | `context/db-migrations.md` | Migrations are the source of truth |
+| API error envelopes + frontend branching | `context/error-handling.md` | Stable contract |
+| Retry/backoff/single-flight | `context/retries-and-backoffs.md` | Upstream flakiness |
+| HTTP test discipline (apitest vs e2etest) | `context/testing.md` | Wire-level testing |
+| UI/TS/Svelte conventions, interaction contracts | `context/ui-design-system.md`, `context/ui-interaction-contracts.md` | Frontend consistency |
+| Phone-first mobile workflow | `context/mobile-ux.md` | `/m` is its own UX |
+| Kata / Docs / Messages mode integration | `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` | Until dedicated docs exist |
+| A decision chosen over an alternative | `docs/adr/NNNN-title.md` | Dated, durable rationale |
+| A feature still being designed | `docs/superpowers/specs/YYYY-MM-DD-topic-design.md` | Loaded only when needed |
 
 Every new topic doc MUST get a routing reference from root `CLAUDE.md` (or from another
 reachable doc). Unreachable context is invisible to agents.
@@ -137,11 +136,11 @@ reachable doc). Unreachable context is invisible to agents.
 These are soft ceilings; when a doc outgrows one, split by sub-concern rather than
 deleting substance. They are not a mandate to shrink today's docs.
 
-| File                          | Soft max lines | Rationale                              |
-| ----------------------------- | -------------- | -------------------------------------- |
-| Each `context/*.md` topic doc | ~250           | One concern, deep but scannable        |
-| `docs/adr/*` entry            | ~80            | One decision                           |
-| `docs/superpowers/specs/*`    | as needed      | Design surface, archived after landing |
+| File | Soft max lines | Rationale |
+|------|----------------|-----------|
+| Each `context/*.md` topic doc | ~250 | One concern, deep but scannable |
+| `docs/adr/*` entry | ~80 | One decision |
+| `docs/superpowers/specs/*` | as needed | Design surface, archived after landing |
 
 The root `CLAUDE.md` is the hub and is allowed to be long, but it should stay a router
 and a conventions list — push any concern that grows rationale into a `context/` doc and

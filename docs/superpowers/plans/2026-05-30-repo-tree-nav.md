@@ -52,7 +52,6 @@ keep the current semantics:
 ### Task 1: Tree builder and types
 
 **Files:**
-
 - Create: `frontend/src/lib/components/repoTree.ts`
 - Test: `frontend/src/lib/components/repoTree.test.ts`
 
@@ -65,7 +64,11 @@ import { describe, expect, it } from "vitest";
 
 import { buildRepoTree, type RepoTreeOption } from "./repoTree.js";
 
-function opt(platformHost: string, repoPath: string, provider = "github"): RepoTreeOption {
+function opt(
+  platformHost: string,
+  repoPath: string,
+  provider = "github",
+): RepoTreeOption {
   const segments = repoPath.split("/");
   return {
     value: `${platformHost}/${repoPath}`,
@@ -100,7 +103,9 @@ describe("buildRepoTree", () => {
   });
 
   it("keeps GitLab nested groups as one slashed owner node", () => {
-    const tree = buildRepoTree([opt("gitlab.com", "platform/frontend/web-ui", "gitlab")]);
+    const tree = buildRepoTree([
+      opt("gitlab.com", "platform/frontend/web-ui", "gitlab"),
+    ]);
 
     const host = tree[0];
     expect(host.children).toHaveLength(1);
@@ -112,12 +117,18 @@ describe("buildRepoTree", () => {
   });
 
   it("separates hosts and sorts them by label", () => {
-    const tree = buildRepoTree([opt("gitlab.com", "g/x", "gitlab"), opt("github.com", "a/y")]);
+    const tree = buildRepoTree([
+      opt("gitlab.com", "g/x", "gitlab"),
+      opt("github.com", "a/y"),
+    ]);
     expect(tree.map((h) => h.label)).toEqual(["github.com", "gitlab.com"]);
   });
 
   it("uses the first option's provider when a host's providers disagree", () => {
-    const tree = buildRepoTree([opt("ghe.example.com", "a/x", "github"), opt("ghe.example.com", "b/y", "gitlab")]);
+    const tree = buildRepoTree([
+      opt("ghe.example.com", "a/x", "github"),
+      opt("ghe.example.com", "b/y", "gitlab"),
+    ]);
     expect(tree[0].provider).toBe("github");
   });
 });
@@ -173,7 +184,9 @@ function stripHostPrefix(value: string, platformHost: string): string {
   return value.replace(/^[^/]+\//, "");
 }
 
-export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
+export function buildRepoTree(
+  options: readonly RepoTreeOption[],
+): HostNode[] {
   const hosts = new Map<string, HostNode>();
 
   for (const option of options) {
@@ -215,7 +228,9 @@ export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
     });
   }
 
-  const sorted = [...hosts.values()].sort((a, b) => a.label.localeCompare(b.label));
+  const sorted = [...hosts.values()].sort((a, b) =>
+    a.label.localeCompare(b.label),
+  );
   for (const host of sorted) {
     host.children.sort((a, b) => a.label.localeCompare(b.label));
     for (const owner of host.children) {
@@ -243,7 +258,6 @@ git commit -m "feat: build host/owner/repo tree from repo options"
 ### Task 2: Visible-row projection (flatten + expansion + filter)
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/repoTree.ts`
 - Test: `frontend/src/lib/components/repoTree.test.ts`
 
@@ -262,7 +276,10 @@ function labelsAtDepth(rows: VisibleRow[]): Array<[string, number]> {
 
 describe("visibleRows", () => {
   it("omits the host node when there is only one host", () => {
-    const tree = buildRepoTree([opt("github.com", "acme/api"), opt("github.com", "acme/web")]);
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+    ]);
     const rows = visibleRows(tree, { isCollapsed: neverCollapsed });
     // owner at depth 0 (host omitted), two leaves at depth 1
     expect(labelsAtDepth(rows)).toEqual([
@@ -273,7 +290,10 @@ describe("visibleRows", () => {
   });
 
   it("shows host nodes at depth 0 when more than one host exists", () => {
-    const tree = buildRepoTree([opt("github.com", "acme/api"), opt("gitlab.com", "g/x", "gitlab")]);
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("gitlab.com", "g/x", "gitlab"),
+    ]);
     const rows = visibleRows(tree, { isCollapsed: neverCollapsed });
     expect(rows[0].node.kind).toBe("host");
     expect(rows[0].depth).toBe(0);
@@ -296,7 +316,10 @@ describe("visibleRows", () => {
   });
 
   it("hides children of a collapsed node", () => {
-    const tree = buildRepoTree([opt("github.com", "acme/api"), opt("github.com", "acme/web")]);
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+    ]);
     const collapsed = (id: string) => id === "github.com/acme";
     const rows = visibleRows(tree, { isCollapsed: collapsed });
     expect(labelsAtDepth(rows)).toEqual([["acme", 0]]);
@@ -344,10 +367,14 @@ export interface VisibleRowsOptions {
   query?: string;
 }
 
-export function visibleRows(tree: readonly HostNode[], { isCollapsed, query }: VisibleRowsOptions): VisibleRow[] {
+export function visibleRows(
+  tree: readonly HostNode[],
+  { isCollapsed, query }: VisibleRowsOptions,
+): VisibleRow[] {
   const q = query?.trim().toLowerCase() ?? "";
   const filtering = q !== "";
-  const matches = (leaf: RepoLeaf) => !filtering || leaf.value.toLowerCase().includes(q);
+  const matches = (leaf: RepoLeaf) =>
+    !filtering || leaf.value.toLowerCase().includes(q);
 
   // Prune to owners/hosts that still have a matching leaf.
   const pruned = tree
@@ -422,7 +449,6 @@ git commit -m "feat: project repo tree into a flattened, filtered visible-row li
 ### Task 3: Selection helpers (tri-state + cascade)
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/repoTree.ts`
 - Test: `frontend/src/lib/components/repoTree.test.ts`
 
@@ -431,7 +457,11 @@ git commit -m "feat: project repo tree into a flattened, filtered visible-row li
 Append to `frontend/src/lib/components/repoTree.test.ts`:
 
 ```ts
-import { collectLeafValues, nodeSelectionState, toggleSubtree } from "./repoTree.js";
+import {
+  collectLeafValues,
+  nodeSelectionState,
+  toggleSubtree,
+} from "./repoTree.js";
 
 describe("selection helpers", () => {
   const tree = buildRepoTree([
@@ -447,14 +477,25 @@ describe("selection helpers", () => {
       "github.com/acme/infra",
       "github.com/acme/web",
     ]);
-    expect(collectLeafValues(acme.children[0])).toEqual(["github.com/acme/api"]);
+    expect(collectLeafValues(acme.children[0])).toEqual([
+      "github.com/acme/api",
+    ]);
   });
 
   it("computes tri-state from the active set", () => {
     expect(nodeSelectionState(acme, new Set())).toBe("unchecked");
-    expect(nodeSelectionState(acme, new Set(["github.com/acme/api"]))).toBe("partial");
     expect(
-      nodeSelectionState(acme, new Set(["github.com/acme/api", "github.com/acme/web", "github.com/acme/infra"])),
+      nodeSelectionState(acme, new Set(["github.com/acme/api"])),
+    ).toBe("partial");
+    expect(
+      nodeSelectionState(
+        acme,
+        new Set([
+          "github.com/acme/api",
+          "github.com/acme/web",
+          "github.com/acme/infra",
+        ]),
+      ),
     ).toBe("checked");
   });
 
@@ -467,15 +508,18 @@ describe("selection helpers", () => {
   });
 
   it("removes all subtree leaves when fully checked", () => {
-    const all = ["github.com/acme/api", "github.com/acme/web", "github.com/acme/infra"];
+    const all = [
+      "github.com/acme/api",
+      "github.com/acme/web",
+      "github.com/acme/infra",
+    ];
     expect(toggleSubtree(acme, all)).toEqual([]);
   });
 
   it("toggles a single leaf without touching siblings", () => {
-    expect(toggleSubtree(acme.children[0], ["github.com/acme/web"]).sort()).toEqual([
-      "github.com/acme/api",
-      "github.com/acme/web",
-    ]);
+    expect(
+      toggleSubtree(acme.children[0], ["github.com/acme/web"]).sort(),
+    ).toEqual(["github.com/acme/api", "github.com/acme/web"]);
   });
 });
 ```
@@ -499,7 +543,10 @@ export function collectLeafValues(node: RepoTreeNodeData): string[] {
   return values;
 }
 
-export function nodeSelectionState(node: RepoTreeNodeData, active: ReadonlySet<string>): SelectionState {
+export function nodeSelectionState(
+  node: RepoTreeNodeData,
+  active: ReadonlySet<string>,
+): SelectionState {
   const leaves = collectLeafValues(node);
   if (leaves.length === 0) return "unchecked";
   let selected = 0;
@@ -509,7 +556,10 @@ export function nodeSelectionState(node: RepoTreeNodeData, active: ReadonlySet<s
   return "partial";
 }
 
-export function toggleSubtree(node: RepoTreeNodeData, activeValues: readonly string[]): string[] {
+export function toggleSubtree(
+  node: RepoTreeNodeData,
+  activeValues: readonly string[],
+): string[] {
   const leaves = collectLeafValues(node);
   if (nodeSelectionState(node, new Set(activeValues)) === "checked") {
     const remove = new Set(leaves);
@@ -539,7 +589,6 @@ git commit -m "feat: derive tri-state selection and subtree toggling for the rep
 ### Task 4: Expansion-state store
 
 **Files:**
-
 - Create: `frontend/src/lib/stores/repoTreeExpansion.svelte.ts`
 - Test: `frontend/src/lib/stores/repoTreeExpansion.test.ts`
 
@@ -595,9 +644,11 @@ describe("createRepoTreeExpansionStore", () => {
   });
 
   it("keeps working in memory when setItem throws", () => {
-    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("QuotaExceededError");
-    });
+    const spy = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("QuotaExceededError");
+      });
     const store = createRepoTreeExpansionStore();
     expect(() => store.toggle("github.com/acme")).not.toThrow();
     expect(store.isCollapsed("github.com/acme")).toBe(true);
@@ -657,7 +708,9 @@ export function createRepoTreeExpansionStore() {
   return { isCollapsed, toggle };
 }
 
-export type RepoTreeExpansionStore = ReturnType<typeof createRepoTreeExpansionStore>;
+export type RepoTreeExpansionStore = ReturnType<
+  typeof createRepoTreeExpansionStore
+>;
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -677,7 +730,6 @@ git commit -m "feat: persist repo tree collapsed-node state"
 ### Task 5: Row presenter component
 
 **Files:**
-
 - Create: `frontend/src/lib/components/RepoTreeNode.svelte`
 - Test: `frontend/src/lib/components/RepoTreeNode.test.ts`
 
@@ -997,7 +1049,6 @@ git commit -m "feat: add repo tree row presenter component"
 ### Task 6: Extend `RepoOption` with provider and platformHost
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/RepoTypeahead.svelte:49` (the `RepoOption` type and the two `optionFrom*` functions)
 
 This is a prep change: thread the two fields the tree builder needs. Behavior is
@@ -1069,7 +1120,6 @@ git commit -m "feat: carry provider and platform host on repo options"
 ### Task 7: Render the tree with mouse selection and filtering
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/RepoTypeahead.svelte` (open-dropdown markup + state)
 - Modify: `frontend/src/lib/components/RepoTypeahead.test.ts`
 
@@ -1114,9 +1164,13 @@ it("selecting an owner row selects all repos beneath it", async () => {
   render(RepoTypeahead, { props: { selected: undefined, onchange } });
 
   await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
-  await fireEvent.mouseDown(screen.getByRole("option", { name: "github.com/import-lab" }));
+  await fireEvent.mouseDown(
+    screen.getByRole("option", { name: "github.com/import-lab" }),
+  );
 
-  expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api,github.com/import-lab/web");
+  expect(onchange).toHaveBeenLastCalledWith(
+    "github.com/import-lab/api,github.com/import-lab/web",
+  );
 });
 
 it("filters to matching leaves while keeping their owner visible", async () => {
@@ -1151,8 +1205,12 @@ it("filters to matching leaves while keeping their owner visible", async () => {
   });
 
   await waitFor(() => {
-    expect(screen.getByRole("option", { name: "github.com/import-lab/web" })).toBeTruthy();
-    expect(screen.queryByRole("option", { name: "github.com/import-lab/api" })).toBeNull();
+    expect(
+      screen.getByRole("option", { name: "github.com/import-lab/web" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("option", { name: "github.com/import-lab/api" }),
+    ).toBeNull();
   });
 });
 ```
@@ -1168,7 +1226,13 @@ In `frontend/src/lib/components/RepoTypeahead.svelte`, add to the imports:
 
 ```ts
 import RepoTreeNode from "./RepoTreeNode.svelte";
-import { buildRepoTree, visibleRows, nodeSelectionState, toggleSubtree, type VisibleRow } from "./repoTree.js";
+import {
+  buildRepoTree,
+  visibleRows,
+  nodeSelectionState,
+  toggleSubtree,
+  type VisibleRow,
+} from "./repoTree.js";
 import { createRepoTreeExpansionStore } from "../stores/repoTreeExpansion.svelte.js";
 ```
 
@@ -1180,7 +1244,9 @@ const expansion = createRepoTreeExpansionStore();
 
 const tree = $derived(buildRepoTree(options));
 
-const rows = $derived(visibleRows(tree, { isCollapsed: expansion.isCollapsed, query }));
+const rows = $derived(
+  visibleRows(tree, { isCollapsed: expansion.isCollapsed, query }),
+);
 
 function rowAriaLabel(row: VisibleRow): string {
   return row.node.kind === "host" ? row.node.platformHost : row.node.id;
@@ -1276,7 +1342,6 @@ git commit -m "feat: render the repo selector as an expandable tree with subtree
 ### Task 8: Keyboard navigation for the tree
 
 **Files:**
-
 - Modify: `frontend/src/lib/components/RepoTypeahead.svelte` (`handleKeydown`, cheatsheet registration)
 - Modify: `frontend/src/lib/components/RepoTypeahead.test.ts`
 
@@ -1318,19 +1383,25 @@ it("collapses and expands the focused owner with arrow keys", async () => {
   const input = screen.getByPlaceholderText("Filter repos...");
 
   // leaves visible by default
-  expect(screen.getByRole("option", { name: "github.com/import-lab/api" })).toBeTruthy();
+  expect(
+    screen.getByRole("option", { name: "github.com/import-lab/api" }),
+  ).toBeTruthy();
 
   // move highlight onto the owner row (index 1) and collapse it
   await fireEvent.keyDown(input, { key: "ArrowDown" });
   await fireEvent.keyDown(input, { key: "ArrowLeft" });
 
   await waitFor(() => {
-    expect(screen.queryByRole("option", { name: "github.com/import-lab/api" })).toBeNull();
+    expect(
+      screen.queryByRole("option", { name: "github.com/import-lab/api" }),
+    ).toBeNull();
   });
 
   await fireEvent.keyDown(input, { key: "ArrowRight" });
   await waitFor(() => {
-    expect(screen.getByRole("option", { name: "github.com/import-lab/api" })).toBeTruthy();
+    expect(
+      screen.getByRole("option", { name: "github.com/import-lab/api" }),
+    ).toBeTruthy();
   });
 });
 
@@ -1366,7 +1437,9 @@ it("toggles selection of the focused row with space", async () => {
   await fireEvent.keyDown(input, { key: "ArrowDown" });
   await fireEvent.keyDown(input, { key: " " });
 
-  expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api,github.com/import-lab/web");
+  expect(onchange).toHaveBeenLastCalledWith(
+    "github.com/import-lab/api,github.com/import-lab/web",
+  );
 });
 ```
 
@@ -1471,7 +1544,6 @@ git commit -m "feat: add keyboard navigation and selection to the repo tree"
 ### Task 9: End-to-end group selection
 
 **Files:**
-
 - Modify: `frontend/tests/e2e-full/repo-filter-multiselect.spec.ts`
 
 Add a test that opens the selector, selects an owner group, and asserts the PR/issue
@@ -1488,7 +1560,9 @@ Expected: shows the existing fixtures used (`github.com/acme/widgets`, `github.c
 Append to `frontend/tests/e2e-full/repo-filter-multiselect.spec.ts`:
 
 ```ts
-test("selecting an owner group filters lists to that group's repos", async ({ page }) => {
+test("selecting an owner group filters lists to that group's repos", async ({
+  page,
+}) => {
   await page.goto("/issues");
   await waitForIssueList(page);
 
@@ -1503,12 +1577,12 @@ test("selecting an owner group filters lists to that group's repos", async ({ pa
   await page.keyboard.press("Escape");
 
   // Both acme repos end up in the persisted filter set.
-  await expect(page.evaluate(() => localStorage.getItem("middleman-filter-repo"))).resolves.toContain(
-    "github.com/acme/widgets",
-  );
-  await expect(page.evaluate(() => localStorage.getItem("middleman-filter-repo"))).resolves.toContain(
-    "github.com/acme/tools",
-  );
+  await expect(
+    page.evaluate(() => localStorage.getItem("middleman-filter-repo")),
+  ).resolves.toContain("github.com/acme/widgets");
+  await expect(
+    page.evaluate(() => localStorage.getItem("middleman-filter-repo")),
+  ).resolves.toContain("github.com/acme/tools");
 
   await expect(page.getByText("GitLab read-only issue")).toHaveCount(0);
 });

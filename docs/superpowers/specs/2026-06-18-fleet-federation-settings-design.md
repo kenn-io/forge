@@ -98,7 +98,9 @@ folding peer editing into unrelated general settings updates:
   "sessions": {
     "include_unmanaged_details": false
   },
-  "peers": [{ "key": "mini", "name": "Mac mini", "base_url": "http://mini.tail:8091" }],
+  "peers": [
+    { "key": "mini", "name": "Mac mini", "base_url": "http://mini.tail:8091" }
+  ],
   "ssh_peers": [
     {
       "key": "epyc",

@@ -212,16 +212,16 @@ Middleman behavior:
 
 ## Mapping To Middleman
 
-| VS Code concept              | Middleman concept             | Implementation note                                                          |
-| ---------------------------- | ----------------------------- | ---------------------------------------------------------------------------- |
-| `EditorPart` serialized grid | Workspace workflow layout     | Persist nested split tree, sizes, active group, MRU group order.             |
-| Editor group                 | Workflow group/pane           | Owns ordered workflow tabs and active tab id.                                |
-| Editor tab                   | Workflow tab/item             | Reorder in group; drag across groups; activate on click.                     |
-| Editor content drop overlay  | Workflow group drop overlay   | Center merge, edges split.                                                   |
-| Terminal group               | Terminal tab                  | Top-level terminal tab list row.                                             |
-| Terminal instance            | Terminal split pane           | Ordered child of a terminal group.                                           |
-| Terminal tab list            | Docked terminal tab rail/list | Show based on group/split count; keep selection synced with active terminal. |
-| Terminal layout info         | Terminal panel layout state   | Persist tab order, split order, active ids, relative sizes.                  |
+| VS Code concept | Middleman concept | Implementation note |
+| --- | --- | --- |
+| `EditorPart` serialized grid | Workspace workflow layout | Persist nested split tree, sizes, active group, MRU group order. |
+| Editor group | Workflow group/pane | Owns ordered workflow tabs and active tab id. |
+| Editor tab | Workflow tab/item | Reorder in group; drag across groups; activate on click. |
+| Editor content drop overlay | Workflow group drop overlay | Center merge, edges split. |
+| Terminal group | Terminal tab | Top-level terminal tab list row. |
+| Terminal instance | Terminal split pane | Ordered child of a terminal group. |
+| Terminal tab list | Docked terminal tab rail/list | Show based on group/split count; keep selection synced with active terminal. |
+| Terminal layout info | Terminal panel layout state | Persist tab order, split order, active ids, relative sizes. |
 
 ## Implementation Checklist
 

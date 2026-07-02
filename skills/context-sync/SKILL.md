@@ -12,7 +12,6 @@ and draft updates for review. Adapted for this repo's Go + Svelte stack and its
 single-surface context layout: root `CLAUDE.md` routes to flat `context/*.md` topic docs.
 
 **Arguments:**
-
 - No args: sync every area in the area map below and produce reviewed context-doc
   updates or concrete improvement suggestions.
 - `$1 = area`: sync one area (see Area Map, e.g. `platform`, `github-sync`, `db`,
@@ -115,20 +114,20 @@ every anchor.
 
 ### Area Map
 
-| Area          | Topic doc(s)                                                                                                              | Code it must track                                                                         |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `platform`    | `context/provider-architecture.md`, `context/platform-sync-invariants.md`                                                 | `internal/platform/` (registry, types, metadata, persist), `internal/platform/<provider>/` |
-| `github-sync` | `context/github-sync-invariants.md`                                                                                       | `internal/github/` (sync, graphql, client, transports)                                     |
-| `db`          | `context/db-migrations.md`, `context/embeds.md`                                                                           | `internal/db/`, `internal/db/migrations/`                                                  |
-| `server`      | `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md`                                                     | `internal/server/`, `internal/apiclient/generated/`                                        |
-| `errors`      | `context/error-handling.md`                                                                                               | error envelopes across `internal/server/`, frontend error branching                        |
-| `retries`     | `context/retries-and-backoffs.md`                                                                                         | retry/backoff/single-flight paths against upstreams                                        |
-| `testing`     | `context/testing.md`                                                                                                      | `internal/server/apitest/`, `internal/server/e2etest/`, test helpers                       |
-| `frontend`    | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/`                                                                            |
-| `mobile`      | `context/mobile-ux.md`                                                                                                    | `frontend/src/` `/m` routes and phone-first components                                     |
-| `kata`        | `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md`                                                    | `internal/kata/`                                                                           |
-| `docs`        | same spec as `kata`                                                                                                       | `internal/docs/`                                                                           |
-| `messages`    | same spec as `kata`                                                                                                       | `internal/messages/msgvault/`                                                              |
+| Area | Topic doc(s) | Code it must track |
+|------|--------------|--------------------|
+| `platform` | `context/provider-architecture.md`, `context/platform-sync-invariants.md` | `internal/platform/` (registry, types, metadata, persist), `internal/platform/<provider>/` |
+| `github-sync` | `context/github-sync-invariants.md` | `internal/github/` (sync, graphql, client, transports) |
+| `db` | `context/db-migrations.md`, `context/embeds.md` | `internal/db/`, `internal/db/migrations/` |
+| `server` | `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `internal/server/`, `internal/apiclient/generated/` |
+| `errors` | `context/error-handling.md` | error envelopes across `internal/server/`, frontend error branching |
+| `retries` | `context/retries-and-backoffs.md` | retry/backoff/single-flight paths against upstreams |
+| `testing` | `context/testing.md` | `internal/server/apitest/`, `internal/server/e2etest/`, test helpers |
+| `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/` |
+| `mobile` | `context/mobile-ux.md` | `frontend/src/` `/m` routes and phone-first components |
+| `kata` | `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` | `internal/kata/` |
+| `docs` | same spec as `kata` | `internal/docs/` |
+| `messages` | same spec as `kata` | `internal/messages/msgvault/` |
 
 When `internal/docs/`, `internal/kata/`, or `internal/messages/msgvault/` graduate from
 the shared modes design spec to their own `context/*.md` docs, add rows here and a

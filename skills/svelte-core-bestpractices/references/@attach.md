@@ -135,10 +135,10 @@ Attachments, unlike [actions](use), are fully reactive: `{@attach foo(bar)}` wil
 ```js
 // @errors: 7006 2304 2552
 function foo(bar) {
-  return (node) => {
-    veryExpensiveSetupWork(node);
-    update(node, bar);
-  };
+	return (node) => {
+		veryExpensiveSetupWork(node);
+		update(node, bar);
+	};
 }
 ```
 
@@ -147,13 +147,13 @@ In the rare case that this is a problem (for example, if `foo` does expensive an
 ```js
 // @errors: 7006 2304 2552
 function foo(getBar) {
-  return (node) => {
-    veryExpensiveSetupWork(node);
+	return (node) => {
+		veryExpensiveSetupWork(node);
 
-    $effect(() => {
-      update(node, getBar());
-    });
-  };
+		$effect(() => {
+			update(node, getBar());
+		});
+	}
 }
 ```
 

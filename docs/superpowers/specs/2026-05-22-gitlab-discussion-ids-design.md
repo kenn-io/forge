@@ -47,19 +47,18 @@ ALTER TABLE middleman_issue_events DROP COLUMN discussion_id;
 
 ### Column Descriptions
 
-| Column          | Type            | Description                                                                               |
-| --------------- | --------------- | ----------------------------------------------------------------------------------------- |
-| `discussion_id` | TEXT (nullable) | GitLab discussion ID; NULL for non-GitLab or pre-migration events                         |
-| `position_json` | TEXT            | JSON blob of GitLab position metadata for inline comments; empty string if not positioned |
-| `resolvable`    | INTEGER         | 1 if discussion can be resolved, 0 otherwise                                              |
-| `resolved`      | INTEGER         | 1 if discussion is currently resolved, 0 otherwise                                        |
+| Column | Type | Description |
+|--------|------|-------------|
+| `discussion_id` | TEXT (nullable) | GitLab discussion ID; NULL for non-GitLab or pre-migration events |
+| `position_json` | TEXT | JSON blob of GitLab position metadata for inline comments; empty string if not positioned |
+| `resolvable` | INTEGER | 1 if discussion can be resolved, 0 otherwise |
+| `resolved` | INTEGER | 1 if discussion is currently resolved, 0 otherwise |
 
 ## Platform Types
 
 ### `internal/platform/types.go`
 
 Extend `MergeRequestEvent`:
-
 ```go
 type MergeRequestEvent struct {
     // ... existing fields ...
@@ -71,7 +70,6 @@ type MergeRequestEvent struct {
 ```
 
 Extend `IssueEvent`:
-
 ```go
 type IssueEvent struct {
     // ... existing fields ...
@@ -80,7 +78,6 @@ type IssueEvent struct {
 ```
 
 Extend `Capabilities`:
-
 ```go
 type Capabilities struct {
     // ... existing fields ...
@@ -96,13 +93,11 @@ type Capabilities struct {
 **File:** `internal/platform/gitlab/client.go`
 
 Replace:
-
 ```go
 func (c *Client) listMergeRequestNotes(ctx context.Context, pid any, number int) ([]*gitlab.Note, error)
 ```
 
 With:
-
 ```go
 func (c *Client) listMergeRequestDiscussions(ctx context.Context, pid any, number int) ([]*gitlab.Discussion, error)
 ```
@@ -118,7 +113,6 @@ Same pattern for `listIssueDiscussions` replacing `listIssueNotes`.
 **File:** `internal/platform/gitlab/normalize.go`
 
 New function:
-
 ```go
 func NormalizeMergeRequestDiscussions(
     repo platform.RepoRef,
@@ -128,7 +122,6 @@ func NormalizeMergeRequestDiscussions(
 ```
 
 For each discussion:
-
 1. Iterate notes in the discussion
 2. Skip system notes (`note.System == true`)
 3. Extract `discussion.ID` as `DiscussionID`
@@ -141,7 +134,6 @@ Similar function for issues (without position/resolvable).
 ### Position JSON Structure
 
 The `position_json` field stores GitLab's native position format:
-
 ```json
 {
   "old_path": "internal/server/api.go",
@@ -183,7 +175,6 @@ type IssueEvent struct {
 **File:** `internal/platform/persist.go`
 
 Update `DBMREvent`:
-
 ```go
 func DBMREvent(mrID int64, event MergeRequestEvent) db.MREvent {
     out := db.MREvent{
@@ -209,7 +200,6 @@ Update `UpsertMREvents` to include new columns in INSERT and ON CONFLICT UPDATE.
 Update `ListMREvents` SELECT to retrieve new columns.
 
 New query:
-
 ```go
 func (d *DB) ListMREventsByDiscussion(ctx context.Context, mrID int64, discussionID string) ([]MREvent, error)
 ```
@@ -223,7 +213,6 @@ POST /api/v1/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id
 ```
 
 **Request:**
-
 ```json
 {
   "body": "Thanks, fixed in the latest commit."
@@ -231,7 +220,6 @@ POST /api/v1/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id
 ```
 
 **Response:** `201 Created`
-
 ```json
 {
   "id": 456,
@@ -250,7 +238,6 @@ POST /api/v1/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id
 ```
 
 **Request:**
-
 ```json
 {
   "resolved": true
@@ -314,7 +301,6 @@ func (c *Client) ResolveDiscussion(
 **Capabilities:**
 
 Update `Client.Capabilities()`:
-
 ```go
 func (c *Client) Capabilities() platform.Capabilities {
     return platform.Capabilities{
@@ -375,7 +361,6 @@ The `db.MREvent` struct embeds directly into API responses. New fields automatic
 ## Provider Extensibility
 
 The schema supports future providers:
-
 - `discussion_id` column is nullable and provider-agnostic
 - Capability flags (`DiscussionReply`, `DiscussionResolve`) let providers opt-in
 - Other providers (GitHub, Forgejo, Gitea) can populate discussion_id if their APIs support threading

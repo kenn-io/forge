@@ -31,7 +31,6 @@
 ## Task 1: Backend Timeline Event Types And Client Tests
 
 **Files:**
-
 - Modify: `internal/github/client.go`
 - Modify: `internal/github/client_test.go`
 
@@ -297,7 +296,6 @@ Expected: PASS.
 ## Task 2: Backend Timeline Event Normalization
 
 **Files:**
-
 - Modify: `internal/github/normalize.go`
 - Modify: `internal/github/normalize_test.go`
 
@@ -523,7 +521,6 @@ Expected: PASS.
 ## Task 3: Sync New Timeline Events
 
 **Files:**
-
 - Modify: `internal/github/sync.go`
 - Modify: `internal/github/sync_test.go`
 
@@ -710,7 +707,6 @@ Expected: PASS.
 ## Task 4: PR Timeline Filter Helper
 
 **Files:**
-
 - Create: `packages/ui/src/components/detail/prTimelineFilter.ts`
 - Create: `packages/ui/src/components/detail/prTimelineFilter.test.ts`
 
@@ -791,15 +787,13 @@ describe("prTimelineFilter", () => {
       event({ ID: 5, EventType: "base_ref_changed", Author: "alice" }),
     ];
 
-    expect(
-      filterPREvents(events, {
-        showMessages: true,
-        showCommitDetails: false,
-        showEvents: true,
-        showForcePushes: false,
-        hideBots: true,
-      }).map((item) => item.ID),
-    ).toEqual([1, 5]);
+    expect(filterPREvents(events, {
+      showMessages: true,
+      showCommitDetails: false,
+      showEvents: true,
+      showForcePushes: false,
+      hideBots: true,
+    }).map((item) => item.ID)).toEqual([1, 5]);
   });
 });
 ```
@@ -829,7 +823,11 @@ export interface PRTimelineFilterState {
   hideBots: boolean;
 }
 
-export type PRTimelineEventBucket = "messages" | "commitDetails" | "events" | "forcePushes";
+export type PRTimelineEventBucket =
+  | "messages"
+  | "commitDetails"
+  | "events"
+  | "forcePushes";
 
 export const PR_TIMELINE_FILTER_STORAGE_KEY = "middleman-pr-timeline-filter";
 
@@ -934,7 +932,6 @@ Expected: PASS.
 ## Task 5: PR Timeline Filter Component
 
 **Files:**
-
 - Create: `packages/ui/src/components/detail/PRTimelineFilter.svelte`
 - Create: `packages/ui/src/components/detail/PRTimelineFilter.test.ts`
 
@@ -1111,7 +1108,6 @@ Expected: PASS from Vitest and no required Svelte autofixer changes.
 ## Task 6: Compact Event Timeline Rendering
 
 **Files:**
-
 - Modify: `packages/ui/src/components/detail/EventTimeline.svelte`
 - Modify: `packages/ui/src/components/detail/EventTimeline.test.ts`
 
@@ -1123,13 +1119,11 @@ Extend `packages/ui/src/components/detail/EventTimeline.test.ts`:
 it("renders commit events as compact one-line commit detail rows", () => {
   render(EventTimeline, {
     props: {
-      events: [
-        makeEvent({
-          EventType: "commit",
-          Summary: "abcdef1234567890",
-          Body: "feat: add timeline filters\n\nLong body",
-        }),
-      ],
+      events: [makeEvent({
+        EventType: "commit",
+        Summary: "abcdef1234567890",
+        Body: "feat: add timeline filters\n\nLong body",
+      })],
     },
   });
 
@@ -1146,7 +1140,7 @@ it("renders system events as compact rows", () => {
         makeEvent({
           ID: 2,
           EventType: "renamed_title",
-          Summary: '"Old" -> "New"',
+          Summary: "\"Old\" -> \"New\"",
           MetadataJSON: JSON.stringify({
             previous_title: "Old",
             current_title: "New",
@@ -1218,20 +1212,23 @@ interface Props {
   filtered?: boolean;
 }
 
-const { events, repoOwner, repoName, filtered = false }: Props = $props();
+const {
+  events,
+  repoOwner,
+  repoName,
+  filtered = false,
+}: Props = $props();
 ```
 
 Add helpers:
 
 ```ts
 function isCompactEvent(eventType: string): boolean {
-  return (
-    eventType === "commit" ||
-    eventType === "force_push" ||
-    eventType === "cross_referenced" ||
-    eventType === "renamed_title" ||
-    eventType === "base_ref_changed"
-  );
+  return eventType === "commit"
+    || eventType === "force_push"
+    || eventType === "cross_referenced"
+    || eventType === "renamed_title"
+    || eventType === "base_ref_changed";
 }
 
 function shortCommit(summary: string): string {
@@ -1244,16 +1241,11 @@ function commitTitle(body: string): string {
 
 function systemEventLabel(eventType: string): string {
   switch (eventType) {
-    case "cross_referenced":
-      return "Referenced";
-    case "renamed_title":
-      return "Title changed";
-    case "base_ref_changed":
-      return "Base changed";
-    case "force_push":
-      return "Force-pushed";
-    default:
-      return typeLabels[eventType] ?? eventType;
+    case "cross_referenced": return "Referenced";
+    case "renamed_title": return "Title changed";
+    case "base_ref_changed": return "Base changed";
+    case "force_push": return "Force-pushed";
+    default: return typeLabels[eventType] ?? eventType;
   }
 }
 
@@ -1361,7 +1353,6 @@ Expected: PASS from Vitest and no required Svelte autofixer changes.
 ## Task 7: Wire Filter Into Pull Detail
 
 **Files:**
-
 - Modify: `packages/ui/src/components/detail/PullDetail.svelte`
 
 - [ ] **Step 1: Add filter state and derived filtered events**
@@ -1389,7 +1380,9 @@ const filteredTimelineEvents = $derived.by(() => {
   return filterPREvents(events, timelineFilter);
 });
 
-const hasActiveTimelineFilters = $derived(activePRTimelineFilterCount(timelineFilter) > 0);
+const hasActiveTimelineFilters = $derived(
+  activePRTimelineFilterCount(timelineFilter) > 0,
+);
 
 function updateTimelineFilter(next: PRTimelineFilterState): void {
   timelineFilter = next;
@@ -1459,7 +1452,6 @@ Expected: no required Svelte autofixer changes.
 ## Task 8: Verification And API Artifacts
 
 **Files:**
-
 - Modify generated files only if Huma/OpenAPI output changes unexpectedly.
 
 - [ ] **Step 1: Run focused Go tests**

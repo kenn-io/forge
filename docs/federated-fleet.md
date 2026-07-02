@@ -237,7 +237,7 @@ the ControlMaster lifecycle.
 - **Runner** (`runner.go`) — relays one HTTP exchange by executing
   the remote CLI through the master:
   `ssh -o ControlPath=<socket> -o ControlMaster=no <destination>
-sh -lc '<PATH=...>; middleman api -i [-d @-] METHOD PATH'`. The
+  sh -lc '<PATH=...>; middleman api -i [-d @-] METHOD PATH'`. The
   `-i` framing (status line, blank line, body) lets the hub recover
   the exact remote status. Exit codes are the transport contract:
   0/1 → parse framed response, 2 → typed

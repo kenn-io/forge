@@ -54,16 +54,16 @@ Routes keep their semantic meaning:
 
 Viewport width chooses presentation, not route identity:
 
-| Route                                     | Wide presentation                                  | Narrow presentation             |
-| ----------------------------------------- | -------------------------------------------------- | ------------------------------- |
-| `/pulls`                                  | Desktop PR list with sidebar/detail placeholder    | Focus PR list presentation      |
-| `/pulls/{ref}`                            | Desktop PR list + detail pane                      | Focus PR detail presentation    |
-| `/pulls/{ref}/files`                      | Desktop PR files detail                            | Focus PR files presentation     |
-| `/issues`                                 | Desktop issue list with sidebar/detail placeholder | Focus issue list presentation   |
-| `/issues/{ref}`                           | Desktop issue list + detail pane                   | Focus issue detail presentation |
-| `/host/{platform_host}/pulls/{ref}`       | Desktop PR list + detail pane                      | Focus PR detail presentation    |
-| `/host/{platform_host}/pulls/{ref}/files` | Desktop PR files detail                            | Focus PR files presentation     |
-| `/host/{platform_host}/issues/{ref}`      | Desktop issue list + detail pane                   | Focus issue detail presentation |
+| Route | Wide presentation | Narrow presentation |
+| --- | --- | --- |
+| `/pulls` | Desktop PR list with sidebar/detail placeholder | Focus PR list presentation |
+| `/pulls/{ref}` | Desktop PR list + detail pane | Focus PR detail presentation |
+| `/pulls/{ref}/files` | Desktop PR files detail | Focus PR files presentation |
+| `/issues` | Desktop issue list with sidebar/detail placeholder | Focus issue list presentation |
+| `/issues/{ref}` | Desktop issue list + detail pane | Focus issue detail presentation |
+| `/host/{platform_host}/pulls/{ref}` | Desktop PR list + detail pane | Focus PR detail presentation |
+| `/host/{platform_host}/pulls/{ref}/files` | Desktop PR files detail | Focus PR files presentation |
+| `/host/{platform_host}/issues/{ref}` | Desktop issue list + detail pane | Focus issue detail presentation |
 
 The browser location must remain byte-for-byte stable during viewport-only transitions, including query parameters and hash fragments.
 

@@ -8014,7 +8014,7 @@ func TestFetchMRDetailDoesNotRepeatNoActorBackfillOn304(t *testing.T) {
 
 	calls, err := syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
 	require.NoError(err)
-	assert.Equal(2, calls)
+	assert.Equal(3, calls)
 
 	calls, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
 	require.NoError(err)

@@ -5707,19 +5707,21 @@ func (s *Syncer) backfillMergedActorWithKnownNeed(
 	if s.skipMergedActorDetailBackfill(existing, time.Now()) {
 		return 0, false, nil
 	}
+	calls := 0
 	fullPR, err := client.GetPullRequest(
 		ctx, repo.Owner, repo.Name, existing.Number,
 	)
+	calls++
 	if err != nil {
 		s.recordMergedActorDetailBackfillRetry(existing, time.Now().Add(mergedActorDetailBackfillErrorBackoff))
-		return 1, false, fmt.Errorf(
+		return calls, false, fmt.Errorf(
 			"get PR #%d for merged actor backfill: %w",
 			existing.Number, err,
 		)
 	}
 	if fullPR == nil {
 		s.recordMergedActorDetailBackfillRetry(existing, time.Now().Add(mergedActorDetailBackfillErrorBackoff))
-		return 1, false, fmt.Errorf(
+		return calls, false, fmt.Errorf(
 			"get PR #%d for merged actor backfill: client returned nil pull request",
 			existing.Number,
 		)
@@ -5729,17 +5731,40 @@ func (s *Syncer) backfillMergedActorWithKnownNeed(
 	)
 	if err != nil {
 		s.recordMergedActorDetailBackfillRetry(existing, time.Now().Add(mergedActorDetailBackfillErrorBackoff))
-		return 1, false, fmt.Errorf(
+		return calls, false, fmt.Errorf(
 			"persist merged lifecycle event for MR #%d: %w",
 			existing.Number, err,
 		)
+	}
+	if !wrote {
+		timelineEvents, timelineErr := client.ListPullRequestTimelineEvents(
+			ctx, repo.Owner, repo.Name, existing.Number,
+		)
+		calls++
+		if timelineErr != nil {
+			s.recordMergedActorDetailBackfillRetry(existing, time.Now().Add(mergedActorDetailBackfillErrorBackoff))
+			return calls, false, fmt.Errorf(
+				"list timeline events for merged actor backfill on MR #%d: %w",
+				existing.Number, timelineErr,
+			)
+		}
+		wrote, err = s.persistMergedTimelineTransitionEvent(
+			ctx, existing.ID, timelineEvents,
+		)
+		if err != nil {
+			s.recordMergedActorDetailBackfillRetry(existing, time.Now().Add(mergedActorDetailBackfillErrorBackoff))
+			return calls, false, fmt.Errorf(
+				"persist timeline merged lifecycle event for MR #%d: %w",
+				existing.Number, err,
+			)
+		}
 	}
 	if wrote {
 		s.clearMergedActorDetailBackfillAttempt(existing)
 	} else {
 		s.recordMergedActorDetailBackfillTerminalMiss(existing)
 	}
-	return 1, wrote, nil
+	return calls, wrote, nil
 }
 
 func (s *Syncer) mergedActorBackfillNeeded(
@@ -8684,6 +8709,34 @@ func (s *Syncer) persistMergedTransitionEvent(
 		return false, err
 	}
 	return true, nil
+}
+
+func (s *Syncer) persistMergedTimelineTransitionEvent(
+	ctx context.Context,
+	mrID int64,
+	timelineEvents []PullRequestTimelineEvent,
+) (bool, error) {
+	for _, timelineEvent := range timelineEvents {
+		if timelineEvent.EventType != "merged" || strings.TrimSpace(timelineEvent.Actor) == "" {
+			continue
+		}
+		exists, err := s.authoredMergedLifecycleEventExists(ctx, mrID)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			return false, nil
+		}
+		event := NormalizeTimelineEvent(mrID, timelineEvent)
+		if event == nil {
+			return false, nil
+		}
+		if err := s.db.UpsertMREvents(ctx, []db.MREvent{*event}); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *Syncer) fetchAndUpdateClosedMergeRequest(

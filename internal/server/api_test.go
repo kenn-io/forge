@@ -214,6 +214,7 @@ type mockGH struct {
 	listIssuesPageFn           func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
 	listCheckRunsForRefFn      func(context.Context, string, string, string) ([]*gh.CheckRun, error)
 	getCombinedStatusFn        func(context.Context, string, string, string) (*gh.CombinedStatus, error)
+	listPRTimelineEventsFn     func(context.Context, string, string, int) ([]ghclient.PullRequestTimelineEvent, error)
 	listOpenPRsErr             error
 	listOpenIssuesFn           func(context.Context, string, string) ([]*gh.Issue, error)
 	listIssueCommentsFn        func(context.Context, string, string, int) ([]*gh.IssueComment, error)
@@ -401,8 +402,11 @@ func (m *mockGH) ListForcePushEvents(
 }
 
 func (m *mockGH) ListPullRequestTimelineEvents(
-	_ context.Context, _, _ string, _ int,
+	ctx context.Context, owner, repo string, number int,
 ) ([]ghclient.PullRequestTimelineEvent, error) {
+	if m.listPRTimelineEventsFn != nil {
+		return m.listPRTimelineEventsFn(ctx, owner, repo, number)
+	}
 	return nil, nil
 }
 
@@ -2482,6 +2486,70 @@ func TestAPIGetPullBackfillsMergedActorFromCachedMergeState(t *testing.T) {
 				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
 				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: new("main")},
 			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
+	)
+	client := setupTestClient(t, srv)
+
+	detailResp, err := client.HTTP.GetPullWithResponse(
+		ctx, "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.NotNil(detailResp.JSON200.Events)
+	require.Len(*detailResp.JSON200.Events, 1)
+	event := (*detailResp.JSON200.Events)[0]
+	assert.Equal("merged", event.EventType)
+	assert.Equal("merge-admin", event.Author)
+	assert.Equal("merged this", event.Summary)
+	assert.True(event.CreatedAt.Equal(mergedAt))
+}
+
+func TestAPIGetPullBackfillsMergedActorFromTimelineWhenRestActorMissing(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	mergedAt := now.Add(time.Minute)
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(1001)
+			sha := "abc123"
+			baseSHA := "def456"
+			state := "closed"
+			title := "Merged PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: mergedAt}
+			createdAt := gh.Timestamp{Time: now}
+			mergedAtTimestamp := gh.Timestamp{Time: mergedAt}
+			merged := true
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Merged:    &merged,
+				MergedAt:  &mergedAtTimestamp,
+				ClosedAt:  &mergedAtTimestamp,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: new("main")},
+			}, nil
+		},
+		listPRTimelineEventsFn: func(_ context.Context, _ string, _ string, _ int) ([]ghclient.PullRequestTimelineEvent, error) {
+			return []ghclient.PullRequestTimelineEvent{{
+				NodeID:    "ME_merged_1",
+				EventType: "merged",
+				Actor:     "merge-admin",
+				CreatedAt: mergedAt,
+			}}, nil
 		},
 	}
 

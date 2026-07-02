@@ -5749,6 +5749,50 @@ func TestIndexUpsertMRReadsExistingByRepoID(t *testing.T) {
 	assert.NotNil(gitlabMR.DetailFetchedAt)
 }
 
+func TestIndexUpsertMRPersistsMergedActorEventFromPullRequest(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+	mergedAt := now.Add(time.Minute)
+
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+
+	merged := true
+	mergedBy := "merge-admin"
+	pr := buildOpenPR(7, now)
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.ClosedAt = makeTimestamp(mergedAt)
+	pr.UpdatedAt = makeTimestamp(mergedAt)
+	pr.MergedBy = &gh.User{Login: &mergedBy}
+	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+
+	require.NoError(syncer.indexUpsertMR(ctx, &mockClient{}, repo, repoID, pr))
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(db.MergeRequestStateMerged, got.State)
+
+	events, err := d.ListMREvents(ctx, got.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("merged", events[0].EventType)
+	assert.Equal("merge-admin", events[0].Author)
+	assert.Equal("merged this", events[0].Summary)
+	assert.True(events[0].CreatedAt.Equal(mergedAt))
+}
+
 func TestFetchMRDetailUsesRepoIDForPendingAndCallback(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -4604,6 +4604,9 @@ func (s *Syncer) indexUpsertMR(
 	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 		return fmt.Errorf("persist labels for MR #%d: %w", ghPR.GetNumber(), err)
 	}
+	if _, err := s.persistMergedTransitionEvent(ctx, mrID, ghPR, normalized.MergedAt); err != nil {
+		return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", ghPR.GetNumber(), err)
+	}
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
 		return fmt.Errorf(

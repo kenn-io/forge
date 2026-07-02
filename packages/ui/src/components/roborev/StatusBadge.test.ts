@@ -15,11 +15,11 @@ describe("StatusBadge", () => {
       },
     });
 
-    const chip = screen.getByText("running").closest(".chip");
+    const chip = screen.getByText("running").closest(".kit-chip");
     expect(chip).not.toBeNull();
-    expect(chip?.classList.contains("chip--tone-info")).toBe(true);
+    expect(chip?.classList.contains("kit-chip--tone-info")).toBe(true);
     expect(chip?.classList.contains("status-badge")).toBe(true);
-    expect(chip?.querySelector(".chip__dot")).not.toBeNull();
+    expect(chip?.querySelector(".kit-chip__dot")).not.toBeNull();
   });
 
   it("keeps canceled reviews visually distinct from unknown statuses", () => {
@@ -29,8 +29,8 @@ describe("StatusBadge", () => {
       },
     });
 
-    const chip = screen.getByText("canceled").closest(".chip");
-    expect(chip?.classList.contains("chip--tone-canceled")).toBe(true);
+    const chip = screen.getByText("canceled").closest(".kit-chip");
+    expect(chip?.classList.contains("kit-chip--tone-canceled")).toBe(true);
     expect(chip?.classList.contains("status-canceled")).toBe(true);
   });
 });

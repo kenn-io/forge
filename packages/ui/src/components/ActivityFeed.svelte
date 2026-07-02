@@ -29,7 +29,7 @@
     type RepoLabelIdentity,
   } from "../utils/repo-label.js";
   import { repoColor } from "../utils/repo-color.js";
-  import Chip from "./shared/Chip.svelte";
+  import { Chip, type ChipTone } from "@kenn-io/kit-ui";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
   import WorkspaceIndicator from "./shared/WorkspaceIndicator.svelte";
@@ -464,15 +464,17 @@
     }
   }
 
+  function eventChipTone(type: string): ChipTone {
+    return type === "comment" ? "warning"
+      : type === "review" ? "success"
+      : type === "commit" || type === "default_branch_commit" ? "workspace"
+      : type === "force_push" || type === "default_branch_force_push" ? "danger"
+      : type === "notification" ? "info"
+      : "muted";
+  }
+
   function eventChipClass(type: string): string {
-    const toneClass =
-      type === "comment" ? "chip--amber"
-      : type === "review" ? "chip--green"
-      : type === "commit" || type === "default_branch_commit" ? "chip--teal"
-      : type === "force_push" || type === "default_branch_force_push" ? "chip--red"
-      : type === "notification" ? "chip--blue"
-      : "chip--muted";
-    return `evt-label ${eventClass(type)} ${toneClass}`;
+    return `evt-label ${eventClass(type)}`;
   }
 
   function relativeTime(iso: string): string {
@@ -648,7 +650,7 @@
               >
                 <span class="compact-row-top">
                   {#if isDefaultBranchActivity(row.representative)}
-                    <Chip size="sm" uppercase={false} class="chip--muted branch-chip">Branch</Chip>
+                    <Chip size="xs" tone="muted" uppercase={false} class="branch-chip">Branch</Chip>
                     <span class="branch-name">{branchName(row.representative)}</span>
                   {:else}
                     <ItemKindChip kind={row.representative.item_type} />
@@ -672,9 +674,9 @@
                 <span class="compact-meta">
                   <span>{repoLabel(row.representative)}</span>
                   <Chip
-                    size="sm"
+                    size="xs"
                     uppercase={false}
-                    class="evt-label evt-commit chip--teal"
+                    tone="workspace" class="evt-label evt-commit"
                   >{row.count} commits</Chip>
                   <span>{row.author}</span>
                 </span>
@@ -691,7 +693,7 @@
                 >
                   <span class="compact-row-top">
                     {#if isDefaultBranchActivity(row)}
-                      <Chip size="sm" uppercase={false} class="chip--muted branch-chip">Branch</Chip>
+                      <Chip size="xs" tone="muted" uppercase={false} class="branch-chip">Branch</Chip>
                       <span class="branch-name">{branchName(row)}</span>
                     {:else}
                       <ItemKindChip kind={row.item_type} />
@@ -714,8 +716,9 @@
                       <span class="sha">{branchActivityDetail(row)}</span>
                     {/if}
                     <Chip
-                      size="sm"
+                      size="xs"
                       uppercase={false}
+                      tone={eventChipTone(row.activity_type)}
                       class={eventChipClass(row.activity_type)}
                     >{eventLabel(row)}</Chip>
                     <span>{activityAuthor(row)}</span>
@@ -765,19 +768,19 @@
               {#if isCollapsedActivityRow(row)}
                 <span class="cell cell--type">
                   {#if isDefaultBranchActivity(row.representative)}
-                    <Chip size="xs" uppercase={false} class="chip--muted branch-chip">Branch</Chip>
+                    <Chip size="sm" tone="muted" uppercase={false} class="branch-chip">Branch</Chip>
                   {:else}
                     <ItemKindChip kind={row.representative.item_type} />
                   {/if}
                   <Chip
-                    size="xs"
+                    size="sm"
                     uppercase={false}
-                    class="evt-label evt-commit chip--teal"
+                    tone="workspace" class="evt-label evt-commit"
                   >{row.count} commits</Chip>
                 </span>
                 <span class="cell cell--repo col-repo">
                   <Chip
-                    size="xs"
+                    size="sm"
                     uppercase={false}
                     class="repo-chip repo-tag"
                     style={repoStyle}
@@ -820,19 +823,20 @@
               {:else}
                 <span class="cell cell--type">
                   {#if isDefaultBranchActivity(row)}
-                    <Chip size="xs" uppercase={false} class="chip--muted branch-chip">Branch</Chip>
+                    <Chip size="sm" tone="muted" uppercase={false} class="branch-chip">Branch</Chip>
                   {:else}
                     <ItemKindChip kind={row.item_type} />
                   {/if}
                   <Chip
-                    size="xs"
+                    size="sm"
                     uppercase={false}
+                    tone={eventChipTone(row.activity_type)}
                     class={eventChipClass(row.activity_type)}
                   >{eventLabel(row)}</Chip>
                 </span>
                 <span class="cell cell--repo col-repo">
                   <Chip
-                    size="xs"
+                    size="sm"
                     uppercase={false}
                     class="repo-chip repo-tag"
                     style={repoStyle}

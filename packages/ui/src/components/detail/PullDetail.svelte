@@ -46,7 +46,7 @@
   import UserCheckIcon from "@lucide/svelte/icons/user-check";
   import UsersIcon from "@lucide/svelte/icons/users";
   import XIcon from "@lucide/svelte/icons/x";
-  import Chip from "../shared/Chip.svelte";
+  import { Chip } from "@kenn-io/kit-ui";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import LabelPicker from "./LabelPicker.svelte";
   import UserListEditor from "./UserListEditor.svelte";
@@ -1621,14 +1621,14 @@
           {@const markDraftGate = operationGate(repoOperations?.mark_draft)}
           {@const canOpenStateMenu = pr.State === "open" && !pr.IsDraft && capabilities.draft_mutation}
           <span class="state-menu-wrap" bind:this={stateMenuWrapEl}>
-            <Chip
-              class={visiblePRState(pr) === "merged"
-                ? "chip--purple"
+            <Chip size="sm"
+              tone={visiblePRState(pr) === "merged"
+                ? "merged"
                 : visiblePRState(pr) === "closed"
-                  ? "chip--red"
+                  ? "danger"
                   : visiblePRState(pr) === "draft"
-                    ? "chip--amber"
-                    : "chip--green"}
+                    ? "warning"
+                    : "success"}
               interactive={canOpenStateMenu}
               disabled={stateSubmitting || stalePR || markDraftGate.unavailable}
               expanded={canOpenStateMenu ? stateMenuOpen : undefined}
@@ -1658,7 +1658,7 @@
           </span>
         {/if}
         {#if pr.IsLocked && lockedSupported}
-          <Chip class="chip--amber" title="This pull request is locked">Locked</Chip>
+          <Chip size="sm" tone="warning" title="This pull request is locked">Locked</Chip>
         {/if}
         <CIStatus
           status={pr.CIStatus}
@@ -1704,7 +1704,7 @@
           />
         {/if}
         {#if hasWorktreeLinks}
-          <Chip class="chip--teal">Worktree</Chip>
+          <Chip size="sm" tone="workspace">Worktree</Chip>
         {/if}
         {#if labels.length > 0}
           <GitHubLabels {labels} mode="full" />
@@ -3333,7 +3333,7 @@
       font-size: 0.9em;
     }
 
-    .pull-detail :global(.chip),
+    .pull-detail :global(.kit-chip),
     .pull-detail :global(.state-chip),
     .pull-detail :global(.status-chip) {
       min-height: calc(var(--detail-mobile-hit-target) * 0.65);

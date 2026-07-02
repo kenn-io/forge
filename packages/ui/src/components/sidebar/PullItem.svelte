@@ -13,7 +13,7 @@
   import CircleAlertIcon from "@lucide/svelte/icons/circle-alert";
   import CircleCheckBigIcon from "@lucide/svelte/icons/circle-check-big";
   import OctagonXIcon from "@lucide/svelte/icons/octagon-x";
-  import Chip from "../shared/Chip.svelte";
+  import { Chip } from "@kenn-io/kit-ui";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
 
@@ -176,10 +176,10 @@
   {#if showRepo}
     <div class="repo-row">
       <Chip
-        size="sm"
+        size="xs"
         uppercase={false}
         title={repoSlug}
-        class="chip--muted repo-chip"
+        tone="muted" class="repo-chip"
         style={`color: ${repoColor(repoSlug)}; background: color-mix(in srgb, ${repoColor(repoSlug)} 15%, transparent);`}
       >{repoSlug}</Chip>
     </div>
@@ -275,7 +275,7 @@
         {/if}
       </span>
       {#if showStatus && statusLabel}
-        <Chip size="sm" class={`status-chip ${statusClass}`}>{statusLabel}</Chip>
+        <Chip size="xs" class={`status-chip ${statusClass}`}>{statusLabel}</Chip>
       {/if}
       <span class="time">{ago}</span>
     </span>
@@ -354,7 +354,7 @@
     margin-bottom: 4px;
   }
 
-  :global(.chip.repo-chip) {
+  :global(.kit-chip.repo-chip) {
     flex: 0 1 auto;
     justify-content: flex-start;
     min-width: 0;
@@ -565,7 +565,7 @@
     gap: var(--focus-mobile-space-xs, 6px);
   }
 
-  :global(.mobile-main) :global(.chip),
+  :global(.mobile-main) :global(.kit-chip),
   :global(.mobile-main) :global(.state-chip),
   :global(.mobile-main) :global(.status-chip) {
     min-height: calc(var(--focus-mobile-hit-target, 37px) * 0.65);

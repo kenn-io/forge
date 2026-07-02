@@ -118,7 +118,7 @@ test.describe("UTC maintainer flows", () => {
     await expect(page.locator(".modal-title")).toHaveText("Merge Pull Request");
     await page.locator(".btn--primary.btn--green").click();
 
-    await expect(page.locator(".chip.chip--purple")).toHaveText("Merged");
+    await expect(page.locator(".kit-chip.kit-chip--tone-merged")).toHaveText("Merged");
 
     const merged = await fetchPullDetail(page, pull);
     expect(merged.merge_request.State).toBe("merged");

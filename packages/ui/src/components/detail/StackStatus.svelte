@@ -9,7 +9,7 @@
     buildPullRequestRoute,
     type PullRequestRouteRef,
   } from "../../routes.js";
-  import Chip from "../shared/Chip.svelte";
+  import { Chip } from "@kenn-io/kit-ui";
   import type { StoreInstances } from "../../types.js";
 
   const client = getClient();
@@ -272,7 +272,7 @@
 {#if visible && data}
   <div class="stack-status">
     {#if showButton}
-      <Chip
+      <Chip size="sm"
         interactive={true}
         tone="neutral"
         uppercase={false}
@@ -359,7 +359,7 @@
     display: contents;
   }
 
-  :global(.stack-status .chip__label) {
+  :global(.stack-status .kit-chip__label) {
     display: inline-flex;
     align-items: center;
     gap: 4px;

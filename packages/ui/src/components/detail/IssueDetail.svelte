@@ -17,7 +17,7 @@
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
   import ActionButton from "../shared/ActionButton.svelte";
-  import Chip from "../shared/Chip.svelte";
+  import { Chip } from "@kenn-io/kit-ui";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import LabelPicker from "./LabelPicker.svelte";
   import UserListEditor from "./UserListEditor.svelte";
@@ -936,7 +936,7 @@
         <span class="meta-sep">·</span>
         <span class="meta-item">{timeAgo(issue.CreatedAt)}</span>
         <span class="meta-sep">·</span>
-        <Chip size="sm" class={`issue-state-chip chip--${issue.State}`}>
+        <Chip size="xs" tone={issue.State === "open" ? "success" : "merged"} class="issue-state-chip">
           {issue.State === "open" ? "Open" : "Closed"}
         </Chip>
         {#if labels.length > 0 || (capabilities.read_labels && capabilities.label_mutation)}
@@ -1873,7 +1873,7 @@
       font-size: 0.9em;
     }
 
-    .issue-detail :global(.chip),
+    .issue-detail :global(.kit-chip),
     .issue-detail :global(.state-chip),
     .issue-detail :global(.status-chip) {
       min-height: calc(var(--detail-mobile-hit-target) * 0.65);

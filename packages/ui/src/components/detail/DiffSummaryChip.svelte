@@ -113,7 +113,7 @@
 <span class="diff-summary">
   <button
     type="button"
-    class="chip chip--muted diff-summary-trigger"
+    class="diff-summary-trigger"
     aria-describedby={open ? popoverId : undefined}
     onmouseenter={showPopover}
     onmouseleave={hidePopover}

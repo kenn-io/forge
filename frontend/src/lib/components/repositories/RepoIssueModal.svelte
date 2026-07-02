@@ -87,7 +87,7 @@
         <div class="issue-modal__title-group">
           <h2 id={titleId}>New issue in {key}</h2>
           {#if showPlatformHost}
-            <Chip size="sm" class="chip--muted" uppercase={false}>
+            <Chip size="xs" tone="muted" uppercase={false}>
               {summary.platform_host}
             </Chip>
           {/if}

@@ -3,9 +3,9 @@
     WorkspaceActivity,
     WorkspaceWorktree,
   } from "../../api/types.js";
-  import Chip, {
+  import { Chip,
     type ChipTone,
-  } from "../shared/Chip.svelte";
+  } from "@kenn-io/kit-ui";
   import DiffStats from "../shared/DiffStats.svelte";
 
   interface Props {
@@ -152,10 +152,10 @@
     <span class="name-row">
       <span class="name">{title}</span>
       {#if worktree.isPrimary}
-        <Chip size="xs" tone="info">ROOT</Chip>
+        <Chip size="sm" tone="info">ROOT</Chip>
       {/if}
       {#if worktree.sessionBackend === "localTmux"}
-        <Chip size="xs" tone="warning">tmux</Chip>
+        <Chip size="sm" tone="warning">tmux</Chip>
       {/if}
       {#if worktree.isStale}
         <span class="stale-icon" title="Stale worktree">⚠</span>
@@ -178,7 +178,7 @@
       <span class="meta-row">
         {#if worktree.linkedPR}
           <Chip
-            size="xs"
+            size="sm"
             tone={linkedPRTone(worktree.linkedPR.state)}
             uppercase={false}
             class={`workspace-pr-chip chip--state-${worktree.linkedPR.state}`}
@@ -346,8 +346,8 @@
     min-width: 0;
   }
 
-  .name-row :global(.chip),
-  .meta-row :global(.chip) {
+  .name-row :global(.kit-chip),
+  .meta-row :global(.kit-chip) {
     flex-shrink: 0;
   }
 

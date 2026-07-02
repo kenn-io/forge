@@ -97,7 +97,7 @@ async function expectReadableDetail(page: Page): Promise<void> {
       titleFontSize: fontSize(".detail-title"),
       metaFontSize: fontSize(".meta-item"),
       bodyFontSize: fontSize(".pull-detail, .issue-detail"),
-      chipFontSize: fontSize(".chip, .state-chip, .status-chip"),
+      chipFontSize: fontSize(".kit-chip, .state-chip, .status-chip"),
       copyNumberFontSize: fontSize(".copy-number-btn"),
       copyNumberRect: rect(".copy-number-btn"),
       overflowingVisible,

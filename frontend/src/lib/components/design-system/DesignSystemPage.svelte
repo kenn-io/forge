@@ -1,25 +1,25 @@
 <script lang="ts">
   import { Chip } from "@middleman/ui";
+  import type { ChipSize, ChipTone } from "@kenn-io/kit-ui";
   import DesignSystemTabbedPanelDemo from "./DesignSystemTabbedPanelDemo.svelte";
   import DesignSystemTypeaheadDemo from "./DesignSystemTypeaheadDemo.svelte";
 
-  type ChipSize = "sm" | "md";
-
   interface ChipVariant {
     name: string;
-    className: string;
+    tone: ChipTone;
   }
 
-  const sizes: ChipSize[] = ["sm", "md"];
+  const sizes: ChipSize[] = ["xs", "sm", "md"];
   const variants: ChipVariant[] = [
-    { name: "Green", className: "chip--green" },
-    { name: "Red", className: "chip--red" },
-    { name: "Amber", className: "chip--amber" },
-    { name: "Purple", className: "chip--purple" },
-    { name: "Teal", className: "chip--teal" },
-    { name: "Muted", className: "chip--muted" },
-    { name: "Open", className: "chip--open" },
-    { name: "Closed", className: "chip--closed" },
+    { name: "Success", tone: "success" },
+    { name: "Danger", tone: "danger" },
+    { name: "Warning", tone: "warning" },
+    { name: "Merged", tone: "merged" },
+    { name: "Info", tone: "info" },
+    { name: "Workspace", tone: "workspace" },
+    { name: "Muted", tone: "muted" },
+    { name: "Neutral", tone: "neutral" },
+    { name: "Canceled", tone: "canceled" },
   ];
 </script>
 
@@ -94,8 +94,8 @@
           <div class="matrix-row" role="row" data-size={size}>
             <div class="matrix-label" role="rowheader">{size.toUpperCase()}</div>
             <div class="matrix-chips">
-              {#each variants as variant (variant.className)}
-                <Chip size={size} class={variant.className}>{variant.name}</Chip>
+              {#each variants as variant (variant.tone)}
+                <Chip size={size} tone={variant.tone}>{variant.name}</Chip>
               {/each}
             </div>
           </div>
@@ -116,8 +116,8 @@
           <h3>Text casing</h3>
           <p>Default uppercase and opt-out plain-case rendering.</p>
           <div class="chip-row">
-            <Chip class="chip--green">Uppercase</Chip>
-            <Chip class="chip--green" uppercase={false}>plain case</Chip>
+            <Chip size="sm" tone="success">Uppercase</Chip>
+            <Chip size="sm" tone="success" uppercase={false}>plain case</Chip>
           </div>
         </article>
 
@@ -125,10 +125,10 @@
           <h3>Interactivity</h3>
           <p>Button mode keeps shared geometry and hover behavior.</p>
           <div class="chip-row">
-            <Chip class="chip--purple" interactive onclick={() => {}}>
+            <Chip size="sm" tone="merged" interactive onclick={() => {}}>
               Interactive
             </Chip>
-            <Chip class="chip--muted" interactive disabled onclick={() => {}}>
+            <Chip size="sm" tone="muted" interactive disabled onclick={() => {}}>
               Disabled
             </Chip>
           </div>
@@ -138,10 +138,10 @@
           <h3>Compact metadata</h3>
           <p>Typical small-chip usage from list and detail surfaces.</p>
           <div class="chip-row">
-            <Chip size="sm" class="chip--muted">+120/-12</Chip>
-            <Chip size="sm" class="chip--muted" uppercase={false} dataTestid="descender-chip">team/inbox-view</Chip>
-            <Chip size="sm" class="chip--teal">Worktree</Chip>
-            <Chip size="sm" class="chip--amber">Draft</Chip>
+            <Chip size="xs" tone="muted">+120/-12</Chip>
+            <Chip size="xs" tone="muted" uppercase={false} dataTestid="descender-chip">team/inbox-view</Chip>
+            <Chip size="xs" tone="workspace">Worktree</Chip>
+            <Chip size="xs" tone="warning">Draft</Chip>
           </div>
         </article>
       </div>
@@ -164,8 +164,8 @@
           <div class="inbox-row-main">
             <div class="inbox-title">Review requested on acme/widget#42</div>
             <div class="inbox-meta">
-              <Chip size="sm" class="chip--purple">Review requested</Chip>
-              <Chip size="sm" class="chip--muted">PR #42</Chip>
+              <Chip size="xs" tone="merged">Review requested</Chip>
+              <Chip size="xs" tone="muted">PR #42</Chip>
               <span>acme/widget</span>
             </div>
           </div>
@@ -176,8 +176,8 @@
           <div class="inbox-row-main">
             <div class="inbox-title">Discussion announcement</div>
             <div class="inbox-meta">
-              <Chip size="sm" class="chip--teal">Mention</Chip>
-              <Chip size="sm" class="chip--muted">External</Chip>
+              <Chip size="xs" tone="workspace">Mention</Chip>
+              <Chip size="xs" tone="muted">External</Chip>
               <span>opens on GitHub</span>
             </div>
           </div>
@@ -188,7 +188,7 @@
           <div class="inbox-row-main">
             <div class="inbox-title">Queued read propagation</div>
             <div class="inbox-meta">
-              <Chip size="sm" class="chip--amber">Queued</Chip>
+              <Chip size="xs" tone="warning">Queued</Chip>
               <span>GitHub read update will sync in background</span>
             </div>
           </div>

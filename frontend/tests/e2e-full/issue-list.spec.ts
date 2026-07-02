@@ -71,9 +71,9 @@ async function expectRepoChipToClipSafely(
     (node as HTMLElement).style.width = "180px";
   });
 
-  await expect(repoChip.locator(".chip__label")).toHaveText(expectedRepoPath);
-  await expect(repoChip.locator(".chip__label")).toHaveCSS("overflow", "hidden");
-  await expect(repoChip.locator(".chip__label")).toHaveCSS("text-overflow", "ellipsis");
+  await expect(repoChip.locator(".kit-chip__label")).toHaveText(expectedRepoPath);
+  await expect(repoChip.locator(".kit-chip__label")).toHaveCSS("overflow", "hidden");
+  await expect(repoChip.locator(".kit-chip__label")).toHaveCSS("text-overflow", "ellipsis");
   await expect(repoChip).toHaveAttribute("title", expectedRepoPath);
   await expect(repoChip).toHaveCSS("justify-content", "flex-start");
 
@@ -85,7 +85,7 @@ async function expectRepoChipToClipSafely(
     expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(itemBox.x + itemBox.width + 1);
   }
 
-  const labelOverflow = await repoChip.locator(".chip__label").evaluate((node) => ({
+  const labelOverflow = await repoChip.locator(".kit-chip__label").evaluate((node) => ({
     clientWidth: (node as HTMLElement).clientWidth,
     scrollWidth: (node as HTMLElement).scrollWidth,
   }));
@@ -158,7 +158,7 @@ test.describe("issue list view", () => {
       };
     });
 
-    expect(stateChipStyles.minHeight).toBe("18px");
+    expect(stateChipStyles.minHeight).toBe("16px");
     expect(stateChipStyles.fontSize).toBe("10px");
     expect(stateChipStyles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   });

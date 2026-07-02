@@ -21,7 +21,7 @@
     createRepoLabelFormatter,
     type RepoLabelIdentity,
   } from "../utils/repo-label.js";
-  import Chip from "./shared/Chip.svelte";
+  import { Chip } from "@kenn-io/kit-ui";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
   import WorkspaceIndicator from "./shared/WorkspaceIndicator.svelte";
@@ -621,7 +621,7 @@
             {#if !grouping.getGroupByRepo()}
               <span class="cell cell--repo">
                 <Chip
-                  size="xs"
+                  size="sm"
                   uppercase={false}
                   class="repo-chip repo-tag"
                   style="color: {repoColor(`${entry.repoOwner}/${entry.repoName}`)}; background: color-mix(in srgb, {repoColor(`${entry.repoOwner}/${entry.repoName}`)} 15%, transparent);"
@@ -686,7 +686,7 @@
           {#if !grouping.getGroupByRepo()}
             <span class="cell cell--repo">
               <Chip
-                size="xs"
+                size="sm"
                 uppercase={false}
                 class="repo-chip repo-tag"
                 style="color: {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)}; background: color-mix(in srgb, {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)} 15%, transparent);"

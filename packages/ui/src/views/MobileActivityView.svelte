@@ -8,7 +8,7 @@
     type TimeRange,
   } from "../stores/activity.svelte.js";
   import { parseAPITimestamp } from "../utils/time.js";
-  import Chip from "../components/shared/Chip.svelte";
+  import { Chip } from "@kenn-io/kit-ui";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
   import SelectDropdown from "../components/shared/SelectDropdown.svelte";
@@ -470,16 +470,16 @@
               <span class="mobile-activity-card__top">
                 <span class="mobile-activity-card__chips">
                   {#if isDefaultBranchActivity(item)}
-                    <Chip size="md" uppercase={false} class="chip--muted">Branch</Chip>
+                    <Chip size="sm" tone="muted" uppercase={false}>Branch</Chip>
                     <span class="mobile-activity-number">{branchName(item)}</span>
                   {:else}
-                    <ItemKindChip kind={item.item_type === "issue" ? "issue" : "pr"} size="md" />
+                    <ItemKindChip kind={item.item_type === "issue" ? "issue" : "pr"} size="sm" />
                     <span class="mobile-activity-number">#{item.item_number}</span>
                     {#if item.workspace}
                       <WorkspaceIndicator status={item.workspace.status} size={16} />
                     {/if}
                     {#if item.item_state === "merged" || item.item_state === "closed"}
-                      <ItemStateChip state={item.item_state} size="md" />
+                      <ItemStateChip state={item.item_state} size="sm" />
                     {/if}
                   {/if}
                 </span>
@@ -751,7 +751,7 @@
     min-width: 0;
   }
 
-  .mobile-activity-card__chips :global(.chip--md) {
+  .mobile-activity-card__chips :global(.kit-chip--sm) {
     min-height: calc(var(--mobile-hit-target) * 0.55);
     padding: 0 var(--mobile-space-xs);
     font-size: var(--font-size-xs);

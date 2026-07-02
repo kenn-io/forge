@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ActionButton, Chip, operationGate } from "@middleman/ui";
+  import type { ChipTone } from "@kenn-io/kit-ui";
   import { timeAgo } from "@middleman/ui/utils/time";
   import { ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
@@ -71,10 +72,10 @@
     if (staleRelease) return "Stale";
     return release.prerelease ? "Pre-release" : "Latest";
   });
-  const releaseStatusClass = $derived.by(() => {
-    if (!release) return "chip--muted";
-    if (staleRelease) return "chip--red";
-    return release.prerelease ? "chip--amber" : "chip--green";
+  const releaseStatusTone: ChipTone = $derived.by(() => {
+    if (!release) return "muted";
+    if (staleRelease) return "danger";
+    return release.prerelease ? "warning" : "success";
   });
   let cardElement: HTMLElement | undefined = $state();
   let hoveredTimelinePoint = $state<TimelinePoint | null>(null);
@@ -218,7 +219,7 @@
         </a>
       </div>
       {#if showPlatformHost}
-        <Chip size="sm" class="chip--muted" uppercase={false}>
+        <Chip size="xs" tone="muted" uppercase={false}>
           {summary.platform_host}
         </Chip>
       {/if}
@@ -264,12 +265,12 @@
     </div>
 
     <div class="repo-card__release-meta">
-      <Chip size="md" class="chip--release" uppercase={false}>
+      <Chip size="sm" class="chip--release" uppercase={false}>
         {releaseLabel}
       </Chip>
       <Chip
-        size="sm"
-        class={releaseStatusClass}
+        size="xs"
+        tone={releaseStatusTone}
         uppercase={false}
       >
         {releaseStatus}

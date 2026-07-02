@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getStores, getNavigate, getSidebar } from "../../context.js";
   import IssueItem from "./IssueItem.svelte";
-  import Chip from "../shared/Chip.svelte";
+  import { Chip } from "@kenn-io/kit-ui";
   import FilterDropdown from "../shared/FilterDropdown.svelte";
   import LeftSidebarToggle from "../shared/LeftSidebarToggle.svelte";
   import type { Issue } from "../../api/types.js";
@@ -135,7 +135,7 @@
 
 <div class="issue-list">
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
-    <Chip size="sm" uppercase={false} class="chip--muted list-count-chip">
+    <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
       {issues.getIssues().length} issues
     </Chip>
     <div class="state-toggle">

@@ -121,7 +121,7 @@ export { default as ReviewsView } from "./views/ReviewsView.svelte";
 export { default as FocusListView } from "./views/FocusListView.svelte";
 export { default as ActionButton } from "./components/shared/ActionButton.svelte";
 export { default as CommentEditor } from "./components/detail/CommentEditor.svelte";
-export { default as Chip } from "./components/shared/Chip.svelte";
+export { Chip } from "@kenn-io/kit-ui";
 export { default as ItemKindChip } from "./components/shared/ItemKindChip.svelte";
 export { default as ItemStateChip } from "./components/shared/ItemStateChip.svelte";
 export { default as CollapsibleResizableSidebar } from "./components/shared/CollapsibleResizableSidebar.svelte";

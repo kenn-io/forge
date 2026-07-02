@@ -284,7 +284,7 @@
             <li class="label-token">
               {#if editingLabels}
                 <Chip
-                  size="sm"
+                  size="xs"
                   tone="muted"
                   uppercase={false}
                   interactive
@@ -299,7 +299,7 @@
                   <XIcon size={11} strokeWidth={2.2} aria-hidden="true" />
                 </Chip>
               {:else}
-                <Chip size="sm" tone="muted" uppercase={false} class="kata-label-chip">
+                <Chip size="xs" tone="muted" uppercase={false} class="kata-label-chip">
                   {label.label}
                 </Chip>
               {/if}

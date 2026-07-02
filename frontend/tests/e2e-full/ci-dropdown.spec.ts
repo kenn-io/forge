@@ -101,7 +101,7 @@ test.describe("CI dropdown", () => {
   test("detail chips use the shared centered chip layout", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1");
 
-    const chips = page.locator(".pull-detail .chips-row .chip");
+    const chips = page.locator(".pull-detail .chips-row .kit-chip");
     await expect(chips.first()).toBeVisible();
 
     const chipLayouts = await chips.evaluateAll((nodes) =>
@@ -120,7 +120,7 @@ test.describe("CI dropdown", () => {
     expect(chipLayouts.length).toBeGreaterThan(0);
 
     for (const chip of chipLayouts) {
-      expect(chip.minHeight, chip.text).toBe("22px");
+      expect(chip.minHeight, chip.text).toBe("18px");
       expect(chip.lineHeight, chip.text).not.toBe("normal");
       expect(chip.paddingTop, chip.text).toBe("0px");
       expect(chip.paddingBottom, chip.text).toBe("0px");

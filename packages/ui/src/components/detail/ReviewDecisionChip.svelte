@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PREvent } from "../../api/types.js";
-  import Chip from "../shared/Chip.svelte";
+  import { Chip, type ChipTone } from "@kenn-io/kit-ui";
 
   interface Props {
     decision: string;
@@ -17,7 +17,7 @@
   );
   const normalizedDecision = $derived(normalizeReviewDecision(decision));
   const label = $derived(reviewLabel(normalizedDecision, approvers.length));
-  const chipClass = $derived(reviewColor(normalizedDecision));
+  const chipTone = $derived(reviewTone(normalizedDecision));
   const canExpand = $derived(
     normalizedDecision === "APPROVED" && approvers.length > 0,
   );
@@ -26,10 +26,10 @@
     return reviewDecision.trim().toUpperCase();
   }
 
-  function reviewColor(reviewDecision: string): string {
-    if (reviewDecision === "APPROVED") return "chip--green";
-    if (reviewDecision === "CHANGES_REQUESTED") return "chip--red";
-    return "chip--muted";
+  function reviewTone(reviewDecision: string): ChipTone {
+    if (reviewDecision === "APPROVED") return "success";
+    if (reviewDecision === "CHANGES_REQUESTED") return "danger";
+    return "muted";
   }
 
   function reviewLabel(reviewDecision: string, approverCount: number): string {
@@ -107,8 +107,8 @@
     bind:this={wrapEl}
     onfocusout={onFocusout}
   >
-    <Chip
-      class={chipClass}
+    <Chip size="sm"
+      tone={chipTone}
       interactive
       expanded={popupOpen}
       title="Show approving reviewers"
@@ -127,7 +127,7 @@
     {/if}
   </div>
 {:else}
-  <Chip class={chipClass}>{label}</Chip>
+  <Chip size="sm" tone={chipTone}>{label}</Chip>
 {/if}
 
 <style>

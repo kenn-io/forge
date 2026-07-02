@@ -11,7 +11,7 @@
   import MinusIcon from "@lucide/svelte/icons/minus";
   import HelpCircleIcon from "@lucide/svelte/icons/circle-help";
   import type { CICheck } from "../../api/types.js";
-  import Chip from "../shared/Chip.svelte";
+  import { Chip } from "@kenn-io/kit-ui";
   import CITokenCluster, { composeAriaLabel } from "../shared/CITokenCluster.svelte";
   import {
     parseCIChecks,
@@ -185,7 +185,7 @@
       {#if isUnavailable && parseError !== null}
         <span class="ci-unavailable-wrap">
           <span
-            class="chip chip--md chip--muted ci-chip-unavailable"
+            class="ci-chip-unavailable"
             role="button"
             tabindex="0"
             aria-disabled="true"
@@ -204,7 +204,7 @@
           >CI unavailable: {safeDiagnosticText(parseError)}</span>
         </span>
       {:else}
-        <Chip
+        <Chip size="sm"
           interactive={true}
           tone="neutral"
           ariaLabel={composeAriaLabel(bucketed)}

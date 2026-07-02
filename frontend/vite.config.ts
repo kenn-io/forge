@@ -316,7 +316,10 @@ const config = {
     // entries (openapi-fetch, the @lucide/svelte icon paths) resolve from
     // frontend directly. The set is exactly the cold "new dependencies
     // optimized" list emitted when mounting App.svelte in the browser tier.
-    exclude: ["@middleman/ui"],
+    // @kenn-io/kit-ui is likewise consumed as Svelte source (svelte export
+    // condition); its .svelte.ts rune modules cannot go through the dep
+    // optimizer's plain-JS parse.
+    exclude: ["@middleman/ui", "@kenn-io/kit-ui"],
     include: [
       // packages/ui-owned transitive deps, reached through the excluded barrel.
       "@middleman/ui > @pierre/diffs",
@@ -331,6 +334,33 @@ const config = {
       "@middleman/ui > prosemirror-state",
       "@middleman/ui > shiki",
       "@middleman/ui > svelte-tiptap",
+      // kit-ui-owned transitive deps, reached through its excluded barrel
+      // (the markdown pipeline peers plus its own icon set — the icon paths
+      // below are shared with the frontend list where they overlap).
+      "@kenn-io/kit-ui > marked",
+      "@kenn-io/kit-ui > shiki",
+      "@kenn-io/kit-ui > dompurify",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/arrow-down",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/arrow-up",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/arrow-up-down",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/calendar",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/check",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/chevron-down",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/chevron-left",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/chevron-right",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/chevron-up",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/copy",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/ellipsis",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/funnel",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/monitor",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/moon",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/panel-left-close",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/panel-left-open",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/refresh-cw",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/search",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/sun",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/wrap-text",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/x",
       // Frontend-resolvable deps the barrel also pulls in.
       "openapi-fetch",
       // The complete set of @lucide/svelte icon paths imported anywhere in

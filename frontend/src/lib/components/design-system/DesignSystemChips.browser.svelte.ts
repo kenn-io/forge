@@ -2,17 +2,18 @@
 // ("design system page renders chip matrix with shared styles"). That spec
 // drove the standalone /design-system page only to read getComputedStyle off
 // the shared Chip primitive. The chip matrix has no backend or app-shell
-// dependency, so it is migrated here by mounting the real Chip directly in a
-// Chromium page and asserting the identical computed geometry/typography the
-// e2e pinned. jsdom returns empty strings for these computed values, which is
-// exactly why this belongs at the browser tier.
+// dependency, so it is migrated here by mounting the real kit-ui Chip
+// directly in a Chromium page and asserting the computed geometry/typography
+// of kit-ui's strict size ladder (xs=10px/16px, sm=11px/18px). jsdom returns
+// empty strings for these computed values, which is exactly why this belongs
+// at the browser tier.
 
 import { describe, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
-// app.css provides --font-size-2xs/--font-size-xs and the accent/bg tokens the
-// chip color classes resolve against. A real page needs no jsdom shims.
+// app.css imports the kit-ui theme tokens the chip tones resolve against.
+// A real page needs no jsdom shims.
 import "../../../app.css";
 
 import DesignSystemChipsHarness from "./DesignSystemChipsHarness.svelte";
@@ -25,29 +26,29 @@ describe("design system chip matrix (browser)", () => {
 
     const assert = expect;
 
-    const smGreen = container.querySelector('[data-size="sm"] .chip--green');
-    const mdGreen = container.querySelector('[data-size="md"] .chip--green');
-    const muted = container.querySelector(".chip--muted");
+    const xsGreen = container.querySelector('[data-size="xs"] .kit-chip--tone-success');
+    const smGreen = container.querySelector('[data-size="sm"] .kit-chip--tone-success');
+    const muted = container.querySelector(".kit-chip--tone-muted");
+    assert(xsGreen).not.toBeNull();
     assert(smGreen).not.toBeNull();
-    assert(mdGreen).not.toBeNull();
     assert(muted).not.toBeNull();
 
-    // Small chip: shared size modifier from Chip.svelte + --font-size-2xs token.
+    // xs chip: kit-ui size modifier + --font-size-2xs token.
+    const xsStyle = getComputedStyle(xsGreen as Element);
+    assert(xsStyle.minHeight).toBe("16px");
+    assert(xsStyle.fontSize).toBe("10px");
+    assert(`${xsStyle.paddingLeft}/${xsStyle.paddingRight}`).toBe("6px/6px");
+
+    // sm chip: 18px / --font-size-xs / 6px padding, painted background,
+    // uppercase casing default.
     const smStyle = getComputedStyle(smGreen as Element);
     assert(smStyle.minHeight).toBe("18px");
-    assert(smStyle.fontSize).toBe("10px");
+    assert(smStyle.fontSize).toBe("11px");
     assert(`${smStyle.paddingLeft}/${smStyle.paddingRight}`).toBe("6px/6px");
+    assert(smStyle.backgroundColor).not.toBe(TRANSPARENT);
+    assert(smStyle.textTransform).toBe("uppercase");
 
-    // Medium chip: 22px / --font-size-xs / 8px padding, painted background,
-    // uppercase casing default.
-    const mdStyle = getComputedStyle(mdGreen as Element);
-    assert(mdStyle.minHeight).toBe("22px");
-    assert(mdStyle.fontSize).toBe("11px");
-    assert(`${mdStyle.paddingLeft}/${mdStyle.paddingRight}`).toBe("8px/8px");
-    assert(mdStyle.backgroundColor).not.toBe(TRANSPARENT);
-    assert(mdStyle.textTransform).toBe("uppercase");
-
-    // Muted variant resolves to a real (non-transparent) inset background.
+    // Muted tone resolves to a real (non-transparent) inset background.
     assert(getComputedStyle(muted as Element).backgroundColor).not.toBe(TRANSPARENT);
   });
 
@@ -67,12 +68,12 @@ describe("design system chip matrix (browser)", () => {
     assert(interactive.tagName).toBe("BUTTON");
     assert(getComputedStyle(interactive).cursor).toBe("pointer");
 
-    // The descender chip (small, plain-case) keeps the shared 18px chip box,
+    // The descender chip (xs, plain-case) keeps the shared 16px chip box,
     // the geometry the e2e guarded against clipping.
     const descenderLabel = container.querySelector('[data-testid="descender-chip"]');
     assert(descenderLabel).not.toBeNull();
-    const chip = (descenderLabel as Element).closest(".chip");
+    const chip = (descenderLabel as Element).closest(".kit-chip");
     assert(chip).not.toBeNull();
-    assert(Math.round((chip as Element).getBoundingClientRect().height)).toBe(18);
+    assert(Math.round((chip as Element).getBoundingClientRect().height)).toBe(16);
   });
 });

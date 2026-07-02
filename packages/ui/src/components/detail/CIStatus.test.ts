@@ -169,14 +169,14 @@ describe("CIStatus", () => {
     const { container } = render(CIStatus, {
       props: { ...chipBaseProps, checksJSON: "" },
     });
-    expect(container.querySelector(".chip")).toBeNull();
+    expect(container.querySelector(".kit-chip, .ci-chip-unavailable")).toBeNull();
   });
 
   it("hides the chip when CIStatus is set but CIChecksJSON is empty", () => {
     const { container } = render(CIStatus, {
       props: { ...chipBaseProps, status: "success", checksJSON: "" },
     });
-    expect(container.querySelector(".chip")).toBeNull();
+    expect(container.querySelector(".kit-chip, .ci-chip-unavailable")).toBeNull();
   });
 
   it("renders CI: unavailable chip when CIChecksJSON is malformed without leaking the raw payload to UI surfaces", () => {

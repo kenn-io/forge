@@ -1,7 +1,7 @@
 <script lang="ts">
-  import Chip, {
+  import { Chip,
     type ChipTone,
-  } from "../shared/Chip.svelte";
+  } from "@kenn-io/kit-ui";
 
   interface Props {
     status: string;
@@ -27,7 +27,7 @@
 </script>
 
 <Chip
-  size="sm"
+  size="xs"
   {tone}
   dot
   uppercase={false}

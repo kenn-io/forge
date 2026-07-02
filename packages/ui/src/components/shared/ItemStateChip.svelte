@@ -1,8 +1,8 @@
 <script lang="ts">
-  import Chip, {
+  import { Chip,
     type ChipSize,
     type ChipTone,
-  } from "./Chip.svelte";
+  } from "@kenn-io/kit-ui";
 
   interface Props {
     state: string;
@@ -13,7 +13,7 @@
 
   const {
     state,
-    size = "xs",
+    size = "sm",
     title = undefined,
     class: className = "",
   }: Props = $props();

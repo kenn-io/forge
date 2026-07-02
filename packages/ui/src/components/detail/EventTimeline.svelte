@@ -14,7 +14,7 @@
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
-  import { copyToClipboard } from "../../utils/clipboard.js";
+  import { copyToClipboard } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import {
     buildItemReferenceLink,

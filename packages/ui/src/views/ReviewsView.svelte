@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmptyState } from "@kenn-io/kit-ui";
+  import { copyToClipboard, EmptyState } from "@kenn-io/kit-ui";
   import { onMount, onDestroy } from "svelte";
   import {
     getStores,
@@ -164,7 +164,7 @@
           e.preventDefault();
           const output =
             stores.roborevReview?.getOutput() ?? "";
-          void navigator.clipboard.writeText(output);
+          void copyToClipboard(output);
         }
         break;
       case "h":

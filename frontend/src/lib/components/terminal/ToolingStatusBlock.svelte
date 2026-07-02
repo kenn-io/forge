@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copyToClipboard } from "@kenn-io/kit-ui";
   // ToolingStatusBlock renders the embedding host's view of git and
   // provider CLI availability/authentication. It is consumed by the
   // First Run Panel (gates provider-dependent actions) and the New
@@ -76,15 +77,14 @@
   );
 
   async function copyCommand(command: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(command);
-      copied = command;
-      setTimeout(() => {
-        if (copied === command) copied = null;
-      }, 1500);
-    } catch (err) {
-      console.error("Copy failed:", err);
+    if (!(await copyToClipboard(command))) {
+      console.error("Copy failed");
+      return;
     }
+    copied = command;
+    setTimeout(() => {
+      if (copied === command) copied = null;
+    }, 1500);
   }
 </script>
 

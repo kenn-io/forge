@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copyToClipboard } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import StatusBadge from "./StatusBadge.svelte";
   import VerdictBadge from "./VerdictBadge.svelte";
@@ -42,7 +43,7 @@
   async function copyOutput(): Promise<void> {
     const output =
       stores.roborevReview?.getOutput() ?? "";
-    await navigator.clipboard.writeText(output);
+    await copyToClipboard(output);
   }
 
   function handleCloseReview(): void {

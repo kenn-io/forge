@@ -1,3 +1,4 @@
+import { copyToClipboard } from "@kenn-io/kit-ui";
 import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
 
 export interface MarkdownMermaidAPI {
@@ -450,21 +451,20 @@ function createMermaidButton(label: string, text: string, onClick: () => void | 
 }
 
 async function copyMermaidSource(source: string, button: HTMLButtonElement): Promise<void> {
-  if (!source || typeof navigator === "undefined" || !navigator.clipboard?.writeText) return;
+  if (!source || typeof navigator === "undefined") return;
 
-  try {
-    await navigator.clipboard.writeText(source);
-    button.dataset.copied = "true";
-    button.setAttribute("aria-label", "Copied Mermaid source");
-    button.title = "Copied Mermaid source";
-    window.setTimeout(() => {
-      button.dataset.copied = "false";
-      button.setAttribute("aria-label", "Copy Mermaid source");
-      button.title = "Copy Mermaid source";
-    }, 1200);
-  } catch (error: unknown) {
-    console.error("Failed to copy Mermaid source", error);
+  if (!(await copyToClipboard(source))) {
+    console.error("Failed to copy Mermaid source");
+    return;
   }
+  button.dataset.copied = "true";
+  button.setAttribute("aria-label", "Copied Mermaid source");
+  button.title = "Copied Mermaid source";
+  window.setTimeout(() => {
+    button.dataset.copied = "false";
+    button.setAttribute("aria-label", "Copy Mermaid source");
+    button.title = "Copy Mermaid source";
+  }, 1200);
 }
 
 function attachDragPanning(viewport: HTMLElement, drag: { onDrag: (deltaX: number, deltaY: number) => void }): void {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copyToClipboard } from "@kenn-io/kit-ui";
   import { onMount, tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
@@ -718,10 +719,9 @@
     successMessage: string,
   ): Promise<void> {
     closeContextMenu();
-    try {
-      await navigator.clipboard.writeText(value);
+    if (await copyToClipboard(value)) {
       showFlash(successMessage);
-    } catch {
+    } else {
       showFlash("Could not copy to clipboard.");
     }
   }

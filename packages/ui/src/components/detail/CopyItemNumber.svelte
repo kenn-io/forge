@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { copyToClipboard } from "../../utils/clipboard.js";
+  import { copyToClipboard } from "@kenn-io/kit-ui";
 
   interface Props {
     kind: "pull" | "issue";

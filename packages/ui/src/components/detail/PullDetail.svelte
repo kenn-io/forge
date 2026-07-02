@@ -22,7 +22,7 @@
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
   import { timeAgo } from "../../utils/time.js";
-  import { copyToClipboard } from "../../utils/clipboard.js";
+  import { copyToClipboard } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import CommentBox from "./CommentBox.svelte";

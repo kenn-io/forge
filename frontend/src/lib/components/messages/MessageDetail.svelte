@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copyToClipboard } from "@kenn-io/kit-ui";
   import { onDestroy } from "svelte";
   import type { MessageDetailData } from "../../api/messages/types";
   import type { MessageLinkInput } from "../../messages/messageLinks";
@@ -81,7 +82,8 @@
   function copyPermalink(): void {
     if (!detail) return;
     const link = permalinkOf(detail.id);
-    void navigator.clipboard.writeText(link).then(() => {
+    void copyToClipboard(link).then((ok) => {
+      if (!ok) return;
       copied = true;
       if (copyTimer !== null) clearTimeout(copyTimer);
       copyTimer = setTimeout(() => {

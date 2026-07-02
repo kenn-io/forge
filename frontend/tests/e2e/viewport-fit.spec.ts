@@ -6,147 +6,140 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-test("settings page uses a sidebar and scrollable content pane", async ({ page }) => {
+test("settings page uses the kit sidebar-and-panel layout", async ({ page }) => {
   await page.goto("/settings");
 
   await expect(page.locator(".settings-page")).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Settings sections" })).toBeVisible();
-  await expect(page.getByPlaceholder("Search settings...")).toBeVisible();
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  await expect(nav).toBeVisible();
+
   await expect(
     page.evaluate(() => {
       const main = document.querySelector<HTMLElement>(".app-main");
-      const shell = document.querySelector<HTMLElement>(".settings-shell");
-      const sidebar = document.querySelector<HTMLElement>(".settings-sidebar");
-      const pane = document.querySelector<HTMLElement>(".settings-scroll-pane");
-      const content = document.querySelector<HTMLElement>(".settings-page");
-      if (!main || !shell || !sidebar || !pane || !content) return null;
+      const shell = document.querySelector<HTMLElement>(".kit-settings");
+      const sidebar = document.querySelector<HTMLElement>(".kit-settings__sidebar");
+      const content = document.querySelector<HTMLElement>(".kit-settings__content");
+      if (!main || !shell || !sidebar || !content) return null;
 
       const mainRect = main.getBoundingClientRect();
       const shellRect = shell.getBoundingClientRect();
       const sidebarRect = sidebar.getBoundingClientRect();
-      const paneRect = pane.getBoundingClientRect();
       const contentRect = content.getBoundingClientRect();
-      const beforeTop = contentRect.top;
-      pane.scrollTop = 120;
-      const afterTop = content.getBoundingClientRect().top;
 
       return {
         shellFillsMain:
           Math.round(shellRect.left) === Math.round(mainRect.left) &&
           Math.round(shellRect.right) === Math.round(mainRect.right),
         sidebarStartsAtMainEdge: Math.round(sidebarRect.left) === Math.round(mainRect.left),
-        paneFillsRemainingWidth:
-          Math.round(paneRect.left) >= Math.round(sidebarRect.right) &&
-          Math.round(paneRect.right) === Math.round(mainRect.right),
-        contentIsCentered:
-          Math.abs(contentRect.left + contentRect.width / 2 - (paneRect.left + paneRect.width / 2)) < 1,
-        paneCanScroll: pane.scrollHeight > pane.clientHeight,
-        contentMovesWithPane: afterTop < beforeTop,
+        contentFillsRemainingWidth:
+          Math.round(contentRect.left) >= Math.round(sidebarRect.right) &&
+          Math.round(contentRect.right) === Math.round(mainRect.right),
+        pageDoesNotScrollHorizontally: document.documentElement.scrollWidth <= window.innerWidth,
       };
     }),
   ).resolves.toEqual({
     shellFillsMain: true,
     sidebarStartsAtMainEdge: true,
-    paneFillsRemainingWidth: true,
-    contentIsCentered: true,
-    paneCanScroll: true,
-    contentMovesWithPane: true,
+    contentFillsRemainingWidth: true,
+    pageDoesNotScrollHorizontally: true,
   });
 
-  await page
-    .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("button", { name: "Workspace agents" })
-    .click();
-  await expect(page.locator("#settings-agents")).toBeInViewport();
+  // Switched panels: selecting a category swaps the rendered section.
+  await expect(page.getByRole("heading", { name: "Repositories" })).toBeVisible();
+  await nav.getByRole("button", { name: "Workspace agents" }).click();
+  await expect(page.getByRole("heading", { name: "Workspace agents" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Repositories" })).toBeHidden();
 });
 
-test("settings shell stacks below 1024px and switches to the sidebar row at it", async ({ page }) => {
+test("settings shell stacks at kit's 760px breakpoint", async ({ page }) => {
   await page.goto("/settings");
   await expect(page.locator(".settings-page")).toBeVisible();
 
   const shellDirection = () =>
     page.evaluate(() => {
-      const shell = document.querySelector<HTMLElement>(".settings-shell");
+      const shell = document.querySelector<HTMLElement>(".kit-settings");
       return shell ? getComputedStyle(shell).flexDirection : null;
     });
 
   // Media-query rem resolves against the browser's 16px initial font size,
-  // not the app's 13px root — a misconverted 64rem-to-832px threshold would
-  // already lay out the sidebar row at tablet widths.
-  await page.setViewportSize({ width: 1023, height: 800 });
+  // not the app root — kit's shared breakpoints are written in px (760px
+  // here) so this boundary must be exact.
+  await page.setViewportSize({ width: 760, height: 800 });
   await expect.poll(shellDirection).toBe("column");
 
-  await page.setViewportSize({ width: 1024, height: 800 });
+  await page.setViewportSize({ width: 761, height: 800 });
   await expect.poll(shellDirection).toBe("row");
 });
 
-test("settings sidebar order matches rendered section order", async ({ page }) => {
+test("settings sidebar lists every panel in declaration order", async ({ page }) => {
   await page.goto("/settings");
 
   await expect(page.locator(".settings-page")).toBeVisible();
   await expect(
-    page.evaluate(() => {
-      const navLabel = (label: string) =>
-        label.replace("Activity feed defaults", "Activity").replace("Workspace terminal", "Terminal");
-      const navOrder = Array.from(document.querySelectorAll<HTMLElement>(".settings-nav-item span")).map(
+    page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".kit-settings__nav-item")).map(
         (item) => item.textContent?.trim() ?? "",
-      );
-      const sectionOrder = Array.from(document.querySelectorAll<HTMLElement>(".settings-section > h2")).map((section) =>
-        navLabel(section.textContent?.trim() ?? ""),
-      );
-
-      return { navOrder, sectionOrder, orderMatches: navOrder.join("\n") === sectionOrder.join("\n") };
-    }),
-  ).resolves.toEqual({
-    navOrder: ["Repositories", "Activity", "Terminal", "Workspace agents", "Fleet federation", "Visible modes"],
-    sectionOrder: ["Repositories", "Activity", "Terminal", "Workspace agents", "Fleet federation", "Visible modes"],
-    orderMatches: true,
-  });
+      ),
+    ),
+  ).resolves.toEqual([
+    "Repositories",
+    "Activity",
+    "Terminal",
+    "Kata mappings",
+    "Visible modes",
+    "Workspace agents",
+    "Fleet federation",
+  ]);
 });
 
-test("settings navigation stacks below Tailwind lg breakpoint", async ({ page }) => {
+test("settings navigation stacks on phone-width viewports", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto("/settings");
 
   await expect(page.locator(".settings-page")).toBeVisible();
-  await expect(
-    page.evaluate(() => {
-      const shell = document.querySelector<HTMLElement>(".settings-shell");
-      const sidebar = document.querySelector<HTMLElement>(".settings-sidebar");
-      const pane = document.querySelector<HTMLElement>(".settings-scroll-pane");
-      if (!shell || !sidebar || !pane) return null;
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const shell = document.querySelector<HTMLElement>(".kit-settings");
+        const sidebar = document.querySelector<HTMLElement>(".kit-settings__sidebar");
+        const content = document.querySelector<HTMLElement>(".kit-settings__content");
+        if (!shell || !sidebar || !content) return null;
 
-      const shellRect = shell.getBoundingClientRect();
-      const sidebarRect = sidebar.getBoundingClientRect();
-      const paneRect = pane.getBoundingClientRect();
+        const shellRect = shell.getBoundingClientRect();
+        const sidebarRect = sidebar.getBoundingClientRect();
+        const contentRect = content.getBoundingClientRect();
 
-      return {
-        navStacksAboveContent: Math.round(sidebarRect.bottom) <= Math.round(paneRect.top),
-        navFitsViewport: Math.round(sidebarRect.left) >= 0 && Math.round(sidebarRect.right) <= window.innerWidth,
-        contentFitsViewport: document.documentElement.scrollWidth <= window.innerWidth,
-        shellFillsViewport: Math.round(shellRect.width) === window.innerWidth,
-      };
-    }),
-  ).resolves.toEqual({
-    navStacksAboveContent: true,
-    navFitsViewport: true,
-    contentFitsViewport: true,
-    shellFillsViewport: true,
-  });
+        return {
+          navStacksAboveContent: Math.round(sidebarRect.bottom) <= Math.round(contentRect.top),
+          navFitsViewport: Math.round(sidebarRect.left) >= 0 && Math.round(sidebarRect.right) <= window.innerWidth,
+          contentFitsViewport: document.documentElement.scrollWidth <= window.innerWidth,
+          shellFillsViewport: Math.round(shellRect.width) === window.innerWidth,
+        };
+      }),
+    )
+    .toEqual({
+      navStacksAboveContent: true,
+      navFitsViewport: true,
+      contentFitsViewport: true,
+      shellFillsViewport: true,
+    });
 });
 
 test("Firefox receives compact scrollbar styling for app scroll panes", async ({ page, browserName }) => {
   test.skip(browserName !== "firefox", "Firefox-specific scrollbar regression");
 
+  // Short viewport plus the tall Terminal panel so the settings panel
+  // overflows its scroll pane.
+  await page.setViewportSize({ width: 1280, height: 420 });
   await page.goto("/settings");
 
-  await expect(page.locator(".settings-scroll-pane")).toBeVisible();
-  await expect(
-    page.locator(".settings-scroll-pane").evaluate((pane) => pane.scrollHeight > pane.clientHeight),
-  ).resolves.toBe(true);
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Terminal" }).click();
+  const pane = page.locator(".kit-settings__scroll");
+  await expect(pane).toBeVisible();
+  await expect.poll(() => pane.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
   await expect(
     page.evaluate(() => {
-      const settingsPane = document.querySelector(".settings-scroll-pane");
+      const settingsPane = document.querySelector(".kit-settings__scroll");
       const appRules = Array.from(document.styleSheets)
         .flatMap((sheet) => {
           try {

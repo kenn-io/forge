@@ -69,6 +69,24 @@ in the kit-ui repo. The parts middleman depends on as stable API:
   on its `text-overflow` ellipsis.
 - The dark/high-contrast mechanism: `dark` / `high-contrast` classes on
   `<html>`.
+- Dialog and Escape layering: every dialog registers a keyboard modal-stack
+  frame while open (the shared `frontend/src/lib/components/shared/Modal.svelte`
+  shell does this for all its consumers; direct kit `Modal` users push their
+  own frame). kit's Escape handler is a bubble-phase `window` listener
+  registered at dialog mount — after long-lived background listeners — so a
+  background surface that closes on Escape (drawer, split view) cannot use
+  `defaultPrevented` to detect an open dialog. It must stand down when
+  `getStackDepth() > 0` (`@middleman/ui/stores/keyboard/modal-stack`).
+  kit `Modal`'s `closable` prop gates only the header X; Escape and
+  backdrop-click dismissal are independent of it. The shared shell prefers
+  `[data-autofocus]`, then body inputs, then body/footer buttons for initial
+  focus.
+- jsdom lacks `offsetParent`, `scrollIntoView`, and `ResizeObserver`, which
+  kit's focus trap and menus use: `frontend/src/test/setup.ts` stubs the
+  latter two globally; focus-trap tests install the shared
+  `frontend/src/test/stubOffsetParent.ts` helper. Synthetic Tab key events
+  only exercise kit's trap at the wrap boundaries — mid-cycle movement is
+  native browser behavior that jsdom/synthetic events cannot drive.
 
 kit-ui component swaps must not keep local copies of replaced components;
 `kit-ui-check` (run with `--warn` during migration) tracks hand-rolled

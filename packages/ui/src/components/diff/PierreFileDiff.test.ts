@@ -555,6 +555,28 @@ describe("PierreFileDiff", () => {
     expect(document.querySelector(".pierre-diff-loading")).toBeNull();
   });
 
+  it("shows massive diffs beyond the tokenize cap without waiting for the highlight pool", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    workerPool.set(makeBusyWorkerPool());
+    // Pierre forces plain-text rendering past DEFAULT_TOKENIZE_MAX_LENGTH
+    // (100k lines), so styled spans never appear for this file either.
+    pierre.setMetadata({
+      ...pierre.metadata,
+      additionLines: Array.from({ length: 100_001 }, () => "line\n"),
+    });
+
+    render(PierreFileDiff, {
+      props: { file: makeFile() },
+    });
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+      expect(document.querySelector(".pierre-diff-shell")?.getAttribute("aria-busy")).toBe("false");
+    });
+
+    expect(document.querySelector(".pierre-diff-loading")).toBeNull();
+  });
+
   it("rerenders when annotation metadata changes without moving lines", async () => {
     const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
     const file = makeFile();

@@ -904,9 +904,11 @@
     return !syntaxHighlightWorkerHasPendingWork();
   }
 
-  // Mirrors Pierre's isDiffPlainText/isDiffMassive checks: these diffs render
-  // without styled spans, so waiting on worker-pool idleness would hide them
-  // for as long as any other file still has highlight tasks queued.
+  // Mirrors Pierre's isDiffPlainText/isDiffMassive checks, which @pierre/diffs
+  // does not export as of 1.2.11: these diffs render without styled spans, so
+  // waiting on worker-pool idleness would hide them for as long as any other
+  // file still has highlight tasks queued. Recheck this mirror (and whether
+  // upstream now exports the helpers) when bumping @pierre/diffs.
   function diffRendersPlainText(): boolean {
     const fileDiff = fullContextFileDiff ?? pierreFile;
     if (!fileDiff) return false;

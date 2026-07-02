@@ -31,15 +31,35 @@ func TestDefaultBaseURL(t *testing.T) {
 	}
 }
 
-func TestRotateGuard(t *testing.T) {
+// TestAuthRotateOutputHeldLock pins the daemon-running behavior against
+// a genuinely held runtime lock (not a pre-computed boolean, which
+// would race a daemon starting between the check and the rotation):
+// rotation refuses without --force and leaves the token untouched, and
+// force-rotates with the restart warning.
+func TestAuthRotateOutputHeldLock(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	assert.NoError(rotateGuard(false, false))
-	assert.NoError(rotateGuard(false, true))
-	assert.NoError(rotateGuard(true, true))
-	err := rotateGuard(true, false)
+	dir := t.TempDir()
+	first, err := runtimelock.EnsureAuthToken(dir)
+	require.NoError(err)
+	handle, err := runtimelock.Acquire(dir)
+	require.NoError(err)
+	t.Cleanup(func() { _ = handle.Release() })
+
+	var out, errOut bytes.Buffer
+	err = authRotateOutput(dir, false, &out, &errOut)
 	require.Error(err)
 	assert.Contains(err.Error(), "--force")
+	unchanged, err := runtimelock.ReadAuthToken(dir)
+	require.NoError(err)
+	assert.Equal(first, unchanged,
+		"a refused rotation must not touch the token file")
+
+	require.NoError(authRotateOutput(dir, true, &out, &errOut))
+	rotated, err := runtimelock.ReadAuthToken(dir)
+	require.NoError(err)
+	assert.NotEqual(first, rotated)
+	assert.Contains(errOut.String(), "OLD token")
 }
 
 func TestAuthTokenOutput(t *testing.T) {

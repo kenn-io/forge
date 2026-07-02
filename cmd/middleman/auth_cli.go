@@ -110,13 +110,26 @@ func authURLOutput(dataDir, baseURLFlag string, stdout io.Writer) error {
 	return err
 }
 
+// authRotateOutput rotates the token while holding the runtime lock, so
+// a daemon cannot start (and cache the old token) between the running
+// check and the rotation. On a lock collision the daemon is running:
+// refuse unless forced, because the live daemon keeps honoring the old
+// token until restarted.
 func authRotateOutput(dataDir string, force bool, stdout, stderr io.Writer) error {
-	st, err := runtimelock.Read(dataDir)
-	if err != nil {
-		return fmt.Errorf("read runtime status: %w", err)
-	}
-	if err := rotateGuard(st.Running, force); err != nil {
-		return err
+	handle, err := runtimelock.Acquire(dataDir)
+	var collision *runtimelock.CollisionError
+	switch {
+	case err == nil:
+		defer func() { _ = handle.Release() }()
+	case errors.As(err, &collision):
+		if !force {
+			return errors.New(
+				"a middleman daemon is running; rotating now would make CLI clients send the" +
+					" new token while the server still accepts only the old one. Stop the daemon" +
+					" first, or pass --force to rotate anyway and restart the daemon afterward")
+		}
+	default:
+		return fmt.Errorf("acquire runtime lock: %w", err)
 	}
 	token, err := runtimelock.RotateAuthToken(dataDir)
 	if err != nil {
@@ -125,7 +138,7 @@ func authRotateOutput(dataDir string, force bool, stdout, stderr io.Writer) erro
 	if _, err := fmt.Fprintln(stdout, token); err != nil {
 		return err
 	}
-	if st.Running && force {
+	if collision != nil {
 		_, err = fmt.Fprintln(stderr,
 			"WARNING: the running daemon still honors the OLD token until restarted;"+
 				" clients using the new token will get 401 until you restart it.")
@@ -149,17 +162,4 @@ func defaultBaseURL(meta *runtimelock.Metadata) string {
 		}
 	}
 	return fmt.Sprintf("http://%s:%d%s", host, meta.Port, strings.TrimSuffix(meta.BasePath, "/"))
-}
-
-// rotateGuard refuses an online rotation unless forced: the daemon caches
-// the token at startup, so rewriting the file under a live daemon makes
-// CLI clients send the new token while the server accepts only the old.
-func rotateGuard(running, force bool) error {
-	if running && !force {
-		return errors.New(
-			"a middleman daemon is running; rotating now would make CLI clients send the" +
-				" new token while the server still accepts only the old one. Stop the daemon" +
-				" first, or pass --force to rotate anyway and restart the daemon afterward")
-	}
-	return nil
 }

@@ -241,13 +241,13 @@ describe("PublishDocsDialog", () => {
     await fireEvent.click(screen.getByRole("button", { name: /commit & push/i }));
     // While publishing is in flight, the Cancel button must be disabled.
     expect((screen.getByRole("button", { name: /cancel/i }) as HTMLButtonElement).disabled).toBe(true);
-    // Exercise the close paths the dialog exposes — the header X button
-    // and the Escape key — and confirm each is a no-op while a publish
-    // is in flight. Without the guard these used to bypass `disabled`
-    // on Cancel and discard publish_failed errors mid-flight.
-    await fireEvent.click(screen.getByRole("button", { name: /^close$/i }));
-    expect(onClose).not.toHaveBeenCalled();
-    await fireEvent.keyDown(document, { key: "Escape" });
+    // The shared Modal shell omits the header X when the footer already has
+    // Cancel, so Escape is the remaining shell-owned close path. Confirm it
+    // is a no-op while a publish is in flight — without the guard it used to
+    // bypass `disabled` on Cancel and discard publish_failed errors
+    // mid-flight.
+    expect(screen.queryByRole("button", { name: /^close$/i })).toBeNull();
+    await fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
     // Now resolve the publish and confirm normal flow resumes.
     resolvePublish!({

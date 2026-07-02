@@ -4,7 +4,7 @@
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import { SelectDropdown } from "@middleman/ui";
-  import Modal from "./DocsModal.svelte";
+  import Modal from "../shared/Modal.svelte";
   import type { DocsAPI } from "../../api/docs/api";
   import type { BrowseEntry, DocsAPIError, Folder } from "../../api/docs/types";
   import { getKataDaemonRoster } from "../../stores/active-kata-daemon.svelte";

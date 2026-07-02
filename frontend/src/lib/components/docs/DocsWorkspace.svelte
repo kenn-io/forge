@@ -26,7 +26,7 @@
   import DocMarkdownView, { type DocMarkdownState, type HeadingEntry } from "./DocMarkdownView.svelte";
   import DocOutline from "./DocOutline.svelte";
   import FolderTree from "./FolderTree.svelte";
-  import Modal from "./DocsModal.svelte";
+  import Modal from "../shared/Modal.svelte";
   import AddFolderDialog from "./AddFolderDialog.svelte";
   import { buildIssueCompletionSource } from "./issueCompletion";
   import { buildDocsIssueCompletionOptions } from "./docsIssueCompletionOptions";
@@ -1250,6 +1250,7 @@
 <Modal
   open={newFileOpen}
   title="New file"
+  width={520}
   onClose={() => (newFileOpen = false)}
 >
   <form
@@ -1286,6 +1287,7 @@
 <Modal
   open={renameOpen}
   title="Rename file"
+  width={520}
   onClose={() => (renameOpen = false)}
 >
   <form
@@ -1321,6 +1323,7 @@
 <Modal
   open={deleteOpen}
   title="Delete file"
+  width={520}
   onClose={() => (deleteOpen = false)}
 >
   <p class="modal-body-text">
@@ -1368,6 +1371,7 @@
 <Modal
   open={renameFolderTarget !== null}
   title="Rename folder"
+  width={520}
   onClose={() => (renameFolderTarget = null)}
 >
   <form
@@ -1405,6 +1409,7 @@
 <Modal
   open={removeFolderTarget !== null}
   title="Remove folder"
+  width={520}
   onClose={() => (removeFolderTarget = null)}
 >
   <p class="modal-body-text">

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Modal from "./DocsModal.svelte";
+  import Modal from "../shared/Modal.svelte";
   import { renderDocsMarkdown, type DocsMarkdownOptions } from "../../api/docs/markdown";
 
   export interface HeadingEntry {
@@ -208,7 +208,7 @@
   {@html html}
 </div>
 
-<Modal open={ambiguous !== null} title="Pick a note" onClose={closeAmbiguous} width={420}>
+<Modal open={ambiguous !== null} title="Pick a note" onClose={closeAmbiguous} width={420} showClose>
   <p class="picker-hint">Multiple notes share this name. Choose one:</p>
   <ul class="picker-list">
     {#each ambiguous?.candidates ?? [] as candidate (candidate)}

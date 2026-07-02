@@ -6,7 +6,7 @@
   import { Chip,
     type ChipTone,
   } from "@kenn-io/kit-ui";
-  import DiffStats from "../shared/DiffStats.svelte";
+  import { DiffStats } from "@kenn-io/kit-ui";
 
   interface Props {
     worktree: WorkspaceWorktree;

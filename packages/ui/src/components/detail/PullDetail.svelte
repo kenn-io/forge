@@ -47,7 +47,7 @@
   import UsersIcon from "@lucide/svelte/icons/users";
   import XIcon from "@lucide/svelte/icons/x";
   import { Chip } from "@kenn-io/kit-ui";
-  import GitHubLabels from "../shared/GitHubLabels.svelte";
+  import { ColorLabel } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
   import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
@@ -1707,7 +1707,11 @@
           <Chip size="sm" tone="workspace">Worktree</Chip>
         {/if}
         {#if labels.length > 0}
-          <GitHubLabels {labels} mode="full" />
+          <span class="labels-row">
+              {#each labels as label (label.name)}
+                <ColorLabel name={label.name} color={label.color} />
+              {/each}
+            </span>
         {/if}
         {#if capabilities.read_labels && capabilities.label_mutation}
           <div class="label-editor-anchor label-editor-anchor--inline">
@@ -3356,5 +3360,12 @@
       position: static;
       opacity: 1;
     }
+  }
+  .labels-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
   }
 </style>

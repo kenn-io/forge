@@ -20,7 +20,7 @@ test.describe("label editing", () => {
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();
       await expect(
-        page.locator(".pull-detail .chips-row .label-pill", {
+        page.locator(".pull-detail .chips-row .kit-color-label", {
           hasText: "bug",
         }),
       ).toBeVisible();
@@ -44,14 +44,14 @@ test.describe("label editing", () => {
 
       await expect(page.getByRole("menuitemcheckbox", { name: /triage/i })).toHaveAttribute("aria-checked", "true");
       await expect(
-        page.locator(".pull-detail .chips-row .label-pill", {
+        page.locator(".pull-detail .chips-row .kit-color-label", {
           hasText: "triage",
         }),
       ).toBeVisible();
 
       await page.reload();
       await expect(
-        page.locator(".pull-detail .chips-row .label-pill", {
+        page.locator(".pull-detail .chips-row .kit-color-label", {
           hasText: "triage",
         }),
       ).toBeVisible();
@@ -118,7 +118,7 @@ test.describe("label editing", () => {
       await page.goto(`${baseURL}/issues/github/acme/widgets/10`);
       await expect(page.locator(".issue-detail")).toBeVisible();
       await expect(
-        page.locator(".issue-detail .meta-row .label-pill", {
+        page.locator(".issue-detail .meta-row .kit-color-label", {
           hasText: "bug",
         }),
       ).toBeVisible();
@@ -135,12 +135,12 @@ test.describe("label editing", () => {
       await page.getByRole("button", { name: "Clear selected labels" }).click();
       expect((await updateResponse).status()).toBe(200);
 
-      await expect(page.locator(".issue-detail .meta-row .label-pill")).toHaveCount(0);
+      await expect(page.locator(".issue-detail .meta-row .kit-color-label")).toHaveCount(0);
       await expect(
         page.locator(".issue-detail .meta-row").getByRole("button", { name: "Labels", exact: true }),
       ).toBeVisible();
       await page.reload();
-      await expect(page.locator(".issue-detail .meta-row .label-pill")).toHaveCount(0);
+      await expect(page.locator(".issue-detail .meta-row .kit-color-label")).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();
     }
@@ -212,13 +212,13 @@ test.describe("label editing", () => {
       await page.getByRole("menuitemcheckbox", { name: /docs/i }).click();
       expect((await pullUpdate).status()).toBe(200);
       await expect(
-        page.locator(".pull-detail .chips-row .label-pill", {
+        page.locator(".pull-detail .chips-row .kit-color-label", {
           hasText: "docs",
         }),
       ).toBeVisible();
       await page.reload();
       await expect(
-        page.locator(".pull-detail .chips-row .label-pill", {
+        page.locator(".pull-detail .chips-row .kit-color-label", {
           hasText: "docs",
         }),
       ).toBeVisible();
@@ -235,13 +235,13 @@ test.describe("label editing", () => {
       await page.getByRole("menuitemcheckbox", { name: /triage/i }).click();
       expect((await issueUpdate).status()).toBe(200);
       await expect(
-        page.locator(".issue-detail .meta-row .label-pill", {
+        page.locator(".issue-detail .meta-row .kit-color-label", {
           hasText: "triage",
         }),
       ).toBeVisible();
       await page.reload();
       await expect(
-        page.locator(".issue-detail .meta-row .label-pill", {
+        page.locator(".issue-detail .meta-row .kit-color-label", {
           hasText: "triage",
         }),
       ).toBeVisible();

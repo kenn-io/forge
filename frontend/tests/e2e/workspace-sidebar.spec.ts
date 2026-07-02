@@ -3402,7 +3402,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
         .locator(".workspace-list-sidebar .ws-row", {
           hasText: "feature/busy",
         })
-        .locator(".diff-stats"),
+        .locator(".kit-diff-stats"),
     ).toHaveCount(1);
 
     const bubbles = page.locator(".workspace-list-sidebar .ws-row .item-bubble");

@@ -9,7 +9,7 @@
   import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
   import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
   import DiffRichPreview from "./DiffRichPreview.svelte";
-  import DiffStats from "../shared/DiffStats.svelte";
+  import { DiffStats } from "@kenn-io/kit-ui";
   import {
     reviewThreadTargetLine,
     reviewThreadTargetSide,

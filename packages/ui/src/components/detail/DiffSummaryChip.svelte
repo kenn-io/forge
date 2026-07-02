@@ -4,7 +4,7 @@
     summarizeDiffFiles,
     type DiffLineSummary,
   } from "./diff-summary.js";
-  import DiffStats from "../shared/DiffStats.svelte";
+  import { DiffStats } from "@kenn-io/kit-ui";
 
   interface Props {
     additions: number;

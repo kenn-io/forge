@@ -14,7 +14,7 @@
   import CircleCheckBigIcon from "@lucide/svelte/icons/circle-check-big";
   import OctagonXIcon from "@lucide/svelte/icons/octagon-x";
   import { Chip } from "@kenn-io/kit-ui";
-  import GitHubLabels from "../shared/GitHubLabels.svelte";
+  import { ColorLabel } from "@kenn-io/kit-ui";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
 
   const { pulls } = getStores();
@@ -171,7 +171,14 @@
     {pr.Title}
   </p>
   {#if labels.length > 0}
-    <GitHubLabels {labels} mode="compact" />
+    <span class="labels-row">
+      {#each labels.slice(0, 2) as label (label.name)}
+        <ColorLabel size="sm" name={label.name} color={label.color} />
+      {/each}
+      {#if labels.length > 2}
+        <span class="label-more">+{labels.length - 2}</span>
+      {/if}
+    </span>
   {/if}
   {#if showRepo}
     <div class="repo-row">
@@ -573,5 +580,22 @@
     border-radius: 999px;
     font-size: var(--font-size-xs);
     line-height: 1.25;
+  }
+  .labels-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .labels-row :global(.kit-color-label) {
+    max-width: 120px;
+  }
+
+  .label-more {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-2xs);
   }
 </style>

@@ -166,7 +166,7 @@ test.describe("repository summaries", () => {
     });
     await expect(page.locator(".issue-detail")).toContainText("Repo overview follow-up");
     await expect(
-      page.locator(".issue-detail .label-pill", {
+      page.locator(".issue-detail .kit-color-label", {
         hasText: "created-from-repos",
       }),
     ).toBeVisible();

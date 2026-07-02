@@ -95,6 +95,10 @@ PR timeline storage is intentionally selective.
 - Optional timeline fetch failures may degrade that event family, but should not
   drop the entire PR detail refresh when the rest of the detail payload is still
   usable.
+- When an optional timeline fetch fails after earlier timeline data was stored,
+  derived `last_activity_at` must still preserve the latest stored non-comment
+  event time. A transient failure must not make an already-observed force push,
+  review, commit, or other PR system event stop driving dashboard freshness.
 
 ## SHA-Sensitive Rules
 

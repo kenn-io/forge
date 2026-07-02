@@ -18,8 +18,11 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 
 ## Sources of truth
 
-- Tokens: `frontend/src/app.css`
-- Shared primitives: `packages/ui/src/components/shared/` and
+- Tokens: `@kenn-io/kit-ui/theme.css` (imported at the top of
+  `frontend/src/app.css`) plus the middleman-specific tokens `app.css`
+  defines on top (chrome, budget, kanban, review, verdict, diff, mermaid)
+- Shared primitives: `@kenn-io/kit-ui` first; app-specific compositions live
+  in `packages/ui/src/components/shared/` and
   `frontend/src/lib/components/shared/`
 - Diff/file-tree adapters: `packages/ui/src/components/diff/PierreFileDiff.svelte`
   and `packages/ui/src/components/diff/PierreFileTree.svelte`
@@ -28,6 +31,33 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 - Interaction contracts: `context/ui-interaction-contracts.md`
 - Mobile UX principles: `context/mobile-ux.md`
 - This guidance: `context/ui-design-system.md`
+
+## kit-ui contract
+
+middleman consumes `@kenn-io/kit-ui` as source from the sibling `../kit-ui`
+checkout (see `docs/migration.md` and `docs/theming.md` in that repo). The
+parts middleman depends on as stable API:
+
+- Theme tokens from `theme.css`: `--bg-*`, `--text-*`, `--border-*`,
+  `--accent-*`, `--font-size-2xs…2xl`, `--font-size-root`, `--space-1…8`,
+  `--radius-*`, `--shadow-*`, `--overlay-bg`, `--focus-ring`,
+  `--transition-fast`, `--opacity-disabled`, `--header-height`,
+  `--status-bar-height`.
+- Type scale behavior: rem tokens that redefine themselves on
+  coarse-pointer devices; the `kit-type-touch` class on `<html>` forces the
+  touch scale (middleman sets it while phone presentation is active). Never
+  pin `html { font-size }`.
+- Media-query `rem` resolves against the browser initial font size (16px),
+  never the app root — breakpoints are written in px (kit-ui's shared
+  layout breakpoints are 640/760/900px).
+- Component class names (`.kit-chip`, `.kit-color-label`, …) are relied on
+  by parent `:global` styles and test selectors.
+- The dark/high-contrast mechanism: `dark` / `high-contrast` classes on
+  `<html>`.
+
+kit-ui component swaps must not keep local copies of replaced components;
+`kit-ui-check` (run with `--warn` during migration) tracks hand-rolled
+equivalents.
 
 ## Shared primitives
 

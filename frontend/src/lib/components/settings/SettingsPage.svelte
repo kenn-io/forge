@@ -437,7 +437,7 @@
   .state-msg { padding: 40px; text-align: center; color: var(--text-muted); font-size: var(--font-size-md); }
   .state-error { color: var(--accent-red); }
 
-  @media (max-width: 624px) {
+  @media (max-width: 768px) {
     .settings-nav-groups {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -466,7 +466,7 @@
     }
   }
 
-  @media (min-width: 624px) {
+  @media (min-width: 768px) {
     .settings-sidebar {
       padding: 12px 16px;
     }
@@ -476,7 +476,7 @@
     }
   }
 
-  @media (min-width: 832px) {
+  @media (min-width: 1024px) {
     .settings-shell {
       flex-direction: row;
     }
@@ -505,7 +505,7 @@
     }
   }
 
-  @media (min-width: 1040px) {
+  @media (min-width: 1280px) {
     .settings-sidebar {
       width: 320px;
       padding: 16px;

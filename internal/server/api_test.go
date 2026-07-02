@@ -2453,6 +2453,88 @@ func TestAPIGetPullBackfillsMergedActorBeforeDetailResponse(t *testing.T) {
 	assert.True(event.CreatedAt.Equal(mergedAt))
 }
 
+func TestAPIGetPullMergedActorBackfillDoesNotRepeatNoop(t *testing.T) {
+	tests := []struct {
+		name string
+		pr   func(number int, now, mergedAt time.Time) (*gh.PullRequest, error)
+	}{
+		{
+			name: "no merged actor",
+			pr: func(number int, now, mergedAt time.Time) (*gh.PullRequest, error) {
+				id := int64(1001)
+				sha := "abc123"
+				baseSHA := "def456"
+				headRef := "feature"
+				baseRef := "main"
+				state := "closed"
+				title := "Merged PR"
+				url := "https://github.com/acme/widget/pull/1"
+				updatedAt := gh.Timestamp{Time: mergedAt}
+				createdAt := gh.Timestamp{Time: now}
+				mergedAtTimestamp := gh.Timestamp{Time: mergedAt}
+				merged := true
+				return &gh.PullRequest{
+					ID:        &id,
+					Number:    &number,
+					State:     &state,
+					Title:     &title,
+					HTMLURL:   &url,
+					UpdatedAt: &updatedAt,
+					CreatedAt: &createdAt,
+					Merged:    &merged,
+					MergedAt:  &mergedAtTimestamp,
+					ClosedAt:  &mergedAtTimestamp,
+					Head:      &gh.PullRequestBranch{SHA: &sha, Ref: &headRef},
+					Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &baseRef},
+				}, nil
+			},
+		},
+		{
+			name: "provider error",
+			pr: func(_ int, _, _ time.Time) (*gh.PullRequest, error) {
+				return nil, errors.New("provider unavailable")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := t.Context()
+			now := time.Now().UTC().Truncate(time.Second)
+			mergedAt := now.Add(time.Minute)
+			var calls atomic.Int32
+			mock := &mockGH{
+				getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
+					calls.Add(1)
+					return tt.pr(number, now, mergedAt)
+				},
+			}
+
+			srv, database := setupTestServerWithMock(t, mock)
+			seedPR(t, database, "acme", "widget", 1,
+				withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
+			)
+			client := setupTestClient(t, srv)
+
+			first, err := client.HTTP.GetPullWithResponse(
+				ctx, "gh", "acme", "widget", 1,
+			)
+			require.NoError(err)
+			require.Equal(http.StatusOK, first.StatusCode(), string(first.Body))
+			assert.Equal(int32(1), calls.Load())
+
+			second, err := client.HTTP.GetPullWithResponse(
+				ctx, "gh", "acme", "widget", 1,
+			)
+			require.NoError(err)
+			require.Equal(http.StatusOK, second.StatusCode(), string(second.Body))
+			assert.Equal(int32(1), calls.Load())
+		})
+	}
+}
+
 func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 	tests := []struct {
 		name  string

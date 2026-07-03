@@ -6,6 +6,11 @@
 import DOMPurify, { type UponSanitizeElementHook, type UponSanitizeElementHookEvent } from "dompurify";
 // kit-ui-check-ignore: link/image renderer overrides exceed kit markdown hooks
 import { Marked, type MarkedExtension, type Tokens } from "marked";
+// escapeHtml is attribute-safe: it escapes double quotes (and ampersands/
+// angle brackets), so the interpolations below into double-quoted href/src/
+// alt/title/data-* attributes rely on that as a contract, not a nicety. If
+// the kit utility ever stopped escaping quotes, these become attribute
+// injection; markdown.test.ts pins the quote-bearing attribute cases.
 import { codeFenceLanguage, escapeHtml } from "@kenn-io/kit-ui/utils/markdown";
 import { providerItemRefExtension, type RepoContext } from "@middleman/ui/utils/markdown";
 import {

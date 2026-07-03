@@ -365,3 +365,43 @@ describe("mentions", () => {
     expect(html).not.toMatch(/kata-mention/);
   });
 });
+
+// The renderer interpolates user-controlled markdown values into
+// double-quoted HTML attributes (href/src/alt/title) via the kit-ui
+// escapeHtml utility. Quote escaping is a load-bearing contract there,
+// not a nicety: these tests pin it so a kit refactor that kept text
+// escaping but dropped quote escaping fails here instead of silently
+// reopening attribute injection.
+describe("attribute escaping", () => {
+  test("escapes double quotes in link titles", () => {
+    const html = renderDocsMarkdown(`[x](https://example.com "a \\"quoted\\" title")`, baseOptions);
+    expect(html).toContain("title=");
+    expect(html).toContain("&quot;quoted&quot;");
+    expect(html).not.toMatch(/title="a "/);
+  });
+
+  test("escapes double quotes in image alt and title", () => {
+    const html = renderDocsMarkdown(`![al"t" onerror="x](../assets/logo.png "ti\\"tle")`, baseOptions);
+    // The whole payload stays inside the alt value; the quote never closes it.
+    expect(html).toContain(`alt="al&quot;t&quot; onerror=&quot;x"`);
+    expect(html).toContain(`title="ti&quot;tle"`);
+    expect(html).not.toContain(`onerror="x"`);
+  });
+
+  test("escapes double quotes in image wikilink aliases used as alt text", () => {
+    const html = renderDocsMarkdown(`![[assets/logo.png|al"t" onerror="x]]`, baseOptions);
+    expect(html).toContain(`alt="al&quot;t&quot; onerror=&quot;x"`);
+    expect(html).not.toContain(`onerror="x"`);
+  });
+
+  test("escapes quotes flowing into href from unencoded blob URLs", () => {
+    // buildBlobURL/buildDocURL implementations are not required to
+    // URL-encode; the renderer must still neutralize quotes on output.
+    const options = {
+      ...baseOptions,
+      buildBlobURL: (folder: string, path: string) => `/blob/${folder}/${path}`,
+    };
+    const html = renderDocsMarkdown(`![x](<../assets/a"b.png>)`, options);
+    expect(html).toContain(`src="/blob/notes/assets/a&quot;b.png"`);
+  });
+});

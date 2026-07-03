@@ -85,7 +85,7 @@ export function buildRepoBrowserRoute(ref: RepoBrowserRouteRef): string {
   const params = new URLSearchParams();
   params.set("provider", requireRouteText(ref.provider, "provider"));
   if (ref.platformHost) params.set("platform_host", ref.platformHost);
-  params.set("repo_path", requireRouteText(ref.repoPath, "repoPath").replace(/^\/+|\/+$/g, ""));
+  params.set("repo_path", trimSlashes(requireRouteText(ref.repoPath, "repoPath")));
   if (ref.refType) params.set("ref_type", ref.refType);
   if (ref.refName) params.set("ref_name", ref.refName);
   if (ref.refSHA) params.set("ref_sha", ref.refSHA);
@@ -107,6 +107,17 @@ function requireRouteText(value: string, field: string): string {
     throw new Error(`missing route ${field}`);
   }
   return value;
+}
+
+// Linear-time trim: the equivalent /^\/+|\/+$/g regex is quadratic on
+// long slash runs (CodeQL js/polynomial-redos) for paths that flow in
+// from API data.
+function trimSlashes(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === "/") start++;
+  while (end > start && value[end - 1] === "/") end--;
+  return value.slice(start, end);
 }
 
 function providerRouteRef(ref: NumberedRouteItemRef): ProviderRouteRef & { number: number } {
@@ -131,7 +142,7 @@ function providerItemPath(kind: "pulls" | "issues", ref: ProviderRouteRef & { nu
 }
 
 function providerRouteParts(ref: ProviderRouteRef): ReturnType<typeof providerRouteParams> {
-  const repoPath = requireRouteText(ref.repoPath, "repoPath").replace(/^\/+|\/+$/g, "");
+  const repoPath = trimSlashes(requireRouteText(ref.repoPath, "repoPath"));
   const pathParts = repoPath.split("/").filter(Boolean);
   if (pathParts.length < 2) {
     throw new Error("missing route repoPath owner/name");

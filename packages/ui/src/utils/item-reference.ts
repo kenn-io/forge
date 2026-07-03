@@ -36,7 +36,6 @@ function providerHost(provider: string, platformHost: string | undefined): strin
 
 function encodeRepoPath(repoPath: string): string {
   return repoPath
-    .replace(/^\/+|\/+$/g, "")
     .split("/")
     .filter(Boolean)
     .map((part) => encodeURIComponent(part))

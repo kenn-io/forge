@@ -258,8 +258,15 @@
     {#if showReviewsDaemonIndicator}
       <!-- Lives here rather than on the Reviews tab: kit TopBarTab has no
            indicator affordance yet (kata kit-ui#b3zf); the dot must also
-           survive the tabs collapsing into the dropdown. -->
-      <span class="daemon-indicator" title="Daemon unavailable"></span>
+           survive the tabs collapsing into the dropdown. role="img" +
+           aria-label name it for AT since it is detached from the Reviews tab
+           and a bare title on a non-interactive span announces unreliably. -->
+      <span
+        class="daemon-indicator"
+        role="img"
+        aria-label="Reviews daemon unavailable"
+        title="Daemon unavailable"
+      ></span>
     {/if}
     <HeaderIconButton onclick={openPalette} title="Open command palette">
       <SearchIcon size="14" strokeWidth="1.75" aria-hidden="true" />

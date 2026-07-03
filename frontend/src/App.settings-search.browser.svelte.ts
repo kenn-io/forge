@@ -83,4 +83,29 @@ describe("settings sidebar search", () => {
       expect(document.querySelector(".kit-settings__nav-item--active")?.textContent).toContain("Terminal");
     }, WAIT);
   });
+
+  it("'Back to app' routes to an in-app view rather than browser history", async () => {
+    await page.viewport(1280, 900);
+    mounted = await mountBrowserApp("/settings");
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(7), WAIT);
+
+    // The fix's contract is that this control must not fall back to
+    // window.history.back(): on a direct or bookmarked /settings entry the
+    // previous history entry can be an unrelated site, so history.back() would
+    // navigate out of middleman. Asserting the resulting route alone is not a
+    // reliable guard here — the harness's leftover history can make back() land
+    // on "/" by coincidence — so stub back() (also keeps a regressed impl from
+    // navigating the test page away) and assert it is never reached.
+    const backSpy = vi.spyOn(window.history, "back").mockImplementation(() => {});
+    const back = document.querySelector<HTMLButtonElement>(".settings-page .back-button");
+    expect(back).not.toBeNull();
+    back!.click();
+    // backToApp runs synchronously on click, so this fails fast on a regression.
+    expect(backSpy).not.toHaveBeenCalled();
+
+    await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
+    expect(document.querySelector(".settings-page")).toBeNull();
+    expect(new URL(window.location.href).pathname).toBe("/");
+    backSpy.mockRestore();
+  });
 });

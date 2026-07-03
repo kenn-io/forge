@@ -129,13 +129,9 @@ func generatedContextIgnorePattern(rel string) (cleanPath, pattern string, err e
 		return "", "", fmt.Errorf("invalid generated context path: %s", rel)
 	}
 	clean := filepath.ToSlash(filepath.Clean(rel))
-	switch {
-	case clean == ".middleman" || strings.HasPrefix(clean, ".middleman/"):
-		return clean, "/.middleman/", nil
-	case clean == "AGENTS.local.md":
-		return clean, "/AGENTS.local.md", nil
-	case clean == "CLAUDE.local.md":
-		return clean, "/CLAUDE.local.md", nil
+	switch clean {
+	case "AGENTS.local.md", "CLAUDE.local.md":
+		return clean, "/" + clean, nil
 	default:
 		return "", "", fmt.Errorf("unknown generated context path: %s", clean)
 	}

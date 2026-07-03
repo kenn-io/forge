@@ -651,12 +651,9 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 	)))
 	assert.Equal(sourceSHA, headSHA)
 
-	contextPath := filepath.Join(ws.WorktreePath, canonicalAgentContextRelPath)
-	contextContent, err := os.ReadFile(contextPath)
-	require.NoError(err)
-	assert.Contains(string(contextContent), "Source kind: pull request")
-	assert.Contains(string(contextContent), "PR: #42")
-	assertGitIgnored(t, ws.WorktreePath, canonicalAgentContextRelPath)
+	// Agent context is launch-scoped: setup must not create agent files.
+	assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.local.md"))
+	assert.NoFileExists(filepath.Join(ws.WorktreePath, "CLAUDE.local.md"))
 	status := strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "status", "--porcelain")))
 	assert.Empty(status)
 }

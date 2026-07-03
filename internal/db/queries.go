@@ -5036,7 +5036,7 @@ const workspaceSummaryColumns = `
 	END,
 	m.is_draft, m.ci_status,
 	m.review_decision, m.additions, m.deletions,
-	m.comment_count, m.mergeable_state,
+	m.comment_count, m.mergeable_state, m.head_branch,
 	CASE
 	    WHEN w.item_type = 'issue' THEN i.last_activity_at
 	    ELSE m.last_activity_at
@@ -5076,6 +5076,7 @@ func scanWorkspaceSummary(
 		&s.MRIsDraft, &s.MRCIStatus,
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
 		&s.MRCommentCount, &s.MRMergeableState,
+		&s.MRHeadBranch,
 		&itemLastActivityAt,
 	)
 	if err != nil {

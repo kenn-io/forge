@@ -89,24 +89,18 @@ where needed.
 
 ## Agent Launch Context
 
-Workspace setup writes the canonical generated context file at
-`.middleman/agent-context.md`. The file identifies the workspace source item as
-a pull request, provider issue, or Kata task; includes the repo, branch, source
-URL, and known associated PR number; and quotes source-system text so task data
-is not presented as higher-priority agent instructions.
+Agent launch writes rendered workspace context to the target's local
+instruction file (`AGENTS.local.md` for Codex, `CLAUDE.local.md` for Claude).
+It does not write during setup or create a generated worktree directory.
 
-Before writing a generated context file, middleman ensures git ignores it via
-the worktree's private exclude file, never a tracked `.gitignore`. Ignore rules
-cover only the paths being generated in that call — never pre-existing
-user-owned local files — and the write fails if a path would still be visible.
-Middleman never ignores or overwrites root `AGENTS.md` or `CLAUDE.md`.
+The first-line marker owns refreshes: middleman updates only marked files.
+Unmarked files, symlinks, and root `AGENTS.md`/`CLAUDE.md` stay untouched. The
+content carries source identity (kind, repo, item number, URL, quoted title)
+and PR push target facts agents cannot read from the worktree.
 
-Agent-specific companion files are generated just in time when the user launches
-that target. The Codex target may create `AGENTS.local.md`; the Claude target
-may create `CLAUDE.local.md`. If either `.local.md` file already exists,
-middleman leaves it untouched and refreshes only `.middleman/agent-context.md`.
-Companion files are stable pointers to the canonical context so launch-time
-refresh updates the source facts without overwriting user-owned local files.
+Before writing, middleman ignores the generated path through the worktree's
+private exclude file, not tracked `.gitignore`. If the path would remain
+visible to Git, the write fails.
 
 ## Diff Scopes
 

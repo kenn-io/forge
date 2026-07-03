@@ -680,17 +680,6 @@ func (m *Manager) Setup(
 		)
 	}
 
-	if err := m.writeCanonicalAgentContext(ctx, ws.ID); err != nil {
-		if !reusedWorktree {
-			m.rollbackWorktree(ctx, gitDir, ws, branch)
-		}
-		return m.failSetup(
-			ctx,
-			ws.ID, workspaceSetupStageWorktree,
-			fmt.Errorf("write agent context: %w", err),
-		)
-	}
-
 	err = m.newTerminalSession(ctx, ws)
 	if err != nil {
 		if !reusedWorktree {

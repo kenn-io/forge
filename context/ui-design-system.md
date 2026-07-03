@@ -73,11 +73,14 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   `getStackDepth() > 0`. kit `Modal`'s `closable` gates only the header X.
 - Escape in overlay-hosted search: a non-empty kit `SearchInput` claims
   Escape to clear itself (stops propagation); an empty field lets it
-  bubble so the host closes (`UserListEditor.test.ts` pins the flow).
+  bubble so the hosting popover closes — every `SearchInput`-hosting
+  popover must handle that bubbled Escape (`UserListEditor.test.ts` pins
+  the flow).
 - Palette, Cheatsheet, and the image lightbox keep hand-rolled focus
-  traps: actions may move focus, which kit `trapFocus`'s
-  restore-on-teardown would undo. Dismissal does not restore pre-open
-  focus (the lightbox restores its own `restoreFocusTo`).
+  traps and own their focus restore (the state stores' close functions;
+  the lightbox's `restoreFocusTo`): close restores focus synchronously
+  before the picked action runs, so an action's own focus move wins. kit
+  `trapFocus` restores at unmount teardown, which would undo it.
 - jsdom lacks `offsetParent` / `scrollIntoView` / `ResizeObserver`:
   `test/setup.ts` stubs the latter two, focus-trap tests install
   `stubOffsetParent.ts`, and synthetic Tab only exercises kit's trap at
@@ -99,7 +102,8 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   `FlashBanner` mounts once per shell; stacking (not latest-wins) is
   intended. Tests assert `.kit-flash-stack`.
 
-`make frontend-check` gates `kit-ui-check` at zero findings. Suppress only
+`kit-ui-check` gates at zero findings in both `make frontend-check` and the
+Vite+ `frontend-check` task behind CI's `vp run -w check`. Suppress only
 with a per-line `kit-ui-check-ignore` (same line or the line above) that
 states a reason.
 

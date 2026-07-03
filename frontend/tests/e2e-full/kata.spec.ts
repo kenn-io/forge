@@ -3891,7 +3891,10 @@ test("message linking follows the daemon activated by a folder-bound docs link",
     const searchBox = page.getByPlaceholder("Search messages...");
     await expect(searchBox).toBeVisible();
     await searchBox.fill("project");
-    await page.getByRole("search", { name: "Search messages" }).getByRole("button", { name: "Search" }).click();
+    await page
+      .getByRole("search", { name: "Search messages" })
+      .getByRole("button", { name: "Search", exact: true })
+      .click();
     await page.getByRole("button", { name: /Project sync/ }).click();
     await expect(page.getByRole("heading", { name: "Project sync" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Link to task" })).toBeVisible();

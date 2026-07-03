@@ -44,7 +44,8 @@ test.describe("focus mode", () => {
     await expect(page.locator(".label-picker")).toBeVisible();
     await expect(page.locator(".actions-menu-popover")).toBeHidden();
     await expect(page.locator(".label-editor-backdrop")).toBeVisible();
-    await expect(page.locator(".label-editor-backdrop")).toHaveCSS("background-color", "rgba(128, 128, 128, 0.3)");
+    // --overlay-bg resolves to rgba(0,0,0,0.3) in the default light theme.
+    await expect(page.locator(".label-editor-backdrop")).toHaveCSS("background-color", "rgba(0, 0, 0, 0.3)");
 
     const pickerRect = await page.locator(".label-picker").boundingBox();
     const viewport = page.viewportSize();

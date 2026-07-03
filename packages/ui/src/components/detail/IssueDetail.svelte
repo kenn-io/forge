@@ -856,6 +856,17 @@
       }, 1500);
     });
   }
+
+  $effect(() => {
+    // The component is reused across item navigation; the copied feedback
+    // (and its pending reset timer) belongs to the item it was copied from.
+    void [provider, platformHost, owner, name, number];
+    if (bodyCopiedTimeout !== null) {
+      clearTimeout(bodyCopiedTimeout);
+      bodyCopiedTimeout = null;
+    }
+    bodyCopied = false;
+  });
 </script>
 
 <svelte:document onmousedown={onDocumentMousedown} />
@@ -962,7 +973,21 @@
                 <TagsIcon size="16" aria-hidden="true" />
               </Button>
               {#if labelPickerOpen}
-                <div class="label-editor-popover" style={labelPickerStyle} bind:this={labelPickerPopover}>
+                <!-- Escape precedence: a non-empty filter claims Escape to clear itself
+                     (kit SearchInput stops propagation); only an empty-field Escape
+                     bubbles here and dismisses the picker. -->
+                <div
+                  class="label-editor-popover"
+                  style={labelPickerStyle}
+                  bind:this={labelPickerPopover}
+                  role="presentation"
+                  onkeydown={(event) => {
+                    if (event.key === "Escape") {
+                      event.stopPropagation();
+                      closeLabelPicker();
+                    }
+                  }}
+                >
                   <LabelPicker
                     catalogLabels={labelCatalog}
                     selectedLabels={labels}

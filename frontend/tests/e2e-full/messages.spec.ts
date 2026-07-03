@@ -862,7 +862,10 @@ test("messages setup and search flow uses middleman against a controlled backend
     await expect(searchBox).toBeVisible();
     await expect(searchBox).toBeFocused();
     await searchBox.fill("project");
-    await page.getByRole("search", { name: "Search messages" }).getByRole("button", { name: "Search" }).click();
+    await page
+      .getByRole("search", { name: "Search messages" })
+      .getByRole("button", { name: "Search", exact: true })
+      .click();
 
     await expect(page).toHaveURL(/\/messages\?q=project$/);
     await expect(messageRow(page, 101)).toBeVisible();
@@ -1290,7 +1293,10 @@ test("messages list keyboard navigation selects the next row and updates the rou
     const searchBox = page.getByPlaceholder("Search messages...");
     await expect(searchBox).toBeVisible({ timeout: 8_000 });
     await searchBox.fill("deploy");
-    await page.getByRole("search", { name: "Search messages" }).getByRole("button", { name: "Search" }).click();
+    await page
+      .getByRole("search", { name: "Search messages" })
+      .getByRole("button", { name: "Search", exact: true })
+      .click();
 
     const rows = page.locator(".messages-list button.row");
     await expect(rows).toHaveCount(2, { timeout: 8_000 });
@@ -1390,7 +1396,10 @@ test("docs and messages keep local state while switching modes", async ({ page }
     const searchBox = page.getByPlaceholder("Search messages...");
     await expect(searchBox).toBeVisible();
     await searchBox.fill("project");
-    await page.getByRole("search", { name: "Search messages" }).getByRole("button", { name: "Search" }).click();
+    await page
+      .getByRole("search", { name: "Search messages" })
+      .getByRole("button", { name: "Search", exact: true })
+      .click();
     await expect(messageRow(page, 101)).toBeVisible();
 
     await appHeaderTab(page, "Docs").click();
@@ -1755,7 +1764,10 @@ test("messages hides task linking controls when no external Kata daemon is confi
     const searchBox = page.getByPlaceholder("Search messages...");
     await expect(searchBox).toBeVisible();
     await searchBox.fill("project");
-    await page.getByRole("search", { name: "Search messages" }).getByRole("button", { name: "Search" }).click();
+    await page
+      .getByRole("search", { name: "Search messages" })
+      .getByRole("button", { name: "Search", exact: true })
+      .click();
     await messageRow(page, 101).click();
     await expect(page.getByRole("heading", { name: "Project sync" })).toBeVisible();
 
@@ -1924,7 +1936,10 @@ test("message links a message to an external Kata task and refreshes linked mess
     const searchBox = page.getByPlaceholder("Search messages...");
     await expect(searchBox).toBeVisible();
     await searchBox.fill("project");
-    await page.getByRole("search", { name: "Search messages" }).getByRole("button", { name: "Search" }).click();
+    await page
+      .getByRole("search", { name: "Search messages" })
+      .getByRole("button", { name: "Search", exact: true })
+      .click();
     await messageRow(page, 101).click();
     await expect(page.getByRole("heading", { name: "Project sync" })).toBeVisible();
 

@@ -1403,6 +1403,17 @@
       }, 1500);
     });
   }
+
+  $effect(() => {
+    // The component is reused across item navigation; the copied feedback
+    // (and its pending reset timer) belongs to the item it was copied from.
+    void [provider, platformHost, owner, name, number];
+    if (bodyCopiedTimeout !== null) {
+      clearTimeout(bodyCopiedTimeout);
+      bodyCopiedTimeout = null;
+    }
+    bodyCopied = false;
+  });
 </script>
 
 <svelte:window onkeydown={onActionMenuKeydown} />
@@ -1748,7 +1759,21 @@
           {#if labelPickerLaunchedFromActionMenu}
             <div class="label-editor-backdrop" aria-hidden="true"></div>
           {/if}
-          <div class="label-editor-popover" style={labelPickerStyle} bind:this={labelPickerPopover}>
+          <!-- Escape precedence: a non-empty filter claims Escape to clear itself
+               (kit SearchInput stops propagation); only an empty-field Escape
+               bubbles here and dismisses the picker. -->
+          <div
+            class="label-editor-popover"
+            style={labelPickerStyle}
+            bind:this={labelPickerPopover}
+            role="presentation"
+            onkeydown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                closeLabelPicker();
+              }
+            }}
+          >
             <LabelPicker
               catalogLabels={labelCatalog}
               selectedLabels={labels}
@@ -3212,7 +3237,11 @@
       line-height: 1.35;
     }
 
-    @media (max-width: 640px) {
+    /* Phone-only touch bump: between 480px and the 640px mobile block the
+       copy-number button stays text-compact (the mid-narrow focus grid
+       depends on that); only true phone widths get the 44px hit target. */
+    /* kit-ui-check-ignore: intentional sub-tier inside the shared 640px block, not a layout breakpoint */
+    @media (max-width: 480px) {
       .pull-detail-content .meta-row :global(.copy-number-btn) {
         min-width: max(44px, var(--detail-mobile-hit-target));
         min-height: max(44px, var(--detail-mobile-hit-target));

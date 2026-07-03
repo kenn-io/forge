@@ -255,9 +255,9 @@ reach a daemon, with no out-of-band configuration:
   authorization boundary. With `[api] require_auth`, both the `/api/`
   routes and the `/ws/` terminal WebSocket routes demand
   `Authorization: Bearer <token>` or the session cookie that browsers
-  bootstrap once via the tokenized URL (`/?auth_token=...` → HttpOnly
-  cookie + redirect; browsers carry the cookie on the WebSocket
-  upgrade). `/healthz` and `/livez` stay exempt so supervisors can poll
+  bootstrap once via the single-use nonce link `middleman auth url`
+  prints (`/?auth_token=<nonce>` → HttpOnly cookie + redirect; browsers
+  carry the cookie on the WebSocket upgrade). `/healthz` and `/livez` stay exempt so supervisors can poll
   before reading the token file. The hub never forwards a caller's
   token or cookie to an HTTP peer, so a require_auth daemon cannot also
   serve as an HTTP peer — reach it as an SSH peer instead.

@@ -11,17 +11,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/middleman/internal/runtimelock"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
-func newAuthTestServer(t *testing.T, token string) *httptest.Server {
+// newAuthTestServer returns a gated test server plus the data_dir
+// holding its login nonce store; mint bootstrap nonces with
+// runtimelock.MintAuthNonce(dataDir).
+func newAuthTestServer(t *testing.T, token string) (*httptest.Server, string) {
 	t.Helper()
+	dataDir := t.TempDir()
 	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
 		APIAuthToken: token,
+		AuthDataDir:  dataDir,
 	})
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	return ts
+	return ts, dataDir
 }
 
 func authGet(
@@ -51,7 +57,7 @@ func authGet(
 func TestAPIAuthGatesAPIRoutes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	ts := newAuthTestServer(t, "secret-token")
+	ts, _ := newAuthTestServer(t, "secret-token")
 
 	resp := authGet(t, ts, "/api/v1/snapshot", nil)
 	require.Equal(http.StatusUnauthorized, resp.StatusCode)
@@ -81,7 +87,7 @@ func TestAPIAuthGatesAPIRoutes(t *testing.T) {
 // minimal server, but it is no longer a 401).
 func TestAPIAuthGatesTerminalWebSocketRoutes(t *testing.T) {
 	assert := assert.New(t)
-	ts := newAuthTestServer(t, "secret-token")
+	ts, _ := newAuthTestServer(t, "secret-token")
 
 	resp := authGet(t, ts, "/ws/v1/workspaces/ws-1/terminal", nil)
 	assert.Equal(http.StatusUnauthorized, resp.StatusCode,
@@ -100,7 +106,7 @@ func TestAPIAuthGatesTerminalWebSocketRoutes(t *testing.T) {
 // non-API paths (SPA assets) are not gated.
 func TestAPIAuthHealthAndAssetsStayOpen(t *testing.T) {
 	assert := assert.New(t)
-	ts := newAuthTestServer(t, "secret-token")
+	ts, _ := newAuthTestServer(t, "secret-token")
 
 	for _, path := range []string{"/healthz", "/livez"} {
 		resp := authGet(t, ts, path, nil)
@@ -109,18 +115,22 @@ func TestAPIAuthHealthAndAssetsStayOpen(t *testing.T) {
 }
 
 // TestAPIAuthCookieBootstrap pins the browser flow: loading any URL
-// with ?auth_token=<token> sets the session cookie and redirects to
-// the same URL without the token; the cookie then authorizes API
-// requests; a wrong bootstrap token is rejected outright.
+// with a minted single-use ?auth_token= nonce sets the session cookie
+// and redirects to the same URL without the credential; the cookie
+// then authorizes API requests. An unknown nonce, a reused nonce, and
+// — critically — the long-lived daemon token itself are all rejected:
+// the token must never work from a URL, where logs would capture it.
 func TestAPIAuthCookieBootstrap(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	ts := newAuthTestServer(t, "secret-token")
+	ts, dataDir := newAuthTestServer(t, "secret-token")
 
-	resp := authGet(t, ts, "/?auth_token=secret-token", nil)
+	nonce, err := runtimelock.MintAuthNonce(dataDir)
+	require.NoError(err)
+	resp := authGet(t, ts, "/?auth_token="+nonce, nil)
 	require.Equal(http.StatusSeeOther, resp.StatusCode)
 	assert.Equal("/", resp.Header.Get("Location"),
-		"token must be stripped from the redirect target")
+		"credential must be stripped from the redirect target")
 	cookies := resp.Cookies()
 	require.Len(cookies, 1)
 	assert.Equal("middleman_auth", cookies[0].Name)
@@ -132,9 +142,15 @@ func TestAPIAuthCookieBootstrap(t *testing.T) {
 	assert.Equal(http.StatusOK, resp.StatusCode,
 		"the bootstrap cookie authorizes API requests")
 
+	resp = authGet(t, ts, "/?auth_token="+nonce, nil)
+	assert.Equal(http.StatusForbidden, resp.StatusCode,
+		"a nonce is single-use")
 	resp = authGet(t, ts, "/?auth_token=wrong", nil)
 	assert.Equal(http.StatusForbidden, resp.StatusCode)
 	assert.Empty(resp.Cookies())
+	resp = authGet(t, ts, "/?auth_token=secret-token", nil)
+	assert.Equal(http.StatusForbidden, resp.StatusCode,
+		"the raw daemon token must not bootstrap from a URL")
 }
 
 // TestAuthBootstrapURLRoundTrip pins the glue between the CLI and the
@@ -147,20 +163,30 @@ func TestAuthBootstrapURLRoundTrip(t *testing.T) {
 		t.Run("basePath="+basePath, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
+			dataDir := t.TempDir()
 			srv := New(dbtest.Open(t), nil, nil, basePath, nil, ServerOptions{
 				APIAuthToken: "secret-token",
+				AuthDataDir:  dataDir,
 			})
 			ts := httptest.NewServer(srv)
 			t.Cleanup(ts.Close)
 
+			nonce, err := runtimelock.MintAuthNonce(dataDir)
+			require.NoError(err)
 			base := ts.URL + strings.TrimSuffix(basePath, "/")
-			bootstrap := AuthBootstrapURL(base, "secret-token")
+			bootstrap := AuthBootstrapURL(base, nonce)
 			resp := authGet(t, ts, strings.TrimPrefix(bootstrap, ts.URL), nil)
 			require.Equal(http.StatusSeeOther, resp.StatusCode)
 			assert.Equal(basePath, resp.Header.Get("Location"),
-				"token must be stripped from the redirect target")
+				"credential must be stripped from the redirect target")
 			cookies := resp.Cookies()
 			require.Len(cookies, 1)
+			wantPath := "/"
+			if basePath != "/" {
+				wantPath = strings.TrimSuffix(basePath, "/")
+			}
+			assert.Equal(wantPath, cookies[0].Path,
+				"the session cookie must not leak to sibling apps on the origin")
 
 			apiPath := strings.TrimSuffix(basePath, "/") + "/api/v1/snapshot"
 			resp = authGet(t, ts, apiPath, nil)
@@ -177,7 +203,7 @@ func TestAuthBootstrapURLRoundTrip(t *testing.T) {
 // TestAPIAuthDisabledByDefault pins the default: with no token
 // configured, behavior is unchanged and nothing is gated.
 func TestAPIAuthDisabledByDefault(t *testing.T) {
-	ts := newAuthTestServer(t, "")
+	ts, _ := newAuthTestServer(t, "")
 	resp := authGet(t, ts, "/api/v1/snapshot", nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
@@ -225,7 +251,7 @@ func authPostLogin(
 func TestAuthLoginSetsCookie(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	ts := newAuthTestServer(t, "secret-token")
+	ts, _ := newAuthTestServer(t, "secret-token")
 
 	resp := authPostLogin(t, ts, "/auth/login", `{"token":"secret-token"}`, nil)
 	require.Equal(http.StatusNoContent, resp.StatusCode)
@@ -250,7 +276,7 @@ func TestAuthLoginSetsCookie(t *testing.T) {
 // non-POST methods are all rejected, and a malformed body is a 400.
 func TestAuthLoginRejectsForgeableRequests(t *testing.T) {
 	assert := assert.New(t)
-	ts := newAuthTestServer(t, "secret-token")
+	ts, _ := newAuthTestServer(t, "secret-token")
 
 	resp := authPostLogin(t, ts, "/auth/login", `{"token":"secret-token"}`,
 		func(r *http.Request) {
@@ -289,6 +315,8 @@ func TestAuthLoginUnderBasePath(t *testing.T) {
 	)
 	require.Equal(http.StatusNoContent, resp.StatusCode)
 	require.Len(resp.Cookies(), 1)
+	assert.Equal("/middleman", resp.Cookies()[0].Path,
+		"the session cookie must not leak to sibling apps on the origin")
 
 	apiResp := authGet(t, ts, "/middleman/api/v1/snapshot",
 		func(r *http.Request) {
@@ -305,7 +333,7 @@ func TestAuthLogoutExpiresCookie(t *testing.T) {
 		t.Run("token="+token, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
-			ts := newAuthTestServer(t, token)
+			ts, _ := newAuthTestServer(t, token)
 
 			resp := authGet(t, ts, "/auth/logout", nil)
 			require.Equal(http.StatusSeeOther, resp.StatusCode)
@@ -331,4 +359,7 @@ func TestAuthLogoutUnderBasePath(t *testing.T) {
 	resp := authGet(t, ts, "/middleman/auth/logout", nil)
 	require.Equal(http.StatusSeeOther, resp.StatusCode)
 	assert.Equal("/middleman/", resp.Header.Get("Location"))
+	require.Len(resp.Cookies(), 1)
+	assert.Equal("/middleman", resp.Cookies()[0].Path,
+		"the deletion cookie path must match the session cookie or the browser keeps both")
 }

@@ -83,7 +83,7 @@ func NewStartupHandler(
 		hostOpts:     hostOpts,
 		allowedHosts: allowedHostsForListener(ln),
 		basePath:     basePath,
-		auth:         authGate{basePath: basePath, token: options.APIAuthToken},
+		auth:         newAuthGate(basePath, options),
 		spa:          spa,
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/runtimelock"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -115,10 +116,11 @@ func TestStartupHandlerServesAuthDuringStartup(t *testing.T) {
 		Port:     8091,
 		BasePath: "/",
 	}
+	dataDir := t.TempDir()
 	handler := NewStartupHandler(
 		frontend,
 		cfg,
-		ServerOptions{APIAuthToken: "secret-token"},
+		ServerOptions{APIAuthToken: "secret-token", AuthDataDir: dataDir},
 		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
 	)
 	do := func(req *http.Request) *httptest.ResponseRecorder {
@@ -129,7 +131,9 @@ func TestStartupHandlerServesAuthDuringStartup(t *testing.T) {
 		return rr
 	}
 
-	rr := do(httptest.NewRequest(http.MethodGet, "/?auth_token=secret-token", nil))
+	nonce, err := runtimelock.MintAuthNonce(dataDir)
+	require.NoError(err)
+	rr := do(httptest.NewRequest(http.MethodGet, "/?auth_token="+nonce, nil))
 	require.Equal(http.StatusSeeOther, rr.Code,
 		"the bootstrap link must not fall through to the SPA during startup")
 	assert.Equal("/", rr.Header().Get("Location"),
@@ -174,15 +178,18 @@ func TestStartupHandlerServesAuthUnderBasePath(t *testing.T) {
 		Port:     8091,
 		BasePath: "/middleman/",
 	}
+	dataDir := t.TempDir()
 	handler := NewStartupHandler(
 		fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte(`<html></html>`)}},
 		cfg,
-		ServerOptions{APIAuthToken: "secret-token"},
+		ServerOptions{APIAuthToken: "secret-token", AuthDataDir: dataDir},
 		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
 	)
 
+	nonce, err := runtimelock.MintAuthNonce(dataDir)
+	require.NoError(err)
 	target := strings.TrimPrefix(
-		AuthBootstrapURL("http://127.0.0.1:8091/middleman", "secret-token"),
+		AuthBootstrapURL("http://127.0.0.1:8091/middleman", nonce),
 		"http://127.0.0.1:8091",
 	)
 	req := httptest.NewRequest(http.MethodGet, target, nil)

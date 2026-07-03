@@ -58,6 +58,11 @@ func TestAuthURLBootstrapE2E(t *testing.T) {
 	require.NoError(err)
 	bootstrap := strings.TrimSpace(string(printed))
 	require.Contains(bootstrap, fmt.Sprintf("http://127.0.0.1:%d/", port))
+	token, err := runtimelock.ReadAuthToken(dataDir)
+	require.NoError(err)
+	require.NotEmpty(token)
+	assert.NotContains(bootstrap, token,
+		"the daemon token must never appear in the printed URL")
 
 	client := &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error {

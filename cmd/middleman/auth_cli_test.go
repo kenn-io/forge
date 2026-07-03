@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -75,7 +76,11 @@ func TestAuthTokenOutput(t *testing.T) {
 	require.Error(authTokenOutput(t.TempDir(), &out), "absent token is an error")
 }
 
+// TestAuthURLOutputWithBaseURL pins the credential shape of the printed
+// link: it carries a fresh single-use nonce the daemon can consume, and
+// never the long-lived token, which URL logs would capture.
 func TestAuthURLOutputWithBaseURL(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	token, err := runtimelock.EnsureAuthToken(dir)
@@ -85,7 +90,14 @@ func TestAuthURLOutputWithBaseURL(t *testing.T) {
 	require.NoError(authURLOutput(dir, "https://middleman.example.com/middleman/", &out))
 	got := strings.TrimSpace(out.String())
 	require.True(strings.HasPrefix(got, "https://middleman.example.com/middleman/?auth_token="), got)
-	require.Contains(got, token)
+	assert.NotContains(got, token,
+		"the daemon token must never appear in a URL")
+
+	parsed, err := url.Parse(got)
+	require.NoError(err)
+	nonce := parsed.Query().Get("auth_token")
+	assert.True(runtimelock.ConsumeAuthNonce(dir, nonce),
+		"the printed link must carry a consumable login nonce")
 }
 
 func TestAuthURLOutputNoDaemonNoBaseURL(t *testing.T) {

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"go.kenn.io/middleman/internal/runtimelock"
 )
 
 // API auth gates /api and /ws routes behind the daemon's bearer token
@@ -14,17 +16,19 @@ import (
 // minted under data_dir at serve start). Two credentials are
 // accepted: an `Authorization: Bearer <token>` header (CLI, native
 // thin clients, SSE over plain HTTP clients) and the session cookie a
-// browser obtains once by loading any page with `?auth_token=<token>`
-// — the tokenized URL recorded next to the runtime metadata. Health
-// probes (/healthz, /livez) stay open so supervisors can poll before
-// they have read the token file.
+// browser obtains either by POSTing the token to /auth/login or by
+// loading the single-use `?auth_token=<nonce>` link that
+// `middleman auth url` mints — the long-lived token itself never
+// appears in a URL, where proxy and access logs would capture it.
+// Health probes (/healthz, /livez) stay open so supervisors can poll
+// before they have read the token file.
 
 const authCookieName = "middleman_auth"
 
-// authBootstrapParam is the query parameter that converts a token
-// into a session cookie; it is stripped from the URL by redirect so
-// the token does not linger in the location bar or history beyond
-// the first load.
+// authBootstrapParam is the query parameter that carries the
+// single-use login nonce; it is stripped from the URL by redirect so
+// the credential does not linger in the location bar or history
+// beyond the first load.
 const authBootstrapParam = "auth_token"
 
 func tokenEqual(a, b string) bool {
@@ -42,6 +46,17 @@ type authGate struct {
 	// token is the enforced bearer token; empty means auth is off and
 	// only logout is active.
 	token string
+	// dataDir locates the single-use bootstrap nonce store shared
+	// with the auth CLI (runtimelock.MintAuthNonce).
+	dataDir string
+}
+
+func newAuthGate(basePath string, options ServerOptions) authGate {
+	return authGate{
+		basePath: basePath,
+		token:    options.APIAuthToken,
+		dataDir:  options.AuthDataDir,
+	}
 }
 
 // stripBasePath removes the configured base path prefix so /auth/*
@@ -53,31 +68,44 @@ func (g authGate) stripBasePath(path string) string {
 	return strings.TrimPrefix(path, strings.TrimSuffix(g.basePath, "/"))
 }
 
-func newAuthSessionCookie(token string) *http.Cookie {
+// cookiePath scopes the session cookie to the configured mount point,
+// so under a base path the cookie is not sent to sibling applications
+// on the same origin (its value doubles as the API bearer token).
+func (g authGate) cookiePath() string {
+	if g.basePath == "/" {
+		return "/"
+	}
+	return strings.TrimSuffix(g.basePath, "/")
+}
+
+func (g authGate) newSessionCookie() *http.Cookie {
 	return &http.Cookie{
 		Name:     authCookieName,
-		Value:    token,
-		Path:     "/",
+		Value:    g.token,
+		Path:     g.cookiePath(),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	}
 }
 
-// handleAuthBootstrap converts a valid ?auth_token= query into the
-// session cookie and redirects to the same URL without the parameter.
-// Returns true when it wrote a response (redirect or rejection).
+// handleAuthBootstrap consumes a valid single-use ?auth_token= login
+// nonce, sets the session cookie, and redirects to the same URL
+// without the parameter. Returns true when it wrote a response
+// (redirect or rejection).
 func (g authGate) handleAuthBootstrap(
 	w http.ResponseWriter, r *http.Request,
 ) bool {
-	token := r.URL.Query().Get(authBootstrapParam)
-	if token == "" {
+	nonce := r.URL.Query().Get(authBootstrapParam)
+	if nonce == "" {
 		return false
 	}
-	if !tokenEqual(token, g.token) {
-		http.Error(w, "invalid auth token", http.StatusForbidden)
+	if !runtimelock.ConsumeAuthNonce(g.dataDir, nonce) {
+		http.Error(w,
+			"invalid, expired, or already-used login link; run `middleman auth url` for a fresh one",
+			http.StatusForbidden)
 		return true
 	}
-	http.SetCookie(w, newAuthSessionCookie(token))
+	http.SetCookie(w, g.newSessionCookie())
 	redirect := *r.URL
 	query := redirect.Query()
 	query.Del(authBootstrapParam)
@@ -119,7 +147,7 @@ func (g authGate) handleLogin(w http.ResponseWriter, r *http.Request) bool {
 		http.Error(w, "invalid auth token", http.StatusForbidden)
 		return true
 	}
-	http.SetCookie(w, newAuthSessionCookie(g.token))
+	http.SetCookie(w, g.newSessionCookie())
 	w.WriteHeader(http.StatusNoContent)
 	return true
 }
@@ -162,10 +190,11 @@ func (g authGate) isGatedAPIRequest(r *http.Request) bool {
 	return strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws/")
 }
 
-// AuthBootstrapURL renders the tokenized URL a browser loads once to
-// obtain the session cookie.
-func AuthBootstrapURL(baseURL, token string) string {
-	return baseURL + "/?" + authBootstrapParam + "=" + url.QueryEscape(token)
+// AuthBootstrapURL renders the single-use login URL a browser loads
+// once to obtain the session cookie; nonce comes from
+// runtimelock.MintAuthNonce.
+func AuthBootstrapURL(baseURL, nonce string) string {
+	return baseURL + "/?" + authBootstrapParam + "=" + url.QueryEscape(nonce)
 }
 
 // handleLogout expires the session cookie and redirects to the base
@@ -180,7 +209,7 @@ func (g authGate) handleLogout(w http.ResponseWriter, r *http.Request) bool {
 	http.SetCookie(w, &http.Cookie{
 		Name:     authCookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     g.cookiePath(),
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,

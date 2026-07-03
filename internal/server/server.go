@@ -48,7 +48,11 @@ type ServerOptions struct {
 	// or session-cookie auth (see api_auth.go). Health probes stay
 	// open. Minted under data_dir by the serve entrypoint when
 	// [api].require_auth is set.
-	APIAuthToken                       string
+	APIAuthToken string
+	// AuthDataDir locates the single-use login nonce store the auth
+	// CLI mints into (<data_dir>/auth_nonces); required for the
+	// ?auth_token= bootstrap route when APIAuthToken is set.
+	AuthDataDir                        string
 	Clones                             *gitclone.Manager // optional clone manager for diff view
 	WorktreeDir                        string            // base dir for workspace worktrees
 	DisableWorkspaceBackgroundMonitors bool
@@ -689,7 +693,7 @@ func newServer(
 		bootCfgSnapshot:         snapshotStartupConfig(cfg),
 		runtimeStripEnvVars:     initialRuntimeStripEnvNames(cfg),
 		options:                 options,
-		auth:                    authGate{basePath: basePath, token: options.APIAuthToken},
+		auth:                    newAuthGate(basePath, options),
 		now:                     time.Now,
 		hub:                     NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		tmuxActivity:            newTmuxActivityTracker(nil),

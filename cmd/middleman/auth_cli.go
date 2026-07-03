@@ -87,6 +87,10 @@ func authTokenOutput(dataDir string, stdout io.Writer) error {
 	return err
 }
 
+// authURLOutput prints a login link carrying a fresh single-use nonce
+// (never the long-lived token, which proxy logs would capture from the
+// request URI). The daemon consumes the nonce from the shared data_dir
+// store, so the link works even during its startup window.
 func authURLOutput(dataDir, baseURLFlag string, stdout io.Writer) error {
 	token, err := runtimelock.ReadAuthToken(dataDir)
 	if err != nil {
@@ -106,7 +110,11 @@ func authURLOutput(dataDir, baseURLFlag string, stdout io.Writer) error {
 		}
 		base = defaultBaseURL(st.Metadata)
 	}
-	_, err = fmt.Fprintln(stdout, server.AuthBootstrapURL(base, token))
+	nonce, err := runtimelock.MintAuthNonce(dataDir)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, server.AuthBootstrapURL(base, nonce))
 	return err
 }
 

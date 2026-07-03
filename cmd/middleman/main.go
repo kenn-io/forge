@@ -429,7 +429,10 @@ func run(opts serve.Options) error {
 	// metadata is written above, so `middleman auth url` can hand out a
 	// bootstrap link before the full server swaps in.
 	startupHandler := server.NewStartupHandler(
-		assets, cfg, server.ServerOptions{APIAuthToken: enforcedToken}, ln,
+		assets, cfg, server.ServerOptions{
+			APIAuthToken: enforcedToken,
+			AuthDataDir:  cfg.DataDir,
+		}, ln,
 	)
 	switcher := server.NewSwitchHandler(startupHandler)
 	httpSrv := &http.Server{
@@ -579,6 +582,7 @@ func run(opts serve.Options) error {
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
 			APIAuthToken:        enforcedToken,
+			AuthDataDir:         cfg.DataDir,
 			WorktreeDir:         filepath.Join(cfg.DataDir, "worktrees"),
 			PtyOwnerManagerPath: os.Getenv("MIDDLEMAN_PTY_MANAGER"),
 			Telemetry:           telemetryReporter,

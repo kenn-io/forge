@@ -2679,8 +2679,8 @@
                   </button>
                 {/if}
               </div>
-              <button
-                class="header-btn header-icon-btn"
+              <!-- kit-ui-check-ignore: icon variant of the 22px header-btn rail; kit IconButton's 24px minimum breaks the rail rhythm -->
+              <button class="header-btn header-icon-btn"
                 disabled={actionsBlocked || refreshingWorkspace}
                 title="Refresh workspace details"
                 aria-label="Refresh workspace details"

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import { IconButton } from "@kenn-io/kit-ui";
   import LayoutPanelLeftIcon from "@lucide/svelte/icons/layout-panel-left";
   import LayoutPanelTopIcon from "@lucide/svelte/icons/layout-panel-top";
   import PlusIcon from "@lucide/svelte/icons/plus";
@@ -853,10 +854,8 @@
       {/if}
     </div>
     <div class="kata-header-actions">
-      <button
-        type="button"
-        class="icon-button"
-        aria-label={splitOrientation === "vertical" ? "Switch to side-by-side layout" : "Switch to stacked layout"}
+      <IconButton
+        ariaLabel={splitOrientation === "vertical" ? "Switch to side-by-side layout" : "Switch to stacked layout"}
         title={splitOrientation === "vertical"
           ? "Side-by-side (list left, detail right)"
           : "Stacked (list top, detail bottom)"}
@@ -867,7 +866,7 @@
         {:else}
           <LayoutPanelTopIcon size={15} strokeWidth={1.8} aria-hidden="true" />
         {/if}
-      </button>
+      </IconButton>
       <button type="button" class="accent-button header-action" onclick={() => { captureOpen = true; }}>
         <PlusIcon size={13} strokeWidth={1.9} aria-hidden="true" />
         <span>New task</span>
@@ -1073,27 +1072,6 @@
     align-items: center;
     gap: var(--space-2);
     white-space: nowrap;
-  }
-
-  .icon-button {
-    width: 28px;
-    height: 28px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    cursor: pointer;
-  }
-
-  .icon-button:hover,
-  .icon-button:focus-visible {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-    outline: none;
   }
 
   .kata-layout {

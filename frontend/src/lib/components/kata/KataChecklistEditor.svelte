@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IconButton } from "@kenn-io/kit-ui";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import XIcon from "@lucide/svelte/icons/x";
 
@@ -103,17 +104,18 @@
               />
               <span>{item.text}</span>
             </label>
-            <button
-              type="button"
-              class="icon-button"
-              aria-label={`Remove ${item.text}`}
+            <IconButton
+              size="sm"
+              tone="danger"
+              class="row-remove"
+              ariaLabel={`Remove ${item.text}`}
               disabled={checklistPending}
               onclick={() => {
                 void removeChecklistItem(item.id);
               }}
             >
               <XIcon size={13} strokeWidth={1.9} />
-            </button>
+            </IconButton>
           </div>
         {/each}
       </div>
@@ -207,28 +209,15 @@
     text-decoration: line-through;
   }
 
-  .icon-button {
-    width: 22px;
-    height: 22px;
-    border: 0;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--text-muted);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  /* The remove affordance stays hidden until its row is hovered or it
+     receives keyboard focus. */
+  .checklist-row :global(.row-remove) {
     opacity: 0;
-    cursor: pointer;
   }
 
-  .checklist-row:hover .icon-button,
-  .icon-button:focus-visible {
+  .checklist-row:hover :global(.row-remove),
+  .checklist-row :global(.row-remove:focus-visible) {
     opacity: 1;
-  }
-
-  .icon-button:hover {
-    background: var(--bg-hover);
-    color: var(--color-danger-fg, #991b1b);
   }
 
   .checklist-add {

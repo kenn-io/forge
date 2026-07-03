@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from "@kenn-io/kit-ui";
+  import { IconButton } from "@kenn-io/kit-ui";
   import { onDestroy, onMount, tick } from "svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import PencilIcon from "@lucide/svelte/icons/pencil";
@@ -168,47 +168,41 @@
   </div>
   <div class="draft-actions">
     {#if editing}
-      <Button
-        class="icon-btn"
-        title="Save draft comment"
-        ariaLabel="Save draft comment"
+      <IconButton
         size="sm"
+        tone="success"
+        ariaLabel="Save draft comment"
         onclick={() => void saveEdit()}
         disabled={saveDisabled}
       >
         <CheckIcon size={13} />
-      </Button>
-      <Button
-        class="icon-btn"
-        title="Cancel editing draft comment"
-        ariaLabel="Cancel editing draft comment"
+      </IconButton>
+      <IconButton
         size="sm"
+        ariaLabel="Cancel editing draft comment"
         onclick={cancelEdit}
         disabled={editDisabled}
       >
         <XIcon size={13} />
-      </Button>
+      </IconButton>
     {:else}
-      <Button
-        class="icon-btn"
-        title="Edit draft comment"
-        ariaLabel="Edit draft comment"
+      <IconButton
         size="sm"
+        ariaLabel="Edit draft comment"
         onclick={beginEdit}
         disabled={disabled}
       >
         <PencilIcon size={13} />
-      </Button>
-      <Button
-        class="icon-btn"
-        title="Delete draft comment"
-        ariaLabel="Delete draft comment"
+      </IconButton>
+      <IconButton
         size="sm"
+        tone="danger"
+        ariaLabel="Delete draft comment"
         onclick={() => ondelete(comment.id)}
         disabled={disabled}
       >
         <XIcon size={13} />
-      </Button>
+      </IconButton>
     {/if}
   </div>
 </div>
@@ -307,12 +301,5 @@
   .draft-actions {
     display: flex;
     gap: 4px;
-  }
-
-  :global(.icon-btn.kit-button) {
-    width: 26px;
-    height: 26px;
-    min-height: 26px;
-    padding: 0;
   }
 </style>

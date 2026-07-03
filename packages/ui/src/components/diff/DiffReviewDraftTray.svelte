@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from "@kenn-io/kit-ui";
+  import { Button, IconButton } from "@kenn-io/kit-ui";
   import SendIcon from "@lucide/svelte/icons/send";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import { getStores } from "../../context.js";
@@ -61,16 +61,15 @@
   <section class="draft-tray" aria-label="Draft review comments">
     <div class="tray-header">
       <strong>{comments.length} draft {comments.length === 1 ? "comment" : "comments"}</strong>
-      <Button
-        class="icon-btn"
-        title="Discard review draft"
-        ariaLabel="Discard review draft"
+      <IconButton
         size="sm"
+        tone="danger"
+        ariaLabel="Discard review draft"
         onclick={() => void diffReviewDraft.discard()}
         disabled={draftActionDisabled}
       >
         <TrashIcon size={14} />
-      </Button>
+      </IconButton>
     </div>
     <div class="draft-list">
       {#each comments as comment (comment.id)}

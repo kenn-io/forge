@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IconButton } from "@kenn-io/kit-ui";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
@@ -292,41 +293,39 @@
 
           <div class="row-actions">
             {#if draft.builtin && draft.expanded}
-              <button
-                class="icon-btn"
-                type="button"
+              <IconButton
+                size="sm"
                 title="Reset"
-                aria-label={`Reset ${agentName(draft)}`}
+                ariaLabel={`Reset ${agentName(draft)}`}
                 disabled={saving}
                 onclick={() => resetBuiltin(draft)}
               >
                 <RotateCcwIcon size="13" strokeWidth="2" aria-hidden="true" />
-              </button>
+              </IconButton>
             {:else if !draft.builtin && draft.expanded}
-              <button
-                class="icon-btn icon-btn--danger"
-                type="button"
+              <IconButton
+                size="sm"
+                tone="danger"
                 title="Remove"
-                aria-label={`Remove ${agentName(draft)}`}
+                ariaLabel={`Remove ${agentName(draft)}`}
                 disabled={saving}
                 onclick={() => removeCustomAgent(draft.id)}
               >
                 <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
-              </button>
+              </IconButton>
             {/if}
 
-            <button
-              class="icon-btn"
-              type="button"
+            <IconButton
+              size="sm"
               title={draft.expanded ? "Collapse" : "Edit"}
-              aria-label={`${draft.expanded ? "Collapse" : "Edit"} ${agentName(draft)}`}
+              ariaLabel={`${draft.expanded ? "Collapse" : "Edit"} ${agentName(draft)}`}
               disabled={saving}
               onclick={() => toggleExpanded(draft)}
             >
               <span class={["chevron-icon", draft.expanded && "chevron-icon--expanded"]}>
                 <ChevronRightIcon size="13" strokeWidth="2" aria-hidden="true" />
               </span>
-            </button>
+            </IconButton>
           </div>
         </div>
 
@@ -503,18 +502,6 @@
     gap: 6px;
   }
 
-  .icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    color: var(--text-muted);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-  }
-
   .chevron-icon {
     display: inline-flex;
     transition: transform 120ms ease-out;
@@ -522,16 +509,6 @@
 
   .chevron-icon--expanded {
     transform: rotate(90deg);
-  }
-
-  .icon-btn:hover:not(:disabled) {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
-  }
-
-  .icon-btn--danger:hover:not(:disabled) {
-    color: var(--accent-red);
-    border-color: color-mix(in srgb, var(--accent-red) 45%, var(--border-muted));
   }
 
   .settings-actions {
@@ -573,8 +550,7 @@
   }
 
   .save-btn:disabled,
-  .add-btn:disabled,
-  .icon-btn:disabled {
+  .add-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }

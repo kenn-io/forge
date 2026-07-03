@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IconButton } from "@kenn-io/kit-ui";
   import MoreHorizontalIcon from "@lucide/svelte/icons/more-horizontal";
   import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
   import Modal from "../shared/Modal.svelte";
@@ -89,18 +90,17 @@
 
 {#if hasAnyAction}
   <div class="overflow-host" bind:this={menuRoot} role="presentation">
-    <button
-      type="button"
-      class="icon-button overflow-trigger"
-      aria-label="More actions"
-      aria-haspopup="menu"
-      aria-expanded={menuOpen}
+    <IconButton
+      class="overflow-trigger"
+      ariaLabel="More actions"
+      ariaHaspopup="menu"
+      ariaExpanded={menuOpen}
       onclick={() => {
         menuOpen = !menuOpen;
       }}
     >
       <MoreHorizontalIcon size={14} strokeWidth={1.9} />
-    </button>
+    </IconButton>
     {#if menuOpen}
       <ul class="overflow-menu" role="menu" aria-label="Task actions">
         {#if canAddChecklist}
@@ -153,7 +153,6 @@
 </Modal>
 
 <style>
-  .icon-button,
   .ghost-button,
   .danger-button {
     display: inline-flex;
@@ -163,20 +162,6 @@
     border-radius: 6px;
     font-size: var(--font-size-sm);
     font-weight: 650;
-  }
-
-  .icon-button {
-    width: 28px;
-    height: 28px;
-    border: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-  }
-
-  .icon-button:hover {
-    border-color: var(--border-muted);
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
   }
 
   .ghost-button,

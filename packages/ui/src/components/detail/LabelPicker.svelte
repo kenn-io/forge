@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { SearchInput } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
   import EraserIcon from "@lucide/svelte/icons/eraser";
   import XIcon from "@lucide/svelte/icons/x";
@@ -37,11 +37,6 @@
   }: Props = $props();
 
   let query = $state("");
-  let filterInput: HTMLInputElement | undefined = $state();
-
-  onMount(() => {
-    if (autofocusFilter) filterInput?.focus();
-  });
 
   const selectedNames = $derived(new Set(selectedLabels.map((label) => label.name)));
   const filteredLabels = $derived.by(() => {
@@ -98,16 +93,15 @@
     </div>
   </div>
 
-  <label class="label-picker__filter">
-    <span class="kit-sr-only">Filter labels</span>
-    <input
-      bind:this={filterInput}
+  <div class="label-picker__filter">
+    <SearchInput
       bind:value={query}
-      type="search"
+      block
+      autofocus={autofocusFilter}
       placeholder="Filter labels"
-      aria-label="Filter labels"
+      ariaLabel="Filter labels"
     />
-  </label>
+  </div>
 
   {#if error}
     <div class="label-picker__error" role="alert">{error}</div>
@@ -222,25 +216,6 @@
     display: block;
     padding: 8px;
     border-bottom: 1px solid var(--border-muted);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .label-picker__filter input {
-    width: 100%;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    background: var(--bg-inset);
-    color: var(--text-primary);
-    padding: 6px 9px;
-    font: inherit;
-    min-height: 32px;
-    outline: none;
-  }
-
-  .label-picker__filter input:focus {
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 18%, transparent);
   }
 
   .label-picker__error {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { SearchInput } from "@kenn-io/kit-ui";
   import { SelectDropdown } from "@middleman/ui";
   import type { MessagesCapabilities, MessagesSearchMode } from "../../api/messages/types";
 
@@ -50,15 +51,16 @@
 </script>
 
 <form role="search" aria-label="Search messages" onsubmit={handleSubmit}>
-  <label class="kit-sr-only" for="messages-search-input">Search messages</label>
-  <input
-    id="messages-search-input"
-    type="search"
-    name="q"
-    bind:value={query}
-    placeholder="Search messages..."
-    autocomplete="off"
-  />
+  <div class="search-wrap">
+    <SearchInput
+      id="messages-search-input"
+      name="q"
+      bind:value={query}
+      block
+      placeholder="Search messages..."
+      ariaLabel="Search messages"
+    />
+  </div>
   <SelectDropdown
     class="mode-dropdown"
     title="Search mode"
@@ -80,20 +82,9 @@
     width: 100%;
   }
 
-  input[type="search"] {
+  .search-wrap {
     flex: 1;
     min-width: 0;
-    padding: 5px 8px;
-    border: 1px solid var(--border-default);
-    border-radius: 4px;
-    background: var(--bg-inset);
-    color: var(--text-primary);
-    font-size: var(--font-size-md);
-  }
-
-  input[type="search"]:focus {
-    outline: 2px solid var(--accent-blue);
-    outline-offset: -1px;
   }
 
   :global(.mode-dropdown) {

@@ -1411,7 +1411,7 @@
     padding: var(--mobile-chrome-space-sm);
   }
 
-  .mobile-main :global(.search-input) {
+  .mobile-main :global(.kit-search-input) {
     min-height: var(--mobile-chrome-hit-target);
   }
 

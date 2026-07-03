@@ -295,7 +295,7 @@ test.describe.serial("Roborev", () => {
       await waitForJobRows(page, 10);
 
       // Use exact ref for job 73 (aa000049 = hex 0x49)
-      await page.locator(".filter-bar .search-input").fill("aa000049");
+      await page.locator(".filter-bar .search-wrap input").fill("aa000049");
 
       // Wait atomically for the filter to settle: at least one row
       // with a matching ref AND no rows with a non-matching ref.

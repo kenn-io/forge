@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmptyState, SegmentedControl, Spinner } from "@kenn-io/kit-ui";
+  import { EmptyState, SearchInput, SegmentedControl, Spinner } from "@kenn-io/kit-ui";
   import { onMount, onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
   import {
@@ -183,8 +183,7 @@
     { value: "90d", label: "90d" },
   ];
 
-  function handleSearchInput(e: Event): void {
-    const val = (e.target as HTMLInputElement).value;
+  function handleSearchInput(val: string): void {
     searchInput = val;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
@@ -611,13 +610,16 @@
       </button>
     {/if}
 
-    <input
-      class="search-input"
-      type="text"
-      placeholder="Search..."
-      value={searchInput}
-      oninput={handleSearchInput}
-    />
+    <div class="search-wrap">
+      <SearchInput
+        bind:value={searchInput}
+        size="sm"
+        block
+        placeholder="Search..."
+        ariaLabel="Search activity"
+        oninput={handleSearchInput}
+      />
+    </div>
   </div>
 
   {#if activity.getActivityError()}
@@ -955,11 +957,9 @@
     gap: 8px;
   }
 
-  .search-input {
+  .search-wrap {
     margin-left: auto;
     width: 180px;
-    font-size: var(--font-size-sm);
-    padding: 4px 8px;
   }
 
   .collapse-all-btn {
@@ -999,7 +999,7 @@
     min-width: 0;
   }
 
-  .activity-feed--compact .search-input {
+  .activity-feed--compact .search-wrap {
     order: 1;
     flex: 1 0 100%;
     width: 100%;

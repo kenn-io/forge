@@ -123,7 +123,7 @@ test.describe("activity feed filters", () => {
   });
 
   test("search filters by title", async ({ page }) => {
-    const input = page.locator(".search-input");
+    const input = page.locator(".search-wrap input");
     await input.fill("caching layer");
 
     // Wait for the server-side search to actually apply. Notifications now

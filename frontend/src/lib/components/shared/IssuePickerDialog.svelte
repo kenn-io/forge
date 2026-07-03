@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { IssueSummary, KataAPI, IssueFilters, SearchScope } from "../../messages/types";
+  import { SearchInput } from "@kenn-io/kit-ui";
   import Modal from "./Modal.svelte";
 
   interface Props {
@@ -116,15 +117,15 @@
 
 <Modal {open} title="Link to task" {onClose}>
   <div class="picker">
-    <label class="picker-field">
+    <div class="picker-field">
       <span>Search tasks</span>
-      <input
-        type="search"
+      <SearchInput
         bind:value={query}
+        block
         placeholder="Title or qualified ID..."
-        autocomplete="off"
+        ariaLabel="Search tasks"
       />
-    </label>
+    </div>
     {#if loading}
       <div class="picker-state">Searching...</div>
     {:else if visible.length === 0}
@@ -190,20 +191,6 @@
     letter-spacing: 0.05em;
   }
 
-  .picker-field input {
-    width: 100%;
-    padding: 6px 8px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-  }
-
-  .picker-field input:focus {
-    outline: 2px solid var(--accent-blue);
-    outline-offset: -1px;
-  }
 
   .picker-state {
     padding: 8px 10px;

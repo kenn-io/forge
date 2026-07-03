@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SearchInput } from "@kenn-io/kit-ui";
   import { getStores, getRoborevClient } from "../../context.js";
   import type { components } from "../../api/roborev/generated/schema.js";
 
@@ -151,12 +152,15 @@
 
   {#if open}
     <div class="dropdown">
-      <input
-        class="search-input"
-        type="text"
-        placeholder="Filter repos..."
-        bind:value={search}
-      />
+      <div class="search-wrap">
+        <SearchInput
+          bind:value={search}
+          size="sm"
+          block
+          placeholder="Filter repos..."
+          ariaLabel="Filter repos"
+        />
+      </div>
       <div class="dropdown-list">
         <button
           class="dropdown-item"
@@ -272,19 +276,10 @@
     box-shadow: var(--shadow-md);
   }
 
-  .search-input {
-    padding: 6px 10px;
-    border: none;
+  .search-wrap {
+    padding: 4px;
     border-bottom: 1px solid var(--border-muted);
-    background: transparent;
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    outline: none;
     flex-shrink: 0;
-  }
-
-  .search-input::placeholder {
-    color: var(--text-muted);
   }
 
   .dropdown-list {

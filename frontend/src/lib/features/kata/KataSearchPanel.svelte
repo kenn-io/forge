@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SearchIcon from "@lucide/svelte/icons/search";
+  import { SearchInput } from "@kenn-io/kit-ui";
   import { SelectDropdown } from "@middleman/ui";
 
   import type {
@@ -62,18 +62,16 @@
 
 <section class="kata-search-panel" aria-label="Search and filters">
   <div class="kata-search-toolbar">
-    <label class="search-field">
-      <SearchIcon size={13} strokeWidth={1.9} aria-hidden="true" />
-      <span class="kit-sr-only">Search tasks</span>
-      <input
-        aria-label="Search tasks"
-        type="search"
+    <div class="query-field">
+      <SearchInput
         value={draft.query}
+        size="sm"
+        block
         placeholder="Search tasks..."
-        autocomplete="off"
-        oninput={(event) => emit({ query: inputValue(event) })}
+        ariaLabel="Search tasks"
+        oninput={(query) => emit({ query })}
       />
-    </label>
+    </div>
 
     <div class="filter-control filter-control-project">
       <span class="kit-sr-only">Project scope</span>
@@ -153,18 +151,9 @@
     min-width: 0;
   }
 
-  .search-field {
+  .query-field {
     flex: 1;
     min-width: 150px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 28px;
-    padding: 0 8px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    background: var(--bg-primary);
-    color: var(--text-muted);
   }
 
   .filter-control {
@@ -189,18 +178,6 @@
   input:focus {
     outline: 2px solid var(--accent-blue);
     outline-offset: -1px;
-  }
-
-  .search-field input {
-    flex: 1;
-    height: 100%;
-    border: 0;
-    background: transparent;
-    padding: 0;
-  }
-
-  .search-field input:focus {
-    outline: 0;
   }
 
   .filter-control-project :global(.typeahead) {
@@ -269,7 +246,7 @@
       flex-wrap: wrap;
     }
 
-    .search-field {
+    .query-field {
       flex: 1 0 100%;
     }
 

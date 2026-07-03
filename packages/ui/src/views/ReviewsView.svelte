@@ -188,7 +188,7 @@
         if (!drawerOpen && !daemonDown) {
           e.preventDefault();
           const searchInput = document.querySelector(
-            ".filter-bar .search-input",
+            ".filter-bar .kit-search-input input",
           ) as HTMLElement | null;
           searchInput?.focus();
         }

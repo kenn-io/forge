@@ -24,7 +24,7 @@ async function expectReadableFocusList(page: Page, itemSelector: string): Promis
     const item = document.querySelector(selector);
     const title = item?.querySelector(".title") ?? null;
     const meta = item?.querySelector(".meta-left") ?? null;
-    const search = document.querySelector(".focus-list .search-input");
+    const search = document.querySelector(".focus-list .kit-search-input");
     const stateButton = document.querySelector(".focus-list .state-btn");
     const focusList = document.querySelector(".focus-list");
     const tokenValue = (node: Element | null, name: string): string =>
@@ -131,7 +131,7 @@ test.describe("phone routes", () => {
     await expect(page.locator("footer")).toHaveCount(0);
 
     const metrics = await page.evaluate(() => {
-      const search = document.querySelector(".search-input");
+      const search = document.querySelector(".kit-search-input");
       const rect = search?.getBoundingClientRect();
       return {
         viewportWidth: window.innerWidth,
@@ -177,7 +177,7 @@ test.describe("phone routes", () => {
       const typeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Activity type']");
       const rangeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Time range']");
       const repoSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Repository']");
-      const search = document.querySelector(".search-input");
+      const search = document.querySelector(".kit-search-input");
       const cardRect = firstCard?.getBoundingClientRect();
       const buttonRect = firstButton?.getBoundingClientRect();
       const searchRect = search?.getBoundingClientRect();
@@ -507,7 +507,7 @@ test.describe("high-density phone routes", () => {
       ]
         .map((control) => control.getBoundingClientRect())
         .map((rect) => ({ left: rect.left, right: rect.right }));
-      const search = document.querySelector(".search-input")?.getBoundingClientRect();
+      const search = document.querySelector(".kit-search-input")?.getBoundingClientRect();
       const firstOption = document
         .querySelector(".mobile-filter-dropdown .kit-select-dropdown__option")
         ?.getBoundingClientRect();

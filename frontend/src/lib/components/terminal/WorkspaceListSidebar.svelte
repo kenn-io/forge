@@ -1,12 +1,11 @@
 <script lang="ts">
-  import { copyToClipboard } from "@kenn-io/kit-ui";
+  import { copyToClipboard, SearchInput } from "@kenn-io/kit-ui";
   import { onMount, tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
-  import SearchIcon from "@lucide/svelte/icons/search";
   import { apiErrorMessage, client } from "../../api/runtime.js";
   import { showFlash } from "@middleman/ui/stores/flash";
   import type { components } from "@middleman/ui/api/schema";
@@ -494,10 +493,8 @@
       : `Open PR #${ws.item_number}`;
   }
 
-  function updateSearch(event: Event): void {
-    searchQuery = event.currentTarget instanceof HTMLInputElement
-      ? event.currentTarget.value
-      : "";
+  function updateSearch(value: string): void {
+    searchQuery = value;
   }
 
   function workspaceMatchesSearch(
@@ -1004,21 +1001,16 @@
       />
     {/if}
   </div>
-  <label class="workspace-filter">
-    <SearchIcon
-      class="workspace-filter-icon"
-      size="13"
-      strokeWidth="2.25"
-      aria-hidden="true"
-    />
-    <input
-      type="search"
+  <div class="workspace-filter">
+    <SearchInput
       value={searchQuery}
+      size="sm"
+      block
       placeholder="Filter workspaces"
-      aria-label="Filter workspaces"
+      ariaLabel="Filter workspaces"
       oninput={updateSearch}
     />
-  </label>
+  </div>
   {#if showFleetStatus}
     <section class="fleet-status" aria-label="Fleet hosts">
       <div class="fleet-status-heading">
@@ -1469,16 +1461,7 @@
   }
 
   .workspace-filter {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 28px;
     margin: 6px 8px 4px;
-    padding: 0 8px;
-    border: 1px solid var(--border-muted);
-    border-radius: 6px;
-    background: var(--bg-surface);
-    color: var(--text-muted);
     flex-shrink: 0;
   }
 
@@ -1500,32 +1483,6 @@
 
   .workspace-sort :global(.kit-filter-dropdown__btn:hover:not(:disabled)) {
     border-color: var(--border-muted);
-  }
-
-  :global(.workspace-filter-icon) {
-    flex-shrink: 0;
-  }
-
-  .workspace-filter input {
-    width: 100%;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    line-height: 1;
-  }
-
-  .workspace-filter input::placeholder {
-    color: var(--text-muted);
-    opacity: 0.8;
-  }
-
-  .workspace-filter:focus-within {
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 1px var(--accent-blue);
   }
 
   .fleet-status {

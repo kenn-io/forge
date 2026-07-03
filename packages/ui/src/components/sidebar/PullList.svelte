@@ -3,7 +3,7 @@
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import PullItem from "./PullItem.svelte";
-  import { Chip } from "@kenn-io/kit-ui";
+  import { Chip, SearchInput } from "@kenn-io/kit-ui";
   import { FilterDropdown } from "@kenn-io/kit-ui";
   import { SidebarToggle } from "@kenn-io/kit-ui";
   import type { KanbanStatus, PullRequest } from "../../api/types.js";
@@ -103,8 +103,7 @@
     };
   });
 
-  function onSearchInput(e: Event): void {
-    const value = (e.target as HTMLInputElement).value;
+  function onSearchInput(value: string): void {
     searchInput = value;
 
     if (debounceHandle !== null) clearTimeout(debounceHandle);
@@ -392,16 +391,13 @@
     {/if}
   </div>
   <div class="search-bar">
-    <div class="search-input-wrap">
-      <svg class="search-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5" />
-        <path d="M10 10L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-      </svg>
-      <input
-        class="search-input"
-        type="search"
+    <div class="search-wrap">
+      <SearchInput
+        bind:value={searchInput}
+        size="sm"
+        block
         placeholder="Search PRs..."
-        value={searchInput}
+        ariaLabel="Search PRs"
         oninput={onSearchInput}
       />
     </div>
@@ -557,35 +553,9 @@
     background: var(--bg-surface);
   }
 
-  .search-input-wrap {
-    position: relative;
+  .search-wrap {
     flex: 1;
     min-width: 0;
-  }
-
-  .search-icon {
-    position: absolute;
-    left: 8px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 13px;
-    height: 13px;
-    color: var(--text-muted);
-    pointer-events: none;
-  }
-
-  .search-input {
-    width: 100%;
-    font-size: var(--font-size-sm);
-    padding: 5px 8px 5px 28px;
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-  }
-
-  .search-input:focus {
-    border-color: var(--accent-blue);
-    outline: none;
   }
 
   .star-filter-btn {

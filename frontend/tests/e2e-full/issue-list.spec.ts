@@ -124,7 +124,7 @@ test.describe("issue list view", () => {
   });
 
   test("search filters by title", async ({ page }) => {
-    const input = page.locator(".search-input");
+    const input = page.locator(".search-wrap input");
     await input.fill("Safari");
 
     // Wait for the filtered result to appear (replaces fixed sleep).

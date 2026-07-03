@@ -147,7 +147,7 @@ test.describe("PR list view", () => {
   });
 
   test("search filters PRs by title", async ({ page }) => {
-    const input = page.locator(".search-input");
+    const input = page.locator(".search-wrap input");
     await input.fill("caching");
 
     // Wait for the count badge to reflect filtered results. The

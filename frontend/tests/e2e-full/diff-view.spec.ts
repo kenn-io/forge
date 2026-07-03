@@ -3347,7 +3347,7 @@ test.describe("diff view", () => {
     await expect(treeFileItems(detailFiles)).toHaveCount(4);
 
     // Filter the sidebar to exclude PR 1 by searching for a different PR.
-    await page.locator(".search-input").fill("race");
+    await page.locator(".search-wrap input").fill("race");
     await expect(page.locator(".list-count-chip")).toHaveText(/^1 PRs?$/, {
       timeout: 5_000,
     });

@@ -8,7 +8,7 @@
     type TimeRange,
   } from "../stores/activity.svelte.js";
   import { parseAPITimestamp } from "../utils/time.js";
-  import { Chip } from "@kenn-io/kit-ui";
+  import { Chip, SearchInput } from "@kenn-io/kit-ui";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
   import { SelectDropdown } from "@kenn-io/kit-ui";
@@ -232,10 +232,7 @@
     grouping.setHideOrgName(!grouping.getHideOrgName());
   }
 
-  function handleSearchInput(event: Event): void {
-    const value = event.currentTarget instanceof HTMLInputElement
-      ? event.currentTarget.value
-      : "";
+  function handleSearchInput(value: string): void {
     searchInput = value;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
@@ -368,16 +365,15 @@
       <h1>What needs attention?</h1>
     </header>
 
-    <label class="mobile-activity-search">
-      <span aria-hidden="true">⌕</span>
-      <input
-        class="search-input"
-        type="search"
+    <div class="mobile-activity-search">
+      <SearchInput
+        bind:value={searchInput}
+        block
         placeholder="Search issues, PRs, authors"
-        value={searchInput}
+        ariaLabel="Search issues, PRs, authors"
         oninput={handleSearchInput}
       />
-    </label>
+    </div>
 
     <div class="mobile-activity-filter-grid" aria-label="Activity filters">
       <div class="mobile-filter-select">
@@ -596,31 +592,13 @@
   }
 
   .mobile-activity-search {
-    min-height: calc(var(--mobile-hit-target) + var(--mobile-space-xs));
-    display: flex;
-    align-items: center;
-    gap: var(--mobile-space-sm);
-    padding: 0 var(--mobile-space-md);
-    border: thin solid var(--border-default);
-    border-radius: var(--radius-lg);
-    background: var(--bg-inset);
-    color: var(--text-muted);
     margin-bottom: var(--mobile-space-sm);
   }
 
-  .mobile-activity-search .search-input {
-    flex: 1;
-    min-width: 0;
-    width: 100%;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--text-primary);
+  .mobile-activity-search :global(.kit-search-input) {
+    min-height: calc(var(--mobile-hit-target) + var(--mobile-space-xs));
+    border-radius: var(--radius-lg);
     font-size: var(--font-size-md);
-  }
-
-  .mobile-activity-search .search-input::placeholder {
-    color: var(--text-muted);
   }
 
   .mobile-activity-filter-grid {

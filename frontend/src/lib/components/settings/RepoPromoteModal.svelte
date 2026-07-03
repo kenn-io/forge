@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmptyState, Spinner } from "@kenn-io/kit-ui";
+  import { EmptyState, SearchInput, Spinner } from "@kenn-io/kit-ui";
   import { tick, untrack } from "svelte";
   import type { ConfigRepo, Settings } from "@middleman/ui/api/types";
   import Modal from "../shared/Modal.svelte";
@@ -30,7 +30,10 @@
   let error = $state<string | null>(null);
   let requestToken = 0;
   let loadedRepoKey: string | null = null;
-  let searchInput = $state<HTMLInputElement | null>(null);
+  // kit SearchInput's inputEl bindable is exactly-optional, which
+  // exactOptionalPropertyTypes rejects for a `| undefined` binding —
+  // resolve the inner input through the wrapper instead.
+  let searchWrap = $state<HTMLDivElement>();
 
   const filteredRows = $derived.by(() => {
     const query = filterText.trim().toLowerCase();
@@ -66,7 +69,7 @@
     const key = configRepoKey(target);
     if (loadedRepoKey === key) return;
     loadedRepoKey = key;
-    void tick().then(() => searchInput?.focus());
+    void tick().then(() => searchWrap?.querySelector("input")?.focus());
     untrack(() => { void loadMatches(target); });
   });
 
@@ -187,16 +190,16 @@
   <div class="promote-content">
     <p class="promote-subject">{repo?.repo_path || `${repo?.owner}/${repo?.name}`}</p>
 
-      <label class="search-field">
+      <div class="match-search" bind:this={searchWrap}>
         <span>Search matches</span>
-        <input
-          bind:this={searchInput}
-          value={filterText}
+        <SearchInput
+          bind:value={filterText}
+          block
           placeholder="Filter repositories..."
           disabled={submitting}
-          oninput={(event) => { filterText = event.currentTarget.value; }}
+          ariaLabel="Search matches"
         />
-      </label>
+      </div>
 
       {#if error}
         <div class="error-msg" role="alert">{error}</div>
@@ -304,7 +307,7 @@
     color: var(--text-muted);
     font-size: var(--font-size-sm);
   }
-  .search-field,
+  .match-search,
   .path-field {
     display: flex;
     flex-direction: column;
@@ -312,8 +315,7 @@
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
-  input[type="text"],
-  .search-field input {
+  input[type="text"] {
     min-width: 0;
     padding: 7px 10px;
     color: var(--text-primary);

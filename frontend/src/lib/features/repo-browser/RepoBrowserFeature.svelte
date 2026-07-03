@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SearchInput } from "@kenn-io/kit-ui";
   import { tick, untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
@@ -759,11 +760,12 @@
       style:width={`${Math.round(filesWidth)}px`}
     >
       <div class="repo-browser__filter">
-        <input
-          type="search"
-          placeholder="Filter files"
-          aria-label="Filter files"
+        <SearchInput
           bind:value={pathFilter}
+          size="sm"
+          block
+          placeholder="Filter files"
+          ariaLabel="Filter files"
         />
       </div>
       <div class="repo-browser__categories" aria-label="File category filters">
@@ -955,16 +957,6 @@
   .repo-browser__actions {
     gap: 8px;
     flex: 0 0 auto;
-  }
-
-  .repo-browser__filter input {
-    height: 30px;
-    border: thin solid var(--border-default);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    background: var(--bg-inset);
-    font: inherit;
-    font-size: var(--font-size-sm);
   }
 
   .repo-browser__icon-button {
@@ -1171,11 +1163,6 @@
 
   .repo-browser__filter {
     padding: 10px 10px 6px;
-  }
-
-  .repo-browser__filter input {
-    width: 100%;
-    padding: 0 9px;
   }
 
   .repo-browser__categories {

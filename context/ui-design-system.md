@@ -107,6 +107,18 @@ in the kit-ui repo. The parts middleman depends on as stable API:
   backdrop-click dismissal are independent of it. The shared shell prefers
   `[data-autofocus]`, then body inputs, then body/footer buttons for initial
   focus.
+- Escape precedence in overlay-hosted search fields: a non-empty kit
+  `SearchInput` claims Escape to clear itself and stops propagation; an
+  empty field lets Escape bubble so the hosting popover/modal can close.
+  All pickers hosting a `SearchInput` share this contract;
+  `UserListEditor.test.ts` pins the representative clear-then-close flow.
+- Palette-family dialogs (Palette, Cheatsheet, the markdown image
+  lightbox) keep their hand-rolled focus traps deliberately: a selected
+  action's outcome may be moving focus, so kit `trapFocus`'s
+  restore-on-teardown would undo it. Dismissal paths (Escape via the
+  modal stack, backdrop click) close without restoring pre-open focus —
+  except the lightbox, which manages its own `restoreFocusTo` because it
+  replaces the reading position the user zoomed from.
 - jsdom lacks `offsetParent`, `scrollIntoView`, and `ResizeObserver`, which
   kit's focus trap and menus use: `frontend/src/test/setup.ts` stubs the
   latter two globally; focus-trap tests install the shared

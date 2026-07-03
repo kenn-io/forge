@@ -12,6 +12,7 @@
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
   import { CopyButton, formatRelativeTime } from "@kenn-io/kit-ui";
+  import { copyToClipboard } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
@@ -837,6 +838,24 @@
     flushBodySave();
     clearDragState();
   });
+  // Body-copy feedback is parent-controlled: the kit CopyButton's internal
+  // copied state is not observable from CSS, and the reveal-on-hover wrap
+  // must keep the button visible for the whole copied window even after
+  // the pointer leaves.
+  let bodyCopied = $state(false);
+  let bodyCopiedTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function copyBody(text: string): void {
+    void copyToClipboard(text).then((ok) => {
+      if (!ok) return;
+      bodyCopied = true;
+      if (bodyCopiedTimeout !== null) clearTimeout(bodyCopiedTimeout);
+      bodyCopiedTimeout = setTimeout(() => {
+        bodyCopied = false;
+        bodyCopiedTimeout = null;
+      }, 1500);
+    });
+  }
 </script>
 
 <svelte:document onmousedown={onDocumentMousedown} />
@@ -980,8 +999,9 @@
           </div>
           <div class="inset-box-wrap">
             <CopyButton
-              class="body-copy"
-              text={issue.Body}
+              class={bodyCopied ? "body-copy body-copy--copied" : "body-copy"}
+              copied={bodyCopied}
+              onclick={() => copyBody(issue.Body)}
               revealOnHover
               ariaLabel="Copy to clipboard"
               copiedAriaLabel="Copied!"
@@ -1456,7 +1476,8 @@
     z-index: 1;
   }
 
-  .inset-box-wrap:hover :global(.kit-copy-btn.body-copy) {
+  .inset-box-wrap:hover :global(.kit-copy-btn.body-copy),
+  .inset-box-wrap :global(.kit-copy-btn.body-copy--copied) {
     opacity: 1;
   }
 

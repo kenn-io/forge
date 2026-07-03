@@ -259,7 +259,22 @@
     {/if}
   </span>
   {#if open}
-    <div class="user-list-editor__popover" style={popoverStyle} bind:this={popoverEl}>
+    <!-- Escape precedence: a non-empty filter claims Escape to clear itself
+         (kit SearchInput stops propagation), so only an Escape from an
+         already-empty field — or elsewhere in the picker — reaches this
+         handler and dismisses the popover. -->
+    <div
+      class="user-list-editor__popover"
+      style={popoverStyle}
+      bind:this={popoverEl}
+      role="presentation"
+      onkeydown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          closePicker();
+        }
+      }}
+    >
       <UserPicker
         title="Edit {label.toLowerCase()}"
         {candidates}

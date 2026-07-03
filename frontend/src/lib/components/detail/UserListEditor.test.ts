@@ -55,6 +55,34 @@ describe("UserListEditor", () => {
     expect(onchange).not.toHaveBeenCalled();
   });
 
+  it("clears a non-empty filter on the first Escape and closes the picker on the second", async () => {
+    render(UserListEditor, {
+      props: {
+        label: "Assignees",
+        users: [],
+        canEdit: true,
+        loadCandidates: vi.fn().mockResolvedValue(["alice", "bob"]),
+        onchange: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Edit assignees" })).toBeTruthy());
+
+    const input = screen.getByLabelText("Filter users") as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: "ali" } });
+    expect(input.value).toBe("ali");
+
+    // Non-empty field: Escape clears the filter, the picker stays open.
+    await fireEvent.keyDown(input, { key: "Escape" });
+    expect(input.value).toBe("");
+    expect(screen.getByRole("dialog", { name: "Edit assignees" })).toBeTruthy();
+
+    // Empty field: Escape bubbles to the popover host and dismisses it.
+    await fireEvent.keyDown(input, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit assignees" })).toBeNull());
+  });
+
   it("dismisses the picker on a press outside the chip and panel", async () => {
     render(UserListEditor, {
       props: {

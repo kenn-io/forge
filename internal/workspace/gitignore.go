@@ -10,6 +10,14 @@ import (
 	"strings"
 )
 
+const (
+	// generatedContextTempPattern ignores the atomic writer's staging files.
+	generatedContextTempPattern = "/.tmp-agent-context-*"
+	// generatedContextTempProbePath is a representative path used to check
+	// whether the temp pattern is already effective.
+	generatedContextTempProbePath = ".tmp-agent-context-probe"
+)
+
 // EnsureGeneratedContextFilesIgnored guarantees the requested generated
 // context paths are ignored by git before they are written, adding local
 // exclude rules (never touching tracked .gitignore) only for the paths that
@@ -19,14 +27,27 @@ func EnsureGeneratedContextFilesIgnored(
 	worktreePath string,
 	generatedRelPaths []string,
 ) error {
-	missingPaths := make([]string, 0, len(generatedRelPaths))
-	missingPatterns := make([]string, 0, len(generatedRelPaths))
-	seenPatterns := make(map[string]bool, len(generatedRelPaths))
+	missingPaths := make([]string, 0, len(generatedRelPaths)+1)
+	missingPatterns := make([]string, 0, len(generatedRelPaths)+1)
+	seenPatterns := make(map[string]bool, len(generatedRelPaths)+1)
+	checks := make([][2]string, 0, len(generatedRelPaths)+1)
 	for _, rel := range generatedRelPaths {
 		clean, pattern, err := generatedContextIgnorePattern(rel)
 		if err != nil {
 			return err
 		}
+		checks = append(checks, [2]string{clean, pattern})
+	}
+	if len(checks) > 0 {
+		// The atomic writer stages content as .tmp-agent-context-* next to
+		// the target; a crash between create and rename must not leave an
+		// untracked file dirtying the workspace.
+		checks = append(checks, [2]string{
+			generatedContextTempProbePath, generatedContextTempPattern,
+		})
+	}
+	for _, check := range checks {
+		clean, pattern := check[0], check[1]
 		ignored, err := gitPathIgnored(ctx, worktreePath, clean)
 		if err != nil {
 			return err

@@ -214,10 +214,20 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 	require.NoError(err)
 	assert.Contains(string(issueContext), "Source kind: provider issue")
 	assert.Contains(string(issueContext), "Issue: #7")
-	assert.Contains(string(issueContext), "https://github.com/acme/widget/issues/1")
+	assert.Contains(string(issueContext), "https://github.com/acme/widget/issues/7")
 	assert.Contains(string(issueContext), "<untrusted-source-text>Test Issue</untrusted-source-text>")
 	issueStatus := strings.TrimSpace(string(runServerWorkspaceTestGit(t, issueWorktree, "status", "--porcelain")))
 	assert.Empty(issueStatus)
+
+	// A pre-existing user-owned file makes launch succeed without touching
+	// it: context delivery is silently skipped by design.
+	userOwned := "# My own instructions\n"
+	require.NoError(os.WriteFile(filepath.Join(kataWorktree, "AGENTS.local.md"), []byte(userOwned), 0o644))
+	launch("ws-kata-context")
+	preserved, err := os.ReadFile(filepath.Join(kataWorktree, "AGENTS.local.md"))
+	require.NoError(err)
+	require.Equal(userOwned, string(preserved))
+	require.NoError(os.Remove(filepath.Join(kataWorktree, "AGENTS.local.md")))
 
 	launch("ws-kata-context")
 	kataContext, err := os.ReadFile(filepath.Join(kataWorktree, "AGENTS.local.md"))

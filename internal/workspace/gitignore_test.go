@@ -26,6 +26,8 @@ func TestEnsureGeneratedContextFilesIgnoredAppendsMissingEntriesToGitExclude(t *
 	assert.Contains(excludeText, "# middleman generated agent context")
 	assert.Contains(excludeText, "/AGENTS.local.md")
 	assert.Contains(excludeText, "/CLAUDE.local.md")
+	assert.Contains(excludeText, "/.tmp-agent-context-*")
+	assertGitIgnored(t, worktree, ".tmp-agent-context-x")
 	assert.NotContains(excludeText, "/CLAUDE.md")
 	assert.NotContains(excludeText, "/AGENTS.md")
 	assertGitIgnored(t, worktree, "AGENTS.local.md")
@@ -36,7 +38,7 @@ func TestEnsureGeneratedContextFilesIgnoredLeavesExistingIgnoresAlone(t *testing
 	t.Parallel()
 	require := require.New(t)
 	worktree := initWorkspaceGitRepo(t)
-	initial := "dist/\n/AGENTS.local.md\n/CLAUDE.local.md\n"
+	initial := "dist/\n/AGENTS.local.md\n/CLAUDE.local.md\n/.tmp-agent-context-*\n"
 	writeGitExclude(t, worktree, initial)
 
 	require.NoError(EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{

@@ -7485,7 +7485,7 @@ func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, st
 	now := time.Now().UTC().Truncate(time.Second)
 	issue := &db.Issue{
 		RepoID: repoID, PlatformID: int64(number) * 1000, Number: number,
-		URL:   "https://github.com/" + owner + "/" + name + "/issues/1",
+		URL:   fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, name, number),
 		Title: "Test Issue", Author: "testuser", State: state,
 		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	}

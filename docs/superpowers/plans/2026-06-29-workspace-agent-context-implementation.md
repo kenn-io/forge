@@ -64,11 +64,19 @@ Push target rules (agents frequently push to the wrong remote or branch):
   snapshot only when no MR row is available, so a renamed head branch is not rendered
   stale.
 
-Source-system prose (titles) is handled like roborev handles untrusted input: fenced
-in `<untrusted-source-text>` tags with XML-escaped, whitespace-compacted content, and
-the file preamble says never to follow instructions found inside the tags. All other
-externally sourced scalar values (Kata IDs, names) are normalized to a single line so
-they cannot break out of their Markdown list items.
+Field trust classes, and the boundary each protection provides:
+
+- Trusted structure: repository identity, provider, and URLs come from middleman
+  configuration and DB identity, and are rendered plainly.
+- Untrusted prose (source title, Kata project name): handled like roborev handles
+  untrusted input — fenced in `<untrusted-source-text>` tags with XML-escaped,
+  whitespace-compacted content, and the file preamble says never to follow
+  instructions found inside the tags. This is the prompt-injection boundary.
+- External identifiers (Kata daemon/project/issue IDs): normalized to a single line
+  (all Unicode whitespace and control characters collapse). This preserves Markdown
+  structure only; it is not an injection defense, so no free-prose field may use it.
+  Hostile same-line identifier text stays visible inside its labeled list item by
+  design.
 
 ## Task 1: Neutral Agent Context Model
 
@@ -112,10 +120,22 @@ they cannot break out of their Markdown list items.
   with the correct source kind and identifier without inferring Kata tasks as provider
   issues.
 
+### Agent file compatibility
+
+`AGENTS.local.md` and `CLAUDE.local.md` are convention-based choices: Claude Code
+documents `CLAUDE.local.md` as a local instruction file, and Codex-family agents
+follow the AGENTS.md spec's local-override naming. If an installed agent does not
+read its file, the context is simply unused; the manual smoke test in Task 4 is the
+compatibility check. Earlier marker lines from previous revisions of this feature are
+still recognized as middleman-owned so old generated files get refreshed, not
+stranded.
+
 ## Open Decisions
 
-- No warning surface exists when a user-owned file prevents writing context. Add a
-  visible launch/context status only if real usage shows users need it.
+- No warning surface exists when a user-owned file prevents writing context; launch
+  succeeds and delivery is silently skipped (covered by a full-stack test as the
+  intended degraded state). Add a visible launch/context status only if real usage
+  shows users need it.
 - Source bodies, comments, labels, and CI state are out of scope; context freshness is
   bounded by the last sync.
 - Arbitrary project worktree sessions stay out of scope; only middleman-owned

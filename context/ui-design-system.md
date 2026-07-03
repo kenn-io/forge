@@ -171,9 +171,13 @@ in the kit-ui repo. The parts middleman depends on as stable API:
   class, the pinned-SHA bump that brings it in must update the selectors in
   the same change.
 
-kit-ui component swaps must not keep local copies of replaced components;
-`kit-ui-check` (run with `--warn` during migration) tracks hand-rolled
-equivalents.
+kit-ui component swaps must not keep local copies of replaced components.
+`kit-ui-check` enforces this at zero findings in `make frontend-check`
+(prek hook and CI, no `--warn`); run it as
+`node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src ../packages/ui/src`
+from `frontend/`. Suppressions are per-line `kit-ui-check-ignore` markers
+on the flagged line or the line directly above, and every one carries a
+reason — no block- or file-level ignores exist.
 
 ## Shared primitives
 

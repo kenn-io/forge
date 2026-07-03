@@ -31,6 +31,22 @@ surface should be task-shaped, small, and explicitly model-friendly.
 - Include workspace and stack context because those affect review decisions.
 - Include a guidance document for configuring and using the MCP capabilities.
 
+## Success Criteria
+
+- A stdio MCP client can connect to `middleman mcp`, list review candidates,
+  fetch compact cached context for one candidate, and claim it as `reviewing`.
+- The same workflow-state write is visible through middleman's daemon API and
+  SQLite-backed state.
+- An MCP claim with `expected_status = "new"` succeeds for an item that has no
+  stored workflow row, because missing state is treated as effective `new`.
+- An MCP claim with stale `expected_status` returns a conflict and does not
+  overwrite the current local state.
+- Existing PR kanban list/detail and state mutation behavior remains compatible
+  with current clients and the board UI.
+- No MCP tool can perform provider writes.
+- The HTTP MCP transport accepts only loopback, token-authenticated,
+  same-origin requests.
+
 ## Non-Goals
 
 - Building or scheduling the periodic system.
@@ -53,6 +69,12 @@ it. Both transports expose the same tools, resources, and prompts. The companion
 discovers the running middleman daemon through the same
 runtime metadata and auth-token files used by `middleman api`, then talks to
 the daemon over loopback.
+
+Use the official Go MCP SDK, `github.com/modelcontextprotocol/go-sdk/mcp`, for
+v1. The SDK provides the server abstraction and transports middleman needs, and
+keeps protocol details out of the application code. If the SDK cannot satisfy
+the stdio and tokenized loopback HTTP requirements during implementation, stop
+and update the design rather than hand-rolling JSON-RPC silently.
 
 Do not open SQLite directly from the MCP companion. The daemon remains
 authoritative for cached data, local workflow writes, auth, host validation,
@@ -115,13 +137,15 @@ Useful flags:
 ```bash
 middleman mcp --config /path/to/config.toml
 middleman mcp --transport stdio
-middleman mcp --transport http --addr 127.0.0.1:0
+middleman mcp --transport http --addr 127.0.0.1:0 --http-token-env MIDDLEMAN_MCP_TOKEN
 ```
 
 These flags are the user-facing contract:
 
 - `stdio` is the default.
 - HTTP binds only to loopback in v1.
+- HTTP requires `--http-token-env` and refuses to start when that environment
+  variable is unset or blank.
 - Port `0` is allowed for an ephemeral local HTTP listener.
 - The companion reads daemon runtime metadata and auth token from `data_dir`.
 - If no daemon is running, tools return a clear daemon-unavailable error.
@@ -149,15 +173,26 @@ The MCP companion owns:
 - candidate grouping from daemon responses;
 - translating daemon problem documents into MCP errors.
 
-### HTTP Safety
+### MCP Library And HTTP Safety
 
 The HTTP MCP transport is local-only in v1. The companion should reject
 non-loopback bind addresses rather than inheriting the daemon's broader bind
 options. Remote MCP access can be designed later with explicit auth and origin
 policy.
 
-The companion does not expose the daemon's auth token to MCP tool responses or
-logs. Errors that mention daemon discovery paths should avoid leaking secrets.
+HTTP MCP requests must be protected independently from the daemon auth token:
+
+- require `Authorization: Bearer <token>` where `<token>` comes from
+  `--http-token-env`;
+- require the `Host` header to match the listener address, with loopback
+  aliases accepted only for the actual bound port;
+- reject browser requests whose `Origin` is present and not the same loopback
+  origin;
+- do not emit permissive CORS headers;
+- do not include the daemon API auth token in MCP responses, HTTP errors, or
+  logs.
+
+Errors that mention daemon discovery paths should avoid leaking secrets.
 
 ## Local Workflow State
 
@@ -173,8 +208,8 @@ middleman_item_workflow_state
   status           -- "new", "reviewing", "waiting", "awaiting_merge"
   updated_at
   updated_source   -- "ui", "api", "mcp", or another local caller label
-  updated_actor    -- optional user/client/agent label
-  updated_reason   -- optional short free-text reason
+  updated_actor    -- optional user/client/agent label, max 120 bytes
+  updated_reason   -- optional short free-text reason, max 500 bytes
 ```
 
 `(repo_id, item_type, item_number)` is unique. `repo_id` preserves the existing
@@ -205,15 +240,19 @@ instructions and state filtering simple.
 
 Workflow state stores last-writer metadata, not a full transition log.
 
-`updated_source` identifies the local surface that changed the state. MCP writes
-use `mcp`. `updated_actor` should be the MCP client name or supplied agent label
-when available. `updated_reason` is optional and should be short enough to show
-in future UI without becoming an unbounded log.
+`updated_source` identifies the local surface that changed the state. It is
+validated against a short allowlist or a conservative identifier pattern and is
+stored with a 40-byte maximum. MCP writes use `mcp`. `updated_actor` should be
+the MCP client name or supplied agent label when available. `updated_reason` is
+optional and should be short enough to show in future UI without becoming an
+unbounded log.
 
-The API should also accept an optional expected current status. If provided and
-the stored status has changed, the daemon returns a conflict. This lets a
-periodic model avoid overwriting a human or another agent that already moved the
-item.
+The API should also accept an optional expected current status. The comparison
+is against the effective current status, where a missing workflow row is
+`new`. If provided and the effective status has changed, the daemon returns a
+conflict. This lets a periodic model avoid overwriting a human or another agent
+that already moved the item while still allowing the first claim of a never-moved
+item with `expected_status = "new"`.
 
 ### PR Kanban Compatibility
 
@@ -251,11 +290,22 @@ Add focused daemon endpoints only for the generic local workflow state:
 - `PUT /workflow-state/{item_type}/{provider}/{owner}/{name}/{number}`
 - host-prefixed variants for non-default provider hosts
 
-`GET /workflow-state` supports repo, item type, state, limit, and offset
-filters. It returns compact provider-aware item refs and last-writer metadata
-joined to PR/issue title, state, URL, author, and last activity. It treats
-missing rows as `new`, so `state=new` includes open items that have never been
-moved. It is not a replacement for PR/issue list endpoints.
+`GET /workflow-state` supports repo, item type, state, `include_closed`, limit,
+and cursor filters. It returns compact provider-aware item refs and last-writer
+metadata joined to PR/issue title, state, URL, author, and last activity. It
+treats missing rows as `new`, so `state=new` includes open items that have never
+been moved. It is not a replacement for PR/issue list endpoints.
+
+Default listing semantics:
+
+- closed/merged PRs and closed issues are excluded unless `include_closed` is
+  true;
+- explicit workflow rows sort by `updated_at DESC`, then item
+  `last_activity_at DESC`;
+- generated `new` rows without workflow storage sort by item
+  `last_activity_at DESC`;
+- ties break by `(platform, platform_host, owner, name, item_type, number)`;
+- pagination uses an opaque cursor carrying the ordering tuple, not offset.
 
 `PUT /workflow-state/...` validates the item type, state, provider-aware route,
 and item existence. It writes only middleman-local state. It never calls a
@@ -375,6 +425,13 @@ Behavior:
 - PRs use the daemon PR detail route.
 - Issues use the daemon issue detail route.
 - The tool returns cached data only. It does not trigger sync.
+- The companion performs v1 filtering after fetching one selected item from the
+  existing detail routes. `event_limit` and include flags limit the MCP response
+  shape, not the daemon payload.
+- Because the tool is only used after candidate narrowing, one full cached
+  detail fetch per selected item is acceptable for v1. If implementation needs
+  bulk context extraction or the cached event payload becomes too large, add a
+  focused daemon context endpoint before expanding MCP behavior.
 - The response includes `detail_loaded` and `detail_fetched_at` so the model can
   decide whether stale or missing detail should reduce confidence.
 
@@ -420,8 +477,9 @@ Inputs:
 - `states`
 - `item_types`
 - `repo`
+- `include_closed`, default false
 - `limit`
-- `offset`
+- `cursor`
 
 This lets a model answer questions such as "what am I already reviewing?" or
 "what did another agent mark waiting?" without scanning all cached PRs/issues.
@@ -442,6 +500,8 @@ tell the model to:
 - avoid provider writes;
 - set workflow state only when the reason is clear;
 - include `expected_status` when marking an item;
+- treat `awaiting_merge` as a PR-oriented state and avoid setting it on issues
+  unless the user prompt explicitly asks for that state;
 - report uncertainty and stale-cache signals.
 
 ## Candidate Semantics
@@ -484,6 +544,27 @@ Important cases:
 
 Provider errors should appear only on read paths that depend on cached daemon
 behavior. MCP workflow writes never call provider APIs.
+
+## Timeouts, Retries, And Compatibility
+
+Each MCP tool call should use a bounded daemon request timeout. The default is
+10 seconds, configurable by a `--daemon-timeout` flag. Candidate discovery and
+detail reads may retry once on a transient connection failure after rediscovering
+daemon runtime metadata. Workflow writes do not retry automatically because a
+retry could obscure whether a local state transition was applied before the
+connection failed.
+
+At startup, and again after daemon-unavailable errors, the companion probes the
+daemon for required MCP support:
+
+- daemon version endpoint is reachable;
+- existing read routes are reachable;
+- workflow-state routes exist before write/list workflow tools are advertised.
+
+If the daemon is older than the MCP companion expects, the companion should
+return a version/capability error that names the missing route or capability.
+It should not silently downgrade into partial semantics that change tool
+behavior.
 
 ## Staleness And Cache Signals
 
@@ -540,8 +621,11 @@ Backend tests:
 - DB query tests cover PR and issue workflow state reads/writes;
 - DB query tests prove missing state reads as `new` where public responses need
   that behavior;
+- DB/API tests prove `expected_status = "new"` succeeds when no workflow row
+  exists and stale `expected_status` conflicts;
 - server API tests cover workflow-state GET/PUT, host-prefixed identity,
-  invalid status, missing item, and expected-status conflict;
+  invalid status, missing item, closed-item filtering, deterministic cursor
+  pagination, and expected-status conflict;
 - existing PR kanban API tests continue to pass against the generic store;
 - issue list/detail API tests cover `WorkflowStatus` and local workflow
   metadata exposure.
@@ -556,6 +640,12 @@ MCP tests:
   mapping;
 - daemon discovery/auth tests reuse the runtime metadata pattern used by the
   API CLI where possible.
+- full-stack stdio MCP e2e starts a real middleman daemon against SQLite,
+  connects through MCP, lists candidates from seeded cached data, performs a
+  workflow-state write, and verifies the state through the daemon API;
+- HTTP transport e2e covers token-required startup, non-loopback bind rejection,
+  accepted loopback requests with a bearer token, and rejected missing-token or
+  cross-origin requests.
 
 CLI tests:
 
@@ -571,12 +661,19 @@ No Playwright coverage is required unless implementation changes visible UI.
 
 ## Rollout
 
-1. Add generic workflow-state storage and migrate existing PR kanban rows.
-2. Update PR kanban read/write paths to use generic workflow state while keeping
+1. Add the schema migration that creates generic workflow-state storage and
+   copies existing PR kanban rows.
+2. Add DB query helpers for generic PR/issue workflow state, including effective
+   `new`, expected-status conflicts, metadata limits, closed filtering, and
+   cursor ordering.
+3. Update PR kanban read/write paths to use generic workflow state while keeping
    the public API stable.
-3. Add issue workflow-state API support.
-4. Add `middleman mcp` companion with curated tools.
-5. Add `docs/middleman-mcp.md` and expose it as an MCP resource.
+4. Add issue workflow-state API exposure.
+5. Add the workflow-state daemon API endpoints and regenerate API artifacts.
+6. Add `docs/middleman-mcp.md`.
+7. Add `middleman mcp` with stdio transport, curated read tools, the workflow
+   write tool, and the guidance resource.
+8. Add HTTP MCP transport with token, Host, Origin, and loopback checks.
 
 The implementation plan can split these into smaller commits, but the generic
 workflow state should land before MCP write tools so the MCP surface does not

@@ -550,7 +550,7 @@
       {/if}
     </div>
     {#if loading}
-      <span class="sr-only" aria-live="polite">Loading snapshot</span>
+      <span class="kit-sr-only" aria-live="polite">Loading snapshot</span>
     {/if}
   </div>
 
@@ -717,7 +717,7 @@
     <span class="cell cell-tags" title={labels}>
       {#if labels}{labels}{/if}
     </span>
-    <span class="sr-keywords">
+    <span class="kit-sr-only">
       <span>project: {issue.project_name}</span>
       {#if issue.metadata.deadline_on}<span> · Due {shortDate(issue.metadata.deadline_on)}</span>{/if}
       {#if issue.owner}<span> · owner: {issue.owner}</span>{/if}
@@ -825,18 +825,6 @@
   .tree-action:disabled {
     cursor: default;
     opacity: 0.45;
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
   }
 
   .table {
@@ -1170,16 +1158,6 @@
     color: var(--text-muted);
     font-size: var(--font-size-2xs);
     font-style: italic;
-  }
-
-  .sr-keywords {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 
   /* Pane-width-driven column visibility. The list narrows whenever the

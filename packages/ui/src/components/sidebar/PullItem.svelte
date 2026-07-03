@@ -235,12 +235,12 @@
         >
           <CircleAlertIcon size={10} strokeWidth={2.5} />
         </span>
-        <span class="sr-only">CI unavailable: {safeDiagnosticText(parsed.error)}</span>
+        <span class="kit-sr-only">CI unavailable: {safeDiagnosticText(parsed.error)}</span>
       {:else if bucketed.all.length > 0}
         <span class="ci" aria-hidden="true">
           <CITokenCluster {bucketed} size="compact" pendingStyle="static" />
         </span>
-        <span class="sr-only">{composeAriaLabel(bucketed)}</span>
+        <span class="kit-sr-only">{composeAriaLabel(bucketed)}</span>
       {/if}
       {#if pr.MergeableState === "dirty"}
         <span class="conflict-icon" title="Has merge conflicts">
@@ -433,17 +433,6 @@
   .ci-unavailable {
     color: var(--state-warn, var(--accent-amber, #c08a2a));
     opacity: 0.85;
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
   }
 
   .pull-item .ci {

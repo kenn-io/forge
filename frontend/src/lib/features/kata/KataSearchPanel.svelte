@@ -64,7 +64,7 @@
   <div class="kata-search-toolbar">
     <label class="search-field">
       <SearchIcon size={13} strokeWidth={1.9} aria-hidden="true" />
-      <span>Search tasks</span>
+      <span class="kit-sr-only">Search tasks</span>
       <input
         aria-label="Search tasks"
         type="search"
@@ -76,7 +76,7 @@
     </label>
 
     <div class="filter-control filter-control-project">
-      <span>Project scope</span>
+      <span class="kit-sr-only">Project scope</span>
       <TypeaheadTrigger
         ariaLabel="Project scope"
         options={projectOptions}
@@ -92,7 +92,7 @@
     </div>
 
     <div class="filter-control filter-control-status">
-      <span>Status</span>
+      <span class="kit-sr-only">Status</span>
       <SelectDropdown
         title="Status"
         value={draft.status}
@@ -102,7 +102,7 @@
     </div>
 
     <label class="filter-control filter-control-input">
-      <span>Owner</span>
+      <span class="kit-sr-only">Owner</span>
       <input
         aria-label="Owner"
         value={draft.owner}
@@ -113,7 +113,7 @@
     </label>
 
     <label class="filter-control filter-control-input">
-      <span>Label</span>
+      <span class="kit-sr-only">Label</span>
       <input
         aria-label="Label"
         value={draft.label}
@@ -171,15 +171,6 @@
     display: flex;
     align-items: center;
     min-width: 0;
-  }
-
-  .search-field > span,
-  .filter-control > span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
   }
 
   input {

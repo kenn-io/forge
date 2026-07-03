@@ -233,7 +233,7 @@
         </div>
         <span class="crumb-sep">/</span>
         <span class="crumb-id">{issue.issue.short_id}</span>
-        <span class="sr-only">{issue.issue.qualified_id}</span>
+        <span class="kit-sr-only">{issue.issue.qualified_id}</span>
       </div>
       {#if editingTitle}
         <input
@@ -444,18 +444,6 @@
 
   .crumb-sep {
     color: var(--text-faint);
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
   }
 
   .detail-heading h2 {

@@ -50,7 +50,7 @@
 </script>
 
 <form role="search" aria-label="Search messages" onsubmit={handleSubmit}>
-  <label class="sr-only" for="messages-search-input">Search messages</label>
+  <label class="kit-sr-only" for="messages-search-input">Search messages</label>
   <input
     id="messages-search-input"
     type="search"
@@ -115,15 +115,4 @@
     background: var(--bg-surface-hover);
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
 </style>

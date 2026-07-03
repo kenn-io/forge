@@ -115,7 +115,7 @@ describe("KataIssueList", () => {
     });
 
     const loading = screen.getByText("Loading snapshot");
-    expect(loading.classList.contains("sr-only")).toBe(true);
+    expect(loading.classList.contains("kit-sr-only")).toBe(true);
     expect(screen.queryByText("Updating")).toBeNull();
   });
 

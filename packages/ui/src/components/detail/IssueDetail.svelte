@@ -1070,7 +1070,7 @@
           </Button>
         {/if}
         {#if !workspace}
-          <span id={createWorkspaceDescriptionId} class="sr-only">
+          <span id={createWorkspaceDescriptionId} class="kit-sr-only">
             {staleIssue
               ? "Refresh details before creating a workspace."
               : createWorkspaceTitle}
@@ -1295,18 +1295,6 @@
 
   .state-msg--error {
     color: var(--accent-red);
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
   }
 
   .issue-detail {

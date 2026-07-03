@@ -196,7 +196,7 @@
             title="CI unavailable: {safeDiagnosticText(parseError)}"
           >CI: unavailable</span>
           <span
-            class="sr-only"
+            class="sr-only kit-sr-only"
             id="ci-unavailable-desc-{instanceId}"
           >CI unavailable: {safeDiagnosticText(parseError)}</span>
           <span
@@ -478,14 +478,4 @@
     visibility: visible;
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
 </style>

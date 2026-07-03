@@ -99,7 +99,7 @@
   </div>
 
   <label class="label-picker__filter">
-    <span class="label-picker__sr-only">Filter labels</span>
+    <span class="kit-sr-only">Filter labels</span>
     <input
       bind:this={filterInput}
       bind:value={query}
@@ -341,15 +341,4 @@
     font-size: var(--font-size-sm);
   }
 
-  .label-picker__sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
 </style>

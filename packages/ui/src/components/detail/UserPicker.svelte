@@ -127,7 +127,7 @@
   </div>
 
   <label class="user-picker__filter">
-    <span class="user-picker__sr-only">Filter users</span>
+    <span class="kit-sr-only">Filter users</span>
     <input
       bind:this={filterInput}
       bind:value={query}
@@ -397,15 +397,4 @@
     font-size: var(--font-size-sm);
   }
 
-  .user-picker__sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
 </style>

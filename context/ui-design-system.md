@@ -34,142 +34,70 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 
 ## kit-ui contract
 
-middleman consumes `@kenn-io/kit-ui` as source from a GitHub dependency
-pinned to a full commit SHA (`github:kenn-io/kit-ui#<sha>` in both
-`frontend/package.json` and `packages/ui/package.json`; keep the two pins
-identical). To upgrade, bump the SHA in both files and run `bun install`.
-Do not use a `file:` path to a sibling checkout — bun's store keys the copy
-by name@version, so it silently goes stale when that checkout switches
-branches. kit-ui's runtime deps are peer dependencies satisfied by
-middleman's own installs, and its rune-module source cannot be prebundled:
-`@kenn-io/kit-ui` stays in vite `optimizeDeps.exclude` with its transitive
-deps pinned as `"@kenn-io/kit-ui > <dep>"` include entries (see
-`frontend/vite.config.ts`). See `docs/migration.md` and `docs/theming.md`
-in the kit-ui repo. The parts middleman depends on as stable API:
+middleman consumes `@kenn-io/kit-ui` as source, pinned to one commit SHA in
+both `frontend/package.json` and `packages/ui/package.json` (bump both
+together; never a `file:` path — bun's store keys by name@version and goes
+stale). Its runtime deps are peers and its rune-module source cannot be
+prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
+`"@kenn-io/kit-ui > <dep>"` includes. See kit-ui's `docs/migration.md` and
+`docs/theming.md`. Invariants middleman relies on:
 
-- Theme tokens from `theme.css`: `--bg-*`, `--text-*`, `--border-*`,
-  `--accent-*`, `--font-size-2xs…2xl`, `--font-size-root`, `--space-1…8`,
-  `--radius-*`, `--shadow-*`, `--overlay-bg`, `--focus-ring`,
-  `--transition-fast`, `--opacity-disabled`, `--header-height`,
-  `--status-bar-height`.
-- `@middleman/ui` components additionally consume app tokens defined in
-  `frontend/src/app.css` (`--text-on-accent`, the kanban/diff/budget
-  palettes, viewer glass chrome). Any harness that mounts package
-  components against real styles must load `app.css` the way
-  `browserAppHarness.ts` does; the package has no standalone theme.
-- Type scale behavior: rem tokens that redefine themselves on
-  coarse-pointer devices; the `kit-type-touch` class on `<html>` forces the
-  touch scale (middleman sets it while phone presentation is active). Never
-  pin `html { font-size }`.
-- Media-query `rem` resolves against the browser initial font size (16px),
-  never the app root — breakpoints are written in px (kit-ui's shared
-  layout breakpoints are 640/760/900px).
-- Spacing ladder: `--space-1…8` = 2/4/6/8/12/16/24/32px. New or edited
-  `gap`/`row-gap`/`column-gap` declarations use ladder tokens, and a
-  two-value shorthand tokenizes both axes. Off-ladder raw px is a
-  kit-ui-check finding and snaps to the nearest step, biased compact when
-  between steps; on-ladder raw px in untouched declarations is allowed by
-  the checker and migrates opportunistically, not as churn.
-  `frontend/src/kit-spacing-tokens.browser.svelte.ts` guards that the
-  ladder resolves in the real stylesheet chain.
-- Component class names (`.kit-chip`, `.kit-color-label`, …) are relied on
-  by parent `:global` styles and test selectors.
-- Icons in chips: kit-ui centers icons composed into Chip `children`, and
-  dropdown chevrons belong in the Chip `trailing` snippet (rendered outside
-  the label span, so they survive label truncation). Do not add downstream
-  `.kit-chip__label` alignment overrides — the `chip-label-override` checker
-  rule flags them — and do not make the label span flex; repo chips depend
-  on its `text-overflow` ellipsis.
-- The dark/high-contrast mechanism: `dark` / `high-contrast` classes on
-  `<html>`.
-- Theme resolution: kit's theme store owns standalone dark/light/system
-  resolution and persistence under the `middleman-theme` storage key
-  (`frontend/src/lib/stores/theme.svelte.ts` is an adapter over it). Two
-  things intentionally stay app-side there: _applying_ an embed-config-forced
-  mode sets the classes directly and never calls kit `setThemeMode` (it always
-  persists, and a host's forced mode must not overwrite the user's standalone
-  preference) — but an _explicit user toggle_ under a forced mode still persists
-  through `setThemeMode` (the keyboard shortcut fires even while the header
-  toggle is hidden), which is why the forced path keeps kit's `middleman-theme`
-  storage key bound after cleanup; and `applyThemeOverrides` injects
-  embed-config CSS variables. Relative timestamps come from kit `formatRelativeTime`;
-  `parseAPITimestamp`/`localDate*Label` stay app-side for the UTC-instant
-  contract.
-- Dialog and Escape layering: every dialog registers a keyboard modal-stack
-  frame while open (the shared `frontend/src/lib/components/shared/Modal.svelte`
-  shell does this for all its consumers; direct kit `Modal` users push their
-  own frame). kit's Escape handler is a bubble-phase `window` listener
-  registered at dialog mount — after long-lived background listeners — so a
-  background surface that closes on Escape (drawer, split view) cannot use
-  `defaultPrevented` to detect an open dialog. It must stand down when
-  `getStackDepth() > 0` (`@middleman/ui/stores/keyboard/modal-stack`).
-  kit `Modal`'s `closable` prop gates only the header X; Escape and
-  backdrop-click dismissal are independent of it. The shared shell prefers
-  `[data-autofocus]`, then body inputs, then body/footer buttons for initial
-  focus.
-- Escape precedence in overlay-hosted search fields: a non-empty kit
-  `SearchInput` claims Escape to clear itself and stops propagation; an
-  empty field lets Escape bubble so the hosting popover/modal can close.
-  All pickers hosting a `SearchInput` share this contract;
-  `UserListEditor.test.ts` pins the representative clear-then-close flow.
-- Palette-family dialogs (Palette, Cheatsheet, the markdown image
-  lightbox) keep their hand-rolled focus traps deliberately: a selected
-  action's outcome may be moving focus, so kit `trapFocus`'s
-  restore-on-teardown would undo it. Dismissal paths (Escape via the
-  modal stack, backdrop click) close without restoring pre-open focus —
-  except the lightbox, which manages its own `restoreFocusTo` because it
-  replaces the reading position the user zoomed from.
-- jsdom lacks `offsetParent`, `scrollIntoView`, and `ResizeObserver`, which
-  kit's focus trap and menus use: `frontend/src/test/setup.ts` stubs the
-  latter two globally; focus-trap tests install the shared
-  `frontend/src/test/stubOffsetParent.ts` helper. Synthetic Tab key events
-  only exercise kit's trap at the wrap boundaries — mid-cycle movement is
-  native browser behavior that jsdom/synthetic events cannot drive.
-- Sidebar layout (`CollapsibleSidebar`): middleman relies on the
-  `kit-sidebar-layout` / `__sidebar` / `__sidebar--collapsed` / `__main` BEM
-  classes and the `data-collapsed` attribute (keyboard context predicate,
-  browser-tier shortcut tests, Playwright selectors), the `SplitResizeEvent`
-  shape, and `SidebarToggle`'s `kit-sidebar-toggle--compact/--push` modifier
-  hooks. The narrow-container floating overlay is kit-owned: hosts pass the
-  container store's `isNarrow()` through the `overlay` prop
-  (`kit-sidebar-layout--overlay`); do not reintroduce app-side copies of
-  kit's overlay CSS. Protected by `App.keyboard-shortcuts.browser.svelte.ts`,
-  `sidebar-collapse` / `container-layout` / `focus-mode` e2e specs, and the
-  keybindings tour.
-- Status bar (`StatusBar`): middleman relies on the `kit-status-bar` and
-  `kit-status-bar__section--left/--right` classes and the
-  `--status-bar-height` token (DetailDrawer offsets against it). middleman
-  passes `overflow="visible"` so BudgetPopover can use kit's sanctioned
-  recipe — a relative wrapper, an absolute `bottom: calc(100% + 4px)` panel
-  with `kit-popover-card` chrome, and the `dismissable` helper; the app in
-  turn owns keeping bar text short (section truncation is off). Protected
-  by the StatusBar counts/budget browser suites and the focus-mode e2e
-  spec.
-- Top bar (`TopBar`): the app header renders through it as `.app-top-bar`
-  (the app-owned alias the shell specs assert on); tabs auto-collapse into
-  `.kit-top-bar__nav-select` by measurement, not a width breakpoint. Two
-  integration constraints, both learned the hard way: the header must clip
-  its x-axis (`overflow-x: clip`) because kit's hidden measurement probe is a
-  full-width absolute row that otherwise inflates body scrollWidth into
-  horizontal overflow at narrow widths; and any responsive side-region CSS
-  must keep the left/right regions content-sized — a flex-stretched region
-  poisons the `expandUsed` footprint kit freezes at collapse and blocks the
-  tabs from re-expanding when the container widens. Select tabs via
-  `.kit-top-bar__tabs .kit-top-bar__tab`, never the bare class (the hidden
-  probe row carries it too). Protected by the `container-layout` and
-  `navigation` e2e specs.
-- Flash (`FlashBanner` + flash store): one shared store instance via
-  `@middleman/ui/stores/flash` (a re-export of kit's), rendered by kit
-  `FlashBanner` mounted once per shell — above the focus/desktop branching
-  in `App.svelte` (`top="var(--header-height)"`) and in
-  `WorkspaceEmbedShell` (`top="0"`, no header there). Tests assert against
-  `.kit-flash-stack`. Stacking (not latest-wins) is the intended
-  semantics. Protected by `App.flash-presentations.browser.svelte.ts` and
-  the App jsdom flash test.
-- kit BEM classes are the sanctioned selector surface for middleman tests
-  (there is no separate app-owned test-hook layer); when kit renames a
-  class, the pinned-SHA bump that brings it in must update the selectors in
+- Theme tokens come from kit `theme.css`; theming is `dark` /
+  `high-contrast` classes on `<html>`. `@middleman/ui` additionally
+  consumes app tokens from `frontend/src/app.css` and has no standalone
+  theme — style-asserting harnesses must load `app.css` like
+  `browserAppHarness.ts`.
+- Type scale: rem tokens self-adjust on coarse pointers; `kit-type-touch`
+  on `<html>` forces the touch scale. Never pin `html { font-size }`.
+- Breakpoints are written in px (shared steps 640/760/900) — media-query
+  `rem` resolves against the browser's 16px, not the app root.
+- Spacing: `--space-1…8` = 2/4/6/8/12/16/24/32px. New or edited `gap`
+  declarations use ladder tokens (both axes of shorthands); off-ladder px
+  snaps to the nearest step, biased compact. On-ladder raw px in untouched
+  code migrates opportunistically, not as churn.
+- kit BEM classes are the sanctioned surface for parent `:global` styles
+  and test selectors; a SHA bump that renames a class updates selectors in
   the same change.
+- Chip: icons go in `children` (kit centers them), dropdown chevrons in
+  `trailing`; no downstream `.kit-chip__label` overrides — repo chips
+  depend on its ellipsis.
+- Theme resolution: kit's theme store owns dark/light/system resolution
+  and persistence (`middleman-theme` key); `theme.svelte.ts` adapts it. A
+  host-forced mode applies classes directly and never persists via
+  `setThemeMode`; an explicit user toggle persists even under a forced
+  mode. Relative timestamps use kit `formatRelativeTime`;
+  `parseAPITimestamp`/`localDate*Label` stay app-side.
+- Dialogs: every dialog pushes a keyboard modal-stack frame. Background
+  Escape surfaces cannot detect dialogs via `defaultPrevented` (kit's
+  window listener registers late); they stand down when
+  `getStackDepth() > 0`. kit `Modal`'s `closable` gates only the header X.
+- Escape in overlay-hosted search: a non-empty kit `SearchInput` claims
+  Escape to clear itself (stops propagation); an empty field lets it
+  bubble so the host closes (`UserListEditor.test.ts` pins the flow).
+- Palette, Cheatsheet, and the image lightbox keep hand-rolled focus
+  traps: actions may move focus, which kit `trapFocus`'s
+  restore-on-teardown would undo. Dismissal does not restore pre-open
+  focus (the lightbox restores its own `restoreFocusTo`).
+- jsdom lacks `offsetParent` / `scrollIntoView` / `ResizeObserver`:
+  `test/setup.ts` stubs the latter two, focus-trap tests install
+  `stubOffsetParent.ts`, and synthetic Tab only exercises kit's trap at
+  wrap boundaries.
+- `CollapsibleSidebar`: middleman relies on the `kit-sidebar-layout*` BEM
+  classes, `data-collapsed`, `SplitResizeEvent`, and `SidebarToggle`
+  modifiers; the narrow floating overlay is kit-owned via the `overlay`
+  prop — no app-side copies of its CSS.
+- `StatusBar`: relies on `kit-status-bar*` classes and
+  `--status-bar-height`; `overflow="visible"` lets BudgetPopover use kit's
+  popover recipe; the app owns keeping bar text short.
+- `TopBar`: renders the app header as `.app-top-bar`; tabs collapse by
+  measurement. The header must clip its x-axis (`overflow-x: clip` — kit's
+  hidden probe row otherwise inflates scrollWidth) and side regions must
+  stay content-sized (a flex-stretched region poisons the frozen
+  `expandUsed` footprint and blocks re-expansion). Select tabs via
+  `.kit-top-bar__tabs .kit-top-bar__tab`, never the bare class.
+- Flash: one shared store (`@middleman/ui/stores/flash`); kit
+  `FlashBanner` mounts once per shell; stacking (not latest-wins) is
+  intended. Tests assert `.kit-flash-stack`.
 
 `make frontend-check` gates `kit-ui-check` at zero findings. Suppress only
 with a per-line `kit-ui-check-ignore` (same line or the line above) that

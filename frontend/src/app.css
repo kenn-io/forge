@@ -25,12 +25,12 @@
   --chrome-dock-resize-hit-size: 7px;
   --chrome-dock-resize-hit-outset: 4px;
   --chrome-dock-resize-stripe-offset: 2px;
-  --budget-green: #4ade80;
-  --budget-yellow: #fbbf24;
-  --budget-red: #f87171;
-  --budget-blue: #60a5fa;
-  --budget-bar-bg: #e5e7eb;
-  --kanban-new: #78716c;
+  --budget-green: #4ade80; /* kit-ui-check-ignore: budget-bar palette */
+  --budget-yellow: #fbbf24; /* kit-ui-check-ignore: budget-bar palette */
+  --budget-red: #f87171; /* kit-ui-check-ignore: budget-bar palette */
+  --budget-blue: #60a5fa; /* kit-ui-check-ignore: budget-bar palette */
+  --budget-bar-bg: #e5e7eb; /* kit-ui-check-ignore: budget-bar palette */
+  --kanban-new: #78716c; /* kit-ui-check-ignore: kanban palette */
   --kanban-reviewing: var(--accent-amber);
   --kanban-waiting: var(--accent-purple);
   --kanban-awaiting-merge: var(--accent-green);
@@ -47,80 +47,91 @@
   --verdict-fail: var(--accent-red);
 
   /* Diff view — light theme (GitHub Light palette) */
-  --diff-bg: #ffffff;
-  --diff-header-bg: #f6f8fa;
-  --diff-border: #d0d7de;
-  --diff-text: #1f2328;
-  --diff-line-num: #656d76;
-  --diff-add-bg: #dafbe1;
-  --diff-add-text: #1a7f37;
-  --diff-del-bg: #ffebe9;
-  --diff-del-text: #cf222e;
-  --diff-sidebar-bg: #f6f8fa;
-  --diff-sidebar-active: #ddf4ff;
+  --diff-bg: #ffffff; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-header-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-border: #d0d7de; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-text: #1f2328; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-line-num: #656d76; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-add-bg: #dafbe1; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-add-text: #1a7f37; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-del-bg: #ffebe9; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-del-text: #cf222e; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-sidebar-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-sidebar-active: #ddf4ff; /* kit-ui-check-ignore: GitHub diff palette */
   --diff-sidebar-accent: var(--accent-blue);
-  --diff-toolbar-bg: #f6f8fa;
-  --diff-stale-bg: #fff8c5;
-  --diff-stale-text: #9a6700;
-  --diff-stale-border: #d4a72c;
+  --diff-toolbar-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-stale-bg: #fff8c5; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-stale-text: #9a6700; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-stale-border: #d4a72c; /* kit-ui-check-ignore: GitHub diff palette */
 
   /* Mermaid view — light theme */
-  --mermaid-bg: #ffffff;
-  --mermaid-viewer-bg: #f6f8fa;
-  --mermaid-node-bg: #ffffff;
-  --mermaid-node-text: #24292f;
-  --mermaid-node-border: #d0d7de;
-  --mermaid-cluster-bg: #f6f8fa;
-  --mermaid-cluster-text: #24292f;
-  --mermaid-cluster-border: #d0d7de;
-  --mermaid-line: #57606a;
-  --mermaid-text: #24292f;
-  --mermaid-label-bg: #ffffff;
-  --mermaid-label-text: #24292f;
-  --mermaid-note-bg: #fff8c5;
-  --mermaid-note-text: #24292f;
-  --mermaid-note-border: #d4a72c;
+  --mermaid-bg: #ffffff; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-viewer-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-node-bg: #ffffff; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-node-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-node-border: #d0d7de; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-cluster-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-cluster-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-cluster-border: #d0d7de; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-line: #57606a; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-label-bg: #ffffff; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-label-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-note-bg: #fff8c5; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-note-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-note-border: #d4a72c; /* kit-ui-check-ignore: GitHub mermaid palette */
+
+  /* Media-viewer glass chrome (mermaid + image lightboxes): fixed
+     GitHub-dark glass regardless of app theme so controls stay legible
+     over media surfaces. */
+  --viewer-scrim: rgba(1, 4, 9, 0.72); /* kit-ui-check-ignore: viewer glass palette */
+  --viewer-control-bg: rgba(36, 41, 47, 0.92); /* kit-ui-check-ignore: viewer glass palette */
+  --viewer-control-hover: rgba(48, 54, 61, 0.96); /* kit-ui-check-ignore: viewer glass palette */
+  --viewer-control-border: rgba(139, 148, 158, 0.48); /* kit-ui-check-ignore: viewer glass palette */
+  --viewer-control-text: #f0f6fc; /* kit-ui-check-ignore: viewer glass palette */
+  --viewer-control-shadow: 0 1px 4px rgba(1, 4, 9, 0.24); /* kit-ui-check-ignore: viewer glass palette */
+  --viewer-panel-shadow: 0 8px 24px rgba(1, 4, 9, 0.38); /* kit-ui-check-ignore: viewer glass palette */
 }
 
 /* App-specific tokens — dark theme */
 :root.dark {
-  --budget-bar-bg: #2a2a3e;
-  --kanban-new: #a8a29e;
+  --budget-bar-bg: #2a2a3e; /* kit-ui-check-ignore: budget-bar palette */
+  --kanban-new: #a8a29e; /* kit-ui-check-ignore: kanban palette */
 
   /* Diff view — dark theme (GitHub Dark palette) */
-  --diff-bg: #0d1117;
-  --diff-header-bg: #161b22;
-  --diff-border: #30363d;
-  --diff-text: #e6edf3;
-  --diff-line-num: #8b949e;
-  --diff-add-bg: rgba(46, 160, 67, 0.15);
-  --diff-add-text: #3fb950;
-  --diff-del-bg: rgba(248, 81, 73, 0.15);
-  --diff-del-text: #f85149;
-  --diff-sidebar-bg: #161b22;
-  --diff-sidebar-active: rgba(56, 139, 253, 0.15);
-  --diff-sidebar-accent: #58a6ff;
-  --diff-toolbar-bg: #161b22;
-  --diff-stale-bg: rgba(187, 128, 9, 0.15);
-  --diff-stale-text: #d29922;
-  --diff-stale-border: #9e6a03;
+  --diff-bg: #0d1117; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-header-bg: #161b22; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-border: #30363d; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-text: #e6edf3; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-line-num: #8b949e; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-add-bg: rgba(46, 160, 67, 0.15); /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-add-text: #3fb950; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-del-bg: rgba(248, 81, 73, 0.15); /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-del-text: #f85149; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-sidebar-bg: #161b22; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-sidebar-active: rgba(56, 139, 253, 0.15); /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-sidebar-accent: #58a6ff; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-toolbar-bg: #161b22; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-stale-bg: rgba(187, 128, 9, 0.15); /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-stale-text: #d29922; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-stale-border: #9e6a03; /* kit-ui-check-ignore: GitHub diff palette */
 
   /* Mermaid view — dark theme */
-  --mermaid-bg: #0d1117;
-  --mermaid-viewer-bg: #4a4d4b;
-  --mermaid-node-bg: #f6f8fa;
-  --mermaid-node-text: #24292f;
-  --mermaid-node-border: #d0d7de;
-  --mermaid-cluster-bg: #4a4d4b;
-  --mermaid-cluster-text: #f0f6fc;
-  --mermaid-cluster-border: #4a4d4b;
-  --mermaid-line: #c9d1d9;
-  --mermaid-text: #c9d1d9;
-  --mermaid-label-bg: #30363d;
-  --mermaid-label-text: #f0f6fc;
-  --mermaid-note-bg: #30363d;
-  --mermaid-note-text: #f0f6fc;
-  --mermaid-note-border: #8b949e;
+  --mermaid-bg: #0d1117; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-viewer-bg: #4a4d4b; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-node-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-node-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-node-border: #d0d7de; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-cluster-bg: #4a4d4b; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-cluster-text: #f0f6fc; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-cluster-border: #4a4d4b; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-line: #c9d1d9; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-text: #c9d1d9; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-label-bg: #30363d; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-label-text: #f0f6fc; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-note-bg: #30363d; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-note-text: #f0f6fc; /* kit-ui-check-ignore: GitHub mermaid palette */
+  --mermaid-note-border: #8b949e; /* kit-ui-check-ignore: GitHub mermaid palette */
 }
 
 /* Base. The root stays at the browser default (no html font-size) so the
@@ -266,11 +277,6 @@ a:hover {
 }
 .markdown-body pre.mermaid.mermaid-viewer,
 .doc-markdown pre.mermaid.mermaid-viewer {
-  --mermaid-viewer-control-bg: rgba(36, 41, 47, 0.92);
-  --mermaid-viewer-control-hover: rgba(48, 54, 61, 0.96);
-  --mermaid-viewer-control-border: rgba(139, 148, 158, 0.48);
-  --mermaid-viewer-control-text: #f0f6fc;
-
   position: relative;
   height: clamp(180px, 34vw, 420px);
   min-height: 180px;
@@ -341,17 +347,17 @@ a:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--mermaid-viewer-control-border);
+  border: 1px solid var(--viewer-control-border);
   border-radius: var(--radius-md);
-  background: var(--mermaid-viewer-control-bg);
-  color: var(--mermaid-viewer-control-text);
+  background: var(--viewer-control-bg);
+  color: var(--viewer-control-text);
   font-family: var(--font-sans);
   font-size: var(--font-size-lg);
   line-height: 1;
-  box-shadow: 0 1px 4px rgba(1, 4, 9, 0.24);
+  box-shadow: var(--viewer-control-shadow);
 }
 .mermaid-viewer__button:hover {
-  background: var(--mermaid-viewer-control-hover);
+  background: var(--viewer-control-hover);
 }
 .mermaid-viewer__button:focus-visible {
   outline: 2px solid var(--accent-blue);
@@ -391,7 +397,7 @@ a:hover {
   align-items: center;
   justify-content: center;
   padding: 28px;
-  background: rgba(1, 4, 9, 0.72);
+  background: var(--viewer-scrim);
 }
 .mermaid-viewer-lightbox__panel {
   position: relative;
@@ -401,7 +407,7 @@ a:hover {
   background: var(--mermaid-bg);
   border: 2px solid color-mix(in srgb, var(--text-secondary) 72%, var(--border-default));
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.38);
+  box-shadow: var(--viewer-panel-shadow);
 }
 .mermaid-viewer-lightbox .mermaid-viewer__viewport {
   background: transparent;
@@ -542,11 +548,11 @@ a:hover {
   justify-content: center;
   width: 30px;
   height: 30px;
-  border: 1px solid rgba(139, 148, 158, 0.5);
+  border: 1px solid var(--viewer-control-border);
   border-radius: var(--radius-md);
-  background: rgba(36, 41, 47, 0.84);
-  color: #f0f6fc;
-  box-shadow: 0 1px 4px rgba(1, 4, 9, 0.24);
+  background: var(--viewer-control-bg);
+  color: var(--viewer-control-text);
+  box-shadow: var(--viewer-control-shadow);
   opacity: 0;
   pointer-events: none;
   transition:
@@ -559,7 +565,7 @@ a:hover {
   pointer-events: auto;
 }
 .markdown-image-expander__button:hover {
-  background: rgba(48, 54, 61, 0.96);
+  background: var(--viewer-control-hover);
 }
 .markdown-image-expander__button:focus-visible {
   outline: 2px solid var(--accent-blue);
@@ -603,7 +609,7 @@ a:hover {
   align-items: center;
   justify-content: center;
   padding: 28px;
-  background: rgba(1, 4, 9, 0.72);
+  background: var(--viewer-scrim);
 }
 .markdown-image-lightbox__panel {
   position: relative;
@@ -618,7 +624,7 @@ a:hover {
   background: transparent;
   border: none;
   border-radius: 0;
-  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.38);
+  box-shadow: var(--viewer-panel-shadow);
 }
 .markdown-image-lightbox__panel img {
   display: block;
@@ -655,16 +661,16 @@ a:hover {
 }
 .markdown-image-lightbox__panel:hover .markdown-image-lightbox__close,
 .markdown-image-lightbox__panel:focus-within .markdown-image-lightbox__close {
-  background: rgba(36, 41, 47, 0.84);
-  border-color: rgba(139, 148, 158, 0.5);
-  color: #f0f6fc;
-  box-shadow: 0 1px 4px rgba(1, 4, 9, 0.24);
+  background: var(--viewer-control-bg);
+  border-color: var(--viewer-control-border);
+  color: var(--viewer-control-text);
+  box-shadow: var(--viewer-control-shadow);
   opacity: 1;
   pointer-events: auto;
 }
 .markdown-image-lightbox__close:hover {
-  background: rgba(48, 54, 61, 0.96);
-  color: #f0f6fc;
+  background: var(--viewer-control-hover);
+  color: var(--viewer-control-text);
 }
 .markdown-image-lightbox__close:focus-visible {
   outline: 2px solid var(--accent-blue);

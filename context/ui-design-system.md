@@ -120,6 +120,19 @@ in the kit-ui repo. The parts middleman depends on as stable API:
   turn owns keeping bar text short (section truncation is off). Protected
   by the StatusBar counts/budget browser suites and the focus-mode e2e
   spec.
+- Top bar (`TopBar`): the app header renders through it as `.app-top-bar`
+  (the app-owned alias the shell specs assert on); tabs auto-collapse into
+  `.kit-top-bar__nav-select` by measurement, not a width breakpoint. Two
+  integration constraints, both learned the hard way: the header must clip
+  its x-axis (`overflow-x: clip`) because kit's hidden measurement probe is a
+  full-width absolute row that otherwise inflates body scrollWidth into
+  horizontal overflow at narrow widths; and any responsive side-region CSS
+  must keep the left/right regions content-sized — a flex-stretched region
+  poisons the `expandUsed` footprint kit freezes at collapse and blocks the
+  tabs from re-expanding when the container widens. Select tabs via
+  `.kit-top-bar__tabs .kit-top-bar__tab`, never the bare class (the hidden
+  probe row carries it too). Protected by the `container-layout` and
+  `navigation` e2e specs.
 - Flash (`FlashBanner` + flash store): one shared store instance via
   `@middleman/ui/stores/flash` (a re-export of kit's), rendered by kit
   `FlashBanner` mounted once per shell — above the focus/desktop branching

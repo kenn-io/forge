@@ -531,7 +531,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: var(--space-6);
     overflow-y: auto;
     padding: 26px 28px;
     background: var(--bg-primary);
@@ -540,7 +540,7 @@
   .repo-page__header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(560px, 720px);
-    gap: 20px;
+    gap: var(--space-6);
     align-items: start;
     padding-bottom: 20px;
     border-bottom: 1px solid var(--border-muted);

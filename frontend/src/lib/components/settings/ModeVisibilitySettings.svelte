@@ -138,7 +138,7 @@
   .mode-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 14px;
+    gap: 8px var(--space-5);
   }
 
   .mode-toggle {
@@ -191,10 +191,10 @@
   }
 
   .compact {
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .compact .mode-grid {
-    gap: 7px 12px;
+    gap: var(--space-3) 12px;
   }
 </style>

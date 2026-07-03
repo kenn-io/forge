@@ -641,7 +641,7 @@
     padding: 14px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space-5);
   }
 
   .first-run-form__header,

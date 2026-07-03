@@ -439,11 +439,11 @@
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
-    gap: 5px;
+    gap: var(--space-2);
   }
 
   :global(.mobile-main) .pull-item .ci {
-    gap: 3px;
+    gap: var(--space-1);
   }
 
   .import-btn {

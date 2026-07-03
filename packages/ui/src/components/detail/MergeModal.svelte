@@ -311,7 +311,7 @@
   .merge-body {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space-5);
   }
 
   .field {

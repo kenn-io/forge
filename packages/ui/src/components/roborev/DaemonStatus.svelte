@@ -79,7 +79,7 @@
   .conn-indicator {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-2);
     font-weight: 500;
   }
 

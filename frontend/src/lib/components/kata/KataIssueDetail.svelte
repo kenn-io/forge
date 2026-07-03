@@ -383,7 +383,7 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 14px;
+    gap: var(--space-5);
     margin-bottom: 14px;
   }
 
@@ -554,7 +554,7 @@
     color: var(--text-muted);
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-2);
     padding: 2px 6px;
     font: inherit;
     font-size: var(--font-size-xs);

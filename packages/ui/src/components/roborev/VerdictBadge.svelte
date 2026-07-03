@@ -55,7 +55,7 @@
   .verdict {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-1);
     font-size: var(--font-size-xs);
     font-weight: 500;
     white-space: nowrap;

@@ -292,7 +292,7 @@
   .promote-content {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space-5);
   }
   .promote-subject {
     margin: 0;
@@ -335,7 +335,7 @@
   .match-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-4);
     min-height: 48px;
     padding: 8px 10px;
     border-bottom: 1px solid var(--border-muted);

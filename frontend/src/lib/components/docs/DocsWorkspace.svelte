@@ -1892,7 +1892,7 @@
   .modal-form {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .modal-field {
@@ -2002,7 +2002,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-4);
     color: var(--text-muted);
     font-size: var(--font-size-sm);
   }

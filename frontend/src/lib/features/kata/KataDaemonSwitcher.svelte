@@ -167,7 +167,7 @@
     display: grid;
     grid-template-columns: 14px minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: 9px;
+    gap: var(--space-4);
     padding: 7px 8px;
     text-align: left;
     font-size: var(--font-size-sm);

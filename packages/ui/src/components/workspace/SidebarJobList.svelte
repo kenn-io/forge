@@ -107,7 +107,7 @@
   .job-row {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: var(--space-1);
     padding: 8px 12px;
     border: none;
     border-bottom: 1px solid var(--border-muted);

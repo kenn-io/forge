@@ -415,7 +415,7 @@
   .agent-settings {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .agent-list {
@@ -430,7 +430,7 @@
   .agent-row {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-4);
     padding: 8px;
     border-top: 1px solid var(--border-muted);
     background: transparent;
@@ -469,7 +469,7 @@
   .field {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: var(--space-2);
     min-width: 0;
   }
 

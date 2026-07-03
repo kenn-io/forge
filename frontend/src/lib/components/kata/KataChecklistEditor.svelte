@@ -236,7 +236,7 @@
     border-radius: 6px;
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-3);
     padding: 2px 4px;
     color: var(--text-muted);
   }

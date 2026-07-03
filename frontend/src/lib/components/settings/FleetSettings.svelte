@@ -525,7 +525,7 @@
   .fleet-settings {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space-5);
   }
 
   .toggle-row,
@@ -628,7 +628,7 @@
   .peer-section {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-4);
     padding-top: 12px;
     border-top: 1px solid var(--border-muted);
   }

@@ -809,7 +809,7 @@
   }
   .schedule {
     display: grid;
-    gap: 10px;
+    gap: var(--space-4);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
     padding: 12px;
@@ -873,7 +873,7 @@
   }
   .template {
     display: grid;
-    gap: 10px;
+    gap: var(--space-4);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
     padding: 12px;

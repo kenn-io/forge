@@ -293,13 +293,13 @@
   .kata-project-mappings {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space-5);
   }
 
   .mapping-section {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .mapping-section-header {

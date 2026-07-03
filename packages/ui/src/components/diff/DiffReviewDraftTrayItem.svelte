@@ -218,7 +218,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
-    gap: 10px;
+    gap: var(--space-4);
     min-width: 0;
     padding: 8px 8px 8px 10px;
     border: 1px solid var(--border-muted);
@@ -228,7 +228,7 @@
 
   .draft-content {
     display: grid;
-    gap: 3px;
+    gap: var(--space-1);
     min-width: 0;
   }
 

@@ -172,7 +172,7 @@
   .picker {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-4);
     min-width: min(360px, calc(100vw - 68px));
   }
 

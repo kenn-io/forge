@@ -310,7 +310,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: var(--space-4);
     min-height: 28px;
     padding: 5px 8px;
     border-radius: 3px;

@@ -395,7 +395,7 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 14px;
+    gap: var(--space-5);
     padding: 14px 14px 10px;
   }
 
@@ -576,7 +576,7 @@
     width: max-content;
     min-width: 160px;
     max-width: min(240px, calc(100% - 16px));
-    gap: 3px;
+    gap: var(--space-1);
     padding: 8px 10px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
@@ -690,7 +690,7 @@
   }
 
   .repo-card__footer {
-    gap: 10px;
+    gap: var(--space-4);
     padding: 9px 14px;
     border-top: 1px solid var(--border-muted);
     color: var(--text-muted);
@@ -735,7 +735,7 @@
     .repo-card__issue-row {
       grid-template-columns: minmax(0, 1fr);
       justify-items: start;
-      gap: 5px;
+      gap: var(--space-2);
     }
 
     .repo-card__issue-main span {

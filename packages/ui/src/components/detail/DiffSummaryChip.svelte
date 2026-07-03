@@ -190,7 +190,7 @@
   .diff-summary-rows {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: var(--space-2);
   }
 
   .diff-summary-row {

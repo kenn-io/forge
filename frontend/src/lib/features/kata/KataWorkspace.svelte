@@ -1028,7 +1028,7 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-4);
     flex: 1 1 auto;
   }
 
@@ -1053,7 +1053,7 @@
   .kata-header-actions {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-4);
     flex: 0 0 auto;
   }
 
@@ -1071,7 +1071,7 @@
   .header-action {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-2);
     white-space: nowrap;
   }
 

@@ -257,9 +257,9 @@
 </Modal>
 
 <style>
-  .import-content { display: flex; flex-direction: column; gap: 14px; }
+  .import-content { display: flex; flex-direction: column; gap: var(--space-5); }
   .footer-status { margin-right: auto; color: var(--text-muted); font-size: var(--font-size-sm); }
-  .preview-form { display: flex; gap: 10px; align-items: end; }
+  .preview-form { display: flex; gap: var(--space-4); align-items: end; }
   label { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: var(--font-size-sm); color: var(--text-secondary); }
   .provider-field { flex: 0 0 120px; }
   .host-field { flex: 0 0 190px; }

@@ -1064,7 +1064,7 @@
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 3px;
+    gap: var(--space-1);
     width: 100%;
     min-height: 62px;
     padding: 8px 10px;

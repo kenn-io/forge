@@ -102,7 +102,7 @@
   .modal-btn {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-2);
     min-height: 28px;
     padding: 4px 12px;
     border-radius: var(--radius-sm);

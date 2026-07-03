@@ -227,7 +227,7 @@
   .thread-action {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-2);
     height: 24px;
     padding: 0 8px;
     border: 1px solid var(--border-muted);

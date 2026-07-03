@@ -454,7 +454,7 @@
     display: grid;
     grid-template-columns: 8px minmax(0, 1fr) 14px;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-3);
     width: 100%;
     height: 26px;
     padding: 0 6px;
@@ -542,7 +542,7 @@
     }
 
     .selector-row {
-      gap: 5px;
+      gap: var(--space-2);
       padding: 0 5px;
     }
   }

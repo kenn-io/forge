@@ -289,7 +289,7 @@
     display: grid;
     grid-template-columns: 18px minmax(0, 1fr) auto;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-3);
     padding: 4px 8px;
     text-align: left;
     font: inherit;
@@ -351,7 +351,7 @@
 
   .project-groups {
     display: grid;
-    gap: 18px;
+    gap: var(--space-6);
     margin-top: 22px;
   }
 

@@ -1061,7 +1061,7 @@
     z-index: 1;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 3px;
+    gap: var(--space-1);
     padding: 3px 3px 5px;
     background: var(--bg-surface);
   }
@@ -1096,7 +1096,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: var(--space-4);
     min-height: 28px;
     padding: 5px 8px;
     border-radius: 3px;
@@ -1188,7 +1188,7 @@
   .repo-browser__categories button {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-2);
     min-height: 24px;
     padding: 0 7px;
     border: thin solid var(--border-default);
@@ -1251,7 +1251,7 @@
 
   .repo-browser__filemeta {
     flex: 0 0 auto;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .repo-browser__segmented {
@@ -1345,7 +1345,7 @@
   .repo-browser__history-list button {
     width: 100%;
     display: grid;
-    gap: 3px;
+    gap: var(--space-1);
     padding: 9px 12px;
     border: 0;
     border-bottom: thin solid var(--border-muted);

@@ -72,7 +72,7 @@
 </section>
 
 <style>
-  .recurrence-panel { display: grid; gap: 10px; }
+  .recurrence-panel { display: grid; gap: var(--space-4); }
   .head { display: flex; align-items: center; justify-content: space-between; }
   h3 {
     font-size: var(--font-size-sm);

@@ -262,7 +262,7 @@
     display: grid;
     grid-template-columns: 12px minmax(0, 1fr) 48px;
     align-items: center;
-    gap: 9px;
+    gap: var(--space-4);
     border: 0;
     background: transparent;
     color: inherit;

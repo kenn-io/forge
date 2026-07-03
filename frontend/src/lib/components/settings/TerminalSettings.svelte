@@ -527,7 +527,7 @@
   .terminal-settings {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .terminal-settings.compact {
@@ -557,7 +557,7 @@
   .control-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .font-input,

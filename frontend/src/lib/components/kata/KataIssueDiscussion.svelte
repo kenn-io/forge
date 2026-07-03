@@ -306,7 +306,7 @@
 
   .link-list {
     display: grid;
-    gap: 3px;
+    gap: var(--space-1);
   }
 
   .link-row {
@@ -361,7 +361,7 @@
     min-width: 0;
     flex: 1;
     display: grid;
-    gap: 3px;
+    gap: var(--space-1);
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     font-weight: 650;

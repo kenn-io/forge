@@ -283,7 +283,7 @@ describe("AppHeader", () => {
   it("spaces the command palette icon and shortcut hint", () => {
     const buttonStyle = compiledStyle(headerIconButtonSource, "button");
 
-    expect(buttonStyle.getPropertyValue("gap")).toBe("7px");
+    expect(buttonStyle.getPropertyValue("gap")).toBe("var(--space-3)");
   });
 
   it("opens the command palette from the header trigger", async () => {

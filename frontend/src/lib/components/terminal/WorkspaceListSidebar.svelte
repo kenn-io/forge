@@ -1573,13 +1573,13 @@
   .fleet-hosts {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: var(--space-2);
   }
 
   .fleet-host {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-2);
     max-width: 100%;
     min-width: 0;
     padding: 2px 6px;
@@ -1867,7 +1867,7 @@
      * the line so the branch chip always keeps some room. */
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-1);
     flex: 0 1 auto;
     max-width: 50%;
     min-width: 0;
@@ -1892,7 +1892,7 @@
      * push state and diff stats and truncates with ellipsis. */
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-1);
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;

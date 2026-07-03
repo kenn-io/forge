@@ -775,7 +775,7 @@
   .heading {
     display: flex;
     align-items: baseline;
-    gap: 10px;
+    gap: var(--space-4);
     min-width: 0;
   }
 
@@ -803,7 +803,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: var(--space-2);
     min-height: 26px;
     padding: 0 8px;
     border: 1px solid var(--border-default);
@@ -890,7 +890,7 @@
   .col {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-1);
     min-width: 0;
     padding: 0;
     border: 0;

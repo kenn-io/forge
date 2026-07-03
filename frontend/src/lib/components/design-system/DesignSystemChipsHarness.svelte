@@ -42,7 +42,7 @@
   .behavior-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: var(--space-4);
     align-items: start;
   }
 </style>

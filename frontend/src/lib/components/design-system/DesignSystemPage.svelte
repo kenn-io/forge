@@ -212,12 +212,12 @@
     margin: 0 auto;
     padding: 32px 24px 48px;
     display: grid;
-    gap: 20px;
+    gap: var(--space-6);
   }
 
   .hero {
     display: grid;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .eyebrow,
@@ -259,7 +259,7 @@
     box-shadow: var(--shadow-sm);
     padding: 20px;
     display: grid;
-    gap: 18px;
+    gap: var(--space-6);
   }
 
   .grid {
@@ -294,7 +294,7 @@
   .matrix-row {
     display: grid;
     grid-template-columns: 72px minmax(0, 1fr);
-    gap: 14px;
+    gap: var(--space-5);
     align-items: start;
   }
 
@@ -315,7 +315,7 @@
   .chip-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .behavior-grid {
@@ -335,7 +335,7 @@
 
   .inbox-examples {
     display: grid;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .inbox-row {

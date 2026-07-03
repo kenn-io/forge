@@ -101,7 +101,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: var(--space-4);
     margin-bottom: 10px;
   }
 
@@ -143,7 +143,7 @@
   .pill-open {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-4);
     flex: 1;
     min-width: 0;
     padding: 6px 10px;

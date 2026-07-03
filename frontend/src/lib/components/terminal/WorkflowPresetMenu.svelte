@@ -157,7 +157,7 @@
   .preset-trigger {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-2);
     height: 22px;
     padding: 0 7px;
     border: 1px solid var(--border-default);

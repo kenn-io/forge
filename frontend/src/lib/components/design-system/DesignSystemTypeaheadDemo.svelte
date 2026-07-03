@@ -97,7 +97,7 @@
     padding: 16px;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
-    gap: 14px;
+    gap: var(--space-5);
     align-items: center;
   }
 

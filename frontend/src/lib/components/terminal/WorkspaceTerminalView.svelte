@@ -3078,7 +3078,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: var(--space-4);
     flex: 1;
     color: var(--text-muted);
     font-size: var(--font-size-lg);
@@ -3093,7 +3093,7 @@
     flex-direction: column;
     align-items: flex-start;
     justify-content: center;
-    gap: 18px;
+    gap: var(--space-6);
     flex: 1;
     min-width: 0;
     overflow: auto;
@@ -3107,7 +3107,7 @@
   .workspace-zero-copy {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-4);
     min-width: 0;
   }
 
@@ -3163,7 +3163,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-3);
     color: var(--text-secondary);
     font-size: var(--font-size-md);
     line-height: 1.5;
@@ -3268,7 +3268,7 @@
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border-default);
     border-left: 1px solid var(--border-default);
-    gap: 10px;
+    gap: var(--space-4);
     flex-shrink: 0;
   }
 
@@ -3368,7 +3368,7 @@
     display: flex;
     align-items: stretch;
     justify-content: space-between;
-    gap: 10px;
+    gap: var(--space-4);
     height: 30px;
     padding: 0 6px 0 0;
     border-bottom: 1px solid var(--border-default);

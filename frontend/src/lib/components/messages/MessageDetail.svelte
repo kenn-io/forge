@@ -514,7 +514,7 @@
 
   .header-fields {
     display: grid;
-    gap: 3px 0;
+    gap: var(--space-1) 0;
     margin-bottom: 12px;
   }
 
@@ -558,7 +558,7 @@
   .label-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: var(--space-2);
   }
 
   .label-chip {
@@ -742,7 +742,7 @@
   .pill-list {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: var(--space-2);
     list-style: none;
     padding: 0;
     margin: 0;
@@ -896,7 +896,7 @@
   .image-banner {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-4);
     margin: 0 0 12px;
     padding: 8px 12px;
     border-radius: var(--radius-sm, 4px);

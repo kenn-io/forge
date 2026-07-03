@@ -1342,7 +1342,7 @@
   .detail-header {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .detail-title {
@@ -1581,7 +1581,7 @@
 
   .conflict-body {
     display: grid;
-    gap: 14px;
+    gap: var(--space-5);
   }
 
   .modal-copy {

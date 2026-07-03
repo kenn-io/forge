@@ -192,7 +192,7 @@
 
   .complete-dialog {
     display: grid;
-    gap: 14px;
+    gap: var(--space-5);
   }
 
   .complete-context {

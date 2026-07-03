@@ -143,7 +143,7 @@
 <style>
   .repo-preview-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .filter-input { flex: 1; min-width: 220px; font-size: var(--font-size-md); padding: 6px 10px; background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
-  .toggle-filter { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; }
+  .toggle-filter { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; }
   .toggle-filter input { margin: 0; }
   .shortcut-btn { font-size: var(--font-size-sm); color: var(--accent-blue); }
   .table-wrap { overflow: auto; border: 1px solid var(--border-muted); border-radius: var(--radius-md); }

@@ -166,7 +166,7 @@
   .workspace-home {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space-5);
     padding: 14px 16px 18px;
     min-width: 0;
     height: 100%;
@@ -370,7 +370,7 @@
     display: grid;
     grid-template-columns: 8px 1fr auto;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-4);
     height: 28px;
     padding: 0 10px;
     border: 1px solid var(--border-muted);

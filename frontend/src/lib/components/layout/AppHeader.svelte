@@ -319,7 +319,7 @@
   .brand {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-3);
     flex-shrink: 0;
   }
 
@@ -353,7 +353,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 7px;
+    gap: var(--space-3);
     min-width: 34px;
     min-height: 28px;
     line-height: 0;

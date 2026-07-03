@@ -115,7 +115,7 @@
   .budget-bar-group {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-1);
   }
   .budget-label {
     font-size: 0.9em;

@@ -66,7 +66,7 @@
 <style>
   .confirm-content {
     display: grid;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .confirm-message {

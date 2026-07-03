@@ -2422,13 +2422,13 @@
     position: relative;
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .title-line {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: var(--space-4);
     flex: 1;
     min-width: 0;
   }
@@ -2573,7 +2573,7 @@
   .meta-branch {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-1);
     font-size: var(--font-size-sm);
   }
 

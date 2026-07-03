@@ -109,7 +109,7 @@
     padding: 18px;
     display: grid;
     align-content: start;
-    gap: 10px;
+    gap: var(--space-4);
     background:
       linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 92%, transparent), var(--bg-surface)),
       var(--bg-surface);
@@ -144,7 +144,7 @@
 
   .panel-surface ul {
     display: grid;
-    gap: 7px;
+    gap: var(--space-3);
     margin: 4px 0 0;
     padding: 0;
     list-style: none;

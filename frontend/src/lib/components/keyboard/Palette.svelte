@@ -815,7 +815,7 @@
     width: 100%;
     display: flex;
     align-items: baseline;
-    gap: 10px;
+    gap: var(--space-4);
     padding: 6px 16px;
     background: transparent;
     border: none;

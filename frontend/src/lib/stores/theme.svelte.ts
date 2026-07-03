@@ -74,6 +74,9 @@ let manualMode: "light" | "dark" | null = null;
 const appliedVars = new Set<string>();
 
 function applyDarkClass(isDarkMode: boolean): void {
+  // This IS the adapter over kit's theme store: the embed-forced path
+  // applies classes directly by design (see context/ui-design-system.md).
+  // kit-ui-check-ignore: sanctioned forced-mode class wiring in the adapter
   document.documentElement.classList.toggle("dark", isDarkMode);
 }
 
@@ -84,6 +87,7 @@ function applyForcedMode(configMode: string): void {
   // signal it mutates, self-retriggering into effect_update_depth_exceeded.
   let isDarkMode: boolean;
   if (configMode === "system") {
+    // kit-ui-check-ignore: forced "system" mode tracks the OS directly, never persisting
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     isDarkMode = mq.matches;
     forcedDark = isDarkMode;

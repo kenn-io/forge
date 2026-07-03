@@ -236,7 +236,7 @@
     z-index: 60;
   }
 
-  @media (max-width: 560px) {
+  @media (max-width: 640px) {
     .issue-modal__backdrop {
       align-items: end;
       padding: 12px;

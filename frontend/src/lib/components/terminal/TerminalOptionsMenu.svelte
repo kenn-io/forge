@@ -150,7 +150,7 @@
     margin-bottom: 8px;
   }
 
-  @media (max-width: 620px) {
+  @media (max-width: 640px) {
     .options-popover {
       width: min(372px, calc(100vw - 24px));
       right: -6px;

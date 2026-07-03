@@ -251,7 +251,7 @@
     width: 100%;
   }
 
-  @media (max-width: 420px) {
+  @media (max-width: 640px) {
     .approve-popover {
       width: min(320px, calc(100vw - 24px));
     }

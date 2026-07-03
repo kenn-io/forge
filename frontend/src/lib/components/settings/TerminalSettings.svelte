@@ -741,7 +741,7 @@
     color: var(--accent-red);
   }
 
-  @media (max-width: 620px) {
+  @media (max-width: 640px) {
     .terminal-settings.compact {
       width: min(340px, calc(100vw - 32px));
     }

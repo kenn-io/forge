@@ -36,6 +36,7 @@ describe("embed-forced theme mode", () => {
     mounted?.unmount();
     mounted = null;
     delete window.__middleman_config;
+    // kit-ui-check-ignore: test harness resets the dark class between cases
     document.documentElement.classList.remove("dark");
     cleanupTheme();
     localStorage.clear();

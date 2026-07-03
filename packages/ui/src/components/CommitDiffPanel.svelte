@@ -91,7 +91,7 @@
     overflow: hidden;
   }
 
-  @media (max-width: 720px) {
+  @media (max-width: 760px) {
     .files-layout {
       flex-direction: column;
     }

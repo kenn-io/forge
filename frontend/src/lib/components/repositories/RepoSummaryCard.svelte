@@ -722,7 +722,7 @@
     color: var(--accent-blue);
   }
 
-  @media (max-width: 700px) {
+  @media (max-width: 760px) {
     .repo-card__header {
       flex-direction: column;
     }

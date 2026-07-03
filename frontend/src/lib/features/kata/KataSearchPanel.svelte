@@ -264,7 +264,7 @@
     font-style: normal;
   }
 
-  @media (max-width: 820px) {
+  @media (max-width: 900px) {
     .kata-search-toolbar {
       flex-wrap: wrap;
     }

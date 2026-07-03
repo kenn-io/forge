@@ -585,7 +585,7 @@
     font-size: var(--font-size-sm);
   }
 
-  @media (max-width: 860px) {
+  @media (max-width: 900px) {
     .agent-fields,
     .agent-fields--custom {
       grid-template-columns: 1fr;

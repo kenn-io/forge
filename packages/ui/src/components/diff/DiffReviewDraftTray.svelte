@@ -193,7 +193,7 @@
     font-size: var(--font-size-sm);
   }
 
-  @media (max-width: 680px) {
+  @media (max-width: 760px) {
     .publish-row {
       align-items: stretch;
       flex-wrap: wrap;

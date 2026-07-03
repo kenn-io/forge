@@ -152,7 +152,7 @@
     }
   }
 
-  @media (max-width: 620px) {
+  @media (max-width: 640px) {
     .repo-metrics--strip {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }

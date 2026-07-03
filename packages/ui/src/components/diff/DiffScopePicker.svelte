@@ -247,7 +247,7 @@
     color: var(--accent-red);
   }
 
-  @media (max-width: 720px) {
+  @media (max-width: 760px) {
     .diff-scope-picker__menu {
       left: 0;
       right: auto;

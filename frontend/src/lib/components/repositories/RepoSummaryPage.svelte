@@ -710,7 +710,7 @@
     gap: 12px;
   }
 
-  @media (max-width: 960px) {
+  @media (max-width: 900px) {
     .repo-page {
       padding: 18px;
     }
@@ -728,7 +728,7 @@
     }
   }
 
-  @media (max-width: 520px) {
+  @media (max-width: 640px) {
     .repo-grid {
       grid-template-columns: 1fr;
     }

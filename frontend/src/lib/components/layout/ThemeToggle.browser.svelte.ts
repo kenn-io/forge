@@ -32,6 +32,7 @@ function setLightBaseline(): void {
   } catch {
     // Storage blocked is irrelevant here; initTheme still honors the value.
   }
+  // kit-ui-check-ignore: test harness resets the dark class between cases
   document.documentElement.classList.remove("dark");
   initTheme();
 }
@@ -43,6 +44,7 @@ describe("ThemeToggle (browser)", () => {
 
   afterEach(() => {
     cleanupTheme();
+    // kit-ui-check-ignore: test harness resets the dark class between cases
     document.documentElement.classList.remove("dark");
     try {
       localStorage.removeItem("middleman-theme");

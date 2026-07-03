@@ -18,6 +18,7 @@ function mountedMarkdown(html: string): HTMLDivElement {
 describe("markdown Shiki theme styles (browser)", () => {
   afterEach(() => {
     document.querySelectorAll("[data-markdown-shiki-theme-test]").forEach((node) => node.remove());
+    // kit-ui-check-ignore: shiki dual-theme test drives the dark class directly
     document.documentElement.classList.remove("dark");
   });
 
@@ -30,6 +31,7 @@ describe("markdown Shiki theme styles (browser)", () => {
     expect(pre).toBeInstanceOf(HTMLElement);
     expect(token).toBeInstanceOf(HTMLElement);
 
+    // kit-ui-check-ignore: shiki dual-theme test drives the dark class directly
     document.documentElement.classList.remove("dark");
     const lightPreStyle = getComputedStyle(pre as HTMLElement);
     const lightTokenStyle = getComputedStyle(token as HTMLElement);
@@ -37,6 +39,7 @@ describe("markdown Shiki theme styles (browser)", () => {
     const lightPreColor = lightPreStyle.color;
     const lightTokenColor = lightTokenStyle.color;
 
+    // kit-ui-check-ignore: shiki dual-theme test drives the dark class directly
     document.documentElement.classList.add("dark");
     const darkPreStyle = getComputedStyle(pre as HTMLElement);
     const darkTokenStyle = getComputedStyle(token as HTMLElement);

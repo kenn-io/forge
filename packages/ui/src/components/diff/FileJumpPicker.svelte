@@ -209,6 +209,11 @@
 
 <style>
   .file-jump {
+    /* Local stacking only: the host and its fixed menu render inside the
+       diff toolbar's own stacking context, so this z competes only with
+       toolbar siblings — the menu's global order comes from the toolbar's
+       plane. That was equally true of the old 1200/2000 literals; they
+       never escaped the toolbar's context either. */
     position: relative;
     z-index: 10;
     flex-shrink: 0;

@@ -173,7 +173,10 @@ describe("budget display", () => {
     const popoverRect = popover.getBoundingClientRect();
     const barRect = document.querySelector(".kit-status-bar")!.getBoundingClientRect();
     expect(popoverRect.height).toBeGreaterThan(100);
-    expect(popoverRect.bottom).toBeLessThanOrEqual(barRect.top);
+    // Subpixel tolerance: with the real app.css tokens loaded the inline
+    // wrapper's box can sit a fraction of a px off the bar edge; the
+    // invariant is that the panel opens above the bar, not into it.
+    expect(popoverRect.bottom).toBeLessThanOrEqual(barRect.top + 1);
   });
 
   it("marks sync budget spend that exceeds the configured limit", async () => {

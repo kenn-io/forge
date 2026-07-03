@@ -6,6 +6,7 @@
 import DOMPurify, { type UponSanitizeElementHook, type UponSanitizeElementHookEvent } from "dompurify";
 // kit-ui-check-ignore: link/image renderer overrides exceed kit markdown hooks
 import { Marked, type MarkedExtension, type Tokens } from "marked";
+import { codeFenceLanguage, escapeHtml } from "@kenn-io/kit-ui/utils/markdown";
 import { providerItemRefExtension, type RepoContext } from "@middleman/ui/utils/markdown";
 import {
   joinFolderPath,
@@ -181,7 +182,7 @@ function newImageToken(): string {
 }
 
 function trustedImageAttr(imageToken: string): string {
-  return `data-doc-image-token="${escapeAttr(imageToken)}"`;
+  return `data-doc-image-token="${escapeHtml(imageToken)}"`;
 }
 
 function stripImageTokenAttrs(html: string): string {
@@ -226,8 +227,8 @@ function wikilinkExtension(options: DocsMarkdownOptions, imageToken: string) {
           return escapeHtml(parsed.alias ?? parsed.target);
         }
         const src = options.buildBlobURL(options.folderID, parsed.target);
-        const alt = escapeAttr(parsed.alias ?? parsed.target);
-        return `<img ${trustedImageAttr(imageToken)} src="${escapeAttr(src)}" alt="${alt}" loading="lazy" decoding="async">`;
+        const alt = escapeHtml(parsed.alias ?? parsed.target);
+        return `<img ${trustedImageAttr(imageToken)} src="${escapeHtml(src)}" alt="${alt}" loading="lazy" decoding="async">`;
       }
       const resolution = resolveWikilink(parsed.target, options.index);
       const display = escapeHtml(parsed.alias ?? parsed.target);
@@ -311,11 +312,11 @@ function kataLinkExtension() {
     renderer(token: Tokens.Generic): string {
       const k = token as KataLinkToken;
       const display = k.project ? `${k.project}/#${k.shortId}` : `#${k.shortId}`;
-      const projectAttr = k.project ? ` data-kata-project="${escapeAttr(k.project)}"` : "";
+      const projectAttr = k.project ? ` data-kata-project="${escapeHtml(k.project)}"` : "";
       return (
         `<a class="kata-link" href="#"` +
         ` data-kata-link="true"` +
-        ` data-kata-short-id="${escapeAttr(k.shortId)}"` +
+        ` data-kata-short-id="${escapeHtml(k.shortId)}"` +
         projectAttr +
         ` title="Open Kata issue">${escapeHtml(display)}</a>`
       );
@@ -361,7 +362,7 @@ function mentionExtension() {
     renderer(token: Tokens.Generic): string {
       const m = token as MentionToken;
       return (
-        `<span class="kata-mention" data-kata-mention="${escapeAttr(m.handle)}">` + `@${escapeHtml(m.handle)}</span>`
+        `<span class="kata-mention" data-kata-mention="${escapeHtml(m.handle)}">` + `@${escapeHtml(m.handle)}</span>`
       );
     },
   };
@@ -380,18 +381,18 @@ function wikilinkAnchor(
     const candidates = resolution.candidates.join("|");
     return (
       `<a class="wikilink wikilink--ambiguous" href="#"` +
-      ` data-wikilink="ambiguous" data-doc-link="${escapeAttr(candidates)}"` +
-      ` data-folder="${escapeAttr(options.folderID)}"` +
-      (anchor ? ` data-anchor="${escapeAttr(anchor)}"` : "") +
+      ` data-wikilink="ambiguous" data-doc-link="${escapeHtml(candidates)}"` +
+      ` data-folder="${escapeHtml(options.folderID)}"` +
+      (anchor ? ` data-anchor="${escapeHtml(anchor)}"` : "") +
       ` title="Multiple notes match — click to pick one">${display}</a>`
     );
   }
   const url = options.buildDocURL(options.folderID, resolution.path, anchor);
   return (
-    `<a class="wikilink" href="${escapeAttr(url)}"` +
-    ` data-wikilink="resolved" data-doc-link="${escapeAttr(resolution.path)}"` +
-    ` data-folder="${escapeAttr(options.folderID)}"` +
-    (anchor ? ` data-anchor="${escapeAttr(anchor)}"` : "") +
+    `<a class="wikilink" href="${escapeHtml(url)}"` +
+    ` data-wikilink="resolved" data-doc-link="${escapeHtml(resolution.path)}"` +
+    ` data-folder="${escapeHtml(options.folderID)}"` +
+    (anchor ? ` data-anchor="${escapeHtml(anchor)}"` : "") +
     `>${display}</a>`
   );
 }
@@ -405,7 +406,7 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
     link(this: { parser: { parseInline: (tokens: Tokens.Generic[]) => string } }, token: Tokens.Link) {
       const inner = this.parser.parseInline(token.tokens ?? []);
       const href = token.href ?? "";
-      const title = token.title ? ` title="${escapeAttr(token.title)}"` : "";
+      const title = token.title ? ` title="${escapeHtml(token.title)}"` : "";
       // Empty href — fall back to plain text so the renderer still emits
       // valid HTML rather than a broken anchor.
       if (!href) return `<span>${inner}</span>`;
@@ -415,16 +416,16 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
         // attribute and ship a safe local href so the viewer's click
         // handler can extract it cleanly.
         const uid = href.slice("kata://issue/".length);
-        return `<a href="#" data-kata-link="issue"` + ` data-kata-uid="${escapeAttr(uid)}"${title}>${inner}</a>`;
+        return `<a href="#" data-kata-link="issue"` + ` data-kata-uid="${escapeHtml(uid)}"${title}>${inner}</a>`;
       }
       if (isUnsafeUri(href)) return `<span>${inner}</span>`;
       if (isExternal(href)) {
         const externalHref = cleanURIForScheme(href);
-        return `<a href="${escapeAttr(externalHref)}" target="_blank" rel="noreferrer"${title}>${inner}</a>`;
+        return `<a href="${escapeHtml(externalHref)}" target="_blank" rel="noreferrer"${title}>${inner}</a>`;
       }
       if (href.startsWith("#")) {
         // In-page anchor — pass through. The viewer wires up scroll behavior.
-        return `<a href="${escapeAttr(href)}" data-anchor-link="true"${title}>${inner}</a>`;
+        return `<a href="${escapeHtml(href)}" data-anchor-link="true"${title}>${inner}</a>`;
       }
       // Split off an optional fragment before checking for a .md target.
       // Without this, `other.md#heading` fails the `.md` suffix check in
@@ -434,10 +435,10 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
       if (finalPath) {
         const url = options.buildDocURL(options.folderID, finalPath, anchor);
         return (
-          `<a class="doc-link" href="${escapeAttr(url)}"` +
-          ` data-doc-link="${escapeAttr(finalPath)}"` +
-          ` data-folder="${escapeAttr(options.folderID)}"` +
-          (anchor ? ` data-anchor="${escapeAttr(anchor)}"` : "") +
+          `<a class="doc-link" href="${escapeHtml(url)}"` +
+          ` data-doc-link="${escapeHtml(finalPath)}"` +
+          ` data-folder="${escapeHtml(options.folderID)}"` +
+          (anchor ? ` data-anchor="${escapeHtml(anchor)}"` : "") +
           `${title}>${inner}</a>`
         );
       }
@@ -446,13 +447,13 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
       if (isAssetRef(href)) {
         const path = joinFolderPath(options.currentDocPath, href) ?? stripLeadingSlash(href);
         const url = options.buildBlobURL(options.folderID, path);
-        return `<a href="${escapeAttr(url)}" target="_blank" rel="noreferrer"${title}>${inner}</a>`;
+        return `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer"${title}>${inner}</a>`;
       }
-      return `<a href="${escapeAttr(href)}"${title}>${inner}</a>`;
+      return `<a href="${escapeHtml(href)}"${title}>${inner}</a>`;
     },
     image(token: Tokens.Image) {
-      const alt = escapeAttr(token.text ?? "");
-      const title = token.title ? ` title="${escapeAttr(token.title)}"` : "";
+      const alt = escapeHtml(token.text ?? "");
+      const title = token.title ? ` title="${escapeHtml(token.title)}"` : "";
       const href = token.href ?? "";
       // Block dangerous URI schemes at the source. DOMPurify also
       // sanitizes these, but rejecting them in the renderer means
@@ -467,28 +468,28 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
         const externalHref = cleanURIForScheme(href);
         if (options.allowExternalImages === false) {
           const label = token.text ? escapeHtml(token.text) : escapeHtml(href);
-          return `<a href="${escapeAttr(externalHref)}" target="_blank" rel="noreferrer"${title}>${label}</a>`;
+          return `<a href="${escapeHtml(externalHref)}" target="_blank" rel="noreferrer"${title}>${label}</a>`;
         }
-        return `<img ${trustedImageAttr(imageToken)} src="${escapeAttr(externalHref)}" alt="${alt}" ${imgAttrs}${title}>`;
+        return `<img ${trustedImageAttr(imageToken)} src="${escapeHtml(externalHref)}" alt="${alt}" ${imgAttrs}${title}>`;
       }
       if (!isAssetRef(href)) {
-        return `<img ${trustedImageAttr(imageToken)} src="${escapeAttr(href)}" alt="${alt}" ${imgAttrs}${title}>`;
+        return `<img ${trustedImageAttr(imageToken)} src="${escapeHtml(href)}" alt="${alt}" ${imgAttrs}${title}>`;
       }
       const path = joinFolderPath(options.currentDocPath, href) ?? stripLeadingSlash(href);
       const url = options.buildBlobURL(options.folderID, path);
-      return `<img ${trustedImageAttr(imageToken)} src="${escapeAttr(url)}" alt="${alt}" ${imgAttrs}${title}>`;
+      return `<img ${trustedImageAttr(imageToken)} src="${escapeHtml(url)}" alt="${alt}" ${imgAttrs}${title}>`;
     },
     heading(this: { parser: { parseInline: (tokens: Tokens.Generic[]) => string } }, token: Tokens.Heading) {
       const inner = this.parser.parseInline(token.tokens ?? []);
       const id = slugify(token.text ?? "");
       const level = Math.min(Math.max(token.depth, 1), 6);
-      return `<h${level} id="${escapeAttr(id)}">${inner}</h${level}>`;
+      return `<h${level} id="${escapeHtml(id)}">${inner}</h${level}>`;
     },
   };
 }
 
 function isMermaidFence(lang: string | undefined): boolean {
-  return (lang ?? "").trim().split(/\s+/, 1)[0]?.toLowerCase() === "mermaid";
+  return codeFenceLanguage(lang) === "mermaid";
 }
 
 function isExternal(href: string): boolean {
@@ -555,12 +556,4 @@ export function slugify(text: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value).replace(/"/g, "&quot;");
 }

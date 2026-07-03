@@ -12,6 +12,11 @@
 
 import { render } from "vitest-browser-svelte";
 
+// Production loads the global stylesheet through main.ts; the harness mounts
+// App.svelte directly, so it must import app.css itself or theme-level classes
+// (kit-sr-only, kit-popover-card, the token definitions) silently no-op in
+// browser-tier assertions.
+import "../app.css";
 import { createMockApiFetch, type MockApiHandle, type MockRouteOverride } from "./mockApiFetch.js";
 
 // A no-op EventSource so the live-update store's stream connect is inert. The

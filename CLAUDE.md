@@ -174,6 +174,7 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - For database schema changes, follow `context/db-migrations.md`; `internal/db/migrations/` is the source of truth for schema evolution.
 - For HTTP API error envelopes and frontend error branching, follow `context/error-handling.md`; branch on stable codes/details rather than prose.
 - For retries, backoff, and single-flight dedup against flaky upstreams, follow `context/retries-and-backoffs.md`.
+- For the `require_auth` API gate, login nonces, session cookies, and token rotation, follow `context/auth-invariants.md`; the long-lived token never goes in a URL.
 - For frontend UI and TypeScript/Svelte conventions, follow `context/ui-design-system.md`; prefer extending shared UI primitives over adding one-off local badge/chip/button styling, and name reused domain object shapes instead of repeating anonymous inline types.
 - For mobile, phone, narrow-viewport, touch, or `/m` route work, follow `context/mobile-ux.md`; mobile UX is a phone-first workflow, not desktop UI resized under mobile routes.
 - For Kata, Docs, and Messages/msgvault mode integration, follow `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` until dedicated context docs exist.

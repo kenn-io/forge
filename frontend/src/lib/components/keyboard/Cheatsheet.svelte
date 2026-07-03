@@ -252,7 +252,7 @@
     /* kit-ui-check-ignore: keyboard cheatsheet is a palette-style surface with its own key handling and layout, not a kit Modal dialog */
     inset: 0;
     background: rgba(0, 0, 0, 0.55);
-    z-index: 100;
+    z-index: 90;
   }
 
   .cheatsheet {
@@ -270,7 +270,7 @@
     border: 1px solid var(--border-default);
     border-radius: 10px;
     box-shadow: var(--shadow-lg);
-    z-index: 101;
+    z-index: 91;
   }
 
   .cheatsheet-filter {

@@ -91,7 +91,7 @@
     left: 0;
     right: 0;
     bottom: var(--status-bar-height);
-    z-index: 100;
+    z-index: 90;
   }
 
   /* kit-ui-check-ignore: full-width chrome-respecting takeover, not a kit side-sheet */

@@ -248,7 +248,7 @@ test("markdown image lightbox opens above drawer layers", async ({ page }) => {
       justifyContent: "center",
       paddingTop: "80px",
       position: "fixed",
-      zIndex: "100",
+      zIndex: "90",
     });
 
     expander.replaceWith(drawer);
@@ -261,7 +261,7 @@ test("markdown image lightbox opens above drawer layers", async ({ page }) => {
 
   const dialog = page.getByRole("dialog", { name: "Expanded image" });
   await expect(dialog).toBeVisible();
-  await expect(dialog).toHaveCSS("z-index", "130");
+  await expect(dialog).toHaveCSS("z-index", "96");
   await expect
     .poll(async () =>
       page.evaluate(() =>

@@ -261,7 +261,7 @@
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
-    z-index: 100;
+    z-index: 90;
     width: 260px;
     max-height: 320px;
     display: flex;

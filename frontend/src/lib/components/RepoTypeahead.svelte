@@ -460,7 +460,7 @@
     overflow-y: auto;
     /* Surface chrome comes from the shared kit-popover-card class so this
        menu reads as the same family as the kit nav dropdown beside it. */
-    z-index: 100;
+    z-index: 90;
     list-style: none;
     padding: 2px;
   }

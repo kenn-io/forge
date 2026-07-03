@@ -367,7 +367,7 @@
 
   .compact-menu {
     position: absolute;
-    z-index: 1000;
+    z-index: var(--z-popover);
     top: calc(100% + 4px);
     right: 0;
     width: min(224px, calc(100cqw - 20px));

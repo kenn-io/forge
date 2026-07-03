@@ -416,7 +416,7 @@
 
   .context-menu {
     position: fixed;
-    z-index: 1000;
+    z-index: var(--z-popover);
     min-width: 180px;
     background: var(--bg-surface);
     border: 1px solid var(--border-default);

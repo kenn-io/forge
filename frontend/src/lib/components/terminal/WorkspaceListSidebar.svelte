@@ -2035,7 +2035,7 @@
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow-md);
-    z-index: 1000;
+    z-index: var(--z-popover);
     padding: 4px 0;
   }
 

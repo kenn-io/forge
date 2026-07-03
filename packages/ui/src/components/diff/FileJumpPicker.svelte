@@ -210,7 +210,7 @@
 <style>
   .file-jump {
     position: relative;
-    z-index: 1200;
+    z-index: 10;
     flex-shrink: 0;
   }
 
@@ -239,7 +239,7 @@
 
   .file-jump-menu {
     position: fixed;
-    z-index: 2000;
+    z-index: var(--z-popover);
     max-height: min(520px, 70vh);
     overflow: hidden;
     border: 1px solid var(--border-default);

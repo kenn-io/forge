@@ -604,7 +604,7 @@ a:hover {
 .markdown-image-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 130;
+  z-index: 96;
   display: flex;
   align-items: center;
   justify-content: center;

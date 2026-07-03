@@ -174,7 +174,7 @@ describe("expandMarkdownImages", () => {
   test("places the expanded image overlay above shared modal layers", () => {
     const overlayStyle = declarationsFor(".markdown-image-lightbox");
 
-    expect(Number(overlayStyle.get("z-index"))).toBeGreaterThan(120);
+    expect(Number(overlayStyle.get("z-index"))).toBeGreaterThan(94);
   });
 
   test("keeps the zoom affordance hidden until image hover or keyboard focus", () => {
@@ -223,16 +223,16 @@ describe("expandMarkdownImages", () => {
 
     expect(closeStyle.get("opacity")).toBe("0");
     expect(closeStyle.get("pointer-events")).toBe("none");
-    expect(visibleStyle.get("background")).toBe("rgba(36, 41, 47, 0.84)");
-    expect(visibleStyle.get("color")).toBe("#f0f6fc");
+    expect(visibleStyle.get("background")).toBe("var(--viewer-control-bg)");
+    expect(visibleStyle.get("color")).toBe("var(--viewer-control-text)");
     expect(appCss).toContain(
       [
         ".markdown-image-lightbox__panel:hover .markdown-image-lightbox__close,",
         ".markdown-image-lightbox__panel:focus-within .markdown-image-lightbox__close {",
-        "  background: rgba(36, 41, 47, 0.84);",
-        "  border-color: rgba(139, 148, 158, 0.5);",
-        "  color: #f0f6fc;",
-        "  box-shadow: 0 1px 4px rgba(1, 4, 9, 0.24);",
+        "  background: var(--viewer-control-bg);",
+        "  border-color: var(--viewer-control-border);",
+        "  color: var(--viewer-control-text);",
+        "  box-shadow: var(--viewer-control-shadow);",
         "  opacity: 1;",
         "  pointer-events: auto;",
         "}",

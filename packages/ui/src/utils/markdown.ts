@@ -1,7 +1,20 @@
+// This pipeline stays on marked+DOMPurify directly rather than kit-ui's
+// createMarkdownRenderer: interactive task lists need marked renderer
+// overrides (checkbox/listitem/blockquote with per-render index state) and
+// the non-data draggable attribute, neither expressible through kit's
+// extensions/codeFence/data-* hook surface. The fence primitives that DO
+// fit (escapeHtml, codeFenceLanguage, codeHighlightPlan and its budgets,
+// shikiStyleIsAllowed) are imported from kit-ui below, so highlighting
+// budgets and the shiki style allowlist stay in parity by construction.
+// kit-ui-check-ignore: task-list renderer overrides exceed kit markdown hooks
 import { Marked } from "marked";
+// kit-ui-check-ignore: task-list renderer overrides exceed kit markdown hooks
 import type { RendererObject, TokenizerAndRendererExtension, Tokens } from "marked";
+// kit-ui-check-ignore: sanitizer must run app-side around the custom renderer
 import DOMPurify from "dompurify";
+// kit-ui-check-ignore: sanitizer must run app-side around the custom renderer
 import type { UponSanitizeAttributeHook } from "dompurify";
+import { codeFenceLanguage, codeHighlightPlan, escapeHtml, shikiStyleIsAllowed } from "@kenn-io/kit-ui/utils/markdown";
 import { getSingletonHighlighter, type BundledLanguage, type Highlighter } from "shiki";
 import { canonicalProvider } from "../api/provider-routes.js";
 import { itemReferenceAnchorAttributes } from "./item-reference.js";
@@ -215,9 +228,6 @@ const SHIKI_THEMES = {
 } as const;
 const SHIKI_PLAINTEXT_LANG = "text";
 const SHIKI_GENERATED_ATTR = "data-middleman-shiki";
-const SHIKI_MAX_HIGHLIGHTED_FENCES = 20;
-const SHIKI_MAX_DISTINCT_LANGUAGES = 8;
-const SHIKI_MAX_HIGHLIGHTED_BYTES = 100_000;
 let shikiHighlighter: Highlighter | undefined;
 let shikiHighlighterPromise: Promise<Highlighter> | undefined;
 let shikiNonceFallbackCounter = 0;
@@ -234,11 +244,7 @@ function getShikiHighlighter(): Promise<Highlighter> {
 }
 
 function isMermaidFence(lang: string | undefined): boolean {
-  return (lang ?? "").trim().split(/\s+/, 1)[0]?.toLowerCase() === "mermaid";
-}
-
-function codeFenceLanguage(lang: string | undefined): string {
-  return (lang ?? "").trim().split(/\s+/, 1)[0]?.toLowerCase() || SHIKI_PLAINTEXT_LANG;
+  return codeFenceLanguage(lang) === "mermaid";
 }
 
 function plainCodeBlock(text: string): string {
@@ -267,10 +273,6 @@ function renderHighlightedCode(token: Tokens.Code): string {
 function markTrustedShikiHtml(html: string): string {
   const marker = `${SHIKI_GENERATED_ATTR}="${renderState.shikiNonce}"`;
   return html.replace("<pre ", `<pre ${marker} `).replaceAll("<span ", `<span ${marker} `);
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 const taskListRenderer: RendererObject = {
@@ -396,24 +398,6 @@ function shikiNonce(): string {
   return `${Date.now()}-${shikiNonceFallbackCounter++}`;
 }
 
-const SHIKI_STYLE_PROPERTY = /^--shiki-(?:light|dark)(?:-bg)?$/;
-const SHIKI_STYLE_VALUE = /^#[0-9a-fA-F]{3,8}$/;
-
-function shikiStyleIsAllowed(value: string): boolean {
-  const declarations = value
-    .split(";")
-    .map((declaration) => declaration.trim())
-    .filter(Boolean);
-  if (declarations.length === 0) return false;
-  return declarations.every((declaration) => {
-    const separator = declaration.indexOf(":");
-    if (separator <= 0) return false;
-    const property = declaration.slice(0, separator).trim();
-    const styleValue = declaration.slice(separator + 1).trim();
-    return SHIKI_STYLE_PROPERTY.test(property) && SHIKI_STYLE_VALUE.test(styleValue);
-  });
-}
-
 const shikiStyleSanitizer: UponSanitizeAttributeHook = (node, data) => {
   if (data.attrName !== "style") return;
   const tagName = node.tagName.toLowerCase();
@@ -456,67 +440,6 @@ function opensDetailsBlock(token: Tokens.Generic): boolean {
 
 function tokenRaw(tokens: Tokens.Generic[]): string {
   return tokens.map((token) => token.raw).join("");
-}
-
-function isCodeToken(token: Tokens.Generic): token is Tokens.Code {
-  return token.type === "code" && typeof token.text === "string";
-}
-
-function utf8ByteLength(value: string): number {
-  let bytes = 0;
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code <= 0x7f) {
-      bytes += 1;
-    } else if (code <= 0x7ff) {
-      bytes += 2;
-    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
-      const next = value.charCodeAt(i + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        bytes += 4;
-        i++;
-      } else {
-        bytes += 3;
-      }
-    } else {
-      bytes += 3;
-    }
-  }
-  return bytes;
-}
-
-interface CodeHighlightPlan {
-  tokens: WeakSet<Tokens.Code>;
-  languages: string[];
-}
-
-function codeHighlightPlan(marked: Marked, tokens: Tokens.Generic[]): CodeHighlightPlan {
-  const highlightedTokens = new WeakSet<Tokens.Code>();
-  const languages = new Set<string>();
-  let highlightedFences = 0;
-  let highlightedBytes = 0;
-
-  marked.walkTokens(tokens, (token) => {
-    if (!isCodeToken(token) || isMermaidFence(token.lang)) return;
-    if (highlightedFences >= SHIKI_MAX_HIGHLIGHTED_FENCES) return;
-
-    const textBytes = utf8ByteLength(token.text);
-    if (highlightedBytes + textBytes > SHIKI_MAX_HIGHLIGHTED_BYTES) return;
-
-    const lang = codeFenceLanguage(token.lang);
-    if (lang !== SHIKI_PLAINTEXT_LANG && !languages.has(lang) && languages.size >= SHIKI_MAX_DISTINCT_LANGUAGES) {
-      return;
-    }
-
-    highlightedTokens.add(token);
-    highlightedFences++;
-    highlightedBytes += textBytes;
-    if (lang !== SHIKI_PLAINTEXT_LANG) {
-      languages.add(lang);
-    }
-  });
-
-  return { tokens: highlightedTokens, languages: [...languages] };
 }
 
 async function loadCodeFenceLanguage(lang: string, highlighter: Highlighter): Promise<void> {
@@ -626,7 +549,9 @@ async function renderMarkdownUncached(
 ): Promise<string> {
   const marked = getMarked(repo);
   const tokens = marked.lexer(raw) as Tokens.Generic[];
-  const highlightPlan = codeHighlightPlan(marked, tokens);
+  // Mermaid fences render as diagram markup, so they never spend the
+  // shared highlight budget.
+  const highlightPlan = codeHighlightPlan(marked, tokens, (_code, lang) => lang === "mermaid");
   await loadCodeFenceLanguages(highlightPlan.languages);
   return renderMarkdownTokens(marked, tokens, opts, true, highlightPlan.tokens);
 }

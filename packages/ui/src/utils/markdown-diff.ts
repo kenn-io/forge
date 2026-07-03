@@ -1,3 +1,6 @@
+// DOM-level diff over already-rendered markdown blocks, not a document
+// render pipeline — kit-ui renderMarkdown has no block-diff surface.
+// kit-ui-check-ignore: diff-block sanitizer, not a markdown render pipeline
 import DOMPurify from "dompurify";
 
 type DiffOp<T> =

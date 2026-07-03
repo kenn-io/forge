@@ -1,4 +1,10 @@
+// Docs rendering stays on marked+DOMPurify directly: folder-aware wikilink,
+// relative-link, and image-src rewriting need marked renderer overrides, and
+// external-image blocking needs an element-level DOMPurify hook — both beyond
+// kit-ui renderMarkdown's extensions/codeFence/data-* hook surface.
+// kit-ui-check-ignore: element-level sanitize hooks exceed kit markdown hooks
 import DOMPurify, { type UponSanitizeElementHook, type UponSanitizeElementHookEvent } from "dompurify";
+// kit-ui-check-ignore: link/image renderer overrides exceed kit markdown hooks
 import { Marked, type MarkedExtension, type Tokens } from "marked";
 import { providerItemRefExtension, type RepoContext } from "@middleman/ui/utils/markdown";
 import {

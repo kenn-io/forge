@@ -46,7 +46,7 @@ keeps a path unignored.
 Include only facts the agent cannot trivially discover from the worktree: workspace
 ID, repository identity (host/owner/name), provider, source kind, source item
 identifier (PR/issue number, or Kata daemon/project/issue identifiers), source URL,
-the source item title quoted as data, the associated PR number/URL when persisted,
+the source item title as fenced untrusted data, the associated PR number/URL when persisted,
 and for PRs the push target. Do not include locally discoverable state such as the
 checked-out branch, and do not embed provider-fetch or Kata CLI command guidance —
 concise source identity plus URL is the useful prompt.
@@ -64,8 +64,11 @@ Push target rules (agents frequently push to the wrong remote or branch):
   snapshot only when no MR row is available, so a renamed head branch is not rendered
   stale.
 
-Quoted source text is prefixed as Markdown blockquote data with an explicit boundary
-sentence so task content is not read as higher-priority instructions.
+Source-system prose (titles) is handled like roborev handles untrusted input: fenced
+in `<untrusted-source-text>` tags with XML-escaped, whitespace-compacted content, and
+the file preamble says never to follow instructions found inside the tags. All other
+externally sourced scalar values (Kata IDs, names) are normalized to a single line so
+they cannot break out of their Markdown list items.
 
 ## Task 1: Neutral Agent Context Model
 
@@ -75,7 +78,8 @@ sentence so task content is not read as higher-priority instructions.
   fork PR, provider issue, issue-with-associated-PR, and Kata task cases, asserting
   provider identity, push-target lines, and the absence of command guidance and
   `Working branch` lines.
-- [x] Hostile source text is quoted, and the marker line leads every render.
+- [x] Hostile source text is XML-fenced and escaped (including embedded closing
+  tags and multiline metadata), and the marker line leads every render.
 
 ## Task 2: Ignore Helper
 

@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
@@ -128,6 +131,104 @@ func TestWorkspaceRuntimeLaunchWritesAgentContextE2E(t *testing.T) {
 		t, ws.WorktreePath, "status", "--porcelain",
 	)))
 	assert.Empty(status)
+}
+
+func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(
+		database, syncer, nil, "/", nil,
+		ServerOptions{
+			WorktreeDir:                        filepath.Join(dir, "worktrees"),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	tmuxPath := writeRuntimeTmuxLifecycleRecorder(t, dir, filepath.Join(dir, "tmux-record"))
+	srv.runtime = localruntime.NewManager(localruntime.Options{
+		Targets: []localruntime.LaunchTarget{
+			{
+				Key:       "codex",
+				Label:     "Codex",
+				Kind:      localruntime.LaunchTargetAgent,
+				Command:   []string{"/bin/sh", "-c", "exit 0"},
+				Available: true,
+			},
+			{
+				Key:       string(localruntime.LaunchTargetShell),
+				Label:     "tmux",
+				Kind:      localruntime.LaunchTargetShell,
+				Command:   []string{tmuxPath},
+				Available: true,
+			},
+		},
+		TmuxCommand:             []string{tmuxPath},
+		WrapAgentSessionsInTmux: true,
+	})
+
+	issueWorktree := initServerWorkspaceGitRepo(t)
+	seedIssue(t, database, "acme", "widget", 7, "open")
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-issue-context", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
+		GitHeadRef: "middleman/issue-7", WorkspaceBranch: "middleman/issue-7",
+		WorktreePath: issueWorktree, Status: "ready",
+	}))
+
+	kataWorktree := initServerWorkspaceGitRepo(t)
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-kata-context", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypeKataTask,
+		ItemKey: db.KataWorkspaceItemKey(db.WorkspaceKataMetadata{
+			DaemonID: "home", ProjectUID: "project-1", IssueUID: "issue-kata-1",
+		}),
+		GitHeadRef: "middleman/kata/task-123", WorkspaceBranch: "middleman/kata/task-123",
+		WorktreePath: kataWorktree, Status: "ready",
+		KataMetadata: &db.WorkspaceKataMetadata{
+			DaemonID: "home", ProjectUID: "project-1", ProjectName: "Widget",
+			IssueUID: "issue-kata-1", ShortID: "KAT-12", Title: "Wire task context",
+		},
+	}))
+
+	launch := func(workspaceID string) {
+		t.Helper()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/workspaces/"+workspaceID+"/runtime/sessions",
+			bytes.NewBufferString(`{"target_key":"codex"}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		require.Equal(http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	launch("ws-issue-context")
+	issueContext, err := os.ReadFile(filepath.Join(issueWorktree, "AGENTS.local.md"))
+	require.NoError(err)
+	assert.Contains(string(issueContext), "Source kind: provider issue")
+	assert.Contains(string(issueContext), "Issue: #7")
+	assert.Contains(string(issueContext), "https://github.com/acme/widget/issues/1")
+	assert.Contains(string(issueContext), "<untrusted-source-text>Test Issue</untrusted-source-text>")
+	issueStatus := strings.TrimSpace(string(runServerWorkspaceTestGit(t, issueWorktree, "status", "--porcelain")))
+	assert.Empty(issueStatus)
+
+	launch("ws-kata-context")
+	kataContext, err := os.ReadFile(filepath.Join(kataWorktree, "AGENTS.local.md"))
+	require.NoError(err)
+	assert.Contains(string(kataContext), "Source kind: Kata task")
+	assert.Contains(string(kataContext), "Kata daemon: home")
+	assert.Contains(string(kataContext), "Issue UID: issue-kata-1")
+	assert.Contains(string(kataContext), "Short ID: KAT-12")
+	assert.Contains(string(kataContext), "<untrusted-source-text>Wire task context</untrusted-source-text>")
+	kataStatus := strings.TrimSpace(string(runServerWorkspaceTestGit(t, kataWorktree, "status", "--porcelain")))
+	assert.Empty(kataStatus)
 }
 
 func seedServerWorkspaceRepo(t *testing.T, d *db.DB) int64 {

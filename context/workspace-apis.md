@@ -95,8 +95,11 @@ It does not write during setup or create a generated worktree directory.
 
 The first-line marker owns refreshes: middleman updates only marked files.
 Unmarked files, symlinks, and root `AGENTS.md`/`CLAUDE.md` stay untouched. The
-content carries source identity (kind, repo, item number, URL, quoted title)
-and PR push target facts agents cannot read from the worktree.
+content carries source identity (kind, repo, item number, URL) and PR push
+target facts agents cannot read from the worktree. Source-system prose such as
+titles is XML-escaped inside `<untrusted-source-text>` fences, and other
+external scalars are normalized to one line, so forge/Kata-controlled text
+cannot inject instructions into the file.
 
 Before writing, middleman ignores the generated path through the worktree's
 private exclude file, not tracked `.gitignore`. If the path would remain

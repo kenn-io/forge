@@ -78,9 +78,15 @@ function applyDarkClass(isDarkMode: boolean): void {
 }
 
 function applyForcedMode(configMode: string): void {
+  // resolveTheme() runs inside App's reapply $effect. Applying the dark class
+  // from a local rather than reading `forcedDark` back is deliberate: reading
+  // the same $state this function just wrote would make the effect depend on a
+  // signal it mutates, self-retriggering into effect_update_depth_exceeded.
+  let isDarkMode: boolean;
   if (configMode === "system") {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    forcedDark = mq.matches;
+    isDarkMode = mq.matches;
+    forcedDark = isDarkMode;
     const handler = (e: MediaQueryListEvent) => {
       forcedDark = e.matches;
       applyDarkClass(e.matches);
@@ -88,9 +94,10 @@ function applyForcedMode(configMode: string): void {
     mq.addEventListener("change", handler);
     forcedCleanup = () => mq.removeEventListener("change", handler);
   } else {
-    forcedDark = configMode === "dark";
+    isDarkMode = configMode === "dark";
+    forcedDark = isDarkMode;
   }
-  applyDarkClass(forcedDark === true);
+  applyDarkClass(isDarkMode);
 }
 
 function resolveTheme(): void {

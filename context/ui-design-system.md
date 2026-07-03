@@ -52,6 +52,11 @@ in the kit-ui repo. The parts middleman depends on as stable API:
   `--radius-*`, `--shadow-*`, `--overlay-bg`, `--focus-ring`,
   `--transition-fast`, `--opacity-disabled`, `--header-height`,
   `--status-bar-height`.
+- `@middleman/ui` components additionally consume app tokens defined in
+  `frontend/src/app.css` (`--text-on-accent`, the kanban/diff/budget
+  palettes, viewer glass chrome). Any harness that mounts package
+  components against real styles must load `app.css` the way
+  `browserAppHarness.ts` does; the package has no standalone theme.
 - Type scale behavior: rem tokens that redefine themselves on
   coarse-pointer devices; the `kit-type-touch` class on `<html>` forces the
   touch scale (middleman sets it while phone presentation is active). Never
@@ -59,10 +64,12 @@ in the kit-ui repo. The parts middleman depends on as stable API:
 - Media-query `rem` resolves against the browser initial font size (16px),
   never the app root — breakpoints are written in px (kit-ui's shared
   layout breakpoints are 640/760/900px).
-- Spacing ladder: `--space-1…8` = 2/4/6/8/12/16/24/32px. `gap`, `row-gap`,
-  and `column-gap` use ladder tokens, never raw px — including on-ladder
-  values and both axes of two-value shorthands. Off-ladder values snap to
-  the nearest step, biased compact when between steps.
+- Spacing ladder: `--space-1…8` = 2/4/6/8/12/16/24/32px. New or edited
+  `gap`/`row-gap`/`column-gap` declarations use ladder tokens, and a
+  two-value shorthand tokenizes both axes. Off-ladder raw px is a
+  kit-ui-check finding and snaps to the nearest step, biased compact when
+  between steps; on-ladder raw px in untouched declarations is allowed by
+  the checker and migrates opportunistically, not as churn.
   `frontend/src/kit-spacing-tokens.browser.svelte.ts` guards that the
   ladder resolves in the real stylesheet chain.
 - Component class names (`.kit-chip`, `.kit-color-label`, …) are relied on

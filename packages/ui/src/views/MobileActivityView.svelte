@@ -599,6 +599,10 @@
     min-height: calc(var(--mobile-hit-target) + var(--mobile-space-xs));
     border-radius: var(--radius-lg);
     font-size: var(--font-size-md);
+    /* The phone inbox keeps the inset field look of the original
+       hand-rolled search (mobile-routes e2e pins this against
+       --bg-inset). */
+    background: var(--bg-inset);
   }
 
   .mobile-activity-filter-grid {

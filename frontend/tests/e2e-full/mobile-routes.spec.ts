@@ -250,7 +250,8 @@ test.describe("phone routes", () => {
         cardBackground: styleFor(firstCard)?.backgroundColor ?? "",
         cardBorderColor: styleFor(firstCard)?.borderColor ?? "",
         cardRadius: styleFor(firstCard)?.borderRadius ?? "",
-        searchBackground: styleFor(document.querySelector(".mobile-activity-search"))?.backgroundColor ?? "",
+        searchBackground:
+          styleFor(document.querySelector(".mobile-activity-search .kit-search-input"))?.backgroundColor ?? "",
         themeBgPrimary: getComputedStyle(themeSample).backgroundColor,
         themeBgSurface: getComputedStyle(surfaceSample).backgroundColor,
         themeBgInset: getComputedStyle(insetSample).backgroundColor,

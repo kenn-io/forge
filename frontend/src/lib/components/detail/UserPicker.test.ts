@@ -22,6 +22,38 @@ describe("UserPicker", () => {
     expect(screen.getByRole("menuitemcheckbox", { name: /alice/i }).getAttribute("aria-checked")).toBe("false");
   });
 
+  // Escape precedence in overlay-hosted pickers: a non-empty field claims
+  // Escape to clear itself (kit SearchInput stops propagation), while an
+  // empty field lets Escape bubble so the owning modal/popover can close.
+  it("clears on Escape without letting the overlay see it, then lets empty Escape bubble", async () => {
+    render(UserPicker, {
+      props: {
+        title: "Edit assignees",
+        candidates: ["alice", "bob"],
+        selected: [],
+        ontoggle: vi.fn(),
+        onclose: vi.fn(),
+      },
+    });
+
+    const input = screen.getByLabelText("Filter users") as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: "ali" } });
+    expect(input.value).toBe("ali");
+
+    const seenByOverlay = vi.fn();
+    document.addEventListener("keydown", seenByOverlay);
+    try {
+      await fireEvent.keyDown(input, { key: "Escape" });
+      expect(input.value).toBe("");
+      expect(seenByOverlay).not.toHaveBeenCalled();
+
+      await fireEvent.keyDown(input, { key: "Escape" });
+      expect(seenByOverlay).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener("keydown", seenByOverlay);
+    }
+  });
+
   it("filters users by the query", async () => {
     render(UserPicker, {
       props: {

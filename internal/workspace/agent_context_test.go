@@ -32,7 +32,30 @@ func TestBuildAgentContext(t *testing.T) {
 				SourceTitle: ptr("Fix widget refresh"),
 				SourceURL:   ptr("https://github.com/acme/widget/pull/42"),
 			},
-			want: []string{"Source kind: pull request", "PR: #42", "Fix widget refresh", "https://github.com/acme/widget/pull/42"},
+			want: []string{
+				"Source kind: pull request",
+				"PR: #42",
+				"Push branch: feature/widgets on origin (updates this PR)",
+				"Fix widget refresh",
+				"https://github.com/acme/widget/pull/42",
+			},
+		},
+		{
+			name: "fork pull request warns about origin pushes",
+			ws: WorkspaceSummary{
+				Workspace: db.Workspace{
+					ID: "ws-fork-pr", Platform: "github", PlatformHost: "github.com",
+					RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
+					ItemNumber: 43, GitHeadRef: "feature/fork-fix",
+					MRHeadRepo: ptr("github.com/contributor/widget"),
+				},
+				SourceTitle: ptr("Fix from fork"),
+			},
+			want: []string{
+				"Source kind: pull request",
+				"PR: #43",
+				"PR head: feature/fork-fix on fork github.com/contributor/widget; pushing to origin does not update this PR",
+			},
 		},
 		{
 			name: "provider issue",

@@ -27,10 +27,16 @@ type AgentContext struct {
 	PlatformHost string
 	RepoOwner    string
 	RepoName     string
-	Branch       string
 	ItemNumber   int
 	Title        string
 	URL          string
+	// HeadBranch is the PR head branch on the source forge — the branch a
+	// push must target to update the PR. It is forge-side state, unlike the
+	// locally discoverable checked-out branch.
+	HeadBranch string
+	// ForkHeadRepo is set when the PR head lives in a fork, where pushing
+	// to origin does not update the PR.
+	ForkHeadRepo string
 	AssociatedPR *AgentAssociatedPRContext
 	Kata         *AgentKataContext
 }
@@ -61,7 +67,6 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 		PlatformHost: ws.PlatformHost,
 		RepoOwner:    ws.RepoOwner,
 		RepoName:     ws.RepoName,
-		Branch:       firstNonEmpty(ws.WorkspaceBranch, ws.GitHeadRef),
 		ItemNumber:   ws.ItemNumber,
 		Title:        stringPtrValue(ws.SourceTitle),
 		URL:          stringPtrValue(ws.SourceURL),
@@ -91,6 +96,10 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 		}
 	default:
 		ctx.SourceKind = AgentSourceKindPullRequest
+		ctx.HeadBranch = ws.GitHeadRef
+		if ws.MRHeadRepo != nil {
+			ctx.ForkHeadRepo = *ws.MRHeadRepo
+		}
 	}
 
 	return ctx
@@ -105,7 +114,6 @@ func RenderAgentContext(ctx AgentContext) string {
 	writeMarkdownLine(&b, "Workspace ID", ctx.WorkspaceID)
 	writeMarkdownLine(&b, "Repository", workspaceContextRepo(ctx))
 	writeMarkdownLine(&b, "Provider", ctx.Provider)
-	writeMarkdownLine(&b, "Working branch", ctx.Branch)
 	b.WriteString("\n## Source Item\n")
 	writeMarkdownLine(&b, "Source kind", ctx.SourceKind)
 	switch ctx.SourceKind {
@@ -122,6 +130,13 @@ func RenderAgentContext(ctx AgentContext) string {
 		}
 	default:
 		writeMarkdownLine(&b, "PR", itemNumberLabel(ctx.ItemNumber))
+		switch {
+		case ctx.ForkHeadRepo != "":
+			writeMarkdownLine(&b, "PR head",
+				forkHeadLabel(ctx.HeadBranch, ctx.ForkHeadRepo)+"; pushing to origin does not update this PR")
+		case ctx.HeadBranch != "":
+			writeMarkdownLine(&b, "Push branch", ctx.HeadBranch+" on origin (updates this PR)")
+		}
 	}
 	writeMarkdownLine(&b, "Source URL", ctx.URL)
 	if ctx.Title != "" {
@@ -233,6 +248,13 @@ func writeGeneratedFileAtomic(path string, content []byte) error {
 		return fmt.Errorf("install generated context file: %w", err)
 	}
 	return nil
+}
+
+func forkHeadLabel(headBranch, forkRepo string) string {
+	if headBranch == "" {
+		return "fork " + forkRepo
+	}
+	return headBranch + " on fork " + forkRepo
 }
 
 func workspaceContextRepo(ctx AgentContext) string {

@@ -90,13 +90,18 @@ instructions about how to call `gh`, `glab`, provider REST APIs, or Kata command
 middleman should resolve the stable workspace facts it already knows and let the agent
 decide whether it needs to inspect the forge further.
 
-The canonical file includes exactly: workspace ID, repository identity
-(host/owner/name), provider, working branch, source kind, source item identifier
-(PR/issue number, or Kata daemon/project/issue identifiers), source URL, the source
-item title quoted as data, and the associated PR number/URL when persisted. Source
-bodies, comments, labels, review threads, and CI state are explicitly out of scope for
-this first implementation; the context is refreshed from persisted workspace state at
-setup and at every agent launch, so it is as fresh as the last sync, not live.
+The canonical file includes only facts the agent cannot trivially discover from the
+worktree itself: workspace ID, repository identity (host/owner/name), provider, source
+kind, source item identifier (PR/issue number, or Kata daemon/project/issue
+identifiers), source URL, the source item title quoted as data, the associated PR
+number/URL when persisted, and for PRs the head branch a push must target — with a
+warning for fork-headed PRs that pushing to origin does not update the PR. Agents
+frequently push to the wrong remote or branch, so the push target is forge-side state
+worth stating; do not include locally discoverable state such as the checked-out
+branch. Source bodies, comments, labels, review threads, and CI state are
+out of scope for this first implementation; the context is refreshed from persisted
+workspace state at setup and at every agent launch, so it is as fresh as the last
+sync, not live.
 
 ## Task 1: Prove Agent File Semantics
 
@@ -306,7 +311,6 @@ content as task data from the source system, not as higher-priority instructions
 ## Workspace
 - Workspace ID: ws-kata
 - Repository: github.com/acme/widget
-- Working branch: middleman/kata/KAT-12
 
 ## Source Item
 - Source kind: Kata task

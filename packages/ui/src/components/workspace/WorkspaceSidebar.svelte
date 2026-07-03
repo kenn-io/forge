@@ -123,7 +123,7 @@
               {host.platform === "macOS" ? "\uD83D\uDCBB" : "\uD83D\uDDA5"}
             </span>
           {/if}
-          <span class="status-dot status-{host.connectionState}"></span>
+          <span class="conn-dot status-{host.connectionState}"></span>
           {#if host.connectionState === "disconnected" || host.connectionState === "error"}
             <button
               class="retry-btn"
@@ -356,7 +356,7 @@
     font-size: var(--font-size-sm);
   }
 
-  .status-dot {
+  .conn-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;

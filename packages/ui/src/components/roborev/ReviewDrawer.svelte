@@ -94,7 +94,7 @@
   <div class="drawer">
     <!-- kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet -->
     <div class="drawer-header">
-      <div class="header-left">
+      <div class="header-start">
         {#if selectedJob}
           <span class="job-id">
             #{selectedJob.id}
@@ -273,7 +273,7 @@
     min-height: 36px;
   }
 
-  .header-left {
+  .header-start {
     display: flex;
     align-items: center;
     gap: 8px;

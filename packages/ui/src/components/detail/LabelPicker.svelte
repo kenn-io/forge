@@ -63,7 +63,7 @@
   }
 </script>
 
-<div class="label-picker" role="dialog" aria-label="Edit labels">
+<div class="label-picker kit-popover-card" role="dialog" aria-label="Edit labels">
   <div class="label-picker__header">
     <div class="label-picker__title">
       <strong>Edit labels</strong>
@@ -148,10 +148,6 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-lg);
     color: var(--text-primary);
   }
 

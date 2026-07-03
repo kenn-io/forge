@@ -981,7 +981,7 @@
       {/if}
       {#if folderMenuOpen}
         <!-- kit-ui-check-ignore: folder switcher renders error/empty message rows kit SelectDropdown lacks (kit-ui#ry18) -->
-        <ul class="folder-menu" role="listbox" aria-label="Folders">
+        <ul class="folder-menu kit-popover-card" role="listbox" aria-label="Folders">
           {#if foldersError}
             <li class="folder-menu-msg error">{foldersError}</li>
           {:else if folders.length === 0}
@@ -1175,7 +1175,7 @@
                 <MoreHorizontal size={14} strokeWidth={2} />
               </button>
               {#if fileMenuOpen}
-                <ul class="file-menu" role="menu" aria-label="File actions">
+                <ul class="file-menu kit-popover-card" role="menu" aria-label="File actions">
                   <li>
                     <button
                       type="button"
@@ -1366,7 +1366,7 @@
 {/if}
 
 {#if publishSuccess}
-  <p class="publish-success" role="status">{publishSuccess}</p>
+  <p class="publish-success kit-popover-card" role="status">{publishSuccess}</p>
 {/if}
 
 <Modal
@@ -1547,9 +1547,6 @@
     margin: 0;
     padding: 4px;
     background: var(--bg-elevated);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
     max-height: 320px;
     overflow: auto;
   }
@@ -1863,9 +1860,6 @@
     padding: 4px;
     min-width: 160px;
     background: var(--bg-elevated);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
   }
 
   .file-menu-item {
@@ -1962,12 +1956,9 @@
     right: 16px;
     z-index: 50;
     padding: 8px 14px;
-    border-radius: var(--radius-md);
     background: var(--bg-elevated);
-    border: 1px solid var(--border-default);
     color: var(--text-primary);
     font-size: var(--font-size-sm);
-    box-shadow: var(--shadow-lg);
   }
 
   .doc-scroll {

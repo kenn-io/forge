@@ -260,7 +260,7 @@ test.describe("workspace tab persistence", () => {
         (response) =>
           response.url().includes(`/api/v1/workspaces/${workspace.id}/diff`) && response.request().method() === "GET",
       );
-      await page.locator(".sidebar-toggle-group .sidebar-toggle-btn", { hasText: "Diff" }).click();
+      await page.locator(".panel-toggle-group .panel-toggle-btn", { hasText: "Diff" }).click();
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       const workspaceScope = page.locator(".right-sidebar .workspace-diff-scope");
       await expect(workspaceScope.locator(".diff-scope-picker")).toHaveCount(0);
@@ -428,7 +428,7 @@ test.describe("workspace tab persistence", () => {
       await writeFile(join(worktreePath, "expand-context.ts"), `${changedLines.join("\n")}\n`);
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
-      await page.locator(".sidebar-toggle-group .sidebar-toggle-btn", { hasText: "Diff" }).click();
+      await page.locator(".panel-toggle-group .panel-toggle-btn", { hasText: "Diff" }).click();
       const previewResponses = Promise.all([
         page.waitForResponse((response) => {
           const url = response.url();

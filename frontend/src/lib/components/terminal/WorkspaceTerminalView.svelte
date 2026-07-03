@@ -2619,7 +2619,7 @@
         </div>
       {:else}
         <div class="header-bar">
-          <div class="header-left">
+          <div class="header-start">
             <span class="header-name">
               {displayName(workspace)}
             </span>
@@ -2627,11 +2627,11 @@
               {workspace.git_head_ref}
             </code>
           </div>
-          <div class="header-right">
+          <div class="header-end">
             {#if !hideRightSidebar}
-              <div class="sidebar-toggle-group">
+              <div class="panel-toggle-group">
                 <button
-                  class="sidebar-toggle-btn"
+                  class="panel-toggle-btn"
                   class:active={sidebarOpen && sidebarTab === "diff"}
                   disabled={actionsBlocked}
                   onclick={() => handleSidebarToggleClick("diff")}
@@ -2640,7 +2640,7 @@
                 </button>
                 {#if workspace.item_type === "issue"}
                   <button
-                    class="sidebar-toggle-btn"
+                    class="panel-toggle-btn"
                     class:active={sidebarOpen && sidebarTab === "issue"}
                     disabled={actionsBlocked}
                     onclick={() => handleSidebarToggleClick("issue")}
@@ -2650,7 +2650,7 @@
                 {/if}
                 {#if workspace.item_type === "kata_task"}
                   <button
-                    class="sidebar-toggle-btn"
+                    class="panel-toggle-btn"
                     class:active={sidebarOpen && sidebarTab === "kata_task"}
                     disabled={actionsBlocked}
                     onclick={() => handleSidebarToggleClick("kata_task")}
@@ -2660,7 +2660,7 @@
                 {/if}
                 {#if getWorkspacePRNumber(workspace) !== null}
                   <button
-                    class="sidebar-toggle-btn"
+                    class="panel-toggle-btn"
                     class:active={sidebarOpen && sidebarTab === "pr"}
                     disabled={actionsBlocked}
                     onclick={() => handleSidebarToggleClick("pr")}
@@ -2670,7 +2670,7 @@
                 {/if}
                 {#if workspace.item_type === "pull_request"}
                   <button
-                    class="sidebar-toggle-btn"
+                    class="panel-toggle-btn"
                     class:active={sidebarOpen && sidebarTab === "reviews"}
                     disabled={actionsBlocked}
                     onclick={() => handleSidebarToggleClick("reviews")}
@@ -3270,7 +3270,7 @@
     flex-shrink: 0;
   }
 
-  .header-left {
+  .header-start {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -3299,7 +3299,7 @@
     line-height: 1.5;
   }
 
-  .header-right {
+  .header-end {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -3411,7 +3411,7 @@
     background: var(--bg-primary);
   }
 
-  .sidebar-toggle-group {
+  .panel-toggle-group {
     display: inline-flex;
     height: 22px;
     border: 1px solid var(--border-default);
@@ -3420,7 +3420,7 @@
     background: var(--bg-surface);
   }
 
-  .sidebar-toggle-btn {
+  .panel-toggle-btn {
     display: inline-flex;
     align-items: center;
     padding: 0 10px;
@@ -3435,29 +3435,29 @@
     transition: background-color 80ms ease, color 80ms ease;
   }
 
-  .sidebar-toggle-btn + .sidebar-toggle-btn {
+  .panel-toggle-btn + .panel-toggle-btn {
     border-left: 1px solid var(--border-default);
   }
 
-  .sidebar-toggle-btn:hover:not(.active):not(:disabled) {
+  .panel-toggle-btn:hover:not(.active):not(:disabled) {
     color: var(--text-primary);
     background: var(--bg-surface-hover);
   }
 
-  .sidebar-toggle-btn.active:not(:disabled) {
+  .panel-toggle-btn.active:not(:disabled) {
     background: var(--accent-blue);
     color: var(--text-on-accent);
     font-weight: 600;
   }
 
-  .sidebar-toggle-btn:disabled {
+  .panel-toggle-btn:disabled {
     cursor: not-allowed;
     color: color-mix(in srgb, var(--text-muted) 75%, var(--bg-surface));
     background: var(--bg-surface);
     opacity: 1;
   }
 
-  .sidebar-toggle-group .sidebar-toggle-btn.active:disabled {
+  .panel-toggle-group .panel-toggle-btn.active:disabled {
     /* kit-ui-check-ignore: pure neutral gray desaturates the disabled-active state the same way in both themes */
     background: color-mix(in srgb, rgb(128 128 128) 28%, var(--bg-surface)) !important;
     /* kit-ui-check-ignore: pure neutral gray desaturates the disabled-active state the same way in both themes */

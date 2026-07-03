@@ -91,7 +91,7 @@
   }
 </script>
 
-<div class="user-picker" role="dialog" aria-label={title}>
+<div class="user-picker kit-popover-card" role="dialog" aria-label={title}>
   <div class="user-picker__header">
     <div class="user-picker__title">
       <strong>{title}</strong>
@@ -205,10 +205,6 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-lg);
     color: var(--text-primary);
   }
 

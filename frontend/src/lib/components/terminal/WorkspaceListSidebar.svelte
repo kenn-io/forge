@@ -544,9 +544,9 @@
   }
 
   function statusDotClass(ws: Workspace): string {
-    if (ws.status === "ready") return "status-dot ready";
-    if (ws.status === "error") return "status-dot error";
-    return "status-dot pending";
+    if (ws.status === "ready") return "daemon-dot ready";
+    if (ws.status === "error") return "daemon-dot error";
+    return "daemon-dot pending";
   }
 
   function workingTitle(ws: Workspace): string {
@@ -1746,26 +1746,26 @@
     min-width: 0;
   }
 
-  .status-dot {
+  .daemon-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
     flex-shrink: 0;
   }
 
-  .status-dot.ready {
+  .daemon-dot.ready {
     background: var(--accent-green);
   }
 
-  .status-dot.error {
+  .daemon-dot.error {
     background: var(--accent-red);
   }
 
-  .status-dot.pending {
+  .daemon-dot.pending {
     background: var(--accent-amber);
   }
 
-  .status-dot.spinning {
+  .daemon-dot.spinning {
     animation: pulse 1.2s ease-in-out infinite;
   }
 
@@ -1906,8 +1906,8 @@
   }
 
   /* Bubble fills mix each accent toward pure white, and the ink toward
-     --bubble-ink, in both themes. kit-ui-check deliberately permits the
-     #000/#fff shade constants inside color-mix — white here is a shade
+     --bubble-ink, in both themes. kit-ui-check deliberately permits pure
+     black/white shade constants inside color-mix — white here is a shade
      anchor, not a palette color. */
   .item-bubble.open {
     --bubble-bg: color-mix(in srgb, var(--accent-green) 70%, #ffffff);

@@ -534,11 +534,11 @@ test.describe("workspace sidebar full-stack", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${createdWorkspace.id}`);
 
-      await expect(page.locator(".terminal-view .sidebar-toggle-btn", { hasText: "Issue" })).toBeVisible();
-      await expect(page.locator(".terminal-view .sidebar-toggle-btn", { hasText: "PR" })).toHaveCount(0);
-      await expect(page.locator(".terminal-view .sidebar-toggle-btn", { hasText: "Reviews" })).toHaveCount(0);
+      await expect(page.locator(".terminal-view .panel-toggle-btn", { hasText: "Issue" })).toBeVisible();
+      await expect(page.locator(".terminal-view .panel-toggle-btn", { hasText: "PR" })).toHaveCount(0);
+      await expect(page.locator(".terminal-view .panel-toggle-btn", { hasText: "Reviews" })).toHaveCount(0);
 
-      await page.locator(".terminal-view .sidebar-toggle-btn", { hasText: "Issue" }).click();
+      await page.locator(".terminal-view .panel-toggle-btn", { hasText: "Issue" }).click();
       await expect(page.locator(".right-sidebar")).toBeVisible();
       await expect(page.locator(".right-sidebar .detail-title")).toContainText("Widget rendering broken on Safari");
     } finally {

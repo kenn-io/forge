@@ -13,6 +13,7 @@ const FOCUSABLE_SELECTOR = [
   "input:not([disabled])",
   "select:not([disabled])",
   "textarea:not([disabled])",
+  // kit-ui-check-ignore: imperative lightbox mounted into a caller-provided document; kit trapFocus binds the component's own document and body
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 let closeActiveMarkdownImageLightbox: (() => void) | null = null;

@@ -154,7 +154,7 @@
   </Button>
 
   {#if expanded}
-    <div class="approve-popover" role="dialog" aria-label="Approve pull request">
+    <div class="approve-popover kit-popover-card" role="dialog" aria-label="Approve pull request">
       <textarea
         bind:this={commentInput}
         class="approve-comment"
@@ -212,10 +212,6 @@
     gap: 8px;
     width: min(360px, calc(100vw - 32px));
     padding: 10px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
   }
 
   .approve-comment {

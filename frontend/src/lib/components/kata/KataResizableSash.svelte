@@ -183,6 +183,7 @@
 
   .kata-sash--horizontal .sash-handle {
     width: 4px;
+    /* kit-ui-check-ignore: recursive split-tree sash (n-ary, orientation-switching), not a two-pane sidebar handle */
     cursor: col-resize;
   }
 

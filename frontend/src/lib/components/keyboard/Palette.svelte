@@ -440,6 +440,7 @@
     const focusable = (): HTMLElement[] =>
       Array.from(
         dialogEl!.querySelectorAll<HTMLElement>(
+          // kit-ui-check-ignore: palette-style actions move focus as their outcome; kit trapFocus restores pre-open focus on teardown, undoing the selected action
           "input, button, [tabindex]:not([tabindex='-1'])",
         ),
       ).filter((e) => !e.hasAttribute("disabled"));

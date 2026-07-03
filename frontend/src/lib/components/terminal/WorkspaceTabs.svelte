@@ -127,7 +127,7 @@
         </span>
         <span class="tab-label">{labelFor(session)}</span>
         <span
-          class={["status-dot", sessionStatusClass(session.status)]}
+          class={["session-dot", sessionStatusClass(session.status)]}
           title={session.status}
         ></span>
       </button>
@@ -306,7 +306,7 @@
     outline-offset: -2px;
   }
 
-  .status-dot {
+  .session-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
@@ -316,16 +316,16 @@
     margin-left: 2px;
   }
 
-  .tab:not(.active) .status-dot {
+  .tab:not(.active) .session-dot {
     box-shadow: none;
   }
 
-  .status-dot.starting {
+  .session-dot.starting {
     background: var(--accent-amber);
     animation: pulse 1.4s ease-in-out infinite;
   }
 
-  .status-dot.exited {
+  .session-dot.exited {
     background: var(--text-muted);
   }
 

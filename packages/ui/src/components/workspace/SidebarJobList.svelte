@@ -58,7 +58,7 @@
       >
         <div class="row-top">
           <span
-            class="status-dot status-{job.status}"
+            class="job-dot status-{job.status}"
             title={job.status}
           ></span>
           <span class="job-id">#{job.id}</span>
@@ -136,18 +136,18 @@
     gap: 6px;
   }
 
-  .status-dot {
+  .job-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
     flex-shrink: 0;
   }
 
-  .status-dot.status-queued { background: var(--review-queued); }
-  .status-dot.status-running { background: var(--review-running); }
-  .status-dot.status-done { background: var(--review-done); }
-  .status-dot.status-failed { background: var(--review-failed); }
-  .status-dot.status-canceled { background: var(--review-canceled); }
+  .job-dot.status-queued { background: var(--review-queued); }
+  .job-dot.status-running { background: var(--review-running); }
+  .job-dot.status-done { background: var(--review-done); }
+  .job-dot.status-failed { background: var(--review-failed); }
+  .job-dot.status-canceled { background: var(--review-canceled); }
 
   .job-id {
     font-family: var(--font-mono);

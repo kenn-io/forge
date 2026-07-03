@@ -181,7 +181,7 @@
     context: { close: () => void },
   ): HTMLElement {
     const menu = document.createElement("div");
-    menu.className = "folder-tree-context-menu";
+    menu.className = "folder-tree-context-menu kit-popover-card";
     if (item.kind === "file") {
       const rename = document.createElement("button");
       rename.type = "button";
@@ -256,9 +256,6 @@
     min-width: 140px;
     padding: 4px;
     background: var(--bg-elevated);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
     font-size: var(--font-size-sm);
   }
   :global(.folder-tree-context-menu-item) {

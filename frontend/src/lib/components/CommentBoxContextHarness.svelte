@@ -18,33 +18,45 @@
     }>;
   }
 
-  export let kind: "pull" | "issue";
-  export let owner = "octo";
-  export let name = "repo";
-  export let number = 1;
-  export let provider = "github";
-  export let platformHost: string | undefined = "github.com";
-  export let repoPath = `${owner}/${name}`;
-  export let submitComment: (
-    owner: string,
-    name: string,
-    number: number,
-    body: string,
-  ) => Promise<void> = async () => {};
-  export let getError: () => string | null = () => null;
-  export let autocompleteResponse: AutocompleteResponse = { users: [], references: [] };
-  export let onAutocompleteQuery:
-    | ((query: Record<string, unknown> | undefined) => void)
-    | undefined = undefined;
+  interface Props {
+    kind: "pull" | "issue";
+    owner?: string;
+    name?: string;
+    number?: number;
+    provider?: string;
+    platformHost?: string | undefined;
+    repoPath?: string;
+    submitComment?: (owner: string, name: string, number: number, body: string) => Promise<void>;
+    getError?: () => string | null;
+    autocompleteResponse?: AutocompleteResponse;
+    onAutocompleteQuery?: ((query: Record<string, unknown> | undefined) => void) | undefined;
+  }
 
+  const {
+    kind,
+    owner = "octo",
+    name = "repo",
+    number = 1,
+    provider = "github",
+    platformHost = "github.com",
+    repoPath = `${owner}/${name}`,
+    submitComment = async () => {},
+    getError = () => null,
+    autocompleteResponse = { users: [], references: [] },
+    onAutocompleteQuery = undefined,
+  }: Props = $props();
+
+  // Reference the props inside closures: setContext runs once at init, and
+  // svelte's state_referenced_locally warning is right that a bare reference
+  // would freeze the initial function values.
   setContext(STORES_KEY, {
     detail: {
-      submitComment,
-      getDetailError: getError,
+      submitComment: (o: string, n: string, num: number, body: string) => submitComment(o, n, num, body),
+      getDetailError: () => getError(),
     },
     issues: {
-      submitIssueComment: submitComment,
-      getIssueDetailError: getError,
+      submitIssueComment: (o: string, n: string, num: number, body: string) => submitComment(o, n, num, body),
+      getIssueDetailError: () => getError(),
     },
   });
 

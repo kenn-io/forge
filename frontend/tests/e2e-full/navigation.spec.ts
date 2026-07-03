@@ -14,32 +14,32 @@ test.describe("view navigation", () => {
     await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 10_000 });
 
     // Click Kata tab -> URL should contain /kata, shell renders.
-    await page.locator(".view-tab", { hasText: "Kata" }).click();
+    await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "Kata" }).click();
     await expect(page).toHaveURL(/\/kata/);
     await expect(page.getByRole("heading", { name: "Kata" })).toBeVisible();
 
     // Click Docs tab -> URL should contain /docs, docs shell renders.
-    await page.locator(".view-tab", { hasText: "Docs" }).click();
+    await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "Docs" }).click();
     await expect(page).toHaveURL(/\/docs/);
     await page.locator(".docs-workspace").waitFor({ state: "visible", timeout: 10_000 });
 
     // Click Messages tab -> URL should contain /messages, messages shell renders.
-    await page.locator(".view-tab", { hasText: "Messages" }).click();
+    await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "Messages" }).click();
     await expect(page).toHaveURL(/\/messages/);
     await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
 
     // Click PRs tab -> URL should contain /pulls, list renders.
-    await page.locator(".view-tab", { hasText: "PRs" }).click();
+    await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "PRs" }).click();
     await expect(page).toHaveURL(/\/pulls/);
     await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
 
     // Click Issues tab -> URL should contain /issues, list renders.
-    await page.locator(".view-tab", { hasText: "Issues" }).click();
+    await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "Issues" }).click();
     await expect(page).toHaveURL(/\/issues/);
     await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
 
     // Click Activity tab -> back to root, feed renders.
-    await page.locator(".view-tab", { hasText: "Activity" }).click();
+    await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "Activity" }).click();
     // Verify pathname is exactly the base path (default "/").
     await expect(page).toHaveURL(/\/(?:\?.*)?$/);
     const basePath = new URL(page.url()).pathname.replace(/\?.*$/, "");

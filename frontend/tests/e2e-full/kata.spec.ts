@@ -352,7 +352,7 @@ function autocompleteTooltip(page: Page): Locator {
 }
 
 function appHeaderTab(page: Page, name: string): Locator {
-  return page.locator(".tab-group").getByRole("button", { name, exact: true });
+  return page.locator(".kit-top-bar__tabs").getByRole("button", { name, exact: true });
 }
 
 async function startKataBackend(options: KataBackendOptions = {}): Promise<BackendHandle> {
@@ -3545,7 +3545,7 @@ test("kata route selects the requested task and app header reset clears the URL 
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send June rent from checking.");
     await expect(page).toHaveURL(/issue=issue-rent/);
 
-    await page.locator(".header-center").getByRole("button", { name: "Kata" }).click();
+    await page.locator(".kit-top-bar__nav").getByRole("button", { name: "Kata" }).click();
 
     await expect(page).toHaveURL(/\/kata$/);
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Select a task");
@@ -3584,7 +3584,7 @@ test("kata URL state restores view, selection history, and project scope", async
     await expect(page.getByRole("button", { name: /Email Susan re: Q3/ })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Deadline scoped task.");
 
-    await page.locator(".header-center").getByRole("button", { name: "Kata" }).click();
+    await page.locator(".kit-top-bar__nav").getByRole("button", { name: "Kata" }).click();
     await expect(page).toHaveURL(/\/kata$/);
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Select a task");
 

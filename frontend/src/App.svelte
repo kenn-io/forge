@@ -1195,6 +1195,7 @@
             {detailTab}
             isSidebarCollapsed={isSidebarCollapsed()}
             sidebarWidth={getSidebarWidth()}
+            sidebarOverlay={isNarrow()}
             onSidebarResize={handleSidebarResize}
           />
         {/if}
@@ -1205,6 +1206,7 @@
             {selectedIssue}
           isSidebarCollapsed={isSidebarCollapsed()}
           sidebarWidth={getSidebarWidth()}
+          sidebarOverlay={isNarrow()}
           onSidebarResize={handleSidebarResize}
         />
       {:else if getPage() === "reviews"}

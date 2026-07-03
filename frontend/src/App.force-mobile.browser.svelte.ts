@@ -56,13 +56,13 @@ describe("force-mobile routes", () => {
     expect(rect.height).toBeGreaterThan(0);
     expect(window.location.pathname).toBe("/issues");
     expect(count(".mobile-shell")).toBe(0);
-    expect(count(".app-header")).toBe(0);
+    expect(count(".app-top-bar")).toBe(0);
   });
 
   it("renders the standard desktop shell at the same route without the flag", async () => {
     mounted = await mountBrowserApp("/issues");
 
-    await vi.waitFor(() => expect(count(".app-header")).toBe(1), WAIT);
+    await vi.waitFor(() => expect(count(".app-top-bar")).toBe(1), WAIT);
     expect(window.location.pathname).toBe("/issues");
     expect(count(".focus-layout")).toBe(0);
   });

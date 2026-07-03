@@ -42,7 +42,7 @@ test.describe("app startup", () => {
 
     await page.goto("/");
 
-    await expect(page.locator(".app-header")).toBeVisible();
+    await expect(page.locator(".app-top-bar")).toBeVisible();
     await expect(page.locator(".loading-state")).toBeVisible();
     await expect.poll(() => healthRequests).toBeGreaterThanOrEqual(3);
     expect(settingsRequests).toBe(0);

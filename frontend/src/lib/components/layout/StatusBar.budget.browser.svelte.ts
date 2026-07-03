@@ -167,9 +167,9 @@ describe("budget display", () => {
     expect(eagerValue).not.toBeNull();
     expect(Math.abs(eagerLabel!.getBoundingClientRect().top - eagerValue!.getBoundingClientRect().top)).toBeLessThan(2);
 
-    // The popover lives inside a kit StatusBar section with overflow:hidden;
-    // it must escape that clip (fixed positioning) and open fully above the
-    // 24px bar rather than being cut to the section's height.
+    // The bar runs with overflow="visible" so the popover's absolute
+    // bottom-anchored panel can open fully above the 24px bar rather than
+    // being cut to the section's height.
     const popoverRect = popover.getBoundingClientRect();
     const barRect = document.querySelector(".kit-status-bar")!.getBoundingClientRect();
     expect(popoverRect.height).toBeGreaterThan(100);
@@ -200,23 +200,22 @@ describe("budget display", () => {
     expect(popover.textContent).not.toContain("eager refresh deferred");
   });
 
-  it("popover dismisses on Escape", async () => {
+  it("popover dismisses on Escape and restores focus to the trigger", async () => {
     const bars = await mountStatusBar();
     await openPopover(bars);
 
     pressKey("Escape", {}, document);
     await vi.waitFor(() => expect(document.querySelector(".budget-popover")).toBeNull(), WAIT);
+    expect(document.activeElement).toBe(bars);
   });
 
-  it("popover dismisses on click outside", async () => {
+  it("popover dismisses on press outside", async () => {
     const bars = await mountStatusBar();
     await openPopover(bars);
 
-    // Popover attaches its outside-click listener via setTimeout(0) to
-    // avoid catching the opening click. Let that timer run before
-    // clicking outside.
-    await new Promise((resolve) => setTimeout(resolve, 5));
-
+    // kit's dismissable helper listens for mousedown outside the wrapper;
+    // the opening interaction happened before mount, so no settling delay
+    // is needed.
     await page.elementLocator(document.querySelector<HTMLElement>(".app-main")!).click();
     await vi.waitFor(() => expect(document.querySelector(".budget-popover")).toBeNull(), WAIT);
   });

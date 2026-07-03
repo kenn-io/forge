@@ -88,24 +88,28 @@ test("settings shell stacks at kit's 760px breakpoint", async ({ page }) => {
   await expect.poll(shellDirection).toBe("row");
 });
 
-test("settings sidebar lists every panel in declaration order", async ({ page }) => {
+test("settings sidebar lists every panel in declaration order under group headings", async ({ page }) => {
   await page.goto("/settings");
 
   await expect(page.locator(".settings-page")).toBeVisible();
   await expect(
     page.evaluate(() =>
-      Array.from(document.querySelectorAll<HTMLElement>(".kit-settings__nav-item")).map(
+      Array.from(document.querySelectorAll<HTMLElement>(".kit-settings__nav-label, .kit-settings__group-title")).map(
         (item) => item.textContent?.trim() ?? "",
       ),
     ),
   ).resolves.toEqual([
+    "Providers",
     "Repositories",
+    "Workflow",
     "Activity",
+    "Workspace",
     "Terminal",
     "Kata mappings",
-    "Visible modes",
     "Workspace agents",
     "Fleet federation",
+    "Navigation",
+    "Visible modes",
   ]);
 });
 

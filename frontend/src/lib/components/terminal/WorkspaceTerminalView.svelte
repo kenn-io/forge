@@ -2,6 +2,7 @@
   import { EmptyState, Spinner } from "@kenn-io/kit-ui";
   import { tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
+  import { isNarrow } from "../../stores/container.svelte.js";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import KataWorkspaceSidebarPane from "./KataWorkspaceSidebarPane.svelte";
   import TerminalPane from "./TerminalPane.svelte";
@@ -2950,6 +2951,7 @@
       minSidebarWidth={MIN_WORKSPACE_LIST_WIDTH}
       maxSidebarWidth={MAX_WORKSPACE_LIST_WIDTH}
       onSidebarResize={handleWorkspaceListResize}
+      overlay={isNarrow()}
       showCollapsedStrip={isSidebarToggleEnabled}
       onExpand={onToggleSidebar}
       mainOverflow="hidden"

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { dismissable } from "@kenn-io/kit-ui";
   import type { RateLimitHostStatus } from "@middleman/ui/api/types";
   import { budgetColor, formatCompact, syncBudgetColor } from "./budget-utils";
 
@@ -11,45 +12,17 @@
 
   let popoverEl: HTMLDivElement | undefined = $state();
 
-  // Fixed positioning anchored to the wrapper in the status bar: the popover
-  // renders inside a kit StatusBar section whose overflow:hidden clips
-  // absolutely positioned children, so it must leave that stacking context.
-  // The anchor is measured once on open — the status bar is static chrome, so
-  // there is nothing to track between open and close.
-  let anchorStyle = $state("");
+  // kit StatusBar runs with overflow="visible" so this can be the natural
+  // bottom-anchored absolute panel inside the relative .budget-wrapper (the
+  // sanctioned kit popover recipe). The wrapper counts as "inside" so a
+  // press on the BudgetBars trigger reaches its own toggle instead of
+  // racing a dismiss-then-reopen.
   $effect(() => {
-    const wrapper = popoverEl?.parentElement;
-    if (!wrapper) return;
-    const rect = wrapper.getBoundingClientRect();
-    const right = Math.max(8, window.innerWidth - rect.right);
-    const bottom = window.innerHeight - rect.top + 4;
-    anchorStyle = `right: ${Math.round(right)}px; bottom: ${Math.round(bottom)}px`;
-  });
-
-  function handleClickOutside(e: MouseEvent) {
-    if (popoverEl && !popoverEl.contains(e.target as Node)) {
-      onclose();
-    }
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      onclose();
-    }
-  }
-
-  $effect(() => {
-    // Delay registration to avoid catching the click that opened the popover.
-    const id = setTimeout(() => {
-      document.addEventListener("click", handleClickOutside);
-    }, 0);
-    document.addEventListener("keydown", handleKeydown);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener("click", handleClickOutside);
-      document.removeEventListener("keydown", handleKeydown);
-    };
+    return dismissable({
+      owners: () => [popoverEl?.parentElement],
+      dismiss: onclose,
+      escapeFocus: () => popoverEl?.parentElement?.querySelector("button"),
+    });
   });
 
   function hostEntries() {
@@ -89,10 +62,9 @@
 </script>
 
 <div
-  class="budget-popover"
+  class="budget-popover kit-popover-card"
   role="dialog"
   aria-label="API Budget"
-  style={anchorStyle}
   bind:this={popoverEl}
 >
   <div class="popover-header">API Budget</div>
@@ -196,18 +168,13 @@
 
 <style>
   .budget-popover {
-    /* Fixed, not absolute: the popover renders inside a kit StatusBar
-       section whose overflow:hidden would clip an absolutely positioned
-       child. right/bottom come from the measured anchor (inline style). */
-    position: fixed;
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 4px);
     width: 320px;
     max-height: 400px;
     overflow-y: auto;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: 8px;
     padding: 12px 16px;
-    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
     z-index: var(--z-popover, 1000);
     font-size: var(--font-size-xs);
   }

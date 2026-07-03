@@ -159,7 +159,7 @@ test("hideHeader suppresses AppHeader on the workspaces page", async ({ page }) 
   });
 
   await page.goto("/workspaces");
-  await expect(page.locator("header.app-header")).toHaveCount(0);
+  await expect(page.locator("header.app-top-bar")).toHaveCount(0);
 });
 
 test("navigateToRoute bridge method works", async ({ page }) => {
@@ -349,7 +349,7 @@ test("embed initialRoute opens detail surface without full app chrome", async ({
   await page.goto("/");
 
   await detailRequest;
-  await expect(page.locator("header.app-header")).toHaveCount(0);
+  await expect(page.locator("header.app-top-bar")).toHaveCount(0);
   await expect(page).toHaveURL(
     /\/workspaces\/embed\/detail\/gitlab\/issue\/git\.example\.com\/7\?repo_path=group%2Fproject$/,
   );
@@ -393,7 +393,7 @@ test("full app initializes after navigating away from an initial embed route", a
   });
 
   await page.goto("/");
-  await expect(page.locator("header.app-header")).toHaveCount(0);
+  await expect(page.locator("header.app-top-bar")).toHaveCount(0);
 
   const pullsResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/pulls");
   await page.evaluate(() => {
@@ -402,7 +402,7 @@ test("full app initializes after navigating away from an initial embed route", a
 
   await expect(page).toHaveURL(/\/pulls$/);
   await pullsResponse;
-  await expect(page.locator("header.app-header")).toBeVisible();
+  await expect(page.locator("header.app-top-bar")).toBeVisible();
 });
 
 test("full app reinitializes after navigating through an embed route", async ({ page }) => {
@@ -456,7 +456,7 @@ test("full app reinitializes after navigating through an embed route", async ({ 
   });
 
   await page.goto("/pulls");
-  await expect(page.locator("header.app-header")).toBeVisible();
+  await expect(page.locator("header.app-top-bar")).toBeVisible();
   await expect.poll(() => settingsRequests).toBe(1);
   const initialEventSources = await page.evaluate(() => window.__middleman_event_source_counts?.().created ?? 0);
   expect(initialEventSources).toBeGreaterThan(0);
@@ -465,7 +465,7 @@ test("full app reinitializes after navigating through an embed route", async ({ 
     window.__middleman_navigate_to_route?.("/workspaces/embed/list");
   });
   await expect(page).toHaveURL(/\/workspaces\/embed\/list$/);
-  await expect(page.locator("header.app-header")).toHaveCount(0);
+  await expect(page.locator("header.app-top-bar")).toHaveCount(0);
   await expect
     .poll(async () => page.evaluate(() => window.__middleman_event_source_counts?.().closed ?? 0))
     .toBeGreaterThanOrEqual(initialEventSources);
@@ -474,7 +474,7 @@ test("full app reinitializes after navigating through an embed route", async ({ 
     window.__middleman_navigate_to_route?.("/pulls");
   });
   await expect(page).toHaveURL(/\/pulls$/);
-  await expect(page.locator("header.app-header")).toBeVisible();
+  await expect(page.locator("header.app-top-bar")).toBeVisible();
   await expect.poll(() => settingsRequests).toBe(2);
   await expect
     .poll(async () => page.evaluate(() => window.__middleman_event_source_counts?.().created ?? 0))

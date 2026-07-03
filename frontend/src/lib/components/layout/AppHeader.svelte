@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { getStores, KbdBadge, SelectDropdown } from "@middleman/ui";
+  import { TopBar, type TopBarTab } from "@kenn-io/kit-ui";
+  import { getStores, KbdBadge } from "@middleman/ui";
   import type { ModeVisibility } from "@middleman/ui/api/types";
   import { SvelteMap } from "svelte/reactivity";
   import {
@@ -25,10 +26,6 @@
   } from "../../icons.ts";
   import { getGlobalRepo, setGlobalRepo } from "../../stores/filter.svelte.js";
   import { isEmbedded, getUIConfig } from "../../stores/embed-config.svelte.js";
-  import {
-    getContainerSize,
-    isNarrow,
-  } from "../../stores/container.svelte.js";
   import { isThemeToggleVisible } from "../../stores/theme.svelte.js";
   import {
     isSidebarCollapsed,
@@ -61,7 +58,7 @@
     | "board"
     | "reviews"
     | "workspaces";
-  type CompactNavValue = NavDestination | "settings" | "design-system";
+  type NavValue = NavDestination | "settings" | "design-system";
 
   const modeNavOptions: { value: NavDestination; label: string; mode: ModeKey }[] = [
     { value: "activity", label: "Activity", mode: "activity" },
@@ -82,7 +79,6 @@
   }
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
-  const compactHeader = $derived(getContainerSize() !== "wide");
   const showProviderRepoSelector = $derived(
     !getUIConfig().hideRepoSelector &&
       (getPage() === "activity" ||
@@ -111,21 +107,25 @@
     navigate("/settings");
   }
 
-  const compactNavOptions = $derived.by(() => {
-    const options: { value: CompactNavValue; label: string }[] = modeNavOptions
+  // Settings and the design-system gallery are not modes, but while one of
+  // those pages is current it needs a tab entry: the collapsed dropdown
+  // otherwise presents the first mode as the current page.
+  const tabs: TopBarTab[] = $derived.by(() => {
+    const entries: TopBarTab[] = modeNavOptions
       .filter((option) => settings.isModeVisible(option.mode))
-      .map(({ value, label }) => ({ value, label }));
+      .map(({ value, label }) => ({ id: value, label }));
 
     if (getPage() === "design-system") {
-      options.push({ value: "design-system", label: "Design system" });
+      entries.push({ id: "design-system", label: "Design system" });
     }
     if (!isEmbedded() && getPage() === "settings") {
-      options.push({ value: "settings", label: "Settings" });
+      entries.push({ id: "settings", label: "Settings" });
     }
 
-    return options;
+    return entries;
   });
-  const compactNavValue = $derived(
+
+  const routeTabId = $derived(
     getPage() === "pulls" && getView() === "board"
       ? "board"
       : getPage() === "terminal"
@@ -134,6 +134,15 @@
           ? "repos"
       : getPage(),
   );
+  // The route owns the active tab: TopBar writes a click into the binding,
+  // navigation happens through onchange, and this sync settles the binding
+  // on whatever page the router actually landed on.
+  let activeTab = $state("");
+  let tabsCollapsed = $state(false);
+  $effect(() => {
+    activeTab = routeTabId;
+  });
+
   type StickyMode = "kata" | "docs" | "messages";
   const stickyModeDefaults: Record<StickyMode, string> = {
     kata: "/kata",
@@ -162,24 +171,12 @@
       ?? `/${destination}`;
   }
 
-  function navigateTab(
-    destination:
-      | "activity"
-      | "repos"
-      | "kata"
-      | "docs"
-      | "messages"
-      | "pulls"
-      | "issues"
-      | "board"
-      | "reviews"
-      | "workspaces"
-      | "settings"
-      | "design-system",
-  ): void {
+  function navigateTab(destination: NavValue): void {
     const currentMode = stickyModeForPage(getPage());
     rememberCurrentStickyModeRoute();
-    if (destination === "activity") navigate(getLastActivityRoute());
+    if (destination === "activity") {
+      if (getPage() !== "activity") navigate(getLastActivityRoute());
+    }
     else if (destination === "repos") navigate("/repos");
     else if (destination === "kata" || destination === "docs" || destination === "messages") {
       if (currentMode === destination) {
@@ -198,7 +195,7 @@
     else if (destination === "design-system") navigate("/design-system");
   }
 
-  function navigateCompactNav(value: string): void {
+  function handleTabChange(value: string): void {
     if (value === "activity") navigateTab("activity");
     else if (value === "repos") navigateTab("repos");
     else if (value === "kata") navigateTab("kata");
@@ -213,13 +210,26 @@
     else if (value === "design-system") navigateTab("design-system");
   }
 
-  function showMode(mode: ModeKey): boolean {
-    return settings.isModeVisible(mode);
-  }
+  const showReviewsDaemonIndicator = $derived(
+    settings.isModeVisible("reviews")
+      && stores.roborevDaemon !== undefined
+      && !stores.roborevDaemon.isAvailable(),
+  );
 </script>
 
-<header class="app-header">
-  <div class="header-left">
+<!-- The app header renders through kit TopBar; app-top-bar is the app-owned
+     selector alias (the kit element also carries .kit-top-bar) used by the
+     app-startup/focus/embedded/routing specs to assert header presence. -->
+<TopBar
+  class="app-top-bar"
+  {tabs}
+  bind:active={activeTab}
+  bind:collapsed={tabsCollapsed}
+  centerTabs
+  ariaLabel="Page"
+  onchange={handleTabChange}
+>
+  {#snippet left()}
     {#if isSidebarCollapsed() && isSidebarToggleEnabled() && !hasSidebarStrip}
       <HeaderIconButton
         onclick={toggleSidebar}
@@ -242,96 +252,15 @@
         onchange={setGlobalRepo}
       />
     {/if}
-    {#if compactHeader && !isNarrow()}
-      <SelectDropdown
-        class="nav-select"
-        value={compactNavValue}
-        options={compactNavOptions}
-        onchange={navigateCompactNav}
-        title="Page"
-      />
-    {/if}
-  </div>
+  {/snippet}
 
-  <nav class="header-center">
-    {#if compactHeader}
-      {#if isNarrow()}
-        <SelectDropdown
-          class="nav-select"
-          value={compactNavValue}
-          options={compactNavOptions}
-          onchange={navigateCompactNav}
-          title="Page"
-        />
-      {/if}
-    {:else}
-      <div class="tab-group">
-        {#if showMode("activity")}
-          <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
-            Activity
-          </button>
-        {/if}
-        {#if showMode("repos")}
-          <button
-            class="view-tab"
-            class:active={getPage() === "repos" || getPage() === "repo-browser"}
-            onclick={() => navigateTab("repos")}
-          >
-            Repos
-          </button>
-        {/if}
-        {#if showMode("kata")}
-          <button class="view-tab" class:active={getPage() === "kata"} onclick={() => navigateTab("kata")}>
-            Kata
-          </button>
-        {/if}
-        {#if showMode("docs")}
-          <button class="view-tab" class:active={getPage() === "docs"} onclick={() => navigateTab("docs")}>
-            Docs
-          </button>
-        {/if}
-        {#if showMode("messages")}
-          <button class="view-tab" class:active={getPage() === "messages"} onclick={() => navigateTab("messages")}>
-            Messages
-          </button>
-        {/if}
-        {#if showMode("pulls")}
-          <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigateTab("pulls")}>
-            PRs
-          </button>
-        {/if}
-        {#if showMode("issues")}
-          <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigateTab("issues")}>
-            Issues
-          </button>
-        {/if}
-        {#if showMode("board")}
-          <button class="view-tab" class:active={getView() === "board"} onclick={() => navigateTab("board")}>
-            Board
-          </button>
-        {/if}
-        {#if showMode("reviews")}
-          <button class="view-tab"
-            class:active={getPage() === "reviews"}
-            onclick={() => navigateTab("reviews")}>
-            Reviews
-            {#if stores.roborevDaemon && !stores.roborevDaemon.isAvailable()}
-              <span class="daemon-indicator" title="Daemon unavailable"></span>
-            {/if}
-          </button>
-        {/if}
-        {#if showMode("workspaces")}
-          <button
-            class="view-tab"
-            class:active={getPage() === "workspaces" || getPage() === "terminal"}
-            onclick={() => navigateTab("workspaces")}
-          >Workspaces</button>
-        {/if}
-      </div>
+  {#snippet right()}
+    {#if showReviewsDaemonIndicator}
+      <!-- Lives here rather than on the Reviews tab: kit TopBarTab has no
+           indicator affordance yet (kata kit-ui#b3zf); the dot must also
+           survive the tabs collapsing into the dropdown. -->
+      <span class="daemon-indicator" title="Daemon unavailable"></span>
     {/if}
-  </nav>
-
-  <div class="header-right">
     <HeaderIconButton onclick={openPalette} title="Open command palette">
       <SearchIcon size="14" strokeWidth="1.75" aria-hidden="true" />
       <KbdBadge binding={{ key: "K", ctrlOrMeta: true }} />
@@ -359,7 +288,9 @@
             />
           </span>
         {/if}
-        <span class="sync-label">{syncing ? "Syncing..." : "Sync"}</span>
+        {#if !tabsCollapsed}
+          <span class="sync-label">{syncing ? "Syncing..." : "Sync"}</span>
+        {/if}
       </button>
     {/if}
     {#if isThemeToggleVisible()}
@@ -374,30 +305,10 @@
         <SettingsIcon size="14" strokeWidth="1.75" aria-hidden="true" />
       </HeaderIconButton>
     {/if}
-  </div>
-</header>
+  {/snippet}
+</TopBar>
 
 <style>
-  .app-header {
-    height: var(--header-height);
-    background: var(--bg-surface);
-    border-bottom: 1px solid var(--border-default);
-    display: flex;
-    align-items: center;
-    padding: 0 16px;
-    gap: 16px;
-    flex-shrink: 0;
-    box-shadow: var(--shadow-sm);
-  }
-
-  .header-left {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
   .brand {
     display: inline-flex;
     align-items: center;
@@ -416,50 +327,6 @@
     font-size: var(--font-size-lg);
     color: var(--text-primary);
     letter-spacing: -0.01em;
-  }
-
-  .header-center {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .tab-group {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    background: var(--bg-inset);
-    border-radius: var(--radius-md);
-    padding: 2px;
-  }
-
-  .view-tab {
-    padding: 4px 14px;
-    border-radius: calc(var(--radius-md) - 2px);
-    font-size: var(--font-size-md);
-    font-weight: 500;
-    color: var(--text-secondary);
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .view-tab:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
-  }
-
-  .view-tab.active {
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .header-right {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
   }
 
   .action-btn {
@@ -498,10 +365,10 @@
     line-height: 1;
   }
 
-  /* Busy state spins the sync affordance icon itself (kit-ui
-     RefreshControl's pattern); AppHeader is replaced by TopBar +
-     RefreshControl in the overlays/layout migration stage. */
-  /* kit-ui-check-ignore: RefreshControl-style icon spin, migrates with TopBar */
+  /* Busy state spins the sync affordance icon itself, matching kit-ui
+     RefreshControl's pattern; the sync button carries app-specific
+     label/disable semantics RefreshControl does not model. */
+  /* kit-ui-check-ignore: RefreshControl-style icon spin on an app button */
   @keyframes header-spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
@@ -524,61 +391,51 @@
     height: 6px;
     border-radius: 50%;
     background: var(--text-muted);
-    margin-left: 4px;
-    vertical-align: middle;
+    margin-right: 2px;
     opacity: 0.6;
   }
 
-  :global(#app.container-medium) .app-header {
-    gap: 8px;
-    padding-inline: 10px;
+  /* kit's collapse probe is a position:absolute row that always renders the
+     full (uncollapsed) tab labels to measure their natural width. With no
+     clip it extends past the bar and inflates body scrollWidth, producing
+     horizontal page overflow at narrow widths. Clip the x-axis only: the
+     nav and typeahead dropdowns open downward and must stay visible, and the
+     probe's own offsetWidth (what kit measures) is unaffected by the clip. */
+  :global(.app-top-bar) {
+    overflow-x: clip;
   }
 
-  :global(#app.container-medium) .header-left {
-    flex: 1 1 auto;
-    gap: 8px;
-  }
-
-  :global(#app.container-medium) .header-left :global(.typeahead) {
+  /* Region sizing on kit's bar: the side regions never shrink (kit collapses
+     the tabs first), so the repo typeahead gets an app-side width cap to keep
+     the left region honest in tighter containers. */
+  :global(.kit-top-bar .kit-top-bar__left .typeahead) {
     flex: 1 1 150px;
     min-width: 128px;
     max-width: 220px;
   }
 
-  :global(#app.container-medium) .header-center {
-    display: none;
+  :global(#app.container-medium .kit-top-bar) {
+    gap: 8px;
+    padding-inline: 10px;
   }
 
-  :global(#app.container-medium) .header-left :global(.nav-select) {
-    flex: 0 0 164px;
-    min-width: 132px;
-  }
-
-  :global(#app.container-medium .nav-select) {
-    width: 100%;
-    min-width: 0;
-  }
-
-  :global(#app.container-medium .nav-select .kit-select-dropdown__trigger) {
+  :global(.kit-top-bar .kit-top-bar__nav-select .kit-select-dropdown__trigger) {
     border-color: var(--border-muted);
     background: var(--bg-inset);
   }
 
-  :global(#app.container-medium) .header-right {
-    flex: 0 0 auto;
-    gap: 6px;
-  }
+  /* Narrow containers (embedded or split panes under 500px) keep the
+     two-row header: the left region wraps onto the first row and the
+     collapsed nav dropdown shares the second row with the action buttons.
+     kit's measurement keeps the tabs collapsed here — the wrap only reorders
+     the regions it renders.
 
-  :global(#app.container-medium) .sync-btn {
-    min-height: 28px;
-    padding: 5px 10px;
-  }
-
-  :global(#app.container-medium) .sync-label {
-    display: none;
-  }
-
-  :global(#app.container-narrow) .app-header {
+     The left region is content-sized (flex: 0 1 auto) rather than stretched
+     to a full row: a stretched left inflated the side-region footprint kit
+     freezes into expandUsed at collapse time, which then blocked the tabs
+     from ever re-expanding when the container widened. Content-sizing keeps
+     kit's collapse math honest across the narrow->wide transition. */
+  :global(#app.container-narrow .kit-top-bar) {
     height: auto;
     min-height: 82px;
     align-items: center;
@@ -587,64 +444,64 @@
     padding: 6px 10px;
   }
 
-  :global(#app.container-narrow) .header-left {
-    flex: 1 1 100%;
-    gap: 8px;
+  :global(#app.container-narrow .kit-top-bar .kit-top-bar__left) {
+    flex: 0 1 auto;
     order: 1;
+    gap: 8px;
   }
 
-  :global(#app.container-narrow) .brand {
+  :global(#app.container-narrow .kit-top-bar) .brand {
     gap: 6px;
   }
 
-  :global(#app.container-narrow) .app-icon {
+  :global(#app.container-narrow .kit-top-bar) .app-icon {
     width: 20px;
     height: 20px;
   }
 
-  :global(#app.container-narrow) .logo {
-    font-size: var(--font-size-lg);
-  }
-
-  :global(#app.container-narrow) .header-left :global(.typeahead) {
+  :global(#app.container-narrow .kit-top-bar .kit-top-bar__left .typeahead) {
     flex: 1 1 auto;
     min-width: 0;
     max-width: none;
   }
 
-  :global(#app.container-narrow) .header-left :global(.typeahead-trigger),
-  :global(#app.container-narrow) .header-left :global(.typeahead-input) {
+  :global(#app.container-narrow .kit-top-bar .kit-top-bar__left .typeahead-trigger),
+  :global(#app.container-narrow .kit-top-bar .kit-top-bar__left .typeahead-input) {
     height: 30px;
   }
 
-  :global(#app.container-narrow) .header-center {
+  :global(#app.container-narrow .kit-top-bar .kit-top-bar__nav) {
     flex: 1 1 min(190px, 100%);
     min-width: 0;
     order: 2;
   }
 
-  :global(#app.container-narrow .nav-select) {
+  :global(#app.container-narrow .kit-top-bar .kit-top-bar__nav-select) {
     width: 100%;
     min-width: 0;
   }
 
-  :global(#app.container-narrow .nav-select .kit-select-dropdown__trigger) {
+  :global(#app.container-narrow .kit-top-bar .kit-top-bar__nav-select .kit-select-dropdown__trigger) {
     min-height: 32px;
     font-size: var(--font-size-md);
   }
 
-  :global(#app.container-narrow) .header-right {
+  :global(#app.container-narrow .kit-top-bar .kit-top-bar__right) {
     flex: 0 0 auto;
     order: 3;
+    margin-left: 0;
     gap: 6px;
   }
 
-  :global(#app.container-narrow) .action-btn {
+  /* Every right-region control gets the same narrow-height bump, not just the
+     sync .action-btn: the hand-rolled sync button and the HeaderIconButton
+     controls (palette, theme, settings) sit side by side, so bumping one
+     alone leaves them misaligned — and mismatched mid-transition, since kit
+     re-expands the tabs immediately while the container class drops on a
+     debounce. Governing all of them by the same class keeps their heights
+     equal in every state. */
+  :global(#app.container-narrow .kit-top-bar .kit-top-bar__right button) {
     height: 32px;
     padding-inline: 10px;
-  }
-
-  :global(#app.container-narrow) .sync-label {
-    display: none;
   }
 </style>

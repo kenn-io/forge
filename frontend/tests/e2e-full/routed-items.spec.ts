@@ -55,7 +55,7 @@ test.describe("routed item builders through the UI", () => {
 
     await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/1$/);
     await expect(page.locator(".focus-layout .pull-detail .detail-title")).toContainText(prTitle);
-    await expect(page.locator(".app-header")).not.toBeAttached();
+    await expect(page.locator(".app-top-bar")).not.toBeAttached();
     await expect((await detailLoaded).ok()).toBe(true);
   });
 
@@ -68,7 +68,7 @@ test.describe("routed item builders through the UI", () => {
 
     await expect(page).toHaveURL(/\/focus\/issues\/github\/acme\/widgets\/10$/);
     await expect(page.locator(".focus-layout .issue-detail .detail-title")).toContainText(issueTitle);
-    await expect(page.locator(".app-header")).not.toBeAttached();
+    await expect(page.locator(".app-top-bar")).not.toBeAttached();
     await expect((await detailLoaded).ok()).toBe(true);
   });
 
@@ -106,13 +106,13 @@ test.describe("routed item builders through the UI", () => {
     await expect(page.locator(".focus-layout:not(.focus-layout--phone) .pull-detail .detail-title")).toContainText(
       prTitle,
     );
-    await expect(page.locator(".app-header")).toHaveCount(0);
+    await expect(page.locator(".app-top-bar")).toHaveCount(0);
 
     await page.setViewportSize({ width: 1200, height: 844 });
 
     await expectPathname(page, "/pulls/github/acme/widgets/1");
     await expect(page.locator(".focus-layout")).toHaveCount(0);
-    await expect(page.locator(".app-header")).toBeVisible();
+    await expect(page.locator(".app-top-bar")).toBeVisible();
     await expect(page.locator(".pull-detail .detail-title")).toContainText(prTitle);
   });
 });

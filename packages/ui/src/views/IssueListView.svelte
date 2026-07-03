@@ -15,6 +15,8 @@
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
     sidebarWidth?: number;
+    /** Float the expanded sidebar over the list (narrow-container hosts). */
+    sidebarOverlay?: boolean;
     autoSyncDetail?: IssueDetailSyncMode;
     hideStaleDetailWhileLoading?: boolean;
     onSidebarResize?: (width: number) => void;
@@ -25,6 +27,7 @@
     isSidebarCollapsed = false,
     hideSidebar = false,
     sidebarWidth = 340,
+    sidebarOverlay = false,
     autoSyncDetail = "background",
     hideStaleDetailWhileLoading = false,
     onSidebarResize,
@@ -36,6 +39,7 @@
   {hideSidebar}
   {sidebarWidth}
   {onSidebarResize}
+  overlay={sidebarOverlay}
   showCollapsedStrip={isSidebarToggleEnabled()}
   onExpand={toggleSidebar}
   mainEmpty={selectedIssue === null}

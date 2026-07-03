@@ -73,6 +73,8 @@
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
     sidebarWidth?: number;
+    /** Float the expanded sidebar over the list (narrow-container hosts). */
+    sidebarOverlay?: boolean;
     autoSyncDetail?: DetailSyncMode;
     hideStaleDetailWhileLoading?: boolean;
     workflowApprovalSync?: boolean;
@@ -88,6 +90,7 @@
     isSidebarCollapsed = false,
     hideSidebar = false,
     sidebarWidth = 340,
+    sidebarOverlay = false,
     autoSyncDetail = "background",
     hideStaleDetailWhileLoading = false,
     workflowApprovalSync = true,
@@ -285,6 +288,7 @@
   {hideSidebar}
   {sidebarWidth}
   {onSidebarResize}
+  overlay={sidebarOverlay}
   showCollapsedStrip={isSidebarToggleEnabled()}
   onExpand={toggleSidebar}
   mainEmpty={selectedPR === null}

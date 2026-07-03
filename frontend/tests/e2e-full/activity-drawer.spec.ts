@@ -885,7 +885,7 @@ test.describe("activity split view and detail drawers", () => {
     await expect(page.locator(".activity-detail .diff-view")).toBeVisible();
     await expect(page.locator(".activity-detail .diff-file")).toHaveCount(1);
 
-    await page.locator(".view-tab", { hasText: "PRs" }).click();
+    await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "PRs" }).click();
 
     await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1\/files$/);
     await expect(page.locator(".diff-file")).toHaveCount(1);
@@ -897,7 +897,7 @@ test.describe("activity split view and detail drawers", () => {
     await page.goto("/?selected=issue:10&provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets");
     await expect(page.locator(".activity-detail .issue-detail")).toBeVisible();
 
-    await page.locator(".view-tab", { hasText: "Issues" }).click();
+    await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "Issues" }).click();
 
     await expect(page).toHaveURL(/\/host\/ghe\.example\.com\/issues\/github\/acme\/widgets\/10$/);
   });

@@ -127,7 +127,7 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-tab--active")).toHaveText("Activity");
     await expect(page.locator(".mobile-topbar .mobile-app-icon")).toBeVisible();
     await expect(page.getByRole("button", { name: "Open desktop view" })).toBeVisible();
-    await expect(page.locator(".app-header")).toHaveCount(0);
+    await expect(page.locator(".app-top-bar")).toHaveCount(0);
     await expect(page.locator("footer")).toHaveCount(0);
 
     const metrics = await page.evaluate(() => {
@@ -454,7 +454,7 @@ test.describe("phone routes", () => {
     await page.goto("/?desktop=1");
 
     await expect(page).toHaveURL(/\/?desktop=1$/);
-    await expect(page.locator(".app-header")).toBeVisible();
+    await expect(page.locator(".app-top-bar")).toBeVisible();
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 

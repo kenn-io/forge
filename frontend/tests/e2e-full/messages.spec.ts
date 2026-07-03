@@ -784,7 +784,7 @@ function savedViewsNav(page: Page) {
 }
 
 function appHeaderTab(page: Page, name: string) {
-  return page.locator(".tab-group").getByRole("button", { name, exact: true });
+  return page.locator(".kit-top-bar__tabs").getByRole("button", { name, exact: true });
 }
 
 async function openDocsEditor(page: Page): Promise<Locator> {

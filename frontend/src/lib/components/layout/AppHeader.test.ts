@@ -343,23 +343,19 @@ describe("AppHeader", () => {
     expect(container.querySelector("button[title='Expand sidebar'] svg")).toBeTruthy();
   });
 
-  it("shows one Workspaces option in the compact nav on terminal routes", async () => {
+  it("marks the Workspaces tab current on terminal routes", () => {
+    // One tabs list drives both the expanded tab row and kit's collapsed
+    // dropdown, so the terminal → workspaces active mapping only needs
+    // asserting once. jsdom cannot trigger kit TopBar's measurement
+    // collapse (zero-width layout), so the expanded row is the testable
+    // presentation here; the collapsed dropdown is covered by the
+    // container-layout e2e spec.
     initTheme();
-    mockedContainerSize.value = "medium";
     navigate("/terminal/ws-123");
     render(AppHeader);
 
-    const pageSelect = screen.getByRole("combobox", {
-      name: "Page: Workspaces",
-    });
-    await fireEvent.click(pageSelect);
-
-    const workspaceOptions = screen.getAllByRole("option", {
-      name: "Workspaces",
-    });
-
-    expect(workspaceOptions).toHaveLength(1);
-    expect(workspaceOptions[0]?.getAttribute("aria-selected")).toBe("true");
+    const workspacesTab = screen.getByRole("button", { name: "Workspaces" });
+    expect(workspacesTab.getAttribute("aria-current")).toBe("page");
   });
 
   it("does not show the collapsed sidebar shortcut hint on Activity", () => {
@@ -373,26 +369,13 @@ describe("AppHeader", () => {
     expect(expandButton!.querySelector("kbd[aria-label]")).toBeNull();
   });
 
-  it("hides imported modes from the top nav by default", async () => {
+  it("hides imported modes from the top nav by default", () => {
     initTheme();
     render(AppHeader);
 
     expect(screen.queryByRole("button", { name: "Kata" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Docs" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Messages" })).toBeNull();
-
-    cleanup();
-    mockedContainerSize.value = "medium";
-    render(AppHeader);
-
-    const pageSelect = screen.getByRole("combobox", {
-      name: "Page: Activity",
-    });
-    await fireEvent.click(pageSelect);
-
-    expect(screen.queryByRole("option", { name: "Kata" })).toBeNull();
-    expect(screen.queryByRole("option", { name: "Docs" })).toBeNull();
-    expect(screen.queryByRole("option", { name: "Messages" })).toBeNull();
   });
 
   it("navigates to Kata from the desktop nav", async () => {
@@ -460,65 +443,17 @@ describe("AppHeader", () => {
     expect(screen.queryByTitle("Select repository")).toBeNull();
   });
 
-  it("includes Kata in the compact nav", async () => {
+  it("remembers sticky mode routes when the nav switches to Activity", async () => {
     initTheme();
     showImportedModes();
-    mockedContainerSize.value = "medium";
-    render(AppHeader);
-
-    const pageSelect = screen.getByRole("combobox", {
-      name: "Page: Activity",
-    });
-    await fireEvent.click(pageSelect);
-    await fireEvent.click(screen.getByRole("option", { name: "Kata" }));
-
-    expect(window.location.pathname + window.location.search).toBe("/kata");
-  });
-
-  it("includes Docs in the compact nav", async () => {
-    initTheme();
-    showImportedModes();
-    mockedContainerSize.value = "medium";
-    render(AppHeader);
-
-    const pageSelect = screen.getByRole("combobox", {
-      name: "Page: Activity",
-    });
-    await fireEvent.click(pageSelect);
-    await fireEvent.click(screen.getByRole("option", { name: "Docs" }));
-
-    expect(window.location.pathname + window.location.search).toBe("/docs");
-  });
-
-  it("includes Messages in the compact nav", async () => {
-    initTheme();
-    showImportedModes();
-    mockedContainerSize.value = "medium";
-    render(AppHeader);
-
-    const pageSelect = screen.getByRole("combobox", {
-      name: "Page: Activity",
-    });
-    await fireEvent.click(pageSelect);
-    await fireEvent.click(screen.getByRole("option", { name: "Messages" }));
-
-    expect(window.location.pathname + window.location.search).toBe("/messages");
-  });
-
-  it("remembers sticky mode routes when compact nav switches to Activity", async () => {
-    initTheme();
-    showImportedModes();
-    mockedContainerSize.value = "medium";
     navigate("/kata?issue=issue-q3");
     render(AppHeader);
 
-    await fireEvent.click(screen.getByRole("combobox", { name: "Page: Kata" }));
-    await fireEvent.click(screen.getByRole("option", { name: "Activity" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Activity" }));
 
     expect(window.location.pathname + window.location.search).toBe("/");
 
-    await fireEvent.click(screen.getByRole("combobox", { name: "Page: Activity" }));
-    await fireEvent.click(screen.getByRole("option", { name: "Kata" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Kata" }));
 
     expect(window.location.pathname + window.location.search).toBe("/kata?issue=issue-q3");
   });

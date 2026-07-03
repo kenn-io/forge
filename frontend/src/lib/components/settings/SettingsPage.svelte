@@ -1,9 +1,11 @@
 <script lang="ts">
+  import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import { onMount } from "svelte";
-  import { SettingsLayout, SettingsSection, type SettingsCategory } from "@kenn-io/kit-ui";
+  import { SearchInput, SettingsLayout, SettingsSection, type SettingsCategory } from "@kenn-io/kit-ui";
   import { getStores } from "@middleman/ui";
   import type { Settings } from "@middleman/ui/api/types";
   import { getSettings } from "../../api/settings.js";
+  import { navigate } from "../../stores/router.svelte.js";
   import RepoSettings from "./RepoSettings.svelte";
   import ActivitySettings from "./ActivitySettings.svelte";
   import TerminalSettings from "./TerminalSettings.svelte";
@@ -20,7 +22,10 @@
     id: string;
     label: string;
     title: string;
+    group: string;
     description: string;
+    /** Extra search-only terms; never rendered. */
+    keywords: string;
   }
 
   const panels: SettingsPanelMeta[] = [
@@ -28,47 +33,77 @@
       id: "settings-repositories",
       label: "Repositories",
       title: "Repositories",
+      group: "Providers",
       description: "Tracked repositories and import tools",
+      keywords: "repos repositories providers github gitlab forgejo gitea import glob",
     },
     {
       id: "settings-activity",
       label: "Activity",
       title: "Activity feed defaults",
+      group: "Workflow",
       description: "Default activity feed filters",
+      keywords: "activity feed defaults filters time range closed bots",
     },
     {
       id: "settings-terminal",
       label: "Terminal",
       title: "Workspace terminal",
+      group: "Workspace",
       description: "Workspace terminal rendering and behavior",
+      keywords: "workspace terminal font renderer cursor scrollback ligatures",
     },
     {
       id: "settings-kata-projects",
       label: "Kata mappings",
       title: "Kata project mappings",
+      group: "Workspace",
       description: "Kata project repository identity overrides",
-    },
-    {
-      id: "settings-modes",
-      label: "Visible modes",
-      title: "Visible modes",
-      description: "Modes shown in the app header",
+      keywords: "kata projects repositories mappings workspaces daemon project uid",
     },
     {
       id: "settings-agents",
       label: "Workspace agents",
       title: "Workspace agents",
+      group: "Workspace",
       description: "Agent commands available in workspaces",
+      keywords: "workspace agents codex claude gemini opencode aider binary arguments",
     },
     {
       id: "settings-fleet",
       label: "Fleet federation",
       title: "Fleet federation",
+      group: "Workspace",
       description: "Remote hosts and fleet membership",
+      keywords: "fleet federation remote hosts peers ssh http membership",
+    },
+    {
+      id: "settings-modes",
+      label: "Visible modes",
+      title: "Visible modes",
+      group: "Navigation",
+      description: "Modes shown in the app header",
+      keywords: "visible modes navigation tabs prs issues board reviews docs messages kata",
     },
   ];
 
-  const categories: SettingsCategory[] = panels.map((p) => ({ id: p.id, label: p.label }));
+  let searchQuery = $state("");
+
+  // The host owns search semantics: kit renders whatever category list it is
+  // given, and its display falls back to the first visible category while the
+  // bound `active` id is filtered out (the selection itself survives clearing
+  // the query). kit renders group headings between runs in array order, so
+  // `panels` keeps each group's entries contiguous.
+  const categories: SettingsCategory[] = $derived.by(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const visible =
+      query === ""
+        ? panels
+        : panels.filter((p) =>
+            `${p.label} ${p.group} ${p.description} ${p.keywords}`.toLowerCase().includes(query),
+          );
+    return visible.map((p) => ({ id: p.id, label: p.label, group: p.group, summary: p.description }));
+  });
 
   const { settings: settingsStore } = getStores();
 
@@ -95,6 +130,14 @@
       loading = false;
     }
   }
+
+  function backToApp(): void {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    navigate("/");
+  }
 </script>
 
 <!-- The settings-page class stays on the route container: route-level specs
@@ -107,6 +150,22 @@
   {:else if settings}
     {@const loaded = settings}
     <SettingsLayout {categories} bind:active title="Settings">
+      {#snippet sidebarHeader()}
+        <button class="back-button" type="button" onclick={backToApp}>
+          <ArrowLeftIcon size="15" strokeWidth="2" aria-hidden="true" />
+          <span>Back to app</span>
+        </button>
+        <SearchInput
+          bind:value={searchQuery}
+          placeholder="Search settings..."
+          ariaLabel="Search settings"
+          size="sm"
+          block
+        />
+        {#if categories.length === 0}
+          <p class="empty-nav">No matching settings</p>
+        {/if}
+      {/snippet}
       {#snippet panel(activeId)}
         <!-- Every panel stays mounted; only the active one is shown. Panel
              components keep unsaved edits in local draft state, so switching
@@ -197,5 +256,26 @@
 
   .settings-panel[hidden] {
     display: none;
+  }
+
+  .back-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+  }
+
+  .back-button:hover {
+    color: var(--text-primary);
+  }
+
+  .empty-nav {
+    margin: 8px 0 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
   }
 </style>

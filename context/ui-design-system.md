@@ -100,20 +100,23 @@ in the kit-ui repo. The parts middleman depends on as stable API:
 - Sidebar layout (`CollapsibleSidebar`): middleman relies on the
   `kit-sidebar-layout` / `__sidebar` / `__sidebar--collapsed` / `__main` BEM
   classes and the `data-collapsed` attribute (keyboard context predicate,
-  browser-tier shortcut tests, Playwright selectors, and the
-  `#app.container-narrow` overlay CSS in `app.css`), the `SplitResizeEvent`
+  browser-tier shortcut tests, Playwright selectors), the `SplitResizeEvent`
   shape, and `SidebarToggle`'s `kit-sidebar-toggle--compact/--push` modifier
-  hooks. Protected by `App.keyboard-shortcuts.browser.svelte.ts`,
+  hooks. The narrow-container floating overlay is kit-owned: hosts pass the
+  container store's `isNarrow()` through the `overlay` prop
+  (`kit-sidebar-layout--overlay`); do not reintroduce app-side copies of
+  kit's overlay CSS. Protected by `App.keyboard-shortcuts.browser.svelte.ts`,
   `sidebar-collapse` / `container-layout` / `focus-mode` e2e specs, and the
   keybindings tour.
 - Status bar (`StatusBar`): middleman relies on the `kit-status-bar` and
   `kit-status-bar__section--left/--right` classes and the
-  `--status-bar-height` token (DetailDrawer offsets against it). Sections
-  are `overflow: hidden`; popover content anchored inside one must use
-  fixed positioning (BudgetPopover measures its trigger once on open — the
-  bar is static chrome, so it deliberately ignores viewport resize while
-  open). Protected by the StatusBar counts/budget browser suites and the
-  focus-mode e2e spec.
+  `--status-bar-height` token (DetailDrawer offsets against it). middleman
+  passes `overflow="visible"` so BudgetPopover can use kit's sanctioned
+  recipe — a relative wrapper, an absolute `bottom: calc(100% + 4px)` panel
+  with `kit-popover-card` chrome, and the `dismissable` helper; the app in
+  turn owns keeping bar text short (section truncation is off). Protected
+  by the StatusBar counts/budget browser suites and the focus-mode e2e
+  spec.
 - Flash (`FlashBanner` + flash store): one shared store instance via
   `@middleman/ui/stores/flash` (a re-export of kit's), rendered by kit
   `FlashBanner` mounted once per shell — above the focus/desktop branching
@@ -191,7 +194,7 @@ Intent:
 - consistent expanded/collapsed direction across PR, issue, activity, and workspace sidebars
 - avoid one-off SVG buttons or local `.sidebar-toggle` styling in each rail
 
-Use it inside left sidebar headers and collapsed strips. Pass a specific label such as `Workspaces sidebar` when the generic `sidebar` label would be ambiguous. The resizable sidebar layout itself is kit-ui's `CollapsibleSidebar`; the app keeps its container-width-driven overlay behavior in `app.css` keyed on `#app.container-narrow` (kit's `overlayOnNarrow` is viewport-based, which is not the same signal).
+Use it inside left sidebar headers and collapsed strips. Pass a specific label such as `Workspaces sidebar` when the generic `sidebar` label would be ambiguous. The resizable sidebar layout itself is kit-ui's `CollapsibleSidebar`; the container-width-driven floating overlay is requested through its `overlay` prop (hosts pass the container store's `isNarrow()` — kit's `overlayOnNarrow` media query is viewport-based, which is not the same signal).
 
 ### SplitResizeHandle
 

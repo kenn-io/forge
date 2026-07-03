@@ -206,7 +206,7 @@ function overrides(): MockRouteOverride[] {
 }
 
 function viewTab(label: string): Element {
-  return Array.from(document.querySelectorAll(".view-tab")).find((t) => (t.textContent ?? "").includes(label))!;
+  return Array.from(document.querySelectorAll(".kit-top-bar__tab")).find((t) => (t.textContent ?? "").includes(label))!;
 }
 
 describe("view navigation", () => {

@@ -161,7 +161,10 @@
   let hasHosts = $derived(Object.keys(rateLimitHosts).length > 0);
 </script>
 
-<KitStatusBar>
+<!-- overflow="visible": the budget popover anchors inside the right section;
+     the app owns keeping bar text short in exchange (kit's default section
+     truncation is off). -->
+<KitStatusBar overflow="visible">
   {#snippet left()}
     <span class="status-item">{counts.pullRequests} PRs</span>
     <span class="status-sep">&middot;</span>

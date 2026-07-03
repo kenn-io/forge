@@ -6,7 +6,7 @@ test.describe("focus mode", () => {
     await page.locator(".focus-layout").waitFor({ state: "visible", timeout: 10_000 });
 
     await expect(page.locator(".pull-detail")).toBeVisible();
-    await expect(page.locator(".app-header")).not.toBeAttached();
+    await expect(page.locator(".app-top-bar")).not.toBeAttached();
     await expect(page.locator(".kit-sidebar-layout__sidebar")).not.toBeAttached();
     await expect(page.locator(".kit-status-bar")).not.toBeAttached();
   });
@@ -16,7 +16,7 @@ test.describe("focus mode", () => {
     await page.locator(".focus-layout").waitFor({ state: "visible", timeout: 10_000 });
 
     await expect(page.locator(".issue-detail")).toBeVisible();
-    await expect(page.locator(".app-header")).not.toBeAttached();
+    await expect(page.locator(".app-top-bar")).not.toBeAttached();
     await expect(page.locator(".kit-sidebar-layout__sidebar")).not.toBeAttached();
     await expect(page.locator(".kit-status-bar")).not.toBeAttached();
   });

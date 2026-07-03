@@ -132,10 +132,11 @@
   }
 
   function backToApp(): void {
-    if (window.history.length > 1) {
-      window.history.back();
-      return;
-    }
+    // Always route to an in-app destination rather than window.history.back():
+    // on a direct or bookmarked /settings visit the previous history entry can
+    // be an unrelated site, and history.back() would navigate the user out of
+    // middleman entirely. The header's settings toggle owns exact-route return;
+    // this in-page control only needs a guaranteed in-app landing.
     navigate("/");
   }
 </script>

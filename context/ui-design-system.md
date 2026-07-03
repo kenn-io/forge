@@ -72,11 +72,14 @@ in the kit-ui repo. The parts middleman depends on as stable API:
 - Theme resolution: kit's theme store owns standalone dark/light/system
   resolution and persistence under the `middleman-theme` storage key
   (`frontend/src/lib/stores/theme.svelte.ts` is an adapter over it). Two
-  things intentionally stay app-side there: embed-config-forced modes apply
-  classes directly and never call kit `setThemeMode` (it always persists,
-  and a host's forced mode must not overwrite the user's standalone
-  preference), and `applyThemeOverrides` injects embed-config CSS
-  variables. Relative timestamps come from kit `formatRelativeTime`;
+  things intentionally stay app-side there: _applying_ an embed-config-forced
+  mode sets the classes directly and never calls kit `setThemeMode` (it always
+  persists, and a host's forced mode must not overwrite the user's standalone
+  preference) — but an _explicit user toggle_ under a forced mode still persists
+  through `setThemeMode` (the keyboard shortcut fires even while the header
+  toggle is hidden), which is why the forced path keeps kit's `middleman-theme`
+  storage key bound after cleanup; and `applyThemeOverrides` injects
+  embed-config CSS variables. Relative timestamps come from kit `formatRelativeTime`;
   `parseAPITimestamp`/`localDate*Label` stay app-side for the UTC-instant
   contract.
 - Dialog and Escape layering: every dialog registers a keyboard modal-stack

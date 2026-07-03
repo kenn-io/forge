@@ -68,6 +68,50 @@ func TestGeneratedContextFilesDoNotDirtyGitStatus(t *testing.T) {
 	assert.Empty(t, status)
 }
 
+func TestEnsureGeneratedContextFilesIgnoredOnlyIgnoresRequestedPaths(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	worktree := initWorkspaceGitRepo(t)
+
+	require.NoError(EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
+		".middleman/agent-context.md",
+	}))
+
+	excludeText := readGitExclude(t, worktree)
+	assert.Contains(excludeText, "/.middleman/")
+	assert.NotContains(excludeText, "/AGENTS.local.md")
+	assert.NotContains(excludeText, "/CLAUDE.local.md")
+	assertGitIgnored(t, worktree, ".middleman/agent-context.md")
+	assertGitNotIgnored(t, worktree, "AGENTS.local.md")
+	assertGitNotIgnored(t, worktree, "CLAUDE.local.md")
+}
+
+func TestEnsureGeneratedContextFilesIgnoredFailsWhenNegationKeepsPathVisible(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	worktree := initWorkspaceGitRepo(t)
+	require.NoError(os.WriteFile(
+		filepath.Join(worktree, ".gitignore"),
+		[]byte("!AGENTS.local.md\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, worktree, "add", ".gitignore")
+	runWorkspaceTestGit(t, worktree, "commit", "-m", "add negation")
+
+	err := EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{"AGENTS.local.md"})
+	require.Error(err)
+	assert.Contains(t, err.Error(), "still not ignored")
+}
+
+func TestEnsureGeneratedContextFilesIgnoredRejectsUnknownPaths(t *testing.T) {
+	t.Parallel()
+	worktree := initWorkspaceGitRepo(t)
+
+	err := EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{"notes/scratch.md"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown generated context path")
+}
+
 func TestEnsureGeneratedContextFilesIgnoredRejectsRootInstructionFiles(t *testing.T) {
 	t.Parallel()
 	worktree := initWorkspaceGitRepo(t)
@@ -98,6 +142,13 @@ func initWorkspaceGitRepoAt(t *testing.T, dir string) {
 func assertGitIgnored(t *testing.T, dir, rel string) {
 	t.Helper()
 	runWorkspaceTestGit(t, dir, "check-ignore", "--quiet", "--", rel)
+}
+
+func assertGitNotIgnored(t *testing.T, dir, rel string) {
+	t.Helper()
+	ignored, err := gitPathIgnored(context.Background(), dir, rel)
+	require.NoError(t, err)
+	assert.False(t, ignored, "expected %s to remain unignored", rel)
 }
 
 func readGitExclude(t *testing.T, dir string) string {

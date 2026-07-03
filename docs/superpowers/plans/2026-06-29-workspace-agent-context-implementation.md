@@ -26,8 +26,8 @@ The likely reason PR/issue agents behave well today is incidental but useful: wo
 - Create `internal/workspace/agent_context.go`: build a provider-neutral `AgentContext` from a persisted workspace summary plus optional live task details.
 - Create `internal/workspace/agent_context_test.go`: unit-test context rendering and prompt-injection boundaries.
 - Modify `internal/workspace/manager.go`: render the canonical generated context file after the worktree exists and before the base tmux session starts.
-- Modify `internal/workspace/gitignore.go`: ensure generated workspace context files are ignored by Git, appending a narrow middleman block to the worktree `.gitignore` only when the repo does not already ignore the generated paths.
-- Create `internal/workspace/gitignore_test.go`: unit-test ignore detection and `.gitignore` updates for generated context paths without shelling out to a real provider.
+- Modify `internal/workspace/gitignore.go`: ensure generated workspace context files are ignored by Git, appending exact rules only for the paths being generated to the worktree's private exclude file (`git rev-parse --git-path info/exclude`), never to the tracked `.gitignore`.
+- Create `internal/workspace/gitignore_test.go`: unit-test ignore detection and local exclude updates for generated context paths against a real temporary Git repository.
 - Modify `internal/server/huma_routes.go`: render target-specific context just in time before launching workspace runtime agent sessions.
 - Modify `internal/server/kata_workspace.go`: expose a small server-side helper for resolving live Kata task details when available, falling back to stored metadata.
 - Modify `internal/db/types.go` only if the context builder needs an explicit persisted timestamp or source version; otherwise keep DB schema unchanged.
@@ -56,12 +56,31 @@ repo-owned `CLAUDE.md` already exists, the Claude path must fall back to a safe 
 mechanism discovered in Task 1, such as a launch-time context argument. If no safe
 mechanism exists, keep only `.middleman/agent-context.md` and surface a warning rather
 than clobbering the repo file.
-All generated guidance files must be ignored by Git before they are written. The
-writer may add ignore entries for `.middleman/`, `AGENTS.local.md`, and
-`CLAUDE.local.md`; it must not add a blanket `/CLAUDE.md` or `/AGENTS.md` ignore entry
-because those names are legitimate repo-owned instruction files. If Claude only reads a
-root `CLAUDE.md`, prefer a launch argument or ignored companion file instead of
-creating a trackable root file.
+All generated guidance files must be ignored by Git before they are written. Ignore
+rules go into the worktree's private exclude file (`git rev-parse --git-path
+info/exclude`), never the tracked `.gitignore`, so workspace setup and launch leave
+`git status --porcelain` clean. The writer adds ignore entries only for the specific
+paths it is about to generate: writing only `.middleman/agent-context.md` must not
+start ignoring `AGENTS.local.md` or `CLAUDE.local.md`, which could hide pre-existing
+user-owned local instruction files. The helper must distinguish `git check-ignore`
+exit status 1 (not ignored) from fatal Git failures, and must re-verify after updating
+the exclude file that every requested path is actually ignored (a later negation rule
+can keep a path visible); if not, fail rather than write a visible generated file. It
+must never add a blanket `/CLAUDE.md` or `/AGENTS.md` ignore entry because those names
+are legitimate repo-owned instruction files. If Claude only reads a root `CLAUDE.md`,
+prefer a launch argument or ignored companion file instead of creating a trackable
+root file.
+
+Target-specific companion files are static pointers, not copies of the dynamic
+context: they only tell the agent to read `.middleman/agent-context.md`, which is the
+single file refreshed on setup and on every agent launch. Because the pointer content
+never changes, an already-generated companion file left in place cannot go stale;
+only the canonical file carries workspace state. `.middleman/` inside a middleman
+workspace worktree is fully reserved by middleman: middleman may overwrite
+`.middleman/agent-context.md` unconditionally, and writes it atomically via a temp
+file plus rename. Concurrent setup or launch calls for the same workspace may race on
+the exclude file, so the helper must tolerate duplicate rules and re-check the
+requested paths rather than assume exclusive ownership of the exclude file.
 
 Generated guidance must identify the worktree's source, not teach provider-specific
 fetch workflows. The useful prompt is concise source identity such as "this is a
@@ -70,6 +89,14 @@ source URL and any known associated pull or merge request. Do not embed long
 instructions about how to call `gh`, `glab`, provider REST APIs, or Kata commands;
 middleman should resolve the stable workspace facts it already knows and let the agent
 decide whether it needs to inspect the forge further.
+
+The canonical file includes exactly: workspace ID, repository identity
+(host/owner/name), provider, working branch, source kind, source item identifier
+(PR/issue number, or Kata daemon/project/issue identifiers), source URL, the source
+item title quoted as data, and the associated PR number/URL when persisted. Source
+bodies, comments, labels, review threads, and CI state are explicitly out of scope for
+this first implementation; the context is refreshed from persisted workspace state at
+setup and at every agent launch, so it is as fresh as the last sync, not live.
 
 ## Task 1: Prove Agent File Semantics
 
@@ -150,23 +177,23 @@ func TestBuildAgentContext(t *testing.T) {
 			ws: WorkspaceSummary{
 				ID: "ws-issue", Platform: "forgejo", PlatformHost: "git.example.test",
 				RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
-				ItemNumber: 7, IssueTitle: ptr("Add retry controls"),
+				ItemNumber: 7, SourceTitle: ptr("Add retry controls"),
 			},
 			want: []string{"Source kind: provider issue", "Issue: #7", "Add retry controls"},
 		},
 		{
-			name: "provider issue with associated pull request",
+			name: "provider issue with associated pull request number",
 			ws: WorkspaceSummary{
 				ID: "ws-issue-pr", Platform: "github", PlatformHost: "github.com",
 				RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
-				ItemNumber: 7, IssueTitle: ptr("Add retry controls"),
-				AssociatedPRNumber: ptrInt(42), MRTitle: ptr("Implement retry controls"),
+				ItemNumber: 7, SourceTitle: ptr("Add retry controls"),
+				AssociatedPRNumber: ptrInt(42),
 			},
 			want: []string{
 				"Source kind: provider issue",
 				"Issue: #7",
 				"Associated PR: #42",
-				"Implement retry controls",
+				"Add retry controls",
 			},
 		},
 		{
@@ -247,9 +274,16 @@ type AgentContext struct {
 
 type AgentAssociatedPRContext struct {
 	Number int
-	Title  string
 	URL    string
 }
+```
+
+The persisted `WorkspaceSummary` does not carry associated-PR title metadata (its
+`MRTitle` slot is the source item's own title), so associated PR context renders the
+number (and URL when known) only. Do not repurpose `MRTitle` for the linked PR; add
+explicit fields plus query joins first if richer associated-PR context is ever needed.
+
+```go
 
 type AgentKataContext struct {
 	DaemonID    string
@@ -301,55 +335,52 @@ Add tests that exercise a real temporary Git repository so `git check-ignore`
 behavior matches Git, not a hand-rolled parser:
 
 ```go
-func TestEnsureGeneratedContextFilesIgnoredAppendsMissingEntries(t *testing.T) {
+func TestEnsureGeneratedContextFilesIgnoredAppendsMissingEntriesToGitExclude(t *testing.T) {
 	t.Parallel()
 
 	worktree := initWorkspaceGitRepo(t)
-	require.NoError(t, os.WriteFile(filepath.Join(worktree, ".gitignore"), []byte("dist/\n"), 0o644))
 
-	changed, err := EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
+	require.NoError(t, EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
 		".middleman/agent-context.md",
 		"AGENTS.local.md",
 		"CLAUDE.local.md",
-	})
-	require.NoError(t, err)
-	require.True(t, changed)
+	}))
 
-	content, err := os.ReadFile(filepath.Join(worktree, ".gitignore"))
-	require.NoError(t, err)
-	text := string(content)
-	assert.Contains(t, text, "dist/\n")
-	assert.Contains(t, text, "# middleman generated agent context")
-	assert.Contains(t, text, "/.middleman/")
-	assert.Contains(t, text, "/AGENTS.local.md")
-	assert.Contains(t, text, "/CLAUDE.local.md")
-	assert.NotContains(t, text, "/CLAUDE.md")
-	assert.NotContains(t, text, "/AGENTS.md")
+	excludeText := readGitExclude(t, worktree)
+	assert.Contains(t, excludeText, "# middleman generated agent context")
+	assert.Contains(t, excludeText, "/.middleman/")
+	assert.Contains(t, excludeText, "/AGENTS.local.md")
+	assert.Contains(t, excludeText, "/CLAUDE.local.md")
+	assert.NotContains(t, excludeText, "/CLAUDE.md")
+	assert.NotContains(t, excludeText, "/AGENTS.md")
 	assertGitIgnored(t, worktree, ".middleman/agent-context.md")
 	assertGitIgnored(t, worktree, "AGENTS.local.md")
 	assertGitIgnored(t, worktree, "CLAUDE.local.md")
 }
 
-func TestEnsureGeneratedContextFilesIgnoredLeavesExistingIgnoresAlone(t *testing.T) {
+func TestEnsureGeneratedContextFilesIgnoredOnlyIgnoresRequestedPaths(t *testing.T) {
 	t.Parallel()
 
 	worktree := initWorkspaceGitRepo(t)
-	initial := "/.middleman/\n/AGENTS.local.md\n/CLAUDE.local.md\n"
-	require.NoError(t, os.WriteFile(filepath.Join(worktree, ".gitignore"), []byte(initial), 0o644))
 
-	changed, err := EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
+	require.NoError(t, EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
 		".middleman/agent-context.md",
-		"AGENTS.local.md",
-		"CLAUDE.local.md",
-	})
-	require.NoError(t, err)
-	require.False(t, changed)
+	}))
 
-	content, err := os.ReadFile(filepath.Join(worktree, ".gitignore"))
-	require.NoError(t, err)
-	assert.Equal(t, initial, string(content))
+	excludeText := readGitExclude(t, worktree)
+	assert.Contains(t, excludeText, "/.middleman/")
+	assert.NotContains(t, excludeText, "/AGENTS.local.md")
+	assert.NotContains(t, excludeText, "/CLAUDE.local.md")
+	assertGitNotIgnored(t, worktree, "AGENTS.local.md")
+	assertGitNotIgnored(t, worktree, "CLAUDE.local.md")
 }
 ```
+
+Also cover: existing exclude rules are left untouched (no rewrite, no duplicates), a
+tracked `.gitignore` negation rule that keeps a requested path visible must produce an
+error rather than a silent success, unknown paths outside the generated allowlist are
+rejected, and `git status --porcelain` stays clean after generated files are written.
+The tracked `.gitignore` must never be modified.
 
 Use these helpers in the same test file:
 
@@ -381,50 +412,23 @@ Expected: fail because `EnsureGeneratedContextFilesIgnored` does not exist.
 
 - [ ] **Step 3: Implement the ignore helper**
 
-Create `internal/workspace/gitignore.go` with this public package helper:
+Create `internal/workspace/gitignore.go` with a public
+`EnsureGeneratedContextFilesIgnored(ctx, worktreePath, generatedRelPaths)` helper that:
 
-```go
-var generatedContextIgnorePatterns = []string{
-	"/.middleman/",
-	"/AGENTS.local.md",
-	"/CLAUDE.local.md",
-}
-
-func EnsureGeneratedContextFilesIgnored(
-	ctx context.Context,
-	worktreePath string,
-	generatedRelPaths []string,
-) (bool, error) {
-	missing := make([]string, 0, len(generatedRelPaths))
-	for _, rel := range generatedRelPaths {
-		if rel == "AGENTS.md" || rel == "CLAUDE.md" {
-			return false, fmt.Errorf("refusing to add root instruction file to generated ignore list: %s", rel)
-		}
-		_, err := gitCombinedOutput(ctx, worktreePath, "check-ignore", "--quiet", "--", rel)
-		if err != nil {
-			missing = append(missing, rel)
-		}
-	}
-	if len(missing) == 0 {
-		return false, nil
-	}
-
-	gitignorePath := filepath.Join(worktreePath, ".gitignore")
-	block := "\n# middleman generated agent context\n" + strings.Join(generatedContextIgnorePatterns, "\n") + "\n"
-	f, err := os.OpenFile(gitignorePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return false, err
-	}
-	defer f.Close()
-	if _, err := f.WriteString(block); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-```
-
-Preserve the guard that rejects root `AGENTS.md` and `CLAUDE.md`; generated
-root instruction filenames are not safe to gitignore globally.
+1. Maps each requested path to its exact ignore rule through a strict allowlist
+   (`.middleman/...` -> `/.middleman/`, `AGENTS.local.md` -> `/AGENTS.local.md`,
+   `CLAUDE.local.md` -> `/CLAUDE.local.md`) and rejects anything else, including root
+   `AGENTS.md` and `CLAUDE.md`, which are never safe to gitignore globally.
+2. Checks each requested path with `git check-ignore --quiet`, treating exit status 1
+   as "not ignored" and any other failure (invalid worktree, cancelled context,
+   missing git) as a fatal error, not as a missing rule.
+3. Appends rules only for the requested-and-missing paths to the file resolved by
+   `git rev-parse --git-path info/exclude`, never to the tracked `.gitignore`,
+   skipping rules already present.
+4. Re-runs `git check-ignore` for every previously missing path after the write and
+   returns an error if any path is still visible (for example due to a tracked
+   `.gitignore` negation rule), so callers never write a generated file that would
+   dirty the worktree.
 
 - [ ] **Step 4: Run green**
 
@@ -473,10 +477,9 @@ Expected: fail because setup does not write canonical context.
 After `addWorktree` or `reuseExistingWorkspaceWorktree` succeeds and before `newTerminalSession`, load the workspace summary from DB, build `AgentContext`, ensure the generated file is ignored, and write the canonical file atomically:
 
 ```go
-_, err := EnsureGeneratedContextFilesIgnored(ctx, ws.WorktreePath, []string{
+if err := EnsureGeneratedContextFilesIgnored(ctx, ws.WorktreePath, []string{
 	".middleman/agent-context.md",
-})
-if err != nil {
+}); err != nil {
 	return err
 }
 ```
@@ -614,8 +617,7 @@ if writeCodexLocal {
 if writeClaudeLocal {
 	generatedRelPaths = append(generatedRelPaths, "CLAUDE.local.md")
 }
-_, err := EnsureGeneratedContextFilesIgnored(ctx, worktree.Path, generatedRelPaths)
-if err != nil {
+if err := EnsureGeneratedContextFilesIgnored(ctx, worktree.Path, generatedRelPaths); err != nil {
 	return err
 }
 ```

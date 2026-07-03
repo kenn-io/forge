@@ -5,33 +5,42 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
-var generatedContextIgnorePatterns = []string{
-	"/.middleman/",
-	"/AGENTS.local.md",
-	"/CLAUDE.local.md",
-}
-
+// EnsureGeneratedContextFilesIgnored guarantees the requested generated
+// context paths are ignored by git before they are written, adding local
+// exclude rules (never touching tracked .gitignore) only for the paths that
+// will actually be generated.
 func EnsureGeneratedContextFilesIgnored(
 	ctx context.Context,
 	worktreePath string,
 	generatedRelPaths []string,
 ) error {
-	missing := false
+	missingPaths := make([]string, 0, len(generatedRelPaths))
+	missingPatterns := make([]string, 0, len(generatedRelPaths))
+	seenPatterns := make(map[string]bool, len(generatedRelPaths))
 	for _, rel := range generatedRelPaths {
-		clean, err := cleanGeneratedContextRelPath(rel)
+		clean, pattern, err := generatedContextIgnorePattern(rel)
 		if err != nil {
 			return err
 		}
-		_, err = gitCombinedOutput(ctx, worktreePath, "check-ignore", "--quiet", "--", clean)
+		ignored, err := gitPathIgnored(ctx, worktreePath, clean)
 		if err != nil {
-			missing = true
+			return err
+		}
+		if ignored {
+			continue
+		}
+		missingPaths = append(missingPaths, clean)
+		if !seenPatterns[pattern] {
+			seenPatterns[pattern] = true
+			missingPatterns = append(missingPatterns, pattern)
 		}
 	}
-	if !missing {
+	if len(missingPaths) == 0 {
 		return nil
 	}
 
@@ -52,44 +61,84 @@ func EnsureGeneratedContextFilesIgnored(
 		return fmt.Errorf("read git exclude: %w", err)
 	}
 	text := string(content)
-	add := make([]string, 0, len(generatedContextIgnorePatterns))
-	for _, pattern := range generatedContextIgnorePatterns {
+	add := make([]string, 0, len(missingPatterns))
+	for _, pattern := range missingPatterns {
 		if !gitExcludeContainsLine(text, pattern) {
 			add = append(add, pattern)
 		}
 	}
-	if len(add) == 0 {
-		return nil
+	if len(add) > 0 {
+		var block strings.Builder
+		if len(text) > 0 && !strings.HasSuffix(text, "\n") {
+			block.WriteString("\n")
+		}
+		block.WriteString("# middleman generated agent context\n")
+		for _, pattern := range add {
+			block.WriteString(pattern)
+			block.WriteString("\n")
+		}
+		f, err := os.OpenFile(excludePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return fmt.Errorf("open git exclude: %w", err)
+		}
+		defer f.Close()
+		if _, err := f.WriteString(block.String()); err != nil {
+			return fmt.Errorf("write git exclude: %w", err)
+		}
 	}
-	var block strings.Builder
-	if len(text) > 0 && !strings.HasSuffix(text, "\n") {
-		block.WriteString("\n")
-	}
-	block.WriteString("# middleman generated agent context\n")
-	for _, pattern := range add {
-		block.WriteString(pattern)
-		block.WriteString("\n")
-	}
-	f, err := os.OpenFile(excludePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("open git exclude: %w", err)
-	}
-	defer f.Close()
-	if _, err := f.WriteString(block.String()); err != nil {
-		return fmt.Errorf("write git exclude: %w", err)
+
+	for _, clean := range missingPaths {
+		ignored, err := gitPathIgnored(ctx, worktreePath, clean)
+		if err != nil {
+			return err
+		}
+		if !ignored {
+			return fmt.Errorf(
+				"generated context path %s is still not ignored after updating %s (a later rule may negate it)",
+				clean, excludePath,
+			)
+		}
 	}
 	return nil
 }
 
-func cleanGeneratedContextRelPath(rel string) (string, error) {
+// gitPathIgnored reports whether git ignores rel inside worktreePath,
+// distinguishing check-ignore's "not ignored" exit status 1 from fatal
+// git failures.
+func gitPathIgnored(ctx context.Context, worktreePath, rel string) (bool, error) {
+	_, err := gitCombinedOutput(ctx, worktreePath, "check-ignore", "--quiet", "--", rel)
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("git check-ignore %s: %w", rel, err)
+}
+
+// generatedContextIgnorePattern maps a generated context path to the exact
+// local ignore rule that covers it. Only known middleman-generated paths are
+// allowed; anything else is rejected rather than silently ignored.
+func generatedContextIgnorePattern(rel string) (cleanPath, pattern string, err error) {
 	rel = strings.TrimSpace(rel)
 	if rel == "AGENTS.md" || rel == "CLAUDE.md" {
-		return "", fmt.Errorf("refusing to add root instruction file to generated ignore list: %s", rel)
+		return "", "", fmt.Errorf("refusing to add root instruction file to generated ignore list: %s", rel)
 	}
 	if rel == "" || filepath.IsAbs(rel) || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
-		return "", fmt.Errorf("invalid generated context path: %s", rel)
+		return "", "", fmt.Errorf("invalid generated context path: %s", rel)
 	}
-	return filepath.ToSlash(filepath.Clean(rel)), nil
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	switch {
+	case clean == ".middleman" || strings.HasPrefix(clean, ".middleman/"):
+		return clean, "/.middleman/", nil
+	case clean == "AGENTS.local.md":
+		return clean, "/AGENTS.local.md", nil
+	case clean == "CLAUDE.local.md":
+		return clean, "/CLAUDE.local.md", nil
+	default:
+		return "", "", fmt.Errorf("unknown generated context path: %s", clean)
+	}
 }
 
 func gitExcludeContainsLine(text, pattern string) bool {

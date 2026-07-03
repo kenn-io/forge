@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	gitcmd "go.kenn.io/kit/git/cmd"
 
+	"go.kenn.io/middleman/internal/apiclient/generated"
+	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/workspace"
@@ -89,6 +93,48 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 	assertServerGitIgnored(t, worktree, ".middleman/agent-context.md")
 	assertServerGitIgnored(t, worktree, "AGENTS.local.md")
 	status := strings.TrimSpace(string(runServerWorkspaceTestGit(t, worktree, "status", "--porcelain")))
+	assert.Empty(status)
+}
+
+func TestWorkspaceRuntimeLaunchWritesAgentContextE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	tmuxPath := writeRuntimeTmuxLifecycleRecorder(t, dir, filepath.Join(dir, "tmux-record"))
+	agentPath := filepath.Join(dir, "helper-agent")
+	require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	cfg := &config.Config{
+		Agents: []config.Agent{{Key: "codex", Label: "Codex", Command: []string{agentPath}}},
+		Tmux:   config.Tmux{Command: []string{tmuxPath}},
+	}
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	canonicalPath := filepath.Join(ws.WorktreePath, ".middleman", "agent-context.md")
+	require.FileExists(canonicalPath, "workspace setup should write canonical agent context")
+	require.NoError(os.WriteFile(canonicalPath, []byte("stale\n"), 0o644))
+
+	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "codex"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	canonical, err := os.ReadFile(canonicalPath)
+	require.NoError(err)
+	assert.Contains(string(canonical), "Source kind: pull request")
+	assert.NotContains(string(canonical), "stale")
+	agentsLocal, err := os.ReadFile(filepath.Join(ws.WorktreePath, "AGENTS.local.md"))
+	require.NoError(err)
+	assert.Contains(string(agentsLocal), "Read `.middleman/agent-context.md`")
+	assert.NoFileExists(filepath.Join(ws.WorktreePath, "CLAUDE.local.md"))
+	assertServerGitIgnored(t, ws.WorktreePath, ".middleman/agent-context.md")
+	assertServerGitIgnored(t, ws.WorktreePath, "AGENTS.local.md")
+	status := strings.TrimSpace(string(runServerWorkspaceTestGit(
+		t, ws.WorktreePath, "status", "--porcelain",
+	)))
 	assert.Empty(status)
 }
 

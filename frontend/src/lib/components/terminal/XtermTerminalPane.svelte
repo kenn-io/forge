@@ -585,12 +585,12 @@
   .terminal-container {
     width: 100%;
     height: 100%;
-    background: #0d1117;
+    background: var(--terminal-bg);
   }
 
   .terminal-container :global(.xterm),
   .terminal-container :global(.xterm-viewport),
   .terminal-container :global(.xterm-screen) {
-    background: #0d1117;
+    background: var(--terminal-bg);
   }
 </style>

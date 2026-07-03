@@ -215,7 +215,7 @@
     background: var(--bg-surface);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
-    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-lg);
   }
 
   .approve-comment {
@@ -230,6 +230,7 @@
     resize: vertical;
     max-height: 150px;
     line-height: 1.5;
+    /* kit-ui-check-ignore: inset top-edge highlight; kit shadow tokens are outer drop shadows */
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
 

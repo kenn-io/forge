@@ -181,6 +181,6 @@
   :global(.composer-btn--primary.kit-button) {
     border-color: var(--accent-blue);
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
   }
 </style>

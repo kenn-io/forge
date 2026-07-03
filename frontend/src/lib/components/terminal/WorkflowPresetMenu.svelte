@@ -192,9 +192,7 @@
     border: 1px solid var(--border-default);
     border-radius: 4px;
     background: var(--bg-surface);
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.04),
-      0 4px 16px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-lg);
   }
 
   .popover-heading {

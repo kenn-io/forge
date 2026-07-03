@@ -355,7 +355,7 @@
 
   .date-picker-day.selected {
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
     font-weight: 700;
   }
 </style>

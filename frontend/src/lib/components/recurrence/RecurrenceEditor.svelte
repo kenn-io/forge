@@ -859,14 +859,14 @@
   .submit-error {
     padding: 8px 10px;
     border-radius: var(--radius-sm);
-    background: rgba(196, 48, 43, 0.12);
+    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
     color: var(--accent-danger, #c4302b);
     font-size: var(--font-size-sm);
   }
   .conflict {
     padding: 8px 10px;
     border-radius: var(--radius-sm);
-    background: rgba(196, 48, 43, 0.12);
+    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
     color: var(--accent-danger, #c4302b);
     font-size: var(--font-size-sm);
     font-weight: 500;

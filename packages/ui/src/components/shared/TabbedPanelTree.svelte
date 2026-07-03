@@ -768,7 +768,7 @@
     opacity: 0.34;
     transform: translateY(-4px) scale(0.96);
     background: color-mix(in srgb, var(--accent-blue) 10%, var(--bg-surface));
-    box-shadow: 0 8px 22px rgb(0 0 0 / 18%);
+    box-shadow: var(--shadow-lg);
   }
 
   .tabbed-panel-tab.sort-target:not(.dragging) {

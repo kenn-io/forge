@@ -120,7 +120,7 @@
 
   .modal-btn-primary {
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
     border-color: var(--accent-blue);
   }
 

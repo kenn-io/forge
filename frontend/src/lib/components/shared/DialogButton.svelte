@@ -64,13 +64,13 @@
   .dialog-button-primary {
     border: 1px solid var(--accent-blue);
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
   }
 
   .dialog-button-danger {
     border: 1px solid var(--accent-red);
     background: var(--accent-red);
-    color: #fff;
+    color: var(--text-on-accent);
   }
 
   .dialog-button-primary:hover:not(:disabled),

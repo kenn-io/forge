@@ -422,7 +422,7 @@
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
     padding: 4px 0;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-lg);
   }
 
   .menu-item {

@@ -176,7 +176,7 @@
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
     font-size: var(--font-size-sm);
     font-weight: 500;
     cursor: pointer;

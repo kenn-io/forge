@@ -91,6 +91,13 @@
   --viewer-control-text: #f0f6fc; /* kit-ui-check-ignore: viewer glass palette */
   --viewer-control-shadow: 0 1px 4px rgba(1, 4, 9, 0.24); /* kit-ui-check-ignore: viewer glass palette */
   --viewer-panel-shadow: 0 8px 24px rgba(1, 4, 9, 0.38); /* kit-ui-check-ignore: viewer glass palette */
+
+  /* Theme-invariant ink anchors: white text on solid accent fills, the
+     always-dark xterm surface, and the near-black ink mixed into accent
+     bubble fills. Identical in light and dark by design. */
+  --text-on-accent: #ffffff; /* kit-ui-check-ignore: white ink on solid accent fills, both themes */
+  --terminal-bg: #0d1117; /* kit-ui-check-ignore: xterm surface stays GitHub-dark in both themes */
+  --bubble-ink: #0a0d14; /* kit-ui-check-ignore: near-black ink for accent bubble color-mixes, both themes */
 }
 
 /* App-specific tokens — dark theme */

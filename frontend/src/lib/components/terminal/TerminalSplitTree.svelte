@@ -478,7 +478,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: #0d1117;
+    background: var(--terminal-bg);
     border: var(--chrome-border-width) solid var(--border-muted);
     border-top: 0;
   }

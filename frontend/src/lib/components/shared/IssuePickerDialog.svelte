@@ -286,7 +286,7 @@
   .picker-action.primary {
     background: var(--accent-blue);
     border-color: var(--accent-blue);
-    color: #ffffff;
+    color: var(--text-on-accent);
   }
 
   .picker-action.primary:hover:not(:disabled) {

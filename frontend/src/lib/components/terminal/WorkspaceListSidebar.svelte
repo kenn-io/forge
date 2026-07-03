@@ -1950,17 +1950,17 @@
 
   .item-bubble.open {
     --bubble-bg: color-mix(in srgb, var(--accent-green) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-green) 25%, #0a0d14);
+    --bubble-fg: color-mix(in srgb, var(--accent-green) 25%, var(--bubble-ink));
   }
 
   .item-bubble.merged {
     --bubble-bg: color-mix(in srgb, var(--accent-purple) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-purple) 25%, #0a0d14);
+    --bubble-fg: color-mix(in srgb, var(--accent-purple) 25%, var(--bubble-ink));
   }
 
   .item-bubble.closed {
     --bubble-bg: color-mix(in srgb, var(--accent-red) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-red) 25%, #0a0d14);
+    --bubble-fg: color-mix(in srgb, var(--accent-red) 25%, var(--bubble-ink));
   }
 
   .item-bubble.draft {
@@ -1968,12 +1968,12 @@
      * chip, design system) so a draft PR reads as draft here too, rather
      * than as a muted/neutral pill indistinguishable from other states. */
     --bubble-bg: color-mix(in srgb, var(--accent-amber) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-amber) 25%, #0a0d14);
+    --bubble-fg: color-mix(in srgb, var(--accent-amber) 25%, var(--bubble-ink));
   }
 
   .item-bubble.kata {
     --bubble-bg: color-mix(in srgb, var(--accent-blue) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-blue) 25%, #0a0d14);
+    --bubble-fg: color-mix(in srgb, var(--accent-blue) 25%, var(--bubble-ink));
   }
 
   /* Kata identity labels are short slugs/qualified IDs rather than a

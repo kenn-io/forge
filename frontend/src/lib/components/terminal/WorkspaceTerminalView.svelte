@@ -3154,9 +3154,7 @@
     border: 1px solid var(--border-default);
     border-radius: 6px;
     background: var(--bg-surface);
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.04),
-      0 4px 14px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-lg);
   }
 
   .workspace-zero-example {
@@ -3215,7 +3213,7 @@
     height: 22px;
     border-radius: 50%;
     background: var(--accent-red);
-    color: #fff;
+    color: var(--text-on-accent);
     font-size: var(--font-size-md);
     font-weight: 700;
     flex-shrink: 0;
@@ -3250,7 +3248,7 @@
   .retry-btn.danger:hover {
     background: var(--accent-red);
     border-color: var(--accent-red);
-    color: #fff;
+    color: var(--text-on-accent);
   }
 
   .action-error {
@@ -3347,7 +3345,7 @@
 
   .header-btn.danger:hover:not(:disabled) {
     background: var(--accent-red);
-    color: #fff;
+    color: var(--text-on-accent);
     border-color: var(--accent-red);
   }
 
@@ -3448,7 +3446,7 @@
 
   .sidebar-toggle-btn.active:not(:disabled) {
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
     font-weight: 600;
   }
 
@@ -3460,9 +3458,12 @@
   }
 
   .sidebar-toggle-group .sidebar-toggle-btn.active:disabled {
+    /* kit-ui-check-ignore: pure neutral gray desaturates the disabled-active state the same way in both themes */
     background: color-mix(in srgb, rgb(128 128 128) 28%, var(--bg-surface)) !important;
+    /* kit-ui-check-ignore: pure neutral gray desaturates the disabled-active state the same way in both themes */
     color: color-mix(in srgb, rgb(115 115 115) 80%, var(--text-primary)) !important;
     box-shadow: inset 0 0 0 1px
+      /* kit-ui-check-ignore: pure neutral gray desaturates the disabled-active state the same way in both themes */
       color-mix(in srgb, rgb(128 128 128) 35%, var(--border-muted));
   }
 

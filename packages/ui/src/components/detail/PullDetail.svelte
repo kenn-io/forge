@@ -2415,7 +2415,7 @@
     /* kit-ui-check-ignore: dimmed click-catcher behind the label-editor popover, not a dialog surface */
     inset: 0;
     z-index: 55;
-    background: rgba(128, 128, 128, 0.3);
+    background: var(--overlay-bg);
   }
 
   .detail-header {
@@ -2487,7 +2487,7 @@
 
   .title-edit-save {
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
     border: none;
   }
 
@@ -2617,7 +2617,7 @@
     font-size: var(--font-size-2xs);
     font-weight: 600;
     letter-spacing: 0.02em;
-    color: #fff;
+    color: var(--text-on-accent);
     background: var(--accent-green);
     padding: 2px 8px;
     border-radius: 4px;
@@ -2664,7 +2664,7 @@
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md, 8px);
     background: var(--bg-surface);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--shadow-lg);
   }
 
   .state-menu-item {
@@ -2831,7 +2831,7 @@
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md, 8px);
     background: var(--bg-surface);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--shadow-lg);
   }
 
   .actions-menu-popover :global(.kit-button) {

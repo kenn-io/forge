@@ -187,7 +187,7 @@
     font-weight: 500;
     padding: var(--focus-detail-space-xs, 6px) var(--focus-detail-space-md, 14px);
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
     border-radius: var(--radius-sm);
     cursor: pointer;
     z-index: 1;

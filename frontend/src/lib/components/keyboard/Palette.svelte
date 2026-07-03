@@ -755,7 +755,7 @@
     position: fixed;
     /* kit-ui-check-ignore: command palette owns its overlay, query focus, and result keyboard model; a kit CommandPalette adoption is a separate migration */
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--overlay-bg);
     z-index: 90;
   }
 

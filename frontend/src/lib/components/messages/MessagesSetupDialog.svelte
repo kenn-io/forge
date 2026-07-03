@@ -250,7 +250,7 @@
   .setup-actions button.primary {
     background: var(--accent-blue);
     border-color: var(--accent-blue);
-    color: #ffffff;
+    color: var(--text-on-accent);
   }
 
   .setup-actions button.primary:hover:not(:disabled) {

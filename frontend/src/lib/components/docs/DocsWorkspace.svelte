@@ -1717,7 +1717,7 @@
   .inline-rename-error {
     margin: 6px 8px 4px;
     padding: 6px 8px;
-    background: rgba(193, 74, 60, 0.08);
+    background: color-mix(in srgb, var(--accent-red) 8%, transparent);
     border: 1px solid var(--accent-red, #c14a3c);
     border-radius: var(--radius-sm);
     color: var(--accent-red, #c14a3c);
@@ -1928,7 +1928,7 @@
     margin: 0;
     padding: 6px 8px;
     border-radius: var(--radius-sm);
-    background: rgba(193, 74, 60, 0.1);
+    background: color-mix(in srgb, var(--accent-red) 10%, transparent);
     color: var(--accent-red, #c14a3c);
     font-size: var(--font-size-sm);
   }

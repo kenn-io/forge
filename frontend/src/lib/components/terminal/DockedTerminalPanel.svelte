@@ -429,7 +429,7 @@
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
     flex: 1;
-    background: #0d1117;
+    background: var(--terminal-bg);
   }
 
   .panel-body.with-selector {

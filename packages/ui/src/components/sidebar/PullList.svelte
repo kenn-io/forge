@@ -835,7 +835,7 @@
   .state-btn--active {
     background: var(--bg-surface);
     color: var(--text-primary);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
   }
   .state-note {
     font-size: var(--font-size-xs);
@@ -866,7 +866,7 @@
   .group-btn--active {
     background: var(--bg-surface);
     color: var(--text-primary);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
   }
 
   .filter-bar--compact .state-toggle,

@@ -27,10 +27,32 @@ describe("runtime", () => {
 afterEach(() => setAuthenticated());
 
 describe("detectUnauthorized", () => {
-  it("flips auth state to false on a 401 response", async () => {
-    const wrapped = detectUnauthorized(async () => new Response(null, { status: 401 }));
+  it("flips auth state to false on a middleman auth-gate 401", async () => {
+    const wrapped = detectUnauthorized(
+      async () =>
+        new Response(null, {
+          status: 401,
+          headers: { "WWW-Authenticate": 'Bearer realm="middleman"' },
+        }),
+    );
     await wrapped("http://x/api/v1/snapshot");
     expect(isAuthenticated()).toBe(false);
+  });
+
+  it("ignores a 401 relayed from an upstream service", async () => {
+    const wrapped = detectUnauthorized(async () => new Response(null, { status: 401 }));
+    await wrapped("http://x/api/v1/msgvault/search");
+    expect(isAuthenticated()).toBe(true);
+
+    const foreignRealm = detectUnauthorized(
+      async () =>
+        new Response(null, {
+          status: 401,
+          headers: { "WWW-Authenticate": 'Bearer realm="upstream"' },
+        }),
+    );
+    await foreignRealm("http://x/api/v1/msgvault/search");
+    expect(isAuthenticated()).toBe(true);
   });
 
   it("leaves auth state intact on a 200 response", async () => {

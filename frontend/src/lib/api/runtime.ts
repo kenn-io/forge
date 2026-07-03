@@ -28,7 +28,14 @@ export function detectUnauthorized(inner: FetchFn): FetchFn {
     // response tick and perturbs response-ordering-sensitive callers.
     void response.then(
       (r) => {
-        if (r.status === 401) setUnauthenticated();
+        // Only middleman's own auth gate should raise the login
+        // overlay. Proxied upstreams (kata, msgvault, fleet peers) can
+        // also 401, and treating those as a lost local session would
+        // trap an authenticated user behind a login they cannot fix.
+        // The gate marks its challenges with this realm.
+        if (r.status === 401 && r.headers.get("WWW-Authenticate")?.includes('realm="middleman"')) {
+          setUnauthenticated();
+        }
       },
       () => {},
     );

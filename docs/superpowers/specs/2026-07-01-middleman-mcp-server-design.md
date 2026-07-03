@@ -24,7 +24,14 @@ surface should be task-shaped, small, and explicitly model-friendly.
 - Support both stdio and HTTP MCP transports.
 - Use the running middleman daemon as the data and mutation authority.
 - Expose recent cached activity and compact PR/issue review candidates.
+- Expose the tracked repository inventory so provider-aware filters are
+  discoverable instead of guessed.
+- Expose cached PR/issue search so clients can find quiet items, not only
+  recently active ones.
 - Expose cached PR/issue details when the model has selected an item.
+- Expose PR diff evidence as a compact per-file summary, with an opt-in
+  full-diff temp-file handoff for local inspection.
+- Expose PR stack context so a model can reason about review order.
 - Expose middleman-local workflow state for both PRs and issues.
 - Preserve the existing PR kanban API and UI behavior.
 - Let MCP clients set local item workflow state, including `reviewing`.
@@ -41,6 +48,11 @@ surface should be task-shaped, small, and explicitly model-friendly.
   stored workflow row, because missing state is treated as effective `new`.
 - An MCP claim with stale `expected_status` returns a conflict and does not
   overwrite the current local state.
+- An MCP client can list tracked repositories, search cached PRs/issues by
+  text, and fetch a per-file diff summary for a PR without any provider call.
+- With `emit_diff_file` set, the diff tool writes the full unified diff to a
+  companion-owned `0600` temp file and returns its path; the file is removed
+  on companion shutdown.
 - Existing PR kanban list/detail and state mutation behavior remains compatible
   with current clients and the board UI.
 - No MCP tool can perform provider writes.
@@ -277,9 +289,12 @@ special-case PRs for local review state.
 The companion should use existing daemon routes where they already fit:
 
 - `GET /activity`
-- `GET /pulls`
+- `GET /repos/summary`
+- `GET /pulls` (including the `q` search filter)
 - `GET /pulls/{provider}/{owner}/{name}/{number}`
-- `GET /issues`
+- `GET /pulls/{provider}/{owner}/{name}/{number}/diff`
+- `GET /pulls/{provider}/{owner}/{name}/{number}/files`
+- `GET /issues` (including the `q` search filter)
 - `GET /issues/{provider}/{owner}/{name}/{number}`
 - `GET /stacks`
 - `GET /workspaces`
@@ -484,6 +499,125 @@ Inputs:
 This lets a model answer questions such as "what am I already reviewing?" or
 "what did another agent mark waiting?" without scanning all cached PRs/issues.
 
+### Tool: `middleman_list_repos`
+
+List the repositories middleman tracks. Every other tool's `repo` filter takes
+a provider-aware identity; this tool is how a model discovers the valid values
+instead of guessing them.
+
+Inputs: none beyond an optional `limit`.
+
+The response wraps `GET /repos/summary` into compact rows:
+
+- `provider`, `platform_host`, `owner`, `name`, `repo_path`;
+- open PR and issue counts;
+- `last_sync_completed_at` and the last sync error, if any.
+
+Guidance should tell periodic agents to call this first: it doubles as a
+staleness map, since a repo whose last sync failed or is old should reduce
+confidence in candidates from that repo.
+
+### Tool: `middleman_search_items`
+
+Search cached PRs and issues by text. Candidates only surface recently active
+items; this tool answers "find the PR about X" for items that have been quiet.
+
+Inputs:
+
+- `query`: required text query;
+- `item_types`: optional list of `pr`, `issue`; default both;
+- `repo`: optional provider-aware repo filter;
+- `state`: `open`, `closed`, `merged`, or `all`; default `open`;
+- `limit`: default 25, capped by the companion.
+
+Behavior:
+
+- PRs use `GET /pulls` with `q`; issues use `GET /issues` with `q`. The
+  companion merges the two lists, ordered by item `last_activity_at`
+  descending.
+- Results are compact item refs with title, state, author, URL, local workflow
+  status, and `last_activity_at`. Search never returns bodies or events; the
+  model follows up with `middleman_get_item_context`.
+- The tool searches cached data only. It does not query provider search APIs.
+
+### Tool: `middleman_get_item_diff`
+
+Return diff evidence for one PR: always a compact per-file summary, and
+optionally the full unified diff written to a local temp file whose path is
+returned so the model can inspect it with its own file tools.
+
+Inputs:
+
+- provider-aware PR ref (`item_type` must be `pr`; issue refs return an
+  invalid-item error);
+- `emit_diff_file`: boolean, default false;
+- `include_whitespace_only`: boolean, default false.
+
+Summary response:
+
+```json
+{
+  "stale": false,
+  "whitespace_only_count": 1,
+  "total_additions": 120,
+  "total_deletions": 45,
+  "files": [
+    {
+      "path": "internal/db/queries.go",
+      "old_path": "",
+      "status": "modified",
+      "is_binary": false,
+      "is_generated": false,
+      "is_whitespace_only": false,
+      "additions": 80,
+      "deletions": 20
+    }
+  ],
+  "diff_file": {
+    "path": "/tmp/middleman-mcp-…/pr-42.diff",
+    "bytes": 24576
+  }
+}
+```
+
+Behavior:
+
+- The summary uses `GET /pulls/{...}/files`; per-file patches and hunks are
+  never inlined into the MCP response.
+- With `emit_diff_file`, the companion fetches `GET /pulls/{...}/diff` and
+  writes a single unified diff to a file under a companion-owned temp
+  directory with `0600` permissions, then returns the absolute path and size.
+  `diff_file` is omitted when the flag is false.
+- Temp files are ephemeral: the companion creates one private directory per
+  process, overwrites per-item files on repeat calls, and removes the
+  directory on shutdown. Clients must not treat the path as durable.
+- The temp-file handoff assumes the MCP client shares the companion's
+  filesystem. That holds for stdio and for the loopback-only HTTP transport in
+  v1; a future remote transport must revisit this tool before reusing it.
+- Diff routes are backed by the daemon's local clone manager. When the daemon
+  reports diff unavailable (clone manager not configured, commit not found),
+  the tool returns a typed diff-unavailable error rather than an empty
+  summary. The `stale` flag from the daemon is passed through untouched.
+
+### Tool: `middleman_get_stack_context`
+
+Return stack context for one PR so a model can reason about review order, not
+just membership.
+
+Inputs: provider-aware PR ref.
+
+Behavior:
+
+- Wraps `GET /stacks` and selects the stack containing the given PR.
+- Returns `present: false` when the PR is not part of a stack.
+- When present, returns the stack health plus ordered members, each with
+  number, title, state, draft flag, and local workflow status, and marks which
+  member is the requested PR.
+
+This complements the four-field stack summary in candidate rows: candidates
+say "this PR is in a stack"; this tool answers "what should be reviewed before
+it".
+
 ### Resource: `middleman://mcp/guidance`
 
 Expose the guidance document content as an MCP resource so a client can load the
@@ -494,8 +628,15 @@ recommended usage patterns.
 Provide a reusable prompt template for periodic review triage. The prompt should
 tell the model to:
 
+- call `middleman_list_repos` first to learn valid repo filters and sync
+  freshness;
 - use `middleman_find_review_candidates`;
 - inspect details only for plausible items;
+- use `middleman_get_item_diff` to check the size and shape of a change before
+  claiming it, requesting the full diff file only when the summary is not
+  enough;
+- consult `middleman_get_stack_context` before claiming a stacked PR so
+  review order respects the stack;
 - prefer cached evidence over assumptions;
 - avoid provider writes;
 - set workflow state only when the reason is clear;
@@ -594,6 +735,12 @@ The guidance doc should cover:
 - that v1 writes only middleman-local workflow state;
 - example periodic-agent flows;
 - safe prompts for "find recent review candidates";
+- discovering repo filters with `middleman_list_repos` before filtering other
+  tools;
+- finding quiet items with `middleman_search_items` when activity-based
+  candidates are not enough;
+- inspecting diffs via the summary-first flow and the temp-file handoff,
+  including that diff files are ephemeral and local to the companion host;
 - when to mark an item `reviewing`;
 - how to use `expected_status` to avoid overwriting humans or other agents;
 - how to inspect already reviewing/waiting items;
@@ -638,6 +785,18 @@ MCP tests:
 - detail tool test verifies event limiting and stale-cache fields;
 - workflow write tool test verifies local-only request shape and conflict
   mapping;
+- repo listing tool test maps `/repos/summary` rows to compact refs including
+  sync freshness fields;
+- search tool test merges PR and issue results from controlled daemon
+  responses in `last_activity_at` order and never includes bodies;
+- diff tool tests cover the summary-only default, `emit_diff_file` writing a
+  `0600` file inside the companion temp directory and returning its path,
+  issue-ref rejection, stale-flag passthrough, and the typed diff-unavailable
+  error;
+- diff temp directory lifecycle test verifies per-item overwrite on repeat
+  calls and removal on companion shutdown;
+- stack context tool test covers `present: false` and ordered members with the
+  requested PR marked;
 - daemon discovery/auth tests reuse the runtime metadata pattern used by the
   API CLI where possible.
 - full-stack stdio MCP e2e starts a real middleman daemon against SQLite,

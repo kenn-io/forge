@@ -844,10 +844,14 @@
   // the pointer leaves.
   let bodyCopied = $state(false);
   let bodyCopiedTimeout: ReturnType<typeof setTimeout> | null = null;
+  let bodyCopySeq = 0;
 
   function copyBody(text: string): void {
+    const seq = bodyCopySeq;
     void copyToClipboard(text).then((ok) => {
-      if (!ok) return;
+      // A copy started on a previous item must not surface feedback on
+      // the one now displayed; the reset effect bumps the token.
+      if (!ok || seq !== bodyCopySeq) return;
       bodyCopied = true;
       if (bodyCopiedTimeout !== null) clearTimeout(bodyCopiedTimeout);
       bodyCopiedTimeout = setTimeout(() => {
@@ -861,6 +865,7 @@
     // The component is reused across item navigation; the copied feedback
     // (and its pending reset timer) belongs to the item it was copied from.
     void [provider, platformHost, owner, name, number];
+    bodyCopySeq++;
     if (bodyCopiedTimeout !== null) {
       clearTimeout(bodyCopiedTimeout);
       bodyCopiedTimeout = null;

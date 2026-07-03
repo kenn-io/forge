@@ -97,10 +97,18 @@ is not presented as higher-priority agent instructions.
 
 Before writing generated context files, middleman adds exact local ignore rules
 to the worktree's Git-private exclude file (`git rev-parse --git-path
-info/exclude`). It does not edit tracked `.gitignore` files for this. Generated
-paths include `.middleman/`, `AGENTS.local.md`, and `CLAUDE.local.md`; middleman
-never ignores or overwrites root `AGENTS.md` or `CLAUDE.md` because those are
-legitimate repo-owned instruction files.
+info/exclude`). It does not edit tracked `.gitignore` files for this. Rules are
+scoped to the paths actually being generated in that call: setup, which writes
+only `.middleman/agent-context.md`, must not start ignoring `AGENTS.local.md` or
+`CLAUDE.local.md`, because that could hide pre-existing user-owned local
+instruction files from `git status`. The helper accepts only the allowlisted
+generated paths (`.middleman/...`, `AGENTS.local.md`, `CLAUDE.local.md`),
+distinguishes `git check-ignore` exit status 1 from fatal git failures, and
+re-verifies after updating the exclude file that every requested path is
+actually ignored — failing instead of writing a visible file when a tracked
+`.gitignore` negation rule keeps a path unignored. Middleman never ignores or
+overwrites root `AGENTS.md` or `CLAUDE.md` because those are legitimate
+repo-owned instruction files.
 
 Agent-specific companion files are generated just in time when the user launches
 that target. The Codex target may create `AGENTS.local.md`; the Claude target

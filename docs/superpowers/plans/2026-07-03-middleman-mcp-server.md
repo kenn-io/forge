@@ -928,7 +928,7 @@ tuple instead of an offset."
 - Modify: `internal/db/queries.go` (`ListIssues` select `3385-3389` and its variants, `GetIssue` `3228`, `GetIssueByRepoIDAndNumber` `3279`)
 - Modify: `internal/db/types.go` (`Issue` struct `:376`)
 - Modify: `internal/server/api_types.go` (`issueDetailResponse` `:151`), plus the builder `buildIssueDetailResponse` (`huma_routes.go:~2511`)
-- Test: `internal/db/queries_workflow_test.go`, `internal/server/apitest/workflow_state_test.go` (issue part lands in Task 6's API tests; DB-level here)
+- Test: `internal/db/queries_workflow_test.go` (DB-level) AND `internal/server/apitest/issue_workflow_test.go` (new, owned by THIS task): the issue wire contract lands here, not in Task 6 — seed an issue with no workflow row via `seedIssue`, assert `GET /issues` and `GET /issues/{provider}/{owner}/{name}/{number}` serialize `WorkflowStatus` as `"new"` (never `""`), then write a state via `SetItemWorkflowState` and assert list/detail reflect it plus detail's `workflow` metadata block. Run: `go test ./internal/server/apitest -run TestIssueWorkflow -shuffle=on`. Task 6 owns only the new `/workflow-state` endpoint tests.
 
 **Interfaces:**
 - Produces: `db.Issue.WorkflowStatus KanbanStatus` field (empty string when no row, mirroring PR `KanbanStatus` behavior); `issueDetailResponse.Workflow *workflowStateMetaResponse`.

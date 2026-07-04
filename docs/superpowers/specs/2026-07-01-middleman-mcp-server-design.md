@@ -604,14 +604,17 @@ Behavior:
   never inlined into the MCP response.
 - With `emit_diff_file`, the companion fetches `GET /pulls/{...}/diff` (a
   structured JSON response with per-file patch text, not raw diff bytes) and
-  serializes it into one unified diff file: files in daemon response order,
-  each emitted as a `diff --git a/<old_path or path> b/<path>` header line
-  followed by that file's `patch` content verbatim; binary files emit the
-  header plus a `Binary files differ` line; files with empty patches emit the
-  header only. Path segments are written as-is (no quoting beyond what the
-  daemon already provides). The file lands under a companion-owned temp
-  directory with `0600` permissions and the tool returns the absolute path
-  and size. `diff_file` is omitted when the flag is false.
+  serializes it into one unified diff file. Each non-empty `patch` value is
+  already a complete per-file patch that begins with its own `diff --git`
+  header and ends with a newline, so the companion concatenates non-empty
+  patches verbatim, in daemon response order, adding nothing. Only files with
+  an empty `patch` get a synthesized section: binary files emit a
+  `diff --git a/<old_path or path> b/<path>` header line plus a
+  `Binary files differ` line; other empty-patch files emit the header line
+  only. Path segments are written as-is (no quoting beyond what the daemon
+  already provides). The file lands under a companion-owned temp directory
+  with `0600` permissions and the tool returns the absolute path and size.
+  `diff_file` is omitted when the flag is false.
 - Temp files are ephemeral: the companion creates one private directory per
   process, overwrites per-item files on repeat calls, and removes the
   directory on shutdown. Clients must not treat the path as durable.

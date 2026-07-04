@@ -2386,7 +2386,7 @@ Diff tool behavior:
 - Reject issue refs up front: `item.item_type != "pr"` → `daemonError{Kind: "invalid_request", Message: "diff is only available for prs"}`.
 - Summary from `GET .../files`: strip `Patch`/`Hunks`, compute `TotalAdditions`/`TotalDeletions` by summing files, pass every file row through unchanged. No whitespace-only filtering or counts anywhere in this tool — the files route does not compute whitespace status and the review use case does not need whitespace-aware line counts (spec as amended). Pass `stale` through untouched.
 - Diff-unavailable: when the daemon returns 404/5xx from the files/diff routes with a clone-manager problem, surface `daemonError{Kind: "diff_unavailable", ...}` (add the kind); never return an empty summary on error.
-- `EmitDiffFile`: `GET .../diff` returns `diffResponse` (structured JSON, not raw diff bytes) with per-file `Patch` strings. Serialize per the spec's exact format: files in daemon response order, each as a `diff --git a/<old_path or path> b/<path>` header line followed by the file's `Patch` verbatim; binary files emit the header plus `Binary files differ`; empty patches emit the header only. Write via the store as `fmt.Sprintf("%s-%s-%s-%s-pr-%d.diff", sanitize(provider), sanitize(host), sanitize(owner), sanitize(name), number)` where `sanitize` replaces any rune outside `[a-zA-Z0-9._-]` with `_`. Cap the serialized buffer at 10 MiB — beyond that return `daemonError{Kind: "diff_too_large", Message: "... use the daemon API or a local checkout"}` instead of writing. Return absolute path + byte count. Repeat calls overwrite the same file in place via `os.WriteFile` (single-client companion; concurrent readers of a file being rewritten are out of scope and documented as such in the guidance doc). Lazily create the store on first use (`s.diffs`); `Server.Close` removes the directory (wired in Task 7). Crash cleanup: the store lives under `os.MkdirTemp("", "middleman-mcp-")`, so a killed companion leaves an orphan dir in the OS temp area that standard temp cleanup reaps; do not build extra machinery.
+- `EmitDiffFile`: `GET .../diff` returns `diffResponse` (structured JSON, not raw diff bytes) with per-file `Patch` strings. CRITICAL: `gitclone.BuildPatch` (`internal/gitclone/patch.go:9`) already produces a COMPLETE per-file patch — it starts with its own `diff --git a/... b/...` header (plus mode headers, `---`/`+++` lines) and ends with `\n`; binary files and hunk-less files have `Patch == ""`. Do NOT prepend any header before a non-empty `Patch` — that would duplicate headers and produce a malformed diff. Serialize per the spec's exact format: concatenate non-empty `Patch` values verbatim in daemon response order; only for empty-patch files synthesize a section — binary files get a `diff --git a/<old_path or path> b/<path>` line plus `Binary files differ`, other empty-patch files get the header line only. Write via the store as `fmt.Sprintf("%s-%s-%s-%s-pr-%d.diff", sanitize(provider), sanitize(host), sanitize(owner), sanitize(name), number)` where `sanitize` replaces any rune outside `[a-zA-Z0-9._-]` with `_`. Cap the serialized buffer at 10 MiB — beyond that return `daemonError{Kind: "diff_too_large", Message: "... use the daemon API or a local checkout"}` instead of writing. Return absolute path + byte count. Repeat calls overwrite the same file in place via `os.WriteFile` (single-client companion; concurrent readers of a file being rewritten are out of scope and documented as such in the guidance doc). Lazily create the store on first use (`s.diffs`); `Server.Close` removes the directory (wired in Task 7). Crash cleanup: the store lives under `os.MkdirTemp("", "middleman-mcp-")`, so a killed companion leaves an orphan dir in the OS temp area that standard temp cleanup reaps; do not build extra machinery.
 
 Stack tool behavior:
 - `GET .../stack` via `itemPath("pulls", ref) + "/stack"`. `not_found` (or empty-context response — verify how `getStackForPR` responds for a PR not in any stack by reading `huma_routes.go` around `:4855` and the `getStackForPR` handler) → `{present: false}`.
@@ -2396,7 +2396,7 @@ Stack tool behavior:
 
 Cover, with a fake daemon:
 - summary-only default: no `diff_file` key, all file rows passed through (no whitespace filtering), totals summed, `stale` passthrough true;
-- `emit_diff_file: true`: response path exists inside the store dir, file mode is `0600` (`os.Stat` + `assert.Equal(os.FileMode(0o600), info.Mode().Perm())`), content matches the specified serialization (git headers + patches; binary file emits `Binary files differ`), second call overwrites (same path, new content);
+- `emit_diff_file: true`: response path exists inside the store dir, file mode is `0600` (`os.Stat` + `assert.Equal(os.FileMode(0o600), info.Mode().Perm())`), content matches the specified serialization — non-empty patches verbatim with exactly ONE `diff --git` line per file (fake patches must include their own headers, and the test asserts no duplication), binary file emits a synthesized header plus `Binary files differ` — and a second call overwrites (same path, new content);
 - serialized diff exceeding the 10 MiB cap → `diff_too_large` error, no file written;
 - issue ref → error with `invalid_request`;
 - daemon diff route failing → `diff_unavailable` error, no partial output;
@@ -2561,7 +2561,8 @@ func TestHTTPGuardChecks(t *testing.T) {
 	//  - correct bearer, loopback alias host (localhost:<port>, [::1]:<port>,
 	//    127.0.0.1:<port>) -> pass-through to next
 	//  - Origin present and not http://<loopback>:<port> -> 403
-	//  - Origin present and matching loopback origin -> pass
+	//  - Origin https://127.0.0.1:<port> (wrong scheme, loopback host) -> 403
+	//  - Origin present and matching http loopback origin -> pass
 	//  - response never carries Access-Control-Allow-Origin
 	//  - 401/403 bodies never contain the daemon token or the MCP token
 }
@@ -2654,8 +2655,11 @@ func (s *Server) httpGuard(next http.Handler, token string, boundPort int) http.
 			return
 		}
 		if origin := r.Header.Get("Origin"); origin != "" {
+			// The transport is plain HTTP on loopback; require the
+			// scheme too so e.g. https://127.0.0.1:<port> is rejected.
 			ou, err := url.Parse(origin)
-			if err != nil || !isLoopbackHost(ou.Hostname()) || ou.Port() != fmt.Sprint(boundPort) {
+			if err != nil || ou.Scheme != "http" ||
+				!isLoopbackHost(ou.Hostname()) || ou.Port() != fmt.Sprint(boundPort) {
 				http.Error(w, "invalid origin", http.StatusForbidden)
 				return
 			}
@@ -2742,10 +2746,27 @@ package main
 //     detail_loaded/cache fields present.
 // 13. CallTool middleman_get_stack_context for the PR ->
 //     present: false (seeded PR is not stacked).
-// 14. CallTool middleman_get_item_diff for the PR -> expect the typed
-//     diff_unavailable error (no clone manager in the e2e fixture);
-//     if seeding a local clone is cheap in this harness, additionally
-//     assert the summary + emit_diff_file path writes a 0600 file.
+// 14. CallTool middleman_get_item_diff for the PR — the real-daemon
+//     summary AND emit_diff_file paths are MANDATORY (spec requires
+//     proving route selection, real JSON shape, and temp-file output
+//     against the real daemon, not fake-daemon mocks). Seed a local
+//     bare git repo with base and head commits following the
+//     setupGitLabCloneFixture pattern
+//     (internal/server/e2etest/gitlab_sync_pin_test.go:36-62: build a
+//     worktree with gitcmd.New(), commit base then head, clone --bare
+//     to <dir>/origin.git), point the seeded repo/MR at it (local
+//     clone URL path + matching diff_head/base SHAs on the MR row —
+//     verify at implementation time which field the daemon's clone
+//     manager reads for the clone source: the config repo entry's
+//     clone URL or the MR's head_repo_clone_url; mirror what
+//     gitlab_sync_pin_test.go feeds through RepoRef.CloneURL).
+//     Assert: summary has the expected file with additions/deletions;
+//     emit_diff_file returns a path to a 0600 file whose content
+//     starts with "diff --git" and contains the seeded change; ALSO
+//     assert exactly one "diff --git" line per changed file (guards
+//     the no-duplicate-header serialization rule).
+//     Separately assert the typed diff_unavailable error for a second
+//     seeded PR whose SHAs do not exist in the fixture repo.
 ```
 
 Write it fully; every numbered step is code in the test. Gate it like other cmd e2e tests (they run in normal `go test` — follow whatever `testing.Short()` gating `api_verb_e2e_test.go` uses).

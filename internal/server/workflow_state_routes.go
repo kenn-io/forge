@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"regexp"
 	"time"
@@ -57,42 +58,53 @@ func (setWorkflowStateBody) TransformSchema(_ huma.Registry, schema *huma.Schema
 	if schema.Extensions == nil {
 		schema.Extensions = map[string]any{}
 	}
-	common := make(map[string]*huma.Schema, len(schema.Properties))
-	for name, property := range schema.Properties {
+	common := workflowStateCommonProperties(schema.Properties)
+	guarded := copyWorkflowStateProperties(common)
+	guarded["expected_status"] = schema.Properties["expected_status"]
+	guarded["force"] = &huma.Schema{
+		Type: huma.TypeBoolean,
+		Enum: []any{false},
+	}
+	forced := copyWorkflowStateProperties(common)
+	forced["force"] = &huma.Schema{
+		Type: huma.TypeBoolean,
+		Enum: []any{true},
+	}
+	schema.AdditionalProperties = nil
+	schema.Extensions["properties"] = map[string]*huma.Schema{}
+	schema.Extensions["required"] = []string{}
+	schema.Extensions["oneOf"] = []*huma.Schema{
+		{
+			Type:                 huma.TypeObject,
+			AdditionalProperties: false,
+			Required:             []string{"status", "expected_status"},
+			Properties:           guarded,
+		},
+		{
+			Type:                 huma.TypeObject,
+			AdditionalProperties: false,
+			Required:             []string{"status", "force"},
+			Properties:           forced,
+		},
+	}
+	return schema
+}
+
+func workflowStateCommonProperties(properties map[string]*huma.Schema) map[string]*huma.Schema {
+	common := make(map[string]*huma.Schema, len(properties))
+	for name, property := range properties {
 		if name == "expected_status" || name == "force" {
 			continue
 		}
 		common[name] = property
 	}
-	schema.Extensions["properties"] = common
-	schema.Extensions["oneOf"] = []*huma.Schema{
-		{
-			Type:     huma.TypeObject,
-			Required: []string{"expected_status"},
-			Properties: map[string]*huma.Schema{
-				"expected_status": schema.Properties["expected_status"],
-				"force": {
-					Type: huma.TypeBoolean,
-					Enum: []any{false},
-				},
-			},
-		},
-		{
-			Type:     huma.TypeObject,
-			Required: []string{"force"},
-			Properties: map[string]*huma.Schema{
-				"force": {
-					Type: huma.TypeBoolean,
-					Enum: []any{true},
-				},
-			},
-			Not: &huma.Schema{
-				Type:     huma.TypeObject,
-				Required: []string{"expected_status"},
-			},
-		},
-	}
-	return schema
+	return common
+}
+
+func copyWorkflowStateProperties(properties map[string]*huma.Schema) map[string]*huma.Schema {
+	out := make(map[string]*huma.Schema, len(properties)+2)
+	maps.Copy(out, properties)
+	return out
 }
 
 type setWorkflowStateInput struct {

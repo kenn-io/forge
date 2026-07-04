@@ -5952,9 +5952,12 @@ components:
         - reviewers
       type: object
     SetWorkflowStateBody:
-      additionalProperties: false
       oneOf:
-        - properties:
+        - additionalProperties: false
+          properties:
+            actor:
+              maxLength: 120
+              type: string
             expected_status:
               description: Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
               enum:
@@ -5967,40 +5970,51 @@ components:
               enum:
                 - false
               type: boolean
+            reason:
+              maxLength: 500
+              type: string
+            source:
+              pattern: ^[a-z][a-z0-9_-]{0,39}$
+              type: string
+            status:
+              enum:
+                - new
+                - reviewing
+                - waiting
+                - awaiting_merge
+              type: string
           required:
+            - status
             - expected_status
           type: object
-        - not:
-            required:
-              - expected_status
-            type: object
+        - additionalProperties: false
           properties:
+            actor:
+              maxLength: 120
+              type: string
             force:
               enum:
                 - true
               type: boolean
+            reason:
+              maxLength: 500
+              type: string
+            source:
+              pattern: ^[a-z][a-z0-9_-]{0,39}$
+              type: string
+            status:
+              enum:
+                - new
+                - reviewing
+                - waiting
+                - awaiting_merge
+              type: string
           required:
+            - status
             - force
           type: object
-      properties:
-        actor:
-          maxLength: 120
-          type: string
-        reason:
-          maxLength: 500
-          type: string
-        source:
-          pattern: ^[a-z][a-z0-9_-]{0,39}$
-          type: string
-        status:
-          enum:
-            - new
-            - reviewing
-            - waiting
-            - awaiting_merge
-          type: string
-      required:
-        - status
+      properties: {}
+      required: []
       type: object
     SetWorktreeHiddenInputBody:
       additionalProperties: false

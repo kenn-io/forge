@@ -1,9 +1,11 @@
 package server
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,17 +35,21 @@ func TestWorkflowStateOpenAPIConstrainsWriteBody(t *testing.T) {
 	contract, ok := schema.Extensions["oneOf"].([]*huma.Schema)
 	require.True(ok)
 	require.Len(contract, 2)
+	assert.Nil(schema.AdditionalProperties)
+	assert.NotContains(schema.Extensions, "additionalProperties")
+	assert.Contains(contract[0].Required, "status")
 	assert.Contains(contract[0].Required, "expected_status")
 	assert.Equal([]any{false}, contract[0].Properties["force"].Enum)
+	assert.Contains(contract[1].Required, "status")
 	assert.Contains(contract[1].Required, "force")
 	assert.Equal([]any{true}, contract[1].Properties["force"].Enum)
-	require.NotNil(contract[1].Not)
-	assert.Contains(contract[1].Not.Required, "expected_status")
+	assert.NotContains(contract[1].Properties, "expected_status")
 	openAPIProperties, ok := schema.Extensions["properties"].(map[string]*huma.Schema)
 	require.True(ok)
-	assert.Contains(openAPIProperties, "status")
+	assert.Empty(openAPIProperties)
 	assert.NotContains(openAPIProperties, "expected_status")
 	assert.NotContains(openAPIProperties, "force")
+	assertValidWorkflowStateOpenAPISchema(t, schema)
 
 	source := schema.Properties["source"]
 	require.NotNil(source)
@@ -55,4 +61,32 @@ func TestWorkflowStateOpenAPIConstrainsWriteBody(t *testing.T) {
 	require.NotNil(reason)
 	assert.Equal(120, *actor.MaxLength)
 	assert.Equal(500, *reason.MaxLength)
+}
+
+func assertValidWorkflowStateOpenAPISchema(t *testing.T, schema *huma.Schema) {
+	t.Helper()
+	require := require.New(t)
+	raw, err := json.Marshal(schema)
+	require.NoError(err)
+	var doc any
+	require.NoError(json.Unmarshal(raw, &doc))
+	compiler := jsonschema.NewCompiler()
+	require.NoError(compiler.AddResource("schema.json", doc))
+	compiled, err := compiler.Compile("schema.json")
+	require.NoError(err)
+
+	for _, body := range []map[string]any{
+		{"status": "reviewing", "expected_status": "new"},
+		{"status": "waiting", "force": true, "actor": "mcp"},
+		{"status": "reviewing", "expected_status": "new", "force": false},
+	} {
+		require.NoError(compiled.Validate(body))
+	}
+	for _, body := range []map[string]any{
+		{"status": "reviewing"},
+		{"status": "reviewing", "force": true, "expected_status": "new"},
+		{"status": "reviewing", "force": true, "unexpected": "field"},
+	} {
+		require.Error(compiled.Validate(body))
+	}
 }

@@ -6863,11 +6863,6 @@ export interface components {
         };
         SetWorkflowStateBody: {
             actor?: string;
-            reason?: string;
-            source?: string;
-            /** @enum {string} */
-            status: "new" | "reviewing" | "waiting" | "awaiting_merge";
-        } & ({
             /**
              * @description Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
              * @enum {string}
@@ -6875,10 +6870,19 @@ export interface components {
             expected_status: "new" | "reviewing" | "waiting" | "awaiting_merge";
             /** @enum {boolean} */
             force?: false;
+            reason?: string;
+            source?: string;
+            /** @enum {string} */
+            status: "new" | "reviewing" | "waiting" | "awaiting_merge";
         } | {
+            actor?: string;
             /** @enum {boolean} */
             force: true;
-        });
+            reason?: string;
+            source?: string;
+            /** @enum {string} */
+            status: "new" | "reviewing" | "waiting" | "awaiting_merge";
+        };
         SetWorktreeHiddenInputBody: {
             /**
              * Format: uri
@@ -16817,10 +16821,15 @@ export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<compon
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
 export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceNotFound", "worktreeDirty"];
-export const setWorkflowStateBodyStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const setWorkflowStateBodyOneOf0Expected_statusValues: ReadonlyArray<Extract<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"], {
     expected_status: unknown;
 }>["expected_status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const setWorkflowStateBodyOneOf0StatusValues: ReadonlyArray<Extract<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"], {
+    status: unknown;
+}>["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const setWorkflowStateBodyOneOf1StatusValues: ReadonlyArray<Extract<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"], {
+    status: unknown;
+}>["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const terminalRendererValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Terminal"]["renderer"]> = ["xterm", "ghostty-web"];
 export const workflowStateChangeResponsePrevious_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateChangeResponse"]["previous_status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workflowStateChangeResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateChangeResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];

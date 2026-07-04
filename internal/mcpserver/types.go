@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -193,4 +194,8 @@ func formatMCPTime(t time.Time) string {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
+}
+
+func seg(value string) string {
+	return url.PathEscape(value)
 }

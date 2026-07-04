@@ -442,7 +442,3 @@ func timeStringAfter(left, right string) bool {
 	}
 	return left > right
 }
-
-func seg(value string) string {
-	return url.PathEscape(value)
-}

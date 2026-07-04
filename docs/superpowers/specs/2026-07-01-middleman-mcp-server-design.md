@@ -607,14 +607,20 @@ Behavior:
   serializes it into one unified diff file. Each non-empty `patch` value is
   already a complete per-file patch that begins with its own `diff --git`
   header and ends with a newline, so the companion concatenates non-empty
-  patches verbatim, in daemon response order, adding nothing. Only files with
-  an empty `patch` get a synthesized section: binary files emit a
-  `diff --git a/<old_path or path> b/<path>` header line plus a
-  `Binary files differ` line; other empty-patch files emit the header line
-  only. Path segments are written as-is (no quoting beyond what the daemon
-  already provides). The file lands under a companion-owned temp directory
-  with `0600` permissions and the tool returns the absolute path and size.
-  `diff_file` is omitted when the flag is false.
+  patches verbatim, in daemon response order, adding nothing. Files with an
+  empty `patch` (binary files and hunk-less metadata-only changes such as
+  rename-only) get a section synthesized by a shared helper in the gitclone
+  package — never hand-rolled patch syntax in the companion — so it applies
+  the same git-style path quoting and the same extended headers (`rename
+  from`/`rename to`, mode/new/deleted-file headers) that `BuildPatch` emits,
+  with binary files additionally getting a `Binary files differ` line.
+  Fidelity rule: the emitted file is a faithful serialization of everything
+  the daemon's cached diff data carries — no changed file may be silently
+  dropped, and metadata-only changes keep their extended headers — but it is
+  a review artifact, not guaranteed byte-identical to `git diff` output. The
+  file lands under a companion-owned temp directory with `0600` permissions
+  and the tool returns the absolute path and size. `diff_file` is omitted
+  when the flag is false.
 - Temp files are ephemeral: the companion creates one private directory per
   process, overwrites per-item files on repeat calls, and removes the
   directory on shutdown. Clients must not treat the path as durable.

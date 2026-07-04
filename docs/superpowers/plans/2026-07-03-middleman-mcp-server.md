@@ -2336,6 +2336,7 @@ being reviewed without scanning all cached items."
 
 **Files:**
 - Create: `internal/mcpserver/difftmp.go`, `internal/mcpserver/tools_diff.go`, `internal/mcpserver/tools_stack.go`, tests for each
+- Modify: `internal/gitclone/patch.go` (+ `patch_test.go`): exported `BuildEmptyPatchSection` helper, `copy from`/`copy to` in `fileModeHeaders`
 
 **Interfaces:**
 - Consumes: `itemPath` helper, `daemonError`, `GET .../files`, `GET .../diff`, `GET .../stack`, `GET /api/v1/workflow-state` (member workflow statuses).
@@ -2386,7 +2387,7 @@ Diff tool behavior:
 - Reject issue refs up front: `item.item_type != "pr"` → `daemonError{Kind: "invalid_request", Message: "diff is only available for prs"}`.
 - Summary from `GET .../files`: strip `Patch`/`Hunks`, compute `TotalAdditions`/`TotalDeletions` by summing files, pass every file row through unchanged. No whitespace-only filtering or counts anywhere in this tool — the files route does not compute whitespace status and the review use case does not need whitespace-aware line counts (spec as amended). Pass `stale` through untouched.
 - Diff-unavailable: when the daemon returns 404/5xx from the files/diff routes with a clone-manager problem, surface `daemonError{Kind: "diff_unavailable", ...}` (add the kind); never return an empty summary on error.
-- `EmitDiffFile`: `GET .../diff` returns `diffResponse` (structured JSON, not raw diff bytes) with per-file `Patch` strings. CRITICAL: `gitclone.BuildPatch` (`internal/gitclone/patch.go:9`) already produces a COMPLETE per-file patch — it starts with its own `diff --git a/... b/...` header (plus mode headers, `---`/`+++` lines) and ends with `\n`; binary files and hunk-less files have `Patch == ""`. Do NOT prepend any header before a non-empty `Patch` — that would duplicate headers and produce a malformed diff. Serialize per the spec's exact format: concatenate non-empty `Patch` values verbatim in daemon response order; only for empty-patch files synthesize a section — binary files get a `diff --git a/<old_path or path> b/<path>` line plus `Binary files differ`, other empty-patch files get the header line only. Write via the store as `fmt.Sprintf("%s-%s-%s-%s-pr-%d.diff", sanitize(provider), sanitize(host), sanitize(owner), sanitize(name), number)` where `sanitize` replaces any rune outside `[a-zA-Z0-9._-]` with `_`. Cap the serialized buffer at 10 MiB — beyond that return `daemonError{Kind: "diff_too_large", Message: "... use the daemon API or a local checkout"}` instead of writing. Return absolute path + byte count. Repeat calls overwrite the same file in place via `os.WriteFile` (single-client companion; concurrent readers of a file being rewritten are out of scope and documented as such in the guidance doc). Lazily create the store on first use (`s.diffs`); `Server.Close` removes the directory (wired in Task 7). Crash cleanup: the store lives under `os.MkdirTemp("", "middleman-mcp-")`, so a killed companion leaves an orphan dir in the OS temp area that standard temp cleanup reaps; do not build extra machinery.
+- `EmitDiffFile`: `GET .../diff` returns `diffResponse` (structured JSON, not raw diff bytes) with per-file `Patch` strings. CRITICAL: `gitclone.BuildPatch` (`internal/gitclone/patch.go:9`) already produces a COMPLETE per-file patch — it starts with its own `diff --git a/... b/...` header (plus mode headers, `---`/`+++` lines) and ends with `\n`; binary files and hunk-less files (rename-only, metadata-only) have `Patch == ""`. Do NOT prepend any header before a non-empty `Patch` — that would duplicate headers and produce a malformed diff. Concatenate non-empty `Patch` values verbatim in daemon response order. For empty-patch files, do NOT hand-roll patch syntax in the companion: add a small exported helper `gitclone.BuildEmptyPatchSection(file DiffFile) string` in `internal/gitclone/patch.go` that reuses the existing `patchPath` quoting and `fileModeHeaders` logic — emitting the quoted `diff --git` line, the extended headers (`rename from`/`rename to` for renamed, new/deleted file modes; extend `fileModeHeaders` with `copy from`/`copy to` for status `copied` while there), and `Binary files differ` for binary files. Unit-test the helper in `internal/gitclone` (rename-only file, binary file, path with control characters/quotes asserting `patchPath`-style quoting). The companion calls this helper so metadata-only changes are never silently dropped and path quoting matches `BuildPatch` exactly (spec fidelity rule). Write via the store as `fmt.Sprintf("%s-%s-%s-%s-pr-%d.diff", sanitize(provider), sanitize(host), sanitize(owner), sanitize(name), number)` where `sanitize` replaces any rune outside `[a-zA-Z0-9._-]` with `_`. Cap the serialized buffer at 10 MiB — beyond that return `daemonError{Kind: "diff_too_large", Message: "... use the daemon API or a local checkout"}` instead of writing. Return absolute path + byte count. Repeat calls overwrite the same file in place via `os.WriteFile` (single-client companion; concurrent readers of a file being rewritten are out of scope and documented as such in the guidance doc). Lazily create the store on first use (`s.diffs`); `Server.Close` removes the directory (wired in Task 7). Crash cleanup: the store lives under `os.MkdirTemp("", "middleman-mcp-")`, so a killed companion leaves an orphan dir in the OS temp area that standard temp cleanup reaps; do not build extra machinery.
 
 Stack tool behavior:
 - `GET .../stack` via `itemPath("pulls", ref) + "/stack"`. `not_found` (or empty-context response — verify how `getStackForPR` responds for a PR not in any stack by reading `huma_routes.go` around `:4855` and the `getStackForPR` handler) → `{present: false}`.
@@ -2396,7 +2397,7 @@ Stack tool behavior:
 
 Cover, with a fake daemon:
 - summary-only default: no `diff_file` key, all file rows passed through (no whitespace filtering), totals summed, `stale` passthrough true;
-- `emit_diff_file: true`: response path exists inside the store dir, file mode is `0600` (`os.Stat` + `assert.Equal(os.FileMode(0o600), info.Mode().Perm())`), content matches the specified serialization — non-empty patches verbatim with exactly ONE `diff --git` line per file (fake patches must include their own headers, and the test asserts no duplication), binary file emits a synthesized header plus `Binary files differ` — and a second call overwrites (same path, new content);
+- `emit_diff_file: true`: response path exists inside the store dir, file mode is `0600` (`os.Stat` + `assert.Equal(os.FileMode(0o600), info.Mode().Perm())`), content matches the specified serialization — non-empty patches verbatim with exactly ONE `diff --git` line per file (fake patches must include their own headers, and the test asserts no duplication), binary file emits a synthesized header plus `Binary files differ`, a rename-only file (empty patch, status `renamed`) keeps its `rename from`/`rename to` extended headers, and a file whose path contains a double quote or control character is quoted `patchPath`-style — and a second call overwrites (same path, new content);
 - serialized diff exceeding the 10 MiB cap → `diff_too_large` error, no file written;
 - issue ref → error with `invalid_request`;
 - daemon diff route failing → `diff_unavailable` error, no partial output;
@@ -2749,17 +2750,23 @@ package main
 // 14. CallTool middleman_get_item_diff for the PR — the real-daemon
 //     summary AND emit_diff_file paths are MANDATORY (spec requires
 //     proving route selection, real JSON shape, and temp-file output
-//     against the real daemon, not fake-daemon mocks). Seed a local
-//     bare git repo with base and head commits following the
-//     setupGitLabCloneFixture pattern
-//     (internal/server/e2etest/gitlab_sync_pin_test.go:36-62: build a
-//     worktree with gitcmd.New(), commit base then head, clone --bare
-//     to <dir>/origin.git), point the seeded repo/MR at it (local
-//     clone URL path + matching diff_head/base SHAs on the MR row —
-//     verify at implementation time which field the daemon's clone
-//     manager reads for the clone source: the config repo entry's
-//     clone URL or the MR's head_repo_clone_url; mirror what
-//     gitlab_sync_pin_test.go feeds through RepoRef.CloneURL).
+//     against the real daemon, not fake-daemon mocks). The daemon's
+//     /files and /diff routes read ONLY from the clone manager's
+//     deterministic local clone path — with no providers configured
+//     and sync idle, clone-URL fields on DB rows are never consulted,
+//     so the fixture must populate that path directly. Sequence:
+//     build a worktree with gitcmd.New(), commit base then head (per
+//     the setupGitLabCloneFixture pattern,
+//     internal/server/e2etest/gitlab_sync_pin_test.go:36-62), then
+//     `git clone --bare` it into the clone manager's per-repo path
+//     BEFORE starting the daemon. The daemon constructs
+//     gitclone.New(filepath.Join(dataDir, "clones"), ...)
+//     (cmd/middleman/main.go:542) and resolves repos via
+//     Manager.ClonePath(host, owner, name)
+//     (internal/gitclone/clone.go:66) — call ClonePath from the test
+//     against a gitclone.New over the same base dir to get the exact
+//     destination, and set the seeded MR row's diff_head/diff_base/
+//     merge_base SHAs to the fixture's head/base commit SHAs.
 //     Assert: summary has the expected file with additions/deletions;
 //     emit_diff_file returns a path to a 0600 file whose content
 //     starts with "diff --git" and contains the seeded change; ALSO

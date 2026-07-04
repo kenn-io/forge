@@ -63,6 +63,9 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 		{StackID: stackID, MergeRequestID: basePRID, Position: 1},
 		{StackID: stackID, MergeRequestID: prID, Position: 2},
 	}))
+	initialWorkflow, err := database.GetItemWorkflowState(ctx, repoID, db.ItemTypePR, 1)
+	require.NoError(err)
+	require.Nil(initialWorkflow, "MCP e2e claim must prove expected_status=new against missing workflow storage")
 
 	diffRepo, err := testutil.SetupDiffRepo(ctx, t.TempDir(), database)
 	require.NoError(err)
@@ -175,6 +178,12 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 	assert.Equal("new", claim.PreviousStatus)
 	assert.Equal("reviewing", claim.Status)
 	assert.Equal("mcp", claim.UpdatedSource)
+	storedWorkflow, err := database.GetItemWorkflowState(ctx, repoID, db.ItemTypePR, 1)
+	require.NoError(err)
+	require.NotNil(storedWorkflow)
+	assert.Equal(string(db.KanbanStatusReviewing), storedWorkflow.Status)
+	assert.Equal("mcp", storedWorkflow.UpdatedSource)
+	assert.Equal("mcp-e2e", storedWorkflow.UpdatedActor)
 
 	listed := callMCPTool[listByWorkflowOutput](t, session, "middleman_list_items_by_workflow_state", map[string]any{
 		"states": []string{"reviewing"},
@@ -386,7 +395,6 @@ func seedMCPPR(t *testing.T, database *db.DB, number int, title string) (int64, 
 	}
 	prID, err := database.UpsertMergeRequest(ctx, pr)
 	require.NoError(t, err)
-	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 	return repoID, prID
 }
 

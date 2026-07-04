@@ -1,0 +1,1 @@
+DROP TABLE middleman_item_workflow_state;

@@ -2114,9 +2114,15 @@ type listReposInput struct {
 }
 
 type repoRow struct {
-	Provider, PlatformHost, Owner, Name, RepoPath string // json snake tags
-	OpenPRCount, OpenIssueCount                   int
-	LastSyncCompletedAt, LastSyncError            string
+	Provider            string `json:"provider"`
+	PlatformHost        string `json:"platform_host"`
+	Owner               string `json:"owner"`
+	Name                string `json:"name"`
+	RepoPath            string `json:"repo_path"`
+	OpenPRCount         int    `json:"open_pr_count"`
+	OpenIssueCount      int    `json:"open_issue_count"`
+	LastSyncCompletedAt string `json:"last_sync_completed_at,omitempty"`
+	LastSyncError       string `json:"last_sync_error,omitempty"`
 }
 
 type listReposOutput struct {

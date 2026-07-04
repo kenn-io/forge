@@ -98,6 +98,9 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   stay content-sized (a flex-stretched region poisons the frozen
   `expandUsed` footprint and blocks re-expansion). Select tabs via
   `.kit-top-bar__tabs .kit-top-bar__tab`, never the bare class.
+  Provider-mode repo selector visibility must not move the tab row; non-provider
+  modes reserve its footprint unless embed config hides it
+  (`frontend/src/lib/components/layout/AppHeader.svelte::reserveProviderRepoSelectorSlot`).
 - Flash: one shared store (`@middleman/ui/stores/flash`); kit
   `FlashBanner` mounts once per shell; stacking (not latest-wins) is
   intended. Tests assert `.kit-flash-stack`.

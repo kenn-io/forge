@@ -25,12 +25,6 @@ type Server struct {
 	diffs  *diffFileStore
 }
 
-type diffFileStore struct{}
-
-func (d *diffFileStore) Close() error {
-	return nil
-}
-
 func New(opts Options) (*Server, error) {
 	if opts.ConfigPath == "" {
 		opts.ConfigPath = config.DefaultConfigPath()
@@ -51,6 +45,8 @@ func (s *Server) registerTools() {
 	s.registerReadTools()
 	s.registerCandidateTools()
 	s.registerItemTools()
+	s.registerDiffTools()
+	s.registerStackTools()
 }
 
 func (s *Server) RunStdio(ctx context.Context) error {

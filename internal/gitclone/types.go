@@ -18,6 +18,8 @@ type FileContent struct {
 type DiffFile struct {
 	Path             string `json:"path"`
 	OldPath          string `json:"old_path"`
+	OldMode          string `json:"-"`
+	NewMode          string `json:"-"`
 	Status           string `json:"status"` // added, modified, deleted, renamed, copied
 	IsBinary         bool   `json:"is_binary"`
 	IsGenerated      bool   `json:"is_generated"`

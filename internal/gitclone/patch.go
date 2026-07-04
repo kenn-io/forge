@@ -7,10 +7,6 @@ import (
 )
 
 func BuildPatch(file DiffFile) string {
-	if file.IsBinary || len(file.Hunks) == 0 {
-		return ""
-	}
-
 	oldPath := file.OldPath
 	if oldPath == "" {
 		oldPath = file.Path
@@ -27,6 +23,13 @@ func BuildPatch(file DiffFile) string {
 	var lines []string
 	lines = append(lines, "diff --git "+patchPath("a/"+oldPath)+" "+patchPath("b/"+file.Path))
 	lines = append(lines, fileModeHeaders(file)...)
+	if file.IsBinary {
+		lines = append(lines, "Binary files "+patchPath(oldHeaderPath)+" and "+patchPath(newHeaderPath)+" differ")
+		return strings.Join(lines, "\n") + "\n"
+	}
+	if len(file.Hunks) == 0 {
+		return strings.Join(lines, "\n") + "\n"
+	}
 	lines = append(lines, "--- "+patchPath(oldHeaderPath), "+++ "+patchPath(newHeaderPath))
 	for _, hunk := range file.Hunks {
 		oldRange := formatPatchRange(hunk.OldStart, hunk.OldCount)
@@ -51,17 +54,34 @@ func buildPatch(file DiffFile) string {
 }
 
 func fileModeHeaders(file DiffFile) []string {
+	var headers []string
 	switch file.Status {
 	case "added":
-		return []string{"new file mode 100644"}
+		return []string{"new file mode " + firstNonEmptyMode(file.NewMode, "100644")}
 	case "deleted":
-		return []string{"deleted file mode 100644"}
+		return []string{"deleted file mode " + firstNonEmptyMode(file.OldMode, "100644")}
 	case "renamed":
 		if file.OldPath != "" && file.OldPath != file.Path {
-			return []string{"rename from " + patchPath(file.OldPath), "rename to " + patchPath(file.Path)}
+			headers = append(headers, "rename from "+patchPath(file.OldPath), "rename to "+patchPath(file.Path))
+		}
+	case "copied":
+		if file.OldPath != "" && file.OldPath != file.Path {
+			headers = append(headers, "copy from "+patchPath(file.OldPath), "copy to "+patchPath(file.Path))
 		}
 	}
-	return nil
+	if file.OldMode != "" && file.NewMode != "" &&
+		file.OldMode != file.NewMode &&
+		file.OldMode != "000000" && file.NewMode != "000000" {
+		headers = append(headers, "old mode "+file.OldMode, "new mode "+file.NewMode)
+	}
+	return headers
+}
+
+func firstNonEmptyMode(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func patchPath(path string) string {

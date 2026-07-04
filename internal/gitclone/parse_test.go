@@ -1,6 +1,7 @@
 package gitclone
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -25,16 +26,42 @@ func TestParseRawZ(t *testing.T) {
 
 	assert.Equal("src/main.go", files[0].Path)
 	assert.Equal("modified", files[0].Status)
+	assert.Equal("100644", files[0].OldMode)
+	assert.Equal("100644", files[0].NewMode)
 
 	assert.Equal("src/new.go", files[1].Path)
 	assert.Equal("added", files[1].Status)
+	assert.Equal("000000", files[1].OldMode)
+	assert.Equal("100644", files[1].NewMode)
 
 	assert.Equal("src/old.go", files[2].Path)
 	assert.Equal("deleted", files[2].Status)
+	assert.Equal("100644", files[2].OldMode)
+	assert.Equal("000000", files[2].NewMode)
 
 	assert.Equal("src/after.go", files[3].Path)
 	assert.Equal("src/before.go", files[3].OldPath)
 	assert.Equal("renamed", files[3].Status)
+	assert.Equal("100644", files[3].OldMode)
+	assert.Equal("100644", files[3].NewMode)
+}
+
+func TestDiffFileModesStayOutOfJSON(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	raw := ":100644 100755 abc def M\x00scripts/run.sh\x00"
+	files := ParseRawZ([]byte(raw))
+	require.Len(files, 1)
+	assert.Equal("100644", files[0].OldMode)
+	assert.Equal("100755", files[0].NewMode)
+
+	data, err := json.Marshal(files[0])
+	require.NoError(err)
+	assert.NotContains(string(data), "OldMode")
+	assert.NotContains(string(data), "NewMode")
+	assert.NotContains(string(data), "old_mode")
+	assert.NotContains(string(data), "new_mode")
 }
 
 func TestParsePatch(t *testing.T) {
@@ -209,7 +236,11 @@ copy to src/copied.txt
 	assert.Equal("src/copied.txt", copied.Path)
 	assert.Zero(copied.Additions)
 	assert.Zero(copied.Deletions)
-	assert.Empty(copied.Patch)
+	assert.Contains(copied.Patch, "diff --git a/src/source.txt b/src/copied.txt\n")
+	assert.Contains(copied.Patch, "copy from src/source.txt\n")
+	assert.Contains(copied.Patch, "copy to src/copied.txt\n")
+	assert.NotContains(copied.Patch, "--- a/src/source.txt")
+	assert.NotContains(copied.Patch, "+++ b/src/copied.txt")
 	assert.Empty(copied.Hunks)
 }
 
@@ -354,4 +385,127 @@ func TestBuildPatchQuotesUnicodeSeparatorPaths(t *testing.T) {
 	assert.Contains(patch, `+++ "b/src/line\u2028separator\u2029file.go"`)
 	assert.NotContains(patch, "\u2028")
 	assert.NotContains(patch, "\u2029")
+}
+
+func TestBuildPatchCompletesHunklessExtendedHeaderSections(t *testing.T) {
+	assert := assert.New(t)
+
+	tests := []struct {
+		name     string
+		file     DiffFile
+		contains []string
+		absent   []string
+	}{
+		{
+			name: "rename only",
+			file: DiffFile{
+				Path: "src/new.go", OldPath: "src/old.go", Status: "renamed",
+			},
+			contains: []string{
+				"diff --git a/src/old.go b/src/new.go\n",
+				"rename from src/old.go\n",
+				"rename to src/new.go\n",
+			},
+			absent: []string{"--- ", "+++ ", "@@ "},
+		},
+		{
+			name: "copy only",
+			file: DiffFile{
+				Path: "src/copied.go", OldPath: "src/source.go", Status: "copied",
+			},
+			contains: []string{
+				"diff --git a/src/source.go b/src/copied.go\n",
+				"copy from src/source.go\n",
+				"copy to src/copied.go\n",
+			},
+			absent: []string{"--- ", "+++ ", "@@ "},
+		},
+		{
+			name: "mode only",
+			file: DiffFile{
+				Path: "scripts/run.sh", OldPath: "scripts/run.sh", Status: "modified",
+				OldMode: "100644", NewMode: "100755",
+			},
+			contains: []string{
+				"diff --git a/scripts/run.sh b/scripts/run.sh\n",
+				"old mode 100644\n",
+				"new mode 100755\n",
+			},
+			absent: []string{"--- ", "+++ ", "@@ "},
+		},
+		{
+			name: "binary",
+			file: DiffFile{
+				Path: "assets/logo.png", OldPath: "assets/logo.png", Status: "modified", IsBinary: true,
+			},
+			contains: []string{
+				"diff --git a/assets/logo.png b/assets/logo.png\n",
+				"Binary files a/assets/logo.png and b/assets/logo.png differ\n",
+			},
+			absent: []string{"--- ", "+++ ", "@@ "},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			patch := BuildPatch(tt.file)
+			for _, want := range tt.contains {
+				assert.Contains(patch, want)
+			}
+			for _, absent := range tt.absent {
+				assert.NotContains(patch, absent)
+			}
+			assert.True(strings.HasSuffix(patch, "\n"))
+		})
+	}
+}
+
+func TestBuildPatchUsesRealModesForContentChanges(t *testing.T) {
+	assert := assert.New(t)
+
+	patch := BuildPatch(DiffFile{
+		Path: "scripts/run.sh", OldPath: "scripts/run.sh", Status: "modified",
+		OldMode: "100644", NewMode: "100755",
+		Hunks: []Hunk{{
+			OldStart: 1, OldCount: 1, NewStart: 1, NewCount: 1,
+			Lines: []Line{
+				{Type: "delete", Content: "echo old", OldNum: 1},
+				{Type: "add", Content: "echo new", NewNum: 1},
+			},
+		}},
+	})
+
+	assert.Contains(patch, "old mode 100644\n")
+	assert.Contains(patch, "new mode 100755\n")
+	assert.Contains(patch, "--- a/scripts/run.sh\n")
+	assert.Contains(patch, "+++ b/scripts/run.sh\n")
+	assert.Contains(patch, "-echo old\n")
+	assert.Contains(patch, "+echo new\n")
+}
+
+func TestBuildPatchUsesRawModesForAddsAndDeletes(t *testing.T) {
+	assert := assert.New(t)
+
+	added := BuildPatch(DiffFile{
+		Path: "scripts/install.sh", Status: "added", OldMode: "000000", NewMode: "100755",
+		Hunks: []Hunk{{
+			OldStart: 0, OldCount: 0, NewStart: 1, NewCount: 1,
+			Lines: []Line{{Type: "add", Content: "#!/bin/sh", NewNum: 1}},
+		}},
+	})
+	assert.Contains(added, "new file mode 100755\n")
+	assert.Contains(added, "--- /dev/null\n")
+	assert.Contains(added, "+++ b/scripts/install.sh\n")
+
+	deleted := BuildPatch(DiffFile{
+		Path: "scripts/remove.sh", OldPath: "scripts/remove.sh", Status: "deleted",
+		OldMode: "100755", NewMode: "000000",
+		Hunks: []Hunk{{
+			OldStart: 1, OldCount: 1, NewStart: 0, NewCount: 0,
+			Lines: []Line{{Type: "delete", Content: "#!/bin/sh", OldNum: 1}},
+		}},
+	})
+	assert.Contains(deleted, "deleted file mode 100755\n")
+	assert.Contains(deleted, "--- a/scripts/remove.sh\n")
+	assert.Contains(deleted, "+++ /dev/null\n")
 }

@@ -30,6 +30,8 @@ func ParseRawZ(data []byte) []DiffFile {
 			i++
 			continue
 		}
+		oldMode := strings.TrimPrefix(fields[0], ":")
+		newMode := fields[1]
 		statusRaw := fields[4]
 		status, isRenameOrCopy := rawStatusToString(statusRaw)
 
@@ -56,6 +58,8 @@ func ParseRawZ(data []byte) []DiffFile {
 		files = append(files, DiffFile{
 			Path:    path,
 			OldPath: oldPath,
+			OldMode: oldMode,
+			NewMode: newMode,
 			Status:  status,
 		})
 		i++
@@ -97,14 +101,12 @@ func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 	}
 
 	pathIndex := newDiffFilePathIndex(rawFiles)
-	touched := make(map[int]bool, len(fileDiffs))
 
 	for _, fd := range fileDiffs {
 		i, ok := matchFileDiff(rawFiles, pathIndex, fd)
 		if !ok {
 			continue
 		}
-		touched[i] = true
 
 		// Detect binary from extended headers.
 		for _, ext := range fd.Extended {
@@ -185,7 +187,7 @@ func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 		}
 	}
 
-	for i := range touched {
+	for i := range rawFiles {
 		rawFiles[i].Patch = buildPatch(rawFiles[i])
 	}
 

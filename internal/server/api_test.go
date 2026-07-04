@@ -18366,6 +18366,106 @@ func TestAPIGetDiff_SingleCommit(t *testing.T) {
 	require.Len(*resp.JSON200.Files, 1)
 }
 
+func TestAPIGetDiffIncludesCompletePatchesForHunklessAndBinaryChanges(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	cloneBase := filepath.Join(dir, "clones")
+	bare := filepath.Join(cloneBase, "github.com", "acme", "widget.git")
+	work := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	runGit(t, dir, "clone", bare, work)
+	runGit(t, work, "config", "user.email", "test@test.com")
+	runGit(t, work, "config", "user.name", "Test")
+
+	require.NoError(os.MkdirAll(filepath.Join(work, "docs"), 0o755))
+	require.NoError(os.MkdirAll(filepath.Join(work, "src"), 0o755))
+	require.NoError(os.MkdirAll(filepath.Join(work, "scripts"), 0o755))
+	require.NoError(os.MkdirAll(filepath.Join(work, "assets"), 0o755))
+	require.NoError(os.WriteFile(filepath.Join(work, "scripts", "mode-only.sh"), []byte("#!/bin/sh\necho mode\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "docs", "old-name.md"), []byte("rename fixture\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "src", "source.txt"), []byte("copy fixture\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "assets", "image.bin"), []byte{0x00, 0x01, 0x02, 0x03}, 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "scripts", "content-mode.sh"), []byte("#!/bin/sh\necho old\n"), 0o644))
+	runGit(t, work, "add", "-A")
+	runGit(t, work, "commit", "-m", "base diff fixture")
+	runGit(t, work, "push", "origin", "main")
+	baseSHA := testGitSHA(t, work, "HEAD")
+
+	runGit(t, work, "checkout", "-b", "pr")
+	require.NoError(os.Chmod(filepath.Join(work, "scripts", "mode-only.sh"), 0o755))
+	runGit(t, work, "mv", "docs/old-name.md", "docs/new-name.md")
+	data, err := os.ReadFile(filepath.Join(work, "src", "source.txt"))
+	require.NoError(err)
+	require.NoError(os.WriteFile(filepath.Join(work, "src", "copied.txt"), data, 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "assets", "image.bin"), []byte{0x00, 0x04, 0x05, 0x06}, 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "scripts", "content-mode.sh"), []byte("#!/bin/sh\necho new\n"), 0o644))
+	require.NoError(os.Chmod(filepath.Join(work, "scripts", "content-mode.sh"), 0o755))
+	runGit(t, work, "add", "-A")
+	runGit(t, work, "commit", "-m", "exercise hunkless diff patches")
+	runGit(t, work, "push", "origin", "pr")
+	headSHA := testGitSHA(t, work, "HEAD")
+
+	database := dbtest.Open(t)
+	seedPR(t, database, "acme", "widget", 1)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, baseSHA, baseSHA))
+	require.NoError(database.UpdatePlatformSHAs(ctx, repoID, 1, headSHA, baseSHA))
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database,
+		nil,
+		[]ghclient.RepoRef{{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+		Clones: gitclone.New(cloneBase, nil),
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls/gh/acme/widget/1/diff", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var body diffResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+
+	renamed := requireServerDiffFile(t, body.Files, "docs/new-name.md")
+	assert.Contains(renamed.Patch, "diff --git a/docs/old-name.md b/docs/new-name.md\n")
+	assert.Contains(renamed.Patch, "rename from docs/old-name.md\n")
+	assert.Contains(renamed.Patch, "rename to docs/new-name.md\n")
+	assert.NotContains(renamed.Patch, "--- a/docs/old-name.md")
+
+	copied := requireServerDiffFile(t, body.Files, "src/copied.txt")
+	assert.Contains(copied.Patch, "diff --git a/src/source.txt b/src/copied.txt\n")
+	assert.Contains(copied.Patch, "copy from src/source.txt\n")
+	assert.Contains(copied.Patch, "copy to src/copied.txt\n")
+	assert.NotContains(copied.Patch, "--- a/src/source.txt")
+
+	modeOnly := requireServerDiffFile(t, body.Files, "scripts/mode-only.sh")
+	assert.Contains(modeOnly.Patch, "old mode 100644\n")
+	assert.Contains(modeOnly.Patch, "new mode 100755\n")
+	assert.NotContains(modeOnly.Patch, "--- a/scripts/mode-only.sh")
+
+	binary := requireServerDiffFile(t, body.Files, "assets/image.bin")
+	assert.Contains(binary.Patch, "Binary files a/assets/image.bin and b/assets/image.bin differ\n")
+	assert.NotContains(binary.Patch, "--- a/assets/image.bin")
+
+	contentMode := requireServerDiffFile(t, body.Files, "scripts/content-mode.sh")
+	assert.Contains(contentMode.Patch, "old mode 100644\n")
+	assert.Contains(contentMode.Patch, "new mode 100755\n")
+	assert.Contains(contentMode.Patch, "--- a/scripts/content-mode.sh\n")
+	assert.Contains(contentMode.Patch, "+echo new\n")
+}
+
 func TestAPIGetRepoCommitDiff(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -23989,7 +24089,10 @@ func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *tes
 	assert.Equal("copied", copied.Status)
 	assert.Zero(copied.Additions)
 	assert.Zero(copied.Deletions)
-	assert.Empty(copied.Patch)
+	assert.Contains(copied.Patch, "diff --git a/src/a.txt b/src/z.txt\n")
+	assert.Contains(copied.Patch, "copy from src/a.txt\n")
+	assert.Contains(copied.Patch, "copy to src/z.txt\n")
+	assert.NotContains(copied.Patch, "--- a/src/a.txt")
 	require.NotNil(copied.Hunks)
 	assert.Empty(*copied.Hunks)
 }
@@ -24284,6 +24387,22 @@ func requireWorkspaceDiffFile(
 	}
 	require.Failf(t, "workspace diff file not found", "path %q", path)
 	return generated.DiffFile{}
+}
+
+func requireServerDiffFile(
+	t *testing.T,
+	files []gitclone.DiffFile,
+	path string,
+) gitclone.DiffFile {
+	t.Helper()
+
+	for _, file := range files {
+		if file.Path == path {
+			return file
+		}
+	}
+	require.Failf(t, "server diff file not found", "path %q", path)
+	return gitclone.DiffFile{}
 }
 
 func assertWorkspaceDiffPaths(

@@ -507,6 +507,15 @@ func (d *DB) SetItemWorkflowState(
 ```
 
 Byte-limit validation for source/actor/reason lives at the server layer (Task 6), not here.
+Vocabulary validation DOES live here, at the DB API boundary: reject any
+`itemType` other than `ItemTypePR`/`ItemTypeIssue` and any `Status` (or
+non-empty `ExpectedStatus`) outside new/reviewing/waiting/awaiting_merge
+with a descriptive error before touching the table. A typo like
+`"pull_request"` would otherwise silently key a separate row, so canonical
+readers see the item as effective-"new" and expected-status conflict
+detection is bypassed. Required tests: invalid item type on all three
+funcs, invalid status and invalid expected_status on SetItemWorkflowState,
+each asserting an error and (for writes) that no row was created.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -1991,14 +2000,30 @@ type repoFilterInput struct {
 	Name         string `json:"name,omitempty"`
 }
 // queryValue renders "provider|platform_host/owner/name" for the daemon's
-// repo query param ("" when the filter is empty). The daemon filter format
-// REQUIRES the host segment, but platform_host is optional on tool inputs:
-// when it is empty, resolve the provider's default host via
-// platform.DefaultHost (internal/platform/metadata.go) before rendering —
-// never emit a host-less filter, it would be malformed or unmatchable.
-// Required test: {provider: "github", owner: "acme", name: "widget"} with
-// no platform_host renders "github|github.com/acme/widget".
-func (r repoFilterInput) queryValue() string
+// repo query param ("", nil when the filter is entirely empty). Validate
+// BEFORE rendering: a non-empty filter requires provider, owner, AND name
+// all set — a partial filter (any of the three missing) is an error, never
+// a silently broadened or malformed query. Do not route provider through
+// NormalizeKind's empty-means-github default; an empty provider on a
+// non-empty filter is invalid input. The daemon filter format REQUIRES the
+// host segment, but platform_host is optional on tool inputs: when it is
+// empty, resolve the provider's default host via platform.DefaultHost
+// (internal/platform/metadata.go); if the provider is unknown to
+// DefaultHost and no platform_host was given, return an error naming the
+// provider — never emit a host-less filter.
+// Required tests:
+//   - {provider: "github", owner: "acme", name: "widget"}, no
+//     platform_host → "github|github.com/acme/widget", nil.
+//   - {} (all empty) → "", nil.
+//   - {owner: "acme", name: "widget"} (no provider) → error.
+//   - {provider: "github", owner: "acme"} (no name) → error.
+//   - {provider: "nonesuch", owner: "a", name: "b"}, no platform_host →
+//     error naming "nonesuch".
+//   - {provider: "nonesuch", platform_host: "git.example.com", owner: "a",
+//     name: "b"} → "nonesuch|git.example.com/a/b", nil (explicit host
+//     needs no DefaultHost lookup).
+// Tool handlers map the error to an invalid_params MCP tool error.
+func (r repoFilterInput) queryValue() (string, error)
 
 // itemRef is the compact provider-aware item identity on every output.
 type itemRef struct {
@@ -2233,6 +2258,12 @@ type candidateWorkflow struct {
 // onto the MCP wire is a contract bug. Audit all output structs in Tasks
 // 8-12 for missing tags (repoRow in Task 8 has the same shorthand problem);
 // add a marshaling test per tool asserting the documented key names.
+// This rule applies ONLY to MCP output (and input) structs. The daemon
+// DECODE structs (daemonPull, daemonIssue, daemonRepoSummary,
+// daemonActivityItem, ... — Task 8) intentionally use Go-name keys like
+// `json:"Number"` because the daemon API embeds db types that serialize
+// Go field names; do not "fix" those tags to snake_case, that would break
+// decoding.
 type candidateActivity struct {
 	LatestAt   string   `json:"latest_at"`
 	EventCount int      `json:"event_count"`
@@ -2395,10 +2426,14 @@ type getItemDiffInput struct {
 	EmitDiffFile bool         `json:"emit_diff_file,omitempty"`
 }
 type diffFileRow struct {
-	Path, OldPath, Status  string
-	IsBinary, IsGenerated  bool
-	Additions, Deletions   int
-} // json snake tags matching the spec example
+	Path        string `json:"path"`
+	OldPath     string `json:"old_path,omitempty"`
+	Status      string `json:"status"`
+	IsBinary    bool   `json:"is_binary"`
+	IsGenerated bool   `json:"is_generated"`
+	Additions   int    `json:"additions"`
+	Deletions   int    `json:"deletions"`
+} // include diffFileRow keys in this tool's required marshaling test
 type diffFileHandle struct{ Path string `json:"path"`; Bytes int64 `json:"bytes"` }
 type getItemDiffOutput struct {
 	Stale          bool            `json:"stale"`

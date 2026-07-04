@@ -185,6 +185,51 @@ func TestOpenResyncsKanbanRowsBeforeDroppingKanbanState(t *testing.T) {
 	assert.False(tableExistsForTest(t, d.ReadDB(), "middleman_kanban_state"))
 }
 
+func TestOpenNormalizesInvalidWorkflowStatusesDuringCutover(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "old.db")
+
+	openAtVersionForTest(t, path, 37, func(raw *sql.DB) {
+		_, err := raw.Exec(`INSERT INTO middleman_repos (
+				id, platform, platform_host, owner, name, repo_path,
+				owner_key, name_key, repo_path_key, created_at
+			)
+			VALUES (
+				1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+				'acme', 'widget', 'acme/widget', datetime('now')
+			)`)
+		require.NoError(t, err)
+		_, err = raw.Exec(`INSERT INTO middleman_merge_requests
+			(id, repo_id, platform_id, number, created_at, updated_at, last_activity_at)
+			VALUES (1, 1, 101, 7, datetime('now'), datetime('now'), datetime('now'))`)
+		require.NoError(t, err)
+		_, err = raw.Exec(`INSERT INTO middleman_kanban_state (merge_request_id, status, updated_at)
+			VALUES (1, 'triage', '2026-07-01 10:00:00')`)
+		require.NoError(t, err)
+		_, err = raw.Exec(`INSERT INTO middleman_item_workflow_state
+			(repo_id, item_type, item_number, status, updated_at)
+			VALUES (1, 'pr', 9, 'bogus', '2026-07-01 10:00:00')`)
+		require.NoError(t, err)
+	})
+
+	d, err := Open(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, d.Close()) })
+
+	var resynced, orphaned string
+	err = d.ReadDB().QueryRow(`SELECT status FROM middleman_item_workflow_state
+		WHERE repo_id = 1 AND item_type = 'pr' AND item_number = 7`).Scan(&resynced)
+	require.NoError(t, err)
+	assert.Equal("new", resynced)
+	err = d.ReadDB().QueryRow(`SELECT status FROM middleman_item_workflow_state
+		WHERE repo_id = 1 AND item_type = 'pr' AND item_number = 9`).Scan(&orphaned)
+	require.NoError(t, err)
+	assert.Equal("new", orphaned)
+}
+
 func TestOpenCreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "new.db")

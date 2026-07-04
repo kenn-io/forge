@@ -611,24 +611,19 @@ Behavior:
   never inlined into the MCP response.
 - With `emit_diff_file`, the companion fetches `GET /pulls/{...}/diff` (a
   structured JSON response with per-file patch text, not raw diff bytes) and
-  serializes it into one unified diff file. Each non-empty `patch` value is
-  already a complete per-file patch that begins with its own `diff --git`
-  header and ends with a newline, so the companion concatenates non-empty
-  patches verbatim, in daemon response order, adding nothing. Files with an
-  empty `patch` (binary files and hunk-less metadata-only changes:
-  rename-only, copy-only, and mode-only) get a section synthesized by a
-  shared helper in the gitclone package — never hand-rolled patch syntax in
-  the companion — so it applies the same git-style path quoting and the same
-  extended headers (`rename from`/`rename to`, `copy from`/`copy to`,
-  `old mode`/`new mode`, new/deleted-file headers) that git emits, with
-  binary files additionally getting a `Binary files differ` line. Mode
-  fidelity applies to every changed file, not only hunk-less ones: the diff
-  metadata must carry old/new file modes, the shared mode-header logic is
-  used by both the full-patch builder and the empty-patch helper (so a
-  content+mode change keeps its mode headers next to its hunks), and
-  added/deleted files emit their real modes rather than an assumed
-  `100644` (which remains only as the fallback when mode metadata is
-  absent).
+  serializes it into one unified diff file. The patch text is the single
+  canonical serialization form: the daemon guarantees every changed file's
+  `patch` value is a complete per-file section — starting with its own
+  `diff --git` header, carrying the extended headers git would emit
+  (`rename from`/`rename to`, `copy from`/`copy to`, `old mode`/`new mode`,
+  real new/deleted file modes) with git-style path quoting, containing hunks
+  when the file has content changes, and a `Binary files differ` line for
+  binary files. The companion concatenates `patch` values verbatim in daemon
+  response order, adding and synthesizing nothing; a changed file with an
+  empty `patch` is a daemon bug and the tool must fail rather than emit a
+  partial diff. File modes are deliberately NOT exposed as separate API
+  fields — one representation only, so structured metadata and patch text
+  cannot drift apart.
   Fidelity rule: the emitted file is a faithful serialization of everything
   the daemon's cached diff data carries — no changed file may be silently
   dropped, and rename-only, copy-only, and mode-only changes keep their

@@ -296,7 +296,7 @@ The companion should use existing daemon routes where they already fit:
 - `GET /pulls/{provider}/{owner}/{name}/{number}/files`
 - `GET /issues` (including the `q` search filter)
 - `GET /issues/{provider}/{owner}/{name}/{number}`
-- `GET /stacks`
+- `GET /pulls/{provider}/{owner}/{name}/{number}/stack`
 - `GET /workspaces`
 
 Add focused daemon endpoints only for the generic local workflow state:
@@ -608,7 +608,12 @@ Inputs: provider-aware PR ref.
 
 Behavior:
 
-- Wraps `GET /stacks` and selects the stack containing the given PR.
+- Wraps the provider-aware per-PR stack route,
+  `GET /pulls/{provider}/{owner}/{name}/{number}/stack` (host-prefixed variant
+  for non-default hosts). The repo-wide `GET /stacks` list is not used: it
+  filters by owner/name only, so with the same owner/name on multiple
+  providers or hosts it could select the wrong stack and violate the repo
+  identity invariant.
 - Returns `present: false` when the PR is not part of a stack.
 - When present, returns the stack health plus ordered members, each with
   number, title, state, draft flag, and local workflow status, and marks which

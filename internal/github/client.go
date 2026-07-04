@@ -2843,6 +2843,9 @@ func applyReviewSuggestionEdits(
 	suggestions []platform.ReviewSuggestion,
 ) (string, error) {
 	lines, newline, trailingNewline := splitGitHubSuggestionContent(content)
+	if lines == nil {
+		lines = []string{}
+	}
 	edits := make([]reviewSuggestionEdit, 0, len(suggestions))
 	for _, suggestion := range suggestions {
 		if strings.ToLower(strings.TrimSpace(suggestion.Range.Side)) != "right" {

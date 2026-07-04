@@ -612,13 +612,15 @@ Behavior:
 - With `emit_diff_file`, the companion fetches `GET /pulls/{...}/diff` (a
   structured JSON response with per-file patch text, not raw diff bytes) and
   serializes it into one unified diff file. The patch text is the single
-  canonical serialization form: the daemon guarantees every changed file's
-  `patch` value is a complete per-file section — starting with its own
-  `diff --git` header, carrying the extended headers git would emit
-  (`rename from`/`rename to`, `copy from`/`copy to`, `old mode`/`new mode`,
-  real new/deleted file modes) with git-style path quoting, containing hunks
-  when the file has content changes, and a `Binary files differ` line for
-  binary files. The companion concatenates `patch` values verbatim in daemon
+  canonical serialization form: on the diff route, the daemon guarantees
+  every changed file's `patch` value is a complete per-file section —
+  starting with its own `diff --git` header, carrying the extended headers
+  git would emit (`rename from`/`rename to`, `copy from`/`copy to`,
+  `old mode`/`new mode`, real new/deleted file modes) with git-style path
+  quoting, `---`/`+++` lines and hunks only when the file has content
+  changes, and a `Binary files <a> and <b> differ` line for binary files.
+  This guarantee is scoped to patch-serving routes; the files summary route
+  stays metadata-only with empty patch fields. The companion concatenates `patch` values verbatim in daemon
   response order, adding and synthesizing nothing; a changed file with an
   empty `patch` is a daemon bug and the tool must fail rather than emit a
   partial diff. File modes are deliberately NOT exposed as separate API

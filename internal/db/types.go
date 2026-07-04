@@ -385,6 +385,37 @@ type SetItemWorkflowStateParams struct {
 	Reason         string
 }
 
+type ListWorkflowStatesOpts struct {
+	RepoFilters   []RepoFilter
+	ItemTypes     []string
+	States        []string
+	IncludeClosed bool
+	Limit         int
+	Cursor        string
+}
+
+type WorkflowStateListRow struct {
+	Platform       string
+	PlatformHost   string
+	Owner          string
+	Name           string
+	RepoPath       string
+	ItemType       string
+	Number         int
+	Title          string
+	State          string
+	URL            string
+	Author         string
+	IsDraft        bool
+	LastActivityAt time.Time
+	Status         string
+	HasRow         bool
+	UpdatedAt      *time.Time
+	UpdatedSource  string
+	UpdatedActor   string
+	UpdatedReason  string
+}
+
 type ListMergeRequestsOpts struct {
 	RepoID       int64
 	PlatformHost string

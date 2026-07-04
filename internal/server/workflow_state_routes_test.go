@@ -3,6 +3,7 @@ package server
 import (
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,6 +30,15 @@ func TestWorkflowStateOpenAPIConstrainsWriteBody(t *testing.T) {
 	assert.Equal("boolean", string(force.Type))
 	assert.Contains(force.Description, "deliberate unconditional override")
 	assert.Contains(force.Description, "mutually exclusive")
+	contract, ok := schema.Extensions["oneOf"].([]*huma.Schema)
+	require.True(ok)
+	require.Len(contract, 2)
+	assert.Contains(contract[0].Required, "expected_status")
+	assert.Equal([]any{false}, contract[0].Properties["force"].Enum)
+	assert.Contains(contract[1].Required, "force")
+	assert.Equal([]any{true}, contract[1].Properties["force"].Enum)
+	require.NotNil(contract[1].Not)
+	assert.Contains(contract[1].Not.Required, "expected_status")
 
 	source := schema.Properties["source"]
 	require.NotNil(source)

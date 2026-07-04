@@ -51,10 +51,13 @@ that single daemon response, so MCP clients never receive summary metadata from
 one diff snapshot and patch text from another. Temp-file names are deterministic
 per item but include a hash of the full provider/host/owner/name/number tuple
 (`internal/mcpserver/tools_diff.go::diffFileName`) so sanitized nested owner
-paths cannot collide. The daemon's gitclone diff parser must not silently omit
-changed files when raw metadata and parsed patch sections disagree; unmatched
-patch sections are preserved as structured diff rows so incomplete data is
-visible instead of hidden.
+paths cannot collide. The filename identity canonicalizes provider aliases and
+omitted provider default hosts before hashing, so `gh`/`github` and omitted
+versus explicit `github.com` write the same per-item evidence file. The
+daemon's gitclone diff parser must not silently omit changed files when raw
+metadata and parsed patch sections disagree; unmatched patch sections are
+preserved as structured diff rows so incomplete data is visible instead of
+hidden.
 
 The HTTP transport serves streamable MCP at the listener root, requires a
 non-blank bearer token from `--http-token-env`, rejects non-loopback binds, and

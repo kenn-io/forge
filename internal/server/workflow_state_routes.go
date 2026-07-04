@@ -53,6 +53,40 @@ type setWorkflowStateBody struct {
 	Reason         string `json:"reason,omitempty" maxLength:"500"`
 }
 
+func (setWorkflowStateBody) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	if schema.Extensions == nil {
+		schema.Extensions = map[string]any{}
+	}
+	schema.Extensions["oneOf"] = []*huma.Schema{
+		{
+			Type:     huma.TypeObject,
+			Required: []string{"expected_status"},
+			Properties: map[string]*huma.Schema{
+				"expected_status": schema.Properties["expected_status"],
+				"force": {
+					Type: huma.TypeBoolean,
+					Enum: []any{false},
+				},
+			},
+		},
+		{
+			Type:     huma.TypeObject,
+			Required: []string{"force"},
+			Properties: map[string]*huma.Schema{
+				"force": {
+					Type: huma.TypeBoolean,
+					Enum: []any{true},
+				},
+			},
+			Not: &huma.Schema{
+				Type:     huma.TypeObject,
+				Required: []string{"expected_status"},
+			},
+		},
+	}
+	return schema
+}
+
 type setWorkflowStateInput struct {
 	ItemType     string `path:"item_type" enum:"pr,issue"`
 	Provider     string `path:"provider"`

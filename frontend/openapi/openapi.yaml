@@ -5953,6 +5953,35 @@ components:
       type: object
     SetWorkflowStateBody:
       additionalProperties: false
+      oneOf:
+        - properties:
+            expected_status:
+              description: Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
+              enum:
+                - new
+                - reviewing
+                - waiting
+                - awaiting_merge
+              type: string
+            force:
+              enum:
+                - false
+              type: boolean
+          required:
+            - expected_status
+          type: object
+        - not:
+            required:
+              - expected_status
+            type: object
+          properties:
+            force:
+              enum:
+                - true
+              type: boolean
+          required:
+            - force
+          type: object
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.

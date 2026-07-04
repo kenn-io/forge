@@ -193,6 +193,37 @@ func TestDiffFileNameUsesCollisionResistantIdentity(t *testing.T) {
 	assert.True(strings.HasSuffix(second, ".diff"))
 }
 
+func TestDiffFileNameCanonicalizesProviderIdentity(t *testing.T) {
+	assert := assert.New(t)
+
+	omittedDefaultHost := diffFileName(itemRefInput{
+		Type:     "pr",
+		Provider: "github",
+		Owner:    "acme",
+		Name:     "widget",
+		Number:   7,
+	})
+	explicitDefaultHost := diffFileName(itemRefInput{
+		Type:         "pr",
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		Number:       7,
+	})
+	providerAlias := diffFileName(itemRefInput{
+		Type:     "pr",
+		Provider: "gh",
+		Owner:    "acme",
+		Name:     "widget",
+		Number:   7,
+	})
+
+	assert.Equal(omittedDefaultHost, explicitDefaultHost)
+	assert.Equal(omittedDefaultHost, providerAlias)
+	assert.Contains(omittedDefaultHost, "github-github.com-acme-widget-pr-7-")
+}
+
 func TestGetItemDiffRejectsIssueAndEmptyPatch(t *testing.T) {
 	require := require.New(t)
 

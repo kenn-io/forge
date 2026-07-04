@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 const maxMCPDiffFileBytes = 10 << 20
@@ -198,6 +199,7 @@ func isDiffIdentityNotFound(derr *daemonError, msg string) bool {
 }
 
 func diffFileName(ref itemRefInput) string {
+	ref = canonicalDiffFileRef(ref)
 	identity := fmt.Sprintf(
 		"%s\x00%s\x00%s\x00%s\x00%d",
 		ref.Provider,
@@ -215,6 +217,22 @@ func diffFileName(ref itemRefInput) string {
 		ref.Number,
 		sum[:12],
 	)
+}
+
+func canonicalDiffFileRef(ref itemRefInput) itemRefInput {
+	ref.Provider = strings.TrimSpace(ref.Provider)
+	ref.PlatformHost = strings.TrimSpace(ref.PlatformHost)
+	ref.Owner = strings.Trim(strings.TrimSpace(ref.Owner), "/")
+	ref.Name = strings.Trim(strings.TrimSpace(ref.Name), "/")
+	kind, err := platform.NormalizeKind(ref.Provider)
+	if err != nil {
+		return ref
+	}
+	ref.Provider = string(kind)
+	if host, ok := platform.HostOrDefault(kind, ref.PlatformHost); ok {
+		ref.PlatformHost = strings.ToLower(strings.TrimSpace(host))
+	}
+	return ref
 }
 
 func sanitizeDiffName(value string) string {

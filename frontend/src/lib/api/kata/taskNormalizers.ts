@@ -5,6 +5,11 @@ import type {
   KataProjectMetadata,
   KataProjectSummary,
   KataProjectsResponse,
+  KataReachableGraphDepth,
+  KataReachableGraphEdge,
+  KataReachableGraphEdgeKind,
+  KataReachableGraphResponse,
+  KataReachableGraphUnresolvedRef,
   KataRecurrence,
   KataRecurrenceResponse,
   KataRecurrencesResponse,
@@ -160,6 +165,14 @@ function normalizeClosedReason(
   return undefined;
 }
 
+function normalizeReachableGraphDepth(value: unknown): KataReachableGraphDepth {
+  return value === "1" || value === "2" || value === "3" ? value : "full";
+}
+
+function normalizeReachableGraphEdgeKind(value: unknown): KataReachableGraphEdgeKind {
+  return value === "parent" || value === "related" ? value : "blocks";
+}
+
 function normalizeViewName(value: unknown, fallback: KataTaskViewName = "today"): KataTaskViewName {
   if (
     value === "inbox" ||
@@ -257,6 +270,11 @@ function parentShortID(
   return { hasValue: false, value: undefined };
 }
 
+function projectNameFromQualifiedID(qualifiedID: string): string {
+  const separator = qualifiedID.indexOf("#");
+  return separator > 0 ? qualifiedID.slice(0, separator) : "";
+}
+
 export function normalizeKataTaskSummary(raw: unknown, labelRows?: KataTaskLabel[]): KataTaskSummary {
   const issue = isObject(raw) ? raw : {};
   const parent = parentRef(issue);
@@ -264,6 +282,7 @@ export function normalizeKataTaskSummary(raw: unknown, labelRows?: KataTaskLabel
   const blocks = optionalLinkPeers(issue, "blocks");
   const blockedBy = optionalLinkPeers(issue, "blocked_by");
   const related = optionalLinkPeers(issue, "related");
+  const qualifiedID = stringValue(issue.qualified_id);
   const childCounts = isObject(issue.child_counts)
     ? { open: numberValue(issue.child_counts.open), total: numberValue(issue.child_counts.total) }
     : undefined;
@@ -272,12 +291,12 @@ export function normalizeKataTaskSummary(raw: unknown, labelRows?: KataTaskLabel
     uid: stringValue(issue.uid),
     project_id: numberValue(issue.project_id),
     short_id: stringValue(issue.short_id),
-    qualified_id: stringValue(issue.qualified_id),
+    qualified_id: qualifiedID,
     title: stringValue(issue.title),
     body: optionalString(issue.body),
     status: normalizeStatus(issue.status),
     project_uid: stringValue(issue.project_uid),
-    project_name: stringValue(issue.project_name),
+    project_name: stringValue(issue.project_name, projectNameFromQualifiedID(qualifiedID)),
     metadata: sanitizeIssueMetadata(issue.metadata),
     revision: numberValue(issue.revision),
     owner: optionalString(issue.owner),
@@ -297,6 +316,40 @@ export function normalizeKataTaskSummary(raw: unknown, labelRows?: KataTaskLabel
     closed_reason: normalizeClosedReason(issue.closed_reason),
     closed_at: optionalString(issue.closed_at),
     deleted_at: optionalString(issue.deleted_at),
+  };
+}
+
+function normalizeReachableGraphEdge(raw: unknown): KataReachableGraphEdge {
+  const edge = isObject(raw) ? raw : {};
+  return {
+    from_uid: stringValue(edge.from_uid),
+    to_uid: stringValue(edge.to_uid),
+    kind: normalizeReachableGraphEdgeKind(edge.kind),
+    layout: edge.layout !== false,
+  };
+}
+
+function normalizeReachableGraphUnresolvedRef(raw: unknown): KataReachableGraphUnresolvedRef {
+  const ref = isObject(raw) ? raw : {};
+  return {
+    uid: stringValue(ref.uid),
+    side: ref.side === "to" ? "to" : "from",
+    kind: normalizeReachableGraphEdgeKind(ref.kind),
+    other_uid: stringValue(ref.other_uid),
+  };
+}
+
+export function normalizeKataReachableGraph(raw: unknown): KataReachableGraphResponse {
+  const body = bodyOf(raw);
+  const source = isObject(body) ? body : {};
+  return {
+    source_uid: stringValue(source.source_uid),
+    depth: normalizeReachableGraphDepth(source.depth),
+    hide_done: source.hide_done === true,
+    nodes: arrayValue(source.nodes).map((node) => normalizeKataTaskSummary(node)),
+    edges: arrayValue(source.edges).map(normalizeReachableGraphEdge),
+    unresolved_refs: arrayValue(source.unresolved_refs).map(normalizeReachableGraphUnresolvedRef),
+    fetched_at: stringValue(source.fetched_at, new Date().toISOString()),
   };
 }
 

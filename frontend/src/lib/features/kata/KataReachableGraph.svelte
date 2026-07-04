@@ -13,7 +13,7 @@
   } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
 
-  import type { KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
+  import type { KataReachableGraphResponse, KataTaskAPI, KataTaskSummary } from "../../api/kata/taskTypes.js";
   import {
     recordKataGraphDebugEvent,
     resetKataGraphDebug,
@@ -26,7 +26,6 @@
     type KataGraphDepthLimit,
     type KataGraphEdge,
     type KataGraphLayoutDirection,
-    type KataGraphMissingRef,
     type KataGraphNode,
   } from "./kataReachableGraph.js";
 
@@ -52,25 +51,23 @@
   }
 
   interface Props {
-    sourceUID: string;
+    api: KataTaskAPI;
+    sourceIssue: KataTaskSummary;
     selectedUID: string | null;
-    tasks: readonly KataTaskSummary[];
-    selectedDetail?: KataTaskDetail | null | undefined;
     layoutDirection?: KataGraphLayoutDirection | undefined;
     onBack: () => void;
     onSelectIssue: (uid: string) => void;
-    onRequestMissingTasks?: ((refs: readonly KataGraphMissingRef[]) => void) | undefined;
+    onGraphTasksLoaded?: ((tasks: readonly KataTaskSummary[]) => void) | undefined;
   }
 
   let {
-    sourceUID,
+    api,
+    sourceIssue,
     selectedUID,
-    tasks,
-    selectedDetail = null,
     layoutDirection = "LR",
     onBack,
     onSelectIssue,
-    onRequestMissingTasks = undefined,
+    onGraphTasksLoaded = undefined,
   }: Props = $props();
 
   const graphPreferencesStorageKey = "middleman:kata:reachableGraphPreferences/v1";
@@ -87,17 +84,18 @@
   let depthLimit = $state<KataGraphDepthLimit>(initialGraphPreferences.depthLimit);
   let layoutMode = $state<KataGraphLayoutMode>(initialGraphPreferences.layoutMode);
   let graphDirectionOverride = $state<KataGraphLayoutDirection | null>(initialGraphPreferences.layoutDirection);
+  let graphResponse = $state.raw<KataReachableGraphResponse | null>(null);
+  let graphLoading = $state(false);
+  let graphError = $state<string | null>(null);
   let effectiveLayoutDirection = $derived(graphDirectionOverride ?? layoutDirection);
   let layoutedPositions = $state.raw<ReadonlyMap<string, LayoutPosition>>(new Map());
   let layoutedKey = $state("");
+  let activeGraphSourceUID: string | null = null;
   let graph = $derived(
     buildKataReachableGraph({
-      sourceUID,
+      sourceUID: sourceIssue.uid,
       selectedUID,
-      tasks,
-      selectedDetail,
-      hideDone,
-      depthLimit,
+      graph: graphResponse,
       contextDepth,
       layoutDirection: effectiveLayoutDirection,
     }),
@@ -109,7 +107,7 @@
   );
   let interactiveNodes = $derived(flowNodes.map((node) => withNodeActivation(node)));
   let layoutReady = $derived(layoutMode === "compact" || layoutedKey === activeLayoutKey);
-  let source = $derived(tasks.find((task) => task.uid === sourceUID));
+  let source = $derived(graphResponse?.nodes.find((task) => task.uid === sourceIssue.uid) ?? sourceIssue);
   let graphFilterActive = $derived(
     hideDone
       || depthLimit !== defaultGraphPreferences.depthLimit
@@ -118,6 +116,7 @@
       || graphDirectionOverride !== defaultGraphPreferences.layoutDirection,
   );
   let layoutRun = 0;
+  let graphRequestRun = 0;
   const elkDefaultLayoutOptions = {
     "elk.algorithm": "layered",
     "elk.edgeRouting": "ORTHOGONAL",
@@ -304,8 +303,12 @@
     return options.find((option) => option.value === value)?.label ?? value;
   }
 
-  function missingRefKey(ref: KataGraphMissingRef): string {
-    return ref.uid ? `uid:${ref.uid}` : `short:${ref.projectUID}:${ref.shortID}`;
+  function missingRefKey(ref: { uid: string; side: string; kind: string; otherUID: string }): string {
+    return `${ref.side}:${ref.kind}:${ref.uid}:${ref.otherUID}`;
+  }
+
+  function graphRequestErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : "Could not load reachable graph.";
   }
 
   function selectNodeID(uid: string): void {
@@ -439,10 +442,56 @@
   });
 
   $effect(() => {
-    const refs = graph.missingRefs;
-    if (refs.length === 0) return;
-    recordKataGraphDebugEvent("graph-missing-refs", { keys: refs.map(missingRefKey) });
-    onRequestMissingTasks?.(refs);
+    const requestSource = sourceIssue;
+    const requestDepth = depthLimit;
+    const requestHideDone = hideDone;
+    const abort = new AbortController();
+    const run = ++graphRequestRun;
+    graphLoading = true;
+    graphError = null;
+    if (activeGraphSourceUID !== requestSource.uid) {
+      graphResponse = null;
+    }
+    activeGraphSourceUID = requestSource.uid;
+    recordKataGraphDebugEvent("graph-load-start", {
+      sourceUID: requestSource.uid,
+      depth: requestDepth,
+      hideDone: requestHideDone,
+    });
+    api
+      .reachableGraph(
+        requestSource.project_id,
+        requestSource.uid,
+        { depth: requestDepth, hide_done: requestHideDone },
+        { signal: abort.signal },
+      )
+      .then((response) => {
+        if (run !== graphRequestRun || abort.signal.aborted) return;
+        graphResponse = response;
+        onGraphTasksLoaded?.(response.nodes);
+        recordKataGraphDebugEvent("graph-load-complete", {
+          sourceUID: response.source_uid,
+          nodeCount: response.nodes.length,
+          edgeCount: response.edges.length,
+          unresolvedCount: response.unresolved_refs.length,
+        });
+      })
+      .catch((error: unknown) => {
+        if (run !== graphRequestRun || abort.signal.aborted) return;
+        graphError = graphRequestErrorMessage(error);
+        recordKataGraphDebugEvent("graph-load-error", {
+          sourceUID: requestSource.uid,
+          message: graphError,
+        });
+      })
+      .finally(() => {
+        if (run !== graphRequestRun) return;
+        graphLoading = false;
+      });
+
+    return () => {
+      abort.abort();
+    };
   });
 
   $effect(() => {
@@ -491,9 +540,11 @@
 
   $effect(() => {
     const snapshot = {
-      sourceUID,
+      sourceUID: sourceIssue.uid,
       selectedUID,
       hideDone,
+      graphLoading,
+      graphError,
       contextDepth,
       depthLimit,
       layoutMode,
@@ -532,7 +583,7 @@
         <span>Tasks</span>
       </button>
       <div class="graph-source">
-        <strong title={source?.qualified_id ?? sourceUID}>{source?.title ?? "Reachable graph"}</strong>
+        <strong title={source.qualified_id || source.uid}>{source.title || "Reachable graph"}</strong>
       </div>
     </div>
     <div class="graph-control-row" aria-label="Graph controls">
@@ -545,16 +596,20 @@
           showBadge={false}
           sections={graphFilterSections}
           minWidth="220px"
-          includeDetailInAriaLabel={true}
         />
       </div>
     </div>
   </header>
 
-  {#if graph.nodes.length === 0}
-    <p class="graph-empty">No cached task data is available for this graph.</p>
+  {#if graphError && graph.nodes.length === 0}
+    <p class="graph-empty" role="alert">{graphError}</p>
+  {:else if graph.nodes.length === 0}
+    <p class="graph-empty">{graphLoading ? "Loading graph..." : "No task data is available for this graph."}</p>
   {:else}
     <div class="graph-canvas">
+      {#if graphError}
+        <p class="graph-canvas-alert" role="alert">{graphError}</p>
+      {/if}
       <SvelteFlow
         nodes={interactiveNodes}
         edges={graph.edges}
@@ -661,7 +716,7 @@
     min-width: 0;
   }
 
-  .graph-filter-menu :global(.filter-btn) {
+  .graph-filter-menu :global(.kit-filter-dropdown__btn) {
     min-height: 30px;
     height: 30px;
     max-width: 100%;
@@ -670,12 +725,12 @@
     color: var(--text-secondary);
   }
 
-  .graph-filter-menu :global(.filter-btn:hover:not(:disabled)) {
+  .graph-filter-menu :global(.kit-filter-dropdown__btn:hover:not(:disabled)) {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
 
-  .graph-filter-menu :global(.filter-trigger-detail) {
+  .graph-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -684,11 +739,11 @@
     font-weight: 600;
   }
 
-  .graph-filter-menu :global(.filter-active) {
+  .graph-filter-menu :global(.kit-filter-dropdown__btn--active) {
     border-color: var(--accent-blue);
   }
 
-  .graph-filter-menu :global(.filter-dropdown) {
+  .graph-filter-menu :global(.kit-filter-dropdown__panel) {
     max-height: min(520px, calc(100vh - 24px));
     overflow-y: auto;
   }
@@ -719,7 +774,7 @@
       min-height: 28px;
     }
 
-    .graph-filter-menu :global(.filter-btn) {
+    .graph-filter-menu :global(.kit-filter-dropdown__btn) {
       width: 100%;
     }
   }
@@ -832,5 +887,21 @@
     margin: 16px;
     color: var(--text-muted);
     font-size: var(--font-size-sm);
+  }
+
+  .graph-canvas-alert {
+    position: absolute;
+    z-index: 3;
+    top: 10px;
+    left: 12px;
+    right: 12px;
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--color-danger-border, var(--border-default));
+    border-radius: 6px;
+    background: var(--color-danger-bg, var(--bg-surface));
+    color: var(--color-danger-text, var(--text-primary));
+    font-size: var(--font-size-xs);
+    pointer-events: none;
   }
 </style>

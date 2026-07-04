@@ -39,7 +39,7 @@
     setKataDaemonRoster,
   } from "../../stores/active-kata-daemon.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
-  import { createKataWorkspaceStore, type KataGraphTaskRef } from "../../stores/kata-workspace.svelte.js";
+  import { createKataWorkspaceStore } from "../../stores/kata-workspace.svelte.js";
   import KataDaemonSwitcher from "./KataDaemonSwitcher.svelte";
   import KataReachableGraph from "./KataReachableGraph.svelte";
   import KataRecurrenceDialogs from "./KataRecurrenceDialogs.svelte";
@@ -109,9 +109,7 @@
   let workspaceTargetKey: string | null = null;
   let workspaceTargetRequestID = 0;
   let listMode = $state<ListMode>("tasks");
-  let graphSourceUID = $state<string | null>(null);
-  let graphSourceDetail = $state.raw<KataTaskDetail | null>(null);
-  let graphSourceDetailRequestID = 0;
+  let graphSourceIssue = $state.raw<KataTaskSummary | null>(null);
   const store = createKataWorkspaceStore({ api: untrack(() => api) });
   const actor = "middleman";
   let syncedRouteIssueUID = $state<string | null>(null);
@@ -391,6 +389,7 @@
     if ((routeViewName ?? null) !== syncedRouteViewName || (routeScopeUID ?? null) !== syncedRouteScopeUID) return;
     if (!uid) {
       if (syncedRouteIssueUID === null) return;
+      clearTaskErrors();
       resetDetailDrafts();
       store.clearSelection();
       syncedRouteIssueUID = null;
@@ -404,13 +403,6 @@
     }
     syncedRouteIssueUID = uid;
     void selectIssue(uid, false);
-  });
-
-  $effect(() => {
-    if (listMode !== "reachableGraph" || !graphSourceUID) return;
-    const selectedDetail = store.selectedIssue;
-    if (!selectedDetail || selectedDetail.issue.uid !== graphSourceUID) return;
-    graphSourceDetail = selectedDetail;
   });
 
   function currentRouteSnapshot(): KataRouteSnapshot {
@@ -767,36 +759,17 @@
 
   function openReachableGraph(issue: KataTaskSummary): void {
     store.rememberTasks([issue]);
-    graphSourceUID = issue.uid;
-    graphSourceDetail = store.selectedIssue?.issue.uid === issue.uid ? store.selectedIssue : null;
+    graphSourceIssue = issue;
     listMode = "reachableGraph";
-    if (!graphSourceDetail) {
-      void loadGraphSourceDetail(issue.uid, ++graphSourceDetailRequestID);
-    }
   }
 
-  async function loadGraphSourceDetail(uid: string, requestID: number): Promise<void> {
-    try {
-      const detail = await store.loadGraphSourceDetail(uid);
-      if (requestID !== graphSourceDetailRequestID) return;
-      if (listMode !== "reachableGraph" || graphSourceUID !== uid) return;
-      graphSourceDetail = detail;
-    } catch {
-      if (requestID !== graphSourceDetailRequestID) return;
-      if (listMode !== "reachableGraph" || graphSourceUID !== uid) return;
-      graphSourceDetail = null;
-    }
+  function rememberGraphTasks(tasks: readonly KataTaskSummary[]): void {
+    store.rememberTasks(tasks);
   }
 
   function closeReachableGraph(): void {
-    graphSourceDetailRequestID++;
     listMode = "tasks";
-    graphSourceUID = null;
-    graphSourceDetail = null;
-  }
-
-  function requestMissingGraphTasks(refs: readonly KataGraphTaskRef[]): void {
-    void store.loadGraphTaskRefs(refs);
+    graphSourceIssue = null;
   }
 
   async function moveSelectedIssue(toProjectUID: string | null): Promise<void> {
@@ -1024,18 +997,17 @@
 
 {#snippet listPane()}
   <div class="list-column kata-list">
-    {#if listMode === "reachableGraph" && graphSourceUID}
+    {#if listMode === "reachableGraph" && graphSourceIssue}
       <KataReachableGraph
-        sourceUID={graphSourceUID}
+        api={store.api}
+        sourceIssue={graphSourceIssue}
         selectedUID={store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null}
-        tasks={store.cachedTasks}
-        selectedDetail={graphSourceDetail}
         layoutDirection={graphLayoutDirection}
         onBack={closeReachableGraph}
         onSelectIssue={(uid) => {
           selectReachableGraphIssue(uid);
         }}
-        onRequestMissingTasks={requestMissingGraphTasks}
+        onGraphTasksLoaded={rememberGraphTasks}
       />
     {:else}
       <KataSearchPanel

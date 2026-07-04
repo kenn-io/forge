@@ -3,19 +3,12 @@ export type KataGraphDebugEventKind =
   | "detail-load-complete"
   | "detail-load-stale"
   | "detail-load-start"
-  | "graph-load-abort"
   | "graph-load-complete"
-  | "graph-load-drain-end"
-  | "graph-load-drain-join"
-  | "graph-load-drain-start"
-  | "graph-load-enqueue"
   | "graph-load-error"
-  | "graph-load-paused"
   | "graph-load-start"
   | "graph-layout-complete"
   | "graph-layout-error"
   | "graph-layout-start"
-  | "graph-missing-refs"
   | "graph-render"
   | "selection-start";
 
@@ -30,6 +23,8 @@ export interface KataGraphDebugGraphSnapshot {
   sourceUID: string;
   selectedUID: string | null;
   hideDone: boolean;
+  graphLoading?: boolean | undefined;
+  graphError?: string | null | undefined;
   contextDepth: string;
   depthLimit: string;
   layoutMode: string;

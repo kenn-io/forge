@@ -5,6 +5,7 @@ import {
   normalizeKataInstance,
   normalizeKataProject,
   normalizeKataProjectList,
+  normalizeKataReachableGraph,
   normalizeKataRecurrenceResponse,
   normalizeKataRecurrences,
   normalizeKataTaskDetail,
@@ -16,6 +17,8 @@ import type {
   KataProjectMetadataPatch,
   KataProjectMutationResponse,
   KataProjectSummary,
+  KataReachableGraphQuery,
+  KataReachableGraphResponse,
   KataTaskAPI,
   KataTaskCloseOptions,
   KataTaskDetail,
@@ -548,6 +551,25 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
 
     async issue(uid, opts) {
       return fetchIssue(uid, opts?.daemonId, opts?.pinned, opts?.signal);
+    },
+
+    async reachableGraph(
+      projectID: number,
+      ref: string,
+      query: KataReachableGraphQuery = {},
+      opts,
+    ): Promise<KataReachableGraphResponse> {
+      const params = new URLSearchParams();
+      params.set("depth", query.depth ?? "full");
+      if (query.hide_done) params.set("hide_done", "true");
+      const result = await request<unknown>(
+        taskPath(`/projects/${projectID}/issues/${encodeURIComponent(ref)}/graph?${params.toString()}`),
+        {
+          headers: daemonHeaders(opts?.daemonId),
+          signal: opts?.signal,
+        },
+      );
+      return normalizeKataReachableGraph(result.body);
     },
 
     async events(query = {}, opts) {

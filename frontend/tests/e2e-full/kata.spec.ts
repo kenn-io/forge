@@ -46,9 +46,9 @@ async function expectKataDaemonSwitcherReady(page: Page): Promise<void> {
 }
 
 async function graphFilterMenu(graph: Locator): Promise<Locator> {
-  const menu = graph.locator(".graph-filter-menu .filter-dropdown");
+  const menu = graph.locator(".graph-filter-menu .kit-filter-dropdown__panel");
   if (!(await menu.isVisible().catch(() => false))) {
-    await graph.getByRole("button", { name: /^Graph filters:/ }).click();
+    await graph.getByRole("button", { name: /^Graph filters\b/ }).click();
     await expect(menu).toBeVisible();
   }
   return menu;
@@ -56,7 +56,40 @@ async function graphFilterMenu(graph: Locator): Promise<Locator> {
 
 async function graphFilterItem(graph: Locator, id: string): Promise<Locator> {
   const menu = await graphFilterMenu(graph);
-  const item = menu.locator(`.filter-item[data-filter-id="${id}"]`);
+  const itemLabels: Record<string, { section: string; label: string }> = {
+    "context-1": { section: "Context", label: "1 edge" },
+    "context-2": { section: "Context", label: "2 edges" },
+    "context-3": { section: "Context", label: "3 edges" },
+    "context-all": { section: "Context", label: "All" },
+    "depth-1": { section: "Depth", label: "1 edge" },
+    "depth-2": { section: "Depth", label: "2 edges" },
+    "depth-3": { section: "Depth", label: "3 edges" },
+    "depth-full": { section: "Depth", label: "Full" },
+    "direction-LR": { section: "Direction", label: "Left to right" },
+    "direction-TB": { section: "Direction", label: "Top to bottom" },
+    "direction-follow": { section: "Direction", label: "Follow split" },
+    "layout-compact": { section: "Layout", label: "Compact" },
+    "layout-elk": { section: "Layout", label: "ELK" },
+    "visibility-hide-done": { section: "Visibility", label: "Hide done" },
+  };
+  const target = itemLabels[id] ?? { section: "", label: id };
+  const index = await menu.evaluate((root, wanted) => {
+    let currentSection = "";
+    let itemIndex = -1;
+    for (const element of Array.from(root.children)) {
+      if (element.classList.contains("kit-filter-dropdown__section-title")) {
+        currentSection = element.textContent?.trim() ?? "";
+        continue;
+      }
+      if (!element.classList.contains("kit-filter-dropdown__item")) continue;
+      itemIndex += 1;
+      const label = element.querySelector(".kit-filter-dropdown__label")?.textContent?.trim() ?? "";
+      if (currentSection === wanted.section && label === wanted.label) return itemIndex;
+    }
+    return -1;
+  }, target);
+  expect(index).toBeGreaterThanOrEqual(0);
+  const item = menu.locator(".kit-filter-dropdown__item").nth(index);
   await expect(item).toBeVisible();
   return item;
 }
@@ -64,7 +97,7 @@ async function graphFilterItem(graph: Locator, id: string): Promise<Locator> {
 async function selectGraphFilterItem(graph: Locator, id: string): Promise<void> {
   const item = await graphFilterItem(graph, id);
   await item.click();
-  await expect(item).toHaveAttribute("aria-pressed", "true");
+  await expect(item).toHaveClass(/(^|\s)active(\s|$)/);
 }
 
 type BackendState = {
@@ -485,6 +518,16 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
     return;
   }
 
+  const reachableGraphRoute = /^\/api\/v1\/projects\/(\d+)\/issues\/([^/]+)\/graph$/.exec(url.pathname);
+  if (reachableGraphRoute) {
+    writeReachableGraph(state, res, {
+      projectID: Number(reachableGraphRoute[1]),
+      ref: decodeURIComponent(reachableGraphRoute[2] ?? ""),
+      url,
+    });
+    return;
+  }
+
   const issueEditRoute = /^\/api\/v1\/projects\/(\d+)\/issues\/([^/]+)$/.exec(url.pathname);
   if (issueEditRoute) {
     await handleIssueEdit(state, req, res, {
@@ -680,6 +723,111 @@ function issuesForStatus(rows: IssueSummary[], status: string | null): IssueSumm
   if (status === "closed") return rows.filter((issue) => issue.status === "closed");
   if (status === "open") return rows.filter((issue) => issue.status === "open");
   return rows;
+}
+
+type GraphEdgeRow = { from_uid: string; to_uid: string; kind: "parent" | "blocks" | "related"; layout: boolean };
+
+function canonicalGraphEdges(state: BackendState): GraphEdgeRow[] {
+  const byUID = new Map(state.issues.map((issue) => [issue.uid, issue]));
+  const byProjectShort = new Map(state.issues.map((issue) => [`${issue.project_uid}:${issue.short_id}`, issue]));
+  const edges = new Map<string, GraphEdgeRow>();
+  const add = (fromUID: string | undefined, toUID: string | undefined, kind: GraphEdgeRow["kind"]) => {
+    if (!fromUID || !toUID) return;
+    const key = `${kind}:${fromUID}:${toUID}`;
+    if (!edges.has(key)) edges.set(key, { from_uid: fromUID, to_uid: toUID, kind, layout: true });
+  };
+
+  for (const issue of state.issues) {
+    if (issue.parent_short_id) {
+      add(byProjectShort.get(`${issue.project_uid}:${issue.parent_short_id}`)?.uid, issue.uid, "parent");
+    }
+    for (const peer of issue.blocks ?? []) add(issue.uid, peer.uid, "blocks");
+    for (const peer of issue.blocked_by ?? []) add(peer.uid, issue.uid, "blocks");
+    for (const peer of issue.related ?? []) add(issue.uid, peer.uid, "related");
+  }
+  for (const link of state.links) {
+    add(link.from.uid, link.to.uid, link.type);
+  }
+
+  for (const edge of [...edges.values()]) {
+    if (edge.kind !== "blocks") continue;
+    const directKey = `${edge.kind}:${edge.from_uid}:${edge.to_uid}`;
+    const queue = [...edges.values()].filter(
+      (candidate) =>
+        candidate.kind === "blocks" &&
+        candidate.from_uid === edge.from_uid &&
+        candidate.to_uid !== edge.to_uid &&
+        `${candidate.kind}:${candidate.from_uid}:${candidate.to_uid}` !== directKey,
+    );
+    const seen = new Set<string>([edge.from_uid]);
+    while (queue.length > 0) {
+      const next = queue.shift()!;
+      if (next.to_uid === edge.to_uid) {
+        edge.layout = false;
+        break;
+      }
+      if (seen.has(next.to_uid)) continue;
+      seen.add(next.to_uid);
+      queue.push(
+        ...[...edges.values()].filter(
+          (candidate) =>
+            candidate.kind === "blocks" &&
+            candidate.from_uid === next.to_uid &&
+            `${candidate.kind}:${candidate.from_uid}:${candidate.to_uid}` !== directKey,
+        ),
+      );
+    }
+  }
+
+  return [...edges.values()].filter((edge) => byUID.has(edge.from_uid) && byUID.has(edge.to_uid));
+}
+
+function writeReachableGraph(
+  state: BackendState,
+  res: ServerResponse,
+  input: { projectID: number; ref: string; url: URL },
+): void {
+  const source = state.issues.find(
+    (issue) => issue.project_id === input.projectID && (issue.uid === input.ref || issue.short_id === input.ref),
+  );
+  if (!source) {
+    writeJSON(res, 404, { error: "not_found" });
+    return;
+  }
+
+  const depthRaw = input.url.searchParams.get("depth") ?? "full";
+  const maxDepth = depthRaw === "full" ? Number.POSITIVE_INFINITY : Number(depthRaw);
+  const hideDone = input.url.searchParams.get("hide_done") === "true";
+  const edges = canonicalGraphEdges(state);
+  const distances = new Map<string, number>([[source.uid, 0]]);
+  const queue = [source.uid];
+  while (queue.length > 0) {
+    const uid = queue.shift()!;
+    const distance = distances.get(uid) ?? 0;
+    if (distance >= maxDepth) continue;
+    for (const edge of edges) {
+      const nextUID = edge.from_uid === uid ? edge.to_uid : edge.to_uid === uid ? edge.from_uid : null;
+      if (!nextUID || distances.has(nextUID)) continue;
+      distances.set(nextUID, distance + 1);
+      queue.push(nextUID);
+    }
+  }
+  const nodeUIDs = new Set(
+    state.issues
+      .filter((issue) => distances.has(issue.uid))
+      .filter((issue) => issue.uid === source.uid || !hideDone || issue.status !== "closed")
+      .map((issue) => issue.uid),
+  );
+  writeJSON(res, 200, {
+    source_uid: source.uid,
+    depth: depthRaw,
+    hide_done: hideDone,
+    nodes: state.issues.filter((issue) => nodeUIDs.has(issue.uid)).sort((a, b) => a.uid.localeCompare(b.uid)),
+    edges: edges
+      .filter((edge) => nodeUIDs.has(edge.from_uid) && nodeUIDs.has(edge.to_uid))
+      .sort((a, b) => `${a.kind}:${a.from_uid}:${a.to_uid}`.localeCompare(`${b.kind}:${b.from_uid}:${b.to_uid}`)),
+    unresolved_refs: [],
+  });
 }
 
 async function handleProjectCreate(state: BackendState, req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -1387,7 +1535,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
         depthLimit: "1",
         nodeIds: expect.arrayContaining(["issue-rent", "issue-q3", "issue-follow-up"]),
         hasDeepFollowUp: false,
-        edgeCount: 2,
+        edgeCount: 3,
         layoutEdgeCount: 2,
       });
     await selectGraphFilterItem(graph, "depth-full");
@@ -1500,7 +1648,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
       .toBe("TB");
     const toolbarMetrics = await page.evaluate(() => {
       const toolbar = document.querySelector<HTMLElement>(".graph-toolbar");
-      const graphFilters = document.querySelector<HTMLElement>(".graph-filter-menu .filter-btn");
+      const graphFilters = document.querySelector<HTMLElement>(".graph-filter-menu .kit-filter-dropdown__btn");
       if (!toolbar || !graphFilters) return null;
       const toolbarRect = toolbar.getBoundingClientRect();
       const graphFiltersRect = graphFilters.getBoundingClientRect();
@@ -1576,11 +1724,7 @@ test("kata reachable graph node selection participates in browser history", asyn
   }
 });
 
-test("kata reachable graph populates uncached refs after selection aborts the graph load", async ({ page }) => {
-  let releaseHiddenDetail = () => {};
-  const hiddenDetailBarrier = new Promise<void>((resolve) => {
-    releaseHiddenDetail = resolve;
-  });
+test("kata reachable graph uses the native graph endpoint for linked nodes", async ({ page }) => {
   const hidden = issueSummary({
     id: 33,
     uid: "issue-hidden-link",
@@ -1597,7 +1741,6 @@ test("kata reachable graph populates uncached refs after selection aborts the gr
   const backend = await startKataBackend({
     issues: [issues[0]!, hidden],
     links: [linkRow({ id: 1, project_id: issues[0]!.project_id, from: issues[0]!, to: hidden, type: "related" })],
-    issueDetailGates: new Map([["issue-hidden-link", { barrier: hiddenDetailBarrier }]]),
   });
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
@@ -1608,12 +1751,20 @@ test("kata reachable graph populates uncached refs after selection aborts the gr
     const detail = page.getByRole("region", { name: "Task detail" });
     await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
     await page.evaluate(() => window.__middleman_kata_graph_debug?.reset());
+    const hiddenDetailFetchesBeforeGraph = backend.state.seenPaths.filter(
+      (path) => path === "GET /api/v1/issues/issue-hidden-link",
+    ).length;
     await detail.getByRole("button", { name: "Open reachable graph" }).click();
 
     const graph = page.getByRole("region", { name: "Reachable task graph" });
     await expect(graph).toBeVisible();
     await expect(graph.locator(".svelte-flow__node", { hasText: "kat-hidden" })).toBeVisible();
-    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/issues/issue-hidden-link");
+    await expect
+      .poll(() => backend.state.seenPaths)
+      .toContain("GET /api/v1/projects/1/issues/issue-rent/graph?depth=full");
+    expect(backend.state.seenPaths.filter((path) => path === "GET /api/v1/issues/issue-hidden-link")).toHaveLength(
+      hiddenDetailFetchesBeforeGraph,
+    );
 
     await graph.locator(".svelte-flow__node", { hasText: "Pay rent" }).click();
     await expect
@@ -1622,15 +1773,11 @@ test("kata reachable graph populates uncached refs after selection aborts the gr
           () =>
             window.__middleman_kata_graph_debug
               ?.snapshot()
-              .events.some((event) => event.kind === "graph-load-paused") ?? false,
+              .events.some((event) => event.kind === "graph-load-complete") ?? false,
         ),
       )
       .toBe(true);
 
-    releaseHiddenDetail();
-    await expect
-      .poll(() => backend.state.seenPaths.filter((path) => path === "GET /api/v1/issues/issue-hidden-link").length)
-      .toBeGreaterThanOrEqual(2);
     await expect(graph.getByRole("button", { name: /Hidden linked task/ })).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.nodeIds ?? []))

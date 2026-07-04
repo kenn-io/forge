@@ -327,8 +327,8 @@ Kata frontend adaptation:
   Kata daemon roster and proxy.
 - Use a middleman-owned selector header for proxied daemon requests.
 - The reachable-task graph is an alternate task-list pane, not detail content:
-  launch it from a row or task detail action, derive the REACHABLE graph from
-  the workspace's cached daemon summaries, and route cached node clicks through
+  launch it from a row or task detail action, load the REACHABLE graph from
+  Kata's native daemon graph endpoint, and route graph node clicks through
   the existing task selection/detail path
   (`frontend/src/lib/features/kata/KataWorkspace.svelte`,
   `frontend/src/lib/features/kata/KataReachableGraph.svelte`,

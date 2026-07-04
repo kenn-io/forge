@@ -5,7 +5,13 @@ import { render } from "vitest-browser-svelte";
 import "../../../app.css";
 
 import { pressKey } from "../../../test/browserAppHarness.js";
-import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
+import type {
+  KataReachableGraphEdge,
+  KataReachableGraphQuery,
+  KataReachableGraphResponse,
+  KataTaskAPI,
+  KataTaskSummary,
+} from "../../api/kata/taskTypes.js";
 import KataReachableGraph from "./KataReachableGraph.svelte";
 
 const graphPreferencesStorageKey = "middleman:kata:reachableGraphPreferences/v1";
@@ -31,6 +37,57 @@ function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
     created_at: overrides.created_at ?? "2026-06-29T12:00:00Z",
     updated_at: overrides.updated_at ?? "2026-06-29T12:00:00Z",
   };
+}
+
+function graphAPI(
+  source: KataTaskSummary,
+  nodes: KataTaskSummary[],
+  edges: KataReachableGraphEdge[] = [],
+): KataTaskAPI {
+  return {
+    reachableGraph: vi.fn(async (_projectID: number, _ref: string, query: KataReachableGraphQuery = {}) => {
+      const depthLimit =
+        query.depth === undefined || query.depth === "full" ? Number.POSITIVE_INFINITY : Number(query.depth);
+      const distanceByUID = new Map<string, number>([[source.uid, 0]]);
+      const queue = [source.uid];
+      while (queue.length > 0) {
+        const uid = queue.shift()!;
+        const distance = distanceByUID.get(uid) ?? 0;
+        if (distance >= depthLimit) continue;
+        for (const edge of edges) {
+          const nextUID = edge.from_uid === uid ? edge.to_uid : edge.to_uid === uid ? edge.from_uid : null;
+          if (!nextUID || distanceByUID.has(nextUID)) continue;
+          distanceByUID.set(nextUID, distance + 1);
+          queue.push(nextUID);
+        }
+      }
+      const visibleNodes =
+        query.hide_done === true
+          ? nodes.filter(
+              (node) => distanceByUID.has(node.uid) && (node.uid === source.uid || node.closed_reason !== "done"),
+            )
+          : nodes.filter((node) => distanceByUID.has(node.uid));
+      const visible = new Set(visibleNodes.map((node) => node.uid));
+      return {
+        source_uid: source.uid,
+        depth: query.depth ?? "full",
+        hide_done: query.hide_done === true,
+        nodes: visibleNodes,
+        edges: edges.filter((edge) => visible.has(edge.from_uid) && visible.has(edge.to_uid)),
+        unresolved_refs: [],
+        fetched_at: "2026-06-29T12:00:00Z",
+      } satisfies KataReachableGraphResponse;
+    }),
+  } as unknown as KataTaskAPI;
+}
+
+function graphEdge(
+  from: KataTaskSummary,
+  to: KataTaskSummary,
+  kind: KataReachableGraphEdge["kind"] = "blocks",
+  layout = true,
+): KataReachableGraphEdge {
+  return { from_uid: from.uid, to_uid: to.uid, kind, layout };
 }
 
 interface RenderedNodeBox {
@@ -110,29 +167,29 @@ function resolvedColor(scope: HTMLElement, color: string): string {
 }
 
 async function ensureGraphFilterMenuOpen(): Promise<void> {
-  if (!document.querySelector(".graph-filter-menu .filter-dropdown")) {
+  if (!document.querySelector(".graph-filter-menu .kit-filter-dropdown__panel")) {
     await page.getByRole("button", { name: /Graph filters/ }).click();
   }
   await vi.waitFor(() => {
-    expect(document.querySelector(".graph-filter-menu .filter-dropdown")).toBeTruthy();
+    expect(document.querySelector(".graph-filter-menu .kit-filter-dropdown__panel")).toBeTruthy();
   });
 }
 
 function findGraphFilterItem(sectionTitle: string, itemLabel: string): HTMLButtonElement {
-  const dropdown = document.querySelector<HTMLElement>(".graph-filter-menu .filter-dropdown");
+  const dropdown = document.querySelector<HTMLElement>(".graph-filter-menu .kit-filter-dropdown__panel");
   expect(dropdown).toBeTruthy();
   let inSection = false;
   for (const element of dropdown!.children) {
-    if (element.classList.contains("filter-section-title")) {
+    if (element.classList.contains("kit-filter-dropdown__section-title")) {
       inSection = element.textContent?.trim() === sectionTitle;
       continue;
     }
-    if (element.classList.contains("filter-divider")) {
+    if (element.classList.contains("kit-filter-dropdown__divider")) {
       inSection = false;
       continue;
     }
-    if (!inSection || !element.classList.contains("filter-item")) continue;
-    const label = element.querySelector(".filter-label")?.textContent?.trim();
+    if (!inSection || !element.classList.contains("kit-filter-dropdown__item")) continue;
+    const label = element.querySelector(".kit-filter-dropdown__label")?.textContent?.trim();
     if (label === itemLabel) return element as HTMLButtonElement;
   }
   throw new Error(`Missing graph filter item: ${sectionTitle} / ${itemLabel}`);
@@ -147,7 +204,7 @@ async function selectGraphFilterItem(sectionTitle: string, itemLabel: string): P
 }
 
 function graphFilterDetailText(container: HTMLElement): string {
-  return container.querySelector(".graph-filter-menu .filter-trigger-detail")?.textContent?.trim() ?? "";
+  return container.querySelector(".graph-filter-menu .kit-filter-dropdown__trigger-detail")?.textContent?.trim() ?? "";
 }
 
 describe("KataReachableGraph (browser)", () => {
@@ -174,10 +231,9 @@ describe("KataReachableGraph (browser)", () => {
     const onSelectIssue = vi.fn();
     const { container } = render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+        sourceIssue: root,
         selectedUID: root.uid,
-        tasks: [root, linked],
-        selectedDetail: null,
         onBack: () => {},
         onSelectIssue,
       },
@@ -283,10 +339,9 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container } = render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api: graphAPI(root, [root, one, two], [graphEdge(root, one), graphEdge(one, two)]),
+        sourceIssue: root,
         selectedUID: root.uid,
-        tasks: [root, one, two],
-        selectedDetail: null,
         onBack: () => {},
         onSelectIssue: () => {},
       },
@@ -319,10 +374,9 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container, rerender } = render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+        sourceIssue: root,
         selectedUID: root.uid,
-        tasks: [root, linked],
-        selectedDetail: null,
         layoutDirection: "TB",
         onBack: () => {},
         onSelectIssue: () => {},
@@ -334,7 +388,7 @@ describe("KataReachableGraph (browser)", () => {
       expect(graphFilterDetailText(container)).toContain("Follow TB");
     });
     await ensureGraphFilterMenuOpen();
-    expect(findGraphFilterItem("Direction", "Follow split").getAttribute("aria-pressed")).toBe("true");
+    expect(findGraphFilterItem("Direction", "Follow split").classList.contains("active")).toBe(true);
     await expect
       .poll(() => {
         const raw = localStorage.getItem(graphPreferencesStorageKey);
@@ -365,10 +419,9 @@ describe("KataReachableGraph (browser)", () => {
       .toBeNull();
 
     await rerender({
-      sourceUID: root.uid,
+      api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+      sourceIssue: root,
       selectedUID: root.uid,
-      tasks: [root, linked],
-      selectedDetail: null,
       layoutDirection: "LR",
       onBack: () => {},
       onSelectIssue: () => {},
@@ -403,10 +456,9 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container } = render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+        sourceIssue: root,
         selectedUID: root.uid,
-        tasks: [root, linked],
-        selectedDetail: null,
         onBack: () => {},
         onSelectIssue: () => {},
       },
@@ -451,10 +503,9 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container, rerender } = render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+        sourceIssue: root,
         selectedUID: root.uid,
-        tasks: [root, linked],
-        selectedDetail: null,
         onBack: () => {},
         onSelectIssue: () => {},
       },
@@ -469,14 +520,12 @@ describe("KataReachableGraph (browser)", () => {
       window.__middleman_kata_graph_debug?.snapshot().events.some((event) => event.kind === "graph-layout-complete"),
     ).toBe(true);
 
+    const updatedRoot = { ...root, title: "Root title after refresh" };
+    const updatedLinked = { ...linked, title: "Linked title after refresh" };
     await rerender({
-      sourceUID: root.uid,
+      api: graphAPI(updatedRoot, [updatedRoot, updatedLinked], [graphEdge(updatedRoot, updatedLinked)]),
+      sourceIssue: updatedRoot,
       selectedUID: linked.uid,
-      tasks: [
-        { ...root, title: "Root title after refresh" },
-        { ...linked, title: "Linked title after refresh" },
-      ],
-      selectedDetail: null,
       onBack: () => {},
       onSelectIssue: () => {},
     });
@@ -508,10 +557,9 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container } = render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api: graphAPI(root, [root, one, two], [graphEdge(root, one), graphEdge(one, two)]),
+        sourceIssue: root,
         selectedUID: root.uid,
-        tasks: [root, one, two],
-        selectedDetail: null,
         onBack: () => {},
         onSelectIssue: () => {},
       },
@@ -564,10 +612,13 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container, rerender } = render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api: graphAPI(
+          root,
+          [root, one, two, three],
+          [graphEdge(root, one), graphEdge(one, two), graphEdge(two, three)],
+        ),
+        sourceIssue: root,
         selectedUID: root.uid,
-        tasks: [root, one, two, three],
-        selectedDetail: null,
         onBack: () => {},
         onSelectIssue: () => {},
       },
@@ -580,10 +631,9 @@ describe("KataReachableGraph (browser)", () => {
     expectRenderedNodeBoxesStable(await waitForStableRenderedNodeBoxes(container, 4), initialBoxes);
 
     await rerender({
-      sourceUID: root.uid,
+      api: graphAPI(root, [root, one, two, three], [graphEdge(root, one), graphEdge(one, two), graphEdge(two, three)]),
+      sourceIssue: root,
       selectedUID: two.uid,
-      tasks: [root, one, two, three],
-      selectedDetail: null,
       onBack: () => {},
       onSelectIssue: () => {},
     });
@@ -614,10 +664,9 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container } = render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+        sourceIssue: root,
         selectedUID: root.uid,
-        tasks: [root, linked],
-        selectedDetail: null,
         onBack: () => {},
         onSelectIssue: () => {},
       },
@@ -628,7 +677,7 @@ describe("KataReachableGraph (browser)", () => {
     await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     const toolbar = container.querySelector<HTMLElement>(".graph-toolbar");
     const graphFilterMenu = container.querySelector<HTMLElement>(".graph-filter-menu");
-    const graphFilterButton = container.querySelector<HTMLElement>(".graph-filter-menu .filter-btn");
+    const graphFilterButton = container.querySelector<HTMLElement>(".graph-filter-menu .kit-filter-dropdown__btn");
     expect(toolbar).toBeTruthy();
     expect(graphFilterMenu).toBeTruthy();
     expect(graphFilterButton).toBeTruthy();
@@ -650,7 +699,7 @@ describe("KataReachableGraph (browser)", () => {
     await selectGraphFilterItem("Visibility", "Hide done");
     await vi.waitFor(() => {
       expect(graphFilterDetailText(container)).toContain("Hide done");
-      expect(graphFilterButton!.getAttribute("aria-label")).toContain("Hide done");
+      expect(graphFilterButton!.classList.contains("kit-filter-dropdown__btn--active")).toBe(true);
     });
   });
 });

@@ -73,21 +73,13 @@ is absent, graph nodes use local selection only. If the immediate detail request
 fails after the URL has already changed, the URL remains authoritative, the
 normal detail request error surface is shown for that routed task, graph mode
 stays open, and browser Back returns to the previous routed task.
-Disabled placeholder nodes represent uncached linked peers and cannot be
-selected. If a placeholder came from a link that included a peer uid, graph mode
-schedules a background detail fetch for that uid and replaces the placeholder
-once the workspace cache receives the task. If only a short id is known, graph
-mode may search exactly within the peer project and cache exact matches.
-Background graph population failures do not replace the normal detail/request
-error surface; the placeholder remains visible. Graph population is queued
-through the workspace store and must pause/abort while a user-driven task detail
-selection is active; there should not be a graph-side issue refresh competing
-with the selected-task detail refresh. UID-backed placeholders use the final
-task uid as their Svelte Flow node id so the node updates in place when cached
-data arrives.
-When a relationship peer includes `uid`, that uid is authoritative: missing
-UID-backed peers render and fetch by uid, and the builder must not attach the
-edge to another cached task just because the short id matches.
+Disabled placeholder nodes represent unresolved endpoint ids reported by the
+Kata graph API and cannot be selected. Middleman does not schedule background
+task-detail fetches to populate graph nodes; the native graph response is the
+source of truth for reachable nodes and relationships. When a relationship peer
+includes `uid`, that uid is authoritative: unresolved UID-backed peers render by
+uid, and the builder must not attach the edge to another cached task just
+because the short id matches.
 
 Graph mode survives issue-only route changes so graph-node navigation can use
 browser history, but closes and invalidates any graph-source detail work when
@@ -96,147 +88,71 @@ not remain visible beside another view or scoped project.
 
 ## Data Model
 
-The graph uses a local frontend cache plus queued background population for
-visible missing references. The component itself does not call the Kata daemon.
-
-`KataWorkspaceStore` keeps a `Map<string, KataTaskSummary>` keyed by `uid`. The
-cache is populated from:
-
-- current view and search results;
-- selected task detail;
-- selected detail children;
-- graph-triggered background loads for uncached relationship references;
-- child rows loaded by list expansion;
-- task mutation responses and event-driven refreshes.
+Kata 0.2.0 owns reachable graph traversal through
+`GET /api/v1/projects/{project_id}/issues/{ref}/graph`. Middleman calls this
+endpoint through the Kata proxy with `depth=full|1|2|3` and optional
+`hide_done=true`, then renders the returned `nodes`, `edges`, and
+`unresolved_refs`. The frontend must not rebuild reachability by walking cached
+task summaries, searching short ids, or launching a separate graph-population
+queue.
 
 The graph builder receives:
 
 - the source task uid;
-- cached task summaries;
-- the graph source task detail, when available;
-- the done-filter flag;
-- the graph depth filter.
+- the native reachable graph response;
+- the selected task uid;
+- the context-emphasis filter;
+- the graph layout direction.
 
-Reachability is computed by walking cached relationships:
+The native graph response is authoritative for the graph node and edge set.
+Depth and `hide_done` are API parameters and are the only controls that ask Kata
+for a different graph. Selecting a graph node, changing context, changing
+layout, or changing direction must not refetch or change the graph node set.
+`Full` is the default unless a persisted user preference explicitly changes it.
+Bounded depths stay rooted at the graph source task passed to the native API.
 
-- parent edges from `parent_short_id`;
-- child edges by matching another cached task's `parent_short_id`;
-- blocking edges from `blocks` and `blocked_by`;
-- related edges from `related`;
-- detail edges from `KataTaskDetail.links` for the graph source task.
+The server-provided edge direction is canonical: `parent -> child` for parent
+links and `blocker -> blocked task` for blocking links. `related` edges are
+server-canonical associations. The frontend dedupes exact duplicate edge ids
+only; it does not invert, pair-collapse, or reinterpret relationships. The
+server also marks layout-pruned edges with `layout: false`. Those edges are
+still rendered and still drive selected-node adjacency/highlighting, but are
+omitted from the edge set handed to Compact/ELK layout.
 
-Reciprocal declarations between the same two tasks collapse to one edge by
-edge kind plus unordered node pair. This applies to summary-derived edges and
-source-detail `KataTaskDetail.links` edges for `parent`, `blocks`, and
-`related`. The graph should not render parallel inverse arrows for the same
-relationship kind.
+Context filtering is an emphasis-only operation. It only controls emphasis
+distance inside the already rendered graph after the API depth and hide-done
+filtering. `All` means every rendered node and edge is in-context; `1 edge`,
+`2 edges`, and `3 edges` compute distance from the selected task over the
+remaining visible edges. Incoming and outgoing visible edges both count as one
+step for emphasis, and hidden/non-rendered tasks do not bridge context distance.
+Edge emphasis is traversal-based: an edge is in-context only when the
+visible-edge BFS crosses it from a node whose distance is below the selected
+context depth; two in-context endpoints do not make an untraversed edge active.
+Rendered nodes and edges outside that emphasis traversal are tagged as faded
+context; selected-adjacent blocking edges may use the amber accent, while
+non-emphasized edges use muted static styling. Context works when depth is
+`Full`, so users can inspect a selected task's nearby context without reflowing
+the full source graph.
 
-The canonical graph direction is `parent -> child` for parent links and
-`blocker -> blocked task` for blocking links. Kata detail `parent` links are
-normalized into that direction because detail links can arrive as
-child-to-parent pairs; summary `parent_short_id` and child matching already
-produce parent-to-child edges.
-
-When duplicate inverse edges conflict, parent and blocking links keep the first
-observed semantic direction after normalization. Cached summary traversal is
-processed before source-detail links, so a cached `blocks` edge from source to
-peer remains "source blocks peer" even if detail links also contain the inverse.
-Related links are associations rather than dependency edges: source-detail
-related links are normalized source-outward, and reverse cached related
-matches are rendered outward from the task being expanded. This prevents the
-same related pair from flipping direction when the daemon alternates which
-side of the pair supplied the relationship.
-For visualization layout only, transitive blocking edges are pruned: if `A`
-blocks `B`, `B` blocks `C`, and `A` also blocks `C`, the direct `A -> C`
-blocking edge is omitted from the edge set handed to compact/ELK layout. The
-full relationship set is still rendered and still drives selected-node
-adjacency/highlighting, so selecting `A` still marks `C` as blocked by `A` and
-the redundant direct edge can still be drawn over the reduced layout. Pruning is
-directed, cycle-safe, same-kind `blocks` only, and never uses parent or related
-edges as alternate paths. Context filtering is an emphasis-only operation:
-layout receives the same depth-derived node and edge set regardless of context
-value. Selecting a different task or changing context can change active/faded
-classification and selected-adjacent highlighting, but must not move nodes when
-the depth graph is unchanged.
-
-Relationship matching prefers `uid`. When a relationship peer or expanded
-parent object carries a `uid`, that full id is the cache key and edge endpoint;
-the short id remains display/fallback data only. When only `short_id` is
-available, the builder resolves it inside the same project. Ambiguous short ids
-do not select a random task; they render an uncached placeholder only when the
-peer id can still be displayed. The pure builder returns unresolved peer
-references alongside the nodes and edges so `KataWorkspaceStore` can populate
-missing cached data without making the graph component own daemon calls.
-Normalizers preserve absent-vs-present relationship fields so sparse view rows
-do not erase richer parent/link data that was loaded from detail responses.
-
-Depth is the only control that changes the graph node/edge set. `Full` is the
-default unless a later persisted user preference explicitly changes it. `Full`
-renders the source task's full cached reachable graph so selecting nodes can
-change details and emphasis without reflowing the graph. `1 edge`, `2 edges`,
-and `3 edges` render a bounded graph rooted at the active selected cached task,
-falling back to the graph source when the active task is not locally cached.
-Traversal follows relationships declared on the task being expanded, while
-still drawing edges in canonical direction; it does not infer extra incoming
-edges by scanning unrelated cached rows that happen to point at the active task
-except for the explicit parent reverse indexes listed below.
-
-The context filter is independent of depth and never changes the rendered node
-or layout edge set. It only controls emphasis distance inside the already
-rendered depth graph after `Hide done` filtering. `All` means every rendered
-node and edge is in-context; `1 edge`, `2 edges`, and `3 edges` compute distance
-from the selected task over the remaining visible edges. Incoming and outgoing
-visible edges both count as one step for emphasis, and hidden/non-rendered tasks
-do not bridge context distance. Edge emphasis is traversal-based: an edge is
-in-context only when the visible-edge BFS crosses it from a node whose distance
-is below the selected context depth; two in-context endpoints do not make an
-untraversed edge active. Rendered nodes and edges outside that emphasis traversal
-are tagged as faded context; selected-adjacent blocking edges may use the amber
-accent, while non-emphasized edges use muted static styling. Context
-works when depth is `Full`, so users can inspect a selected task's nearby
-context without reflowing the full source graph. `Hide done` applies after depth
-traversal and preserves the source, graph root, and selected task; edges whose
-endpoint is hidden are dropped. The Svelte Flow node pane must be positioned
-above the edge pane so edges never paint on top of task cards. Disable Svelte
-Flow node-focus autopan so clicking/focusing a graph task changes selection
-without panning the viewport. The graph persists the depth, context, layout,
-and explicit graph direction override in a versioned, browser-profile-global
-localStorage value so new graph pane sessions restore the last user layout.
-`layoutDirection: null` means follow the current workspace split direction.
-The Direction group includes a `Follow split` item that clears the persisted
-direction override back to `null`; `LR` or `TB` means the user intentionally
-pinned graph direction. The trigger summary distinguishes the two states so a
-matching effective direction is not secretly pinned. Invalid or unavailable
-storage falls back to `Full`, `All`, `Compact`, and the current workspace split
-direction.
-
-Traversal sources by relationship kind:
-
-| Relationship | Full graph | Bounded depth graph |
-| --- | --- | --- |
-| `parent` | Declared parent on expanded task; child reverse index by `parent.uid`; child reverse index by same-project `parent_short_id` only when that cached child has no `parent.uid`; source-detail parent links | Declared parent on expanded task; child reverse index by `parent.uid`; child reverse index by same-project `parent_short_id` only when that cached child has no `parent.uid`; source-detail parent links only when expanding the source |
-| `blocks` | Declared `blocks` and `blocked_by` on expanded task; source-detail blocks links | Declared `blocks` and `blocked_by` on expanded task; source-detail blocks links only when expanding the source |
-| `related` | Declared `related` on expanded task; source-detail related links normalized source-outward | Declared `related` on expanded task; source-detail related links only when expanding the source |
-
-For bounded depths, the active graph is selected-task anchored: the original
-source remains visible only when it is inside the selected task's bounded
-closure or is the fallback root. For `Full`, the graph stays source-rooted.
-Context never adds nodes; it only marks already-rendered nodes and edges outside
-the selected-task emphasis distance as faded context.
-
-Depth changes only affect the current graph render and newly reported missing
-refs. Narrowing the graph depth does not cancel a store-owned graph fetch
-already in flight, and a completed fetch may still enter the workspace cache
-even if the ref is no longer visible. Re-rendering at the narrower depth stops
-enqueueing newly hidden refs; widening depth later reports those refs again and
-lets the single store graph-load queue populate them.
+The Svelte Flow node pane must be positioned above the edge pane so edges never
+paint on top of task cards. Disable Svelte Flow node-focus autopan so
+clicking/focusing a graph task changes selection without panning the viewport.
+The graph persists the depth, context, layout, and explicit graph direction
+override in a versioned, browser-profile-global localStorage value so new graph
+pane sessions restore the last user layout. `layoutDirection: null` means
+follow the current workspace split direction. The Direction group includes a
+`Follow split` item that clears the persisted direction override back to `null`;
+`LR` or `TB` means the user intentionally pinned graph direction. The trigger
+summary distinguishes the two states so a matching effective direction is not
+secretly pinned. Invalid or unavailable storage falls back to `Full`, `All`,
+`Compact`, and the current workspace split direction.
 
 ## Component Plan
 
 `KataWorkspace.svelte` owns graph mode:
 
 - `listMode: "tasks" | "reachableGraph"`;
-- `graphSourceUID: string | null`;
+- `graphSourceIssue: KataTaskSummary | null`;
 - handlers to open graph mode from list rows and detail actions;
 - handler to return to task list mode.
 
@@ -343,36 +259,30 @@ If graph mode opens before the source task exists in cache, show an empty graph
 pane with a back-to-list action. If the source exists but has no reachable peers,
 show a single source node.
 
-The graph does not surface daemon errors directly. It reflects whatever the
-workspace cache already knows. Normal detail selection errors continue to use the
-existing request error path. ELK layout failures are debug-only: keep or fall
-back to compact coordinates, record a graph layout error event, and do not show a
-blocking user-facing error for layout failure alone.
+The graph surfaces native graph request errors in the graph pane without
+replacing the normal task-detail request error path. If a previous graph response
+is already visible, keep it visible and show a non-blocking graph alert for the
+failed refresh. ELK layout failures are debug-only: keep or fall back to compact
+coordinates, record a graph layout error event, and do not show a blocking
+user-facing error for layout failure alone.
 
 ## Testing
 
 Add unit tests for the graph builder:
 
 - source-only graph;
-- parent and child reachability;
-- blocks, blocked-by, and related reachability;
-- inverse parent/child and blocks/blocked_by declarations dedupe to one edge;
-- summary/detail reciprocal edges dedupe through the same edge path;
-- detail-only reciprocal edges keep the first detail-link direction;
-- UID-backed reverse edges do not fall back through cached short-id matches;
-- placeholder peer handling;
-- done filtering;
+- rendering nodes and server-provided `parent`, `blocks`, and `related` edges;
+- exact duplicate edge-id dedupe without inverse edge reinterpretation;
+- `layout: false` edges remain rendered but are omitted from layout edges;
+- unresolved refs render disabled UID-backed placeholders without short-id
+  matching;
 - priority and status node metadata;
 - graph node subtitles use the short task id even when a qualified id is
   available;
-- no ambiguous short-id random matching.
-- unresolved graph peer references are returned for background fetching.
-- UID-backed missing peers do not fall back to cached short-id matches.
-- graph depth filters prune selected-task traversal at 1, 2, and 3 edges, while
-  `Full` renders the source-rooted cached graph.
+- empty graph response handling;
 - graph context filters only change emphasis at 1, 2, and 3 selected-task
   edges; `All` leaves every rendered node and edge in context.
-- context changes and full-depth graph-node selection keep the same node set,
+- context changes and graph-node selection keep the same node set,
   layout edges, and positions while moving only active/faded classification and
   selected-adjacent highlighting.
 
@@ -383,9 +293,9 @@ Add Svelte tests for workspace integration:
 - graph nodes display task titles and priority markers;
 - clicking a cached graph node selects the task and updates the detail pane;
 - pressing Enter/Space on a focused graph task node selects the task;
-- selecting a detail-only linked node does not remove it from the graph;
-- uncached graph references with peer uids trigger background detail fetches and
-  replace disabled placeholders once cached;
+- graph loading and graph request errors are reflected in the graph pane;
+- selected graph nodes do not trigger a new graph request when depth, hide-done,
+  source, and daemon are unchanged;
 - adjacent graph nodes are themed by their relationship direction to the
   selected task;
 - adjacent relation backgrounds do not overwrite status accents;
@@ -404,9 +314,9 @@ Add Svelte tests for workspace integration:
 - full-stack e2e coverage switches active depth and context through the real
   workspace graph path and verifies context remains emphasis-only by fading
   visible out-of-context edges without changing node ids, positions, or layout
-  edge count.
-- full-stack e2e coverage verifies uncached UID-backed graph references populate
-  through the real proxy path.
+  edge count, while depth is the API-backed control that changes the node set.
+- full-stack e2e coverage verifies linked graph nodes arrive from the native
+  `/graph` endpoint without a graph-time per-node detail fetch.
 - full-stack e2e coverage verifies rendered edge count can stay larger than
   layout edge count when transitive block edges are elided only for layout.
 - full-stack e2e coverage stalls a clicked graph-node detail request, verifies

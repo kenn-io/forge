@@ -24,6 +24,7 @@ export function parseAPITimestamp(dateStr: string): Date {
  * under a week; beyond that it shows a short absolute month/day instead of
  * "12d ago"/"2mo ago"). Import it from @kenn-io/kit-ui directly.
  */
+export { formatRelativeTime as timeAgo } from "@kenn-io/kit-ui/utils/time";
 
 /**
  * Converts an API timestamp to a local calendar label for display.

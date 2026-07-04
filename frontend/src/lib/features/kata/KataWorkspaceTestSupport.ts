@@ -3,6 +3,7 @@ import { vi } from "vite-plus/test";
 import type {
   KataInstanceResponse,
   KataProjectSummary,
+  KataReachableGraphResponse,
   KataRecurrence,
   KataTaskAPI,
   KataTaskEvent,
@@ -191,6 +192,49 @@ function detail(
   };
 }
 
+function reachableGraph(
+  sourceUID: string,
+  rows: readonly KataTaskSummary[],
+  depth: KataReachableGraphResponse["depth"] = "full",
+  hideDone = false,
+): KataReachableGraphResponse {
+  const visibleRows = rows.filter((item) => item.uid === sourceUID || !(hideDone && item.closed_reason === "done"));
+  const visible = new Set(visibleRows.map((item) => item.uid));
+  return {
+    source_uid: sourceUID,
+    depth,
+    hide_done: hideDone,
+    nodes: visibleRows.map((item) => ({ ...item, labels: [...(item.labels ?? [])] })),
+    edges: visibleRows
+      .flatMap((item) => [
+        ...(item.parent?.uid
+          ? [{ from_uid: item.parent.uid, to_uid: item.uid, kind: "parent" as const, layout: true }]
+          : []),
+        ...(item.blocks ?? []).map((peer) => ({
+          from_uid: item.uid,
+          to_uid: peer.uid,
+          kind: "blocks" as const,
+          layout: true,
+        })),
+        ...(item.blocked_by ?? []).map((peer) => ({
+          from_uid: peer.uid,
+          to_uid: item.uid,
+          kind: "blocks" as const,
+          layout: true,
+        })),
+        ...(item.related ?? []).map((peer) => ({
+          from_uid: item.uid,
+          to_uid: peer.uid,
+          kind: "related" as const,
+          layout: true,
+        })),
+      ])
+      .filter((edge) => visible.has(edge.from_uid) && visible.has(edge.to_uid)),
+    unresolved_refs: [],
+    fetched_at: fetchedAt,
+  };
+}
+
 function createDaemonWorkspaceAPI(rowsByDaemon: Record<string, KataTaskSummary[]>): KataTaskAPI {
   function rows(): KataTaskSummary[] {
     return rowsByDaemon[getActiveKataDaemon() ?? getDefaultKataDaemon() ?? "home"] ?? [];
@@ -255,6 +299,9 @@ function createDaemonWorkspaceAPI(rowsByDaemon: Record<string, KataTaskSummary[]
       }),
     ),
     issue: vi.fn(async (uid: string) => detail(uid, rows())),
+    reachableGraph: vi.fn(async (_projectID: number, ref: string, query = {}) =>
+      reachableGraph(ref, rows(), query.depth ?? "full", query.hide_done === true),
+    ),
     events: vi.fn(
       async (): Promise<KataTaskEventsResponse> => ({
         reset_required: false,
@@ -416,6 +463,9 @@ function createWorkspaceAPI(
       ),
       search,
       issue: vi.fn(async (uid: string) => detail(uid, rows, commentsByUID)),
+      reachableGraph: vi.fn(async (_projectID: number, ref: string, query = {}) =>
+        reachableGraph(ref, rows, query.depth ?? "full", query.hide_done === true),
+      ),
       events: vi.fn(
         async (): Promise<KataTaskEventsResponse> => ({
           reset_required: false,

@@ -89,7 +89,7 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 7px;
+    gap: var(--space-2);
     border: 1px solid var(--border-default);
     border-radius: 6px;
     background: var(--node-relation-bg, var(--node-status-bg, var(--bg-primary)));

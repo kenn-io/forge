@@ -1,7 +1,12 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
+import type {
+  KataReachableGraphQuery,
+  KataReachableGraphResponse,
+  KataTaskAPI,
+  KataTaskSummary,
+} from "../../api/kata/taskTypes.js";
 import KataReachableGraph from "./KataReachableGraph.svelte";
 
 function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
@@ -20,13 +25,38 @@ function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
     revision: overrides.revision ?? 1,
     author: overrides.author ?? "middleman",
     priority: overrides.priority,
-    blocks: overrides.blocks,
-    blocked_by: overrides.blocked_by,
-    related: overrides.related,
     closed_reason: overrides.closed_reason,
     created_at: overrides.created_at ?? "2026-06-29T12:00:00Z",
     updated_at: overrides.updated_at ?? "2026-06-29T12:00:00Z",
   };
+}
+
+function graphResponse(
+  source: KataTaskSummary,
+  nodes: KataTaskSummary[],
+  query: KataReachableGraphQuery = {},
+): KataReachableGraphResponse {
+  return {
+    source_uid: source.uid,
+    depth: query.depth ?? "full",
+    hide_done: query.hide_done === true,
+    nodes,
+    edges: [],
+    unresolved_refs: [],
+    fetched_at: "2026-06-29T12:00:00Z",
+  };
+}
+
+function graphAPI(source: KataTaskSummary, allNodes: KataTaskSummary[]): KataTaskAPI {
+  return {
+    reachableGraph: vi.fn(async (_projectID: number, _ref: string, query: KataReachableGraphQuery = {}) => {
+      const nodes =
+        query.hide_done === true
+          ? allNodes.filter((node) => node.uid === source.uid || node.closed_reason !== "done")
+          : allNodes;
+      return graphResponse(source, nodes, query);
+    }),
+  } as unknown as KataTaskAPI;
 }
 
 function graphNodeButtonWithText(text: string): HTMLButtonElement {
@@ -68,31 +98,35 @@ describe("KataReachableGraph", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders node titles and priority markers", () => {
+  it("loads the native graph and renders node titles and priority markers", async () => {
     const root = task({ uid: "issue-root", short_id: "root", title: "Root task", priority: 0 });
+    const api = graphAPI(root, [root]);
     render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api,
+        sourceIssue: root,
         selectedUID: root.uid,
-        tasks: [root],
-        selectedDetail: null,
         onBack: () => {},
         onSelectIssue: () => {},
       },
     });
 
+    await waitFor(() =>
+      expect(api.reachableGraph).toHaveBeenCalledWith(
+        7,
+        "issue-root",
+        { depth: "full", hide_done: false },
+        expect.any(Object),
+      ),
+    );
     expect(screen.getByRole("region", { name: "Reachable task graph" })).toBeTruthy();
     expect(screen.getAllByText("Root task").length).toBeGreaterThan(0);
     expect(screen.getByText("P0")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Source task, selected, Root task, Kata#root, open/ })).toBeTruthy();
   });
 
-  it("filters done nodes", async () => {
-    const root = task({
-      uid: "issue-root",
-      short_id: "root",
-      blocks: [{ uid: "issue-done", short_id: "done" }],
-    });
+  it("passes hide-done to the native graph endpoint", async () => {
+    const root = task({ uid: "issue-root", short_id: "root" });
     const done = task({
       uid: "issue-done",
       short_id: "done",
@@ -100,38 +134,47 @@ describe("KataReachableGraph", () => {
       status: "closed",
       closed_reason: "done",
     });
+    const api = graphAPI(root, [root, done]);
     render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api,
+        sourceIssue: root,
         selectedUID: root.uid,
-        tasks: [root, done],
-        selectedDetail: null,
         onBack: () => {},
         onSelectIssue: () => {},
       },
     });
 
-    expect(screen.getAllByText("Done task").length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getAllByText("Done task").length).toBeGreaterThan(0));
     await fireEvent.click(screen.getByRole("button", { name: /Graph filters/ }));
     await fireEvent.click(screen.getByRole("button", { name: "Hide done" }));
-    expect(screen.queryAllByText("Done task")).toEqual([]);
+    await waitFor(() =>
+      expect(api.reachableGraph).toHaveBeenLastCalledWith(
+        7,
+        "issue-root",
+        { depth: "full", hide_done: true },
+        expect.any(Object),
+      ),
+    );
+    await waitFor(() => expect(screen.queryAllByText("Done task")).toEqual([]));
   });
 
   it("selects cached nodes and returns to the list", async () => {
     const root = task({ uid: "issue-root", short_id: "root", title: "Root task" });
+    const api = graphAPI(root, [root]);
     const onSelectIssue = vi.fn();
     const onBack = vi.fn();
     render(KataReachableGraph, {
       props: {
-        sourceUID: root.uid,
+        api,
+        sourceIssue: root,
         selectedUID: null,
-        tasks: [root],
-        selectedDetail: null,
         onBack,
         onSelectIssue,
       },
     });
 
+    await waitFor(() => expect(graphNodeButtonWithText("Root task")).toBeTruthy());
     await fireEvent.click(graphNodeButtonWithText("Root task"));
     expect(onSelectIssue).toHaveBeenCalledWith("issue-root");
 

@@ -113,6 +113,38 @@ export interface KataTaskSearchResponse {
   fetched_at: string;
 }
 
+export type KataReachableGraphDepth = "full" | "1" | "2" | "3";
+export type KataReachableGraphEdgeKind = "parent" | "blocks" | "related";
+
+export interface KataReachableGraphQuery {
+  depth?: KataReachableGraphDepth | undefined;
+  hide_done?: boolean | undefined;
+}
+
+export interface KataReachableGraphEdge {
+  from_uid: string;
+  to_uid: string;
+  kind: KataReachableGraphEdgeKind;
+  layout: boolean;
+}
+
+export interface KataReachableGraphUnresolvedRef {
+  uid: string;
+  side: "from" | "to";
+  kind: KataReachableGraphEdgeKind;
+  other_uid: string;
+}
+
+export interface KataReachableGraphResponse {
+  source_uid: string;
+  depth: KataReachableGraphDepth;
+  hide_done: boolean;
+  nodes: KataTaskSummary[];
+  edges: KataReachableGraphEdge[];
+  unresolved_refs: KataReachableGraphUnresolvedRef[];
+  fetched_at: string;
+}
+
 export interface KataDuplicateCandidateDisplay {
   title: string;
   qualified_id: string;
@@ -361,6 +393,12 @@ export interface KataTaskAPI {
   issues(query: KataTaskIssuesQuery): Promise<KataTaskViewResponse>;
   search(filters: KataTaskSearchFilters, opts?: { daemonId?: string }): Promise<KataTaskSearchResponse>;
   issue(uid: string, opts?: { daemonId?: string; pinned?: boolean; signal?: AbortSignal }): Promise<KataTaskDetail>;
+  reachableGraph(
+    projectID: number,
+    ref: string,
+    query?: KataReachableGraphQuery,
+    opts?: { daemonId?: string; signal?: AbortSignal },
+  ): Promise<KataReachableGraphResponse>;
   events(query?: KataTaskEventsQuery, opts?: { signal?: AbortSignal }): Promise<KataTaskEventsResponse>;
   addComment(target: KataTaskMutationTarget, actor: string, body: string): Promise<KataTaskMutationResponse>;
   addLabel(target: KataTaskMutationTarget, actor: string, label: string): Promise<KataTaskMutationResponse>;

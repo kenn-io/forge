@@ -4,6 +4,7 @@ import { KataTaskAPIError } from "../api/kata/taskClient.js";
 import type {
   KataCreateRecurrenceInput,
   KataInstanceResponse,
+  KataReachableGraphResponse,
   KataTaskCreateDraft,
   KataProjectSummary,
   KataRecurrence,
@@ -207,6 +208,7 @@ type FakeKataTaskAPI = KataTaskAPI & {
     issues: ReturnType<typeof vi.fn>;
     search: ReturnType<typeof vi.fn>;
     issue: ReturnType<typeof vi.fn>;
+    reachableGraph: ReturnType<typeof vi.fn>;
     events: ReturnType<typeof vi.fn>;
     addComment: ReturnType<typeof vi.fn>;
     addLabel: ReturnType<typeof vi.fn>;
@@ -318,6 +320,17 @@ function createFakeKataTaskAPI(): FakeKataTaskAPI {
     return { filters, issues: rows, fetched_at: fetchedAt };
   });
   const issueMock = vi.fn(async (uid: string) => detailFor(uid));
+  const reachableGraph = vi.fn(
+    async (_projectID: number, ref: string): Promise<KataReachableGraphResponse> => ({
+      source_uid: ref,
+      depth: "full",
+      hide_done: false,
+      nodes: issues,
+      edges: [],
+      unresolved_refs: [],
+      fetched_at: fetchedAt,
+    }),
+  );
   const eventsMock = vi.fn(async (query: KataTaskEventsQuery = {}): Promise<KataTaskEventsResponse> => {
     const rows = events
       .filter((event) => event.event_id > (query.after_id ?? 0))
@@ -409,6 +422,7 @@ function createFakeKataTaskAPI(): FakeKataTaskAPI {
     issues: issuesMock,
     search,
     issue: issueMock,
+    reachableGraph,
     events: eventsMock,
     addComment,
     addLabel,
@@ -436,6 +450,7 @@ function createFakeKataTaskAPI(): FakeKataTaskAPI {
       issues: issuesMock,
       search,
       issue: issueMock,
+      reachableGraph,
       events: eventsMock,
       addComment,
       addLabel,
@@ -1004,100 +1019,6 @@ describe("kata workspace store", () => {
     expect(store.pendingSelectionUID).toBeNull();
   });
 
-  test("invalidating pending loads clears stale graph task population", async () => {
-    resetKataGraphDebug();
-    const api = createFakeKataTaskAPI();
-    const first = issue("issue-first-graph", "First graph task", "project-kata");
-    const second = issue("issue-second-graph", "Second graph task", "project-kata");
-    const pendingDetail = deferred<KataTaskDetail>();
-    const signals: (AbortSignal | undefined)[] = [];
-    api.mocks.issue.mockImplementation(async (uid: string, opts?: { signal?: AbortSignal }) => {
-      if (uid === first.uid) {
-        signals.push(opts?.signal);
-        return pendingDetail.promise;
-      }
-      if (uid === second.uid) return { ...detailFor("issue-email-susan"), issue: second };
-      return detailFor(uid);
-    });
-    const store = createKataWorkspaceStore({ api });
-    const graphLoad = store.loadGraphTaskRefs([
-      { uid: first.uid, projectUID: first.project_uid, shortID: first.short_id },
-      { uid: second.uid, projectUID: second.project_uid, shortID: second.short_id },
-    ]);
-
-    await Promise.resolve();
-    expect(signals).toHaveLength(1);
-
-    store.invalidatePendingLoads();
-    const aborted = signals[0]?.aborted;
-    const queueKeysAfterInvalidation = getKataGraphDebugSnapshot().store?.queueKeys;
-
-    pendingDetail.resolve({ ...detailFor("issue-email-susan"), issue: { ...first, body: "First graph task body" } });
-    await graphLoad;
-
-    expect(aborted).toBe(true);
-    expect(queueKeysAfterInvalidation).toEqual([]);
-    expect(api.mocks.issue.mock.calls.map(([uid]) => uid)).toEqual([first.uid]);
-    expect(store.cachedTasks.find((task) => task.uid === first.uid)).toBeUndefined();
-    expect(store.cachedTasks.find((task) => task.uid === second.uid)).toBeUndefined();
-  });
-
-  test("coalesces graph task population into one refresh loop per missing issue", async () => {
-    resetKataGraphDebug();
-    const api = createFakeKataTaskAPI();
-    const linked = issue("issue-linked-graph", "Linked graph task", "project-kata");
-    const pendingDetail = deferred<KataTaskDetail>();
-    api.mocks.issue.mockImplementation(async (uid: string) => {
-      if (uid === linked.uid) return pendingDetail.promise;
-      return detailFor(uid);
-    });
-    const store = createKataWorkspaceStore({ api });
-    const ref = { uid: linked.uid, projectUID: linked.project_uid, shortID: linked.short_id };
-
-    const first = store.loadGraphTaskRefs([ref]);
-    const second = store.loadGraphTaskRefs([ref]);
-
-    await Promise.resolve();
-    expect(api.mocks.issue.mock.calls.filter(([uid]) => uid === linked.uid)).toHaveLength(1);
-
-    pendingDetail.resolve({
-      ...detailFor("issue-email-susan"),
-      issue: { ...linked, body: "Linked graph task body" },
-    });
-    await first;
-    await second;
-
-    expect(store.cachedTasks.find((task) => task.uid === linked.uid)?.title).toBe("Linked graph task");
-    const debug = getKataGraphDebugSnapshot();
-    const eventKinds = debug.events.map((event) => event.kind);
-    expect(eventKinds.filter((kind) => kind === "graph-load-start")).toHaveLength(1);
-    expect(eventKinds).toContain("graph-load-drain-join");
-    expect(eventKinds).toContain("graph-load-complete");
-    expect(debug.store?.queueKeys).toEqual([]);
-    expect(debug.store?.graphLoadActive).toBe(false);
-  });
-
-  test("uses uid-backed graph refs even when another cached task has the same short id", async () => {
-    const api = createFakeKataTaskAPI();
-    const wrongCachedTask = issue("issue-wrong-graph", "Wrong graph task", "project-kata");
-    const linked = {
-      ...issue("issue-linked-graph", "Linked graph task", "project-kata"),
-      short_id: wrongCachedTask.short_id,
-      qualified_id: wrongCachedTask.qualified_id,
-    };
-    api.mocks.issue.mockImplementation(async (uid: string) => {
-      if (uid === linked.uid) return { ...detailFor("issue-email-susan"), issue: linked };
-      return detailFor(uid);
-    });
-    const store = createKataWorkspaceStore({ api });
-    store.rememberTasks([wrongCachedTask]);
-
-    await store.loadGraphTaskRefs([{ uid: linked.uid, projectUID: linked.project_uid, shortID: linked.short_id }]);
-
-    expect(api.mocks.issue).toHaveBeenCalledWith(linked.uid, { signal: expect.any(AbortSignal) });
-    expect(store.cachedTasks.find((task) => task.uid === linked.uid)?.title).toBe("Linked graph task");
-  });
-
   test("explicit empty relationship fields clear stale cached graph links", () => {
     const store = createKataWorkspaceStore({ api: createFakeKataTaskAPI() });
     const stale = {
@@ -1125,71 +1046,6 @@ describe("kata workspace store", () => {
       related: [],
       child_counts: { open: 0, total: 0 },
     });
-  });
-
-  test("records non-store graph aborts as terminal background errors", async () => {
-    resetKataGraphDebug();
-    const api = createFakeKataTaskAPI();
-    const linked = issue("issue-linked-graph", "Linked graph task", "project-kata");
-    api.mocks.issue.mockRejectedValueOnce(new DOMException("Transport aborted", "AbortError"));
-    const store = createKataWorkspaceStore({ api });
-
-    await store.loadGraphTaskRefs([{ uid: linked.uid, projectUID: linked.project_uid, shortID: linked.short_id }]);
-
-    const debug = getKataGraphDebugSnapshot();
-    expect(api.mocks.issue.mock.calls.filter(([uid]) => uid === linked.uid)).toHaveLength(1);
-    expect(debug.events.map((event) => event.kind)).toContain("graph-load-error");
-    expect(debug.store?.queueKeys).toEqual([]);
-  });
-
-  test("pauses graph population while a user selection refresh is active", async () => {
-    resetKataGraphDebug();
-    const api = createFakeKataTaskAPI();
-    const linked = issue("issue-linked-graph", "Linked graph task", "project-kata");
-    const pendingDetail = deferred<KataTaskDetail>();
-    const graphSignals: (AbortSignal | undefined)[] = [];
-    api.mocks.issue.mockImplementation(async (uid: string, opts?: { signal?: AbortSignal }) => {
-      if (uid === linked.uid) {
-        graphSignals.push(opts?.signal);
-        if (graphSignals.length === 1) {
-          return new Promise<KataTaskDetail>((_resolve, reject) => {
-            opts?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
-              once: true,
-            });
-          });
-        }
-        return pendingDetail.promise;
-      }
-      return detailFor(uid);
-    });
-    const store = createKataWorkspaceStore({ api });
-    const graphLoad = store.loadGraphTaskRefs([
-      { uid: linked.uid, projectUID: linked.project_uid, shortID: linked.short_id },
-    ]);
-
-    await Promise.resolve();
-    expect(graphSignals).toHaveLength(1);
-
-    await expect(store.selectIssue("issue-pay-rent")).resolves.toBe(true);
-
-    expect(graphSignals[0]?.aborted).toBe(true);
-    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
-    await graphLoad;
-
-    const debug = getKataGraphDebugSnapshot();
-    const eventKinds = debug.events.map((event) => event.kind);
-    expect(eventKinds).toContain("graph-load-abort");
-    expect(eventKinds).toContain("graph-load-paused");
-    expect(eventKinds).toContain("detail-load-start");
-    expect(eventKinds).toContain("detail-load-complete");
-
-    pendingDetail.resolve({
-      ...detailFor("issue-email-susan"),
-      issue: { ...linked, body: "Linked graph task body" },
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(store.cachedTasks.find((task) => task.uid === linked.uid)?.title).toBe("Linked graph task");
   });
 
   test("clearing the selection aborts the in-flight detail load", async () => {

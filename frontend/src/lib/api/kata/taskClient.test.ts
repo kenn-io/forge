@@ -706,6 +706,51 @@ describe("kata task HTTP client", () => {
     expect(events.events.map((event) => event.event_uid)).toEqual(["event-5"]);
   });
 
+  test("fetches the native reachable graph with depth and hide-done parameters", async () => {
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/projects/42/issues/issue-root/graph?depth=2&hide_done=true": {
+        body: {
+          source_uid: "issue-root",
+          depth: "2",
+          hide_done: true,
+          nodes: [
+            {
+              id: 1,
+              uid: "issue-root",
+              project_id: 42,
+              project_uid: "project-work",
+              short_id: "root",
+              qualified_id: "Work#root",
+              title: "Root graph task",
+              status: "open",
+              metadata: {},
+              revision: 1,
+              author: "fixture-user",
+              created_at: "2026-05-01T12:00:00.000Z",
+              updated_at: "2026-05-15T16:00:00.000Z",
+            },
+          ],
+          edges: [{ from_uid: "issue-root", to_uid: "issue-child", kind: "blocks", layout: false }],
+          unresolved_refs: [{ uid: "issue-child", side: "to", kind: "blocks", other_uid: "issue-root" }],
+        },
+      },
+    });
+    const api = createKataTaskAPI({ fetchImpl, getDaemonId: () => "work" });
+
+    const graph = await api.reachableGraph(42, "issue-root", { depth: "2", hide_done: true });
+
+    expect(proxyPath(calls[0]!.url)).toBe("/api/v1/projects/42/issues/issue-root/graph?depth=2&hide_done=true");
+    expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("work");
+    expect(graph).toMatchObject({
+      source_uid: "issue-root",
+      depth: "2",
+      hide_done: true,
+      edges: [{ from_uid: "issue-root", to_uid: "issue-child", kind: "blocks", layout: false }],
+      unresolved_refs: [{ uid: "issue-child", side: "to", kind: "blocks", other_uid: "issue-root" }],
+    });
+    expect(graph.nodes[0]?.project_name).toBe("Work");
+  });
+
   test("paginates issue-scoped event reads until the requested filtered limit is reached", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/events?after_id=4&limit=2": {

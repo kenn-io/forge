@@ -56,17 +56,6 @@ interface KataBootstrapOptions {
   selectFirst?: boolean | undefined;
 }
 
-export interface KataGraphTaskRef {
-  uid?: string | undefined;
-  projectUID: string;
-  shortID: string;
-}
-
-interface QueuedKataGraphTaskRef {
-  ref: KataGraphTaskRef;
-  generation: number;
-}
-
 function emptyView(name: KataTaskViewName = "today"): KataCurrentView {
   return { name, groups: [] };
 }
@@ -196,21 +185,6 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function graphTaskRefKey(ref: KataGraphTaskRef): string {
-  return ref.uid ? `uid:${ref.uid}` : `short:${ref.projectUID}:${ref.shortID}`;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-class GraphTaskLoadInterrupted extends Error {
-  constructor() {
-    super("Graph task load interrupted");
-    this.name = "GraphTaskLoadInterrupted";
-  }
-}
-
 function mergeKataPeerList(
   previous: KataTaskSummary["blocks"],
   next: KataTaskSummary["blocks"],
@@ -324,10 +298,6 @@ export class KataWorkspaceStore {
   private unscopedViewName: KataTaskViewName = "today";
   private issueETags = new Map<string, string>();
   private metadataQueues = new Map<string, Promise<void>>();
-  private graphTaskLoadQueue = new Map<string, QueuedKataGraphTaskRef>();
-  private graphTaskLoadPromise: Promise<void> | null = null;
-  private graphTaskLoadAbort: AbortController | null = null;
-  private graphTaskLoadGeneration = 0;
 
   constructor(options: CreateKataWorkspaceStoreOptions = {}) {
     this.api = options.api ?? createKataTaskAPI();
@@ -544,17 +514,6 @@ export class KataWorkspaceStore {
     }
   }
 
-  async loadGraphSourceDetail(uid: string, signal?: AbortSignal): Promise<KataTaskDetail> {
-    const detail = await this.api.issue(uid, signal ? { signal } : {});
-    this.cacheDetail(detail);
-    if (detail.etag) {
-      this.issueETags.set(detail.issue.uid, detail.etag);
-    } else {
-      this.issueETags.set(detail.issue.uid, `"rev-${detail.issue.revision}"`);
-    }
-    return detail;
-  }
-
   clearSelection(): void {
     this.detailRequestID++;
     this.abortPendingDetail();
@@ -673,26 +632,9 @@ export class KataWorkspaceStore {
     this.cacheTasks(issues);
   }
 
-  async loadGraphTaskRefs(refs: readonly KataGraphTaskRef[]): Promise<void> {
-    const requestedKeys = refs.map(graphTaskRefKey);
-    const queuedKeys: string[] = [];
-    const generation = this.graphTaskLoadGeneration;
-    for (const ref of refs) {
-      const key = graphTaskRefKey(ref);
-      if (this.hasCachedGraphTaskRef(ref)) continue;
-      this.graphTaskLoadQueue.set(key, { ref, generation });
-      queuedKeys.push(key);
-    }
-    this.observeGraphStore("graph-load-enqueue", { requestedKeys, queuedKeys });
-    await this.startGraphTaskLoadDrain();
-  }
-
   invalidatePendingLoads(): void {
     this.viewRequestID++;
     this.detailRequestID++;
-    this.graphTaskLoadGeneration++;
-    this.graphTaskLoadQueue.clear();
-    this.abortGraphTaskLoad();
     this.abortPendingDetail();
     this.pendingSelectionUID = null;
     this.updateGraphDebugStore();
@@ -708,14 +650,6 @@ export class KataWorkspaceStore {
     }
     this.detailAbort?.abort();
     this.detailAbort = null;
-  }
-
-  private abortGraphTaskLoad(): void {
-    if (this.graphTaskLoadAbort) {
-      this.observeGraphStore("graph-load-abort");
-    }
-    this.graphTaskLoadAbort?.abort();
-    this.graphTaskLoadAbort = null;
   }
 
   resetEventCursor(): void {
@@ -807,131 +741,14 @@ export class KataWorkspaceStore {
     this.cacheTasks([detail.issue, ...(detail.children ?? [])]);
   }
 
-  private hasCachedGraphTaskRef(ref: KataGraphTaskRef): boolean {
-    if (ref.uid && this.taskCache.has(ref.uid)) return true;
-    if (ref.uid) return false;
-    for (const issue of this.taskCache.values()) {
-      if (issue.project_uid === ref.projectUID && issue.short_id === ref.shortID) return true;
-    }
-    return false;
-  }
-
-  private ensureCurrentGraphTaskLoad(generation: number): void {
-    if (generation !== this.graphTaskLoadGeneration) {
-      throw new GraphTaskLoadInterrupted();
-    }
-  }
-
-  private async loadGraphTaskRef(ref: KataGraphTaskRef, generation: number): Promise<void> {
-    this.ensureCurrentGraphTaskLoad(generation);
-    if (ref.uid) {
-      const abort = new AbortController();
-      this.graphTaskLoadAbort = abort;
-      let detail: KataTaskDetail;
-      try {
-        detail = await this.api.issue(ref.uid, { signal: abort.signal });
-      } catch (error) {
-        if (abort.signal.aborted) throw new GraphTaskLoadInterrupted();
-        throw error;
-      } finally {
-        if (this.graphTaskLoadAbort === abort) this.graphTaskLoadAbort = null;
-      }
-      this.ensureCurrentGraphTaskLoad(generation);
-      this.cacheDetail(detail);
-      if (detail.etag) {
-        this.issueETags.set(detail.issue.uid, detail.etag);
-      } else {
-        this.issueETags.set(detail.issue.uid, `"rev-${detail.issue.revision}"`);
-      }
-      return;
-    }
-
-    const results = await this.api.search({
-      scope: { kind: "project", project_uid: ref.projectUID },
-      status: "all",
-      owner: "",
-      label: "",
-      query: ref.shortID,
-    });
-    const matches = results.issues.filter(
-      (issue) => issue.project_uid === ref.projectUID && issue.short_id === ref.shortID,
-    );
-    this.ensureCurrentGraphTaskLoad(generation);
-    this.cacheTasks(matches);
-  }
-
   private isIssueRefreshActive(): boolean {
     return this.detailAbort !== null || this.pendingSelectionUID !== null;
   }
 
-  private async startGraphTaskLoadDrain(): Promise<void> {
-    if (this.graphTaskLoadPromise) {
-      this.observeGraphStore("graph-load-drain-join");
-      await this.graphTaskLoadPromise;
-      if (this.graphTaskLoadQueue.size > 0 && !this.isIssueRefreshActive()) {
-        await this.startGraphTaskLoadDrain();
-      }
-      return;
-    }
-    if (this.isIssueRefreshActive()) {
-      if (this.graphTaskLoadQueue.size > 0) this.observeGraphStore("graph-load-paused");
-      return;
-    }
-    if (this.graphTaskLoadQueue.size === 0) {
-      this.updateGraphDebugStore();
-      return;
-    }
-    this.graphTaskLoadPromise = Promise.resolve().then(() => this.drainGraphTaskLoadQueue());
-    this.observeGraphStore("graph-load-drain-start");
-    try {
-      await this.graphTaskLoadPromise;
-    } finally {
-      this.graphTaskLoadPromise = null;
-      this.observeGraphStore("graph-load-drain-end");
-      if (this.graphTaskLoadQueue.size > 0 && !this.isIssueRefreshActive()) {
-        void this.startGraphTaskLoadDrain();
-      }
-    }
-  }
-
-  private async drainGraphTaskLoadQueue(): Promise<void> {
-    for (;;) {
-      if (this.isIssueRefreshActive()) {
-        this.observeGraphStore("graph-load-paused");
-        return;
-      }
-      const next = this.graphTaskLoadQueue.entries().next();
-      if (next.done) return;
-      const [key, entry] = next.value;
-      this.graphTaskLoadQueue.delete(key);
-      const { ref, generation } = entry;
-      if (generation !== this.graphTaskLoadGeneration) continue;
-      if (this.hasCachedGraphTaskRef(ref)) continue;
-      try {
-        this.observeGraphStore("graph-load-start", { key });
-        await this.loadGraphTaskRef(ref, generation);
-        this.observeGraphStore("graph-load-complete", { key });
-      } catch (error) {
-        if (
-          generation === this.graphTaskLoadGeneration &&
-          (this.isIssueRefreshActive() || error instanceof GraphTaskLoadInterrupted) &&
-          !this.hasCachedGraphTaskRef(ref)
-        ) {
-          this.graphTaskLoadQueue.set(key, { ref, generation });
-          this.observeGraphStore("graph-load-paused", { key });
-          return;
-        }
-        this.observeGraphStore("graph-load-error", { key, message: errorMessage(error) });
-        // Background graph expansion should not replace the workspace's
-        // normal request-error surface. The unresolved node remains visible.
-      }
-    }
-  }
-
   private updateGraphDebugStore(): void {
     setKataGraphDebugStore({
-      queueKeys: [...this.graphTaskLoadQueue.keys()],
-      graphLoadActive: this.graphTaskLoadPromise !== null,
+      queueKeys: [],
+      graphLoadActive: false,
       issueRefreshActive: this.isIssueRefreshActive(),
       pendingSelectionUID: this.pendingSelectionUID,
       selectedIssueUID: this.selectedIssue?.issue.uid ?? null,
@@ -1154,7 +971,6 @@ export class KataWorkspaceStore {
     viewRequestID: number | undefined,
     detailRequestID: number,
   ): Promise<boolean> {
-    this.abortGraphTaskLoad();
     this.abortPendingDetail();
 
     if (!uid) {
@@ -1163,7 +979,6 @@ export class KataWorkspaceStore {
         this.selectedEvents = [];
         this.selectedRecurrences = [];
         this.pendingSelectionUID = null;
-        void this.startGraphTaskLoadDrain();
         this.updateGraphDebugStore();
         return true;
       }
@@ -1190,7 +1005,6 @@ export class KataWorkspaceStore {
       throw error;
     } finally {
       if (this.detailAbort === abort) this.detailAbort = null;
-      void this.startGraphTaskLoadDrain();
     }
     if (viewRequestID !== undefined && viewRequestID !== this.viewRequestID) {
       this.observeGraphStore("detail-load-stale", { uid, detailRequestID, viewRequestID });
@@ -1211,7 +1025,6 @@ export class KataWorkspaceStore {
     this.selectedRecurrences = [];
     this.pendingSelectionUID = null;
     this.observeGraphStore("detail-load-complete", { uid, detailRequestID });
-    void this.startGraphTaskLoadDrain();
     void this.loadSelectedRecurrences(detail.issue.project_id, detailRequestID);
     return true;
   }

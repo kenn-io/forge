@@ -269,9 +269,14 @@ item with `expected_status = "new"`.
 ### PR Kanban Compatibility
 
 Existing PR list/detail responses continue to expose `KanbanStatus` with the
-same behavior as today:
+same wire behavior as today, byte-compatible with current clients:
 
-- missing workflow rows read as `new`;
+- missing workflow rows keep emitting an empty `KanbanStatus` string on PR
+  list/detail responses, exactly as the current wire shape does; consumers
+  (including the board UI) already treat empty as `new`;
+- "missing reads as `new`" applies to the effective status used for
+  filtering, workflow-state listings, and `expected_status` comparisons —
+  not to the raw `KanbanStatus` wire value;
 - unexpected values normalize to `new`;
 - `PUT /pulls/{provider}/{owner}/{name}/{number}/state` and the host-prefixed
   variant keep their current request and response shape.
@@ -742,17 +747,19 @@ daemon runtime metadata. Workflow writes do not retry automatically because a
 retry could obscure whether a local state transition was applied before the
 connection failed.
 
-At startup, and again after daemon-unavailable errors, the companion probes the
-daemon for required MCP support:
+Daemon discovery and capability checking are lazy and uniform across
+transports: companion startup never contacts the daemon, and `middleman mcp`
+starts successfully with no daemon running — tools then return a clear
+daemon-unavailable error when called. The workflow-state capability probe
+runs on the first workflow tool call after a successful discovery, before
+that tool executes. Its result is cached keyed by the daemon identity from
+runtime metadata (PID plus start time), so a daemon restart or upgrade while
+the companion stays alive invalidates the cache and triggers a re-probe.
 
-- daemon version endpoint is reachable;
-- existing read routes are reachable;
-- workflow-state routes exist before write/list workflow tools are advertised.
-
-If the daemon is older than the MCP companion expects, the companion should
+If the daemon is older than the MCP companion expects, the workflow tools
 return a version/capability error that names the missing route or capability.
-It should not silently downgrade into partial semantics that change tool
-behavior.
+The companion must not silently downgrade into partial semantics that change
+tool behavior.
 
 ## Staleness And Cache Signals
 

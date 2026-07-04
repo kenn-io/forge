@@ -5983,27 +5983,9 @@ components:
             - force
           type: object
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/SetWorkflowStateBody.json
-          format: uri
-          readOnly: true
-          type: string
         actor:
           maxLength: 120
           type: string
-        expected_status:
-          description: Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
-          enum:
-            - new
-            - reviewing
-            - waiting
-            - awaiting_merge
-          type: string
-        force:
-          description: Set true only for a deliberate unconditional override when expected_status is omitted. This is mutually exclusive with expected_status.
-          type: boolean
         reason:
           maxLength: 500
           type: string

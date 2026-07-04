@@ -39,6 +39,11 @@ func TestWorkflowStateOpenAPIConstrainsWriteBody(t *testing.T) {
 	assert.Equal([]any{true}, contract[1].Properties["force"].Enum)
 	require.NotNil(contract[1].Not)
 	assert.Contains(contract[1].Not.Required, "expected_status")
+	openAPIProperties, ok := schema.Extensions["properties"].(map[string]*huma.Schema)
+	require.True(ok)
+	assert.Contains(openAPIProperties, "status")
+	assert.NotContains(openAPIProperties, "expected_status")
+	assert.NotContains(openAPIProperties, "force")
 
 	source := schema.Properties["source"]
 	require.NotNil(source)

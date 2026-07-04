@@ -57,6 +57,14 @@ func (setWorkflowStateBody) TransformSchema(_ huma.Registry, schema *huma.Schema
 	if schema.Extensions == nil {
 		schema.Extensions = map[string]any{}
 	}
+	common := make(map[string]*huma.Schema, len(schema.Properties))
+	for name, property := range schema.Properties {
+		if name == "expected_status" || name == "force" {
+			continue
+		}
+		common[name] = property
+	}
+	schema.Extensions["properties"] = common
 	schema.Extensions["oneOf"] = []*huma.Schema{
 		{
 			Type:     huma.TypeObject,

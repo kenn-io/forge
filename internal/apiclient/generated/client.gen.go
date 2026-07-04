@@ -290,30 +290,6 @@ func (e ProblemErrorCode) Valid() bool {
 	}
 }
 
-// Defines values for SetWorkflowStateBodyExpectedStatus.
-const (
-	SetWorkflowStateBodyExpectedStatusAwaitingMerge SetWorkflowStateBodyExpectedStatus = "awaiting_merge"
-	SetWorkflowStateBodyExpectedStatusNew           SetWorkflowStateBodyExpectedStatus = "new"
-	SetWorkflowStateBodyExpectedStatusReviewing     SetWorkflowStateBodyExpectedStatus = "reviewing"
-	SetWorkflowStateBodyExpectedStatusWaiting       SetWorkflowStateBodyExpectedStatus = "waiting"
-)
-
-// Valid indicates whether the value is a known member of the SetWorkflowStateBodyExpectedStatus enum.
-func (e SetWorkflowStateBodyExpectedStatus) Valid() bool {
-	switch e {
-	case SetWorkflowStateBodyExpectedStatusAwaitingMerge:
-		return true
-	case SetWorkflowStateBodyExpectedStatusNew:
-		return true
-	case SetWorkflowStateBodyExpectedStatusReviewing:
-		return true
-	case SetWorkflowStateBodyExpectedStatusWaiting:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for SetWorkflowStateBodyStatus.
 const (
 	SetWorkflowStateBodyStatusAwaitingMerge SetWorkflowStateBodyStatus = "awaiting_merge"
@@ -628,16 +604,16 @@ func (e GetWorkspaceFilePreviewParamsWhitespace) Valid() bool {
 
 // Defines values for GetWorkspaceFilePreviewParamsSide.
 const (
-	New GetWorkspaceFilePreviewParamsSide = "new"
-	Old GetWorkspaceFilePreviewParamsSide = "old"
+	GetWorkspaceFilePreviewParamsSideNew GetWorkspaceFilePreviewParamsSide = "new"
+	GetWorkspaceFilePreviewParamsSideOld GetWorkspaceFilePreviewParamsSide = "old"
 )
 
 // Valid indicates whether the value is a known member of the GetWorkspaceFilePreviewParamsSide enum.
 func (e GetWorkspaceFilePreviewParamsSide) Valid() bool {
 	switch e {
-	case New:
+	case GetWorkspaceFilePreviewParamsSideNew:
 		return true
-	case Old:
+	case GetWorkspaceFilePreviewParamsSideOld:
 		return true
 	default:
 		return false
@@ -3018,23 +2994,12 @@ type SetReviewersRequest struct {
 
 // SetWorkflowStateBody defines model for SetWorkflowStateBody.
 type SetWorkflowStateBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Actor  *string `json:"actor,omitempty"`
-
-	// ExpectedStatus Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
-	ExpectedStatus *SetWorkflowStateBodyExpectedStatus `json:"expected_status,omitempty"`
-
-	// Force Set true only for a deliberate unconditional override when expected_status is omitted. This is mutually exclusive with expected_status.
-	Force  *bool                      `json:"force,omitempty"`
+	Actor  *string                    `json:"actor,omitempty"`
 	Reason *string                    `json:"reason,omitempty"`
 	Source *string                    `json:"source,omitempty"`
 	Status SetWorkflowStateBodyStatus `json:"status"`
 	union  json.RawMessage
 }
-
-// SetWorkflowStateBodyExpectedStatus Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
-type SetWorkflowStateBodyExpectedStatus string
 
 // SetWorkflowStateBodyStatus defines model for SetWorkflowStateBody.Status.
 type SetWorkflowStateBodyStatus string
@@ -4486,31 +4451,10 @@ func (t SetWorkflowStateBody) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	if t.Schema != nil {
-		object["$schema"], err = json.Marshal(t.Schema)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '$schema': %w", err)
-		}
-	}
-
 	if t.Actor != nil {
 		object["actor"], err = json.Marshal(t.Actor)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'actor': %w", err)
-		}
-	}
-
-	if t.ExpectedStatus != nil {
-		object["expected_status"], err = json.Marshal(t.ExpectedStatus)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'expected_status': %w", err)
-		}
-	}
-
-	if t.Force != nil {
-		object["force"], err = json.Marshal(t.Force)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'force': %w", err)
 		}
 	}
 
@@ -4548,31 +4492,10 @@ func (t *SetWorkflowStateBody) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	if raw, found := object["$schema"]; found {
-		err = json.Unmarshal(raw, &t.Schema)
-		if err != nil {
-			return fmt.Errorf("error reading '$schema': %w", err)
-		}
-	}
-
 	if raw, found := object["actor"]; found {
 		err = json.Unmarshal(raw, &t.Actor)
 		if err != nil {
 			return fmt.Errorf("error reading 'actor': %w", err)
-		}
-	}
-
-	if raw, found := object["expected_status"]; found {
-		err = json.Unmarshal(raw, &t.ExpectedStatus)
-		if err != nil {
-			return fmt.Errorf("error reading 'expected_status': %w", err)
-		}
-	}
-
-	if raw, found := object["force"]; found {
-		err = json.Unmarshal(raw, &t.Force)
-		if err != nil {
-			return fmt.Errorf("error reading 'force': %w", err)
 		}
 	}
 

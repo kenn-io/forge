@@ -6862,20 +6862,7 @@ export interface components {
             reviewers: string[];
         };
         SetWorkflowStateBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/SetWorkflowStateBody.json
-             */
-            readonly $schema?: string;
             actor?: string;
-            /**
-             * @description Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
-             * @enum {string}
-             */
-            expected_status?: "new" | "reviewing" | "waiting" | "awaiting_merge";
-            /** @description Set true only for a deliberate unconditional override when expected_status is omitted. This is mutually exclusive with expected_status. */
-            force?: boolean;
             reason?: string;
             source?: string;
             /** @enum {string} */
@@ -16830,7 +16817,6 @@ export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<compon
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
 export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceNotFound", "worktreeDirty"];
-export const setWorkflowStateBodyExpected_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"]["expected_status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const setWorkflowStateBodyStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const setWorkflowStateBodyOneOf0Expected_statusValues: ReadonlyArray<Extract<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"], {
     expected_status: unknown;

@@ -1548,6 +1548,13 @@ func TestDaemonClientMapsProblems(t *testing.T) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		switch r.URL.Path {
 		case "/api/v1/nf":
+			// code "notFound" is the exact regression case: the daemon
+			// uses it for domain states (diff unavailable, thread
+			// missing), so it must map to not_found, NOT
+			// version_mismatch.
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(`{"status":404,"code":"notFound","detail":"diff not available"}`))
+		case "/api/v1/nf-item":
 			w.WriteHeader(404)
 			_, _ = w.Write([]byte(`{"status":404,"code":"pullNotFound","detail":"nope"}`))
 		case "/api/v1/conflict":
@@ -1565,6 +1572,8 @@ func TestDaemonClientMapsProblems(t *testing.T) {
 	var out any
 	var derr *daemonError
 	require.ErrorAs(t, c.getJSON(t.Context(), "/api/v1/nf", nil, &out), &derr)
+	assert.Equal("not_found", derr.Kind)
+	require.ErrorAs(t, c.getJSON(t.Context(), "/api/v1/nf-item", nil, &out), &derr)
 	assert.Equal("not_found", derr.Kind)
 	require.ErrorAs(t, c.putJSON(t.Context(), "/api/v1/conflict", map[string]any{}, &out), &derr)
 	assert.Equal("conflict", derr.Kind)
@@ -1779,7 +1788,7 @@ func (c *daemonClient) putJSON(ctx context.Context, path string, body, out any) 
 }
 ```
 
-Version-mismatch detection lives ONLY in the workflow capability probe, never in the generic mapper: the probe is `GET /api/v1/workflow-state?limit=1`, and that route with a valid query cannot 404 for domain reasons — so ANY 404 from the probe (regardless of problem `code`) means the route is missing and the daemon predates this companion; the probe converts it to `daemonError{Kind: "version_mismatch", Message: "daemon does not support /workflow-state; upgrade middleman"}`. Ordinary `not_found` errors from other routes flow to tool-specific handlers (diff tool → `diff_unavailable`, stack tool → `present: false`, item tools → item-not-found). Daemon discovery and capability checking are LAZY, uniformly: `New` never contacts the daemon, and `middleman mcp` starts successfully with no daemon running (tools then return `daemon_unavailable`). The workflow-state capability probe (GET `/api/v1/workflow-state?limit=1`) runs on the first call to either workflow tool, after a successful discovery; on `version_mismatch`/`not_found` the result is cached and both workflow tools return a version/capability error naming the missing route (spec: do not silently downgrade). No eager startup probe exists on any transport — stdio and HTTP behave identically.
+Version-mismatch detection lives ONLY in the workflow capability probe, never in the generic mapper: the probe is `GET /api/v1/workflow-state?limit=1`, and that route with a valid query cannot 404 for domain reasons — so ANY 404 from the probe (regardless of problem `code`) means the route is missing and the daemon predates this companion; the probe converts it to `daemonError{Kind: "version_mismatch", Message: "daemon does not support /workflow-state; upgrade middleman"}`. Ordinary `not_found` errors from other routes flow to tool-specific handlers (diff tool → `diff_unavailable`, stack tool → `present: false`, item tools → item-not-found). The cached probe result is keyed by the daemon identity from runtime metadata (`Metadata.PID` + `Metadata.StartedAt`, captured at discovery): whenever discovery re-runs and observes a different PID/StartedAt pair, the cached probe result is discarded and the next workflow tool call re-probes — so a daemon upgrade or restart while the companion stays alive cannot serve a stale `version_mismatch`. Required tests: a probe 404 (any problem code) yields `version_mismatch` on workflow tool calls; a non-probe 404 with `code:"notFound"` stays `not_found`; and after simulating a daemon restart (new metadata PID/StartedAt) a previously failed probe re-runs and clears. Daemon discovery and capability checking are LAZY, uniformly: `New` never contacts the daemon, and `middleman mcp` starts successfully with no daemon running (tools then return `daemon_unavailable`). The workflow-state capability probe (GET `/api/v1/workflow-state?limit=1`) runs on the first call to either workflow tool, after a successful discovery; on `version_mismatch`/`not_found` the result is cached and both workflow tools return a version/capability error naming the missing route (spec: do not silently downgrade). No eager startup probe exists on any transport — stdio and HTTP behave identically.
 
 `internal/mcpserver/server.go`:
 
@@ -2719,14 +2728,21 @@ package main
 //    only as a SQLite row is invisible to every list surface and the
 //    list_repos/candidate/search/context assertions below would
 //    fail. Add the repo to config.toml using the repo syntax from
-//    internal/config (read how repos are declared there), keeping the
-//    test hermetic: use a self-hosted provider host that resolves to
-//    an unroutable loopback endpoint (e.g. a gitea-like host at
-//    127.0.0.1:1) or leave the token env unset so startup sync fails
-//    fast with a recorded last_sync_error and never leaves the
-//    machine; cached SQLite data still serves all read routes. The
-//    seeded DB rows must use the exact same (platform, platform_host,
-//    owner, name) identity as the config entry.
+//    internal/config (read how repos are declared there). Hermetic
+//    setup, both parts required: (1) a self-hosted gitea or forgejo
+//    repo whose platform_host is an unroutable loopback endpoint
+//    (127.0.0.1:1) so sync fails fast with connection refused and
+//    never leaves the machine (do NOT use github here — the GitHub
+//    token/CLI fallback chain could make the test non-hermetic), and
+//    (2) a dummy NON-EMPTY token: set token_env =
+//    "MIDDLEMAN_MCP_E2E_TOKEN" on the repo entry and t.Setenv a
+//    synthetic value. Leaving the token unset is NOT an option:
+//    Config.ProviderTokenSources() marks configured repos as
+//    required token sources and the daemon refuses to start when one
+//    is missing. Sync failure just records last_sync_error; cached
+//    SQLite data still serves all read routes. The seeded DB rows
+//    must use the exact same (platform, platform_host, owner, name)
+//    identity as the config entry.
 // 2. Start the daemon: procutil.Command(bin, "--config", cfgPath),
 //    waitForFile for runtimelock.MetadataPath(dataDir) and
 //    AuthTokenPath. t.Cleanup: SIGTERM.

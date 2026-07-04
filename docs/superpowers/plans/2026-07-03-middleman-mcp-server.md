@@ -545,7 +545,7 @@ never-moved items without racing humans or other agents."
 
 - [ ] **Step 1: Add migration 000038 (re-sync then drop)**
 
-Between Task 1's migration and this task, running pre-rewire builds still wrote `middleman_kanban_state`, so the drop migration re-syncs newer rows before dropping (both migrations run back-to-back for anyone upgrading across the branch, making the re-sync a no-op there).
+Between Task 1's migration and this task, running pre-rewire builds still wrote `middleman_kanban_state` — and nothing in production wrote the new table during that window — so the legacy table is authoritative and the drop migration re-syncs UNCONDITIONALLY (no `updated_at` comparison: `datetime('now')` has one-second precision, so a timestamp-guarded upsert could drop a kanban change made within the same second as the 000037 copy). For anyone upgrading across the whole branch, 000037 and 000038 run back-to-back and the re-sync is a no-op. The migration test must cover the equal-timestamp case: seed a kanban row whose status differs from the already-copied generic row but shares its `updated_at`, run `Open`, and assert the kanban value won.
 
 `internal/db/migrations/000038_drop_kanban_state.up.sql`:
 
@@ -558,8 +558,7 @@ JOIN middleman_merge_requests mr ON mr.id = k.merge_request_id
 WHERE 1
 ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET
     status     = excluded.status,
-    updated_at = excluded.updated_at
-WHERE excluded.updated_at > middleman_item_workflow_state.updated_at;
+    updated_at = excluded.updated_at;
 
 DROP TABLE middleman_kanban_state;
 ```
@@ -682,6 +681,7 @@ type ListWorkflowStatesOpts struct {
 
 type WorkflowStateListRow struct {
 	Platform, PlatformHost, Owner, Name string
+	RepoPath       string // stored middleman_repos.repo_path; falls back to owner/name in SQL for legacy empty rows
 	ItemType       string
 	Number         int
 	Title, State, URL, Author string
@@ -853,6 +853,7 @@ Core query (build with the same conds/args style as `ListMergeRequests`; study `
 ```sql
 SELECT * FROM (
     SELECT r.platform, r.platform_host, r.owner, r.name,
+           COALESCE(NULLIF(r.repo_path, ''), r.owner || '/' || r.name) AS repo_path,
            'pr' AS item_type, p.number, p.title, p.state, p.url, p.author,
            p.is_draft, p.last_activity_at,
            COALESCE(w.status, 'new') AS status,
@@ -867,6 +868,7 @@ SELECT * FROM (
         ON w.repo_id = p.repo_id AND w.item_type = 'pr' AND w.item_number = p.number
     UNION ALL
     SELECT r.platform, r.platform_host, r.owner, r.name,
+           COALESCE(NULLIF(r.repo_path, ''), r.owner || '/' || r.name) AS repo_path,
            'issue' AS item_type, i.number, i.title, i.state, i.url, i.author,
            0 AS is_draft, i.last_activity_at,
            COALESCE(w.status, 'new') AS status,
@@ -899,7 +901,7 @@ SQLite supports row-value comparison since 3.15; modernc.org/sqlite handles it. 
 
 Cursor stability: the cursor is a keyset snapshot, not an isolation mechanism. A workflow write between pages changes an item's `sort_ts`, which can move it across the cursor boundary (appearing twice or being skipped). This is accepted for v1; document it in the endpoint's huma `doc:` tag on `cursor` so API consumers know pages are best-effort under concurrent writes.
 
-Add one more test alongside the pagination test: seed two repos differing only in owner case (or one on a non-default `platform_host`) and assert a `RepoFilters` entry with mixed-case input matches via the key columns and excludes the other repo — this pins the casefold-aware filter requirement above.
+Add one more test alongside the pagination test: seed two repos differing only in owner case (or one on a non-default `platform_host`) and assert a `RepoFilters` entry with mixed-case input matches via the key columns and excludes the other repo — this pins the casefold-aware filter requirement above. In the same test, give one repo a stored `repo_path` whose display casing differs from `owner + "/" + name` (GitLab-style) and assert `WorkflowStateListRow.RepoPath` returns the stored value, not the concatenation.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -1272,7 +1274,7 @@ func (s *Server) listWorkflowState(
 	for _, r := range rows {
 		item := workflowStateItemResponse{
 			Provider: r.Platform, PlatformHost: r.PlatformHost,
-			Owner: r.Owner, Name: r.Name, RepoPath: r.Owner + "/" + r.Name,
+			Owner: r.Owner, Name: r.Name, RepoPath: r.RepoPath,
 			ItemType: r.ItemType, Number: r.Number, Title: r.Title,
 			State: r.State, URL: r.URL, Author: r.Author, IsDraft: r.IsDraft,
 			LastActivityAt: r.LastActivityAt.UTC().Format(time.RFC3339),
@@ -2404,6 +2406,7 @@ Diff tool behavior:
 - `EmitDiffFile`: `GET .../diff` returns `diffResponse` (structured JSON, not raw diff bytes) with per-file `Patch` strings. CRITICAL: `gitclone.BuildPatch` (`internal/gitclone/patch.go:9`) already produces a COMPLETE per-file patch — it starts with its own `diff --git a/... b/...` header (plus mode headers, `---`/`+++` lines) and ends with `\n`; binary files and hunk-less files (rename-only, metadata-only) have `Patch == ""`. Do NOT prepend any header before a non-empty `Patch` — that would duplicate headers and produce a malformed diff. Concatenate non-empty `Patch` values verbatim in daemon response order. For empty-patch files, do NOT hand-roll patch syntax in the companion: add a small exported helper `gitclone.BuildEmptyPatchSection(file DiffFile) string` in `internal/gitclone/patch.go` that reuses the existing `patchPath` quoting and `fileModeHeaders` logic — emitting the quoted `diff --git` line, the extended headers (`rename from`/`rename to` for renamed; extend `fileModeHeaders` with `copy from`/`copy to` for status `copied`; new/deleted file modes), and `Binary files differ` for binary files. Mode fidelity applies to ALL changed files, not just hunk-less ones — the mode logic lives in the shared `fileModeHeaders`, which both `BuildPatch` and `BuildEmptyPatchSection` call. Concretely: `ParseRawZ` (`internal/gitclone/parse.go:12`) reads `:oldmode newmode ...` headers but drops `fields[0]`/`fields[1]` — add `OldMode`/`NewMode` string fields to `DiffFile` (json `old_mode`/`new_mode`) and populate them in `ParseRawZ`. Then rework `fileModeHeaders` (`internal/gitclone/patch.go:53`) to use them: `added` emits `new file mode <NewMode>` (fallback `100644` only when `NewMode` is empty), `deleted` emits `deleted file mode <OldMode>` (same fallback), and any status where both modes are set, differ, and neither is `000000` emits `old mode <OldMode>`/`new mode <NewMode>` lines — so a content+mode change keeps its mode headers inside `BuildPatch` output, executable/symlink adds and deletes carry their real modes, and a mode-only change (empty patch, status modified) serializes via `BuildEmptyPatchSection` instead of collapsing to a bare header. Required unit tests in `internal/gitclone`: rename-only file (`rename from`/`rename to`), copy-only file with `OldPath` set (`copy from`/`copy to`), mode-only file (100644→100755 emits `old mode`/`new mode`), content+mode change (hunks AND mode headers in `BuildPatch` output), executable add (`new file mode 100755`) and executable delete (`deleted file mode 100755`), binary file, and a path with control characters/quotes asserting `patchPath`-style quoting; `ParseRawZ` test asserting modes are captured. The companion calls `BuildEmptyPatchSection` so metadata-only changes are never silently dropped and path quoting matches `BuildPatch` exactly (spec fidelity rule). Write via the store as `fmt.Sprintf("%s-%s-%s-%s-pr-%d.diff", sanitize(provider), sanitize(host), sanitize(owner), sanitize(name), number)` where `sanitize` replaces any rune outside `[a-zA-Z0-9._-]` with `_`. Cap the serialized buffer at 10 MiB — beyond that return `daemonError{Kind: "diff_too_large", Message: "... use the daemon API or a local checkout"}` instead of writing. Return absolute path + byte count. Repeat calls overwrite the same file in place via `os.WriteFile` (single-client companion; concurrent readers of a file being rewritten are out of scope and documented as such in the guidance doc). Lazily create the store on first use (`s.diffs`); `Server.Close` removes the directory (wired in Task 7). Crash cleanup: the store lives under `os.MkdirTemp("", "middleman-mcp-")`, so a killed companion leaves an orphan dir in the OS temp area that standard temp cleanup reaps; do not build extra machinery.
 
 Stack tool behavior:
+- Reject issue refs up front exactly like the diff tool: `item.item_type != "pr"` → `daemonError{Kind: "invalid_request", Message: "stack context is only available for prs"}`. Without this, an issue ref whose number collides with a PR number would silently return the wrong item's stack.
 - `GET .../stack` via `itemPath("pulls", ref) + "/stack"`. `not_found` (or empty-context response — verify how `getStackForPR` responds for a PR not in any stack by reading `huma_routes.go` around `:4855` and the `getStackForPR` handler) → `{present: false}`.
 - Member workflow statuses: one call `GET /api/v1/workflow-state?repo=<filter>&item_type=pr&include_closed=true&limit=200`; build number→status map (absent = `new`); mark `IsRequested` on the member whose number matches the input ref.
 
@@ -2416,7 +2419,7 @@ Cover, with a fake daemon:
 - issue ref → error with `invalid_request`;
 - daemon diff route failing → `diff_unavailable` error, no partial output;
 - store `Close` removes the directory;
-- stack: present=false on 404; present case orders members by position, marks requested member, and joins workflow statuses from the workflow-state fake.
+- stack: issue ref → `invalid_request` error; present=false on 404; present case orders members by position, marks requested member, and joins workflow statuses from the workflow-state fake.
 
 - [ ] **Step 2: Run to verify failure** — `go test ./internal/mcpserver -run 'TestGetItemDiff|TestDiffFileStore|TestGetStackContext' -shuffle=on` → FAIL.
 

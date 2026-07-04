@@ -724,7 +724,9 @@ type WorkflowStateListRow struct {
 func (d *DB) ListItemWorkflowStates(ctx context.Context, opts ListWorkflowStatesOpts) ([]WorkflowStateListRow, string, error)
 ```
 
-Ordering contract (single keyset satisfying both spec bullets): primary key `sortTs = COALESCE(w.updated_at, item.last_activity_at) DESC`, then `item.last_activity_at DESC`, ties broken ascending by `(platform, platform_host, owner, name, item_type, number)`. Cursor encodes that full tuple: `base64.RawURLEncoding` over the fields joined with `"\x1f"` (`sortTsUnixMilli, activityUnixMilli, platform, platformHost, owner, name, itemType, number`). Invalid cursors return an error (the handler maps it to `problemValidation`).
+Ordering contract (single keyset satisfying both spec bullets): primary key `sortKey = CAST(COALESCE(w.updated_at, item.last_activity_at) AS TEXT) DESC`, then `activityKey = CAST(item.last_activity_at AS TEXT) DESC`, ties broken ascending by `(platform, platform_host, owner, name, item_type, number)`. Stored workflow rows therefore sort by their workflow `updated_at`, while generated `new` rows with no workflow storage sort by item `last_activity_at`. Cursor encodes that full tuple as an opaque `base64.RawURLEncoding` payload over fields joined with `"\x1f"` (`sortKey, activityKey, platform, platformHost, owner, name, itemType, number`). Invalid cursors return an error (the handler maps it to `problemValidation`). Cursors are filter-bound: clients must only reuse a cursor with the same repo, item-type, state, and include-closed filter set that produced it.
+
+Cursor stability is best-effort across requests, not snapshot isolation. If a workflow write or item activity update happens between page requests, the changed item can move across the cursor boundary and may be skipped or repeated. This is accepted for v1 because the cursor prevents offset drift for a stable ordering without holding DB snapshots across HTTP requests.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -925,7 +927,7 @@ Conds assembled in Go: item-type filter (`t.item_type IN (...)` — validate val
 
 SQLite supports row-value comparison since 3.15; modernc.org/sqlite handles it. Limit: default 50 when `opts.Limit <= 0`, cap at 200. Fetch `limit+1` rows; when you get the extra row, drop it and return `encodeWorkflowCursor(lastKept, lastKeptSortTs)` as next cursor. Scan `sort_ts` into a local `time.Time` alongside each row for cursor encoding; scan `updated_at` via `sql.NullTime` into `*time.Time`.
 
-Cursor stability: the cursor is a keyset snapshot, not an isolation mechanism. A workflow write between pages changes an item's `sort_ts`, which can move it across the cursor boundary (appearing twice or being skipped). This is accepted for v1; document it in the endpoint's huma `doc:` tag on `cursor` so API consumers know pages are best-effort under concurrent writes.
+Cursor stability: the cursor is a keyset snapshot, not an isolation mechanism. A workflow write between pages changes an item's `sort_ts`, which can move it across the cursor boundary (appearing twice or being skipped). This is accepted for v1; document it in the endpoint's huma `doc:` tag on `cursor` so API consumers know pages are best-effort under concurrent writes. The cursor is also filter-bound: it encodes only the keyset position, not the filters that produced it, so reusing a cursor with a different `state`/`item_type`/`repo`/`include_closed` combination silently resumes the new filter set from the old position. Clients must pass the same filters for every page of a walk; state that in the same `doc:` tag.
 
 Add one more test alongside the pagination test: seed two repos differing only in owner case (or one on a non-default `platform_host`) and assert a `RepoFilters` entry with mixed-case input matches via the key columns and excludes the other repo — this pins the casefold-aware filter requirement above. In the same test, give one repo a stored `repo_path` whose display casing differs from `owner + "/" + name` (GitLab-style) and assert `WorkflowStateListRow.RepoPath` returns the stored value, not the concatenation.
 
@@ -964,13 +966,22 @@ tuple instead of an offset."
 ```go
 // api_types.go — new shared shape, reused by Task 6 responses
 type workflowStateMetaResponse struct {
-	Status        string `json:"status"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
-	UpdatedSource string `json:"updated_source,omitempty"`
-	UpdatedActor  string `json:"updated_actor,omitempty"`
-	UpdatedReason string `json:"updated_reason,omitempty"`
+	Status        db.KanbanStatus `json:"status" enum:"new,reviewing,waiting,awaiting_merge"`
+	UpdatedAt     string          `json:"updated_at,omitempty" format:"date-time"`
+	UpdatedSource string          `json:"updated_source,omitempty"`
+	UpdatedActor  string          `json:"updated_actor,omitempty"`
+	UpdatedReason string          `json:"updated_reason,omitempty"`
 }
 ```
+
+There is exactly ONE workflow status contract on the wire: `Status` uses the
+same `db.KanbanStatus` enum as `Issue.WorkflowStatus`/PR `KanbanStatus`, and
+every value placed in it is normalized through the same helper that
+normalizes the item-level field (unknown/empty → `"new"`, with a warning
+log). A response must never be able to say `issue.WorkflowStatus: "new"`
+while `workflow.status` carries a different raw string — two divergent
+representations of the same datum is a contract bug. `UpdatedAt` declares
+`format:"date-time"` so generated clients keep RFC3339 typing.
 
 - [ ] **Step 1: Write the failing DB test**
 

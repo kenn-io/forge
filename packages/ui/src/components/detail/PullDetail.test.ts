@@ -9,6 +9,18 @@ const markdownMockState = vi.hoisted(() => ({
   pendingPromise: new Promise<string>(() => undefined),
 }));
 
+const clipboardMockState = vi.hoisted(() => ({
+  resolvers: [] as Array<(ok: boolean) => void>,
+}));
+
+vi.mock("@kenn-io/kit-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-io/kit-ui")>();
+  return {
+    ...actual,
+    copyToClipboard: vi.fn(() => new Promise<boolean>((resolve) => clipboardMockState.resolvers.push(resolve))),
+  };
+});
+
 vi.mock("../../utils/markdown.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../utils/markdown.js")>();
   return {
@@ -903,5 +915,54 @@ describe("PullDetail approvals", () => {
     // A failed aggregate with a still-running check must not route to deferred
     // merge, since the backend would reject that with a 409.
     expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+  });
+});
+
+describe("PullDetail body copy feedback", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    clipboardMockState.resolvers.length = 0;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function copyButton(): HTMLButtonElement {
+    const button = document.querySelector<HTMLButtonElement>(".kit-copy-btn.body-copy");
+    if (button === null) {
+      throw new Error("body copy button not found");
+    }
+    return button;
+  }
+
+  it("shows copied feedback when the clipboard write resolves on the same pull", async () => {
+    const detail = pullDetail();
+    detail.merge_request.Body = "body text";
+    renderPullDetail(detail);
+
+    await fireEvent.click(copyButton());
+    expect(clipboardMockState.resolvers).toHaveLength(1);
+    clipboardMockState.resolvers[0]!(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.querySelector(".body-copy--copied")).not.toBeNull();
+  });
+
+  it("drops a clipboard write that resolves after navigating to another pull", async () => {
+    const detail = pullDetail();
+    detail.merge_request.Body = "body text";
+    const { rerender } = renderPullDetail(detail);
+
+    await fireEvent.click(copyButton());
+    expect(clipboardMockState.resolvers).toHaveLength(1);
+
+    // Navigate to a different pull while the clipboard promise is pending.
+    await rerender({ number: detail.merge_request.Number + 1 });
+
+    clipboardMockState.resolvers[0]!(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.querySelector(".body-copy--copied")).toBeNull();
   });
 });

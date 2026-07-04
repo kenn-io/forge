@@ -3,6 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import type { IssueDetail } from "../../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
+
+const clipboardMockState = vi.hoisted(() => ({
+  resolvers: [] as Array<(ok: boolean) => void>,
+}));
+
+vi.mock("@kenn-io/kit-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-io/kit-ui")>();
+  return {
+    ...actual,
+    copyToClipboard: vi.fn(() => new Promise<boolean>((resolve) => clipboardMockState.resolvers.push(resolve))),
+  };
+});
+
 import IssueDetailComponent from "./IssueDetail.svelte";
 
 const capabilities = {
@@ -196,5 +209,54 @@ describe("IssueDetail activity view", () => {
     const descriptionId = button.getAttribute("aria-describedby");
     expect(descriptionId).toBeTruthy();
     expect(document.getElementById(descriptionId ?? "")?.textContent).toContain(button.getAttribute("title"));
+  });
+});
+
+describe("IssueDetail body copy feedback", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    clipboardMockState.resolvers.length = 0;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function copyButton(): HTMLButtonElement {
+    const button = document.querySelector<HTMLButtonElement>(".kit-copy-btn.body-copy");
+    if (button === null) {
+      throw new Error("body copy button not found");
+    }
+    return button;
+  }
+
+  it("shows copied feedback when the clipboard write resolves on the same issue", async () => {
+    const detail = issueDetail();
+    detail.issue.Body = "body text";
+    renderIssueDetail(detail);
+
+    await fireEvent.click(copyButton());
+    expect(clipboardMockState.resolvers).toHaveLength(1);
+    clipboardMockState.resolvers[0]!(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.querySelector(".body-copy--copied")).not.toBeNull();
+  });
+
+  it("drops a clipboard write that resolves after navigating to another issue", async () => {
+    const detail = issueDetail();
+    detail.issue.Body = "body text";
+    const { rerender } = renderIssueDetail(detail);
+
+    await fireEvent.click(copyButton());
+    expect(clipboardMockState.resolvers).toHaveLength(1);
+
+    // Navigate to a different issue while the clipboard promise is pending.
+    await rerender({ number: detail.issue.Number + 1 });
+
+    clipboardMockState.resolvers[0]!(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.querySelector(".body-copy--copied")).toBeNull();
   });
 });

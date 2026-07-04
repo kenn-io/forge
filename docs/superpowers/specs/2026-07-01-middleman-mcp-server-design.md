@@ -271,13 +271,15 @@ item with `expected_status = "new"`.
 Existing PR list/detail responses continue to expose `KanbanStatus` with the
 same wire behavior as today, byte-compatible with current clients:
 
-- missing workflow rows keep emitting an empty `KanbanStatus` string on PR
-  list/detail responses, exactly as the current wire shape does; consumers
-  (including the board UI) already treat empty as `new`;
-- "missing reads as `new`" applies to the effective status used for
-  filtering, workflow-state listings, and `expected_status` comparisons —
-  not to the raw `KanbanStatus` wire value;
-- unexpected values normalize to `new`;
+- missing workflow rows read as `new` on PR list/detail wire responses: the
+  DB layer scans an empty string for a missing row, and the existing
+  response-layer normalization converts empty and unexpected values to
+  `new` before serialization, exactly as today (existing server API tests
+  assert `new` on both list and detail);
+- the empty string for missing rows is an internal DB-layer detail only and
+  must never reach the wire;
+- the same effective-`new` rule drives filtering, workflow-state listings,
+  and `expected_status` comparisons;
 - `PUT /pulls/{provider}/{owner}/{name}/{number}/state` and the host-prefixed
   variant keep their current request and response shape.
 

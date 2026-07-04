@@ -1017,6 +1017,8 @@ resp.Workflow = wf
 
 Every code path that constructs `issueDetailResponse` must carry the field: grep for `issueDetailResponse{` — the issue sync handler (`POST /issues/.../sync`) builds its response separately from `buildIssueDetailResponse`. Refactor it to reuse the shared builder (preferred) or populate `Workflow` there too, and add an apitest asserting the sync route's response includes `workflow` after a state write.
 
+Wire normalization mirrors PRs exactly: the empty string a missing row scans into `db.Issue.WorkflowStatus` is an internal DB detail and must never reach the wire. PR responses already normalize via `mergeRequestResponseKanbanStatus` (`huma_routes.go:1693-1701`, empty/unexpected → `new`); add the analogous `issueResponseWorkflowStatus` helper and apply it wherever `issueResponse`/`issueDetailResponse` are built, so issue list/detail emit `WorkflowStatus: "new"` for missing rows. Add an apitest asserting an issue with no workflow row serializes `WorkflowStatus` as `"new"` on both list and detail.
+
 - [ ] **Step 4: Run tests**
 
 Run: `go test ./internal/db ./internal/server/... -shuffle=on`

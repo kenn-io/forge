@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sort"
 	"time"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -212,10 +213,15 @@ func (s *Server) getPullContext(ctx context.Context, in getItemContextInput) (ge
 	out := getItemContextOutput{
 		Item:           pull.itemRef(),
 		Body:           detail.MergeRequest.Body,
-		Workflow:       candidateWorkflow{Status: workflowStatusOrNew(detail.MergeRequest.KanbanStatus)},
 		Cache:          candidateCache{DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt},
 		LastActivityAt: formatMCPTime(detail.MergeRequest.LastActivityAt),
 	}
+	workflowKey := candidateKeyFromItem(out.Item)
+	workflows, err := s.workflowStatesForKeys(ctx, map[candidateKey]bool{workflowKey: true})
+	if err != nil {
+		return getItemContextOutput{}, err
+	}
+	out.Workflow = workflowForCandidate(workflowKey, workflows, detail.MergeRequest.KanbanStatus)
 	if boolDefault(in.IncludeEvents, true) {
 		out.Events = contextEvents(detail.Events, clampLimit(in.EventLimit, 30, 100))
 	}
@@ -421,8 +427,22 @@ func boolDefault(value *bool, def bool) bool {
 }
 
 func truncateBytes(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
 	if len(value) <= limit {
 		return value
 	}
-	return string([]byte(value)[:limit])
+	end := 0
+	for i, r := range value {
+		size := utf8.RuneLen(r)
+		if r == utf8.RuneError {
+			_, size = utf8.DecodeRuneInString(value[i:])
+		}
+		if i+size > limit {
+			break
+		}
+		end = i + size
+	}
+	return value[:end]
 }

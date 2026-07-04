@@ -72,16 +72,20 @@ func (s *Server) getStackContext(
 		return getStackContextOutput{}, err
 	}
 
-	statuses, err := s.stackWorkflowStatuses(ctx, in.Item)
-	if err != nil {
-		return getStackContextOutput{}, err
-	}
 	sort.Slice(stack.Members, func(i, j int) bool {
 		if stack.Members[i].Position != stack.Members[j].Position {
 			return stack.Members[i].Position < stack.Members[j].Position
 		}
 		return stack.Members[i].Number < stack.Members[j].Number
 	})
+	wanted := make(map[int]bool, len(stack.Members))
+	for _, member := range stack.Members {
+		wanted[member.Number] = true
+	}
+	statuses, err := s.stackWorkflowStatuses(ctx, in.Item, wanted)
+	if err != nil {
+		return getStackContextOutput{}, err
+	}
 
 	out := getStackContextOutput{
 		Present: true,
@@ -105,6 +109,7 @@ func (s *Server) getStackContext(
 func (s *Server) stackWorkflowStatuses(
 	ctx context.Context,
 	ref itemRefInput,
+	wanted map[int]bool,
 ) (map[int]string, error) {
 	filter, err := (repoFilterInput{
 		Provider:     ref.Provider,
@@ -120,13 +125,19 @@ func (s *Server) stackWorkflowStatuses(
 	query.Add("item_type", "pr")
 	query.Set("include_closed", "true")
 	query.Set("limit", "200")
-	var resp daemonWorkflowStateResponse
-	if err := s.daemon.getJSON(ctx, "/api/v1/workflow-state", query, &resp); err != nil {
-		return nil, err
+	statuses := map[int]string{}
+	for {
+		var resp daemonWorkflowStateResponse
+		if err := s.daemon.getJSON(ctx, "/api/v1/workflow-state", query, &resp); err != nil {
+			return nil, err
+		}
+		for _, item := range resp.Items {
+			statuses[item.Number] = workflowStatusOrNew(item.Workflow.Status)
+			delete(wanted, item.Number)
+		}
+		if len(wanted) == 0 || resp.NextCursor == "" {
+			return statuses, nil
+		}
+		query.Set("cursor", resp.NextCursor)
 	}
-	statuses := make(map[int]string, len(resp.Items))
-	for _, item := range resp.Items {
-		statuses[item.Number] = workflowStatusOrNew(item.Workflow.Status)
-	}
-	return statuses, nil
 }

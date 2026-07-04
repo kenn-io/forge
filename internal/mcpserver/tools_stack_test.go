@@ -79,3 +79,48 @@ func TestGetStackContextJoinsWorkflowStateAndMarksRequestedMember(t *testing.T) 
 	assert.Equal(43, out.Members[2].Number)
 	assert.Equal("new", out.Members[2].WorkflowStatus)
 }
+
+func TestGetStackContextPagesWorkflowStateUntilMembersAreFound(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cursors := []string{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42/stack", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"stack_id":9,"stack_name":"feature","position":2,"size":2,"health":"ok",
+			"members":[
+				{"number":41,"title":"Base","state":"open","is_draft":false,"position":1},
+				{"number":42,"title":"Tip","state":"open","is_draft":false,"position":2}
+			]
+		}`))
+	})
+	mux.HandleFunc("/api/v1/workflow-state", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		cursors = append(cursors, query.Get("cursor"))
+		assert.Equal("200", query.Get("limit"))
+		w.Header().Set("Content-Type", "application/json")
+		if query.Get("cursor") == "" {
+			_, _ = w.Write([]byte(`{"next_cursor":"page-2","items":[
+				{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget","repo_path":"acme/widget","item_type":"pr","number":1,"workflow":{"status":"waiting"}}
+			]}`))
+			return
+		}
+		assert.Equal("page-2", query.Get("cursor"))
+		_, _ = w.Write([]byte(`{"items":[
+			{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget","repo_path":"acme/widget","item_type":"pr","number":41,"workflow":{"status":"waiting"}},
+			{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget","repo_path":"acme/widget","item_type":"pr","number":42,"workflow":{"status":"reviewing"}}
+		]}`))
+	})
+	s := newMCPTestServer(t, mux)
+
+	out, err := s.getStackContext(t.Context(), getStackContextInput{
+		Item: itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
+	})
+
+	require.NoError(err)
+	assert.Equal([]string{"", "page-2"}, cursors)
+	require.Len(out.Members, 2)
+	assert.Equal("waiting", out.Members[0].WorkflowStatus)
+	assert.Equal("reviewing", out.Members[1].WorkflowStatus)
+}

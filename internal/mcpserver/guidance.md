@@ -20,7 +20,7 @@ Recommended flow:
    state.
 8. Set workflow state only when the reason is clear. Include `expected_status`
    when marking an item so a stale agent run does not overwrite humans or other
-   agents.
+   agents. Omit it only for a deliberate unconditional local override.
 9. Treat `awaiting_merge` as a PR-oriented state. Avoid setting it on issues
    unless the user explicitly asks for that state.
 

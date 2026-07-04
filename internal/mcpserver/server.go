@@ -2,7 +2,7 @@ package mcpserver
 
 import (
 	"context"
-	"fmt"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -19,10 +19,12 @@ type Options struct {
 }
 
 type Server struct {
-	opts   Options
-	daemon *daemonClient
-	mcp    *mcp.Server
-	diffs  *diffFileStore
+	opts     Options
+	daemon   *daemonClient
+	mcp      *mcp.Server
+	diffs    *diffFileStore
+	httpMu   sync.RWMutex
+	httpAddr string
 }
 
 func New(opts Options) (*Server, error) {
@@ -53,10 +55,6 @@ func (s *Server) registerTools() {
 
 func (s *Server) RunStdio(ctx context.Context) error {
 	return s.mcp.Run(ctx, &mcp.StdioTransport{})
-}
-
-func (s *Server) RunHTTP(context.Context) error {
-	return fmt.Errorf("http transport not yet available")
 }
 
 func (s *Server) Close() error {

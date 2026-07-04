@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,6 +15,7 @@ func TestGetItemContextPullRequestLimitsEventsAndEscapesPath(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	mux := http.NewServeMux()
+	handleEmptyWorkflowState(mux)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal("/api/v1/host/git.example.com/pulls/gitlab/Group%2FSub/Project/42", r.URL.EscapedPath())
 		w.Header().Set("Content-Type", "application/json")
@@ -66,6 +68,51 @@ func TestGetItemContextPullRequestLimitsEventsAndEscapesPath(t *testing.T) {
 	assert.Equal("unit", out.Checks[0].Name)
 	assert.True(out.Cache.DetailLoaded)
 	assert.Equal("2026-07-01T16:05:00Z", out.Cache.DetailFetchedAt)
+}
+
+func TestGetItemContextPullRequestUsesWorkflowMetadata(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"merge_request":{
+				"Number":42,"Title":"Retry budget","State":"open","Author":"alice",
+				"URL":"https://example.test/pr/42","Body":"full PR body",
+				"KanbanStatus":"reviewing","LastActivityAt":"2026-07-01T16:00:00Z"
+			},
+			"repo":{"provider":"github","platform_host":"github.com","repo_path":"acme/widget","owner":"acme","name":"widget"},
+			"platform_host":"github.com","repo_owner":"acme","repo_name":"widget",
+			"detail_loaded":true
+		}`))
+	})
+	mux.HandleFunc("/api/v1/workflow-state", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		assert.Equal("github|github.com/acme/widget", query.Get("repo"))
+		assert.Equal([]string{"pr"}, query["item_type"])
+		assert.Equal("true", query.Get("include_closed"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[{
+			"provider":"github","platform_host":"github.com","owner":"acme","name":"widget","repo_path":"acme/widget",
+			"item_type":"pr","number":42,"workflow":{
+				"status":"reviewing","updated_at":"2026-07-01T16:10:00Z",
+				"updated_source":"mcp","updated_actor":"agent","updated_reason":"claim"
+			}
+		}]}`))
+	})
+	s := newMCPTestServer(t, mux)
+
+	out, err := s.getItemContext(t.Context(), getItemContextInput{
+		Item: itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
+	})
+
+	require.NoError(err)
+	assert.Equal("reviewing", out.Workflow.Status)
+	assert.Equal("2026-07-01T16:10:00Z", out.Workflow.UpdatedAt)
+	assert.Equal("mcp", out.Workflow.UpdatedSource)
+	assert.Equal("agent", out.Workflow.UpdatedActor)
+	assert.Equal("claim", out.Workflow.UpdatedReason)
 }
 
 func TestGetItemContextCanOmitEvents(t *testing.T) {
@@ -146,4 +193,21 @@ func TestListItemsByWorkflowStateForwardsFiltersAndMapsItems(t *testing.T) {
 	assert.Equal("Group/Sub/Project", out.Items[0].Item.RepoPath)
 	assert.Equal("reviewing", out.Items[0].Workflow.Status)
 	assert.Equal("2026-07-01T16:00:00Z", out.Items[0].LastActivityAt)
+}
+
+func TestTruncateBytesPreservesUTF8(t *testing.T) {
+	assert := assert.New(t)
+
+	got := truncateBytes(strings.Repeat("a", 499)+"é", 500)
+
+	assert.True(utf8.ValidString(got))
+	assert.LessOrEqual(len(got), 500)
+	assert.Equal(strings.Repeat("a", 499), got)
+}
+
+func handleEmptyWorkflowState(mux *http.ServeMux) {
+	mux.HandleFunc("/api/v1/workflow-state", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	})
 }

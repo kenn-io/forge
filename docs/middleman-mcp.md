@@ -35,10 +35,12 @@ Generate at least 32 random bytes for the token; `openssl rand -hex 32` is a
 reasonable default. The companion checks that the token environment variable is
 non-blank, but it does not enforce entropy.
 
-Example bearer request:
+The streamable HTTP MCP endpoint is the listener root. MCP clients send JSON-RPC
+requests there with `Authorization: Bearer <token>`; browser-style cross-origin
+requests are rejected.
 
 ```bash
-curl -H "Authorization: Bearer $MIDDLEMAN_MCP_TOKEN" http://127.0.0.1:8092/mcp
+curl -H "Authorization: Bearer $MIDDLEMAN_MCP_TOKEN" http://127.0.0.1:8092/
 ```
 
 ## Usage Patterns
@@ -58,7 +60,7 @@ For periodic review triage:
 5. Mark an item `reviewing` only when there is a clear review reason.
 6. Include `expected_status` when calling
    `middleman_set_item_workflow_state`, so stale runs do not overwrite humans
-   or other agents.
+   or other agents. Omit it only for a deliberate unconditional local override.
 
 Safe prompt shape:
 
@@ -71,7 +73,9 @@ stale cache fields and uncertainty.
 ```
 
 Use `middleman_search_items` for quiet items that may not have recent
-activity-based candidates.
+activity-based candidates. Search is backed by middleman's cached PR/issue list
+query fields; it is not full body or comment search unless the daemon list
+endpoint supports that field.
 
 Diff files produced by `middleman_get_item_diff` are ephemeral and local to the
 companion host. They are intended for the current agent session and may

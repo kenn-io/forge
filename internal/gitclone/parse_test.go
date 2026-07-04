@@ -262,6 +262,47 @@ index 1111111..2222222 100644
 	assert.Empty(files)
 }
 
+func TestParsePatchSynthesizesUnmatchedPatchEntriesWhenRawMetadataIsPartial(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	patch := `diff --git a/src/kept.go b/src/kept.go
+index 1111111..2222222 100644
+--- a/src/kept.go
++++ b/src/kept.go
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/missing.go b/src/missing.go
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/src/missing.go
+@@ -0,0 +1 @@
++missing
+`
+	rawFiles := []DiffFile{
+		{Path: "src/kept.go", OldPath: "src/kept.go", Status: "modified"},
+	}
+
+	files := ParsePatch([]byte(patch), rawFiles)
+
+	require.Len(files, 2)
+	kept := files[0]
+	assert.Equal("src/kept.go", kept.Path)
+	assert.Equal(1, kept.Additions)
+	assert.Equal(1, kept.Deletions)
+
+	missing := files[1]
+	assert.Equal("src/missing.go", missing.Path)
+	assert.Equal("added", missing.Status)
+	assert.Equal(1, missing.Additions)
+	assert.Zero(missing.Deletions)
+	assert.Contains(missing.Patch, "diff --git a/src/missing.go b/src/missing.go\n")
+	assert.Contains(missing.Patch, "+missing\n")
+	require.Len(missing.Hunks, 1)
+}
+
 func TestSortDiffFilesUsesBytewisePathOrder(t *testing.T) {
 	assert := assert.New(t)
 

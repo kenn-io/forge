@@ -106,6 +106,9 @@ func (s *Server) getItemDiff(ctx context.Context, in getItemDiffInput) (getItemD
 	if err := s.daemon.getJSON(ctx, basePath+"/diff", nil, &diff); err != nil {
 		return getItemDiffOutput{}, diffRouteError(err)
 	}
+	if err := validateDiffMatchesSummary(summary.Files, diff.Files); err != nil {
+		return getItemDiffOutput{}, err
+	}
 	data, err := serializeDiffPatches(diff.Files)
 	if err != nil {
 		return getItemDiffOutput{}, err
@@ -152,6 +155,44 @@ func serializeDiffPatches(files []daemonDiffFile) ([]byte, error) {
 		buf.WriteString(file.Patch)
 	}
 	return buf.Bytes(), nil
+}
+
+func validateDiffMatchesSummary(summary []daemonDiffFile, diff []daemonDiffFile) error {
+	if len(summary) != len(diff) {
+		return &daemonError{
+			Kind:    "diff_incomplete",
+			Message: "daemon diff response does not match file summary",
+		}
+	}
+	counts := map[diffIdentity]int{}
+	for _, file := range summary {
+		counts[file.diffIdentity()]++
+	}
+	for _, file := range diff {
+		key := file.diffIdentity()
+		if counts[key] == 0 {
+			return &daemonError{
+				Kind:    "diff_incomplete",
+				Message: "daemon diff response does not match file summary",
+			}
+		}
+		counts[key]--
+	}
+	return nil
+}
+
+type diffIdentity struct {
+	path    string
+	oldPath string
+	status  string
+}
+
+func (f daemonDiffFile) diffIdentity() diffIdentity {
+	return diffIdentity{
+		path:    f.Path,
+		oldPath: f.OldPath,
+		status:  f.Status,
+	}
 }
 
 func diffRouteError(err error) error {

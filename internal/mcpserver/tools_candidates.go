@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -182,14 +183,19 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 		group.addActivity(row)
 	}
 
-	pulls, issues, err := s.fetchCandidateItems(ctx, repos)
+	pulls, issues, err := s.fetchCandidateItems(ctx, repos, candidateKeys(groups))
+	if err != nil {
+		return findCandidatesOutput{}, err
+	}
+	workflows, err := s.workflowStatesForKeys(ctx, candidateKeys(groups))
 	if err != nil {
 		return findCandidatesOutput{}, err
 	}
 
 	candidates := make([]candidate, 0, len(groups))
-	for _, group := range groups {
-		cand, ok := s.buildCandidate(ctx, group, pulls, issues, in.IncludeClosed, in.IncludeDrafts)
+	capped := resp.Capped
+	for _, group := range sortedCandidateGroups(groups) {
+		cand, ok := s.buildCandidate(ctx, group, pulls, issues, workflows, in.IncludeClosed, in.IncludeDrafts)
 		if !ok {
 			continue
 		}
@@ -201,9 +207,12 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 			continue
 		}
 		candidates = append(candidates, cand)
+		if len(candidates) > limit {
+			capped = true
+			break
+		}
 	}
 	sortCandidates(candidates)
-	capped := resp.Capped || len(candidates) > limit
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
 	}
@@ -233,6 +242,7 @@ func (g *candidateGroup) addActivity(row daemonActivityItem) {
 func (s *Server) fetchCandidateItems(
 	ctx context.Context,
 	repos map[candidateRepoKey]candidateRepoKey,
+	needed map[candidateKey]bool,
 ) (map[candidateKey]daemonPull, map[candidateKey]daemonIssue, error) {
 	pulls := map[candidateKey]daemonPull{}
 	issues := map[candidateKey]daemonIssue{}
@@ -241,26 +251,110 @@ func (s *Server) fetchCandidateItems(
 		if err != nil {
 			return nil, nil, err
 		}
-		query := url.Values{}
-		query.Set("repo", filter)
-		query.Set("state", "all")
-		query.Set("limit", "200")
-		var pullRows []daemonPull
-		if err := s.daemon.getJSON(ctx, "/api/v1/pulls", query, &pullRows); err != nil {
-			return nil, nil, err
+		repoPulls, repoIssues := neededForRepo(needed, repo)
+		if len(repoPulls) > 0 {
+			if err := s.fetchCandidatePullPages(ctx, filter, repoPulls, pulls); err != nil {
+				return nil, nil, err
+			}
 		}
-		for _, row := range pullRows {
-			pulls[candidateKeyFromItem(row.itemRef())] = row
-		}
-		var issueRows []daemonIssue
-		if err := s.daemon.getJSON(ctx, "/api/v1/issues", query, &issueRows); err != nil {
-			return nil, nil, err
-		}
-		for _, row := range issueRows {
-			issues[candidateKeyFromItem(row.itemRef())] = row
+		if len(repoIssues) > 0 {
+			if err := s.fetchCandidateIssuePages(ctx, filter, repoIssues, issues); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 	return pulls, issues, nil
+}
+
+func (s *Server) fetchCandidatePullPages(
+	ctx context.Context,
+	filter string,
+	needed map[candidateKey]bool,
+	out map[candidateKey]daemonPull,
+) error {
+	const pageSize = 200
+	for offset := 0; ; offset += pageSize {
+		query := candidateListQuery(filter, offset, pageSize)
+		var rows []daemonPull
+		if err := s.daemon.getJSON(ctx, "/api/v1/pulls", query, &rows); err != nil {
+			return err
+		}
+		for _, row := range rows {
+			key := candidateKeyFromItem(row.itemRef())
+			out[key] = row
+			delete(needed, key)
+		}
+		if len(needed) == 0 || len(rows) < pageSize {
+			return nil
+		}
+	}
+}
+
+func (s *Server) fetchCandidateIssuePages(
+	ctx context.Context,
+	filter string,
+	needed map[candidateKey]bool,
+	out map[candidateKey]daemonIssue,
+) error {
+	const pageSize = 200
+	for offset := 0; ; offset += pageSize {
+		query := candidateListQuery(filter, offset, pageSize)
+		var issueRows []daemonIssue
+		if err := s.daemon.getJSON(ctx, "/api/v1/issues", query, &issueRows); err != nil {
+			return err
+		}
+		for _, row := range issueRows {
+			key := candidateKeyFromItem(row.itemRef())
+			out[key] = row
+			delete(needed, key)
+		}
+		if len(needed) == 0 || len(issueRows) < pageSize {
+			return nil
+		}
+	}
+}
+
+func candidateListQuery(filter string, offset int, limit int) url.Values {
+	query := url.Values{}
+	query.Set("repo", filter)
+	query.Set("state", "all")
+	query.Set("limit", strconv.Itoa(limit))
+	if offset > 0 {
+		query.Set("offset", strconv.Itoa(offset))
+	}
+	return query
+}
+
+func candidateKeys(groups map[candidateKey]*candidateGroup) map[candidateKey]bool {
+	needed := make(map[candidateKey]bool, len(groups))
+	for key := range groups {
+		needed[key] = true
+	}
+	return needed
+}
+
+func neededForRepo(
+	needed map[candidateKey]bool,
+	repo candidateRepoKey,
+) (map[candidateKey]bool, map[candidateKey]bool) {
+	pulls := map[candidateKey]bool{}
+	issues := map[candidateKey]bool{}
+	for key := range needed {
+		if key.provider != repo.provider ||
+			key.platformHost != repo.platformHost ||
+			key.repoPath != repo.repoPath ||
+			key.owner != repo.owner ||
+			key.name != repo.name {
+			continue
+		}
+		switch key.itemType {
+		case "pr":
+			pulls[key] = true
+		case "issue":
+			issues[key] = true
+		}
+	}
+	return pulls, issues
 }
 
 func (s *Server) buildCandidate(
@@ -268,6 +362,7 @@ func (s *Server) buildCandidate(
 	group *candidateGroup,
 	pulls map[candidateKey]daemonPull,
 	issues map[candidateKey]daemonIssue,
+	workflows map[candidateKey]candidateWorkflow,
 	includeClosed bool,
 	includeDrafts bool,
 ) (candidate, bool) {
@@ -287,7 +382,7 @@ func (s *Server) buildCandidate(
 		workspace := workspaceFromRef(row.Workspace)
 		return candidate{
 			Item:      item,
-			Workflow:  candidateWorkflow{Status: workflowStatusOrNew(row.KanbanStatus)},
+			Workflow:  workflowForCandidate(group.key, workflows, row.KanbanStatus),
 			Activity:  group.activity,
 			Workspace: workspace,
 			Stack:     s.stackForCandidate(ctx, item),
@@ -307,7 +402,7 @@ func (s *Server) buildCandidate(
 		item := row.itemRef()
 		return candidate{
 			Item:      item,
-			Workflow:  candidateWorkflow{Status: workflowStatusOrNew(row.WorkflowStatus)},
+			Workflow:  workflowForCandidate(group.key, workflows, row.WorkflowStatus),
 			Activity:  group.activity,
 			Workspace: workspaceFromRef(row.Workspace),
 			Stack:     candidateStack{},
@@ -426,6 +521,25 @@ func sortCandidates(candidates []candidate) {
 		}
 		return itemSortKey(candidates[i].Item) < itemSortKey(candidates[j].Item)
 	})
+}
+
+func sortedCandidateGroups(groups map[candidateKey]*candidateGroup) []*candidateGroup {
+	out := make([]*candidateGroup, 0, len(groups))
+	for _, group := range groups {
+		out = append(out, group)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		left := out[i].activity.LatestAt
+		right := out[j].activity.LatestAt
+		if timeStringAfter(left, right) {
+			return true
+		}
+		if timeStringAfter(right, left) {
+			return false
+		}
+		return itemSortKey(out[i].item) < itemSortKey(out[j].item)
+	})
+	return out
 }
 
 func timeStringAfter(left, right string) bool {

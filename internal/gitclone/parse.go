@@ -96,6 +96,7 @@ func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 	if len(fileDiffs) == 0 {
 		return rawFiles
 	}
+	hasRawMetadata := rawFiles != nil
 	if rawFiles == nil {
 		rawFiles = []DiffFile{}
 	}
@@ -105,86 +106,14 @@ func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 	for _, fd := range fileDiffs {
 		i, ok := matchFileDiff(rawFiles, pathIndex, fd)
 		if !ok {
-			continue
+			if !hasRawMetadata {
+				continue
+			}
+			rawFiles = append(rawFiles, synthesizeDiffFile(fd))
+			i = len(rawFiles) - 1
 		}
 
-		// Detect binary from extended headers.
-		for _, ext := range fd.Extended {
-			if strings.HasPrefix(ext, "Binary files ") || strings.HasPrefix(ext, "GIT binary patch") {
-				rawFiles[i].IsBinary = true
-				break
-			}
-		}
-
-		// Convert hunks.
-		for _, h := range fd.Hunks {
-			hunk := Hunk{
-				OldStart: int(h.OrigStartLine),
-				OldCount: int(h.OrigLines),
-				NewStart: int(h.NewStartLine),
-				NewCount: int(h.NewLines),
-				Section:  h.Section,
-			}
-			oldNum := int(h.OrigStartLine)
-			newNum := int(h.NewStartLine)
-
-			// The library handles "\ No newline at end of file" internally:
-			// - Orig side: sets OrigNoNewlineAt to the byte offset after the line
-			// - New side: removes the trailing \n from Body
-			body := h.Body
-			newSideNoNewline := len(body) > 0 && body[len(body)-1] != '\n'
-			bodyLines := strings.Split(string(body), "\n")
-
-			byteOffset := 0
-			for j, line := range bodyLines {
-				if j == len(bodyLines)-1 && line == "" {
-					continue
-				}
-
-				lineByteEnd := byteOffset + len(line) + 1 // +1 for \n separator
-
-				if len(line) == 0 {
-					hunk.Lines = append(hunk.Lines, Line{
-						Type: "context", Content: "", OldNum: oldNum, NewNum: newNum,
-					})
-					oldNum++
-					newNum++
-					byteOffset = lineByteEnd
-					continue
-				}
-
-				isLastRealLine := j == len(bodyLines)-1 ||
-					(j == len(bodyLines)-2 && bodyLines[len(bodyLines)-1] == "")
-
-				switch line[0] {
-				case ' ':
-					// Context lines appear on both sides; check both no-newline signals.
-					noNL := (newSideNoNewline && isLastRealLine) ||
-						(h.OrigNoNewlineAt > 0 && int32(lineByteEnd) == h.OrigNoNewlineAt)
-					hunk.Lines = append(hunk.Lines, Line{
-						Type: "context", Content: line[1:], OldNum: oldNum, NewNum: newNum, NoNewline: noNL,
-					})
-					oldNum++
-					newNum++
-				case '+':
-					noNL := newSideNoNewline && isLastRealLine
-					hunk.Lines = append(hunk.Lines, Line{
-						Type: "add", Content: line[1:], NewNum: newNum, NoNewline: noNL,
-					})
-					newNum++
-					rawFiles[i].Additions++
-				case '-':
-					noNL := h.OrigNoNewlineAt > 0 && int32(lineByteEnd) == h.OrigNoNewlineAt
-					hunk.Lines = append(hunk.Lines, Line{
-						Type: "delete", Content: line[1:], OldNum: oldNum, NoNewline: noNL,
-					})
-					oldNum++
-					rawFiles[i].Deletions++
-				}
-				byteOffset = lineByteEnd
-			}
-			rawFiles[i].Hunks = append(rawFiles[i].Hunks, hunk)
-		}
+		applyParsedFileDiff(&rawFiles[i], fd)
 	}
 
 	for i := range rawFiles {
@@ -192,6 +121,142 @@ func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 	}
 
 	return rawFiles
+}
+
+func applyParsedFileDiff(file *DiffFile, fd *godiff.FileDiff) {
+	// Detect binary from extended headers.
+	for _, ext := range fd.Extended {
+		if strings.HasPrefix(ext, "Binary files ") || strings.HasPrefix(ext, "GIT binary patch") {
+			file.IsBinary = true
+			break
+		}
+	}
+
+	// Convert hunks.
+	for _, h := range fd.Hunks {
+		hunk := Hunk{
+			OldStart: int(h.OrigStartLine),
+			OldCount: int(h.OrigLines),
+			NewStart: int(h.NewStartLine),
+			NewCount: int(h.NewLines),
+			Section:  h.Section,
+		}
+		oldNum := int(h.OrigStartLine)
+		newNum := int(h.NewStartLine)
+
+		// The library handles "\ No newline at end of file" internally:
+		// - Orig side: sets OrigNoNewlineAt to the byte offset after the line
+		// - New side: removes the trailing \n from Body
+		body := h.Body
+		newSideNoNewline := len(body) > 0 && body[len(body)-1] != '\n'
+		bodyLines := strings.Split(string(body), "\n")
+
+		byteOffset := 0
+		for j, line := range bodyLines {
+			if j == len(bodyLines)-1 && line == "" {
+				continue
+			}
+
+			lineByteEnd := byteOffset + len(line) + 1 // +1 for \n separator
+
+			if len(line) == 0 {
+				hunk.Lines = append(hunk.Lines, Line{
+					Type: "context", Content: "", OldNum: oldNum, NewNum: newNum,
+				})
+				oldNum++
+				newNum++
+				byteOffset = lineByteEnd
+				continue
+			}
+
+			isLastRealLine := j == len(bodyLines)-1 ||
+				(j == len(bodyLines)-2 && bodyLines[len(bodyLines)-1] == "")
+
+			switch line[0] {
+			case ' ':
+				// Context lines appear on both sides; check both no-newline signals.
+				noNL := (newSideNoNewline && isLastRealLine) ||
+					(h.OrigNoNewlineAt > 0 && int32(lineByteEnd) == h.OrigNoNewlineAt)
+				hunk.Lines = append(hunk.Lines, Line{
+					Type: "context", Content: line[1:], OldNum: oldNum, NewNum: newNum, NoNewline: noNL,
+				})
+				oldNum++
+				newNum++
+			case '+':
+				noNL := newSideNoNewline && isLastRealLine
+				hunk.Lines = append(hunk.Lines, Line{
+					Type: "add", Content: line[1:], NewNum: newNum, NoNewline: noNL,
+				})
+				newNum++
+				file.Additions++
+			case '-':
+				noNL := h.OrigNoNewlineAt > 0 && int32(lineByteEnd) == h.OrigNoNewlineAt
+				hunk.Lines = append(hunk.Lines, Line{
+					Type: "delete", Content: line[1:], OldNum: oldNum, NoNewline: noNL,
+				})
+				oldNum++
+				file.Deletions++
+			}
+			byteOffset = lineByteEnd
+		}
+		file.Hunks = append(file.Hunks, hunk)
+	}
+}
+
+func synthesizeDiffFile(fd *godiff.FileDiff) DiffFile {
+	oldPath := normalizeDiffHeaderPath(fd.OrigName)
+	newPath := normalizeDiffHeaderPath(fd.NewName)
+	path := newPath
+	if path == "" {
+		path = oldPath
+	}
+	if oldPath == "" {
+		oldPath = path
+	}
+	file := DiffFile{
+		Path:    path,
+		OldPath: oldPath,
+		Status:  "modified",
+	}
+	applyExtendedHeaderMetadata(&file, fd.Extended)
+	if file.Status == "modified" {
+		switch {
+		case normalizeDiffHeaderPath(fd.OrigName) == "":
+			file.Status = "added"
+		case normalizeDiffHeaderPath(fd.NewName) == "":
+			file.Status = "deleted"
+		}
+	}
+	return file
+}
+
+func applyExtendedHeaderMetadata(file *DiffFile, headers []string) {
+	for _, header := range headers {
+		switch {
+		case strings.HasPrefix(header, "new file mode "):
+			file.Status = "added"
+			file.NewMode = strings.TrimPrefix(header, "new file mode ")
+		case strings.HasPrefix(header, "deleted file mode "):
+			file.Status = "deleted"
+			file.OldMode = strings.TrimPrefix(header, "deleted file mode ")
+		case strings.HasPrefix(header, "old mode "):
+			file.OldMode = strings.TrimPrefix(header, "old mode ")
+		case strings.HasPrefix(header, "new mode "):
+			file.NewMode = strings.TrimPrefix(header, "new mode ")
+		case strings.HasPrefix(header, "rename from "):
+			file.Status = "renamed"
+			file.OldPath = strings.TrimPrefix(header, "rename from ")
+		case strings.HasPrefix(header, "rename to "):
+			file.Status = "renamed"
+			file.Path = strings.TrimPrefix(header, "rename to ")
+		case strings.HasPrefix(header, "copy from "):
+			file.Status = "copied"
+			file.OldPath = strings.TrimPrefix(header, "copy from ")
+		case strings.HasPrefix(header, "copy to "):
+			file.Status = "copied"
+			file.Path = strings.TrimPrefix(header, "copy to ")
+		}
+	}
 }
 
 type diffFilePathIndex struct {

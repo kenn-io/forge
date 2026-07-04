@@ -101,7 +101,10 @@ func (c *daemonClient) ensureWorkflowStateSupported(ctx context.Context) error {
 	if c.workflowProbeDone {
 		err := c.workflowProbeErr
 		c.mu.Unlock()
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 	c.mu.Unlock()
 

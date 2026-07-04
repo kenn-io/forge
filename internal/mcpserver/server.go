@@ -47,6 +47,8 @@ func (s *Server) registerTools() {
 	s.registerItemTools()
 	s.registerDiffTools()
 	s.registerStackTools()
+	s.registerWorkflowTools()
+	s.registerGuidance()
 }
 
 func (s *Server) RunStdio(ctx context.Context) error {

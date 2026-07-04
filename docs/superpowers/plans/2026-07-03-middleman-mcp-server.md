@@ -13,6 +13,7 @@
 ## Global Constraints
 
 - Status vocabulary everywhere: `new`, `reviewing`, `waiting`, `awaiting_merge`. Missing workflow row reads as effective `new`.
+- One rule for `new`, no exceptions: setting `status=new` stores an explicit row (with metadata) exactly like any other status — it is never a delete/reset, and rows are never deleted by state changes. Everywhere that filters or lists by state, `new` matches the *effective* status: explicit `new` rows AND items with no row at all. `expected_status` likewise compares against the effective status. Explicit `new` rows sort by their `updated_at` like any other explicit row.
 - Metadata byte limits (validated at the API layer, exact values from spec): `updated_source` max 40 bytes matching `^[a-z][a-z0-9_-]{0,39}$`; `updated_actor` max 120 bytes; `updated_reason` max 500 bytes.
 - `updated_source` values: existing PR kanban route writes `"ui"`, new workflow-state PUT defaults to `"api"`, MCP write tool always sends `"mcp"`.
 - Repository identity is always `(platform, platform_host, owner, name)`. No repo-scoped data keyed by owner/repo/number alone.
@@ -88,7 +89,7 @@ Implementers get zero other context; these are load-bearing:
 - Modify: `internal/db/db_test.go` (expected-tables list at `:40`, plus new migration test)
 
 **Interfaces:**
-- Produces: table `middleman_item_workflow_state(repo_id, item_type, item_number, status, updated_at, updated_source, updated_actor, updated_reason)` with `UNIQUE(repo_id, item_type, item_number)`; `middleman_kanban_state` no longer exists after migration.
+- Produces: table `middleman_item_workflow_state(repo_id, item_type, item_number, status, updated_at, updated_source, updated_actor, updated_reason)` with `UNIQUE(repo_id, item_type, item_number)`. `middleman_kanban_state` is NOT dropped here — it stays live (and still consistent, since nothing writes the new table yet) until Task 3 rewires all readers/writers and drops it in migration 000038 within the same commit. This keeps every commit on the branch a working bisect point.
 
 - [ ] **Step 1: Write the failing migration test**
 
@@ -129,7 +130,9 @@ func TestOpenMigratesKanbanRowsToItemWorkflowState(t *testing.T) {
 	assert.Equal(7, number)
 	assert.Equal("reviewing", status)
 	assert.Equal("", source)
-	assert.False(tableExistsForTest(t, d, "middleman_kanban_state"))
+	// The old table stays until Task 3's migration 000038 drops it,
+	// so this commit remains a working bisect point.
+	assert.True(tableExistsForTest(t, d, "middleman_kanban_state"))
 	assert.True(tableExistsForTest(t, d, "middleman_item_workflow_state"))
 }
 ```
@@ -144,7 +147,7 @@ func migrateToVersionForTest(path string, v uint) error {
 }
 ```
 
-Also update the expected-tables list in `TestOpenAndSchema` (`db_test.go:40`): remove `"middleman_kanban_state"`, add `"middleman_item_workflow_state"`.
+Also update the expected-tables list in `TestOpenAndSchema` (`db_test.go:40`): add `"middleman_item_workflow_state"`. Keep `"middleman_kanban_state"` in the list — Task 3 removes it when migration 000038 drops the table.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -176,29 +179,13 @@ INSERT INTO middleman_item_workflow_state
 SELECT mr.repo_id, 'pr', mr.number, k.status, k.updated_at
 FROM middleman_kanban_state k
 JOIN middleman_merge_requests mr ON mr.id = k.merge_request_id;
-
-DROP TABLE middleman_kanban_state;
 ```
+
+No `DROP TABLE` here: the old table stays live and all existing code keeps working until Task 3 rewires it and drops the table in migration 000038 (same commit as the rewiring).
 
 `internal/db/migrations/000037_item_workflow_state.down.sql`:
 
 ```sql
-CREATE TABLE IF NOT EXISTS middleman_kanban_state (
-    merge_request_id INTEGER PRIMARY KEY REFERENCES middleman_merge_requests(id) ON DELETE CASCADE,
-    status           TEXT NOT NULL DEFAULT 'new',
-    updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_kanban_status
-    ON middleman_kanban_state(status, updated_at DESC);
-
-INSERT INTO middleman_kanban_state (merge_request_id, status, updated_at)
-SELECT mr.id, w.status, w.updated_at
-FROM middleman_item_workflow_state w
-JOIN middleman_merge_requests mr
-    ON mr.repo_id = w.repo_id AND mr.number = w.item_number
-WHERE w.item_type = 'pr';
-
 DROP TABLE middleman_item_workflow_state;
 ```
 
@@ -206,8 +193,8 @@ Legacy rows keep `updated_source = ''` (empty means "predates metadata"). Item d
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `go test ./internal/db -run 'TestOpenMigratesKanbanRowsToItemWorkflowState|TestOpenAndSchema|TestOpenMigratesLegacyDatabase|TestOpenCreatesSchemaMigrationsTable' -shuffle=on`
-Expected: PASS. (Compilation of the rest of the package still fails is NOT acceptable — the old kanban funcs still reference the dropped table but compile fine; only their runtime use breaks, which Task 3 fixes. Run only these tests, not the full package, until Task 3.)
+Run: `go test ./internal/db -shuffle=on`
+Expected: PASS — the full package passes because nothing that exists yet reads or writes the new table, and the old table is untouched.
 
 - [ ] **Step 5: Commit**
 
@@ -218,9 +205,9 @@ git commit -m "feat: generalize PR kanban storage into item workflow state
 Adds middleman_item_workflow_state keyed by (repo_id, item_type,
 item_number) with last-writer metadata so issues can carry the same
 local review workflow as PRs and MCP writes can be attributed. Existing
-kanban rows are copied as item_type='pr' and the old table is dropped;
-public API compatibility is restored at the Go layer in follow-up
-commits on this branch."
+kanban rows are copied as item_type='pr'; the old table stays live and
+authoritative until the Go layer is rewired, so every commit in the
+sequence remains a working bisect point."
 ```
 
 ---
@@ -544,17 +531,62 @@ never-moved items without racing humans or other agents."
 **Spec sections:** "PR Kanban Compatibility".
 
 **Files:**
+- Create: `internal/db/migrations/000038_drop_kanban_state.up.sql`, `.down.sql`
 - Modify: `internal/db/queries.go` (joins at `2312/2316`, `2373/2376`, `2495/2499`; filter at `2458-2465`; delete `EnsureKanbanState`/`SetKanbanState`/`GetKanbanState` at `2727-2771`; also the host-cleanup DELETE at `queries.go:916`)
 - Modify: `internal/db/types.go` (delete `KanbanState` struct at `:347-351`; keep `KanbanStatus` type and `MergeRequest.KanbanStatus`)
 - Modify: `internal/server/huma_routes.go` (`setKanbanState` handler `:1886`, `EnsureKanbanState` call at `:3074`)
+- Modify: `internal/db/db_test.go` (`TestOpenAndSchema` list: remove `"middleman_kanban_state"`)
 - Modify: `internal/db/queries_test.go` (`TestKanbanState` at `:2869` and any other `EnsureKanbanState`/`SetKanbanState` callers)
 - Modify: `internal/server/apitest/fixtures_test.go` (`seedPR` at `:170`)
 
 **Interfaces:**
 - Consumes: `EnsureItemWorkflowState`, `SetItemWorkflowState`, `GetItemWorkflowState`, `ItemTypePR` (Task 2).
-- Produces: unchanged public behavior — `KanbanStatus` on PR list/detail responses, `PUT .../state` request/response shape identical. All old `*KanbanState` DB funcs are gone.
+- Produces: unchanged public behavior — `KanbanStatus` on PR list/detail responses, `PUT .../state` request/response shape identical. All old `*KanbanState` DB funcs and `middleman_kanban_state` itself are gone after this task; the rewiring and the drop land in ONE commit so no commit references a dropped table.
 
-- [ ] **Step 1: Update the DB joins and filter**
+- [ ] **Step 1: Add migration 000038 (re-sync then drop)**
+
+Between Task 1's migration and this task, running pre-rewire builds still wrote `middleman_kanban_state`, so the drop migration re-syncs newer rows before dropping (both migrations run back-to-back for anyone upgrading across the branch, making the re-sync a no-op there).
+
+`internal/db/migrations/000038_drop_kanban_state.up.sql`:
+
+```sql
+INSERT INTO middleman_item_workflow_state
+    (repo_id, item_type, item_number, status, updated_at)
+SELECT mr.repo_id, 'pr', mr.number, k.status, k.updated_at
+FROM middleman_kanban_state k
+JOIN middleman_merge_requests mr ON mr.id = k.merge_request_id
+WHERE 1
+ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET
+    status     = excluded.status,
+    updated_at = excluded.updated_at
+WHERE excluded.updated_at > middleman_item_workflow_state.updated_at;
+
+DROP TABLE middleman_kanban_state;
+```
+
+`internal/db/migrations/000038_drop_kanban_state.down.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS middleman_kanban_state (
+    merge_request_id INTEGER PRIMARY KEY REFERENCES middleman_merge_requests(id) ON DELETE CASCADE,
+    status           TEXT NOT NULL DEFAULT 'new',
+    updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_kanban_status
+    ON middleman_kanban_state(status, updated_at DESC);
+
+INSERT INTO middleman_kanban_state (merge_request_id, status, updated_at)
+SELECT mr.id, w.status, w.updated_at
+FROM middleman_item_workflow_state w
+JOIN middleman_merge_requests mr
+    ON mr.repo_id = w.repo_id AND mr.number = w.item_number
+WHERE w.item_type = 'pr';
+```
+
+Update `TestOpenAndSchema` (`db_test.go:40`): remove `"middleman_kanban_state"` from the expected list. Update Task 1's migration test assertion (`assert.True(tableExistsForTest(t, d, "middleman_kanban_state"))` → `assert.False(...)`) since `Open` now runs through 000038.
+
+- [ ] **Step 2: Update the DB joins and filter**
 
 In `internal/db/queries.go`, replace all three occurrences of
 
@@ -604,12 +636,12 @@ Keep the `lookupMRID` existence check above it exactly as-is (it guards item exi
 - `internal/server/apitest/fixtures_test.go:170` (`seedPR`): replace `database.EnsureKanbanState(ctx, prID)` with `database.EnsureItemWorkflowState(ctx, repoID, db.ItemTypePR, number)` (repoID and number are already in scope in `seedPR`).
 - `internal/db/queries_test.go:2869` (`TestKanbanState`) and `:2529` (`TestListPullRequestsFilterByKanban`): port to the new API — `SetKanbanState(ctx, id2, "reviewing")` becomes `SetItemWorkflowState(ctx, SetItemWorkflowStateParams{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 2, Status: "reviewing", Source: "ui"})`; `EnsureKanbanState(ctx, id3)` becomes `EnsureItemWorkflowState(ctx, repoID, ItemTypePR, 3)`. The filter assertions (`KanbanState: "reviewing"` returns PR 2; `"new"` returns PRs 3 and 1) stay identical — they prove the compatibility contract.
 
-- [ ] **Step 2: Run the full affected suites**
+- [ ] **Step 3: Run the full affected suites**
 
 Run: `go test ./internal/db ./internal/server/... -shuffle=on`
 Expected: PASS, including untouched kanban API tests in apitest (the public-contract proof).
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add -A internal/db internal/server
@@ -619,7 +651,9 @@ The kanban board, PR list/detail KanbanStatus, and the existing PUT
 /pulls/.../state route keep their exact public behavior while the
 storage moves to the generic (repo_id, item_type, item_number) table,
 so issues and MCP writes can share one state store without a
-duplicate-write shim."
+duplicate-write shim. Migration 000038 re-syncs any rows written to
+the old table since 000037 and drops it in this same commit, so no
+commit on the branch queries a dropped table."
 ```
 
 ---
@@ -711,7 +745,8 @@ func TestListItemWorkflowStates(t *testing.T) {
 	assert.False(rows[1].HasRow)
 	assert.Equal(1, rows[2].Number)
 
-	// state=new includes never-moved open items only.
+	// state=new matches effective status: items with no row AND items
+	// explicitly set to "new" (Global Constraints rule).
 	rows, _, err = d.ListItemWorkflowStates(ctx, ListWorkflowStatesOpts{States: []string{"new"}})
 	require.NoError(t, err)
 	require.Len(t, rows, 2)
@@ -850,7 +885,7 @@ ORDER BY t.sort_ts DESC, t.last_activity_at DESC,
 LIMIT ?
 ```
 
-Conds assembled in Go: item-type filter (`t.item_type IN (...)` — validate values are `pr`/`issue`, else error), states filter (`t.status IN (...)`), closed filter when `!IncludeClosed` (`t.state NOT IN ('closed','merged')`), repo filters (reuse the same matching approach `ListMergeRequests` uses for `RepoFilters` — read how it builds those conds and mirror it against `r.*` columns inside each UNION arm, or against `t.platform/t.platform_host/t.owner/t.name` in the outer WHERE using the casefold key columns the existing code uses; follow the existing pattern exactly), and the keyset predicate when a cursor is present:
+Conds assembled in Go: item-type filter (`t.item_type IN (...)` — validate values are `pr`/`issue`, else error), states filter (`t.status IN (...)`), closed filter when `!IncludeClosed` (`t.state NOT IN ('closed','merged')`), repo filters (MUST be applied inside each UNION arm against `r.*` using the exact casefold-aware helper/condition `ListMergeRequests` uses for `RepoFilters` — read `queries.go:2413-2530` and reuse that helper or its condition builder verbatim; it matches on the `owner_key`/`name_key`/`repo_path_key` key columns plus `platform`/`platform_host`, NOT case-sensitive display `owner`/`name`. Do not filter on the outer `t.*` display columns), and the keyset predicate when a cursor is present:
 
 ```sql
 (t.sort_ts < ?
@@ -861,6 +896,10 @@ Conds assembled in Go: item-type filter (`t.item_type IN (...)` — validate val
 ```
 
 SQLite supports row-value comparison since 3.15; modernc.org/sqlite handles it. Limit: default 50 when `opts.Limit <= 0`, cap at 200. Fetch `limit+1` rows; when you get the extra row, drop it and return `encodeWorkflowCursor(lastKept, lastKeptSortTs)` as next cursor. Scan `sort_ts` into a local `time.Time` alongside each row for cursor encoding; scan `updated_at` via `sql.NullTime` into `*time.Time`.
+
+Cursor stability: the cursor is a keyset snapshot, not an isolation mechanism. A workflow write between pages changes an item's `sort_ts`, which can move it across the cursor boundary (appearing twice or being skipped). This is accepted for v1; document it in the endpoint's huma `doc:` tag on `cursor` so API consumers know pages are best-effort under concurrent writes.
+
+Add one more test alongside the pagination test: seed two repos differing only in owner case (or one on a non-default `platform_host`) and assert a `RepoFilters` entry with mixed-case input matches via the key columns and excludes the other repo — this pins the casefold-aware filter requirement above.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -976,6 +1015,8 @@ if row, err := s.db.GetItemWorkflowState(ctx, repo.ID, db.ItemTypeIssue, issue.N
 resp.Workflow = wf
 ```
 
+Every code path that constructs `issueDetailResponse` must carry the field: grep for `issueDetailResponse{` — the issue sync handler (`POST /issues/.../sync`) builds its response separately from `buildIssueDetailResponse`. Refactor it to reuse the shared builder (preferred) or populate `Workflow` there too, and add an apitest asserting the sync route's response includes `workflow` after a state write.
+
 - [ ] **Step 4: Run tests**
 
 Run: `go test ./internal/db ./internal/server/... -shuffle=on`
@@ -1071,7 +1112,8 @@ package apitest
 // repo=provider|host/owner/name returns it.
 
 // TestWorkflowStateListFilters: closed PR excluded by default, included
-// with include_closed=true; state=new includes never-moved items;
+// with include_closed=true; state=new matches effective status (no-row
+// items AND explicit new rows, per the Global Constraints rule);
 // item_type=issue excludes PRs; limit+cursor walk returns disjoint pages
 // in the documented order (deterministic pagination).
 ```
@@ -1734,7 +1776,7 @@ func (c *daemonClient) putJSON(ctx context.Context, path string, body, out any) 
 }
 ```
 
-Verify against huma's actual 404-for-unknown-route body: huma emits its own 404 problem for unregistered paths — check the real `code` (it may be absent, not `"notFound"`). Adjust the `version_mismatch` detection to whatever an unregistered route actually returns (e.g. missing `code` on a 404 for a `/workflow-state` path). Add a startup probe in `New` (below): GET `/api/v1/workflow-state?limit=1`; on `version_mismatch`/`not_found`, remember it and have the two workflow tools return a version/capability error naming the missing route (spec: do not silently downgrade).
+Verify against huma's actual 404-for-unknown-route body: huma emits its own 404 problem for unregistered paths — check the real `code` (it may be absent, not `"notFound"`). Adjust the `version_mismatch` detection to whatever an unregistered route actually returns (e.g. missing `code` on a 404 for a `/workflow-state` path). Daemon discovery and capability checking are LAZY, uniformly: `New` never contacts the daemon, and `middleman mcp` starts successfully with no daemon running (tools then return `daemon_unavailable`). The workflow-state capability probe (GET `/api/v1/workflow-state?limit=1`) runs on the first call to either workflow tool, after a successful discovery; on `version_mismatch`/`not_found` the result is cached and both workflow tools return a version/capability error naming the missing route (spec: do not silently downgrade). No eager startup probe exists on any transport — stdio and HTTP behave identically.
 
 `internal/mcpserver/server.go`:
 
@@ -2092,8 +2134,8 @@ type searchItemsOutput struct {
 
 Implementation notes (write real code, these are the decisions):
 - `sinceToRFC3339(s string)` helper: `time.ParseDuration` first; on success `time.Now().UTC().Add(-d).Format(time.RFC3339)`; otherwise pass through unchanged. Default `"24h"`.
-- `search_items`: PR call `GET /api/v1/pulls` with `q`, `state` (map `merged`→`all`, `all`→`all`, else pass), `repo`, `limit`; issue call `GET /api/v1/issues` likewise (skip when `state == "merged"`). Client-side: when input state is `merged` keep only `State == "merged"`; when `closed` keep `closed` (and for PRs also drop `merged` unless the daemon already distinguishes — check `db.MergeRequest.State` values in a quick grep: states are `open`/`closed`/`merged`). Merge, sort by `LastActivityAt` desc, truncate to limit, set `Capped` when truncated. Workflow status: PR `KanbanStatus` (empty → `"new"`), issue `WorkflowStatus` (empty → `"new"`).
-- `list_activity`: forward params; map response items to a compact struct (drop commit-metadata fields that are empty); include `capped`.
+- `search_items`: PR call `GET /api/v1/pulls` with `q`, `state` (map `merged`→`all`, `all`→`all`, else pass), `repo`, `limit`; issue call `GET /api/v1/issues` likewise (skip when `state == "merged"`). Client-side: when input state is `merged` keep only `State == "merged"`; when `closed` keep `closed` (and for PRs also drop `merged` unless the daemon already distinguishes — check `db.MergeRequest.State` values in a quick grep: states are `open`/`closed`/`merged`). Each source is fetched with the full tool `limit` so global truncation cannot miss top results. Merge, sort by `LastActivityAt` desc with ties broken ascending by `(provider, platform_host, owner, name, item_type, number)` (deterministic ordering per the spec; no pagination in v1), truncate to limit, set `Capped` when truncated. Workflow status: PR `KanbanStatus` (empty → `"new"`), issue `WorkflowStatus` (empty → `"new"`).
+- `list_activity`: forward params, but note the daemon `/activity` route has NO `limit` query parameter — the companion must truncate client-side to the tool's `limit` (default 50, cap 200) after decoding, and set the output `capped` flag when it truncated or the daemon reported `capped`. Map response items to a compact struct (drop commit-metadata fields that are empty). Test must assert the returned row count honors the tool input when the fake daemon returns more rows.
 - Register in `registerTools()` (Task 7 stub) with `mcp.AddTool(s.mcp, &mcp.Tool{Name: "middleman_list_repos", Description: "..."}, wrap(s.listRepos))` — write a tiny `wrap` adapter if the SDK handler signature needs `(*mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error)`; return `nil` for the result and let the SDK serialize the typed output. Tool descriptions: 1-3 sentences from the spec's tool sections, including "call middleman_list_repos first to discover valid repo filters and sync freshness".
 
 - [ ] **Step 4: Run tests**
@@ -2245,14 +2287,23 @@ Routing rule shared by every ref-taking tool (write once as a helper):
 
 ```go
 // itemPath renders the daemon route for a ref. kind is "pulls" or "issues".
+// seg escapes one path segment. GitLab owners can nest ("group/sub"),
+// and owner/name may contain reserved URL characters; unescaped values
+// would silently hit the wrong route on every ref-taking tool.
+func seg(s string) string { return url.PathEscape(s) }
+
 func itemPath(kind string, ref itemRefInput) string {
-	base := fmt.Sprintf("/api/v1/%s/%s/%s/%s/%d", kind, ref.Provider, ref.Owner, ref.Name, ref.Number)
+	base := fmt.Sprintf("/api/v1/%s/%s/%s/%s/%d",
+		kind, seg(ref.Provider), seg(ref.Owner), seg(ref.Name), ref.Number)
 	if ref.PlatformHost != "" {
-		return fmt.Sprintf("/api/v1/host/%s/%s/%s/%s/%s/%d", ref.PlatformHost, kind, ref.Provider, ref.Owner, ref.Name, ref.Number)
+		return fmt.Sprintf("/api/v1/host/%s/%s/%s/%s/%s/%d",
+			seg(ref.PlatformHost), kind, seg(ref.Provider), seg(ref.Owner), seg(ref.Name), ref.Number)
 	}
 	return base
 }
 ```
+
+Every hand-built daemon path in the companion (this helper, `workflowPath` in Task 12, and any query-building code) goes through `seg`. Check how the daemon serves nested owners today (grep the frontend's `provider-routes.ts` and an existing handler test for an owner containing `/`) and match that encoding exactly. Tests must include a nested GitLab owner (`group/sub`) and a self-hosted `platform_host`, asserting the fake daemon receives the expected escaped path.
 
 `get_item_context`: PR refs hit the PR detail route (decode `merge_request` with Go-name keys, `events` with Go-name keys except tagged extras, snake-case wrapper fields incl. `stack`, `workspace`, `checks`, `workflow_approval`); issue refs hit the issue detail route (decode `issue`, `events`, `workflow`). Event limiting and include-flag filtering happen in the companion after the fetch (spec: v1 filters the MCP response shape, not the daemon payload). Truncate each event body to 500 bytes into `body_preview`; never emit full bodies of all events — emit the full body only for the item itself. Invalid `item_type` → tool error `invalid_request`.
 
@@ -2297,23 +2348,21 @@ func (st *diffFileStore) write(name string, data []byte) (path string, size int6
 func (st *diffFileStore) Close() error // os.RemoveAll
 
 type getItemDiffInput struct {
-	Item                  itemRefInput `json:"item"`
-	EmitDiffFile          bool         `json:"emit_diff_file,omitempty"`
-	IncludeWhitespaceOnly bool         `json:"include_whitespace_only,omitempty"`
+	Item         itemRefInput `json:"item"`
+	EmitDiffFile bool         `json:"emit_diff_file,omitempty"`
 }
 type diffFileRow struct {
-	Path, OldPath, Status                     string
-	IsBinary, IsGenerated, IsWhitespaceOnly   bool
-	Additions, Deletions                      int
+	Path, OldPath, Status  string
+	IsBinary, IsGenerated  bool
+	Additions, Deletions   int
 } // json snake tags matching the spec example
 type diffFileHandle struct{ Path string `json:"path"`; Bytes int64 `json:"bytes"` }
 type getItemDiffOutput struct {
-	Stale               bool           `json:"stale"`
-	WhitespaceOnlyCount int            `json:"whitespace_only_count"`
-	TotalAdditions      int            `json:"total_additions"`
-	TotalDeletions      int            `json:"total_deletions"`
-	Files               []diffFileRow  `json:"files"`
-	DiffFile            *diffFileHandle `json:"diff_file,omitempty"`
+	Stale          bool            `json:"stale"`
+	TotalAdditions int             `json:"total_additions"`
+	TotalDeletions int             `json:"total_deletions"`
+	Files          []diffFileRow   `json:"files"`
+	DiffFile       *diffFileHandle `json:"diff_file,omitempty"`
 }
 
 type getStackContextInput struct{ Item itemRefInput `json:"item"` }
@@ -2335,9 +2384,9 @@ type getStackContextOutput struct {
 
 Diff tool behavior:
 - Reject issue refs up front: `item.item_type != "pr"` → `daemonError{Kind: "invalid_request", Message: "diff is only available for prs"}`.
-- Summary from `GET .../files`: strip `Patch`/`Hunks`, compute `TotalAdditions`/`TotalDeletions` by summing files, compute `WhitespaceOnlyCount` by counting `is_whitespace_only` files itself (the daemon's files route leaves it 0 — Codebase Facts), and drop whitespace-only files from `files` unless `IncludeWhitespaceOnly`. Pass `stale` through untouched.
+- Summary from `GET .../files`: strip `Patch`/`Hunks`, compute `TotalAdditions`/`TotalDeletions` by summing files, pass every file row through unchanged. No whitespace-only filtering or counts anywhere in this tool — the files route does not compute whitespace status and the review use case does not need whitespace-aware line counts (spec as amended). Pass `stale` through untouched.
 - Diff-unavailable: when the daemon returns 404/5xx from the files/diff routes with a clone-manager problem, surface `daemonError{Kind: "diff_unavailable", ...}` (add the kind); never return an empty summary on error.
-- `EmitDiffFile`: `GET .../diff` returns `diffResponse` with per-file `Patch` strings; concatenate `Files[i].Patch` in order into one unified diff buffer, write via the store as `fmt.Sprintf("%s-%s-%s-%s-pr-%d.diff", sanitize(provider), sanitize(host), sanitize(owner), sanitize(name), number)` where `sanitize` replaces any rune outside `[a-zA-Z0-9._-]` with `_`. Return absolute path + byte count. Repeat calls overwrite the same file. Lazily create the store on first use (`s.diffs`), and `Server.Close` removes the directory (already wired in Task 7).
+- `EmitDiffFile`: `GET .../diff` returns `diffResponse` (structured JSON, not raw diff bytes) with per-file `Patch` strings. Serialize per the spec's exact format: files in daemon response order, each as a `diff --git a/<old_path or path> b/<path>` header line followed by the file's `Patch` verbatim; binary files emit the header plus `Binary files differ`; empty patches emit the header only. Write via the store as `fmt.Sprintf("%s-%s-%s-%s-pr-%d.diff", sanitize(provider), sanitize(host), sanitize(owner), sanitize(name), number)` where `sanitize` replaces any rune outside `[a-zA-Z0-9._-]` with `_`. Cap the serialized buffer at 10 MiB — beyond that return `daemonError{Kind: "diff_too_large", Message: "... use the daemon API or a local checkout"}` instead of writing. Return absolute path + byte count. Repeat calls overwrite the same file in place via `os.WriteFile` (single-client companion; concurrent readers of a file being rewritten are out of scope and documented as such in the guidance doc). Lazily create the store on first use (`s.diffs`); `Server.Close` removes the directory (wired in Task 7). Crash cleanup: the store lives under `os.MkdirTemp("", "middleman-mcp-")`, so a killed companion leaves an orphan dir in the OS temp area that standard temp cleanup reaps; do not build extra machinery.
 
 Stack tool behavior:
 - `GET .../stack` via `itemPath("pulls", ref) + "/stack"`. `not_found` (or empty-context response — verify how `getStackForPR` responds for a PR not in any stack by reading `huma_routes.go` around `:4855` and the `getStackForPR` handler) → `{present: false}`.
@@ -2346,9 +2395,9 @@ Stack tool behavior:
 - [ ] **Step 1: Write failing tests**
 
 Cover, with a fake daemon:
-- summary-only default: no `diff_file` key, whitespace-only file dropped and counted, totals summed, `stale` passthrough true;
-- `include_whitespace_only: true` keeps the file;
-- `emit_diff_file: true`: response path exists inside the store dir, file mode is `0600` (`os.Stat` + `assert.Equal(os.FileMode(0o600), info.Mode().Perm())`), content equals concatenated patches, second call overwrites (same path, new content);
+- summary-only default: no `diff_file` key, all file rows passed through (no whitespace filtering), totals summed, `stale` passthrough true;
+- `emit_diff_file: true`: response path exists inside the store dir, file mode is `0600` (`os.Stat` + `assert.Equal(os.FileMode(0o600), info.Mode().Perm())`), content matches the specified serialization (git headers + patches; binary file emits `Binary files differ`), second call overwrites (same path, new content);
+- serialized diff exceeding the 10 MiB cap → `diff_too_large` error, no file written;
 - issue ref → error with `invalid_request`;
 - daemon diff route failing → `diff_unavailable` error, no partial output;
 - store `Close` removes the directory;
@@ -2458,7 +2507,7 @@ Register the resource (`URI: "middleman://mcp/guidance"`, `MIMEType: "text/markd
 
 `guidance.md` (embedded, model-facing) covers the same flow in prose plus the example flow from the spec ("Example guidance flow" block, copied).
 
-`docs/middleman-mcp.md` (user-facing) must cover every bullet in the spec's "Guidance Document" section: client configuration for stdio (`command: middleman, args: ["mcp"]` JSON example), HTTP transport usage (`--transport http --addr 127.0.0.1:8092 --http-token-env MIDDLEMAN_MCP_TOKEN`, curl example with bearer), cached-data semantics (no provider refresh), local-write-only scope, example periodic flows, safe prompts, repo-filter discovery, quiet-item search, diff summary-first flow + ephemeral temp files local to the companion host, when to mark `reviewing`, `expected_status` usage, inspecting reviewing/waiting items, stale-cache interpretation, and troubleshooting daemon discovery/auth (`no middleman daemon is running on <data_dir>` → start `middleman`; auth errors → check `auth_token` file perms).
+`docs/middleman-mcp.md` (user-facing) must cover every bullet in the spec's "Guidance Document" section: client configuration for stdio (`command: middleman, args: ["mcp"]` JSON example), HTTP transport usage (`--transport http --addr 127.0.0.1:8092 --http-token-env MIDDLEMAN_MCP_TOKEN`, curl example with bearer, and a token-generation recommendation: at least 32 random bytes, e.g. `openssl rand -hex 32` — the companion checks non-blank only and does not enforce entropy), cached-data semantics (no provider refresh), local-write-only scope, example periodic flows, safe prompts, repo-filter discovery, quiet-item search, diff summary-first flow + ephemeral temp files local to the companion host, when to mark `reviewing`, `expected_status` usage, inspecting reviewing/waiting items, stale-cache interpretation, and troubleshooting daemon discovery/auth (`no middleman daemon is running on <data_dir>` → start `middleman`; auth errors → check `auth_token` file perms).
 
 - [ ] **Step 4: Run tests** — `go test ./internal/mcpserver -shuffle=on` → PASS.
 
@@ -2681,6 +2730,22 @@ package main
 //    "reviewing" with updated_source "mcp".
 // 9. CallTool again with expected_status "new" -> tool-level error/
 //    conflict result; state unchanged.
+//
+// The read tools must also be proven against the real daemon (spec as
+// amended: route selection, real JSON casing, SQLite behavior, and
+// temp-file output must not hide behind fake-daemon unit tests):
+// 10. CallTool middleman_list_repos -> seeded repo present with counts.
+// 11. CallTool middleman_search_items {query: <word from seeded PR
+//     title>} -> the PR is returned with workflow status "reviewing"
+//     (set in step 7) and no body fields.
+// 12. CallTool middleman_get_item_context for the PR -> title, body,
+//     detail_loaded/cache fields present.
+// 13. CallTool middleman_get_stack_context for the PR ->
+//     present: false (seeded PR is not stacked).
+// 14. CallTool middleman_get_item_diff for the PR -> expect the typed
+//     diff_unavailable error (no clone manager in the e2e fixture);
+//     if seeding a local clone is cheap in this harness, additionally
+//     assert the summary + emit_diff_file path writes a 0600 file.
 ```
 
 Write it fully; every numbered step is code in the test. Gate it like other cmd e2e tests (they run in normal `go test` — follow whatever `testing.Short()` gating `api_verb_e2e_test.go` uses).
@@ -2720,5 +2785,6 @@ the spec's primary success criterion."
 
 - Spec coverage: every Goal/Success Criterion maps to a task — generic state (1-5), daemon endpoints + conflict semantics + `expected_status="new"` on missing rows (2, 6), kanban compatibility (3), issue exposure (5), all 9 tools (8-12), resource + prompt + docs (12), HTTP safety (13), stdio e2e + write-visibility criterion (14). "No MCP tool performs provider writes" is enforced structurally (only `putJSON` caller is the workflow tool; Task 12's registration test pins the tool set).
 - `middleman_get_stack_context` uses the existing per-PR route `GET /pulls/.../stack` (host-prefixed variant for non-default hosts), matching the spec as amended: the repo-wide `GET /stacks` list filters by owner/name only and could pick the wrong stack across providers/hosts.
+- Review-driven decisions (roborev jobs 4833-4836, spec amended to match): whitespace-only diff detection is out of scope entirely (no input flag, no counts — the files route cannot compute it and the use case does not need whitespace-aware line counts); `state=merged` in search is PR-only via `state=all` + client-side filter; the emitted diff file has an exact serialization spec; `status=new` is always an explicit stored row and listings match effective status; daemon discovery and the capability probe are uniformly lazy; migration 000037 no longer drops the old table — the drop moved to 000038 inside Task 3's commit so every commit is a working bisect point; all companion-built paths escape segments for nested owners; `/activity` results are truncated client-side because the daemon route has no limit param; the issue sync handler must share the detail builder; workflow-state repo filters must use the casefold key columns inside each UNION arm; the stdio e2e exercises every read tool against the real daemon.
 - Type consistency: `ItemTypePR`/`ItemTypeIssue`, `SetItemWorkflowStateParams`, `WorkflowStateConflictError`, `workflowStateMetaResponse`, `itemRef`/`itemRefInput`, `daemonError` kinds, and cursor format are each defined once and referenced by name in later tasks' Interfaces blocks.
 - Known verify-at-implementation points (explicitly flagged in tasks, not placeholders): exact MCP SDK v1.6.1 symbol names (Task 7 Step 1), huma's unknown-route 404 body for version_mismatch detection (Task 7), activity-type strings for the reasons map (Task 9), `getStackForPR` not-in-stack behavior (Task 11), `runtimelock.Acquire` handle API (Task 7 test helper).

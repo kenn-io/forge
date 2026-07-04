@@ -334,6 +334,13 @@ API and UI contract.
 The MCP server exposes curated tools, resources, and prompts. It does not expose
 generic HTTP passthrough.
 
+Every tool that takes an item or repo ref matches it by the full identity
+`(provider, platform_host, owner, name, number)`. When `platform_host` is
+present and differs from the provider's default host, the companion must call
+the daemon's `/host/{platform_host}/...` route variants; when it is omitted,
+the default-host routes are used. This applies to every ref-taking tool,
+including diff and stack context.
+
 ### Tool: `middleman_find_review_candidates`
 
 Find compact PR/issue candidates with recent cached activity.
@@ -530,11 +537,20 @@ Inputs:
 - `state`: `open`, `closed`, `merged`, or `all`; default `open`;
 - `limit`: default 25, capped by the companion.
 
+State semantics: the daemon list routes accept `open`, `closed`, and `all`
+only, and issues have no merged state. `merged` is therefore PR-only: the
+companion narrows the search to PRs, queries the daemon with `state=all`, and
+keeps only PRs whose cached state is `merged`. Issues are skipped for
+`state=merged` without error.
+
 Behavior:
 
-- PRs use `GET /pulls` with `q`; issues use `GET /issues` with `q`. The
-  companion merges the two lists, ordered by item `last_activity_at`
-  descending.
+- PRs use `GET /pulls` with `q`; issues use `GET /issues` with `q`. Each
+  source is fetched with the tool `limit`, then the companion merges the two
+  lists, orders by item `last_activity_at` descending with ties broken by
+  `(platform, platform_host, owner, name, item_type, number)`, and truncates
+  to `limit`. Ordering is deterministic; v1 intentionally has no pagination —
+  a capped flag reports truncation.
 - Results are compact item refs with title, state, author, URL, local workflow
   status, and `last_activity_at`. Search never returns bodies or events; the
   model follows up with `middleman_get_item_context`.
@@ -550,15 +566,18 @@ Inputs:
 
 - provider-aware PR ref (`item_type` must be `pr`; issue refs return an
   invalid-item error);
-- `emit_diff_file`: boolean, default false;
-- `include_whitespace_only`: boolean, default false.
+- `emit_diff_file`: boolean, default false.
+
+Whitespace-only detection is intentionally out of scope for this tool: the
+files route does not compute it and the review use case does not need
+whitespace-aware line counts. The tool passes the daemon's per-file rows
+through without whitespace filtering or whitespace counts.
 
 Summary response:
 
 ```json
 {
   "stale": false,
-  "whitespace_only_count": 1,
   "total_additions": 120,
   "total_deletions": 45,
   "files": [
@@ -568,7 +587,6 @@ Summary response:
       "status": "modified",
       "is_binary": false,
       "is_generated": false,
-      "is_whitespace_only": false,
       "additions": 80,
       "deletions": 20
     }
@@ -584,10 +602,16 @@ Behavior:
 
 - The summary uses `GET /pulls/{...}/files`; per-file patches and hunks are
   never inlined into the MCP response.
-- With `emit_diff_file`, the companion fetches `GET /pulls/{...}/diff` and
-  writes a single unified diff to a file under a companion-owned temp
-  directory with `0600` permissions, then returns the absolute path and size.
-  `diff_file` is omitted when the flag is false.
+- With `emit_diff_file`, the companion fetches `GET /pulls/{...}/diff` (a
+  structured JSON response with per-file patch text, not raw diff bytes) and
+  serializes it into one unified diff file: files in daemon response order,
+  each emitted as a `diff --git a/<old_path or path> b/<path>` header line
+  followed by that file's `patch` content verbatim; binary files emit the
+  header plus a `Binary files differ` line; files with empty patches emit the
+  header only. Path segments are written as-is (no quoting beyond what the
+  daemon already provides). The file lands under a companion-owned temp
+  directory with `0600` permissions and the tool returns the absolute path
+  and size. `diff_file` is omitted when the flag is false.
 - Temp files are ephemeral: the companion creates one private directory per
   process, overwrites per-item files on repeat calls, and removes the
   directory on shutdown. Clients must not treat the path as durable.
@@ -806,7 +830,12 @@ MCP tests:
   API CLI where possible.
 - full-stack stdio MCP e2e starts a real middleman daemon against SQLite,
   connects through MCP, lists candidates from seeded cached data, performs a
-  workflow-state write, and verifies the state through the daemon API;
+  workflow-state write, and verifies the state through the daemon API; the
+  same e2e also exercises `middleman_list_repos`, `middleman_search_items`,
+  `middleman_get_item_context`, `middleman_get_item_diff` (summary and
+  emitted file), and `middleman_get_stack_context` against the real daemon so
+  route selection, JSON casing, and temp-file output are proven outside
+  fake-daemon unit tests;
 - HTTP transport e2e covers token-required startup, non-loopback bind rejection,
   accepted loopback requests with a bearer token, and rejected missing-token or
   cross-origin requests.

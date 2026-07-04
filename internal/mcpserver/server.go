@@ -47,7 +47,9 @@ func New(opts Options) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) registerTools() {}
+func (s *Server) registerTools() {
+	s.registerReadTools()
+}
 
 func (s *Server) RunStdio(ctx context.Context) error {
 	return s.mcp.Run(ctx, &mcp.StdioTransport{})

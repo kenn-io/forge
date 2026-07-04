@@ -12,12 +12,33 @@ const (
 	ItemTypeIssue = "issue"
 )
 
+func validateItemWorkflowType(itemType string) error {
+	switch itemType {
+	case ItemTypePR, ItemTypeIssue:
+		return nil
+	default:
+		return fmt.Errorf("invalid item workflow type %q", itemType)
+	}
+}
+
+func validateItemWorkflowStatus(status string) error {
+	switch KanbanStatus(status) {
+	case KanbanStatusNew, KanbanStatusReviewing, KanbanStatusWaiting, KanbanStatusAwaitingMerge:
+		return nil
+	default:
+		return fmt.Errorf("invalid item workflow status %q", status)
+	}
+}
+
 func (d *DB) GetItemWorkflowState(
 	ctx context.Context,
 	repoID int64,
 	itemType string,
 	number int,
 ) (*ItemWorkflowState, error) {
+	if err := validateItemWorkflowType(itemType); err != nil {
+		return nil, err
+	}
 	var w ItemWorkflowState
 	err := d.ro.QueryRowContext(ctx,
 		`SELECT repo_id, item_type, item_number, status, updated_at,
@@ -50,6 +71,9 @@ func (d *DB) EnsureItemWorkflowState(
 	itemType string,
 	number int,
 ) error {
+	if err := validateItemWorkflowType(itemType); err != nil {
+		return err
+	}
 	_, err := d.rw.ExecContext(ctx,
 		`INSERT INTO middleman_item_workflow_state (repo_id, item_type, item_number, status)
 		 VALUES (?, ?, ?, 'new')
@@ -66,6 +90,18 @@ func (d *DB) SetItemWorkflowState(
 	ctx context.Context,
 	p SetItemWorkflowStateParams,
 ) (string, error) {
+	if err := validateItemWorkflowType(p.ItemType); err != nil {
+		return "", err
+	}
+	if err := validateItemWorkflowStatus(p.Status); err != nil {
+		return "", err
+	}
+	if p.ExpectedStatus != "" {
+		if err := validateItemWorkflowStatus(p.ExpectedStatus); err != nil {
+			return "", err
+		}
+	}
+
 	tx, err := d.rw.BeginTx(ctx, nil)
 	if err != nil {
 		return "", fmt.Errorf("set item workflow state: begin: %w", err)

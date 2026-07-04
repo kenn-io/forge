@@ -130,3 +130,44 @@ func TestItemWorkflowStateIssueType(t *testing.T) {
 	require.NoError(err)
 	assert.Nil(st)
 }
+
+func TestItemWorkflowStateValidation(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	insertTestMR(t, d, repoID, 1, "pr 1", baseTime())
+
+	_, err := d.GetItemWorkflowState(ctx, repoID, "pull_request", 1)
+	require.Error(err)
+	assert.Contains(err.Error(), "invalid item workflow type")
+
+	err = d.EnsureItemWorkflowState(ctx, repoID, "pull_request", 1)
+	require.Error(err)
+	assert.Contains(err.Error(), "invalid item workflow type")
+
+	_, err = d.SetItemWorkflowState(ctx, SetItemWorkflowStateParams{
+		RepoID:     repoID,
+		ItemType:   ItemTypePR,
+		ItemNumber: 1,
+		Status:     "triaged",
+	})
+	require.Error(err)
+	assert.Contains(err.Error(), "invalid item workflow status")
+
+	_, err = d.SetItemWorkflowState(ctx, SetItemWorkflowStateParams{
+		RepoID:         repoID,
+		ItemType:       ItemTypePR,
+		ItemNumber:     1,
+		Status:         "reviewing",
+		ExpectedStatus: "triaged",
+	})
+	require.Error(err)
+	assert.Contains(err.Error(), "invalid item workflow status")
+
+	st, err := d.GetItemWorkflowState(ctx, repoID, ItemTypePR, 1)
+	require.NoError(err)
+	assert.Nil(st)
+}

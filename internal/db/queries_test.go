@@ -267,7 +267,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 }
 
 // TestCascadeDeleteRepo verifies that deleting a repo on a fresh DB
-// cascades to all dependent tables (mr_events, kanban_state, issue_events).
+// cascades to all dependent tables (mr_events, workflow_state, issue_events).
 func TestCascadeDeleteRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -323,7 +323,7 @@ func TestCascadeDeleteRepo(t *testing.T) {
 	assert.Equal(0, count)
 
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_kanban_state`,
+		`SELECT COUNT(*) FROM middleman_item_workflow_state`,
 	).Scan(&count)
 	require.NoError(err)
 	assert.Equal(0, count)

@@ -741,6 +741,7 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/issues", s.listIssues,
 		documentOperation("list-issues", "List issues", "Issues"))
 	s.registerProviderRepoAPI(api)
+	s.registerWorkflowStateAPI(api)
 	s.registerFleetRoutes(api)
 
 	huma.Register(api, huma.Operation{

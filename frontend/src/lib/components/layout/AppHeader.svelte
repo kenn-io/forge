@@ -79,13 +79,15 @@
   }
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
-  const showProviderRepoSelector = $derived(
-    !getUIConfig().hideRepoSelector &&
-      (getPage() === "activity" ||
-        getPage() === "repos" ||
-        getPage() === "pulls" ||
-        getPage() === "issues"),
+  const hideProviderRepoSelector = $derived(getUIConfig().hideRepoSelector);
+  const isProviderRepoSelectorPage = $derived(
+    getPage() === "activity" ||
+      getPage() === "repos" ||
+      getPage() === "pulls" ||
+      getPage() === "issues",
   );
+  const showProviderRepoSelector = $derived(!hideProviderRepoSelector && isProviderRepoSelectorPage);
+  const reserveProviderRepoSelectorSlot = $derived(!hideProviderRepoSelector && !isProviderRepoSelectorPage);
   let settingsReturnPath = "/";
 
   function currentAppPath(): string {
@@ -251,6 +253,11 @@
         selected={getGlobalRepo()}
         onchange={setGlobalRepo}
       />
+    {:else if reserveProviderRepoSelectorSlot}
+      <div
+        class="typeahead repo-selector-placeholder"
+        aria-hidden="true"
+      ></div>
     {/if}
   {/snippet}
 
@@ -370,6 +377,13 @@
 
   .sync-label {
     line-height: 1;
+  }
+
+  .repo-selector-placeholder {
+    display: block;
+    height: 26px;
+    pointer-events: none;
+    visibility: hidden;
   }
 
   /* Busy state spins the sync affordance icon itself, matching kit-ui

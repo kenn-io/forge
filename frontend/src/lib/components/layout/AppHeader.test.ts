@@ -115,6 +115,13 @@ function showImportedModes(): void {
   };
 }
 
+function expectReservedRepoSelectorSlot(container: HTMLElement): void {
+  const slot = container.querySelector(".repo-selector-placeholder");
+
+  expect(screen.queryByTitle("Select repository")).toBeNull();
+  expect(slot?.getAttribute("aria-hidden")).toBe("true");
+}
+
 describe("AppHeader", () => {
   beforeEach(() => {
     document.documentElement.classList.remove("dark");
@@ -122,6 +129,8 @@ describe("AppHeader", () => {
     mockMatchMedia(false);
     setSidebarCollapsed(false);
     mockedContainerSize.value = "wide";
+    delete window.__middleman_config;
+    window.__middleman_notify_config_changed?.();
     mockedModeVisibility.value = {
       activity: true,
       repos: true,
@@ -145,6 +154,8 @@ describe("AppHeader", () => {
     localStorage.clear();
     setSidebarCollapsed(false);
     mockedContainerSize.value = "wide";
+    delete window.__middleman_config;
+    window.__middleman_notify_config_changed?.();
     mockedModeVisibility.value = {
       activity: true,
       repos: true,
@@ -419,28 +430,39 @@ describe("AppHeader", () => {
     expect(window.location.pathname + window.location.search).toBe("/messages");
   });
 
-  it("does not render the provider repo selector on Kata", () => {
+  it("reserves the provider repo selector slot on Kata without exposing the selector", () => {
     initTheme();
     navigate("/kata");
-    render(AppHeader);
+    const { container } = render(AppHeader);
 
-    expect(screen.queryByTitle("Select repository")).toBeNull();
+    expectReservedRepoSelectorSlot(container);
   });
 
-  it("does not render the provider repo selector on Docs", () => {
+  it("reserves the provider repo selector slot on Docs without exposing the selector", () => {
     initTheme();
     navigate("/docs");
-    render(AppHeader);
+    const { container } = render(AppHeader);
 
-    expect(screen.queryByTitle("Select repository")).toBeNull();
+    expectReservedRepoSelectorSlot(container);
   });
 
-  it("does not render the provider repo selector on Messages", () => {
+  it("reserves the provider repo selector slot on Messages without exposing the selector", () => {
     initTheme();
     navigate("/messages");
-    render(AppHeader);
+    const { container } = render(AppHeader);
+
+    expectReservedRepoSelectorSlot(container);
+  });
+
+  it("does not reserve the repo selector slot when embed config hides it", () => {
+    initTheme();
+    window.__middleman_config = { ui: { hideRepoSelector: true } };
+    window.__middleman_notify_config_changed?.();
+    navigate("/kata");
+    const { container } = render(AppHeader);
 
     expect(screen.queryByTitle("Select repository")).toBeNull();
+    expect(container.querySelector(".repo-selector-placeholder")).toBeNull();
   });
 
   it("remembers sticky mode routes when the nav switches to Activity", async () => {

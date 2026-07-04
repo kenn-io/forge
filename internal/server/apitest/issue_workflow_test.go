@@ -82,6 +82,37 @@ func TestIssueWorkflowStatusWire(t *testing.T) {
 	assert.Equal("needs maintainer input", workflow["updated_reason"])
 }
 
+func TestIssueWorkflowStatusMetadataNormalizesInvalidStoredStatus(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	srv, database := setupTestServer(t)
+	seedIssue(t, database, "acme", "widget", 6, "open")
+
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = database.WriteDB().ExecContext(ctx, `INSERT INTO middleman_item_workflow_state (
+			repo_id, item_type, item_number, status, updated_source
+		) VALUES (?, 'issue', 6, 'bogus', 'api')`, repo.ID)
+	require.NoError(err)
+
+	client := setupTestClient(t, srv)
+	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, "gh", "acme", "widget", 6)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode())
+
+	var detail map[string]any
+	decodeIssueWorkflowBody(t, detailResp.Body, &detail)
+	issue, ok := detail["issue"].(map[string]any)
+	require.True(ok)
+	workflow, ok := detail["workflow"].(map[string]any)
+	require.True(ok)
+	assert.Equal("new", issue["WorkflowStatus"])
+	assert.Equal(issue["WorkflowStatus"], workflow["status"])
+	assert.Equal("api", workflow["updated_source"])
+}
+
 func TestIssueSyncResponseIncludesWorkflow(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

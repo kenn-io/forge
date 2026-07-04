@@ -6576,10 +6576,16 @@ components:
       additionalProperties: false
       properties:
         status:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
           type: string
         updated_actor:
           type: string
         updated_at:
+          format: date-time
           type: string
         updated_reason:
           type: string

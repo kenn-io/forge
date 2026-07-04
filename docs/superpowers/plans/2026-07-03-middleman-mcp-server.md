@@ -761,7 +761,7 @@ func TestListItemWorkflowStates(t *testing.T) {
 	rows, next, err := d.ListItemWorkflowStates(ctx, ListWorkflowStatesOpts{})
 	require.NoError(t, err)
 	assert.Empty(next)
-	// PR 2 has the newest sortTs (its updated_at is now); then issue 5 and
+	// PR 2 has the newest sort key (its updated_at is now); then issue 5 and
 	// PR 1 by last_activity_at. Closed PR 3 excluded.
 	require.Len(t, rows, 3)
 	assert.Equal(2, rows[0].Number)
@@ -837,10 +837,10 @@ Expected: FAIL (undefined `ListItemWorkflowStates`).
 Append to `internal/db/queries_workflow.go` (types to `types.go`). Shape of the implementation — a UNION ALL over PRs and issues, each LEFT JOINed to workflow state, wrapped for keyset filtering:
 
 ```go
-func encodeWorkflowCursor(r WorkflowStateListRow, sortTs time.Time) string {
+func encodeWorkflowCursor(r WorkflowStateListRow, sortKey, activityKey string) string {
 	raw := strings.Join([]string{
-		strconv.FormatInt(sortTs.UnixMilli(), 10),
-		strconv.FormatInt(r.LastActivityAt.UnixMilli(), 10),
+		sortKey,
+		activityKey,
 		r.Platform, r.PlatformHost, r.Owner, r.Name, r.ItemType,
 		strconv.Itoa(r.Number),
 	}, "\x1f")
@@ -848,7 +848,7 @@ func encodeWorkflowCursor(r WorkflowStateListRow, sortTs time.Time) string {
 }
 
 type workflowCursor struct {
-	sortTs, activityTs                     time.Time
+	sortKey, activityKey                   string
 	platform, host, owner, name, itemType string
 	number                                 int
 }
@@ -862,14 +862,12 @@ func decodeWorkflowCursor(s string) (workflowCursor, error) {
 	if len(parts) != 8 {
 		return workflowCursor{}, errors.New("invalid cursor")
 	}
-	sortMs, err1 := strconv.ParseInt(parts[0], 10, 64)
-	actMs, err2 := strconv.ParseInt(parts[1], 10, 64)
-	num, err3 := strconv.Atoi(parts[7])
-	if err1 != nil || err2 != nil || err3 != nil {
-		return workflowCursor{}, errors.New("invalid cursor")
+	num, err := strconv.Atoi(parts[7])
+	if err != nil {
+		return workflowCursor{}, fmt.Errorf("invalid cursor number: %w", err)
 	}
 	return workflowCursor{
-		sortTs: time.UnixMilli(sortMs).UTC(), activityTs: time.UnixMilli(actMs).UTC(),
+		sortKey: parts[0], activityKey: parts[1],
 		platform: parts[2], host: parts[3], owner: parts[4], name: parts[5],
 		itemType: parts[6], number: num,
 	}, nil
@@ -889,7 +887,8 @@ SELECT * FROM (
            w.updated_at, COALESCE(w.updated_source,'') AS updated_source,
            COALESCE(w.updated_actor,'') AS updated_actor,
            COALESCE(w.updated_reason,'') AS updated_reason,
-           COALESCE(w.updated_at, p.last_activity_at) AS sort_ts
+           CAST(COALESCE(w.updated_at, p.last_activity_at) AS TEXT) AS sort_key,
+           CAST(p.last_activity_at AS TEXT) AS activity_key
     FROM middleman_merge_requests p
     JOIN middleman_repos r ON r.id = p.repo_id
     LEFT JOIN middleman_item_workflow_state w
@@ -903,14 +902,15 @@ SELECT * FROM (
            (w.repo_id IS NOT NULL) AS has_row,
            w.updated_at, COALESCE(w.updated_source,''), COALESCE(w.updated_actor,''),
            COALESCE(w.updated_reason,''),
-           COALESCE(w.updated_at, i.last_activity_at) AS sort_ts
+           CAST(COALESCE(w.updated_at, i.last_activity_at) AS TEXT) AS sort_key,
+           CAST(i.last_activity_at AS TEXT) AS activity_key
     FROM middleman_issues i
     JOIN middleman_repos r ON r.id = i.repo_id
     LEFT JOIN middleman_item_workflow_state w
         ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 ) t
 WHERE <conds>
-ORDER BY t.sort_ts DESC, t.last_activity_at DESC,
+ORDER BY t.sort_key DESC, t.activity_key DESC,
          t.platform, t.platform_host, t.owner, t.name, t.item_type, t.number
 LIMIT ?
 ```
@@ -918,16 +918,16 @@ LIMIT ?
 Conds assembled in Go: item-type filter (`t.item_type IN (...)` — validate values are `pr`/`issue`, else error), states filter (`t.status IN (...)`), closed filter when `!IncludeClosed` (`t.state NOT IN ('closed','merged')`), repo filters (MUST be applied inside each UNION arm against `r.*` using the exact casefold-aware helper/condition `ListMergeRequests` uses for `RepoFilters` — read `queries.go:2413-2530` and reuse that helper or its condition builder verbatim; it matches on the `owner_key`/`name_key`/`repo_path_key` key columns plus `platform`/`platform_host`, NOT case-sensitive display `owner`/`name`. Do not filter on the outer `t.*` display columns), and the keyset predicate when a cursor is present:
 
 ```sql
-(t.sort_ts < ?
- OR (t.sort_ts = ? AND t.last_activity_at < ?)
- OR (t.sort_ts = ? AND t.last_activity_at = ?
+(t.sort_key < ?
+ OR (t.sort_key = ? AND t.activity_key < ?)
+ OR (t.sort_key = ? AND t.activity_key = ?
      AND (t.platform, t.platform_host, t.owner, t.name, t.item_type, t.number)
          > (?, ?, ?, ?, ?, ?)))
 ```
 
-SQLite supports row-value comparison since 3.15; modernc.org/sqlite handles it. Limit: default 50 when `opts.Limit <= 0`, cap at 200. Fetch `limit+1` rows; when you get the extra row, drop it and return `encodeWorkflowCursor(lastKept, lastKeptSortTs)` as next cursor. Scan `sort_ts` into a local `time.Time` alongside each row for cursor encoding; scan `updated_at` via `sql.NullTime` into `*time.Time`.
+SQLite supports row-value comparison since 3.15; modernc.org/sqlite handles it. Limit: default 50 when `opts.Limit <= 0`, cap at 200. Fetch `limit+1` rows; when you get the extra row, drop it and return `encodeWorkflowCursor(lastKept, lastKeptSortKey, lastKeptActivityKey)` as next cursor. Scan `sort_key` and `activity_key` as strings alongside each row for cursor encoding; parse `last_activity_at` and nullable `updated_at` with the DB time parser before assigning response fields.
 
-Cursor stability: the cursor is a keyset snapshot, not an isolation mechanism. A workflow write between pages changes an item's `sort_ts`, which can move it across the cursor boundary (appearing twice or being skipped). This is accepted for v1; document it in the endpoint's huma `doc:` tag on `cursor` so API consumers know pages are best-effort under concurrent writes. The cursor is also filter-bound: it encodes only the keyset position, not the filters that produced it, so reusing a cursor with a different `state`/`item_type`/`repo`/`include_closed` combination silently resumes the new filter set from the old position. Clients must pass the same filters for every page of a walk; state that in the same `doc:` tag.
+Cursor stability: the cursor is a keyset snapshot, not an isolation mechanism. A workflow write between pages changes an item's `sort_key`, which can move it across the cursor boundary (appearing twice or being skipped). This is accepted for v1; document it in the endpoint's huma `doc:` tag on `cursor` so API consumers know pages are best-effort under concurrent writes. The cursor is also filter-bound: it encodes only the keyset position, not the filters that produced it, so reusing a cursor with a different `state`/`item_type`/`repo`/`include_closed` combination silently resumes the new filter set from the old position. Clients must pass the same filters for every page of a walk; state that in the same `doc:` tag.
 
 Add one more test alongside the pagination test: seed two repos differing only in owner case (or one on a non-default `platform_host`) and assert a `RepoFilters` entry with mixed-case input matches via the key columns and excludes the other repo — this pins the casefold-aware filter requirement above. In the same test, give one repo a stored `repo_path` whose display casing differs from `owner + "/" + name` (GitLab-style) and assert `WorkflowStateListRow.RepoPath` returns the stored value, not the concatenation.
 

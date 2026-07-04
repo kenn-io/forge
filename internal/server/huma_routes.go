@@ -2586,10 +2586,12 @@ func (s *Server) issueWorkflowMetaResponse(
 		return nil, problemInternal("read issue workflow state failed")
 	}
 	if row == nil {
-		return &workflowStateMetaResponse{Status: string(db.KanbanStatusNew)}, nil
+		return &workflowStateMetaResponse{Status: db.KanbanStatusNew}, nil
 	}
 	return &workflowStateMetaResponse{
-		Status:        row.Status,
+		Status: normalizeWorkflowStatus(
+			row.Status, "repo_id", repoID, "item_type", db.ItemTypeIssue, "item_number", number,
+		),
 		UpdatedAt:     formatUTCRFC3339(row.UpdatedAt),
 		UpdatedSource: row.UpdatedSource,
 		UpdatedActor:  row.UpdatedActor,
@@ -2603,13 +2605,18 @@ func issueResponseModel(issue db.Issue) db.Issue {
 }
 
 func issueResponseWorkflowStatus(issue db.Issue) db.KanbanStatus {
-	switch issue.WorkflowStatus {
+	return normalizeWorkflowStatus(string(issue.WorkflowStatus), "issue_id", issue.ID)
+}
+
+func normalizeWorkflowStatus(status string, logAttrs ...any) db.KanbanStatus {
+	switch db.KanbanStatus(status) {
 	case db.KanbanStatusNew, db.KanbanStatusReviewing, db.KanbanStatusWaiting, db.KanbanStatusAwaitingMerge:
-		return issue.WorkflowStatus
+		return db.KanbanStatus(status)
 	case "":
 		return db.KanbanStatusNew
 	default:
-		slog.Warn("normalizing unexpected workflow status in issue response", "issue_id", issue.ID, "status", issue.WorkflowStatus)
+		attrs := append([]any{"status", status}, logAttrs...)
+		slog.Warn("normalizing unexpected workflow status in response", attrs...)
 		return db.KanbanStatusNew
 	}
 }

@@ -138,11 +138,11 @@ var validKanbanStates = map[string]bool{
 }
 
 type workflowStateMetaResponse struct {
-	Status        string `json:"status"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
-	UpdatedSource string `json:"updated_source,omitempty"`
-	UpdatedActor  string `json:"updated_actor,omitempty"`
-	UpdatedReason string `json:"updated_reason,omitempty"`
+	Status        db.KanbanStatus `json:"status" enum:"new,reviewing,waiting,awaiting_merge"`
+	UpdatedAt     string          `json:"updated_at,omitempty" format:"date-time"`
+	UpdatedSource string          `json:"updated_source,omitempty"`
+	UpdatedActor  string          `json:"updated_actor,omitempty"`
+	UpdatedReason string          `json:"updated_reason,omitempty"`
 }
 
 type issueResponse struct {

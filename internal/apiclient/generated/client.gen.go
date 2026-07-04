@@ -308,6 +308,30 @@ func (e TerminalRenderer) Valid() bool {
 	}
 }
 
+// Defines values for WorkflowStateMetaResponseStatus.
+const (
+	WorkflowStateMetaResponseStatusAwaitingMerge WorkflowStateMetaResponseStatus = "awaiting_merge"
+	WorkflowStateMetaResponseStatusNew           WorkflowStateMetaResponseStatus = "new"
+	WorkflowStateMetaResponseStatusReviewing     WorkflowStateMetaResponseStatus = "reviewing"
+	WorkflowStateMetaResponseStatusWaiting       WorkflowStateMetaResponseStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the WorkflowStateMetaResponseStatus enum.
+func (e WorkflowStateMetaResponseStatus) Valid() bool {
+	switch e {
+	case WorkflowStateMetaResponseStatusAwaitingMerge:
+		return true
+	case WorkflowStateMetaResponseStatusNew:
+		return true
+	case WorkflowStateMetaResponseStatusReviewing:
+		return true
+	case WorkflowStateMetaResponseStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetPullFilePreviewOnHostParamsSide.
 const (
 	GetPullFilePreviewOnHostParamsSideNew GetPullFilePreviewOnHostParamsSide = "new"
@@ -418,16 +442,16 @@ func (e GetWorkspaceFilePreviewParamsWhitespace) Valid() bool {
 
 // Defines values for GetWorkspaceFilePreviewParamsSide.
 const (
-	New GetWorkspaceFilePreviewParamsSide = "new"
-	Old GetWorkspaceFilePreviewParamsSide = "old"
+	GetWorkspaceFilePreviewParamsSideNew GetWorkspaceFilePreviewParamsSide = "new"
+	GetWorkspaceFilePreviewParamsSideOld GetWorkspaceFilePreviewParamsSide = "old"
 )
 
 // Valid indicates whether the value is a known member of the GetWorkspaceFilePreviewParamsSide enum.
 func (e GetWorkspaceFilePreviewParamsSide) Valid() bool {
 	switch e {
-	case New:
+	case GetWorkspaceFilePreviewParamsSideNew:
 		return true
-	case Old:
+	case GetWorkspaceFilePreviewParamsSideOld:
 		return true
 	default:
 		return false
@@ -3055,12 +3079,15 @@ type WorkflowApprovalResponse struct {
 
 // WorkflowStateMetaResponse defines model for WorkflowStateMetaResponse.
 type WorkflowStateMetaResponse struct {
-	Status        string  `json:"status"`
-	UpdatedActor  *string `json:"updated_actor,omitempty"`
-	UpdatedAt     *string `json:"updated_at,omitempty"`
-	UpdatedReason *string `json:"updated_reason,omitempty"`
-	UpdatedSource *string `json:"updated_source,omitempty"`
+	Status        WorkflowStateMetaResponseStatus `json:"status"`
+	UpdatedActor  *string                         `json:"updated_actor,omitempty"`
+	UpdatedAt     *time.Time                      `json:"updated_at,omitempty"`
+	UpdatedReason *string                         `json:"updated_reason,omitempty"`
+	UpdatedSource *string                         `json:"updated_source,omitempty"`
 }
+
+// WorkflowStateMetaResponseStatus defines model for WorkflowStateMetaResponse.Status.
+type WorkflowStateMetaResponseStatus string
 
 // WorkspaceKataMetadata defines model for WorkspaceKataMetadata.
 type WorkspaceKataMetadata struct {

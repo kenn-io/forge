@@ -614,9 +614,14 @@ Behavior:
   the companion — so it applies the same git-style path quoting and the same
   extended headers (`rename from`/`rename to`, `copy from`/`copy to`,
   `old mode`/`new mode`, new/deleted-file headers) that git emits, with
-  binary files additionally getting a `Binary files differ` line. The diff
-  metadata must carry old/new file modes so mode-only changes survive
-  serialization.
+  binary files additionally getting a `Binary files differ` line. Mode
+  fidelity applies to every changed file, not only hunk-less ones: the diff
+  metadata must carry old/new file modes, the shared mode-header logic is
+  used by both the full-patch builder and the empty-patch helper (so a
+  content+mode change keeps its mode headers next to its hunks), and
+  added/deleted files emit their real modes rather than an assumed
+  `100644` (which remains only as the fallback when mode metadata is
+  absent).
   Fidelity rule: the emitted file is a faithful serialization of everything
   the daemon's cached diff data carries — no changed file may be silently
   dropped, and rename-only, copy-only, and mode-only changes keep their

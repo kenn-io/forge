@@ -344,3 +344,43 @@ func TestListItemWorkflowStatesRepoFiltersUseCasefoldKeys(t *testing.T) {
 	assert.Equal("gitlab.example.com", rows[0].PlatformHost)
 	assert.Equal("Group/SubGroup/Project.Special", rows[0].RepoPath)
 }
+
+func TestIssueQueriesExposeWorkflowStatus(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	insertTestIssue(t, d, repoID, 5, "issue five", baseTime())
+
+	_, err := d.SetItemWorkflowState(ctx, SetItemWorkflowStateParams{
+		RepoID:     repoID,
+		ItemType:   ItemTypeIssue,
+		ItemNumber: 5,
+		Status:     "waiting",
+		Source:     "api",
+	})
+	require.NoError(err)
+
+	iss, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 5)
+	require.NoError(err)
+	require.NotNil(iss)
+	assert.Equal(KanbanStatus("waiting"), iss.WorkflowStatus)
+
+	got, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", 5)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(KanbanStatus("waiting"), got.WorkflowStatus)
+
+	list, err := d.ListIssues(ctx, ListIssuesOpts{})
+	require.NoError(err)
+	require.Len(list, 1)
+	assert.Equal(KanbanStatus("waiting"), list[0].WorkflowStatus)
+
+	insertTestIssue(t, d, repoID, 6, "issue six", baseTime())
+	iss, err = d.GetIssueByRepoIDAndNumber(ctx, repoID, 6)
+	require.NoError(err)
+	require.NotNil(iss)
+	assert.Equal(KanbanStatus(""), iss.WorkflowStatus)
+}

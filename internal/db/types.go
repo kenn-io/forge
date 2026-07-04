@@ -459,8 +459,9 @@ type Issue struct {
 	ClosedAt           *time.Time
 	DetailFetchedAt    *time.Time
 	Starred            bool
-	Labels             []Label  `json:"labels,omitempty"`
-	Assignees          []string `json:"assignees,omitempty"` // Parsed assignees
+	WorkflowStatus     KanbanStatus `enum:"new,reviewing,waiting,awaiting_merge"`
+	Labels             []Label      `json:"labels,omitempty"`
+	Assignees          []string     `json:"assignees,omitempty"` // Parsed assignees
 }
 
 type IssueEvent struct {

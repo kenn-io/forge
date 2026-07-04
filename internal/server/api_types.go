@@ -137,6 +137,14 @@ var validKanbanStates = map[string]bool{
 	"awaiting_merge": true,
 }
 
+type workflowStateMetaResponse struct {
+	Status        string `json:"status"`
+	UpdatedAt     string `json:"updated_at,omitempty"`
+	UpdatedSource string `json:"updated_source,omitempty"`
+	UpdatedActor  string `json:"updated_actor,omitempty"`
+	UpdatedReason string `json:"updated_reason,omitempty"`
+}
+
 type issueResponse struct {
 	db.Issue
 	Repo            repoRefResponse `json:"repo"`
@@ -149,15 +157,16 @@ type issueResponse struct {
 }
 
 type issueDetailResponse struct {
-	Issue           *db.Issue       `json:"issue"`
-	Events          []db.IssueEvent `json:"events"`
-	Repo            repoRefResponse `json:"repo"`
-	PlatformHost    string          `json:"platform_host"`
-	RepoOwner       string          `json:"repo_owner"`
-	RepoName        string          `json:"repo_name"`
-	DetailLoaded    bool            `json:"detail_loaded"`
-	DetailFetchedAt string          `json:"detail_fetched_at,omitempty"`
-	Workspace       *workspaceRef   `json:"workspace,omitempty"`
+	Issue           *db.Issue                  `json:"issue"`
+	Events          []db.IssueEvent            `json:"events"`
+	Repo            repoRefResponse            `json:"repo"`
+	PlatformHost    string                     `json:"platform_host"`
+	RepoOwner       string                     `json:"repo_owner"`
+	RepoName        string                     `json:"repo_name"`
+	DetailLoaded    bool                       `json:"detail_loaded"`
+	DetailFetchedAt string                     `json:"detail_fetched_at,omitempty"`
+	Workspace       *workspaceRef              `json:"workspace,omitempty"`
+	Workflow        *workflowStateMetaResponse `json:"workflow,omitempty"`
 }
 
 type repoSummaryAuthorResponse struct {

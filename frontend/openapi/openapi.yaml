@@ -2034,6 +2034,13 @@ components:
         UpdatedAt:
           format: date-time
           type: string
+        WorkflowStatus:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
+          type: string
         assignees:
           items:
             type: string
@@ -2064,6 +2071,7 @@ components:
         - ClosedAt
         - DetailFetchedAt
         - Starred
+        - WorkflowStatus
       type: object
     IssueDetailResponse:
       additionalProperties: false
@@ -2095,6 +2103,8 @@ components:
           type: string
         repo_owner:
           type: string
+        workflow:
+          $ref: "#/components/schemas/WorkflowStateMetaResponse"
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
       required:
@@ -2218,6 +2228,13 @@ components:
         UpdatedAt:
           format: date-time
           type: string
+        WorkflowStatus:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
+          type: string
         assignees:
           items:
             type: string
@@ -2266,6 +2283,7 @@ components:
         - LastActivityAt
         - ClosedAt
         - Starred
+        - WorkflowStatus
       type: object
     ItemAssigneesResponse:
       additionalProperties: false
@@ -6553,6 +6571,22 @@ components:
         - checked
         - required
         - count
+      type: object
+    WorkflowStateMetaResponse:
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+        updated_actor:
+          type: string
+        updated_at:
+          type: string
+        updated_reason:
+          type: string
+        updated_source:
+          type: string
+      required:
+        - status
       type: object
     WorkspaceKataMetadata:
       additionalProperties: false

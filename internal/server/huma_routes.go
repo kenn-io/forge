@@ -2419,7 +2419,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 			continue
 		}
 		resp := issueResponse{
-			Issue:        issue,
+			Issue:        issueResponseModel(issue),
 			Repo:         s.repoRefFromRepo(rp),
 			PlatformHost: rp.PlatformHost,
 			RepoOwner:    rp.Owner,
@@ -2491,7 +2491,7 @@ func (s *Server) createIssue(
 	savedIssue.ID = issueID
 
 	out := issueResponse{
-		Issue:        *savedIssue,
+		Issue:        issueResponseModel(*savedIssue),
 		Repo:         s.repoRefFromRepo(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
@@ -2542,15 +2542,21 @@ func (s *Server) buildIssueDetailResponse(
 	if events == nil {
 		events = []db.IssueEvent{}
 	}
+	workflow, err := s.issueWorkflowMetaResponse(ctx, repo.ID, issue.Number)
+	if err != nil {
+		return issueDetailResponse{}, err
+	}
+	issueModel := issueResponseModel(*issue)
 
 	issueResp := issueDetailResponse{
-		Issue:        issue,
+		Issue:        &issueModel,
 		Events:       events,
 		Repo:         s.repoRefWithOperations(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
 		DetailLoaded: issue.DetailFetchedAt != nil,
+		Workflow:     workflow,
 	}
 	if issue.DetailFetchedAt != nil {
 		issueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
@@ -2568,6 +2574,44 @@ func (s *Server) buildIssueDetailResponse(
 		}
 	}
 	return issueResp, nil
+}
+
+func (s *Server) issueWorkflowMetaResponse(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) (*workflowStateMetaResponse, error) {
+	row, err := s.db.GetItemWorkflowState(ctx, repoID, db.ItemTypeIssue, number)
+	if err != nil {
+		return nil, problemInternal("read issue workflow state failed")
+	}
+	if row == nil {
+		return &workflowStateMetaResponse{Status: string(db.KanbanStatusNew)}, nil
+	}
+	return &workflowStateMetaResponse{
+		Status:        row.Status,
+		UpdatedAt:     formatUTCRFC3339(row.UpdatedAt),
+		UpdatedSource: row.UpdatedSource,
+		UpdatedActor:  row.UpdatedActor,
+		UpdatedReason: row.UpdatedReason,
+	}, nil
+}
+
+func issueResponseModel(issue db.Issue) db.Issue {
+	issue.WorkflowStatus = issueResponseWorkflowStatus(issue)
+	return issue
+}
+
+func issueResponseWorkflowStatus(issue db.Issue) db.KanbanStatus {
+	switch issue.WorkflowStatus {
+	case db.KanbanStatusNew, db.KanbanStatusReviewing, db.KanbanStatusWaiting, db.KanbanStatusAwaitingMerge:
+		return issue.WorkflowStatus
+	case "":
+		return db.KanbanStatusNew
+	default:
+		slog.Warn("normalizing unexpected workflow status in issue response", "issue_id", issue.ID, "status", issue.WorkflowStatus)
+		return db.KanbanStatusNew
+	}
 }
 
 func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentInput) (*postIssueCommentOutput, error) {
@@ -4022,41 +4066,9 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		return nil, problemNotFound(CodeIssueNotFound, "issue not found after sync", nil)
 	}
 
-	events, err := s.db.ListIssueEvents(ctx, issue.ID)
+	syncIssueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
 	if err != nil {
-		return nil, problemInternal("list issue events: " + err.Error())
-	}
-	if events == nil {
-		events = []db.IssueEvent{}
-	}
-
-	syncIssueResp := issueDetailResponse{
-		Issue:  issue,
-		Events: events,
-		// The frontend replaces the issue detail payload with this
-		// response, so it must carry operations like the detail
-		// endpoint does — a bare repo ref would clear every mutation
-		// gate until the next detail load.
-		Repo:         s.repoRefWithOperations(*repo),
-		PlatformHost: repo.PlatformHost,
-		RepoOwner:    repo.Owner,
-		RepoName:     repo.Name,
-		DetailLoaded: issue.DetailFetchedAt != nil,
-	}
-	if issue.DetailFetchedAt != nil {
-		syncIssueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
-	}
-	if s.workspaces != nil {
-		wsRef, wsErr := s.workspaces.GetByIssueForProvider(
-			ctx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
-			issue.Number,
-		)
-		if wsErr == nil && wsRef != nil {
-			syncIssueResp.Workspace = &workspaceRef{
-				ID:     wsRef.ID,
-				Status: wsRef.Status,
-			}
-		}
+		return nil, err
 	}
 	return &syncIssueOutput{Body: syncIssueResp}, nil
 }

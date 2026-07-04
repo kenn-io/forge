@@ -3255,11 +3255,14 @@ func (d *DB) GetIssue(
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
-		       (s.number IS NOT NULL) AS starred
+		       (s.number IS NOT NULL) AS starred,
+		       COALESCE(w.status, '') AS workflow_status
 		FROM middleman_issues i
 		JOIN middleman_repos r ON r.id = i.repo_id
 		LEFT JOIN middleman_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
+		LEFT JOIN middleman_item_workflow_state w
+		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		WHERE r.platform = ? AND r.platform_host = ?
 		  AND r.owner_key = ? AND r.name_key = ?
 		  AND i.number = ?`,
@@ -3270,7 +3273,7 @@ func (d *DB) GetIssue(
 		&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 		&issue.DetailFetchedAt,
 		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
-		&issue.ClosedAt, &issue.Starred,
+		&issue.ClosedAt, &issue.Starred, &issue.WorkflowStatus,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -3300,10 +3303,13 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
-		       (s.number IS NOT NULL) AS starred
+		       (s.number IS NOT NULL) AS starred,
+		       COALESCE(w.status, '') AS workflow_status
 		FROM middleman_issues i
 		LEFT JOIN middleman_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
+		LEFT JOIN middleman_item_workflow_state w
+		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		WHERE i.repo_id = ? AND i.number = ?`,
 		repoID, number,
 	).Scan(
@@ -3312,7 +3318,7 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 		&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 		&issue.DetailFetchedAt,
 		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
-		&issue.ClosedAt, &issue.Starred,
+		&issue.ClosedAt, &issue.Starred, &issue.WorkflowStatus,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -3403,11 +3409,14 @@ func (d *DB) ListIssues(
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
-		       (s.number IS NOT NULL) AS starred
+		       (s.number IS NOT NULL) AS starred,
+		       COALESCE(w.status, '') AS workflow_status
 		FROM middleman_issues i
 		JOIN middleman_repos r ON r.id = i.repo_id
 		LEFT JOIN middleman_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
+		LEFT JOIN middleman_item_workflow_state w
+		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		%s
 		ORDER BY i.last_activity_at DESC, i.id DESC`, where)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
@@ -3428,7 +3437,7 @@ func (d *DB) ListIssues(
 			&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 			&issue.DetailFetchedAt,
 			&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
-			&issue.ClosedAt, &issue.Starred,
+			&issue.ClosedAt, &issue.Starred, &issue.WorkflowStatus,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
 		}

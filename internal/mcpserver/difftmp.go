@@ -23,9 +23,32 @@ func newDiffFileStore() (*diffFileStore, error) {
 
 func (d *diffFileStore) write(name string, data []byte) (string, int64, error) {
 	path := filepath.Join(d.dir, filepath.Base(name))
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	tmp, err := os.CreateTemp(d.dir, filepath.Base(name)+".*.tmp")
+	if err != nil {
 		return "", 0, err
 	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := os.Chmod(tmpPath, 0o600); err != nil {
+		_ = tmp.Close()
+		return "", 0, err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return "", 0, err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", 0, err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return "", 0, err
+	}
+	cleanup = false
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", 0, err

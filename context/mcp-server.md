@@ -53,11 +53,13 @@ per item but include a hash of the full provider/host/owner/name/number tuple
 (`internal/mcpserver/tools_diff.go::diffFileName`) so sanitized nested owner
 paths cannot collide. The filename identity canonicalizes provider aliases and
 omitted provider default hosts before hashing, so `gh`/`github` and omitted
-versus explicit `github.com` write the same per-item evidence file. The
-daemon's gitclone diff parser must not silently omit changed files when raw
-metadata and parsed patch sections disagree; unmatched patch sections are
-preserved as structured diff rows so incomplete data is visible instead of
-hidden.
+versus explicit `github.com` write the same per-item evidence file. File writes
+go through a unique temp file in the same directory and atomic rename, so a
+reader should observe the previous complete evidence file or the next complete
+one, never an in-place partial write. The daemon's gitclone diff parser must
+not silently omit changed files when raw metadata and parsed patch sections
+disagree; unmatched patch sections are preserved as structured diff rows so
+incomplete data is visible instead of hidden.
 
 The HTTP transport serves streamable MCP at the listener root, requires a
 non-blank bearer token from `--http-token-env`, rejects non-loopback binds, and

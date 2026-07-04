@@ -608,15 +608,19 @@ Behavior:
   already a complete per-file patch that begins with its own `diff --git`
   header and ends with a newline, so the companion concatenates non-empty
   patches verbatim, in daemon response order, adding nothing. Files with an
-  empty `patch` (binary files and hunk-less metadata-only changes such as
-  rename-only) get a section synthesized by a shared helper in the gitclone
-  package — never hand-rolled patch syntax in the companion — so it applies
-  the same git-style path quoting and the same extended headers (`rename
-  from`/`rename to`, mode/new/deleted-file headers) that `BuildPatch` emits,
-  with binary files additionally getting a `Binary files differ` line.
+  empty `patch` (binary files and hunk-less metadata-only changes:
+  rename-only, copy-only, and mode-only) get a section synthesized by a
+  shared helper in the gitclone package — never hand-rolled patch syntax in
+  the companion — so it applies the same git-style path quoting and the same
+  extended headers (`rename from`/`rename to`, `copy from`/`copy to`,
+  `old mode`/`new mode`, new/deleted-file headers) that git emits, with
+  binary files additionally getting a `Binary files differ` line. The diff
+  metadata must carry old/new file modes so mode-only changes survive
+  serialization.
   Fidelity rule: the emitted file is a faithful serialization of everything
   the daemon's cached diff data carries — no changed file may be silently
-  dropped, and metadata-only changes keep their extended headers — but it is
+  dropped, and rename-only, copy-only, and mode-only changes keep their
+  extended headers — but it is
   a review artifact, not guaranteed byte-identical to `git diff` output. The
   file lands under a companion-owned temp directory with `0600` permissions
   and the tool returns the absolute path and size. `diff_file` is omitted

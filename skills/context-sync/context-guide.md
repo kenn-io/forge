@@ -18,14 +18,33 @@ style that `golangci-lint` / `gofmt` / `oxfmt` already enforce.
 ### Good vs Bad Context
 
 BAD (greppable): "`Registry` is defined in `internal/platform/registry.go`."
-GOOD (not greppable): "Provider identity is always the tuple `(platform, platform_host,
+WORDY: "Provider identity is always the tuple `(platform, platform_host,
 owner, name)`; code that keys repos by `owner/name/number` alone will silently collide
 across hosts once a self-hosted Forgejo and github.com share an owner."
+GOOD: "Provider identity is always `(platform, platform_host, owner, name)`;
+keying by owner/name alone collides across hosts."
 
 BAD (greppable): "`internal/github/graphql.go` has a `BulkFetch` function."
 GOOD (not greppable): "GitHub GraphQL bulk fetch is an optimization layered *around* the
 neutral persistence path, not through it — keep it optional so other providers keep
 working when the GraphQL path is skipped."
+
+## Write Terse: Per-Addition Budget
+
+The size ceilings below are per-doc; these are per-change:
+
+- One new fact = one bullet, ≤ 3 lines. A new `##` section only when a doc
+  gains a genuinely new concern, and even then ≤ 10 lines total.
+- Invariant first; rationale as one trailing clause, only when the invariant
+  is surprising without it. Rationale that needs more than a clause is an
+  ADR, not a context bullet.
+- No implementation walkthroughs. State the constraint the next agent must
+  respect, not how the current change satisfied it — the diff and git
+  history own the "how."
+- Do not list the tests/files that cover a claim (greppable). One anchor per
+  claim, in a trailing parenthetical.
+- Before applying, reread each addition and delete every clause whose removal
+  doesn't change what the next agent would do.
 
 ## Single-Surface Layout
 
@@ -176,3 +195,7 @@ reference it.
 When proposing updates, present DELETIONS and MODIFICATIONS separately from additions and
 justify each removal. Removing context that turns out to be load-bearing is more costly
 than leaving a redundant line.
+
+This asymmetry applies to deletions of existing context only. Padding new
+additions is its own poisoning: every redundant line dilutes the
+load-bearing ones a future agent must find.

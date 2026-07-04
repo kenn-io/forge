@@ -52,7 +52,9 @@ When the Stop hook asks for context sync:
    workflow changed, open the matching context doc and decide whether the grep test says
    to update it.
 3. Apply the context update when the right doc edit is clear, additive, and supported by
-   the diff/conversation. If the update would delete context, reinterpret a design
+   the diff/conversation. Compress it to the per-addition budget in
+   `context-guide.md` first — terse invariants, never implementation
+   walkthroughs. If the update would delete context, reinterpret a design
    decision, or make a claim the code cannot verify, propose a concrete diff or
    confidence-tagged suggestion in the final response instead.
 4. Only then mark the current worktree state with the decision:
@@ -162,6 +164,11 @@ invariant is documented but unguarded, flag it as a gap and propose the smallest
 When a guard and a doc disagree, that is a high-priority finding for Step 7.
 
 ## Step 7: Present Or Apply Diffs
+
+Before presenting or applying any diff, compress each addition to the
+per-addition budget in `context-guide.md` — additions are terse invariants
+(a few lines), never implementation walkthroughs. If a draft needs a
+paragraph, it is either an ADR or it contains greppable material to cut.
 
 For explicit full-sync/audit requests, show all proposed changes. Flag DELETIONS and
 MODIFICATIONS separately from additions — deletions are higher risk (removing context

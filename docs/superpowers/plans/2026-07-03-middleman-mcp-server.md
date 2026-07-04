@@ -55,7 +55,8 @@ Implementers get zero other context; these are load-bearing:
 
 | File | Responsibility |
 |---|---|
-| `internal/db/migrations/000037_item_workflow_state.{up,down}.sql` | New generic table, copy kanban rows, drop old table |
+| `internal/db/migrations/000037_item_workflow_state.{up,down}.sql` | New generic table and initial copy from kanban rows; legacy table stays live |
+| `internal/db/migrations/000038_drop_kanban_state.{up,down}.sql` | Re-sync legacy kanban rows, then drop the old PR-only table |
 | `internal/db/queries_workflow.go` | All generic workflow-state queries (get/ensure/set/list/cursor) |
 | `internal/db/queries_workflow_test.go` | Tests for the above |
 | `internal/db/types.go` | `ItemWorkflowState`, params/opts/row types, conflict error (added to existing file) |
@@ -515,7 +516,9 @@ with a descriptive error before touching the table. A typo like
 readers see the item as effective-"new" and expected-status conflict
 detection is bypassed. Required tests: invalid item type on all three
 funcs, invalid status and invalid expected_status on SetItemWorkflowState,
-each asserting an error and (for writes) that no row was created.
+each asserting an error and (for writes) that no row was created. Also
+seed one valid existing row before an invalid status/expected_status write
+and assert the stored row remains unchanged.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -2003,25 +2006,31 @@ type repoFilterInput struct {
 // repo query param ("", nil when the filter is entirely empty). Validate
 // BEFORE rendering: a non-empty filter requires provider, owner, AND name
 // all set — a partial filter (any of the three missing) is an error, never
-// a silently broadened or malformed query. Do not route provider through
-// NormalizeKind's empty-means-github default; an empty provider on a
-// non-empty filter is invalid input. The daemon filter format REQUIRES the
+// a silently broadened or malformed query. Validate provider before
+// rendering: an empty provider on a non-empty filter is invalid input, so
+// do not route empty through NormalizeKind's empty-means-github default.
+// For non-empty provider, call platform.NormalizeKind, then require
+// platform.MetadataFor to recognize the normalized provider even when
+// platform_host was supplied explicitly. Render the normalized provider
+// string, not the raw alias/casing. The daemon filter format REQUIRES the
 // host segment, but platform_host is optional on tool inputs: when it is
-// empty, resolve the provider's default host via platform.DefaultHost
-// (internal/platform/metadata.go); if the provider is unknown to
-// DefaultHost and no platform_host was given, return an error naming the
-// provider — never emit a host-less filter.
+// empty, use the normalized provider's default host from MetadataFor; never
+// emit a host-less filter.
 // Required tests:
 //   - {provider: "github", owner: "acme", name: "widget"}, no
 //     platform_host → "github|github.com/acme/widget", nil.
+//   - {provider: "GH", owner: "acme", name: "widget"}, no platform_host →
+//     "github|github.com/acme/widget", nil.
 //   - {} (all empty) → "", nil.
 //   - {owner: "acme", name: "widget"} (no provider) → error.
 //   - {provider: "github", owner: "acme"} (no name) → error.
 //   - {provider: "nonesuch", owner: "a", name: "b"}, no platform_host →
 //     error naming "nonesuch".
 //   - {provider: "nonesuch", platform_host: "git.example.com", owner: "a",
-//     name: "b"} → "nonesuch|git.example.com/a/b", nil (explicit host
-//     needs no DefaultHost lookup).
+//     name: "b"} → error naming "nonesuch" (explicit host does not make an
+//     unknown provider valid).
+//   - {provider: "gitlab", platform_host: "git.example.com", owner: "a",
+//     name: "b"} → "gitlab|git.example.com/a/b", nil.
 // Tool handlers map the error to an invalid_params MCP tool error.
 func (r repoFilterInput) queryValue() (string, error)
 

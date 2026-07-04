@@ -47,6 +47,7 @@ type listWorkflowStateOutput = bodyOutput[workflowStateListResponse]
 type setWorkflowStateBody struct {
 	Status         string `json:"status" enum:"new,reviewing,waiting,awaiting_merge"`
 	ExpectedStatus string `json:"expected_status,omitempty" enum:"new,reviewing,waiting,awaiting_merge"`
+	Force          bool   `json:"force,omitempty"`
 	Source         string `json:"source,omitempty" pattern:"^[a-z][a-z0-9_-]{0,39}$"`
 	Actor          string `json:"actor,omitempty" maxLength:"120"`
 	Reason         string `json:"reason,omitempty" maxLength:"500"`
@@ -268,6 +269,12 @@ func validateSetWorkflowStateBody(body setWorkflowStateBody) error {
 			"expected_status must be one of: new, reviewing, waiting, awaiting_merge",
 			"new", "reviewing", "waiting", "awaiting_merge",
 		)
+	}
+	if body.ExpectedStatus == "" && !body.Force {
+		return problemValidation("body.expected_status", "expected_status is required unless force is true")
+	}
+	if body.ExpectedStatus != "" && body.Force {
+		return problemValidation("body.force", "force cannot be true when expected_status is provided")
 	}
 	if body.Source != "" && !workflowSourcePattern.MatchString(body.Source) {
 		return problemValidation("body.source", "source must match ^[a-z][a-z0-9_-]{0,39}$")

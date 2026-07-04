@@ -22,7 +22,7 @@ Consult middleman_get_stack_context before claiming a stacked PR so review order
 Prefer cached evidence over assumptions, and report stale cache signals or uncertainty.
 Never perform provider writes.
 Set workflow state only when the reason is clear.
-Include expected_status when marking an item, so you do not overwrite humans or other agents; omit it only for a deliberate unconditional local override.
+Include expected_status when marking an item, so you do not overwrite humans or other agents; use force: true only for a deliberate unconditional local override.
 Treat awaiting_merge as a PR-oriented state and avoid setting it on issues unless the user explicitly asks for that state.`
 
 func (s *Server) registerGuidance() {

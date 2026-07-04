@@ -80,15 +80,15 @@ func TestGetItemDiffWritesVerbatimDiffFileAndOverwrites(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if diffCalls == 1 {
 			_, _ = w.Write([]byte(`{"files":[
-				{"path":"src/renamed.go","status":"renamed","patch":"diff --git a/src/old.go b/src/renamed.go\nrename from src/old.go\nrename to src/renamed.go\n"},
-				{"path":"src/copied.go","old_path":"src/source.go","status":"copied","patch":"diff --git a/src/source.go b/src/copied.go\ncopy from src/source.go\ncopy to src/copied.go\n"},
-				{"path":"scripts/run.sh","status":"modified","patch":"diff --git a/scripts/run.sh b/scripts/run.sh\nold mode 100644\nnew mode 100755\n"},
-				{"path":"assets/logo.png","status":"modified","is_binary":true,"patch":"diff --git a/assets/logo.png b/assets/logo.png\nBinary files a/assets/logo.png and b/assets/logo.png differ\n"}
+				{"path":"src/renamed.go","status":"renamed","additions":1,"deletions":1,"patch":"diff --git a/src/old.go b/src/renamed.go\nrename from src/old.go\nrename to src/renamed.go\n"},
+				{"path":"src/copied.go","old_path":"src/source.go","status":"copied","additions":1,"deletions":0,"patch":"diff --git a/src/source.go b/src/copied.go\ncopy from src/source.go\ncopy to src/copied.go\n"},
+				{"path":"scripts/run.sh","status":"modified","additions":1,"deletions":1,"patch":"diff --git a/scripts/run.sh b/scripts/run.sh\nold mode 100644\nnew mode 100755\n"},
+				{"path":"assets/logo.png","status":"modified","is_binary":true,"additions":0,"deletions":0,"patch":"diff --git a/assets/logo.png b/assets/logo.png\nBinary files a/assets/logo.png and b/assets/logo.png differ\n"}
 			]}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"files":[
-			{"path":"src/newer.go","status":"added","patch":"diff --git a/src/newer.go b/src/newer.go\nnew file mode 100644\n"}
+			{"path":"src/newer.go","status":"added","additions":1,"deletions":0,"patch":"diff --git a/src/newer.go b/src/newer.go\nnew file mode 100644\n"}
 		]}`))
 	})
 	s := newMCPTestServer(t, mux)
@@ -183,6 +183,41 @@ func TestGetItemDiffRejectsMismatchedSummaryAndDiffFiles(t *testing.T) {
 		require.NoError(t, readErr)
 		assert.Empty(t, entries)
 	}
+}
+
+func TestGetItemDiffRejectsMismatchedSummaryAndDiffMetadata(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42/files", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"files":[{
+			"path":"src/one.go","status":"modified",
+			"is_binary":false,"is_generated":false,"additions":2,"deletions":1
+		}]}`))
+	})
+	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42/diff", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"files":[{
+			"path":"src/one.go","status":"modified",
+			"is_binary":false,"is_generated":false,"additions":1,"deletions":1,
+			"patch":"diff --git a/src/one.go b/src/one.go\n"
+		}]}`))
+	})
+	s := newMCPTestServer(t, mux)
+
+	_, err := s.getItemDiff(t.Context(), getItemDiffInput{
+		Item:         itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
+		EmitDiffFile: true,
+	})
+
+	assertDaemonErrorKind(t, err, "diff_incomplete")
+	var derr *daemonError
+	require.ErrorAs(err, &derr)
+	assert.Equal("src/one.go", derr.Details["path"])
+	assert.Equal("additions", derr.Details["field"])
+	assert.Equal(2, derr.Details["summary"])
+	assert.Equal(1, derr.Details["diff"])
 }
 
 func TestGetItemDiffReportsUnavailableAndTooLarge(t *testing.T) {

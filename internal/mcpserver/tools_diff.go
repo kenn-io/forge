@@ -159,26 +159,63 @@ func serializeDiffPatches(files []daemonDiffFile) ([]byte, error) {
 
 func validateDiffMatchesSummary(summary []daemonDiffFile, diff []daemonDiffFile) error {
 	if len(summary) != len(diff) {
-		return &daemonError{
-			Kind:    "diff_incomplete",
-			Message: "daemon diff response does not match file summary",
-		}
+		return diffMismatchError("", "file_count", len(summary), len(diff))
 	}
-	counts := map[diffIdentity]int{}
+	files := map[diffIdentity]daemonDiffFile{}
 	for _, file := range summary {
-		counts[file.diffIdentity()]++
+		key := file.diffIdentity()
+		if _, exists := files[key]; exists {
+			return diffMismatchError(file.Path, "duplicate_summary_file", 1, 2)
+		}
+		files[key] = file
 	}
 	for _, file := range diff {
 		key := file.diffIdentity()
-		if counts[key] == 0 {
-			return &daemonError{
-				Kind:    "diff_incomplete",
-				Message: "daemon diff response does not match file summary",
-			}
+		summaryFile, ok := files[key]
+		if !ok {
+			return diffMismatchError(file.Path, "file_identity", "summary", "diff")
 		}
-		counts[key]--
+		if err := validateDiffFileMetadata(summaryFile, file); err != nil {
+			return err
+		}
+		delete(files, key)
+	}
+	for _, file := range files {
+		return diffMismatchError(file.Path, "missing_diff_file", "summary", "diff")
 	}
 	return nil
+}
+
+func validateDiffFileMetadata(summary daemonDiffFile, diff daemonDiffFile) error {
+	if summary.IsBinary != diff.IsBinary {
+		return diffMismatchError(summary.Path, "is_binary", summary.IsBinary, diff.IsBinary)
+	}
+	if summary.IsGenerated != diff.IsGenerated {
+		return diffMismatchError(summary.Path, "is_generated", summary.IsGenerated, diff.IsGenerated)
+	}
+	if summary.Additions != diff.Additions {
+		return diffMismatchError(summary.Path, "additions", summary.Additions, diff.Additions)
+	}
+	if summary.Deletions != diff.Deletions {
+		return diffMismatchError(summary.Path, "deletions", summary.Deletions, diff.Deletions)
+	}
+	return nil
+}
+
+func diffMismatchError(path string, field string, summary any, diff any) *daemonError {
+	details := map[string]any{
+		"field":   field,
+		"summary": summary,
+		"diff":    diff,
+	}
+	if path != "" {
+		details["path"] = path
+	}
+	return &daemonError{
+		Kind:    "diff_incomplete",
+		Message: "daemon diff response does not match file summary",
+		Details: details,
+	}
 }
 
 type diffIdentity struct {

@@ -2968,6 +2968,7 @@ type SetWorkflowStateBody struct {
 	Schema         *string                             `json:"$schema,omitempty"`
 	Actor          *string                             `json:"actor,omitempty"`
 	ExpectedStatus *SetWorkflowStateBodyExpectedStatus `json:"expected_status,omitempty"`
+	Force          *bool                               `json:"force,omitempty"`
 	Reason         *string                             `json:"reason,omitempty"`
 	Source         *string                             `json:"source,omitempty"`
 	Status         SetWorkflowStateBodyStatus          `json:"status"`

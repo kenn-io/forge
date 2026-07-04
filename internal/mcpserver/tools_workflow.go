@@ -12,6 +12,7 @@ type setWorkflowInput struct {
 	Item           itemRefInput `json:"item"`
 	Status         string       `json:"status"`
 	ExpectedStatus string       `json:"expected_status,omitempty"`
+	Force          bool         `json:"force,omitempty"`
 	Reason         string       `json:"reason,omitempty"`
 	Actor          string       `json:"actor,omitempty"`
 }
@@ -53,16 +54,31 @@ func (s *Server) setItemWorkflowState(
 			return setWorkflowOutput{}, fmt.Errorf("expected_status: %w", err)
 		}
 	}
+	if expected == "" && !in.Force {
+		return setWorkflowOutput{}, &daemonError{
+			Kind:    "invalid_request",
+			Message: "expected_status is required unless force is true",
+		}
+	}
+	if expected != "" && in.Force {
+		return setWorkflowOutput{}, &daemonError{
+			Kind:    "invalid_request",
+			Message: "force cannot be true when expected_status is provided",
+		}
+	}
 	if err := s.daemon.ensureWorkflowStateSupported(ctx); err != nil {
 		return setWorkflowOutput{}, err
 	}
 
-	body := map[string]string{
+	body := map[string]any{
 		"status": status,
 		"source": "mcp",
 	}
 	if expected != "" {
 		body["expected_status"] = expected
+	}
+	if in.Force {
+		body["force"] = true
 	}
 	if in.Actor != "" {
 		body["actor"] = in.Actor

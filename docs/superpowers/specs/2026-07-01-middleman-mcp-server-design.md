@@ -259,12 +259,13 @@ the MCP client name or supplied agent label when available. `updated_reason` is
 optional and should be short enough to show in future UI without becoming an
 unbounded log.
 
-The API should also accept an optional expected current status. The comparison
-is against the effective current status, where a missing workflow row is
-`new`. If provided and the effective status has changed, the daemon returns a
-conflict. This lets a periodic model avoid overwriting a human or another agent
-that already moved the item while still allowing the first claim of a never-moved
-item with `expected_status = "new"`.
+The API should also accept an expected current status. The comparison is
+against the effective current status, where a missing workflow row is `new`.
+If the effective status has changed, the daemon returns a conflict. This lets a
+periodic model avoid overwriting a human or another agent that already moved the
+item while still allowing the first claim of a never-moved item with
+`expected_status = "new"`. Unconditional writes are allowed only when the caller
+sets an explicit `force: true` override instead of `expected_status`.
 
 ### PR Kanban Compatibility
 
@@ -330,8 +331,8 @@ Default listing semantics:
 - pagination uses an opaque cursor carrying the ordering tuple, not offset.
 
 `PUT /workflow-state/...` validates the item type, state, provider-aware route,
-and item existence. It writes only middleman-local state. It never calls a
-provider mutator.
+expected-status-or-force contract, and item existence. It writes only
+middleman-local state. It never calls a provider mutator.
 
 The existing PR kanban route remains because it is part of the current public
 API and UI contract.
@@ -472,7 +473,7 @@ Inputs:
 
 - provider-aware item ref;
 - `status`;
-- optional `expected_status`;
+- `expected_status`, or `force: true` for a deliberate unconditional override;
 - optional `reason`;
 - optional `actor`.
 
@@ -696,7 +697,8 @@ tell the model to:
 - prefer cached evidence over assumptions;
 - avoid provider writes;
 - set workflow state only when the reason is clear;
-- include `expected_status` when marking an item;
+- include `expected_status` when marking an item, or `force: true` only for a
+  deliberate unconditional local override;
 - treat `awaiting_merge` as a PR-oriented state and avoid setting it on issues
   unless the user prompt explicitly asks for that state;
 - report uncertainty and stale-cache signals.
@@ -800,7 +802,8 @@ The guidance doc should cover:
 - inspecting diffs via the summary-first flow and the temp-file handoff,
   including that diff files are ephemeral and local to the companion host;
 - when to mark an item `reviewing`;
-- how to use `expected_status` to avoid overwriting humans or other agents;
+- how to use `expected_status` to avoid overwriting humans or other agents, and
+  how to use `force: true` only for a deliberate unconditional local override;
 - how to inspect already reviewing/waiting items;
 - how to interpret stale cache fields;
 - troubleshooting daemon discovery and auth errors.
@@ -829,8 +832,9 @@ Backend tests:
 - DB/API tests prove `expected_status = "new"` succeeds when no workflow row
   exists and stale `expected_status` conflicts;
 - server API tests cover workflow-state GET/PUT, host-prefixed identity,
-  invalid status, missing item, closed-item filtering, deterministic cursor
-  pagination, and expected-status conflict;
+  invalid status, explicit force override validation, missing item,
+  closed-item filtering, deterministic cursor pagination, and expected-status
+  conflict;
 - existing PR kanban API tests continue to pass against the generic store;
 - issue list/detail API tests cover `WorkflowStatus` and local workflow
   metadata exposure.

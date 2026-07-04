@@ -60,13 +60,14 @@ func TestSetItemWorkflowStateTool(t *testing.T) {
 	mux.HandleFunc("/api/v1/host/git.example.com/workflow-state/issue/gitlab/Group%2FSub/Project/7", func(w http.ResponseWriter, r *http.Request) {
 		hostCalls++
 		assert.Equal(http.MethodPut, r.Method)
-		var body map[string]string
+		var body map[string]any
 		if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
 			return
 		}
 		assert.Equal("waiting", body["status"])
 		assert.Equal("mcp", body["source"])
-		assert.Empty(body["expected_status"])
+		assert.NotContains(body, "expected_status")
+		assert.Equal(true, body["force"])
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"previous_status":"reviewing",
@@ -100,6 +101,7 @@ func TestSetItemWorkflowStateTool(t *testing.T) {
 			Owner: "Group/Sub", Name: "Project", Number: 7,
 		},
 		Status: "waiting",
+		Force:  true,
 	})
 	require.NoError(err)
 	assert.Equal("reviewing", hostOut.PreviousStatus)
@@ -107,6 +109,42 @@ func TestSetItemWorkflowStateTool(t *testing.T) {
 	assert.Equal(1, probeCalls)
 	assert.Equal(1, defaultCalls)
 	assert.Equal(1, hostCalls)
+}
+
+func TestSetItemWorkflowStateRequiresExpectedStatusOrForce(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	s := newMCPTestServer(t, http.NewServeMux())
+
+	_, err := s.setItemWorkflowState(t.Context(), setWorkflowInput{
+		Item:   itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
+		Status: "reviewing",
+	})
+
+	require.Error(err)
+	var derr *daemonError
+	require.ErrorAs(err, &derr)
+	assert.Equal("invalid_request", derr.Kind)
+	assert.Contains(derr.Message, "expected_status")
+}
+
+func TestSetItemWorkflowStateRejectsExpectedStatusWithForce(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	s := newMCPTestServer(t, http.NewServeMux())
+
+	_, err := s.setItemWorkflowState(t.Context(), setWorkflowInput{
+		Item:           itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
+		Status:         "reviewing",
+		ExpectedStatus: "new",
+		Force:          true,
+	})
+
+	require.Error(err)
+	var derr *daemonError
+	require.ErrorAs(err, &derr)
+	assert.Equal("invalid_request", derr.Kind)
+	assert.Contains(derr.Message, "force")
 }
 
 func TestSetItemWorkflowStateConflict(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,6 +193,56 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 	assert.Equal("reviewing", status.Items[0].Workflow.Status)
 	assert.Equal("mcp", status.Items[0].Workflow.UpdatedSource)
 	assert.Equal("mcp-e2e", status.Items[0].Workflow.UpdatedActor)
+
+	t.Setenv("MIDDLEMAN_MCP_HTTP_TOKEN", "streamable-e2e-token")
+	httpMCPServer, err := New(Options{
+		ConfigPath:    cfgPath,
+		Transport:     "http",
+		Addr:          "127.0.0.1:0",
+		HTTPTokenEnv:  "MIDDLEMAN_MCP_HTTP_TOKEN",
+		DaemonTimeout: 5 * time.Second,
+		Version:       "test",
+	})
+	require.NoError(err)
+	t.Cleanup(func() {
+		require.NoError(httpMCPServer.Close())
+	})
+	httpCtx, httpCancel := context.WithCancel(t.Context())
+	httpErrc := make(chan error, 1)
+	go func() {
+		httpErrc <- httpMCPServer.RunHTTP(httpCtx)
+	}()
+	t.Cleanup(func() {
+		httpCancel()
+		require.NoError(<-httpErrc)
+	})
+	httpSession := connectHTTPMCPTestSession(t, httpMCPServer, "streamable-e2e-token")
+	t.Cleanup(func() {
+		err := httpSession.Close()
+		if err != nil && !strings.Contains(err.Error(), "EOF") {
+			require.NoError(err)
+		}
+	})
+
+	httpListed := callMCPTool[listByWorkflowOutput](t, httpSession, "middleman_list_items_by_workflow_state", map[string]any{
+		"states": []string{"reviewing"},
+		"repo": map[string]any{
+			"provider":      "github",
+			"platform_host": "github.com",
+			"repo_path":     "acme/widgets",
+		},
+	})
+	require.Len(httpListed.Items, 1)
+	assert.Equal(1, httpListed.Items[0].Item.Number)
+
+	httpConflict := callMCPToolError(t, httpSession, "middleman_set_item_workflow_state", map[string]any{
+		"item":            item,
+		"status":          "waiting",
+		"expected_status": "new",
+		"actor":           "mcp-e2e",
+		"reason":          "stale http claim",
+	})
+	assert.Contains(httpConflict, "conflict")
 }
 
 func callMCPTool[T any](
@@ -219,6 +270,48 @@ func callMCPTool[T any](
 	require.True(t, ok)
 	require.NoError(t, json.Unmarshal([]byte(text.Text), &out))
 	return out
+}
+
+func callMCPToolError(
+	t *testing.T,
+	session *mcp.ClientSession,
+	name string,
+	args any,
+) string {
+	t.Helper()
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      name,
+		Arguments: args,
+	})
+	if err != nil {
+		return err.Error()
+	}
+	if result.IsError {
+		var b strings.Builder
+		for _, content := range result.Content {
+			if text, ok := content.(*mcp.TextContent); ok {
+				b.WriteString(text.Text)
+				continue
+			}
+			fmt.Fprintf(&b, "%T", content)
+		}
+		return b.String()
+	}
+	require.FailNow(t, "expected tool error", "tool %s returned success: %#v", name, result)
+	return ""
+}
+
+func connectHTTPMCPTestSession(t *testing.T, s *Server, token string) *mcp.ClientSession {
+	t.Helper()
+	endpoint := "http://" + waitForHTTPAddr(t, s)
+	client := mcp.NewClient(&mcp.Implementation{Name: "middleman-http-test-client", Version: "test"}, nil)
+	session, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{
+		Endpoint:             endpoint,
+		HTTPClient:           &http.Client{Transport: bearerRoundTripper{token: token}},
+		DisableStandaloneSSE: true,
+	}, nil)
+	require.NoError(t, err)
+	return session
 }
 
 func daemonWorkflowState(t *testing.T, baseURL string, token string) daemonWorkflowStateResponse {

@@ -36,8 +36,10 @@ reasonable default. The companion checks that the token environment variable is
 non-blank, but it does not enforce entropy.
 
 The streamable HTTP MCP endpoint is the listener root. MCP clients send JSON-RPC
-requests there with `Authorization: Bearer <token>`; browser-style cross-origin
-requests are rejected.
+requests there with `Authorization: Bearer <token>`. Browser-style Origin
+headers are accepted only when they use `http` and the same loopback listener
+port; `localhost`, `127.0.0.1`, and `[::1]` aliases are treated as equivalent
+loopback origins.
 
 ```bash
 curl -H "Authorization: Bearer $MIDDLEMAN_MCP_TOKEN" http://127.0.0.1:8092/
@@ -60,7 +62,8 @@ For periodic review triage:
 5. Mark an item `reviewing` only when there is a clear review reason.
 6. Include `expected_status` when calling
    `middleman_set_item_workflow_state`, so stale runs do not overwrite humans
-   or other agents. Omit it only for a deliberate unconditional local override.
+   or other agents. Use `force: true` instead of `expected_status` only for a
+   deliberate unconditional local override.
 
 Safe prompt shape:
 

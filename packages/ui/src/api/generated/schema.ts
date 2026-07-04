@@ -6871,6 +6871,7 @@ export interface components {
             actor?: string;
             /** @enum {string} */
             expected_status?: "new" | "reviewing" | "waiting" | "awaiting_merge";
+            force?: boolean;
             reason?: string;
             source?: string;
             /** @enum {string} */

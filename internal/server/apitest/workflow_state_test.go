@@ -158,6 +158,7 @@ func TestWorkflowStatePutValidation(t *testing.T) {
 		path  string
 		body  map[string]any
 		field string
+		want  int
 	}{
 		{
 			name:  "invalid status",
@@ -168,20 +169,38 @@ func TestWorkflowStatePutValidation(t *testing.T) {
 		{
 			name:  "invalid source",
 			path:  "/workflow-state/pr/gh/acme/widget/42",
-			body:  map[string]any{"status": "reviewing", "source": "MCP"},
+			body:  map[string]any{"status": "reviewing", "force": true, "source": "MCP"},
 			field: "body.source",
 		},
 		{
 			name:  "actor too long",
 			path:  "/workflow-state/pr/gh/acme/widget/42",
-			body:  map[string]any{"status": "reviewing", "actor": string(bytes.Repeat([]byte("a"), 121))},
+			body:  map[string]any{"status": "reviewing", "force": true, "actor": string(bytes.Repeat([]byte("a"), 121))},
 			field: "body.actor",
 		},
 		{
 			name:  "reason too long",
 			path:  "/workflow-state/pr/gh/acme/widget/42",
-			body:  map[string]any{"status": "reviewing", "reason": string(bytes.Repeat([]byte("r"), 501))},
+			body:  map[string]any{"status": "reviewing", "force": true, "reason": string(bytes.Repeat([]byte("r"), 501))},
 			field: "body.reason",
+		},
+		{
+			name:  "missing expected status without force",
+			path:  "/workflow-state/pr/gh/acme/widget/42",
+			body:  map[string]any{"status": "reviewing"},
+			field: "body.expected_status",
+			want:  http.StatusBadRequest,
+		},
+		{
+			name: "expected status with force",
+			path: "/workflow-state/pr/gh/acme/widget/42",
+			body: map[string]any{
+				"status":          "reviewing",
+				"expected_status": "new",
+				"force":           true,
+			},
+			field: "body.force",
+			want:  http.StatusBadRequest,
 		},
 	}
 
@@ -190,20 +209,28 @@ func TestWorkflowStatePutValidation(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			code, body := workflowStateRequest(t, srv, http.MethodPut, tt.path, tt.body)
-			require.Equal(http.StatusUnprocessableEntity, code)
+			want := tt.want
+			if want == 0 {
+				want = http.StatusUnprocessableEntity
+			}
+			require.Equal(want, code)
 			assert.Equal("validationError", body["code"])
-			errors, ok := body["errors"].([]any)
-			require.True(ok)
-			require.NotEmpty(errors)
-			detail, ok := errors[0].(map[string]any)
-			require.True(ok)
-			assert.Equal(tt.field, detail["location"])
+			if errors, ok := body["errors"].([]any); ok {
+				require.NotEmpty(errors)
+				detail, ok := errors[0].(map[string]any)
+				require.True(ok)
+				assert.Equal(tt.field, detail["location"])
+			} else {
+				details, ok := body["details"].(map[string]any)
+				require.True(ok)
+				assert.Equal(tt.field, details["field"])
+			}
 		})
 	}
 
 	code, body := workflowStateRequest(t, srv, http.MethodPut,
 		"/workflow-state/task/gh/acme/widget/42",
-		map[string]any{"status": "reviewing"})
+		map[string]any{"status": "reviewing", "force": true})
 	req.Equal(http.StatusUnprocessableEntity, code)
 	assert.Equal(t, "validationError", body["code"])
 }
@@ -217,19 +244,19 @@ func TestWorkflowStatePutMissingItem(t *testing.T) {
 
 	code, body := workflowStateRequest(t, srv, http.MethodPut,
 		"/workflow-state/pr/gh/acme/widget/99",
-		map[string]any{"status": "reviewing"})
+		map[string]any{"status": "reviewing", "force": true})
 	require.Equal(http.StatusNotFound, code)
 	assert.Equal("pullNotFound", body["code"])
 
 	code, body = workflowStateRequest(t, srv, http.MethodPut,
 		"/workflow-state/issue/gh/acme/widget/99",
-		map[string]any{"status": "reviewing"})
+		map[string]any{"status": "reviewing", "force": true})
 	require.Equal(http.StatusNotFound, code)
 	assert.Equal("issueNotFound", body["code"])
 
 	code, body = workflowStateRequest(t, srv, http.MethodPut,
 		"/workflow-state/pr/gh/acme/missing/1",
-		map[string]any{"status": "reviewing"})
+		map[string]any{"status": "reviewing", "force": true})
 	require.Equal(http.StatusNotFound, code)
 	assert.Equal("repoNotFound", body["code"])
 }
@@ -242,7 +269,7 @@ func TestWorkflowStateHostVariant(t *testing.T) {
 
 	code, body := workflowStateRequest(t, srv, http.MethodPut,
 		"/host/ghe.example.com/workflow-state/pr/gh/acme/widget/42",
-		map[string]any{"status": "waiting", "source": "api"})
+		map[string]any{"status": "waiting", "force": true, "source": "api"})
 	require.Equal(http.StatusOK, code)
 	assert.Equal("waiting", body["status"])
 
@@ -290,7 +317,7 @@ func TestWorkflowStateHostVariantUsesEscapedNestedRepoPath(t *testing.T) {
 
 	code, body := workflowStateRequest(t, srv, http.MethodPut,
 		"/host/gitlab.example.com/workflow-state/pr/gl/Group%2FSubGroup/My_Project/42",
-		map[string]any{"status": "reviewing", "source": "mcp"})
+		map[string]any{"status": "reviewing", "force": true, "source": "mcp"})
 	require.Equal(http.StatusOK, code)
 	assert.Equal("reviewing", body["status"])
 

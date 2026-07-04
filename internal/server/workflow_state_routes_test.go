@@ -22,6 +22,10 @@ func TestWorkflowStateOpenAPIConstrainsWriteBody(t *testing.T) {
 	require.NotNil(expected)
 	assert.Equal([]any{"new", "reviewing", "waiting", "awaiting_merge"}, expected.Enum)
 
+	force := schema.Properties["force"]
+	require.NotNil(force)
+	assert.Equal("boolean", string(force.Type))
+
 	source := schema.Properties["source"]
 	require.NotNil(source)
 	assert.Equal("^[a-z][a-z0-9_-]{0,39}$", source.Pattern)

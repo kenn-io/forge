@@ -28,9 +28,9 @@ The curated v1 tool set is intentionally fixed:
 daemon `PUT /workflow-state/{item_type}/{provider}/{owner}/{name}/{number}`
 route, or the host-prefixed variant, and always sends `source: "mcp"`. It
 passes `expected_status` through so agents can avoid overwriting humans or other
-agents. Omitting `expected_status` is an unconditional local workflow write and
-should be reserved for deliberate overrides. Workflow writes never retry
-automatically.
+agents. A write without `expected_status` must include `force: true`; that
+combination is an unconditional local workflow override and should be reserved
+for deliberate overrides. Workflow writes never retry automatically.
 
 Every item/repo ref sent through MCP must preserve the full provider identity:
 `provider`, `platform_host`, `owner`, `name`, and item `number` where relevant.
@@ -45,15 +45,19 @@ It should not be documented or treated as full body/comment search unless those
 daemon list endpoints explicitly support those fields.
 
 `middleman_get_item_diff` fetches `/files` for the summary and validates that
-the `/diff` file identities match before writing a temp file. The daemon's
-gitclone diff parser must not silently omit changed files when raw metadata and
-parsed patch sections disagree; unmatched patch sections are preserved as
-structured diff rows so incomplete data is visible instead of hidden.
+the `/diff` file identities and summary metadata match before writing a temp
+file. Mismatches return `diff_incomplete` with field/path details instead of a
+partial temp file. The daemon's gitclone diff parser must not silently omit
+changed files when raw metadata and parsed patch sections disagree; unmatched
+patch sections are preserved as structured diff rows so incomplete data is
+visible instead of hidden.
 
 The HTTP transport serves streamable MCP at the listener root, requires a
 non-blank bearer token from `--http-token-env`, rejects non-loopback binds, and
-checks bearer auth, loopback Host, and same-origin loopback Origin before
-handing requests to the MCP SDK handler.
+checks bearer auth, loopback Host, and loopback Origin before handing requests
+to the MCP SDK handler. Origin checks use strict `http` scheme and listener
+port matching, while treating `localhost`, `127.0.0.1`, and `[::1]` as
+equivalent loopback aliases for that port.
 
 MCP guidance is exposed both as the resource `middleman://mcp/guidance` and as
 the `middleman-review-candidates` prompt. User-facing setup and usage guidance

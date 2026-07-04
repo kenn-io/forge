@@ -46,8 +46,8 @@ type listWorkflowStateOutput = bodyOutput[workflowStateListResponse]
 
 type setWorkflowStateBody struct {
 	Status         string `json:"status" enum:"new,reviewing,waiting,awaiting_merge"`
-	ExpectedStatus string `json:"expected_status,omitempty" enum:"new,reviewing,waiting,awaiting_merge"`
-	Force          bool   `json:"force,omitempty"`
+	ExpectedStatus string `json:"expected_status,omitempty" enum:"new,reviewing,waiting,awaiting_merge" doc:"Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing."`
+	Force          bool   `json:"force,omitempty" doc:"Set true only for a deliberate unconditional override when expected_status is omitted. This is mutually exclusive with expected_status."`
 	Source         string `json:"source,omitempty" pattern:"^[a-z][a-z0-9_-]{0,39}$"`
 	Actor          string `json:"actor,omitempty" maxLength:"120"`
 	Reason         string `json:"reason,omitempty" maxLength:"500"`

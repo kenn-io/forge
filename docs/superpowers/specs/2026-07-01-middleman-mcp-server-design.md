@@ -266,6 +266,9 @@ periodic model avoid overwriting a human or another agent that already moved the
 item while still allowing the first claim of a never-moved item with
 `expected_status = "new"`. Unconditional writes are allowed only when the caller
 sets an explicit `force: true` override instead of `expected_status`.
+The forced-write mode is intentionally not persisted as a separate audit field
+in v1; workflow state stores last-writer metadata only. Callers that need human
+readable override context should put it in `updated_reason`.
 
 ### PR Kanban Compatibility
 
@@ -333,6 +336,9 @@ Default listing semantics:
 `PUT /workflow-state/...` validates the item type, state, provider-aware route,
 expected-status-or-force contract, and item existence. It writes only
 middleman-local state. It never calls a provider mutator.
+Omitting both `expected_status` and `force` is invalid for all callers of this
+new endpoint; callers that want the old unconditional kanban behavior must send
+`force: true` explicitly.
 
 The existing PR kanban route remains because it is part of the current public
 API and UI contract.
@@ -613,12 +619,15 @@ Summary response:
 
 Behavior:
 
-- The summary uses `GET /pulls/{...}/files`; per-file patches and hunks are
-  never inlined into the MCP response.
-- With `emit_diff_file`, the companion fetches `GET /pulls/{...}/diff` (a
-  structured JSON response with per-file patch text, not raw diff bytes) and
-  serializes it into one unified diff file. The patch text is the single
-  canonical serialization form: on the diff route, the daemon guarantees
+- Summary-only calls use `GET /pulls/{...}/files`; per-file patches and hunks
+  are never inlined into the MCP response.
+- With `emit_diff_file`, the companion fetches `GET /pulls/{...}/diff` once and
+  builds both the returned summary metadata and the temp file from that single
+  daemon response, so the summary cannot describe a different diff snapshot
+  than the emitted file. The diff route returns a structured JSON response with
+  per-file patch text, not raw diff bytes, and the companion serializes it into
+  one unified diff file. The patch text is the single canonical serialization
+  form: on the diff route, the daemon guarantees
   every changed file's `patch` value is a complete per-file section —
   starting with its own `diff --git` header, carrying the extended headers
   git would emit (`rename from`/`rename to`, `copy from`/`copy to`,
@@ -853,8 +862,8 @@ MCP tests:
   responses in `last_activity_at` order and never includes bodies;
 - diff tool tests cover the summary-only default, `emit_diff_file` writing a
   `0600` file inside the companion temp directory and returning its path,
-  issue-ref rejection, stale-flag passthrough, and the typed diff-unavailable
-  error;
+  issue-ref rejection, stale-flag passthrough, identity-not-found passthrough,
+  and the typed diff-unavailable error;
 - diff temp directory lifecycle test verifies per-item overwrite on repeat
   calls and removal on companion shutdown;
 - stack context tool test covers `present: false` and ordered members with the
@@ -871,7 +880,9 @@ MCP tests:
   fake-daemon unit tests;
 - HTTP transport e2e covers token-required startup, non-loopback bind rejection,
   accepted loopback requests with a bearer token, and rejected missing-token or
-  cross-origin requests.
+  cross-origin requests. It also calls a daemon-backed workflow write over HTTP
+  with `force: true` and verifies the missing-guard failure through the actual
+  MCP tool boundary.
 
 CLI tests:
 

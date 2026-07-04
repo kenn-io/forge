@@ -21,10 +21,14 @@ func TestWorkflowStateOpenAPIConstrainsWriteBody(t *testing.T) {
 	expected := schema.Properties["expected_status"]
 	require.NotNil(expected)
 	assert.Equal([]any{"new", "reviewing", "waiting", "awaiting_merge"}, expected.Enum)
+	assert.Contains(expected.Description, "Required unless force is true")
+	assert.Contains(expected.Description, "mutually exclusive")
 
 	force := schema.Properties["force"]
 	require.NotNil(force)
 	assert.Equal("boolean", string(force.Type))
+	assert.Contains(force.Description, "deliberate unconditional override")
+	assert.Contains(force.Description, "mutually exclusive")
 
 	source := schema.Properties["source"]
 	require.NotNil(source)

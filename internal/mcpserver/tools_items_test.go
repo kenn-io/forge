@@ -88,6 +88,9 @@ func TestGetItemContextPullRequestUsesWorkflowMetadata(t *testing.T) {
 		}`))
 	})
 	mux.HandleFunc("/api/v1/workflow-state", func(w http.ResponseWriter, r *http.Request) {
+		if writeWorkflowProbeResponse(w, r) {
+			return
+		}
 		query := r.URL.Query()
 		assert.Equal("github|github.com/acme/widget", query.Get("repo"))
 		assert.Equal([]string{"pr"}, query["item_type"])
@@ -156,6 +159,9 @@ func TestListItemsByWorkflowStateForwardsFiltersAndMapsItems(t *testing.T) {
 	require := require.New(t)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/workflow-state", func(w http.ResponseWriter, r *http.Request) {
+		if writeWorkflowProbeResponse(w, r) {
+			return
+		}
 		query := r.URL.Query()
 		assert.ElementsMatch([]string{"reviewing", "waiting"}, query["state"])
 		assert.ElementsMatch([]string{"pr", "issue"}, query["item_type"])
@@ -195,6 +201,27 @@ func TestListItemsByWorkflowStateForwardsFiltersAndMapsItems(t *testing.T) {
 	assert.Equal("2026-07-01T16:00:00Z", out.Items[0].LastActivityAt)
 }
 
+func TestListItemsByWorkflowStateReportsVersionMismatch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/workflow-state", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"status":404,"code":"notFound","detail":"route missing"}`))
+	})
+	s := newMCPTestServer(t, mux)
+
+	_, err := s.listItemsByWorkflowState(t.Context(), listByWorkflowInput{
+		States: []string{"reviewing"},
+	})
+
+	var derr *daemonError
+	require.ErrorAs(err, &derr)
+	assert.Equal("version_mismatch", derr.Kind)
+	assert.Contains(derr.Message, "/workflow-state")
+}
+
 func TestTruncateBytesPreservesUTF8(t *testing.T) {
 	assert := assert.New(t)
 
@@ -210,4 +237,14 @@ func handleEmptyWorkflowState(mux *http.ServeMux) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"items":[]}`))
 	})
+}
+
+func writeWorkflowProbeResponse(w http.ResponseWriter, r *http.Request) bool {
+	query := r.URL.Query()
+	if query.Get("limit") != "1" || len(query) != 1 {
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"items":[]}`))
+	return true
 }

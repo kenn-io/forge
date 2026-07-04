@@ -216,7 +216,7 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(httpMCPServer.Close())
 	})
-	httpCtx, httpCancel := context.WithCancel(t.Context())
+	httpCtx, httpCancel := context.WithCancel(context.Background())
 	httpErrc := make(chan error, 1)
 	go func() {
 		httpErrc <- httpMCPServer.RunHTTP(httpCtx)
@@ -252,6 +252,27 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 		"reason":          "stale http claim",
 	})
 	assert.Contains(httpConflict, "conflict")
+
+	httpForced := callMCPTool[setWorkflowOutput](t, httpSession, "middleman_set_item_workflow_state", map[string]any{
+		"item":   item,
+		"status": "waiting",
+		"force":  true,
+		"actor":  "mcp-http-e2e",
+		"reason": "deliberate http override",
+	})
+	assert.Equal("reviewing", httpForced.PreviousStatus)
+	assert.Equal("waiting", httpForced.Status)
+	httpMissingGuard := callMCPToolError(t, httpSession, "middleman_set_item_workflow_state", map[string]any{
+		"item":   item,
+		"status": "reviewing",
+	})
+	assert.Contains(httpMissingGuard, "expected_status")
+
+	storedWorkflow, err = database.GetItemWorkflowState(ctx, repoID, db.ItemTypePR, 1)
+	require.NoError(err)
+	require.NotNil(storedWorkflow)
+	assert.Equal(string(db.KanbanStatusWaiting), storedWorkflow.Status)
+	assert.Equal("mcp-http-e2e", storedWorkflow.UpdatedActor)
 }
 
 func callMCPTool[T any](

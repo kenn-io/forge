@@ -5965,6 +5965,7 @@ components:
           maxLength: 120
           type: string
         expected_status:
+          description: Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
           enum:
             - new
             - reviewing
@@ -5972,6 +5973,7 @@ components:
             - awaiting_merge
           type: string
         force:
+          description: Set true only for a deliberate unconditional override when expected_status is omitted. This is mutually exclusive with expected_status.
           type: boolean
         reason:
           maxLength: 500

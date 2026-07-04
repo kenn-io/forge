@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -77,28 +78,12 @@ func (s *Server) getItemDiff(ctx context.Context, in getItemDiffInput) (getItemD
 	}
 
 	basePath := itemPath("pulls", in.Item)
-	var summary daemonDiffResponse
-	if err := s.daemon.getJSON(ctx, basePath+"/files", nil, &summary); err != nil {
-		return getItemDiffOutput{}, diffRouteError(err)
-	}
-	out := getItemDiffOutput{
-		Stale: summary.Stale,
-		Files: make([]diffFileRow, 0, len(summary.Files)),
-	}
-	for _, file := range summary.Files {
-		out.TotalAdditions += file.Additions
-		out.TotalDeletions += file.Deletions
-		out.Files = append(out.Files, diffFileRow{
-			Path:        file.Path,
-			OldPath:     file.OldPath,
-			Status:      file.Status,
-			IsBinary:    file.IsBinary,
-			IsGenerated: file.IsGenerated,
-			Additions:   file.Additions,
-			Deletions:   file.Deletions,
-		})
-	}
 	if !in.EmitDiffFile {
+		var summary daemonDiffResponse
+		if err := s.daemon.getJSON(ctx, basePath+"/files", nil, &summary); err != nil {
+			return getItemDiffOutput{}, diffRouteError(err)
+		}
+		out := diffOutputFromFiles(summary)
 		return out, nil
 	}
 
@@ -106,9 +91,7 @@ func (s *Server) getItemDiff(ctx context.Context, in getItemDiffInput) (getItemD
 	if err := s.daemon.getJSON(ctx, basePath+"/diff", nil, &diff); err != nil {
 		return getItemDiffOutput{}, diffRouteError(err)
 	}
-	if err := validateDiffMatchesSummary(summary.Files, diff.Files); err != nil {
-		return getItemDiffOutput{}, err
-	}
+	out := diffOutputFromFiles(diff)
 	data, err := serializeDiffPatches(diff.Files)
 	if err != nil {
 		return getItemDiffOutput{}, err
@@ -125,7 +108,30 @@ func (s *Server) getItemDiff(ctx context.Context, in getItemDiffInput) (getItemD
 	return out, nil
 }
 
+func diffOutputFromFiles(resp daemonDiffResponse) getItemDiffOutput {
+	out := getItemDiffOutput{
+		Stale: resp.Stale,
+		Files: make([]diffFileRow, 0, len(resp.Files)),
+	}
+	for _, file := range resp.Files {
+		out.TotalAdditions += file.Additions
+		out.TotalDeletions += file.Deletions
+		out.Files = append(out.Files, diffFileRow{
+			Path:        file.Path,
+			OldPath:     file.OldPath,
+			Status:      file.Status,
+			IsBinary:    file.IsBinary,
+			IsGenerated: file.IsGenerated,
+			Additions:   file.Additions,
+			Deletions:   file.Deletions,
+		})
+	}
+	return out
+}
+
 func (s *Server) diffStore() (*diffFileStore, error) {
+	s.diffMu.Lock()
+	defer s.diffMu.Unlock()
 	if s.diffs != nil {
 		return s.diffs, nil
 	}
@@ -157,90 +163,15 @@ func serializeDiffPatches(files []daemonDiffFile) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func validateDiffMatchesSummary(summary []daemonDiffFile, diff []daemonDiffFile) error {
-	if len(summary) != len(diff) {
-		return diffMismatchError("", "file_count", len(summary), len(diff))
-	}
-	files := map[diffIdentity]daemonDiffFile{}
-	for _, file := range summary {
-		key := file.diffIdentity()
-		if _, exists := files[key]; exists {
-			return diffMismatchError(file.Path, "duplicate_summary_file", 1, 2)
-		}
-		files[key] = file
-	}
-	for _, file := range diff {
-		key := file.diffIdentity()
-		summaryFile, ok := files[key]
-		if !ok {
-			return diffMismatchError(file.Path, "file_identity", "summary", "diff")
-		}
-		if err := validateDiffFileMetadata(summaryFile, file); err != nil {
-			return err
-		}
-		delete(files, key)
-	}
-	for _, file := range files {
-		return diffMismatchError(file.Path, "missing_diff_file", "summary", "diff")
-	}
-	return nil
-}
-
-func validateDiffFileMetadata(summary daemonDiffFile, diff daemonDiffFile) error {
-	if summary.IsBinary != diff.IsBinary {
-		return diffMismatchError(summary.Path, "is_binary", summary.IsBinary, diff.IsBinary)
-	}
-	if summary.IsGenerated != diff.IsGenerated {
-		return diffMismatchError(summary.Path, "is_generated", summary.IsGenerated, diff.IsGenerated)
-	}
-	if summary.Additions != diff.Additions {
-		return diffMismatchError(summary.Path, "additions", summary.Additions, diff.Additions)
-	}
-	if summary.Deletions != diff.Deletions {
-		return diffMismatchError(summary.Path, "deletions", summary.Deletions, diff.Deletions)
-	}
-	return nil
-}
-
-func diffMismatchError(path string, field string, summary any, diff any) *daemonError {
-	details := map[string]any{
-		"field":   field,
-		"summary": summary,
-		"diff":    diff,
-	}
-	if path != "" {
-		details["path"] = path
-	}
-	return &daemonError{
-		Kind:    "diff_incomplete",
-		Message: "daemon diff response does not match file summary",
-		Details: details,
-	}
-}
-
-type diffIdentity struct {
-	path    string
-	oldPath string
-	status  string
-}
-
-func (f daemonDiffFile) diffIdentity() diffIdentity {
-	return diffIdentity{
-		path:    f.Path,
-		oldPath: f.OldPath,
-		status:  f.Status,
-	}
-}
-
 func diffRouteError(err error) error {
 	var derr *daemonError
 	if !errors.As(err, &derr) {
 		return err
 	}
-	if derr.Kind == "not_found" && strings.Contains(derr.Message, "pull request not found") {
+	msg := strings.ToLower(derr.Message)
+	if derr.Kind == "not_found" && isDiffIdentityNotFound(derr, msg) {
 		return err
 	}
-	msg := strings.ToLower(derr.Message)
 	if derr.Kind == "not_found" ||
 		strings.Contains(msg, "clone manager") ||
 		strings.Contains(msg, "diff not available") ||
@@ -256,13 +187,33 @@ func diffRouteError(err error) error {
 	return err
 }
 
+func isDiffIdentityNotFound(derr *daemonError, msg string) bool {
+	switch derr.Code {
+	case "repoNotFound", "pullNotFound":
+		return true
+	}
+	return strings.Contains(msg, "pull request not found") ||
+		strings.Contains(msg, "repo not found") ||
+		strings.Contains(msg, "repository not found")
+}
+
 func diffFileName(ref itemRefInput) string {
-	return fmt.Sprintf("%s-%s-%s-%s-pr-%d.diff",
+	identity := fmt.Sprintf(
+		"%s\x00%s\x00%s\x00%s\x00%d",
+		ref.Provider,
+		ref.PlatformHost,
+		ref.Owner,
+		ref.Name,
+		ref.Number,
+	)
+	sum := sha256.Sum256([]byte(identity))
+	return fmt.Sprintf("%s-%s-%s-%s-pr-%d-%x.diff",
 		sanitizeDiffName(ref.Provider),
 		sanitizeDiffName(ref.PlatformHost),
 		sanitizeDiffName(ref.Owner),
 		sanitizeDiffName(ref.Name),
 		ref.Number,
+		sum[:12],
 	)
 }
 

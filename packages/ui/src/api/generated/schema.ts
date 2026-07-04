@@ -6869,8 +6869,12 @@ export interface components {
              */
             readonly $schema?: string;
             actor?: string;
-            /** @enum {string} */
+            /**
+             * @description Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
+             * @enum {string}
+             */
             expected_status?: "new" | "reviewing" | "waiting" | "awaiting_merge";
+            /** @description Set true only for a deliberate unconditional override when expected_status is omitted. This is mutually exclusive with expected_status. */
             force?: boolean;
             reason?: string;
             source?: string;

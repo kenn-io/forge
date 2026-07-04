@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -77,11 +78,12 @@ func (d *DB) EnsureItemWorkflowState(
 	if err := validateItemWorkflowType(itemType); err != nil {
 		return err
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := d.rw.ExecContext(ctx,
-		`INSERT INTO middleman_item_workflow_state (repo_id, item_type, item_number, status)
-		 VALUES (?, ?, ?, 'new')
+		`INSERT INTO middleman_item_workflow_state (repo_id, item_type, item_number, status, updated_at)
+		 VALUES (?, ?, ?, 'new', ?)
 		 ON CONFLICT(repo_id, item_type, item_number) DO NOTHING`,
-		repoID, itemType, number,
+		repoID, itemType, number, now,
 	)
 	if err != nil {
 		return fmt.Errorf("ensure item workflow state: %w", err)
@@ -128,12 +130,13 @@ func (d *DB) SetItemWorkflowState(
 		}
 	}
 
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO middleman_item_workflow_state (
 		     repo_id, item_type, item_number, status, updated_at,
 		     updated_source, updated_actor, updated_reason
 		 )
-		 VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET
 		     status = excluded.status,
 		     updated_at = excluded.updated_at,
@@ -144,6 +147,7 @@ func (d *DB) SetItemWorkflowState(
 		p.ItemType,
 		p.ItemNumber,
 		p.Status,
+		now,
 		p.Source,
 		p.Actor,
 		p.Reason,
@@ -313,8 +317,8 @@ func (d *DB) ListItemWorkflowStates(
 		           w.updated_at, COALESCE(w.updated_source, '') AS updated_source,
 		           COALESCE(w.updated_actor, '') AS updated_actor,
 		           COALESCE(w.updated_reason, '') AS updated_reason,
-		           CAST(COALESCE(w.updated_at, p.last_activity_at) AS TEXT) AS sort_key,
-		           CAST(p.last_activity_at AS TEXT) AS activity_key
+		           printf('%%016d', CAST((julianday(replace(substr(COALESCE(w.updated_at, p.last_activity_at), 1, 19), 'T', ' ')) - 2440587.5) * 86400000 AS INTEGER)) AS sort_key,
+		           printf('%%016d', CAST((julianday(replace(substr(p.last_activity_at, 1, 19), 'T', ' ')) - 2440587.5) * 86400000 AS INTEGER)) AS activity_key
 		    FROM middleman_merge_requests p
 		    JOIN middleman_repos r ON r.id = p.repo_id
 		    LEFT JOIN middleman_item_workflow_state w
@@ -330,8 +334,8 @@ func (d *DB) ListItemWorkflowStates(
 		           w.updated_at, COALESCE(w.updated_source, '') AS updated_source,
 		           COALESCE(w.updated_actor, '') AS updated_actor,
 		           COALESCE(w.updated_reason, '') AS updated_reason,
-		           CAST(COALESCE(w.updated_at, i.last_activity_at) AS TEXT) AS sort_key,
-		           CAST(i.last_activity_at AS TEXT) AS activity_key
+		           printf('%%016d', CAST((julianday(replace(substr(COALESCE(w.updated_at, i.last_activity_at), 1, 19), 'T', ' ')) - 2440587.5) * 86400000 AS INTEGER)) AS sort_key,
+		           printf('%%016d', CAST((julianday(replace(substr(i.last_activity_at, 1, 19), 'T', ' ')) - 2440587.5) * 86400000 AS INTEGER)) AS activity_key
 		    FROM middleman_issues i
 		    JOIN middleman_repos r ON r.id = i.repo_id
 		    LEFT JOIN middleman_item_workflow_state w

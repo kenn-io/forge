@@ -206,6 +206,7 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 		if excludeWorkflow[status] {
 			continue
 		}
+		s.enrichCandidateStack(ctx, &cand)
 		candidates = append(candidates, cand)
 		if len(candidates) > limit {
 			capped = true
@@ -385,7 +386,6 @@ func (s *Server) buildCandidate(
 			Workflow:  workflowForCandidate(group.key, workflows, row.KanbanStatus),
 			Activity:  group.activity,
 			Workspace: workspace,
-			Stack:     s.stackForCandidate(ctx, item),
 			Cache: candidateCache{
 				DetailLoaded:    row.DetailLoaded,
 				DetailFetchedAt: row.DetailFetchedAt,
@@ -414,6 +414,13 @@ func (s *Server) buildCandidate(
 	default:
 		return candidate{}, false
 	}
+}
+
+func (s *Server) enrichCandidateStack(ctx context.Context, cand *candidate) {
+	if cand == nil || cand.Item.Type != "pr" {
+		return
+	}
+	cand.Stack = s.stackForCandidate(ctx, cand.Item)
 }
 
 func (s *Server) stackForCandidate(ctx context.Context, item itemRef) candidateStack {

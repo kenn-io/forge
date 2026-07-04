@@ -321,7 +321,7 @@ func (s *Server) listItemsByWorkflowState(
 		query.Set("cursor", in.Cursor)
 	}
 	var resp daemonWorkflowStateResponse
-	if err := s.daemon.getJSON(ctx, "/api/v1/workflow-state", query, &resp); err != nil {
+	if err := s.getWorkflowStateJSON(ctx, query, &resp); err != nil {
 		return listByWorkflowOutput{}, err
 	}
 	out := listByWorkflowOutput{

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"sort"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -66,7 +67,10 @@ func (s *Server) getStackContext(
 	var stack daemonFullStackContext
 	if err := s.daemon.getJSON(ctx, itemPath("pulls", in.Item)+"/stack", nil, &stack); err != nil {
 		var derr *daemonError
-		if errors.As(err, &derr) && derr.Kind == "not_found" {
+		if errors.As(err, &derr) &&
+			derr.Kind == "not_found" &&
+			derr.Code == "notFound" &&
+			strings.Contains(derr.Message, "not part of a stack") {
 			return getStackContextOutput{Present: false}, nil
 		}
 		return getStackContextOutput{}, err
@@ -128,7 +132,7 @@ func (s *Server) stackWorkflowStatuses(
 	statuses := map[int]string{}
 	for {
 		var resp daemonWorkflowStateResponse
-		if err := s.daemon.getJSON(ctx, "/api/v1/workflow-state", query, &resp); err != nil {
+		if err := s.getWorkflowStateJSON(ctx, query, &resp); err != nil {
 			return nil, err
 		}
 		for _, item := range resp.Items {

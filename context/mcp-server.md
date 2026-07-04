@@ -44,10 +44,14 @@ segment.
 It should not be documented or treated as full body/comment search unless those
 daemon list endpoints explicitly support those fields.
 
-`middleman_get_item_diff` fetches `/files` for the summary and validates that
-the `/diff` file identities and summary metadata match before writing a temp
-file. Mismatches return `diff_incomplete` with field/path details instead of a
-partial temp file. The daemon's gitclone diff parser must not silently omit
+`middleman_get_item_diff` uses `/files` only for summary-only calls. When
+`emit_diff_file` is true, `internal/mcpserver/tools_diff.go::getItemDiff`
+fetches `/diff` once and builds both the returned summary and temp file from
+that single daemon response, so MCP clients never receive summary metadata from
+one diff snapshot and patch text from another. Temp-file names are deterministic
+per item but include a hash of the full provider/host/owner/name/number tuple
+(`internal/mcpserver/tools_diff.go::diffFileName`) so sanitized nested owner
+paths cannot collide. The daemon's gitclone diff parser must not silently omit
 changed files when raw metadata and parsed patch sections disagree; unmatched
 patch sections are preserved as structured diff rows so incomplete data is
 visible instead of hidden.

@@ -20,6 +20,7 @@ import (
 
 type daemonError struct {
 	Kind    string
+	Code    string
 	Message string
 	Details map[string]any
 }
@@ -263,5 +264,5 @@ func problemToDaemonError(resp *http.Response) error {
 	case resp.StatusCode >= 400 && resp.StatusCode < 500:
 		kind = "invalid_request"
 	}
-	return &daemonError{Kind: kind, Message: message, Details: prob.Details}
+	return &daemonError{Kind: kind, Code: prob.Code, Message: message, Details: prob.Details}
 }

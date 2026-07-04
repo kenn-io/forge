@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,17 @@ func TestItemWorkflowStateCRUD(t *testing.T) {
 	assert.Equal("mcp", st.UpdatedSource)
 	assert.Equal("agent-a", st.UpdatedActor)
 	assert.Equal("recent force push", st.UpdatedReason)
+
+	var rawUpdatedAt string
+	require.NoError(d.ro.QueryRowContext(ctx,
+		`SELECT updated_at FROM middleman_item_workflow_state
+		  WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
+		repoID, ItemTypePR, 1,
+	).Scan(&rawUpdatedAt))
+	assert.Contains(rawUpdatedAt, "T")
+	assert.True(strings.HasSuffix(rawUpdatedAt, "Z"), "workflow updated_at should use UTC RFC3339, got %q", rawUpdatedAt)
+	_, err = time.Parse(time.RFC3339, rawUpdatedAt)
+	require.NoError(err)
 
 	require.NoError(d.EnsureItemWorkflowState(ctx, repoID, ItemTypePR, 1))
 	st, err = d.GetItemWorkflowState(ctx, repoID, ItemTypePR, 1)
@@ -263,6 +275,32 @@ func TestListItemWorkflowStates(t *testing.T) {
 	_, _, err = d.ListItemWorkflowStates(ctx, ListWorkflowStatesOpts{States: []string{"triaged"}})
 	require.Error(err)
 	assert.Contains(err.Error(), "invalid item workflow status")
+}
+
+func TestListItemWorkflowStatesOrdersMixedTimestampFormats(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := time.Date(2026, 7, 4, 17, 0, 0, 0, time.UTC)
+	insertTestMR(t, d, repoID, 1, "older activity", base.Add(-30*time.Minute))
+	insertTestMR(t, d, repoID, 2, "newer workflow", base.Add(-90*time.Minute))
+	_, err := d.rw.ExecContext(ctx,
+		`INSERT INTO middleman_item_workflow_state
+		    (repo_id, item_type, item_number, status, updated_at)
+		 VALUES (?, 'pr', 2, 'reviewing', ?)`,
+		repoID, "2026-07-04 17:00:00",
+	)
+	require.NoError(err)
+
+	rows, _, err := d.ListItemWorkflowStates(ctx, ListWorkflowStatesOpts{})
+	require.NoError(err)
+	require.Len(rows, 2)
+	assert.Equal(2, rows[0].Number)
+	assert.Equal("reviewing", rows[0].Status)
+	assert.Equal(1, rows[1].Number)
 }
 
 func TestListItemWorkflowStatesCursorPagination(t *testing.T) {

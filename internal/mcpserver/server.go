@@ -22,6 +22,7 @@ type Server struct {
 	opts     Options
 	daemon   *daemonClient
 	mcp      *mcp.Server
+	diffMu   sync.Mutex
 	diffs    *diffFileStore
 	httpMu   sync.RWMutex
 	httpAddr string
@@ -58,6 +59,8 @@ func (s *Server) RunStdio(ctx context.Context) error {
 }
 
 func (s *Server) Close() error {
+	s.diffMu.Lock()
+	defer s.diffMu.Unlock()
 	if s.diffs != nil {
 		return s.diffs.Close()
 	}

@@ -164,6 +164,9 @@ func TestFindReviewCandidatesPopulatesWorkflowMetadata(t *testing.T) {
 		_, _ = w.Write([]byte(`[]`))
 	})
 	mux.HandleFunc("/api/v1/workflow-state", func(w http.ResponseWriter, r *http.Request) {
+		if writeWorkflowProbeResponse(w, r) {
+			return
+		}
 		query := r.URL.Query()
 		assert.Equal("github|github.com/acme/widget", query.Get("repo"))
 		assert.ElementsMatch([]string{"pr"}, query["item_type"])
@@ -197,6 +200,7 @@ func TestFindReviewCandidatesPopulatesWorkflowMetadata(t *testing.T) {
 }
 
 func TestFindReviewCandidatesWorkflowFilters(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/activity", func(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +229,12 @@ func TestFindReviewCandidatesWorkflowFilters(t *testing.T) {
 		_, _ = w.Write([]byte(`[]`))
 	})
 	handleEmptyWorkflowState(mux)
+	stackCalls := 0
+	mux.HandleFunc("/api/v1/host/github.com/pulls/github/acme/widget/42/stack", func(w http.ResponseWriter, _ *http.Request) {
+		stackCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"stack_id":1,"stack_name":"stack","position":1,"size":1,"health":"ok","members":[]}`))
+	})
 	s := newMCPTestServer(t, mux)
 
 	out, err := s.findReviewCandidates(t.Context(), findCandidatesInput{
@@ -232,12 +242,14 @@ func TestFindReviewCandidatesWorkflowFilters(t *testing.T) {
 	})
 	require.NoError(err)
 	require.Empty(out.Candidates)
+	assert.Equal(0, stackCalls)
 
 	out, err = s.findReviewCandidates(t.Context(), findCandidatesInput{
 		WorkflowStates: []string{"reviewing"},
 	})
 	require.NoError(err)
 	require.Len(out.Candidates, 1)
+	assert.Equal(1, stackCalls)
 }
 
 func TestFindReviewCandidatesDraftHandling(t *testing.T) {

@@ -2965,16 +2965,20 @@ type SetReviewersRequest struct {
 // SetWorkflowStateBody defines model for SetWorkflowStateBody.
 type SetWorkflowStateBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema         *string                             `json:"$schema,omitempty"`
-	Actor          *string                             `json:"actor,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+	Actor  *string `json:"actor,omitempty"`
+
+	// ExpectedStatus Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
 	ExpectedStatus *SetWorkflowStateBodyExpectedStatus `json:"expected_status,omitempty"`
-	Force          *bool                               `json:"force,omitempty"`
-	Reason         *string                             `json:"reason,omitempty"`
-	Source         *string                             `json:"source,omitempty"`
-	Status         SetWorkflowStateBodyStatus          `json:"status"`
+
+	// Force Set true only for a deliberate unconditional override when expected_status is omitted. This is mutually exclusive with expected_status.
+	Force  *bool                      `json:"force,omitempty"`
+	Reason *string                    `json:"reason,omitempty"`
+	Source *string                    `json:"source,omitempty"`
+	Status SetWorkflowStateBodyStatus `json:"status"`
 }
 
-// SetWorkflowStateBodyExpectedStatus defines model for SetWorkflowStateBody.ExpectedStatus.
+// SetWorkflowStateBodyExpectedStatus Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
 type SetWorkflowStateBodyExpectedStatus string
 
 // SetWorkflowStateBodyStatus defines model for SetWorkflowStateBody.Status.

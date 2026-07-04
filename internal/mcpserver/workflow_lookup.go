@@ -48,7 +48,7 @@ func (s *Server) workflowStatesForKeys(
 		for {
 			query := workflowLookupQuery(filter, group.itemType, cursor)
 			var resp daemonWorkflowStateResponse
-			if err := s.daemon.getJSON(ctx, "/api/v1/workflow-state", query, &resp); err != nil {
+			if err := s.getWorkflowStateJSON(ctx, query, &resp); err != nil {
 				return nil, err
 			}
 			for _, row := range resp.Items {
@@ -68,6 +68,13 @@ func (s *Server) workflowStatesForKeys(
 		}
 	}
 	return out, nil
+}
+
+func (s *Server) getWorkflowStateJSON(ctx context.Context, query url.Values, out any) error {
+	if err := s.daemon.ensureWorkflowStateSupported(ctx); err != nil {
+		return err
+	}
+	return s.daemon.getJSON(ctx, "/api/v1/workflow-state", query, out)
 }
 
 func workflowLookupQuery(repo string, itemType string, cursor string) url.Values {

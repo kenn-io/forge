@@ -4929,6 +4929,16 @@ func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*ge
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
+	ref := repoNumberPathRef{
+		repoID:       repo.ID,
+		owner:        repo.Owner,
+		name:         repo.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
+	if _, err := s.lookupMRID(ctx, ref); err != nil {
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+	}
 	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, problemInternal("get stack for pr failed")

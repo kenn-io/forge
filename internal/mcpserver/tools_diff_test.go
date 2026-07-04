@@ -57,6 +57,44 @@ func TestGetItemDiffSummaryOnly(t *testing.T) {
 	assert.NotContains(string(raw), `"diff_file"`)
 }
 
+func TestGetItemDiffEmitUsesSingleDiffSnapshot(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	filesCalls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42/files", func(w http.ResponseWriter, _ *http.Request) {
+		filesCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"stale":false,"files":[{
+			"path":"src/app.go","status":"modified","additions":2,"deletions":1
+		}]}`))
+	})
+	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42/diff", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"stale":true,"files":[{
+			"path":"src/app.go","status":"modified","additions":2,"deletions":1,
+			"patch":"diff --git a/src/app.go b/src/app.go\n--- a/src/app.go\n+++ b/src/app.go\n@@ -1 +1 @@\n-old\n+new\n"
+		}]}`))
+	})
+	s := newMCPTestServer(t, mux)
+
+	out, err := s.getItemDiff(t.Context(), getItemDiffInput{
+		Item:         itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
+		EmitDiffFile: true,
+	})
+
+	require.NoError(err)
+	assert.Equal(0, filesCalls, "emitted diffs must not mix /files and /diff snapshots")
+	assert.True(out.Stale)
+	assert.Equal(2, out.TotalAdditions)
+	require.Len(out.Files, 1)
+	assert.Equal("src/app.go", out.Files[0].Path)
+	require.NotNil(out.DiffFile)
+	data, err := os.ReadFile(out.DiffFile.Path)
+	require.NoError(err)
+	assert.Contains(string(data), "diff --git a/src/app.go b/src/app.go")
+}
+
 func TestGetItemDiffWritesVerbatimDiffFileAndOverwrites(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -128,6 +166,33 @@ func TestGetItemDiffWritesVerbatimDiffFileAndOverwrites(t *testing.T) {
 	assert.Equal("diff --git a/src/newer.go b/src/newer.go\nnew file mode 100644\n", string(updated))
 }
 
+func TestDiffFileNameUsesCollisionResistantIdentity(t *testing.T) {
+	assert := assert.New(t)
+
+	first := diffFileName(itemRefInput{
+		Type:         "pr",
+		Provider:     "gitlab",
+		PlatformHost: "git.example.com",
+		Owner:        "group/sub",
+		Name:         "project",
+		Number:       7,
+	})
+	second := diffFileName(itemRefInput{
+		Type:         "pr",
+		Provider:     "gitlab",
+		PlatformHost: "git.example.com",
+		Owner:        "group_sub",
+		Name:         "project",
+		Number:       7,
+	})
+
+	assert.NotEqual(first, second)
+	assert.NotContains(first, "/")
+	assert.NotContains(second, "/")
+	assert.True(strings.HasSuffix(first, ".diff"))
+	assert.True(strings.HasSuffix(second, ".diff"))
+}
+
 func TestGetItemDiffRejectsIssueAndEmptyPatch(t *testing.T) {
 	require := require.New(t)
 
@@ -153,71 +218,6 @@ func TestGetItemDiffRejectsIssueAndEmptyPatch(t *testing.T) {
 	})
 	require.Error(err)
 	assertDaemonErrorKind(t, err, "daemon_error")
-}
-
-func TestGetItemDiffRejectsMismatchedSummaryAndDiffFiles(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42/files", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"files":[
-			{"path":"src/one.go","status":"modified","additions":2,"deletions":1},
-			{"path":"src/two.go","status":"added","additions":1,"deletions":0}
-		]}`))
-	})
-	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42/diff", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"files":[
-			{"path":"src/one.go","status":"modified","patch":"diff --git a/src/one.go b/src/one.go\n"}
-		]}`))
-	})
-	s := newMCPTestServer(t, mux)
-
-	_, err := s.getItemDiff(t.Context(), getItemDiffInput{
-		Item:         itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
-		EmitDiffFile: true,
-	})
-
-	assertDaemonErrorKind(t, err, "diff_incomplete")
-	if s.diffs != nil {
-		entries, readErr := os.ReadDir(s.diffs.dir)
-		require.NoError(t, readErr)
-		assert.Empty(t, entries)
-	}
-}
-
-func TestGetItemDiffRejectsMismatchedSummaryAndDiffMetadata(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42/files", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"files":[{
-			"path":"src/one.go","status":"modified",
-			"is_binary":false,"is_generated":false,"additions":2,"deletions":1
-		}]}`))
-	})
-	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42/diff", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"files":[{
-			"path":"src/one.go","status":"modified",
-			"is_binary":false,"is_generated":false,"additions":1,"deletions":1,
-			"patch":"diff --git a/src/one.go b/src/one.go\n"
-		}]}`))
-	})
-	s := newMCPTestServer(t, mux)
-
-	_, err := s.getItemDiff(t.Context(), getItemDiffInput{
-		Item:         itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
-		EmitDiffFile: true,
-	})
-
-	assertDaemonErrorKind(t, err, "diff_incomplete")
-	var derr *daemonError
-	require.ErrorAs(err, &derr)
-	assert.Equal("src/one.go", derr.Details["path"])
-	assert.Equal("additions", derr.Details["field"])
-	assert.Equal(2, derr.Details["summary"])
-	assert.Equal(1, derr.Details["diff"])
 }
 
 func TestGetItemDiffReportsUnavailableAndTooLarge(t *testing.T) {
@@ -254,6 +254,39 @@ func TestGetItemDiffReportsUnavailableAndTooLarge(t *testing.T) {
 		require.NoError(readErr)
 		assert.Empty(entries)
 	}
+}
+
+func TestGetItemDiffPreservesIdentityNotFound(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/pulls/github/acme/missing/1/files", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"status":404,"code":"repoNotFound","detail":"repo not found"}`))
+	})
+	mux.HandleFunc("/api/v1/pulls/github/acme/widget/99/diff", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"status":404,"code":"pullNotFound","detail":"pull request not found"}`))
+	})
+	s := newMCPTestServer(t, mux)
+
+	_, err := s.getItemDiff(t.Context(), getItemDiffInput{
+		Item: itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "missing", Number: 1},
+	})
+	assertDaemonErrorKind(t, err, "not_found")
+	var derr *daemonError
+	require.ErrorAs(err, &derr)
+	assert.Equal("repoNotFound", derr.Code)
+
+	_, err = s.getItemDiff(t.Context(), getItemDiffInput{
+		Item:         itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 99},
+		EmitDiffFile: true,
+	})
+	assertDaemonErrorKind(t, err, "not_found")
+	require.ErrorAs(err, &derr)
+	assert.Equal("pullNotFound", derr.Code)
 }
 
 func TestDiffFileStoreCloseRemovesDirectory(t *testing.T) {

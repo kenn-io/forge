@@ -21,7 +21,7 @@ func TestGetStackContextRejectsIssueAndTreatsNotFoundAsAbsent(t *testing.T) {
 	mux.HandleFunc("/api/v1/pulls/github/acme/widget/42/stack", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"status":404,"code":"not_found","detail":"PR is not part of a stack"}`))
+		_, _ = w.Write([]byte(`{"status":404,"code":"notFound","detail":"PR is not part of a stack"}`))
 	})
 	s = newMCPTestServer(t, mux)
 	out, err := s.getStackContext(t.Context(), getStackContextInput{
@@ -30,6 +30,27 @@ func TestGetStackContextRejectsIssueAndTreatsNotFoundAsAbsent(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(out.Present)
 	assert.Empty(out.Members)
+}
+
+func TestGetStackContextPropagatesMissingPull(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/pulls/github/acme/widget/99/stack", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"status":404,"code":"pullNotFound","detail":"pull request not found"}`))
+	})
+	s := newMCPTestServer(t, mux)
+
+	_, err := s.getStackContext(t.Context(), getStackContextInput{
+		Item: itemRefInput{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 99},
+	})
+
+	var derr *daemonError
+	require.ErrorAs(err, &derr)
+	assert.Equal("not_found", derr.Kind)
+	assert.Equal("pullNotFound", derr.Code)
 }
 
 func TestGetStackContextJoinsWorkflowStateAndMarksRequestedMember(t *testing.T) {
@@ -48,6 +69,9 @@ func TestGetStackContextJoinsWorkflowStateAndMarksRequestedMember(t *testing.T) 
 		}`))
 	})
 	mux.HandleFunc("/api/v1/workflow-state", func(w http.ResponseWriter, r *http.Request) {
+		if writeWorkflowProbeResponse(w, r) {
+			return
+		}
 		query := r.URL.Query()
 		assert.Equal("github|github.com/acme/widget", query.Get("repo"))
 		assert.Equal([]string{"pr"}, query["item_type"])
@@ -96,6 +120,9 @@ func TestGetStackContextPagesWorkflowStateUntilMembersAreFound(t *testing.T) {
 		}`))
 	})
 	mux.HandleFunc("/api/v1/workflow-state", func(w http.ResponseWriter, r *http.Request) {
+		if writeWorkflowProbeResponse(w, r) {
+			return
+		}
 		query := r.URL.Query()
 		cursors = append(cursors, query.Get("cursor"))
 		assert.Equal("200", query.Get("limit"))

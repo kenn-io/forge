@@ -1991,7 +1991,13 @@ type repoFilterInput struct {
 	Name         string `json:"name,omitempty"`
 }
 // queryValue renders "provider|platform_host/owner/name" for the daemon's
-// repo query param ("" when empty).
+// repo query param ("" when the filter is empty). The daemon filter format
+// REQUIRES the host segment, but platform_host is optional on tool inputs:
+// when it is empty, resolve the provider's default host via
+// platform.DefaultHost (internal/platform/metadata.go) before rendering —
+// never emit a host-less filter, it would be malformed or unmatchable.
+// Required test: {provider: "github", owner: "acme", name: "widget"} with
+// no platform_host renders "github|github.com/acme/widget".
 func (r repoFilterInput) queryValue() string
 
 // itemRef is the compact provider-aware item identity on every output.
@@ -2216,8 +2222,17 @@ type candidate struct {
 	Cache    candidateCache     `json:"cache"`
 }
 type candidateWorkflow struct {
-	Status, UpdatedAt, UpdatedSource, UpdatedActor, UpdatedReason string
+	Status        string `json:"status"`
+	UpdatedAt     string `json:"updated_at,omitempty"`
+	UpdatedSource string `json:"updated_source,omitempty"`
+	UpdatedActor  string `json:"updated_actor,omitempty"`
+	UpdatedReason string `json:"updated_reason,omitempty"`
 }
+// EVERY MCP output struct in the companion must carry explicit snake_case
+// json tags matching the documented response contract — Go-name keys leaking
+// onto the MCP wire is a contract bug. Audit all output structs in Tasks
+// 8-12 for missing tags (repoRow in Task 8 has the same shorthand problem);
+// add a marshaling test per tool asserting the documented key names.
 type candidateActivity struct {
 	LatestAt   string   `json:"latest_at"`
 	EventCount int      `json:"event_count"`

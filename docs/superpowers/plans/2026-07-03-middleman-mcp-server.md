@@ -1743,11 +1743,14 @@ func (c *daemonClient) problemToError(resp *http.Response) error {
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 		kind = "daemon_auth"
-	case resp.StatusCode == http.StatusNotFound && prob.Code == "notFound":
-		// Route absent: daemon predates this companion.
-		kind = "version_mismatch"
-		msg = "daemon does not support this route; upgrade middleman: " + msg
 	case resp.StatusCode == http.StatusNotFound:
+		// Always plain not_found here. Do NOT infer version_mismatch
+		// from code "notFound": existing daemon routes use that code
+		// for ordinary domain states (diff unavailable, review thread
+		// missing, item not found — e.g. huma_routes.go:1529), so the
+		// generic mapper cannot distinguish a missing route from a
+		// missing resource. Version detection happens only in the
+		// explicit capability probe below.
 		kind = "not_found"
 	case resp.StatusCode == http.StatusConflict:
 		kind = "conflict"
@@ -1776,7 +1779,7 @@ func (c *daemonClient) putJSON(ctx context.Context, path string, body, out any) 
 }
 ```
 
-Verify against huma's actual 404-for-unknown-route body: huma emits its own 404 problem for unregistered paths — check the real `code` (it may be absent, not `"notFound"`). Adjust the `version_mismatch` detection to whatever an unregistered route actually returns (e.g. missing `code` on a 404 for a `/workflow-state` path). Daemon discovery and capability checking are LAZY, uniformly: `New` never contacts the daemon, and `middleman mcp` starts successfully with no daemon running (tools then return `daemon_unavailable`). The workflow-state capability probe (GET `/api/v1/workflow-state?limit=1`) runs on the first call to either workflow tool, after a successful discovery; on `version_mismatch`/`not_found` the result is cached and both workflow tools return a version/capability error naming the missing route (spec: do not silently downgrade). No eager startup probe exists on any transport — stdio and HTTP behave identically.
+Version-mismatch detection lives ONLY in the workflow capability probe, never in the generic mapper: the probe is `GET /api/v1/workflow-state?limit=1`, and that route with a valid query cannot 404 for domain reasons — so ANY 404 from the probe (regardless of problem `code`) means the route is missing and the daemon predates this companion; the probe converts it to `daemonError{Kind: "version_mismatch", Message: "daemon does not support /workflow-state; upgrade middleman"}`. Ordinary `not_found` errors from other routes flow to tool-specific handlers (diff tool → `diff_unavailable`, stack tool → `present: false`, item tools → item-not-found). Daemon discovery and capability checking are LAZY, uniformly: `New` never contacts the daemon, and `middleman mcp` starts successfully with no daemon running (tools then return `daemon_unavailable`). The workflow-state capability probe (GET `/api/v1/workflow-state?limit=1`) runs on the first call to either workflow tool, after a successful discovery; on `version_mismatch`/`not_found` the result is cached and both workflow tools return a version/capability error naming the missing route (spec: do not silently downgrade). No eager startup probe exists on any transport — stdio and HTTP behave identically.
 
 `internal/mcpserver/server.go`:
 
@@ -2710,7 +2713,20 @@ package main
 
 // TestMCPStdioE2E:
 // 1. bin := buildMiddleman(t); dataDir, cfgPath via writeMinimalConfig
-//    (no providers configured; sync idle).
+//    PLUS a tracked-repo entry for the seeded repo. This is required:
+//    the daemon filters repo summaries, activity, pulls, and issues
+//    through the configured tracked repo set, so a repo that exists
+//    only as a SQLite row is invisible to every list surface and the
+//    list_repos/candidate/search/context assertions below would
+//    fail. Add the repo to config.toml using the repo syntax from
+//    internal/config (read how repos are declared there), keeping the
+//    test hermetic: use a self-hosted provider host that resolves to
+//    an unroutable loopback endpoint (e.g. a gitea-like host at
+//    127.0.0.1:1) or leave the token env unset so startup sync fails
+//    fast with a recorded last_sync_error and never leaves the
+//    machine; cached SQLite data still serves all read routes. The
+//    seeded DB rows must use the exact same (platform, platform_host,
+//    owner, name) identity as the config entry.
 // 2. Start the daemon: procutil.Command(bin, "--config", cfgPath),
 //    waitForFile for runtimelock.MetadataPath(dataDir) and
 //    AuthTokenPath. t.Cleanup: SIGTERM.
@@ -2752,9 +2768,9 @@ package main
 //     proving route selection, real JSON shape, and temp-file output
 //     against the real daemon, not fake-daemon mocks). The daemon's
 //     /files and /diff routes read ONLY from the clone manager's
-//     deterministic local clone path — with no providers configured
-//     and sync idle, clone-URL fields on DB rows are never consulted,
-//     so the fixture must populate that path directly. Sequence:
+//     deterministic local clone path — with the tracked repo's sync
+//     failing fast against its unroutable host, clone-URL fields are
+//     never fetched, so the fixture must populate that path directly. Sequence:
 //     build a worktree with gitcmd.New(), commit base then head (per
 //     the setupGitLabCloneFixture pattern,
 //     internal/server/e2etest/gitlab_sync_pin_test.go:36-62), then

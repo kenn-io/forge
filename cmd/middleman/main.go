@@ -207,6 +207,8 @@ func runCLI(args []string, stdout io.Writer) error {
 				os.Exit(exitCodeForAPIVerb(err))
 			}
 			return nil
+		case "mcp":
+			return runMCPCLI(args[1:])
 		case "serve":
 			return serve.Run(args[1:], runServer)
 		}

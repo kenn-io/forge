@@ -290,6 +290,54 @@ func (e ProblemErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for SetWorkflowStateBodyExpectedStatus.
+const (
+	SetWorkflowStateBodyExpectedStatusAwaitingMerge SetWorkflowStateBodyExpectedStatus = "awaiting_merge"
+	SetWorkflowStateBodyExpectedStatusNew           SetWorkflowStateBodyExpectedStatus = "new"
+	SetWorkflowStateBodyExpectedStatusReviewing     SetWorkflowStateBodyExpectedStatus = "reviewing"
+	SetWorkflowStateBodyExpectedStatusWaiting       SetWorkflowStateBodyExpectedStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the SetWorkflowStateBodyExpectedStatus enum.
+func (e SetWorkflowStateBodyExpectedStatus) Valid() bool {
+	switch e {
+	case SetWorkflowStateBodyExpectedStatusAwaitingMerge:
+		return true
+	case SetWorkflowStateBodyExpectedStatusNew:
+		return true
+	case SetWorkflowStateBodyExpectedStatusReviewing:
+		return true
+	case SetWorkflowStateBodyExpectedStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetWorkflowStateBodyStatus.
+const (
+	SetWorkflowStateBodyStatusAwaitingMerge SetWorkflowStateBodyStatus = "awaiting_merge"
+	SetWorkflowStateBodyStatusNew           SetWorkflowStateBodyStatus = "new"
+	SetWorkflowStateBodyStatusReviewing     SetWorkflowStateBodyStatus = "reviewing"
+	SetWorkflowStateBodyStatusWaiting       SetWorkflowStateBodyStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the SetWorkflowStateBodyStatus enum.
+func (e SetWorkflowStateBodyStatus) Valid() bool {
+	switch e {
+	case SetWorkflowStateBodyStatusAwaitingMerge:
+		return true
+	case SetWorkflowStateBodyStatusNew:
+		return true
+	case SetWorkflowStateBodyStatusReviewing:
+		return true
+	case SetWorkflowStateBodyStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TerminalRenderer.
 const (
 	GhosttyWeb TerminalRenderer = "ghostty-web"
@@ -2917,13 +2965,19 @@ type SetReviewersRequest struct {
 // SetWorkflowStateBody defines model for SetWorkflowStateBody.
 type SetWorkflowStateBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema         *string `json:"$schema,omitempty"`
-	Actor          *string `json:"actor,omitempty"`
-	ExpectedStatus *string `json:"expected_status,omitempty"`
-	Reason         *string `json:"reason,omitempty"`
-	Source         *string `json:"source,omitempty"`
-	Status         string  `json:"status"`
+	Schema         *string                             `json:"$schema,omitempty"`
+	Actor          *string                             `json:"actor,omitempty"`
+	ExpectedStatus *SetWorkflowStateBodyExpectedStatus `json:"expected_status,omitempty"`
+	Reason         *string                             `json:"reason,omitempty"`
+	Source         *string                             `json:"source,omitempty"`
+	Status         SetWorkflowStateBodyStatus          `json:"status"`
 }
+
+// SetWorkflowStateBodyExpectedStatus defines model for SetWorkflowStateBody.ExpectedStatus.
+type SetWorkflowStateBodyExpectedStatus string
+
+// SetWorkflowStateBodyStatus defines model for SetWorkflowStateBody.Status.
+type SetWorkflowStateBodyStatus string
 
 // SetWorktreeHiddenInputBody defines model for SetWorktreeHiddenInputBody.
 type SetWorktreeHiddenInputBody struct {

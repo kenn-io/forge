@@ -6869,10 +6869,12 @@ export interface components {
              */
             readonly $schema?: string;
             actor?: string;
-            expected_status?: string;
+            /** @enum {string} */
+            expected_status?: "new" | "reviewing" | "waiting" | "awaiting_merge";
             reason?: string;
             source?: string;
-            status: string;
+            /** @enum {string} */
+            status: "new" | "reviewing" | "waiting" | "awaiting_merge";
         };
         SetWorktreeHiddenInputBody: {
             /**
@@ -16812,6 +16814,8 @@ export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<compon
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
 export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceNotFound", "worktreeDirty"];
+export const setWorkflowStateBodyExpected_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"]["expected_status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const setWorkflowStateBodyStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SetWorkflowStateBody"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const terminalRendererValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Terminal"]["renderer"]> = ["xterm", "ghostty-web"];
 export const workflowStateChangeResponsePrevious_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateChangeResponse"]["previous_status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workflowStateChangeResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateChangeResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];

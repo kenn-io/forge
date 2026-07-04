@@ -11,6 +11,7 @@ import (
 type repoFilterInput struct {
 	Provider     string `json:"provider,omitempty" jsonschema:"provider kind, such as github or gitlab"`
 	PlatformHost string `json:"platform_host,omitempty" jsonschema:"provider host; defaults to the provider public host"`
+	RepoPath     string `json:"repo_path,omitempty" jsonschema:"full repository path from middleman_list_repos; preferred for nested namespaces"`
 	Owner        string `json:"owner,omitempty" jsonschema:"repository owner or namespace"`
 	Name         string `json:"name,omitempty" jsonschema:"repository name"`
 }
@@ -18,19 +19,14 @@ type repoFilterInput struct {
 func (r repoFilterInput) queryValue() (string, error) {
 	provider := strings.TrimSpace(r.Provider)
 	host := strings.TrimSpace(r.PlatformHost)
+	repoPath := strings.Trim(strings.TrimSpace(r.RepoPath), "/")
 	owner := strings.Trim(strings.TrimSpace(r.Owner), "/")
 	name := strings.Trim(strings.TrimSpace(r.Name), "/")
-	if provider == "" && host == "" && owner == "" && name == "" {
+	if provider == "" && host == "" && repoPath == "" && owner == "" && name == "" {
 		return "", nil
 	}
 	if provider == "" {
 		return "", fmt.Errorf("repo provider is required")
-	}
-	if owner == "" {
-		return "", fmt.Errorf("repo owner is required")
-	}
-	if name == "" {
-		return "", fmt.Errorf("repo name is required")
 	}
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
@@ -42,6 +38,15 @@ func (r repoFilterInput) queryValue() (string, error) {
 	}
 	if host == "" {
 		host = meta.DefaultHost
+	}
+	if repoPath != "" {
+		return fmt.Sprintf("%s|%s/%s", kind, host, repoPath), nil
+	}
+	if owner == "" {
+		return "", fmt.Errorf("repo owner is required")
+	}
+	if name == "" {
+		return "", fmt.Errorf("repo name is required")
 	}
 	return fmt.Sprintf("%s|%s/%s/%s", kind, host, owner, name), nil
 }

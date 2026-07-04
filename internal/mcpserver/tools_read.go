@@ -202,22 +202,25 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 	}
 
 	results := make([]searchResult, 0, limit)
+	sourceCapped := false
 	if includePR {
-		pulls, err := s.searchPulls(ctx, in.Query, state, repo, limit)
+		pulls, capped, err := s.searchPulls(ctx, in.Query, state, repo, limit)
 		if err != nil {
 			return searchItemsOutput{}, err
 		}
+		sourceCapped = sourceCapped || capped
 		results = append(results, pulls...)
 	}
 	if includeIssue && state != "merged" {
-		issues, err := s.searchIssues(ctx, in.Query, state, repo, limit)
+		issues, capped, err := s.searchIssues(ctx, in.Query, state, repo, limit)
 		if err != nil {
 			return searchItemsOutput{}, err
 		}
+		sourceCapped = sourceCapped || capped
 		results = append(results, issues...)
 	}
 	sortSearchResults(results)
-	capped := len(results) > limit
+	capped := sourceCapped || len(results) > limit
 	if capped {
 		results = results[:limit]
 	}
@@ -230,7 +233,47 @@ func (s *Server) searchPulls(
 	state string,
 	repo string,
 	limit int,
-) ([]searchResult, error) {
+) ([]searchResult, bool, error) {
+	pageSize := limit + 1
+	offset := 0
+	out := make([]searchResult, 0, pageSize)
+	for len(out) <= limit {
+		rows, err := s.fetchPullSearchPage(ctx, text, state, repo, pageSize, offset)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, row := range rows {
+			if state == "merged" && row.State != "merged" {
+				continue
+			}
+			if state == "closed" && row.State != "closed" {
+				continue
+			}
+			out = append(out, searchResult{
+				Item:           row.itemRef(),
+				WorkflowStatus: workflowStatusOrNew(row.KanbanStatus),
+				LastActivityAt: formatMCPTime(row.LastActivityAt),
+			})
+			if len(out) > limit {
+				return out, true, nil
+			}
+		}
+		if len(rows) < pageSize {
+			return out, false, nil
+		}
+		offset += len(rows)
+	}
+	return out, len(out) > limit, nil
+}
+
+func (s *Server) fetchPullSearchPage(
+	ctx context.Context,
+	text string,
+	state string,
+	repo string,
+	limit int,
+	offset int,
+) ([]daemonPull, error) {
 	query := url.Values{}
 	query.Set("q", text)
 	query.Set("state", state)
@@ -238,6 +281,9 @@ func (s *Server) searchPulls(
 		query.Set("state", "all")
 	}
 	query.Set("limit", fmt.Sprintf("%d", limit))
+	if offset > 0 {
+		query.Set("offset", fmt.Sprintf("%d", offset))
+	}
 	if repo != "" {
 		query.Set("repo", repo)
 	}
@@ -245,21 +291,7 @@ func (s *Server) searchPulls(
 	if err := s.daemon.getJSON(ctx, "/api/v1/pulls", query, &rows); err != nil {
 		return nil, err
 	}
-	out := make([]searchResult, 0, len(rows))
-	for _, row := range rows {
-		if state == "merged" && row.State != "merged" {
-			continue
-		}
-		if state == "closed" && row.State != "closed" {
-			continue
-		}
-		out = append(out, searchResult{
-			Item:           row.itemRef(),
-			WorkflowStatus: workflowStatusOrNew(row.KanbanStatus),
-			LastActivityAt: formatMCPTime(row.LastActivityAt),
-		})
-	}
-	return out, nil
+	return rows, nil
 }
 
 func (s *Server) searchIssues(
@@ -268,17 +300,17 @@ func (s *Server) searchIssues(
 	state string,
 	repo string,
 	limit int,
-) ([]searchResult, error) {
+) ([]searchResult, bool, error) {
 	query := url.Values{}
 	query.Set("q", text)
 	query.Set("state", state)
-	query.Set("limit", fmt.Sprintf("%d", limit))
+	query.Set("limit", fmt.Sprintf("%d", limit+1))
 	if repo != "" {
 		query.Set("repo", repo)
 	}
 	var rows []daemonIssue
 	if err := s.daemon.getJSON(ctx, "/api/v1/issues", query, &rows); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	out := make([]searchResult, 0, len(rows))
 	for _, row := range rows {
@@ -288,7 +320,7 @@ func (s *Server) searchIssues(
 			LastActivityAt: formatMCPTime(row.LastActivityAt),
 		})
 	}
-	return out, nil
+	return out, len(out) > limit, nil
 }
 
 func itemTypeSelection(values []string) (bool, bool, error) {
@@ -385,8 +417,7 @@ func itemSortKey(item itemRef) string {
 	return strings.Join([]string{
 		item.Provider,
 		item.PlatformHost,
-		item.Owner,
-		item.Name,
+		item.RepoPath,
 		item.Type,
 		fmt.Sprintf("%08d", item.Number),
 	}, "\x1f")

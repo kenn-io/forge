@@ -94,27 +94,16 @@ func (c *daemonClient) discover() error {
 }
 
 func (c *daemonClient) ensureWorkflowStateSupported(ctx context.Context) error {
+	if err := c.discover(); err != nil {
+		return err
+	}
 	c.mu.Lock()
-	needsDiscovery := c.baseURL == ""
-	if !needsDiscovery && c.workflowProbeDone {
+	if c.workflowProbeDone {
 		err := c.workflowProbeErr
 		c.mu.Unlock()
 		return err
 	}
 	c.mu.Unlock()
-
-	if needsDiscovery {
-		if err := c.discover(); err != nil {
-			return err
-		}
-		c.mu.Lock()
-		if c.workflowProbeDone {
-			err := c.workflowProbeErr
-			c.mu.Unlock()
-			return err
-		}
-		c.mu.Unlock()
-	}
 
 	var out struct {
 		Items []any `json:"items"`
@@ -158,7 +147,12 @@ func (c *daemonClient) getJSON(ctx context.Context, path string, query url.Value
 }
 
 func (c *daemonClient) putJSON(ctx context.Context, path string, body, out any) error {
-	return c.do(ctx, http.MethodPut, path, nil, body, out)
+	err := c.do(ctx, http.MethodPut, path, nil, body, out)
+	var derr *daemonError
+	if errors.As(err, &derr) && derr.Kind == "daemon_unavailable" {
+		_ = c.discover()
+	}
+	return err
 }
 
 func (c *daemonClient) do(

@@ -74,6 +74,21 @@ func TestRepoFilterInputQueryValue(t *testing.T) {
 			},
 			want: "gitlab|git.example.com/a/b",
 		},
+		{
+			name: "gitlab nested repo path",
+			filter: repoFilterInput{
+				Provider: "gitlab", PlatformHost: "git.example.com", RepoPath: "Group/SubGroup/Project",
+			},
+			want: "gitlab|git.example.com/Group/SubGroup/Project",
+		},
+		{
+			name: "repo path takes precedence over owner name",
+			filter: repoFilterInput{
+				Provider: "gitlab", PlatformHost: "git.example.com",
+				RepoPath: "Group/SubGroup/Project", Owner: "wrong", Name: "wrong",
+			},
+			want: "gitlab|git.example.com/Group/SubGroup/Project",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -122,7 +137,7 @@ func TestSearchItemsMergesAndOrders(t *testing.T) {
 		query := r.URL.Query()
 		assert.Equal("retry", query.Get("q"))
 		assert.Equal("open", query.Get("state"))
-		assert.Equal("25", query.Get("limit"))
+		assert.Equal("26", query.Get("limit"))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[{
 			"Number":42,"Title":"Retry budget","State":"open","Author":"alice",
@@ -137,7 +152,7 @@ func TestSearchItemsMergesAndOrders(t *testing.T) {
 		query := r.URL.Query()
 		assert.Equal("retry", query.Get("q"))
 		assert.Equal("open", query.Get("state"))
-		assert.Equal("25", query.Get("limit"))
+		assert.Equal("26", query.Get("limit"))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[{
 			"Number":7,"Title":"Retry docs","State":"open","Author":"bob",
@@ -198,6 +213,79 @@ func TestSearchItemsMergedStateFilter(t *testing.T) {
 	assert.Equal("pr", out.Results[0].Item.Type)
 	assert.Equal(1, out.Results[0].Item.Number)
 	assert.Equal(0, issueCalls)
+}
+
+func TestSearchItemsPagesBeforeMergedStateFilter(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var offsets []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/pulls", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		assert.Equal("all", query.Get("state"))
+		assert.Equal("2", query.Get("limit"))
+		offsets = append(offsets, query.Get("offset"))
+		w.Header().Set("Content-Type", "application/json")
+		switch query.Get("offset") {
+		case "":
+			_, _ = w.Write([]byte(`[{
+				"Number":1,"Title":"open newer","State":"open","Author":"alice",
+				"URL":"https://example.test/pr/1","LastActivityAt":"2026-07-01T15:00:00Z",
+				"repo":{"provider":"github","platform_host":"github.com","repo_path":"acme/widget","owner":"acme","name":"widget"}
+			},{
+				"Number":2,"Title":"closed newer","State":"closed","Author":"alice",
+				"URL":"https://example.test/pr/2","LastActivityAt":"2026-07-01T14:00:00Z",
+				"repo":{"provider":"github","platform_host":"github.com","repo_path":"acme/widget","owner":"acme","name":"widget"}
+			}]`))
+		case "2":
+			_, _ = w.Write([]byte(`[{
+				"Number":3,"Title":"merged older","State":"merged","Author":"alice",
+				"URL":"https://example.test/pr/3","LastActivityAt":"2026-07-01T13:00:00Z",
+				"repo":{"provider":"github","platform_host":"github.com","repo_path":"acme/widget","owner":"acme","name":"widget"}
+			}]`))
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	})
+	s := newMCPTestServer(t, mux)
+
+	out, err := s.searchItems(t.Context(), searchItemsInput{Query: "retry", State: "merged", Limit: 1})
+	require.NoError(err)
+	require.Len(out.Results, 1)
+	assert.Equal(3, out.Results[0].Item.Number)
+	assert.False(out.Capped)
+	assert.Equal([]string{"", "2"}, offsets)
+}
+
+func TestSearchItemsReportsCappedWhenSourceHasMoreMatches(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/pulls", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		assert.Equal("3", query.Get("limit"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{
+			"Number":1,"Title":"first","State":"open","Author":"alice",
+			"URL":"https://example.test/pr/1","LastActivityAt":"2026-07-01T15:00:00Z",
+			"repo":{"provider":"github","platform_host":"github.com","repo_path":"acme/widget","owner":"acme","name":"widget"}
+		},{
+			"Number":2,"Title":"second","State":"open","Author":"alice",
+			"URL":"https://example.test/pr/2","LastActivityAt":"2026-07-01T14:00:00Z",
+			"repo":{"provider":"github","platform_host":"github.com","repo_path":"acme/widget","owner":"acme","name":"widget"}
+		},{
+			"Number":3,"Title":"third","State":"open","Author":"alice",
+			"URL":"https://example.test/pr/3","LastActivityAt":"2026-07-01T13:00:00Z",
+			"repo":{"provider":"github","platform_host":"github.com","repo_path":"acme/widget","owner":"acme","name":"widget"}
+		}]`))
+	})
+	s := newMCPTestServer(t, mux)
+
+	out, err := s.searchItems(t.Context(), searchItemsInput{Query: "retry", ItemTypes: []string{"pr"}, Limit: 2})
+	require.NoError(err)
+	require.Len(out.Results, 2)
+	assert.True(out.Capped)
+	assert.Equal(1, out.Results[0].Item.Number)
 }
 
 func TestListActivityPassthrough(t *testing.T) {

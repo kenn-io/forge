@@ -5962,14 +5962,27 @@ components:
           readOnly: true
           type: string
         actor:
+          maxLength: 120
           type: string
         expected_status:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
           type: string
         reason:
+          maxLength: 500
           type: string
         source:
+          pattern: ^[a-z][a-z0-9_-]{0,39}$
           type: string
         status:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
           type: string
       required:
         - status

@@ -208,3 +208,86 @@ func TestDaemonClientWorkflowProbeRechecksAfterDaemonIdentityChanges(t *testing.
 	require.NoError(c.ensureWorkflowStateSupported(t.Context()))
 	assert.Equal(1, secondCalls)
 }
+
+func TestDaemonClientWorkflowProbeRefreshesIdentityBeforeUsingCachedResult(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, fmt.Appendf(nil, "data_dir = %q\n", dir), 0o600))
+	require.NoError(os.WriteFile(runtimelock.AuthTokenPath(dir), nil, 0o600))
+
+	handle, err := runtimelock.Acquire(dir)
+	require.NoError(err)
+	t.Cleanup(func() {
+		require.NoError(handle.Release())
+	})
+
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"status":404,"code":"notFound","detail":"route missing"}`))
+	}))
+	defer first.Close()
+	secondCalls := 0
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer second.Close()
+
+	writeDaemonMetadataForServer(t, handle, dir, first, 101, "2026-07-01T10:00:00Z")
+	c := newDaemonClient(cfgPath, 5*time.Second)
+	var derr *daemonError
+	require.ErrorAs(c.ensureWorkflowStateSupported(t.Context()), &derr)
+	assert.Equal("version_mismatch", derr.Kind)
+
+	writeDaemonMetadataForServer(t, handle, dir, second, 202, "2026-07-01T10:01:00Z")
+	require.NoError(c.ensureWorkflowStateSupported(t.Context()))
+	assert.Equal(1, secondCalls)
+}
+
+func TestDaemonClientPutRefreshesDiscoveryAfterUnavailableWithoutReplaying(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, fmt.Appendf(nil, "data_dir = %q\n", dir), 0o600))
+	require.NoError(os.WriteFile(runtimelock.AuthTokenPath(dir), nil, 0o600))
+
+	handle, err := runtimelock.Acquire(dir)
+	require.NoError(err)
+	t.Cleanup(func() {
+		require.NoError(handle.Release())
+	})
+
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	writeDaemonMetadataForServer(t, handle, dir, first, 101, "2026-07-01T10:00:00Z")
+	c := newDaemonClient(cfgPath, 5*time.Second)
+	var out any
+	require.NoError(c.getJSON(t.Context(), "/api/v1/ping", nil, &out))
+	first.Close()
+
+	secondCalls := 0
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer second.Close()
+	writeDaemonMetadataForServer(t, handle, dir, second, 202, "2026-07-01T10:01:00Z")
+
+	err = c.putJSON(t.Context(), "/api/v1/workflow-state/pr/gh/acme/widget/1", map[string]any{"status": "reviewing"}, &out)
+	require.Error(err)
+	var derr *daemonError
+	require.ErrorAs(err, &derr)
+	assert.Equal("daemon_unavailable", derr.Kind)
+	assert.Equal(0, secondCalls)
+
+	require.NoError(c.putJSON(t.Context(), "/api/v1/workflow-state/pr/gh/acme/widget/1", map[string]any{"status": "reviewing"}, &out))
+	assert.Equal(1, secondCalls)
+}

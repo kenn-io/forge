@@ -190,11 +190,14 @@ func TestWorkflowStatePutValidation(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			code, body := workflowStateRequest(t, srv, http.MethodPut, tt.path, tt.body)
-			require.Equal(http.StatusBadRequest, code)
+			require.Equal(http.StatusUnprocessableEntity, code)
 			assert.Equal("validationError", body["code"])
-			details, ok := body["details"].(map[string]any)
+			errors, ok := body["errors"].([]any)
 			require.True(ok)
-			assert.Equal(tt.field, details["field"])
+			require.NotEmpty(errors)
+			detail, ok := errors[0].(map[string]any)
+			require.True(ok)
+			assert.Equal(tt.field, detail["location"])
 		})
 	}
 
@@ -254,6 +257,54 @@ func TestWorkflowStateHostVariant(t *testing.T) {
 	workflow, ok := item["workflow"].(map[string]any)
 	require.True(ok)
 	assert.Equal("waiting", workflow["status"])
+}
+
+func TestWorkflowStateHostVariantUsesEscapedNestedRepoPath(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	srv, database := setupTestServer(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	repoPath := "Group/SubGroup/My_Project"
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "Group/SubGroup",
+		Name:         "My_Project",
+		RepoPath:     repoPath,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     42000,
+		Number:         42,
+		URL:            "https://gitlab.example.com/Group/SubGroup/My_Project/-/merge_requests/42",
+		Title:          "Nested path PR",
+		Author:         "testuser",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	code, body := workflowStateRequest(t, srv, http.MethodPut,
+		"/host/gitlab.example.com/workflow-state/pr/gl/Group%2FSubGroup/My_Project/42",
+		map[string]any{"status": "reviewing", "source": "mcp"})
+	require.Equal(http.StatusOK, code)
+	assert.Equal("reviewing", body["status"])
+
+	code, body = workflowStateRequest(t, srv, http.MethodGet,
+		"/workflow-state?repo=gitlab|gitlab.example.com/Group/SubGroup/My_Project", nil)
+	require.Equal(http.StatusOK, code)
+	items := workflowStateItems(t, body)
+	require.Len(items, 1)
+	item, ok := items[0].(map[string]any)
+	require.True(ok)
+	assert.Equal(repoPath, item["repo_path"])
+	workflow, ok := item["workflow"].(map[string]any)
+	require.True(ok)
+	assert.Equal("reviewing", workflow["status"])
 }
 
 func TestWorkflowStateListFilters(t *testing.T) {

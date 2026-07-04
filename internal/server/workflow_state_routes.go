@@ -45,11 +45,11 @@ type workflowStateListResponse struct {
 type listWorkflowStateOutput = bodyOutput[workflowStateListResponse]
 
 type setWorkflowStateBody struct {
-	Status         string `json:"status"`
-	ExpectedStatus string `json:"expected_status,omitempty"`
-	Source         string `json:"source,omitempty"`
-	Actor          string `json:"actor,omitempty"`
-	Reason         string `json:"reason,omitempty"`
+	Status         string `json:"status" enum:"new,reviewing,waiting,awaiting_merge"`
+	ExpectedStatus string `json:"expected_status,omitempty" enum:"new,reviewing,waiting,awaiting_merge"`
+	Source         string `json:"source,omitempty" pattern:"^[a-z][a-z0-9_-]{0,39}$"`
+	Actor          string `json:"actor,omitempty" maxLength:"120"`
+	Reason         string `json:"reason,omitempty" maxLength:"500"`
 }
 
 type setWorkflowStateInput struct {

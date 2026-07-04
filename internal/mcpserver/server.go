@@ -49,6 +49,7 @@ func New(opts Options) (*Server, error) {
 
 func (s *Server) registerTools() {
 	s.registerReadTools()
+	s.registerCandidateTools()
 }
 
 func (s *Server) RunStdio(ctx context.Context) error {

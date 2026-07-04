@@ -540,7 +540,9 @@ Inputs:
 
 - `query`: required text query;
 - `item_types`: optional list of `pr`, `issue`; default both;
-- `repo`: optional provider-aware repo filter;
+- `repo`: optional provider-aware repo filter. Clients should pass
+  `repo_path` from `middleman_list_repos` when available so nested namespaces
+  are addressed exactly;
 - `state`: `open`, `closed`, `merged`, or `all`; default `open`;
 - `limit`: default 25, capped by the companion.
 
@@ -552,12 +554,15 @@ keeps only PRs whose cached state is `merged`. Issues are skipped for
 
 Behavior:
 
-- PRs use `GET /pulls` with `q`; issues use `GET /issues` with `q`. Each
-  source is fetched with the tool `limit`, then the companion merges the two
-  lists, orders by item `last_activity_at` descending with ties broken by
-  `(platform, platform_host, owner, name, item_type, number)`, and truncates
-  to `limit`. Ordering is deterministic; v1 intentionally has no pagination —
-  a capped flag reports truncation.
+- PRs use `GET /pulls` with `q`; issues use `GET /issues` with `q`. The
+  companion fetches `limit + 1` rows from each source, and for PR states that
+  need local filtering (`merged`, or a closed-only distinction from merged)
+  continues paging until it has enough filtered rows or the daemon page is
+  exhausted. Then it merges the sources, orders by item `last_activity_at`
+  descending with ties broken by `(platform, platform_host, repo_path,
+  item_type, number)`, and truncates to `limit`. Ordering is deterministic;
+  v1 intentionally has no cursor pagination — a capped flag reports either
+  source truncation or global truncation.
 - Results are compact item refs with title, state, author, URL, local workflow
   status, and `last_activity_at`. Search never returns bodies or events; the
   model follows up with `middleman_get_item_context`.

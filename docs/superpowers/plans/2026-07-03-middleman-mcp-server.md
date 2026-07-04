@@ -2024,14 +2024,16 @@ daemon token."
 type repoFilterInput struct {
 	Provider     string `json:"provider,omitempty"`
 	PlatformHost string `json:"platform_host,omitempty"`
+	RepoPath     string `json:"repo_path,omitempty"`
 	Owner        string `json:"owner,omitempty"`
 	Name         string `json:"name,omitempty"`
 }
-// queryValue renders "provider|platform_host/owner/name" for the daemon's
+// queryValue renders "provider|platform_host/repo_path" when RepoPath is
+// provided, otherwise "provider|platform_host/owner/name" for the daemon's
 // repo query param ("", nil when the filter is entirely empty). Validate
-// BEFORE rendering: a non-empty filter requires provider, owner, AND name
-// all set — a partial filter (any of the three missing) is an error, never
-// a silently broadened or malformed query. Validate provider before
+// BEFORE rendering: a non-empty filter requires provider and either RepoPath
+// or owner+name all set — a partial filter is an error, never a silently
+// broadened or malformed query. Validate provider before
 // rendering: an empty provider on a non-empty filter is invalid input, so
 // do not route empty through NormalizeKind's empty-means-github default.
 // For non-empty provider, call platform.NormalizeKind, then require
@@ -2040,10 +2042,15 @@ type repoFilterInput struct {
 // string, not the raw alias/casing. The daemon filter format REQUIRES the
 // host segment, but platform_host is optional on tool inputs: when it is
 // empty, use the normalized provider's default host from MetadataFor; never
-// emit a host-less filter.
+// emit a host-less filter. Prefer RepoPath over owner+name when both are
+// supplied so GitLab nested namespaces and canonical provider paths survive
+// filtering exactly.
 // Required tests:
 //   - {provider: "github", owner: "acme", name: "widget"}, no
 //     platform_host → "github|github.com/acme/widget", nil.
+//   - {provider: "gitlab", platform_host: "git.example.com",
+//     repo_path: "Group/SubGroup/Project"} →
+//     "gitlab|git.example.com/Group/SubGroup/Project", nil.
 //   - {provider: "GH", owner: "acme", name: "widget"}, no platform_host →
 //     "github|github.com/acme/widget", nil.
 //   - {} (all empty) → "", nil.
@@ -2226,7 +2233,7 @@ type searchItemsOutput struct {
 
 Implementation notes (write real code, these are the decisions):
 - `sinceToRFC3339(s string)` helper: `time.ParseDuration` first; on success `time.Now().UTC().Add(-d).Format(time.RFC3339)`; otherwise pass through unchanged. Default `"24h"`.
-- `search_items`: PR call `GET /api/v1/pulls` with `q`, `state` (map `merged`→`all`, `all`→`all`, else pass), `repo`, `limit`; issue call `GET /api/v1/issues` likewise (skip when `state == "merged"`). Client-side: when input state is `merged` keep only `State == "merged"`; when `closed` keep `closed` (and for PRs also drop `merged` unless the daemon already distinguishes — check `db.MergeRequest.State` values in a quick grep: states are `open`/`closed`/`merged`). Each source is fetched with the full tool `limit` so global truncation cannot miss top results. Merge, sort by `LastActivityAt` desc with ties broken ascending by `(provider, platform_host, owner, name, item_type, number)` (deterministic ordering per the spec; no pagination in v1), truncate to limit, set `Capped` when truncated. Workflow status: PR `KanbanStatus` (empty → `"new"`), issue `WorkflowStatus` (empty → `"new"`).
+- `search_items`: PR call `GET /api/v1/pulls` with `q`, `state` (map `merged`→`all`, `all`→`all`, else pass), `repo`, `limit`; issue call `GET /api/v1/issues` likewise (skip when `state == "merged"`). Client-side: when input state is `merged` keep only `State == "merged"`; when `closed` keep `closed` (and for PRs also drop `merged` unless the daemon already distinguishes — check `db.MergeRequest.State` values in a quick grep: states are `open`/`closed`/`merged`). Fetch `limit+1` from each source so source truncation is detectable. For PR states that need client-side filtering, continue fetching pages with `offset` until the filtered result set has `limit+1` rows or the daemon returns a short page, so older matching merged/closed rows are not hidden behind locally rejected rows. Merge, sort by `LastActivityAt` desc with ties broken ascending by `(provider, platform_host, repo_path, item_type, number)` (deterministic ordering per the spec; no cursor pagination in v1), truncate to limit, set `Capped` when source truncation or global truncation occurred. Workflow status: PR `KanbanStatus` (empty → `"new"`), issue `WorkflowStatus` (empty → `"new"`).
 - `list_activity`: forward params, but note the daemon `/activity` route has NO `limit` query parameter — the companion must truncate client-side to the tool's `limit` (default 50, cap 200) after decoding, and set the output `capped` flag when it truncated or the daemon reported `capped`. Map response items to a compact struct (drop commit-metadata fields that are empty). Test must assert the returned row count honors the tool input when the fake daemon returns more rows.
 - Register in `registerTools()` (Task 7 stub) with `mcp.AddTool(s.mcp, &mcp.Tool{Name: "middleman_list_repos", Description: "..."}, wrap(s.listRepos))` — write a tiny `wrap` adapter if the SDK handler signature needs `(*mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error)`; return `nil` for the result and let the SDK serialize the typed output. Tool descriptions: 1-3 sentences from the spec's tool sections, including "call middleman_list_repos first to discover valid repo filters and sync freshness".
 

@@ -34,12 +34,16 @@ func TestMCPStdioCLIE2E(t *testing.T) {
 	writeMinimalConfig(t, cfgPath, dataDir, port)
 	appendConfig(t, cfgPath, `
 [[repos]]
+platform = "github"
+platform_host = "127.0.0.1:1"
 owner = "acme"
 name = "widgets"
+token_env = "MIDDLEMAN_MCP_STDIO_E2E_TOKEN"
 
 [api]
 require_auth = true
 `)
+	t.Setenv("MIDDLEMAN_MCP_STDIO_E2E_TOKEN", "synthetic-mcp-stdio-e2e-token")
 	database, repoID := seedMCPCLIRepo(t, dataDir)
 
 	daemon := procutil.Command(bin, "--config", cfgPath)
@@ -89,14 +93,14 @@ require_auth = true
 	repos := callMCPCLITool[mcpCLIListReposOutput](t, session, "middleman_list_repos", map[string]any{})
 	require.Len(repos.Repos, 1)
 	assert.Equal("github", repos.Repos[0].Provider)
-	assert.Equal("github.com", repos.Repos[0].PlatformHost)
+	assert.Equal("127.0.0.1:1", repos.Repos[0].PlatformHost)
 	assert.Equal("acme/widgets", repos.Repos[0].RepoPath)
 	assert.Equal(1, repos.Repos[0].OpenPRCount)
 
 	item := map[string]any{
 		"type":          "pr",
 		"provider":      "github",
-		"platform_host": "github.com",
+		"platform_host": "127.0.0.1:1",
 		"owner":         "acme",
 		"name":          "widgets",
 		"number":        1,
@@ -116,7 +120,7 @@ require_auth = true
 		"item_types": []string{"pr"},
 		"repo": map[string]any{
 			"provider":      "github",
-			"platform_host": "github.com",
+			"platform_host": "127.0.0.1:1",
 			"repo_path":     "acme/widgets",
 		},
 	})
@@ -190,7 +194,7 @@ func seedMCPCLIRepo(t *testing.T, dataDir string) (*db.DB, int64) {
 	database := dbtest.OpenAt(t, filepath.Join(dataDir, "middleman.db"))
 	repoID, err := database.UpsertRepo(
 		t.Context(),
-		db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+		db.GitHubRepoIdentity("127.0.0.1:1", "acme", "widgets"),
 	)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -198,7 +202,7 @@ func seedMCPCLIRepo(t *testing.T, dataDir string) (*db.DB, int64) {
 		RepoID:         repoID,
 		PlatformID:     1001,
 		Number:         1,
-		URL:            "https://github.com/acme/widgets/pull/1",
+		URL:            "https://127.0.0.1:1/acme/widgets/pull/1",
 		Title:          "Review stdio path",
 		Author:         "developer",
 		State:          db.MergeRequestStateOpen,

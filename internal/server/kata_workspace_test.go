@@ -371,6 +371,35 @@ name = "middleman"
 	assert.Nil(resp.Repo)
 }
 
+func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresTrackedRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "middleman"
+`, &mockGH{})
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+		"daemon_id":    "desktop",
+		"project_uid":  "project-middleman",
+		"project_name": "middleman",
+		"issue_uid":    "issue-kata-1",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp kataWorkspaceTargetResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.False(resp.Available)
+	assert.Nil(resp.Repo)
+}
+
 func TestKataWorkspaceTargetAutomaticMappingFromGlobTrackedRepoName(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -308,11 +308,7 @@ func kataAutomaticWorkspaceRepo(repos []config.Repo, projectUID string, projectN
 	if matches > 1 {
 		return config.Repo{}, false
 	}
-	repo, matches = kataAutomaticWorkspaceRepoByTrackedName(repos, name)
-	if matches != 1 {
-		return config.Repo{}, false
-	}
-	return repo, true
+	return config.Repo{}, false
 }
 
 func kataAutomaticWorkspaceRepoByTOML(repos []config.Repo, matches func(kataProjectTOML) bool) (config.Repo, int) {
@@ -323,31 +319,6 @@ func kataAutomaticWorkspaceRepoByTOML(repos []config.Repo, matches func(kataProj
 		}
 		project, ok := readKataProjectTOML(repo.WorktreeBasePath)
 		if ok && matches(project) {
-			matched = append(matched, repo)
-		}
-	}
-	if len(matched) != 1 {
-		return config.Repo{}, len(matched)
-	}
-	return matched[0], 1
-}
-
-func kataAutomaticWorkspaceRepoByTrackedName(repos []config.Repo, projectName string) (config.Repo, int) {
-	projectName = strings.TrimSpace(projectName)
-	if projectName == "" {
-		return config.Repo{}, 0
-	}
-	var matched []config.Repo
-	for _, repo := range repos {
-		if repo.HasNameGlob() {
-			continue
-		}
-		if strings.TrimSpace(repo.WorktreeBasePath) != "" {
-			if project, ok := readKataProjectTOML(repo.WorktreeBasePath); ok && project.hasAnyProjectMetadata() {
-				continue
-			}
-		}
-		if strings.EqualFold(repo.Name, projectName) || strings.EqualFold(configRepoPath(repo), projectName) {
 			matched = append(matched, repo)
 		}
 	}

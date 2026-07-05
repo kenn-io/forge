@@ -44,9 +44,16 @@ func run(ctx context.Context, stderr io.Writer) int {
 		return 1
 	}
 
-	diff, err := git(ctx, "diff", "--cached", "--name-status", "--", migrationDir)
+	baseCommit, err := git(ctx, "merge-base", "HEAD", baseRef)
 	if err != nil {
-		fmt.Fprintf(stderr, "failed to inspect staged migrations: %v\n", err)
+		fmt.Fprintf(stderr, "failed to find merge base with %s: %v\n", baseRef, err)
+		return 1
+	}
+	baseCommit = strings.TrimSpace(baseCommit)
+
+	diff, err := git(ctx, "diff", "--cached", "--name-status", baseCommit, "--", migrationDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "failed to inspect proposed migration changes: %v\n", err)
 		return 1
 	}
 
@@ -56,8 +63,13 @@ func run(ctx context.Context, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "failed to verify migration numbers: %v\n", err)
 		return 1
 	}
+	multipleVersionViolations, err := multipleNewMigrationVersionViolations(ctx, baseRef, migrationDir, diff)
+	if err != nil {
+		fmt.Fprintf(stderr, "failed to verify new migration count: %v\n", err)
+		return 1
+	}
 
-	if len(changedViolations) == 0 && len(duplicateViolations) == 0 {
+	if len(changedViolations) == 0 && len(duplicateViolations) == 0 && len(multipleVersionViolations) == 0 {
 		return 0
 	}
 
@@ -73,6 +85,14 @@ func run(ctx context.Context, stderr io.Writer) int {
 	if len(duplicateViolations) > 0 {
 		fmt.Fprintln(stderr, "\nEach migration number may identify only one migration. Found duplicate migration number assignments:")
 		for _, violation := range duplicateViolations {
+			fmt.Fprintf(stderr, "  %s: %s\n", violation.number, strings.Join(violation.names, ", "))
+		}
+	}
+	if len(multipleVersionViolations) > 0 {
+		fmt.Fprintln(stderr, "\nOnly one new migration version may be introduced per branch.")
+		fmt.Fprintln(stderr, "Squash schema changes into a single up/down migration pair before committing.")
+		fmt.Fprintln(stderr, "\nNew migration versions in this branch:")
+		for _, violation := range multipleVersionViolations {
 			fmt.Fprintf(stderr, "  %s: %s\n", violation.number, strings.Join(violation.names, ", "))
 		}
 	}
@@ -175,6 +195,41 @@ func duplicateMigrationNumberViolations(ctx context.Context, baseRef, migrationD
 		})
 	}
 
+	slices.SortFunc(violations, duplicateNumberViolation.Compare)
+	return violations, nil
+}
+
+func multipleNewMigrationVersionViolations(ctx context.Context, baseRef, migrationDir, diff string) ([]duplicateNumberViolation, error) {
+	baseByNumber, err := migrationNamesByNumberOnRef(ctx, baseRef, migrationDir)
+	if err != nil {
+		return nil, err
+	}
+
+	newByNumber := map[string]map[string]struct{}{}
+	for _, path := range stagedMigrationPaths(diff, migrationDir) {
+		number, name, ok := migrationIdentityFromPath(path)
+		if !ok {
+			continue
+		}
+		if len(baseByNumber[number]) > 0 {
+			continue
+		}
+		if _, exists := newByNumber[number]; !exists {
+			newByNumber[number] = map[string]struct{}{}
+		}
+		newByNumber[number][name] = struct{}{}
+	}
+	if len(newByNumber) <= 1 {
+		return nil, nil
+	}
+
+	violations := make([]duplicateNumberViolation, 0, len(newByNumber))
+	for number, namesByNumber := range newByNumber {
+		violations = append(violations, duplicateNumberViolation{
+			number: number,
+			names:  sortedKeys(namesByNumber),
+		})
+	}
 	slices.SortFunc(violations, duplicateNumberViolation.Compare)
 	return violations, nil
 }

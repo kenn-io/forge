@@ -26,6 +26,29 @@ func TestAllowsNewMigration(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
+func TestBlocksMultipleNewMigrationVersionsOnBranch(t *testing.T) {
+	assert := assert.New(t)
+	isolateGitEnvironment(t)
+	repo := initRepoWithMainMigration(t)
+	t.Chdir(repo)
+	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+
+	writeFile(t, repo, "internal/db/migrations/000002_first.up.sql", "first up\n")
+	writeFile(t, repo, "internal/db/migrations/000002_first.down.sql", "first down\n")
+	gitCommand(t, "add", "internal/db/migrations/000002_first.up.sql", "internal/db/migrations/000002_first.down.sql")
+	gitCommand(t, "commit", "-qm", "add first migration")
+
+	writeFile(t, repo, "internal/db/migrations/000003_second.up.sql", "second up\n")
+	writeFile(t, repo, "internal/db/migrations/000003_second.down.sql", "second down\n")
+	gitCommand(t, "add", "internal/db/migrations/000003_second.up.sql", "internal/db/migrations/000003_second.down.sql")
+
+	var stderr bytes.Buffer
+	assert.Equal(1, run(t.Context(), &stderr))
+	assert.Contains(stderr.String(), "Only one new migration version may be introduced per branch.")
+	assert.Contains(stderr.String(), "000002")
+	assert.Contains(stderr.String(), "000003")
+}
+
 func TestBlocksNewMigrationWhenNumberAlreadyExistsOnMain(t *testing.T) {
 	assert := assert.New(t)
 	isolateGitEnvironment(t)

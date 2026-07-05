@@ -2,13 +2,18 @@
 
 `internal/db/migrations/` is append-only history. Once a migration exists on `main`, do not edit it to add new behavior. Add a new numbered migration instead.
 
-The pre-commit hook `go run ./tools/migrationhistorycheck` enforces this by rejecting staged edits to migration files that already exist on `origin/main`. If a checkout uses a different main-branch ref, set `MIDDLEMAN_MIGRATION_BASE_REF` before running the hook.
+The pre-commit hook `go run ./tools/migrationhistorycheck` compares the base
+merge point with the proposed commit index. It rejects edits to migration files
+that already exist on `origin/main`, duplicate migration-number assignments, and
+branches that introduce more than one new migration version. If a checkout uses
+a different main-branch ref, set `MIDDLEMAN_MIGRATION_BASE_REF` before running
+the hook.
 
 ## Rules
 
 - Create the next sequential `NNNNNN_description.up.sql` and matching `NNNNNN_description.down.sql`.
 - Do not modify `.up.sql` or `.down.sql` files that already exist on `main` to account for new requirements. Historical migrations must keep describing the schema at the time they were introduced.
-- If a previous migration in the same branch is wrong, prefer a follow-up migration that repairs or completes the state. Only rewrite an existing migration when explicitly instructed by the user.
+- A branch may introduce only one new migration version. If the branch-local migration is wrong before merge, fold the fix into that same new `.up.sql`/`.down.sql` pair; follow-up repair migrations are for migrations already on `main`.
 - Keep `.down.sql` honest. If the data cleanup is one-way, say that in the down migration and only undo reversible schema artifacts such as triggers or indexes.
 - Validate migrations through `db.Open()` and application-level tests. Do not test `golang-migrate` internals.
 - For SQLite, remember that adding constraints to existing columns usually requires a table rebuild. Do not add fill, repair, or validation triggers as a shortcut around fixing current write paths or rebuilding a table when a real schema invariant is required.

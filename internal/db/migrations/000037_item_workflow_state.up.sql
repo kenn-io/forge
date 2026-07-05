@@ -18,3 +18,12 @@ INSERT INTO middleman_item_workflow_state
 SELECT mr.repo_id, 'pr', mr.number, k.status, k.updated_at
 FROM middleman_kanban_state k
 JOIN middleman_merge_requests mr ON mr.id = k.merge_request_id;
+
+-- The workflow helpers reject statuses outside the canonical vocabulary, so
+-- an invalid legacy status carried into the canonical table would be
+-- unreadable and unfixable through the API.
+UPDATE middleman_item_workflow_state
+SET status = 'new'
+WHERE status NOT IN ('new', 'reviewing', 'waiting', 'awaiting_merge');
+
+DROP TABLE middleman_kanban_state;

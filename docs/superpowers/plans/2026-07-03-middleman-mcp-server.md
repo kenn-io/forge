@@ -55,8 +55,7 @@ Implementers get zero other context; these are load-bearing:
 
 | File | Responsibility |
 |---|---|
-| `internal/db/migrations/000037_item_workflow_state.{up,down}.sql` | New generic table and initial copy from kanban rows; legacy table stays live |
-| `internal/db/migrations/000038_drop_kanban_state.{up,down}.sql` | Re-sync legacy kanban rows, then drop the old PR-only table |
+| `internal/db/migrations/000037_item_workflow_state.{up,down}.sql` | New generic table, kanban row copy, legacy-status normalization, and old PR-only table removal |
 | `internal/db/queries_workflow.go` | All generic workflow-state queries (get/ensure/set/list/cursor) |
 | `internal/db/queries_workflow_test.go` | Tests for the above |
 | `internal/db/types.go` | `ItemWorkflowState`, params/opts/row types, conflict error (added to existing file) |
@@ -90,7 +89,7 @@ Implementers get zero other context; these are load-bearing:
 - Modify: `internal/db/db_test.go` (expected-tables list at `:40`, plus new migration test)
 
 **Interfaces:**
-- Produces: table `middleman_item_workflow_state(repo_id, item_type, item_number, status, updated_at, updated_source, updated_actor, updated_reason)` with `UNIQUE(repo_id, item_type, item_number)`. `middleman_kanban_state` is NOT dropped here — it stays live (and still consistent, since nothing writes the new table yet) until Task 3 rewires all readers/writers and drops it in migration 000038 within the same commit. This keeps every commit on the branch a working bisect point.
+- Produces: table `middleman_item_workflow_state(repo_id, item_type, item_number, status, updated_at, updated_source, updated_actor, updated_reason)` with `UNIQUE(repo_id, item_type, item_number)`. The single branch migration copies PR kanban rows into the generic table, normalizes legacy statuses outside the workflow vocabulary to `new`, and drops `middleman_kanban_state`; this PR must not introduce a second branch-only schema version.
 
 - [ ] **Step 1: Write the failing migration test**
 
@@ -131,9 +130,7 @@ func TestOpenMigratesKanbanRowsToItemWorkflowState(t *testing.T) {
 	assert.Equal(7, number)
 	assert.Equal("reviewing", status)
 	assert.Equal("", source)
-	// The old table stays until Task 3's migration 000038 drops it,
-	// so this commit remains a working bisect point.
-	assert.True(tableExistsForTest(t, d, "middleman_kanban_state"))
+	assert.False(tableExistsForTest(t, d, "middleman_kanban_state"))
 	assert.True(tableExistsForTest(t, d, "middleman_item_workflow_state"))
 }
 ```
@@ -148,7 +145,7 @@ func migrateToVersionForTest(path string, v uint) error {
 }
 ```
 
-Also update the expected-tables list in `TestOpenAndSchema` (`db_test.go:40`): add `"middleman_item_workflow_state"`. Keep `"middleman_kanban_state"` in the list — Task 3 removes it when migration 000038 drops the table.
+Also update the expected-tables list in `TestOpenAndSchema` (`db_test.go:40`): add `"middleman_item_workflow_state"` and remove `"middleman_kanban_state"`.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -180,13 +177,33 @@ INSERT INTO middleman_item_workflow_state
 SELECT mr.repo_id, 'pr', mr.number, k.status, k.updated_at
 FROM middleman_kanban_state k
 JOIN middleman_merge_requests mr ON mr.id = k.merge_request_id;
-```
 
-No `DROP TABLE` here: the old table stays live and all existing code keeps working until Task 3 rewires it and drops the table in migration 000038 (same commit as the rewiring).
+UPDATE middleman_item_workflow_state
+SET status = 'new'
+WHERE status NOT IN ('new', 'reviewing', 'waiting', 'awaiting_merge');
+
+DROP TABLE middleman_kanban_state;
+```
 
 `internal/db/migrations/000037_item_workflow_state.down.sql`:
 
 ```sql
+CREATE TABLE IF NOT EXISTS middleman_kanban_state (
+    merge_request_id INTEGER PRIMARY KEY REFERENCES middleman_merge_requests(id) ON DELETE CASCADE,
+    status           TEXT NOT NULL DEFAULT 'new',
+    updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_kanban_status
+    ON middleman_kanban_state(status, updated_at DESC);
+
+INSERT INTO middleman_kanban_state (merge_request_id, status, updated_at)
+SELECT mr.id, w.status, w.updated_at
+FROM middleman_item_workflow_state w
+JOIN middleman_merge_requests mr
+    ON mr.repo_id = w.repo_id AND mr.number = w.item_number
+WHERE w.item_type = 'pr';
+
 DROP TABLE middleman_item_workflow_state;
 ```
 
@@ -543,7 +560,6 @@ never-moved items without racing humans or other agents."
 **Spec sections:** "PR Kanban Compatibility".
 
 **Files:**
-- Create: `internal/db/migrations/000038_drop_kanban_state.up.sql`, `.down.sql`
 - Modify: `internal/db/queries.go` (joins at `2312/2316`, `2373/2376`, `2495/2499`; filter at `2458-2465`; delete `EnsureKanbanState`/`SetKanbanState`/`GetKanbanState` at `2727-2771`; also the host-cleanup DELETE at `queries.go:916`)
 - Modify: `internal/db/types.go` (delete `KanbanState` struct at `:347-351`; keep `KanbanStatus` type and `MergeRequest.KanbanStatus`)
 - Modify: `internal/server/huma_routes.go` (`setKanbanState` handler `:1886`, `EnsureKanbanState` call at `:3074`)
@@ -553,63 +569,11 @@ never-moved items without racing humans or other agents."
 
 **Interfaces:**
 - Consumes: `EnsureItemWorkflowState`, `SetItemWorkflowState`, `GetItemWorkflowState`, `ItemTypePR` (Task 2).
-- Produces: unchanged public behavior — `KanbanStatus` on PR list/detail responses, `PUT .../state` request/response shape identical. All old `*KanbanState` DB funcs and `middleman_kanban_state` itself are gone after this task; the rewiring and the drop land in ONE commit so no commit references a dropped table.
+- Produces: unchanged public behavior — `KanbanStatus` on PR list/detail responses, `PUT .../state` request/response shape identical. All old `*KanbanState` DB funcs are gone after this task; the old `middleman_kanban_state` table is removed by the single branch migration.
 
-- [ ] **Step 1: Add migration 000038 (re-sync then drop)**
+- [ ] **Step 1: Keep the schema cutover in migration 000037**
 
-Between Task 1's migration and this task, running pre-rewire builds still wrote `middleman_kanban_state` — and nothing in production wrote the new table during that window — so the legacy table is authoritative and the drop migration re-syncs UNCONDITIONALLY (no `updated_at` comparison: `datetime('now')` has one-second precision, so a timestamp-guarded upsert could drop a kanban change made within the same second as the 000037 copy). For anyone upgrading across the whole branch, 000037 and 000038 run back-to-back and the re-sync is a no-op. The migration test must cover the equal-timestamp case: seed a kanban row whose status differs from the already-copied generic row but shares its `updated_at`, run `Open`, and assert the kanban value won.
-
-`internal/db/migrations/000038_drop_kanban_state.up.sql`:
-
-```sql
-INSERT INTO middleman_item_workflow_state
-    (repo_id, item_type, item_number, status, updated_at)
-SELECT mr.repo_id, 'pr', mr.number, k.status, k.updated_at
-FROM middleman_kanban_state k
-JOIN middleman_merge_requests mr ON mr.id = k.merge_request_id
-WHERE 1
-ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET
-    status     = excluded.status,
-    updated_at = excluded.updated_at;
-
--- The workflow helpers reject statuses outside the canonical vocabulary, so
--- an invalid legacy status carried into the canonical table would be
--- unreadable and unfixable through the API. Normalize the whole table, not
--- just the re-synced rows, to also cover rows copied by 000037 whose kanban
--- counterpart has since been deleted.
-UPDATE middleman_item_workflow_state
-SET status = 'new'
-WHERE status NOT IN ('new', 'reviewing', 'waiting', 'awaiting_merge');
-
-DROP TABLE middleman_kanban_state;
-```
-
-Required migration test alongside the equal-timestamp case: seed (at version
-37) a kanban row with an out-of-vocabulary status (for example `'triage'`)
-plus a generic-table row carrying an invalid status with no kanban
-counterpart, run `Open`, and assert both read back as `'new'`.
-
-`internal/db/migrations/000038_drop_kanban_state.down.sql`:
-
-```sql
-CREATE TABLE IF NOT EXISTS middleman_kanban_state (
-    merge_request_id INTEGER PRIMARY KEY REFERENCES middleman_merge_requests(id) ON DELETE CASCADE,
-    status           TEXT NOT NULL DEFAULT 'new',
-    updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_kanban_status
-    ON middleman_kanban_state(status, updated_at DESC);
-
-INSERT INTO middleman_kanban_state (merge_request_id, status, updated_at)
-SELECT mr.id, w.status, w.updated_at
-FROM middleman_item_workflow_state w
-JOIN middleman_merge_requests mr
-    ON mr.repo_id = w.repo_id AND mr.number = w.item_number
-WHERE w.item_type = 'pr';
-```
-
-Update `TestOpenAndSchema` (`db_test.go:40`): remove `"middleman_kanban_state"` from the expected list. Update Task 1's migration test assertion (`assert.True(tableExistsForTest(t, d, "middleman_kanban_state"))` → `assert.False(...)`) since `Open` now runs through 000038.
+No second branch-only migration is allowed. The migration-history hook compares the base merge point to the proposed commit index and rejects branches with more than one new migration version. Keep the final copy, normalization, old-table drop, and down-migration restoration in `000037_item_workflow_state.{up,down}.sql`; update the migration tests from version 36 directly to the final schema.
 
 - [ ] **Step 2: Update the DB joins and filter**
 
@@ -676,9 +640,9 @@ The kanban board, PR list/detail KanbanStatus, and the existing PUT
 /pulls/.../state route keep their exact public behavior while the
 storage moves to the generic (repo_id, item_type, item_number) table,
 so issues and MCP writes can share one state store without a
-duplicate-write shim. Migration 000038 re-syncs any rows written to
-the old table since 000037 and drops it in this same commit, so no
-commit on the branch queries a dropped table."
+duplicate-write shim. Migration 000037 copies kanban rows into the
+generic table, normalizes legacy statuses, and drops the old table as
+the single schema version introduced by this PR."
 ```
 
 ---
@@ -2971,6 +2935,6 @@ the spec's primary success criterion."
 
 - Spec coverage: every Goal/Success Criterion maps to a task — generic state (1-5), daemon endpoints + conflict semantics + `expected_status="new"` on missing rows (2, 6), kanban compatibility (3), issue exposure (5), all 9 tools (8-12), resource + prompt + docs (12), HTTP safety (13), stdio e2e + write-visibility criterion (14). "No MCP tool performs provider writes" is enforced structurally (only `putJSON` caller is the workflow tool; Task 12's registration test pins the tool set).
 - `middleman_get_stack_context` uses the existing per-PR route `GET /pulls/.../stack` (host-prefixed variant for non-default hosts), matching the spec as amended: the repo-wide `GET /stacks` list filters by owner/name only and could pick the wrong stack across providers/hosts.
-- Review-driven decisions (roborev jobs 4833-4836, spec amended to match): whitespace-only diff detection is out of scope entirely (no input flag, no counts — the files route cannot compute it and the use case does not need whitespace-aware line counts); `state=merged` in search is PR-only via `state=all` + client-side filter; the emitted diff file has an exact serialization spec; `status=new` is always an explicit stored row and listings match effective status; daemon discovery and the capability probe are uniformly lazy; migration 000037 no longer drops the old table — the drop moved to 000038 inside Task 3's commit so every commit is a working bisect point; all companion-built paths escape segments for nested owners; `/activity` results are truncated client-side because the daemon route has no limit param; the issue sync handler must share the detail builder; workflow-state repo filters must use the casefold key columns inside each UNION arm; the stdio e2e exercises every read tool against the real daemon.
+- Review-driven decisions (roborev jobs 4833-4836, spec amended to match): whitespace-only diff detection is out of scope entirely (no input flag, no counts — the files route cannot compute it and the use case does not need whitespace-aware line counts); `state=merged` in search is PR-only via `state=all` + client-side filter; the emitted diff file has an exact serialization spec; `status=new` is always an explicit stored row and listings match effective status; daemon discovery and the capability probe are uniformly lazy; the schema cutover stays in a single new migration version for the PR; all companion-built paths escape segments for nested owners; `/activity` results are truncated client-side because the daemon route has no limit param; the issue sync handler must share the detail builder; workflow-state repo filters must use the casefold key columns inside each UNION arm; the stdio e2e exercises every read tool against the real daemon.
 - Type consistency: `ItemTypePR`/`ItemTypeIssue`, `SetItemWorkflowStateParams`, `WorkflowStateConflictError`, `workflowStateMetaResponse`, `itemRef`/`itemRefInput`, `daemonError` kinds, and cursor format are each defined once and referenced by name in later tasks' Interfaces blocks.
 - Known verify-at-implementation points (explicitly flagged in tasks, not placeholders): exact MCP SDK v1.6.1 symbol names (Task 7 Step 1), huma's unknown-route 404 body for version_mismatch detection (Task 7), activity-type strings for the reasons map (Task 9), `getStackForPR` not-in-stack behavior (Task 11), `runtimelock.Acquire` handle API (Task 7 test helper).

@@ -222,8 +222,8 @@ func diffFileName(ref itemRefInput) string {
 func canonicalDiffFileRef(ref itemRefInput) itemRefInput {
 	ref.Provider = strings.TrimSpace(ref.Provider)
 	ref.PlatformHost = strings.TrimSpace(ref.PlatformHost)
-	ref.Owner = strings.Trim(strings.TrimSpace(ref.Owner), "/")
-	ref.Name = strings.Trim(strings.TrimSpace(ref.Name), "/")
+	ref.Owner = strings.ToLower(strings.Trim(strings.TrimSpace(ref.Owner), "/"))
+	ref.Name = strings.ToLower(strings.Trim(strings.TrimSpace(ref.Name), "/"))
 	kind, err := platform.NormalizeKind(ref.Provider)
 	if err != nil {
 		return ref

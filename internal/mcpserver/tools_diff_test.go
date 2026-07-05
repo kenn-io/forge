@@ -218,9 +218,18 @@ func TestDiffFileNameCanonicalizesProviderIdentity(t *testing.T) {
 		Name:     "widget",
 		Number:   7,
 	})
+	mixedCase := diffFileName(itemRefInput{
+		Type:         "pr",
+		Provider:     "Gh",
+		PlatformHost: "GITHUB.COM",
+		Owner:        "Acme",
+		Name:         "Widget",
+		Number:       7,
+	})
 
 	assert.Equal(omittedDefaultHost, explicitDefaultHost)
 	assert.Equal(omittedDefaultHost, providerAlias)
+	assert.Equal(omittedDefaultHost, mixedCase)
 	assert.Contains(omittedDefaultHost, "github-github.com-acme-widget-pr-7-")
 }
 

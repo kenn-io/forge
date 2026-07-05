@@ -61,9 +61,9 @@ The resolver uses this precedence:
    when the matching repo has no readable `.kata.toml` project metadata.
 6. No target when neither source yields exactly one repository.
 
-Manual mappings are a fallback and override only the project they name. Automatic
-discovery remains the default path because it follows the user's existing watched
-repo clone setup.
+Manual mappings are explicit overrides for the project they name. Automatic
+discovery runs only when no matching manual mapping exists and remains the
+default path because it follows the user's existing watched repo clone setup.
 
 ## Alternatives Considered
 
@@ -105,8 +105,9 @@ it accepts only a regular file (rejecting symlinks, devices, and other
 non-regular entries) and reads through a small explicit size cap before
 decoding. This stops a malicious clone from pointing the file at an endless or
 oversized target (for example a symlink to `/dev/zero`) and stalling or
-exhausting the process during a worktree scan. A symlinked, oversized, or
-otherwise non-regular `.kata.toml` contributes no mapping.
+exhausting the process during a worktree scan. A symlinked, oversized,
+malformed, or otherwise non-regular `.kata.toml` contributes no mapping and is
+treated as absent for tracked-name fallback.
 
 The `.kata.toml` parser accepts a small, explicit shape:
 
@@ -134,6 +135,11 @@ cover. Restricting name matching to identifier-less clones is the guardrail: a
 valid name-only project still resolves even when an unrelated watched clone
 carries identity metadata, and a clone with stable identity is never silently
 matched by a colliding name.
+
+Tracked-name fallback uses the synced repository catalog filtered through
+current repo configuration. Readable `.kata.toml` project metadata suppresses
+that fallback for the same repo; stale synced rows remain candidates until sync
+or config removes them, and workspace creation still owns clone/fetch failure.
 
 Automatic `.kata.toml` mappings are global by project UID, identity, or name
 because the file does not carry daemon identity. If two repositories claim the

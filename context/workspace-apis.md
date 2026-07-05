@@ -73,9 +73,9 @@ contains a matching `.kata.toml`. Matching first compares both explicit
 identifiers, `project.uid` and `project.identity`, to the Kata project UID. If
 either identifier matches exactly, that clone is a candidate; if more than one
 clone matches, the result is ambiguous. Name fallback through `.kata.toml` is
-only allowed when the watched clone metadata set has no usable `project.uid` or
-`project.identity` values at all, and then exactly one case-insensitive
-`project.name` match is required. If no `.kata.toml` mapping matches, the
+only allowed per clone when that clone has no usable `project.uid` or
+`project.identity`, and then exactly one case-insensitive `project.name` match
+is required. If no `.kata.toml` mapping matches, the
 resolver may fall back to a case-insensitive exact match between the Kata
 project name and exactly one synced tracked repo matched by current repo
 configuration, whether that configuration entry is exact or globbed, but only

@@ -233,9 +233,12 @@ func (s *Server) resolveKataWorkspaceRepo(
 	if repo, ok := kataManualWorkspaceRepo(repos, mappings, metadata, false); ok {
 		return kataResolvedRepoFromConfig(repo), true, nil
 	}
-	repo, ok := kataAutomaticWorkspaceRepo(repos, metadata.ProjectUID, metadata.ProjectName)
-	if ok {
+	repo, matches := kataAutomaticWorkspaceRepo(repos, metadata.ProjectUID, metadata.ProjectName)
+	if matches == 1 {
 		return kataResolvedRepoFromConfig(repo), true, nil
+	}
+	if matches > 1 {
+		return kataResolvedWorkspaceRepo{}, false, nil
 	}
 	tracked, err := s.db.ListRepos(ctx)
 	if err != nil {
@@ -282,17 +285,17 @@ func kataMappingMatchesRepo(mapping config.KataProjectRepoMapping, repo config.R
 		strings.EqualFold(mapping.RepoPath, configRepoPath(repo))
 }
 
-func kataAutomaticWorkspaceRepo(repos []config.Repo, projectUID string, projectName string) (config.Repo, bool) {
+func kataAutomaticWorkspaceRepo(repos []config.Repo, projectUID string, projectName string) (config.Repo, int) {
 	if repo, matches := kataAutomaticWorkspaceRepoByTOML(repos, func(project kataProjectTOML) bool {
 		return project.matchesProjectUID(projectUID)
 	}); matches == 1 {
-		return repo, true
+		return repo, 1
 	} else if matches > 1 {
-		return config.Repo{}, false
+		return config.Repo{}, matches
 	}
 	name := strings.TrimSpace(projectName)
 	if name == "" {
-		return config.Repo{}, false
+		return config.Repo{}, 0
 	}
 	// Name fallback is only for clones whose .kata.toml carries no stable
 	// UID/identity. Restricting the match to identifier-less entries is the
@@ -303,12 +306,12 @@ func kataAutomaticWorkspaceRepo(repos []config.Repo, projectUID string, projectN
 		return !project.hasIdentifier() && strings.EqualFold(project.Name, name)
 	})
 	if matches == 1 {
-		return repo, true
+		return repo, 1
 	}
 	if matches > 1 {
-		return config.Repo{}, false
+		return config.Repo{}, matches
 	}
-	return config.Repo{}, false
+	return config.Repo{}, 0
 }
 
 func kataAutomaticWorkspaceRepoByTOML(repos []config.Repo, matches func(kataProjectTOML) bool) (config.Repo, int) {

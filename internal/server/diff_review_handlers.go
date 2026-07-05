@@ -173,6 +173,9 @@ func (s *Server) applyReviewSuggestions(
 	if err := s.requireSyncerCapability(*repo, capabilityReviewSuggestionApplication); err != nil {
 		return nil, err
 	}
+	if err := s.requireReviewSuggestionCapabilities(*repo); err != nil {
+		return nil, err
+	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")
@@ -226,11 +229,18 @@ func (s *Server) applyReviewSuggestions(
 		if err := validateReviewSuggestionThread(*thread, expectedHeadSHA); err != nil {
 			return nil, err
 		}
+		replacement, err := verifyReviewSuggestionReplacement(thread.Body, request.Replacement)
+		if err != nil {
+			return nil, problemValidation(
+				"body.suggestions["+strconv.Itoa(i)+"].replacement",
+				err.Error(),
+			)
+		}
 		suggestions = append(suggestions, platform.ReviewSuggestion{
 			ProviderThreadID:  thread.ProviderThreadID,
 			ProviderCommentID: thread.ProviderCommentID,
 			Range:             platformReviewLineRange(thread.Range),
-			Replacement:       request.Replacement,
+			Replacement:       replacement,
 		})
 	}
 
@@ -298,6 +308,110 @@ func validateReviewSuggestionThread(thread db.MRReviewThread, expectedHeadSHA st
 		)
 	}
 	return nil
+}
+
+func (s *Server) requireReviewSuggestionCapabilities(repo db.Repo) error {
+	caps := s.capabilitiesForRepo(repo)
+	for _, capability := range []string{
+		capabilityMutationHeadBinding,
+		capabilityReadReviewThreads,
+	} {
+		if !capabilityEnabled(caps, capability) {
+			return problemUnsupportedCapability(repo, capability)
+		}
+	}
+	return nil
+}
+
+func verifyReviewSuggestionReplacement(body, replacement string) (string, error) {
+	for _, stored := range markdownSuggestionReplacements(body) {
+		if replacement == stored {
+			return stored, nil
+		}
+	}
+	return "", errors.New("must match a stored review suggestion")
+}
+
+type markdownFence struct {
+	marker byte
+	length int
+	info   string
+}
+
+func markdownSuggestionReplacements(body string) []string {
+	if body == "" {
+		return nil
+	}
+	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+	replacements := make([]string, 0)
+	for lineIndex := 0; lineIndex < len(lines); {
+		fence, ok := openingMarkdownFence(lines[lineIndex])
+		if !ok || !markdownFenceInfoIsSuggestion(fence.info) {
+			lineIndex++
+			continue
+		}
+		closeIndex := -1
+		for i := lineIndex + 1; i < len(lines); i++ {
+			if closesMarkdownFence(lines[i], fence) {
+				closeIndex = i
+				break
+			}
+		}
+		if closeIndex == -1 {
+			lineIndex++
+			continue
+		}
+		replacements = append(replacements, strings.Join(lines[lineIndex+1:closeIndex], "\n"))
+		lineIndex = closeIndex + 1
+	}
+	return replacements
+}
+
+func openingMarkdownFence(line string) (markdownFence, bool) {
+	line = strings.TrimSuffix(line, "\r")
+	if len(line) < 3 {
+		return markdownFence{}, false
+	}
+	marker := line[0]
+	if marker != '`' && marker != '~' {
+		return markdownFence{}, false
+	}
+	length := 0
+	for length < len(line) && line[length] == marker {
+		length++
+	}
+	if length < 3 {
+		return markdownFence{}, false
+	}
+	return markdownFence{
+		marker: marker,
+		length: length,
+		info:   strings.TrimSpace(line[length:]),
+	}, true
+}
+
+func markdownFenceInfoIsSuggestion(info string) bool {
+	lower := strings.ToLower(info)
+	if !strings.HasPrefix(lower, "suggestion") {
+		return false
+	}
+	if len(lower) == len("suggestion") {
+		return true
+	}
+	next := rune(lower[len("suggestion")])
+	return next == ':' || next == ' ' || next == '\t'
+}
+
+func closesMarkdownFence(line string, fence markdownFence) bool {
+	line = strings.TrimSuffix(line, "\r")
+	count := 0
+	for count < len(line) && line[count] == fence.marker {
+		count++
+	}
+	if count < fence.length {
+		return false
+	}
+	return strings.TrimSpace(line[count:]) == ""
 }
 
 func (s *Server) syncAfterReviewSuggestionApply(repo db.Repo, number int) {

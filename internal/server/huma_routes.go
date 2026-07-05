@@ -168,13 +168,15 @@ type applyReviewSuggestionInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	Body         struct {
-		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
-		Message         string `json:"message,omitempty"`
-		Suggestions     []struct {
-			ThreadID    string `json:"thread_id"`
-			Replacement string `json:"replacement"`
-		} `json:"suggestions"`
+		ExpectedHeadSHA string                             `json:"expected_head_sha,omitempty"`
+		Message         string                             `json:"message,omitempty"`
+		Suggestions     []applyReviewSuggestionRequestItem `json:"suggestions"`
 	}
+}
+
+type applyReviewSuggestionRequestItem struct {
+	ThreadID    string `json:"thread_id"`
+	Replacement string `json:"replacement"`
 }
 
 type applyReviewSuggestionResponse struct {

@@ -491,19 +491,25 @@ type AggregateRow struct {
 // ApplyReviewSuggestionHostInputBody defines model for ApplyReviewSuggestionHostInputBody.
 type ApplyReviewSuggestionHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string `json:"$schema,omitempty"`
-	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
-	Message         *string `json:"message,omitempty"`
-	Suggestions     *[]Item `json:"suggestions"`
+	Schema          *string                             `json:"$schema,omitempty"`
+	ExpectedHeadSha *string                             `json:"expected_head_sha,omitempty"`
+	Message         *string                             `json:"message,omitempty"`
+	Suggestions     *[]ApplyReviewSuggestionRequestItem `json:"suggestions"`
 }
 
 // ApplyReviewSuggestionInputBody defines model for ApplyReviewSuggestionInputBody.
 type ApplyReviewSuggestionInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string `json:"$schema,omitempty"`
-	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
-	Message         *string `json:"message,omitempty"`
-	Suggestions     *[]Item `json:"suggestions"`
+	Schema          *string                             `json:"$schema,omitempty"`
+	ExpectedHeadSha *string                             `json:"expected_head_sha,omitempty"`
+	Message         *string                             `json:"message,omitempty"`
+	Suggestions     *[]ApplyReviewSuggestionRequestItem `json:"suggestions"`
+}
+
+// ApplyReviewSuggestionRequestItem defines model for ApplyReviewSuggestionRequestItem.
+type ApplyReviewSuggestionRequestItem struct {
+	Replacement string `json:"replacement"`
+	ThreadId    string `json:"thread_id"`
 }
 
 // ApplyReviewSuggestionResponse defines model for ApplyReviewSuggestionResponse.
@@ -1362,12 +1368,6 @@ type IssueResponse struct {
 	RepoName           string          `json:"repo_name"`
 	RepoOwner          string          `json:"repo_owner"`
 	Workspace          *WorkspaceRef   `json:"workspace,omitempty"`
-}
-
-// Item defines model for Item.
-type Item struct {
-	Replacement string `json:"replacement"`
-	ThreadId    string `json:"thread_id"`
 }
 
 // ItemAssigneesResponse defines model for ItemAssigneesResponse.

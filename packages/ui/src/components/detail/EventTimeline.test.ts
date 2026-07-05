@@ -607,6 +607,10 @@ describe("EventTimeline", () => {
             Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join(
               "\n",
             ),
+            diff_thread: {
+              ...makeReviewThreadEvent().diff_thread!,
+              diff_head_sha: "abc123",
+            },
           }),
         ],
         provider: "github",
@@ -644,6 +648,45 @@ describe("EventTimeline", () => {
         },
       ],
     });
+  });
+
+  it("disables suggestion application when the reviewed head is missing", async () => {
+    const applySuggestion = vi.fn(async () => true);
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeReviewThreadEvent({
+            Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join(
+              "\n",
+            ),
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        onApplySuggestion: applySuggestion,
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    await expectSuggestionPierreText(/return client\.publishThreads\(\);/);
+    const button = screen.getByRole("button", { name: "Commit suggestion" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("The suggestion is missing a reviewed head commit");
   });
 
   it("renders threaded comments as separate compact rows with one-line previews", async () => {

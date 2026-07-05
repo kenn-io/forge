@@ -4276,7 +4276,7 @@ export interface components {
             readonly $schema?: string;
             expected_head_sha?: string;
             message?: string;
-            suggestions: components["schemas"]["Item"][] | null;
+            suggestions: components["schemas"]["ApplyReviewSuggestionRequestItem"][] | null;
         };
         ApplyReviewSuggestionInputBody: {
             /**
@@ -4287,7 +4287,11 @@ export interface components {
             readonly $schema?: string;
             expected_head_sha?: string;
             message?: string;
-            suggestions: components["schemas"]["Item"][] | null;
+            suggestions: components["schemas"]["ApplyReviewSuggestionRequestItem"][] | null;
+        };
+        ApplyReviewSuggestionRequestItem: {
+            replacement: string;
+            thread_id: string;
         };
         ApplyReviewSuggestionResponse: {
             /**
@@ -5263,10 +5267,6 @@ export interface components {
             repo_name: string;
             repo_owner: string;
             workspace?: components["schemas"]["WorkspaceRef"];
-        };
-        Item: {
-            replacement: string;
-            thread_id: string;
         };
         ItemAssigneesResponse: {
             /**

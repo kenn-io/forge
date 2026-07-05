@@ -20,23 +20,26 @@ import (
 
 func TestDeriveOperationAvailability(t *testing.T) {
 	allCaps := providerCapabilitiesResponse{
-		ReadRepositories:    true,
-		ReadMergeRequests:   true,
-		ReadIssues:          true,
-		ReadComments:        true,
-		ReadReleases:        true,
-		ReadCI:              true,
-		ReadLabels:          true,
-		CommentMutation:     true,
-		StateMutation:       true,
-		MergeMutation:       true,
-		ReviewMutation:      true,
-		ReviewDraftMutation: true,
-		WorkflowApproval:    true,
-		ReadyForReview:      true,
-		DraftMutation:       true,
-		IssueMutation:       true,
-		LabelMutation:       true,
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReadReleases:                true,
+		ReadCI:                      true,
+		ReadLabels:                  true,
+		CommentMutation:             true,
+		StateMutation:               true,
+		MergeMutation:               true,
+		ReviewMutation:              true,
+		ReviewDraftMutation:         true,
+		WorkflowApproval:            true,
+		ReadyForReview:              true,
+		DraftMutation:               true,
+		IssueMutation:               true,
+		LabelMutation:               true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
 	}
 	mergePR := operationDescriptor{
 		name:                 operationMergePR,
@@ -148,6 +151,29 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			expected: OperationAvailability{Available: true},
 		},
 		{
+			name:     "review suggestion operation requires stored thread and head binding prerequisites",
+			op:       descApplyReviewSuggestion,
+			caps:     allCaps,
+			repo:     repoCanMerge,
+			expected: OperationAvailability{Available: true},
+		},
+		{
+			name: "first missing review suggestion prerequisite wins",
+			op:   descApplyReviewSuggestion,
+			caps: func() providerCapabilitiesResponse {
+				c := allCaps
+				c.MutationHeadBinding = false
+				c.ReadReviewThreads = false
+				return c
+			}(),
+			repo: repoCanMerge,
+			expected: OperationAvailability{
+				Code:               availabilityCodeUnsupportedCapability,
+				UnavailableReason:  "Provider does not support mutation_head_binding",
+				RequiredCapability: capabilityMutationHeadBinding,
+			},
+		},
+		{
 			name: "rate-limited host blocks even when capability and permission exist",
 			op:   mergePR,
 			caps: allCaps,
@@ -214,6 +240,28 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			require.Equal(t, tc.expected, got)
 		})
 	}
+}
+
+func TestOperationRateLimitChecksExtraBuckets(t *testing.T) {
+	resetAt := time.Date(2026, 5, 19, 14, 35, 0, 0, time.UTC)
+	restRate := rateLimitAvailability{
+		limited: true,
+		reason:  "github.com REST rate-limited",
+		retryAt: resetAt.UTC().Format(time.RFC3339),
+	}
+	graphQLRate := rateLimitAvailability{
+		limited: true,
+		reason:  "github.com GraphQL rate-limited",
+		retryAt: resetAt.Add(time.Minute).UTC().Format(time.RFC3339),
+	}
+
+	assert.Equal(t, restRate, operationRateLimit(descApplyReviewSuggestion, map[apiBucket]rateLimitAvailability{
+		apiBucketREST:    restRate,
+		apiBucketGraphQL: graphQLRate,
+	}))
+	assert.Equal(t, graphQLRate, operationRateLimit(descApplyReviewSuggestion, map[apiBucket]rateLimitAvailability{
+		apiBucketGraphQL: graphQLRate,
+	}))
 }
 
 func TestFormatRateLimit(t *testing.T) {

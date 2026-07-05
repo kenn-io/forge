@@ -15777,7 +15777,7 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 	require.NoError(database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
 		ProviderThreadID:  "provider-thread-1",
 		ProviderCommentID: "provider-comment-1",
-		Body:              "Inline suggestion",
+		Body:              "Inline suggestion\n\n```suggestion\nreturn client.publishThreads();\n```",
 		AuthorLogin:       "ada",
 		Range: db.ReviewLineRange{
 			Path:        "src/review.ts",
@@ -15820,6 +15820,70 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 	assert.Equal("provider-comment-1", applied.Suggestions[0].ProviderCommentID)
 	assert.Equal("src/review.ts", applied.Suggestions[0].Range.Path)
 	assert.Equal("return client.publishThreads();", applied.Suggestions[0].Replacement)
+}
+
+func TestAPIApplyReviewSuggestionRejectsReplacementOutsideStoredSuggestion(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	line := 11
+	require.NoError(database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
+		ProviderThreadID:  "provider-thread-1",
+		ProviderCommentID: "provider-comment-1",
+		Body:              "Please apply this.\n\n```suggestion\nreturn client.publishThreads();\n```",
+		AuthorLogin:       "ada",
+		Range: db.ReviewLineRange{
+			Path:        "src/review.ts",
+			Side:        "right",
+			Line:        line,
+			NewLine:     &line,
+			LineType:    "context",
+			DiffHeadSHA: "abc123",
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}}))
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
+				"replacement": "return maliciousRewrite();",
+			}},
+		},
+	)
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Contains(rr.Body.String(), "body.suggestions[0].replacement")
+	assert.Empty(provider.appliedSuggestions)
 }
 
 func TestAPIApplyReviewSuggestionRejectsStaleHead(t *testing.T) {

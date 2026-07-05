@@ -88,13 +88,29 @@ registry helpers return typed errors for missing providers or capabilities.
   envelope described in [`context/error-handling.md`](./error-handling.md).
 - Review suggestion application is a provider capability, not a markdown/UI
   shortcut. Providers that can apply suggestions must expose
-  `review_suggestion_application` and implement
-  `internal/platform/client.go::ReviewSuggestionApplier`. The server must
-  rebuild each provider suggestion from persisted review-thread metadata in
+  `review_suggestion_application`, `mutation_head_binding`, and
+  `read_review_threads`, and implement
+  `internal/platform/client.go::ReviewSuggestionApplier`. The provider
+  contract is an all-or-nothing batch apply against the expected head; partial
+  success is not a valid implementation of this capability.
+- The server must rebuild each provider suggestion from persisted review-thread
+  metadata in
   `internal/server/diff_review_handlers.go::applyReviewSuggestions` and
   `validateReviewSuggestionThread`, including path, side, range, and reviewed
-  head; clients may send the replacement text and expected head, but must not
-  be trusted for provider comment ids or line ranges.
+  head. Clients may send replacement text and the expected head, but the server
+  must verify that replacement text exactly matches a persisted reviewer
+  suggestion fence from the stored review comment body before calling the
+  provider. Clients must not be trusted for provider comment ids, line ranges,
+  or patch content authenticity.
+- Review suggestion apply availability must account for all upstream calls the
+  provider implementation makes. GitHub currently needs REST content reads and
+  a GraphQL `createCommitOnBranch` mutation, so either bucket being paused must
+  hide or disable the operation.
+- Suggestion apply implementations must define deterministic handling for edge
+  cases before exposing the capability: duplicate thread ids, overlapping
+  ranges, stale heads, missing reviewed heads, renamed or deleted files, binary
+  files, large or unsupported content encodings, and inaccessible source repos
+  must fail the entire batch with stable error reasons.
 - Forgejo and Gitea currently expose only SDK-proven mutations: comments,
   issue creation, issue and PR content/state edits, merge, and review approval.
   Workflow approval and ready-for-review must remain hidden or return typed

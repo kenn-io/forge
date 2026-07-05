@@ -259,7 +259,7 @@ components:
           type: string
         suggestions:
           items:
-            $ref: "#/components/schemas/Item"
+            $ref: "#/components/schemas/ApplyReviewSuggestionRequestItem"
           type:
             - array
             - "null"
@@ -282,12 +282,23 @@ components:
           type: string
         suggestions:
           items:
-            $ref: "#/components/schemas/Item"
+            $ref: "#/components/schemas/ApplyReviewSuggestionRequestItem"
           type:
             - array
             - "null"
       required:
         - suggestions
+      type: object
+    ApplyReviewSuggestionRequestItem:
+      additionalProperties: false
+      properties:
+        replacement:
+          type: string
+        thread_id:
+          type: string
+      required:
+        - thread_id
+        - replacement
       type: object
     ApplyReviewSuggestionResponse:
       additionalProperties: false
@@ -2331,17 +2342,6 @@ components:
         - LastActivityAt
         - ClosedAt
         - Starred
-      type: object
-    Item:
-      additionalProperties: false
-      properties:
-        replacement:
-          type: string
-        thread_id:
-          type: string
-      required:
-        - thread_id
-        - replacement
       type: object
     ItemAssigneesResponse:
       additionalProperties: false

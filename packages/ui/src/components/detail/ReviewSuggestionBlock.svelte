@@ -28,16 +28,17 @@
   }: Props = $props();
 
   const file = $derived(buildSuggestionDiffFile(thread, context, replacement));
+  const reviewedHeadSHA = $derived(thread.diff_head_sha ?? "");
   const canApply = $derived(
     !context.outdated &&
       thread.side.toLowerCase() !== "left" &&
-      thread.diff_head_sha !== "" &&
+      reviewedHeadSHA !== "" &&
       onCommit !== undefined,
   );
   const disabledReason = $derived.by(() => {
     if (context.outdated) return "The original diff context is not available";
     if (thread.side.toLowerCase() === "left") return "Suggestions on removed lines cannot be applied";
-    if (thread.diff_head_sha === "") return "The suggestion is missing a reviewed head commit";
+    if (reviewedHeadSHA === "") return "The suggestion is missing a reviewed head commit";
     if (onCommit === undefined) return "Suggestion application is unavailable";
     return "";
   });

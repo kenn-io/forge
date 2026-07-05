@@ -26,6 +26,7 @@ const (
 	capabilityReviewThreadResolution      = "review_thread_resolution"
 	capabilityReviewSuggestionApplication = "review_suggestion_application"
 	capabilityReadReviewThreads           = "read_review_threads"
+	capabilityMutationHeadBinding         = "mutation_head_binding"
 )
 
 func capabilityEnabled(
@@ -69,6 +70,8 @@ func capabilityEnabled(
 		return caps.ReviewSuggestionApplication
 	case capabilityReadReviewThreads:
 		return caps.ReadReviewThreads
+	case capabilityMutationHeadBinding:
+		return caps.MutationHeadBinding
 	default:
 		return false
 	}

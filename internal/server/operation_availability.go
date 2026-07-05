@@ -112,7 +112,7 @@ type RepoOperations struct {
 }
 
 // operationDescriptor lists the capabilities an operation needs and
-// the API bucket it consumes. requiredCapabilities is checked in
+// the API bucket or buckets it consumes. requiredCapabilities is checked in
 // declaration order so the first missing capability becomes
 // RequiredCapability, giving deterministic behavior when multiple
 // are absent.
@@ -120,6 +120,7 @@ type operationDescriptor struct {
 	name                 string
 	requiredCapabilities []string
 	bucket               apiBucket
+	extraBuckets         []apiBucket
 }
 
 type operationAvailabilityContext struct {
@@ -160,7 +161,16 @@ var (
 	descUpdateContent         = operationDescriptor{name: operationUpdateContent, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
 	descReplyReviewThread     = operationDescriptor{name: operationReplyReviewThread, requiredCapabilities: []string{capabilityThreadReply}, bucket: apiBucketREST}
 	descResolveReviewThread   = operationDescriptor{name: operationResolveReviewThread, requiredCapabilities: []string{capabilityReviewThreadResolution}, bucket: apiBucketREST}
-	descApplyReviewSuggestion = operationDescriptor{name: operationApplyReviewSuggestion, requiredCapabilities: []string{capabilityReviewSuggestionApplication}, bucket: apiBucketGraphQL}
+	descApplyReviewSuggestion = operationDescriptor{
+		name: operationApplyReviewSuggestion,
+		requiredCapabilities: []string{
+			capabilityReviewSuggestionApplication,
+			capabilityMutationHeadBinding,
+			capabilityReadReviewThreads,
+		},
+		bucket:       apiBucketREST,
+		extraBuckets: []apiBucket{apiBucketGraphQL},
+	}
 )
 
 // repoOperations derives the availability of every operation for a
@@ -185,7 +195,7 @@ func (s *Server) repoOperationsWithContext(
 	writeCred := s.writeCredentialGateForRepo(repo)
 	derive := func(op operationDescriptor) OperationAvailability {
 		return deriveOperationAvailabilityWithContext(
-			op, caps, repo, rates[op.bucket], writeCred, opContext,
+			op, caps, repo, operationRateLimit(op, rates), writeCred, opContext,
 		)
 	}
 	return RepoOperations{
@@ -312,6 +322,21 @@ func (s *Server) mergeRequestAuthoredByViewer(
 		return false
 	}
 	return authored
+}
+
+func operationRateLimit(
+	op operationDescriptor,
+	rates map[apiBucket]rateLimitAvailability,
+) rateLimitAvailability {
+	if rate := rates[op.bucket]; rate.limited {
+		return rate
+	}
+	for _, bucket := range op.extraBuckets {
+		if rate := rates[bucket]; rate.limited {
+			return rate
+		}
+	}
+	return rateLimitAvailability{}
 }
 
 // rateLimitAvailability is the result of consulting a rate tracker

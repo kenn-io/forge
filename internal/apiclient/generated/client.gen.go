@@ -314,21 +314,6 @@ func (e SetWorkflowStateBody0ExpectedStatus) Valid() bool {
 	}
 }
 
-// Defines values for SetWorkflowStateBody0Force.
-const (
-	False SetWorkflowStateBody0Force = false
-)
-
-// Valid indicates whether the value is a known member of the SetWorkflowStateBody0Force enum.
-func (e SetWorkflowStateBody0Force) Valid() bool {
-	switch e {
-	case False:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for SetWorkflowStateBody0Status.
 const (
 	SetWorkflowStateBody0StatusAwaitingMerge SetWorkflowStateBody0Status = "awaiting_merge"
@@ -3025,19 +3010,15 @@ type SetWorkflowStateBody struct {
 type SetWorkflowStateBody0 struct {
 	Actor *string `json:"actor,omitempty"`
 
-	// ExpectedStatus Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
+	// ExpectedStatus Required unless force is true. Omit force when expected_status is provided. This compares against the effective current local workflow state before writing.
 	ExpectedStatus SetWorkflowStateBody0ExpectedStatus `json:"expected_status"`
-	Force          *SetWorkflowStateBody0Force         `json:"force,omitempty"`
 	Reason         *string                             `json:"reason,omitempty"`
 	Source         *string                             `json:"source,omitempty"`
 	Status         SetWorkflowStateBody0Status         `json:"status"`
 }
 
-// SetWorkflowStateBody0ExpectedStatus Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
+// SetWorkflowStateBody0ExpectedStatus Required unless force is true. Omit force when expected_status is provided. This compares against the effective current local workflow state before writing.
 type SetWorkflowStateBody0ExpectedStatus string
-
-// SetWorkflowStateBody0Force defines model for SetWorkflowStateBody.0.Force.
-type SetWorkflowStateBody0Force bool
 
 // SetWorkflowStateBody0Status defines model for SetWorkflowStateBody.0.Status.
 type SetWorkflowStateBody0Status string

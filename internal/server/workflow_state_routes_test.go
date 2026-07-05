@@ -25,13 +25,13 @@ func TestWorkflowStateOpenAPIConstrainsWriteBody(t *testing.T) {
 	require.NotNil(expected)
 	assert.Equal([]any{"new", "reviewing", "waiting", "awaiting_merge"}, expected.Enum)
 	assert.Contains(expected.Description, "Required unless force is true")
-	assert.Contains(expected.Description, "mutually exclusive")
+	assert.Contains(expected.Description, "Omit force")
 
 	force := schema.Properties["force"]
 	require.NotNil(force)
 	assert.Equal("boolean", string(force.Type))
 	assert.Contains(force.Description, "deliberate unconditional override")
-	assert.Contains(force.Description, "mutually exclusive")
+	assert.Contains(force.Description, "false is invalid")
 	contract, ok := schema.Extensions["oneOf"].([]*huma.Schema)
 	require.True(ok)
 	require.Len(contract, 2)
@@ -39,7 +39,7 @@ func TestWorkflowStateOpenAPIConstrainsWriteBody(t *testing.T) {
 	assert.NotContains(schema.Extensions, "additionalProperties")
 	assert.Contains(contract[0].Required, "status")
 	assert.Contains(contract[0].Required, "expected_status")
-	assert.Equal([]any{false}, contract[0].Properties["force"].Enum)
+	assert.NotContains(contract[0].Properties, "force")
 	assert.Contains(contract[1].Required, "status")
 	assert.Contains(contract[1].Required, "force")
 	assert.Equal([]any{true}, contract[1].Properties["force"].Enum)
@@ -78,12 +78,13 @@ func assertValidWorkflowStateOpenAPISchema(t *testing.T, schema *huma.Schema) {
 	for _, body := range []map[string]any{
 		{"status": "reviewing", "expected_status": "new"},
 		{"status": "waiting", "force": true, "actor": "mcp"},
-		{"status": "reviewing", "expected_status": "new", "force": false},
 	} {
 		require.NoError(compiled.Validate(body))
 	}
 	for _, body := range []map[string]any{
 		{"status": "reviewing"},
+		{"status": "reviewing", "force": false},
+		{"status": "reviewing", "expected_status": "new", "force": false},
 		{"status": "reviewing", "force": true, "expected_status": "new"},
 		{"status": "reviewing", "force": true, "unexpected": "field"},
 	} {

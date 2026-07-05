@@ -47,8 +47,8 @@ type listWorkflowStateOutput = bodyOutput[workflowStateListResponse]
 
 type setWorkflowStateBody struct {
 	Status         string `json:"status" enum:"new,reviewing,waiting,awaiting_merge"`
-	ExpectedStatus string `json:"expected_status,omitempty" enum:"new,reviewing,waiting,awaiting_merge" doc:"Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing."`
-	Force          bool   `json:"force,omitempty" doc:"Set true only for a deliberate unconditional override when expected_status is omitted. This is mutually exclusive with expected_status."`
+	ExpectedStatus string `json:"expected_status,omitempty" enum:"new,reviewing,waiting,awaiting_merge" doc:"Required unless force is true. Omit force when expected_status is provided. This compares against the effective current local workflow state before writing."`
+	Force          *bool  `json:"force,omitempty" doc:"Set true only for a deliberate unconditional override when expected_status is omitted. Omit this field when expected_status is provided; false is invalid."`
 	Source         string `json:"source,omitempty" pattern:"^[a-z][a-z0-9_-]{0,39}$"`
 	Actor          string `json:"actor,omitempty" maxLength:"120"`
 	Reason         string `json:"reason,omitempty" maxLength:"500"`
@@ -61,10 +61,6 @@ func (setWorkflowStateBody) TransformSchema(_ huma.Registry, schema *huma.Schema
 	common := workflowStateCommonProperties(schema.Properties)
 	guarded := copyWorkflowStateProperties(common)
 	guarded["expected_status"] = schema.Properties["expected_status"]
-	guarded["force"] = &huma.Schema{
-		Type: huma.TypeBoolean,
-		Enum: []any{false},
-	}
 	forced := copyWorkflowStateProperties(common)
 	forced["force"] = &huma.Schema{
 		Type: huma.TypeBoolean,
@@ -324,11 +320,16 @@ func validateSetWorkflowStateBody(body setWorkflowStateBody) error {
 			"new", "reviewing", "waiting", "awaiting_merge",
 		)
 	}
-	if body.ExpectedStatus == "" && !body.Force {
+	forceProvided := body.Force != nil
+	force := forceProvided && *body.Force
+	if body.ExpectedStatus == "" && !force {
+		if forceProvided {
+			return problemValidation("body.force", "force must be true when expected_status is omitted")
+		}
 		return problemValidation("body.expected_status", "expected_status is required unless force is true")
 	}
-	if body.ExpectedStatus != "" && body.Force {
-		return problemValidation("body.force", "force cannot be true when expected_status is provided")
+	if body.ExpectedStatus != "" && forceProvided {
+		return problemValidation("body.force", "force cannot be provided when expected_status is provided")
 	}
 	if body.Source != "" && !workflowSourcePattern.MatchString(body.Source) {
 		return problemValidation("body.source", "source must match ^[a-z][a-z0-9_-]{0,39}$")

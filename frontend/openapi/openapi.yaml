@@ -5959,17 +5959,13 @@ components:
               maxLength: 120
               type: string
             expected_status:
-              description: Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
+              description: Required unless force is true. Omit force when expected_status is provided. This compares against the effective current local workflow state before writing.
               enum:
                 - new
                 - reviewing
                 - waiting
                 - awaiting_merge
               type: string
-            force:
-              enum:
-                - false
-              type: boolean
             reason:
               maxLength: 500
               type: string

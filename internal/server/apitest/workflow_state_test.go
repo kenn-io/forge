@@ -202,6 +202,24 @@ func TestWorkflowStatePutValidation(t *testing.T) {
 			field: "body.force",
 			want:  http.StatusBadRequest,
 		},
+		{
+			name: "expected status with force false",
+			path: "/workflow-state/pr/gh/acme/widget/42",
+			body: map[string]any{
+				"status":          "reviewing",
+				"expected_status": "new",
+				"force":           false,
+			},
+			field: "body.force",
+			want:  http.StatusBadRequest,
+		},
+		{
+			name:  "force false without expected status",
+			path:  "/workflow-state/pr/gh/acme/widget/42",
+			body:  map[string]any{"status": "reviewing", "force": false},
+			field: "body.force",
+			want:  http.StatusBadRequest,
+		},
 	}
 
 	for _, tt := range tests {

@@ -6864,12 +6864,10 @@ export interface components {
         SetWorkflowStateBody: {
             actor?: string;
             /**
-             * @description Required unless force is true. This is mutually exclusive with force and compares against the effective current local workflow state before writing.
+             * @description Required unless force is true. Omit force when expected_status is provided. This compares against the effective current local workflow state before writing.
              * @enum {string}
              */
             expected_status: "new" | "reviewing" | "waiting" | "awaiting_merge";
-            /** @enum {boolean} */
-            force?: false;
             reason?: string;
             source?: string;
             /** @enum {string} */

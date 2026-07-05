@@ -193,6 +193,67 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 	require.NoError(err)
 	assert.Contains(string(diffData), "diff --git")
 
+	longHost := "self-hosted-" + strings.Repeat("segment-", 8) + "git.example.test"
+	longOwner := strings.TrimSuffix(strings.Repeat("nested-group/", 12), "/")
+	longName := strings.Repeat("repository", 12)
+	longNumber := 77
+	longRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: longHost,
+		Owner:        longOwner,
+		Name:         longName,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          longRepoID,
+		PlatformID:      77000,
+		Number:          longNumber,
+		URL:             "https://" + longHost + "/" + longOwner + "/" + longName + "/pull/77",
+		Title:           "Long diff identity",
+		Author:          "testuser",
+		State:           db.MergeRequestStateOpen,
+		Body:            "cached PR body",
+		HeadBranch:      "feature/caching",
+		BaseBranch:      "main",
+		PlatformHeadSHA: diffRepo.HeadSHA,
+		PlatformBaseSHA: diffRepo.BaseSHA,
+		Additions:       5,
+		Deletions:       2,
+		CreatedAt:       time.Now().UTC().Truncate(time.Second),
+		UpdatedAt:       time.Now().UTC().Truncate(time.Second),
+		LastActivityAt:  time.Now().UTC().Truncate(time.Second),
+	})
+	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(ctx, longRepoID, longNumber, diffRepo.HeadSHA, diffRepo.BaseSHA, diffRepo.BaseSHA))
+	require.NoError(database.UpdatePlatformSHAs(ctx, longRepoID, longNumber, diffRepo.HeadSHA, diffRepo.BaseSHA))
+	sourceClone, err := diffRepo.Manager.ClonePath("github.com", "acme", "widgets")
+	require.NoError(err)
+	longClone, err := diffRepo.Manager.ClonePath(longHost, longOwner, longName)
+	require.NoError(err)
+	require.NoError(os.MkdirAll(filepath.Dir(longClone), 0o755))
+	require.NoError(os.Rename(sourceClone, longClone))
+	require.NoError(database.UpdateRepoProviderMetadata(ctx, longRepoID, db.RepoProviderMetadata{
+		WebURL:        "https://" + longHost + "/" + longOwner + "/" + longName,
+		CloneURL:      longClone,
+		DefaultBranch: "main",
+	}))
+	longDiff := callMCPTool[getItemDiffOutput](t, session, "middleman_get_item_diff", map[string]any{
+		"item": map[string]any{
+			"type":          "pr",
+			"provider":      "github",
+			"platform_host": longHost,
+			"owner":         longOwner,
+			"name":          longName,
+			"number":        longNumber,
+		},
+		"emit_diff_file": true,
+	})
+	require.NotNil(longDiff.DiffFile)
+	assert.LessOrEqual(len(filepath.Base(longDiff.DiffFile.Path)), maxMCPDiffFileNameBytes)
+	longDiffData, err := os.ReadFile(longDiff.DiffFile.Path)
+	require.NoError(err)
+	assert.Contains(string(longDiffData), "diff --git")
+
 	stack := callMCPTool[getStackContextOutput](t, session, "middleman_get_stack_context", map[string]any{
 		"item": item,
 	})

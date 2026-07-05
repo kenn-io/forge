@@ -921,10 +921,20 @@ repo_path = "acme/widget"
 }
 
 func TestCreateKataWorkspaceFromGlobTrackedRepoName(t *testing.T) {
+	testCreateKataWorkspaceFromTrackedRepoName(t, "middle*")
+}
+
+func TestCreateKataWorkspaceFromExactTrackedRepoName(t *testing.T) {
+	testCreateKataWorkspaceFromTrackedRepoName(t, "middleman")
+}
+
+func testCreateKataWorkspaceFromTrackedRepoName(t *testing.T, configuredRepoName string) {
+	t.Helper()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	cfg := fmt.Sprintf(`
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -932,8 +942,9 @@ port = 8091
 
 [[repos]]
 owner = "acme"
-name = "middle*"
-`, &mockGH{})
+name = %q
+`, configuredRepoName)
+	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
 	require.NoError(err)
 	srv.workspaces = workspace.NewManager(database, t.TempDir())

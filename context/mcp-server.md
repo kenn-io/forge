@@ -30,7 +30,11 @@ route, or the host-prefixed variant, and always sends `source: "mcp"`. It
 passes `expected_status` through so agents can avoid overwriting humans or other
 agents. A write without `expected_status` must include `force: true`; that
 combination is an unconditional local workflow override and should be reserved
-for deliberate overrides. Workflow writes never retry automatically.
+for deliberate overrides. `expected_status` and `force` are exact request
+variants in the daemon schema (`internal/server/workflow_state_routes.go::TransformSchema`):
+`force: false`, `force` alongside `expected_status`, and unknown body fields are
+all rejected at runtime (`internal/server/workflow_state_routes.go::UnmarshalJSON`).
+Workflow writes never retry automatically.
 
 Every item/repo ref sent through MCP must preserve the full provider identity:
 `provider`, `platform_host`, `owner`, `name`, and item `number` where relevant.
@@ -53,13 +57,20 @@ per item but include a hash of the full provider/host/owner/name/number tuple
 (`internal/mcpserver/tools_diff.go::diffFileName`) so sanitized nested owner
 paths cannot collide. The filename identity canonicalizes provider aliases and
 omitted provider default hosts before hashing, so `gh`/`github` and omitted
-versus explicit `github.com` write the same per-item evidence file. File writes
-go through a unique temp file in the same directory and atomic rename, so a
-reader should observe the previous complete evidence file or the next complete
-one, never an in-place partial write. The daemon's gitclone diff parser must
-not silently omit changed files when raw metadata and parsed patch sections
-disagree; unmatched patch sections are preserved as structured diff rows so
-incomplete data is visible instead of hidden.
+versus explicit `github.com` write the same per-item evidence file. The filename
+identity also casefolds owner/name to match daemon repo lookup keys and bounds
+the readable prefix while preserving the PR-number/hash suffix
+(`internal/mcpserver/tools_diff.go::canonicalDiffFileRef`,
+`internal/mcpserver/tools_diff.go::truncateDiffNamePrefix`). Full-stack MCP e2e
+coverage must keep proving those identity aliases and long self-hosted/nested
+repo paths through `middleman_get_item_diff`
+(`internal/mcpserver/e2e_test.go::TestMCPToolsRoundTripAgainstDaemonAPI`). File
+writes go through a unique temp file in the same directory and atomic rename, so
+a reader should observe the previous complete evidence file or the next complete
+one, never an in-place partial write. The daemon's gitclone diff parser must not
+silently omit changed files when raw metadata and parsed patch sections disagree;
+unmatched patch sections are preserved as structured diff rows so incomplete data
+is visible instead of hidden.
 
 The HTTP transport serves streamable MCP at the listener root, requires a
 non-blank bearer token from `--http-token-env`, rejects non-loopback binds, and

@@ -291,6 +291,86 @@ worktree_base_path = %q
 	assert.Equal("widget", resp.Repo.Name)
 }
 
+func TestKataWorkspaceTargetAutomaticMappingFromTrackedRepoName(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "middleman"
+`, &mockGH{})
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+		"daemon_id":    "desktop",
+		"project_uid":  "project-middleman",
+		"project_name": "middleman",
+		"issue_uid":    "issue-kata-1",
+		"short_id":     "task-123",
+		"title":        "Fix workspace affordance",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp kataWorkspaceTargetResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.True(resp.Available)
+	require.NotNil(resp.Repo)
+	assert.Equal("github", resp.Repo.Provider)
+	assert.Equal("github.com", resp.Repo.PlatformHost)
+	assert.Equal("acme", resp.Repo.Owner)
+	assert.Equal("middleman", resp.Repo.Name)
+	assert.Equal(db.WorkspaceItemTypeKataTask, resp.ItemType)
+	assert.Equal(db.KataWorkspaceItemKey(db.WorkspaceKataMetadata{
+		DaemonID:   "desktop",
+		ProjectUID: "project-middleman",
+		IssueUID:   "issue-kata-1",
+	}), resp.ItemKey)
+}
+
+func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresOneMatch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "middleman"
+
+[[repos]]
+owner = "forks"
+name = "middleman"
+`, &mockGH{})
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	require.NoError(err)
+	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "middleman"))
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+		"daemon_id":    "desktop",
+		"project_uid":  "project-middleman",
+		"project_name": "middleman",
+		"issue_uid":    "issue-kata-1",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp kataWorkspaceTargetResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.False(resp.Available)
+	assert.Nil(resp.Repo)
+}
+
 func TestKataWorkspaceTargetAutomaticMappingFromProjectUIDWhenIdentityPresent(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -68,15 +68,18 @@ longer configured, so settings repo deletion must remove mappings for the
 deleted repo in the same save/rollback path
 (`internal/config/config.go::validateKataProjectRepoMappings`,
 `internal/server/settings_handlers.go::deleteConfiguredRepo`). Automatic
-resolution only uses watched exact repos with `worktree_base_path` whose clone
+resolution first uses watched exact repos with `worktree_base_path` whose clone
 contains a matching `.kata.toml`. Matching first compares both explicit
 identifiers, `project.uid` and `project.identity`, to the Kata project UID. If
 either identifier matches exactly, that clone is a candidate; if more than one
-clone matches, the result is ambiguous. Name fallback is only allowed when the
-watched clone metadata set has no usable `project.uid` or `project.identity`
-values at all, and then exactly one case-insensitive `project.name` match is
-required. Ambiguous, mismatched, or missing matches mean the Create/Open
-workspace button must not render.
+clone matches, the result is ambiguous. Name fallback through `.kata.toml` is
+only allowed when the watched clone metadata set has no usable `project.uid` or
+`project.identity` values at all, and then exactly one case-insensitive
+`project.name` match is required. If no `.kata.toml` mapping matches, the
+resolver may fall back to a case-insensitive exact match between the Kata
+project name and one configured exact repo name or repo path, but only for repos
+without readable `.kata.toml` project metadata. Ambiguous, mismatched, or
+missing matches mean the Create/Open workspace button must not render.
 
 Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so

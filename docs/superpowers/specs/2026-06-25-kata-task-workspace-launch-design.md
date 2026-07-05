@@ -145,9 +145,11 @@ Automatic `.kata.toml` mappings are global by project UID, identity, or name
 because the file does not carry daemon identity. If two repositories claim the
 same Kata project identity, or two identifier-less repositories claim the same
 project name, the resolver treats the mapping as ambiguous and returns no
-workspace target. The UI should not show a disabled button for this state
-because the user asked for the button to be absent when there is no clear
-mapping.
+workspace target. `.kata.toml` ambiguity is terminal: tracked-name fallback runs
+only when `.kata.toml` produces zero candidates. The UI should not show a
+disabled button or reason text for this state because the user asked for the
+button to be absent when there is no clear mapping; diagnostics need a new API
+field.
 
 ## Manual Settings
 

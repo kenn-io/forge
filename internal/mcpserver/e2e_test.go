@@ -150,13 +150,46 @@ func TestMCPToolsRoundTripAgainstDaemonAPI(t *testing.T) {
 	require.Len(contextOut.Events, 1)
 	assert.Equal("reviewer", contextOut.Events[0].Author)
 
-	diff := callMCPTool[getItemDiffOutput](t, session, "middleman_get_item_diff", map[string]any{
-		"item":           item,
-		"emit_diff_file": true,
-	})
-	require.NotEmpty(diff.Files)
-	require.NotNil(diff.DiffFile)
-	diffData, err := os.ReadFile(diff.DiffFile.Path)
+	diffItems := []map[string]any{
+		item,
+		{
+			"type":     "pr",
+			"provider": "github",
+			"owner":    "acme",
+			"name":     "widgets",
+			"number":   1,
+		},
+		{
+			"type":     "pr",
+			"provider": "gh",
+			"owner":    "acme",
+			"name":     "widgets",
+			"number":   1,
+		},
+		{
+			"type":          "pr",
+			"provider":      "Gh",
+			"platform_host": "GITHUB.COM",
+			"owner":         "Acme",
+			"name":          "Widgets",
+			"number":        1,
+		},
+	}
+	var diffPath string
+	for i, diffItem := range diffItems {
+		diff := callMCPTool[getItemDiffOutput](t, session, "middleman_get_item_diff", map[string]any{
+			"item":           diffItem,
+			"emit_diff_file": true,
+		})
+		require.NotEmpty(diff.Files)
+		require.NotNil(diff.DiffFile)
+		if i == 0 {
+			diffPath = diff.DiffFile.Path
+			continue
+		}
+		assert.Equal(diffPath, diff.DiffFile.Path)
+	}
+	diffData, err := os.ReadFile(diffPath)
 	require.NoError(err)
 	assert.Contains(string(diffData), "diff --git")
 

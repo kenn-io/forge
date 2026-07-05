@@ -50,6 +50,33 @@ describe("parseMarkdownSuggestions", () => {
       },
     ]);
   });
+
+  test("ignores suggestion-looking fences inside code blocks", () => {
+    const blocks = parseMarkdownSuggestions(
+      [
+        "Reviewer explained this with a markdown example.",
+        "",
+        "````markdown",
+        "```suggestion",
+        "return client.publishThreads();",
+        "```",
+        "````",
+        "",
+        "```suggestion",
+        "return actualSuggestion();",
+        "```",
+      ].join("\n"),
+    );
+
+    expect(blocks.filter((block) => block.type === "suggestion")).toEqual([
+      {
+        type: "suggestion",
+        key: "suggestion-1",
+        replacement: "return actualSuggestion();",
+        fenceLine: 9,
+      },
+    ]);
+  });
 });
 
 describe("buildSuggestionDiffFile", () => {

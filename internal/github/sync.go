@@ -815,6 +815,16 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 	}
 }
 
+func (p *gitHubClientProvider) OperationRateLimitBuckets(operation string) ([]platform.RateLimitBucket, bool) {
+	if operation != "apply_review_suggestion" {
+		return nil, false
+	}
+	return []platform.RateLimitBucket{
+		platform.RateLimitBucketREST,
+		platform.RateLimitBucketGraphQL,
+	}, true
+}
+
 func (p *gitHubClientProvider) GitHubClient() Client {
 	return p.client
 }
@@ -1766,7 +1776,7 @@ func (p *gitHubClientProvider) PublishDiffReviewDraft(
 	}, nil
 }
 
-func (p gitHubClientProvider) ApplyReviewSuggestions(
+func (p *gitHubClientProvider) ApplyReviewSuggestions(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,

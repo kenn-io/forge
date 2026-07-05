@@ -123,6 +123,11 @@ Some PR-derived state is only valid for one head commit.
   review-thread line ranges locally as one all-or-nothing batch, and commits with
   `createCommitOnBranch.expectedHeadOid` in
   `internal/github/client.go::createCommitForReviewSuggestions`.
+- GitHub's apply-suggestion operation consumes both the REST content API and the
+  GraphQL `createCommitOnBranch` mutation. The GitHub provider must report both
+  buckets through `OperationRateLimitBuckets("apply_review_suggestion")` so a
+  paused GraphQL write budget disables this operation without making GraphQL a
+  provider-neutral requirement.
 
 ## Fallback Data Rules
 

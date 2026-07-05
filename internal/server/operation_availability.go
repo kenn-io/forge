@@ -168,8 +168,7 @@ var (
 			capabilityMutationHeadBinding,
 			capabilityReadReviewThreads,
 		},
-		bucket:       apiBucketREST,
-		extraBuckets: []apiBucket{apiBucketGraphQL},
+		bucket: apiBucketREST,
 	}
 )
 
@@ -195,7 +194,7 @@ func (s *Server) repoOperationsWithContext(
 	writeCred := s.writeCredentialGateForRepo(repo)
 	derive := func(op operationDescriptor) OperationAvailability {
 		return deriveOperationAvailabilityWithContext(
-			op, caps, repo, operationRateLimit(op, rates), writeCred, opContext,
+			op, caps, repo, s.operationRateLimit(repo, op, rates), writeCred, opContext,
 		)
 	}
 	return RepoOperations{
@@ -324,14 +323,57 @@ func (s *Server) mergeRequestAuthoredByViewer(
 	return authored
 }
 
-func operationRateLimit(
+func (s *Server) operationRateLimit(
+	repo db.Repo,
 	op operationDescriptor,
 	rates map[apiBucket]rateLimitAvailability,
 ) rateLimitAvailability {
-	if rate := rates[op.bucket]; rate.limited {
-		return rate
+	return operationRateLimitForBuckets(s.operationRateLimitBuckets(repo, op), rates)
+}
+
+func (s *Server) operationRateLimitBuckets(repo db.Repo, op operationDescriptor) []apiBucket {
+	if s != nil && s.syncer != nil && s.syncer.Registry() != nil {
+		provider, err := s.syncer.Registry().Provider(repoProviderKind(repo), repoProviderHost(repo))
+		if err == nil {
+			if reporter, ok := provider.(platform.OperationRateLimitReporter); ok {
+				if buckets, ok := reporter.OperationRateLimitBuckets(op.name); ok {
+					if converted, ok := apiBucketsFromPlatform(buckets); ok {
+						return converted
+					}
+				}
+			}
+		}
 	}
-	for _, bucket := range op.extraBuckets {
+	return op.rateLimitBuckets()
+}
+
+func apiBucketsFromPlatform(buckets []platform.RateLimitBucket) ([]apiBucket, bool) {
+	result := make([]apiBucket, 0, len(buckets))
+	for _, bucket := range buckets {
+		switch bucket {
+		case platform.RateLimitBucketREST:
+			result = append(result, apiBucketREST)
+		case platform.RateLimitBucketGraphQL:
+			result = append(result, apiBucketGraphQL)
+		default:
+			return nil, false
+		}
+	}
+	return result, true
+}
+
+func (op operationDescriptor) rateLimitBuckets() []apiBucket {
+	buckets := make([]apiBucket, 0, 1+len(op.extraBuckets))
+	buckets = append(buckets, op.bucket)
+	buckets = append(buckets, op.extraBuckets...)
+	return buckets
+}
+
+func operationRateLimitForBuckets(
+	buckets []apiBucket,
+	rates map[apiBucket]rateLimitAvailability,
+) rateLimitAvailability {
+	for _, bucket := range buckets {
 		if rate := rates[bucket]; rate.limited {
 			return rate
 		}

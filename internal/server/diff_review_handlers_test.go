@@ -1,8 +1,10 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,4 +61,26 @@ func TestDBReviewLineRangeRejectsMalformedMultilineRanges(t *testing.T) {
 			require.Error(err)
 		})
 	}
+}
+
+func TestMarkdownSuggestionReplacementsSkipsNestedSuggestionFenceInCodeBlock(t *testing.T) {
+	body := strings.Join([]string{
+		"Reviewer explained this with a markdown example.",
+		"",
+		"````markdown",
+		"```suggestion",
+		"return client.publishThreads();",
+		"```",
+		"````",
+		"",
+		"```suggestion",
+		"return actualSuggestion();",
+		"```",
+	}, "\n")
+
+	replacements := markdownSuggestionReplacements(body)
+	require.Equal(t, []string{"return actualSuggestion();"}, replacements)
+
+	_, err := verifyReviewSuggestionReplacement(body, "return client.publishThreads();")
+	assert.Error(t, err)
 }

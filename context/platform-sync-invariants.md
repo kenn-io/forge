@@ -100,12 +100,18 @@ registry helpers return typed errors for missing providers or capabilities.
   head. Clients may send replacement text and the expected head, but the server
   must verify that replacement text exactly matches a persisted reviewer
   suggestion fence from the stored review comment body before calling the
-  provider. Clients must not be trusted for provider comment ids, line ranges,
-  or patch content authenticity.
+  provider. Non-suggestion fenced code blocks are opaque examples and must be
+  skipped before looking for later suggestion fences. Stored CRLF line endings
+  are normalized to LF for matching; replacement text is otherwise not trimmed
+  or rewritten. Clients must not be trusted for provider comment ids, line
+  ranges, or patch content authenticity.
 - Review suggestion apply availability must account for all upstream calls the
-  provider implementation makes. GitHub currently needs REST content reads and
-  a GraphQL `createCommitOnBranch` mutation, so either bucket being paused must
-  hide or disable the operation.
+  provider implementation makes. The neutral operation defaults to the REST
+  bucket, and providers with different needs must report them through
+  `internal/platform/client.go::OperationRateLimitReporter`. GitHub currently
+  needs REST content reads and a GraphQL `createCommitOnBranch` mutation, so its
+  provider reports both buckets and either bucket being paused must hide or
+  disable the operation.
 - Suggestion apply implementations must define deterministic handling for edge
   cases before exposing the capability: duplicate thread ids, overlapping
   ranges, stale heads, missing reviewed heads, renamed or deleted files, binary

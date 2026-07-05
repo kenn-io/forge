@@ -346,25 +346,31 @@ func markdownSuggestionReplacements(body string) []string {
 	replacements := make([]string, 0)
 	for lineIndex := 0; lineIndex < len(lines); {
 		fence, ok := openingMarkdownFence(lines[lineIndex])
-		if !ok || !markdownFenceInfoIsSuggestion(fence.info) {
+		if !ok {
 			lineIndex++
 			continue
 		}
-		closeIndex := -1
-		for i := lineIndex + 1; i < len(lines); i++ {
-			if closesMarkdownFence(lines[i], fence) {
-				closeIndex = i
-				break
-			}
-		}
+		closeIndex := closingMarkdownFenceIndex(lines, lineIndex, fence)
 		if closeIndex == -1 {
-			lineIndex++
+			break
+		}
+		if !markdownFenceInfoIsSuggestion(fence.info) {
+			lineIndex = closeIndex + 1
 			continue
 		}
 		replacements = append(replacements, strings.Join(lines[lineIndex+1:closeIndex], "\n"))
 		lineIndex = closeIndex + 1
 	}
 	return replacements
+}
+
+func closingMarkdownFenceIndex(lines []string, openIndex int, fence markdownFence) int {
+	for i := openIndex + 1; i < len(lines); i++ {
+		if closesMarkdownFence(lines[i], fence) {
+			return i
+		}
+	}
+	return -1
 }
 
 func openingMarkdownFence(line string) (markdownFence, bool) {

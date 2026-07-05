@@ -8,6 +8,20 @@ type Provider interface {
 	Capabilities() Capabilities
 }
 
+type RateLimitBucket string
+
+const (
+	RateLimitBucketREST    RateLimitBucket = "rest"
+	RateLimitBucketGraphQL RateLimitBucket = "graphql"
+)
+
+// OperationRateLimitReporter lets a provider override the server's default
+// operation-to-rate-bucket mapping when an implementation consumes a different
+// API budget than the provider-neutral operation normally would.
+type OperationRateLimitReporter interface {
+	OperationRateLimitBuckets(operation string) ([]RateLimitBucket, bool)
+}
+
 type RepositoryReader interface {
 	GetRepository(ctx context.Context, ref RepoRef) (Repository, error)
 	ListRepositories(

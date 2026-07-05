@@ -53,6 +53,13 @@ function closesFence(line: string, fence: Fence): boolean {
   return new RegExp(`^${marker}{${fence.length},}\\s*$`).test(line);
 }
 
+function closingFenceIndex(lines: string[], openIndex: number, fence: Fence): number {
+  for (let i = openIndex + 1; i < lines.length; i += 1) {
+    if (closesFence(lines[i]!, fence)) return i;
+  }
+  return -1;
+}
+
 function pushMarkdownBlock(blocks: MarkdownSuggestionBlock[], text: string): void {
   if (text.length === 0) return;
   blocks.push({
@@ -72,20 +79,15 @@ export function parseMarkdownSuggestions(raw: string): MarkdownSuggestionBlock[]
 
   while (lineIndex < lines.length) {
     const fence = openingFence(lines[lineIndex]!);
-    if (!fence || !suggestionInfo.test(fence.info)) {
+    if (!fence) {
       lineIndex += 1;
       continue;
     }
 
-    let closeIndex = -1;
-    for (let i = lineIndex + 1; i < lines.length; i += 1) {
-      if (closesFence(lines[i]!, fence)) {
-        closeIndex = i;
-        break;
-      }
-    }
-    if (closeIndex === -1) {
-      lineIndex += 1;
+    const closeIndex = closingFenceIndex(lines, lineIndex, fence);
+    if (closeIndex === -1) break;
+    if (!suggestionInfo.test(fence.info)) {
+      lineIndex = closeIndex + 1;
       continue;
     }
 

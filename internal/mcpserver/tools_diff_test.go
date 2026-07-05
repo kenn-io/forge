@@ -233,6 +233,23 @@ func TestDiffFileNameCanonicalizesProviderIdentity(t *testing.T) {
 	assert.Contains(omittedDefaultHost, "github-github.com-acme-widget-pr-7-")
 }
 
+func TestDiffFileNameBoundsReadablePrefix(t *testing.T) {
+	assert := assert.New(t)
+
+	name := diffFileName(itemRefInput{
+		Type:         "pr",
+		Provider:     "github",
+		PlatformHost: strings.Repeat("host-segment.", 30) + "example.com",
+		Owner:        strings.Repeat("nested-group/", 30),
+		Name:         strings.Repeat("repository-name", 30),
+		Number:       7,
+	})
+
+	assert.LessOrEqual(len(name), maxMCPDiffFileNameBytes)
+	assert.Contains(name, "-pr-7-")
+	assert.True(strings.HasSuffix(name, ".diff"))
+}
+
 func TestGetItemDiffRejectsIssueAndEmptyPatch(t *testing.T) {
 	require := require.New(t)
 

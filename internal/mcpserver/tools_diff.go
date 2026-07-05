@@ -13,7 +13,10 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
-const maxMCPDiffFileBytes = 10 << 20
+const (
+	maxMCPDiffFileBytes     = 10 << 20
+	maxMCPDiffFileNameBytes = 180
+)
 
 type getItemDiffInput struct {
 	Item         itemRefInput `json:"item"`
@@ -209,14 +212,15 @@ func diffFileName(ref itemRefInput) string {
 		ref.Number,
 	)
 	sum := sha256.Sum256([]byte(identity))
-	return fmt.Sprintf("%s-%s-%s-%s-pr-%d-%x.diff",
+	suffix := fmt.Sprintf("-pr-%d-%x.diff", ref.Number, sum[:12])
+	prefix := fmt.Sprintf("%s-%s-%s-%s",
 		sanitizeDiffName(ref.Provider),
 		sanitizeDiffName(ref.PlatformHost),
 		sanitizeDiffName(ref.Owner),
 		sanitizeDiffName(ref.Name),
-		ref.Number,
-		sum[:12],
 	)
+	prefix = truncateDiffNamePrefix(prefix, maxMCPDiffFileNameBytes-len(suffix))
+	return prefix + suffix
 }
 
 func canonicalDiffFileRef(ref itemRefInput) itemRefInput {
@@ -252,4 +256,18 @@ func sanitizeDiffName(value string) string {
 		b.WriteByte('_')
 	}
 	return b.String()
+}
+
+func truncateDiffNamePrefix(prefix string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return "diff"
+	}
+	if len(prefix) > maxBytes {
+		prefix = prefix[:maxBytes]
+	}
+	prefix = strings.Trim(prefix, "-_")
+	if prefix == "" {
+		return "diff"
+	}
+	return prefix
 }

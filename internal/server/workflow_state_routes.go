@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"regexp"
@@ -52,6 +54,27 @@ type setWorkflowStateBody struct {
 	Source         string `json:"source,omitempty" pattern:"^[a-z][a-z0-9_-]{0,39}$"`
 	Actor          string `json:"actor,omitempty" maxLength:"120"`
 	Reason         string `json:"reason,omitempty" maxLength:"500"`
+}
+
+func (body *setWorkflowStateBody) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for field := range raw {
+		switch field {
+		case "status", "expected_status", "force", "source", "actor", "reason":
+		default:
+			return fmt.Errorf("unknown field %q", field)
+		}
+	}
+	type workflowBody setWorkflowStateBody
+	var decoded workflowBody
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*body = setWorkflowStateBody(decoded)
+	return nil
 }
 
 func (setWorkflowStateBody) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {

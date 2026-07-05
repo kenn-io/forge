@@ -56,8 +56,9 @@ The resolver uses this precedence:
    repositories with a non-empty `worktree_base_path`.
 4. Automatic mapping by unambiguous `.kata.toml` project name, considering only
    clones whose `.kata.toml` declares no `uid`/`identity`.
-5. Automatic mapping by unambiguous tracked exact repository name when the
-   matching repo has no readable `.kata.toml` project metadata.
+5. Automatic mapping by unambiguous tracked repository name, including synced
+   repos matched by a configured glob, when the matching repo has no readable
+   `.kata.toml` project metadata.
 6. No target when neither source yields exactly one repository.
 
 Manual mappings are a fallback and override only the project they name. Automatic
@@ -361,8 +362,9 @@ Backend coverage:
   return `available: false`.
 - A project name matching exactly one tracked exact repository name resolves
   when that repository has no readable `.kata.toml` project metadata.
-- A project name matching multiple tracked exact repositories is ambiguous and
-  returns `available: false`.
+- A project name matching exactly one synced glob-matched repository name also
+  resolves; multiple tracked repository matches are ambiguous and return
+  `available: false`.
 - Manual mapping resolves to a watched repository and overrides an automatic
   mapping for the same daemon/project.
 - Missing Kata issue UID and removed watched repo mappings return

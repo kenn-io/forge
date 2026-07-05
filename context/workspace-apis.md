@@ -77,10 +77,11 @@ only allowed when the watched clone metadata set has no usable `project.uid` or
 `project.identity` values at all, and then exactly one case-insensitive
 `project.name` match is required. If no `.kata.toml` mapping matches, the
 resolver may fall back to a case-insensitive exact match between the Kata
-project name and one configured exact repo name or repo path, but only for repos
-without readable `.kata.toml` project metadata. Ambiguous, mismatched, or
-missing matches mean the Create/Open workspace button must not render
-(`internal/server/kata_workspace.go::kataAutomaticWorkspaceRepo`).
+project name and one configured exact repo, or one synced repo matched by a
+configured glob, but only for repos without readable `.kata.toml` project
+metadata. Ambiguous, mismatched, or missing matches mean the Create/Open
+workspace button must not render
+(`internal/server/kata_workspace.go::resolveKataWorkspaceRepo`).
 
 Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so

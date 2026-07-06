@@ -65,9 +65,10 @@ export function problemCapability(problem: ProblemBody): string | undefined {
 }
 
 // ConflictReason is the details.reason subtype carried by conflict
-// problems on head-bound mutations (merge, approve), per the head
-// binding contract in context/provider-architecture.md.
-export type ConflictReason = "stale_state" | "head_unknown" | "conflict";
+// problems on head-bound mutations (merge, approve, review-suggestion
+// apply), per the head binding contract in context/provider-architecture.md
+// and the apply-specific contract in context/error-handling.md.
+export type ConflictReason = "stale_state" | "head_unknown" | "not_open" | "head_repo_unknown" | "conflict";
 
 // problemConflictReason reads details.reason from a conflict problem.
 // Non-conflict problems return undefined; a conflict with a missing or
@@ -78,7 +79,12 @@ export function problemConflictReason(problem: ProblemBody): ConflictReason | un
     return undefined;
   }
   const reason = problem.details?.["reason"];
-  if (reason === "stale_state" || reason === "head_unknown") {
+  if (
+    reason === "stale_state" ||
+    reason === "head_unknown" ||
+    reason === "not_open" ||
+    reason === "head_repo_unknown"
+  ) {
     return reason;
   }
   return "conflict";

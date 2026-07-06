@@ -112,8 +112,8 @@ describe("problemCapability", () => {
 });
 
 describe("problemConflictReason", () => {
-  it("returns the head-pinning reasons from details.reason", () => {
-    for (const reason of ["stale_state", "head_unknown"] as const) {
+  it("returns the stable conflict reasons from details.reason", () => {
+    for (const reason of ["stale_state", "head_unknown", "not_open", "head_repo_unknown"] as const) {
       expect(
         problemConflictReason({
           code: ProblemCodes.conflict,

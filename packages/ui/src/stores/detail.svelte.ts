@@ -1,5 +1,6 @@
 import type { KanbanStatus, Label, PullDetail } from "../api/types.js";
 import type { ApplySuggestionRequest } from "../utils/markdown-suggestions.js";
+import { isProblem, problemConflictReason, type ConflictReason, type ProblemBody } from "../api/problems.js";
 import {
   providerDefaultHost,
   providerItemPath,
@@ -44,6 +45,13 @@ export interface DetailStoreOptions {
 
 function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
   return error.detail ?? error.title ?? fallback;
+}
+
+function shouldRefreshAfterApplySuggestionConflict(problem: ProblemBody): boolean {
+  const reason: ConflictReason | undefined = problemConflictReason(problem);
+  return (
+    reason === "stale_state" || reason === "head_unknown" || reason === "not_open" || reason === "head_repo_unknown"
+  );
 }
 
 function delay(ms: number): Promise<void> {
@@ -1130,7 +1138,15 @@ export function createDetailStore(opts: DetailStoreOptions) {
         },
       );
       if (requestError) {
-        throw new Error(requestError.detail ?? requestError.title ?? "failed to apply suggestion");
+        const message = apiErrorMessage(requestError, "failed to apply suggestion");
+        if (isProblem(requestError) && shouldRefreshAfterApplySuggestionConflict(requestError)) {
+          if (isDetailShowingRef(ref)) {
+            await syncDetail(owner, name, number, syncGeneration, ref);
+          }
+          storeError = message;
+          return false;
+        }
+        throw new Error(message);
       }
     } catch (err) {
       storeError = err instanceof Error ? err.message : String(err);

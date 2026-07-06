@@ -142,9 +142,7 @@ function contextLineNumber(line: ReviewThreadContextLine, delta: number): number
 function suggestionLines(replacement: string): string[] {
   if (replacement === "") return [];
   const normalized = replacement.replace(/\r\n/g, "\n");
-  const lines = normalized.split("\n");
-  if (lines.at(-1) === "") lines.pop();
-  return lines;
+  return normalized.split("\n");
 }
 
 function patchLine(line: DiffLine): string {

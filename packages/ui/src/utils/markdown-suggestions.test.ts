@@ -193,4 +193,14 @@ describe("buildSuggestionDiffFile", () => {
       },
     ]);
   });
+
+  test("preserves a trailing blank replacement line in the preview diff", () => {
+    const file = buildSuggestionDiffFile(thread, context, "return compute();\n");
+
+    expect(file.additions).toBe(2);
+    expect(file.hunks[0]?.lines.filter((line) => line.type === "add")).toEqual([
+      { type: "add", new_num: 10, content: "return compute();" },
+      { type: "add", new_num: 11, content: "" },
+    ]);
+  });
 });

@@ -933,7 +933,7 @@
   .table-body {
     flex: 1;
     overflow: auto;
-    padding: 0 6px 12px;
+    padding: 0 0 12px;
   }
 
   .empty {

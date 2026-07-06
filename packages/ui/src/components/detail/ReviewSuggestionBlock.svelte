@@ -36,14 +36,16 @@
     !context.outdated &&
       thread.side.toLowerCase() !== "left" &&
       reviewedHeadSHA !== "" &&
-      (currentHeadSHA === "" || reviewedHeadSHA === currentHeadSHA) &&
+      currentHeadSHA !== "" &&
+      reviewedHeadSHA === currentHeadSHA &&
       onCommit !== undefined,
   );
   const disabledReason = $derived.by(() => {
     if (context.outdated) return "The original diff context is not available";
     if (thread.side.toLowerCase() === "left") return "Suggestions on removed lines cannot be applied";
     if (reviewedHeadSHA === "") return "The suggestion is missing a reviewed head commit";
-    if (currentHeadSHA !== "" && reviewedHeadSHA !== currentHeadSHA) {
+    if (currentHeadSHA === "") return "The current pull request head is not known yet";
+    if (reviewedHeadSHA !== currentHeadSHA) {
       return "The suggestion was reviewed on an older head commit";
     }
     if (onCommit === undefined) return "Suggestion application is unavailable";
@@ -79,8 +81,8 @@
         class:review-suggestion__action--selected={batched}
         type="button"
         onclick={onToggleBatch}
-        disabled={!canApply || applying || onToggleBatch === undefined}
-        title={!canApply ? disabledReason : undefined}
+        disabled={(!canApply && !batched) || applying || onToggleBatch === undefined}
+        title={!canApply && !batched ? disabledReason : undefined}
       >
         <PlusIcon size={14} />
         {batched ? "Remove from batch" : "Add suggestion to batch"}

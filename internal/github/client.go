@@ -2615,6 +2615,9 @@ func (c *liveClient) ApplyReviewSuggestions(
 	if len(byPath) == 0 {
 		return nil, githubSuggestionPlatformError(platform.ErrCodeInvalidArgument, "at least one suggestion is required", nil)
 	}
+	if err := c.ensureReviewSuggestionPullOpen(ctx, owner, repo, number); err != nil {
+		return nil, err
+	}
 
 	paths := make([]string, 0, len(byPath))
 	for path := range byPath {
@@ -2638,6 +2641,28 @@ func (c *liveClient) ApplyReviewSuggestions(
 	}
 
 	return c.createCommitForReviewSuggestions(ctx, owner, repo, number, headFullName, headBranch, expectedHeadSHA, strings.TrimSpace(input.Message), additions)
+}
+
+func (c *liveClient) ensureReviewSuggestionPullOpen(
+	ctx context.Context,
+	owner string,
+	repo string,
+	number int,
+) error {
+	pr, err := c.GetPullRequest(ctx, owner, repo, number)
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(pr.GetState(), "open") {
+		return nil
+	}
+	return &platform.Error{
+		Code:         platform.ErrCodeConflict,
+		Provider:     platform.KindGitHub,
+		PlatformHost: c.platformHost,
+		Details:      map[string]string{"reason": "not_open"},
+		Err:          fmt.Errorf("pull request is not open"),
+	}
 }
 
 func (c *liveClient) githubFileContentAtRef(

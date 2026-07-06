@@ -205,6 +205,7 @@ type mockGH struct {
 	createReviewCommentReplyFn func(context.Context, string, string, int, string, int64) (*gh.PullRequestComment, error)
 	createReviewFn             func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
 	createReviewWithCommentsFn func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
+	applyReviewSuggestionsFn   func(context.Context, string, string, int, platform.ApplyReviewSuggestionsInput) (*platform.AppliedReviewSuggestions, error)
 	mergePullRequestFn         func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
 	listWorkflowRunsForHeadFn  func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
 	approveWorkflowRunFn       func(context.Context, string, string, int64) error
@@ -545,13 +546,16 @@ func (m *mockGH) CreateReviewWithComments(
 }
 
 func (m *mockGH) ApplyReviewSuggestions(
-	context.Context,
-	string,
-	string,
-	int,
-	platform.ApplyReviewSuggestionsInput,
+	ctx context.Context,
+	owner string,
+	repo string,
+	number int,
+	input platform.ApplyReviewSuggestionsInput,
 ) (*platform.AppliedReviewSuggestions, error) {
-	return nil, nil
+	if m.applyReviewSuggestionsFn != nil {
+		return m.applyReviewSuggestionsFn(ctx, owner, repo, number, input)
+	}
+	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}, nil
 }
 
 func (m *mockGH) DismissReview(
@@ -15852,6 +15856,7 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 	applied := provider.appliedSuggestions[0]
 	require.Len(applied.Suggestions, 1)
 	assert.Equal("feature/gitlab", applied.HeadBranch)
+	assert.Equal("https://gitlab.example.com/fork/project.git", applied.HeadRepoCloneURL)
 	assert.Equal("abc123", applied.ExpectedHeadSHA)
 	assert.Equal("provider-thread-1", applied.Suggestions[0].ProviderThreadID)
 	assert.Equal("provider-comment-1", applied.Suggestions[0].ProviderCommentID)
@@ -15910,6 +15915,106 @@ func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
 	require.NotNil(problem.Details)
 	assert.Equal("not_open", problem.Details["reason"])
 	assert.Empty(provider.appliedSuggestions)
+}
+
+func TestAPIApplyReviewSuggestionRejectsUnknownHeadRepoOnGitHub(t *testing.T) {
+	tests := []struct {
+		name             string
+		headRepoCloneURL string
+	}{
+		{name: "missing clone URL"},
+		{name: "unparseable clone URL", headRepoCloneURL: "not-a-url"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			caps := platform.Capabilities{
+				ReadRepositories:            true,
+				ReadMergeRequests:           true,
+				ReadIssues:                  true,
+				ReadComments:                true,
+				ReviewSuggestionApplication: true,
+				MutationHeadBinding:         true,
+				ReadReviewThreads:           true,
+			}
+			srv, _, provider := setupGitHubCapabilityServerWithProvider(t, &caps, tt.headRepoCloneURL)
+
+			rr := doJSON(
+				t,
+				srv,
+				http.MethodPost,
+				"/api/v1/host/github.example.com/pulls/gh/acme/widget/7/review-suggestions/apply",
+				map[string]any{
+					"expected_head_sha": "abc123",
+					"suggestions": []map[string]any{{
+						"thread_id":   "1",
+						"replacement": "return client.publishThreads();",
+					}},
+				},
+			)
+
+			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+			var problem rawProblemDetail
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal(string(CodeConflict), problem.Code)
+			assert.Equal("pull request head repository is unknown", problem.Detail)
+			require.NotNil(problem.Details)
+			assert.Equal("head_repo_unknown", problem.Details["reason"])
+			assert.Empty(provider.appliedSuggestions)
+		})
+	}
+}
+
+func TestAPIApplyReviewSuggestionPassesHeadRepoToGitHubProvider(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitHubCapabilityServerWithProvider(
+		t, &caps, "https://github.example.com/fork/widget.git",
+	)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.example.com",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/github.example.com/pulls/gh/acme/widget/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	require.Len(provider.appliedSuggestions, 1)
+	assert.Equal(
+		"https://github.example.com/fork/widget.git",
+		provider.appliedSuggestions[0].HeadRepoCloneURL,
+	)
 }
 
 func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
@@ -17947,6 +18052,7 @@ func setupGitLabCapabilityServerWithProvider(
 			State:              "open",
 			IsDraft:            true,
 			HeadBranch:         "feature/gitlab",
+			HeadRepoCloneURL:   "https://gitlab.example.com/fork/project.git",
 			BaseBranch:         "main",
 			HeadSHA:            "abc123",
 			BaseSHA:            "def456",
@@ -17981,6 +18087,78 @@ func setupGitLabCapabilityServerWithProvider(
 		PlatformExternalID: "gid://gitlab/Project/4242",
 		WebURL:             "https://gitlab.example.com/group/project",
 		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	syncer.RunOnce(ctx)
+	return srv, database, provider
+}
+
+func setupGitHubCapabilityServerWithProvider(
+	t *testing.T,
+	caps *platform.Capabilities,
+	headRepoCloneURL string,
+) (*Server, *db.DB, *apiTestGitLabProvider) {
+	t.Helper()
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitHub,
+		Host:               "github.example.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformID:         6262,
+		PlatformExternalID: "6262",
+		WebURL:             "https://github.example.com/acme/widget",
+		CloneURL:           "https://github.example.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+	provider := &apiTestGitLabProvider{
+		ref:          ref,
+		capabilities: caps,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:               ref,
+			PlatformID:         7101,
+			PlatformExternalID: "7101",
+			Number:             7,
+			URL:                "https://github.example.com/acme/widget/pull/7",
+			Title:              "GitHub provider PR",
+			Author:             "ada",
+			State:              "open",
+			HeadBranch:         "feature/github",
+			HeadRepoCloneURL:   headRepoCloneURL,
+			BaseBranch:         "main",
+			HeadSHA:            "abc123",
+			BaseSHA:            "def456",
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			LastActivityAt:     now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitHub,
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "github.example.com",
+		RepoPath:           "acme/widget",
+		PlatformRepoID:     6262,
+		PlatformExternalID: "6262",
+		WebURL:             "https://github.example.com/acme/widget",
+		CloneURL:           "https://github.example.com/acme/widget.git",
 		DefaultBranch:      "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(

@@ -118,15 +118,26 @@ registry helpers return typed errors for missing providers or capabilities.
   needs REST content reads and a GraphQL `createCommitOnBranch` mutation, so its
   provider reports both buckets and either bucket being paused must hide or
   disable the operation.
-- Review suggestion application mutates the source branch and is open-PR-only:
-  closed/merged rows fail with `reason: not_open`, and the UI withholds apply
-  handlers for non-open PRs (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `packages/ui/src/components/detail/PullDetail.svelte::applyTimelineSuggestion`).
+- Review suggestion application mutates the source branch and is open-PR-only
+  as an upstream guarantee: closed/merged local rows fail with
+  `reason: not_open`, providers must re-verify live PR state immediately before
+  branch mutation and map upstream closed/merged races to the same reason, and
+  the UI withholds apply handlers for non-open PRs
+  (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `internal/github/client.go::ensureReviewSuggestionPullOpen`, `packages/ui/src/components/detail/PullDetail.svelte::applyTimelineSuggestion`).
+- Missing or unparseable head repository identity fails suggestion apply closed with
+  `reason: head_repo_unknown` before any provider call; providers must never
+  fall back to the base repository as a write target
+  (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `internal/github/client.go::githubSuggestionHeadRepo`).
 - Successful suggestion apply must refresh through the detail-sync broadcaster,
-  not a raw background sync, so detail observes the persisted new head/suggestions
-  (`internal/server/diff_review_handlers.go::syncAfterReviewSuggestionApply`).
+  not a raw background sync, so detail observes the persisted new head/suggestions;
+  the post-apply refresh must rerun after any in-flight detail sync for the same
+  PR instead of deduping into it, because that sync may predate the commit
+  (`internal/server/diff_review_handlers.go::syncAfterReviewSuggestionApply`, `internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).
 - Suggestion apply controls should only expose actions for review-thread heads
-  that still match the current PR head; stale heads fail closed server-side but
-  should not remain clickable (`packages/ui/src/components/detail/ReviewSuggestionBlock.svelte`).
+  that still match the current PR head; stale or unknown heads fail closed
+  server-side but should not remain clickable, and suggestions batched before
+  the head moved must not reach batch submit while staying removable
+  (`packages/ui/src/components/detail/ReviewSuggestionBlock.svelte`, `packages/ui/src/components/detail/EventTimeline.svelte`).
 - Suggestion apply implementations must define deterministic handling for edge
   cases before exposing the capability: duplicate thread ids, overlapping
   ranges, stale heads, missing reviewed heads, missing head repository identity,

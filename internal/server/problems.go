@@ -577,6 +577,15 @@ func mapPlatformError(err error) huma.StatusError {
 	case platform.ErrCodeConflict:
 		d := platformErrorDetails(provider, host)
 		d["reason"] = "conflict"
+		for key, value := range pe.Details {
+			if key == "reason" {
+				d[key] = value
+				continue
+			}
+			if _, reserved := d[key]; !reserved {
+				d[key] = value
+			}
+		}
 		return problemConflict(CodeConflict, err.Error(), d)
 	case platform.ErrCodeProviderNotConfigured,
 		platform.ErrCodeMissingToken,

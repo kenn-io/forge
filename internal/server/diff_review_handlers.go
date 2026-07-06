@@ -13,6 +13,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 )
 
@@ -188,6 +189,13 @@ func (s *Server) applyReviewSuggestions(
 			CodeConflict,
 			"pull request is not open",
 			map[string]any{"reason": "not_open"},
+		)
+	}
+	if repoProviderKind(*repo) == platform.KindGitHub && ghclient.ParseHeadRepoFullName(mr.HeadRepoCloneURL) == "" {
+		return nil, problemConflict(
+			CodeConflict,
+			"pull request head repository is unknown",
+			map[string]any{"reason": "head_repo_unknown"},
 		)
 	}
 	if len(input.Body.Suggestions) == 0 {
@@ -453,7 +461,7 @@ func (s *Server) syncAfterReviewSuggestionApply(repo db.Repo, number int) {
 	host := repoProviderHost(repo)
 	key := "pr:" + string(kind) + ":" + host + ":" + repo.RepoPath +
 		"#" + strconv.Itoa(number)
-	s.enqueueDetailSync(
+	s.enqueueDetailSyncOrRerun(
 		key,
 		[]any{
 			"type", "pr",

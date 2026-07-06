@@ -405,6 +405,23 @@ func TestMapPlatformError(t *testing.T) {
 			wantCode:   CodeBadRequest,
 		},
 		{
+			name: "ConflictWithReason",
+			input: &platform.Error{
+				Code:         platform.ErrCodeConflict,
+				Provider:     "github",
+				PlatformHost: "github.com",
+				Details:      map[string]string{"reason": "not_open"},
+				Err:          errors.New("pull request is not open"),
+			},
+			wantStatus: http.StatusConflict,
+			wantCode:   CodeConflict,
+			wantDetails: map[string]any{
+				"provider":     "github",
+				"platformHost": "github.com",
+				"reason":       "not_open",
+			},
+		},
+		{
 			name:       "PlainError",
 			input:      errors.New("boom"),
 			wantStatus: http.StatusBadGateway,

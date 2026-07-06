@@ -619,6 +619,7 @@ describe("EventTimeline", () => {
         repoName: "widget",
         repoPath: "acme/widget",
         number: 7,
+        currentHeadSHA: "abc123",
         onApplySuggestion: applySuggestion,
       },
       context: new Map([
@@ -681,6 +682,7 @@ describe("EventTimeline", () => {
       repoName: "widget",
       repoPath: "acme/widget",
       number: 7,
+      currentHeadSHA: "abc123",
       onApplySuggestion: applySuggestion,
     };
     const context = new Map([
@@ -807,6 +809,133 @@ describe("EventTimeline", () => {
     expect(commitButton.disabled).toBe(true);
     expect(commitButton.title).toBe("The suggestion was reviewed on an older head commit");
     expect(batchButton.disabled).toBe(true);
+  });
+
+  it("disables suggestion application when the current head is unknown", async () => {
+    const applySuggestion = vi.fn(async () => true);
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeReviewThreadEvent({
+            Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join(
+              "\n",
+            ),
+            diff_thread: {
+              ...makeReviewThreadEvent().diff_thread!,
+              diff_head_sha: "abc123",
+            },
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        onApplySuggestion: applySuggestion,
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    await expectSuggestionPierreText(/return client\.publishThreads\(\);/);
+    const commitButton = screen.getByRole("button", { name: "Commit suggestion" }) as HTMLButtonElement;
+    const batchButton = screen.getByRole("button", { name: "Add suggestion to batch" }) as HTMLButtonElement;
+    expect(commitButton.disabled).toBe(true);
+    expect(commitButton.title).toBe("The current pull request head is not known yet");
+    expect(batchButton.disabled).toBe(true);
+  });
+
+  it("drops suggestions batched on an older head from batch submit and keeps them removable", async () => {
+    const applySuggestion = vi.fn(async () => true);
+    const baseThread = makeReviewThreadEvent().diff_thread!;
+    const staleEvent = makeReviewThreadEvent({
+      ID: 1,
+      CreatedAt: "2024-06-01T12:01:00Z",
+      Body: ["First suggestion.", "", "```suggestion", "return firstSuggestion();", "```"].join("\n"),
+      diff_thread: {
+        ...baseThread,
+        id: "thread-1",
+        diff_head_sha: "abc123",
+      },
+    });
+    const freshEvent = makeReviewThreadEvent({
+      ID: 2,
+      CreatedAt: "2024-06-01T12:02:00Z",
+      Body: ["Second suggestion.", "", "```suggestion", "return secondSuggestion();", "```"].join("\n"),
+      diff_thread: {
+        ...baseThread,
+        id: "thread-2",
+        diff_head_sha: "new-head",
+      },
+    });
+    const props = {
+      events: [staleEvent, freshEvent],
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widget",
+      repoPath: "acme/widget",
+      number: 7,
+      currentHeadSHA: "abc123",
+      onApplySuggestion: applySuggestion,
+    };
+    const context = new Map([
+      [
+        STORES_KEY,
+        {
+          diff: makeDiffStore(),
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        },
+      ],
+    ]);
+    const { rerender } = render(EventTimeline, { props, context });
+
+    const batchButtons = await waitFor(() => {
+      const buttons = screen.getAllByRole("button", { name: "Add suggestion to batch" });
+      expect(buttons).toHaveLength(2);
+      return buttons as HTMLButtonElement[];
+    });
+    expect(batchButtons[0]!.disabled).toBe(false);
+    await fireEvent.click(batchButtons[0]!);
+    expect(screen.getByText("1 suggestion in batch")).toBeTruthy();
+
+    // The PR head moves past the first suggestion's reviewed head.
+    await rerender({ ...props, currentHeadSHA: "new-head" });
+    expect(screen.queryByText("1 suggestion in batch")).toBeNull();
+
+    // The now-fresh suggestion can still be batched and committed alone.
+    await fireEvent.click(screen.getByRole("button", { name: "Add suggestion to batch" }));
+    expect(screen.getByText("1 suggestion in batch")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Commit batch" }));
+    expect(applySuggestion).toHaveBeenCalledTimes(1);
+    expect(applySuggestion).toHaveBeenCalledWith({
+      suggestions: [
+        {
+          threadID: "thread-2",
+          replacement: "return secondSuggestion();",
+        },
+      ],
+    });
+
+    // The stale batched suggestion stays removable even though it cannot apply.
+    const removeButton = screen.getByRole("button", { name: "Remove from batch" }) as HTMLButtonElement;
+    expect(removeButton.disabled).toBe(false);
+    await fireEvent.click(removeButton);
+    expect(screen.queryByRole("button", { name: "Remove from batch" })).toBeNull();
   });
 
   it("renders threaded comments as separate compact rows with one-line previews", async () => {

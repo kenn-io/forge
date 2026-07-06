@@ -164,6 +164,33 @@ describe("KataWorkspace", () => {
     expect(screen.queryByRole("region", { name: "Reachable task graph" })).toBeNull();
   });
 
+  it("keeps a graph node selection when no route callback is provided", async () => {
+    const root = {
+      ...issue("issue-root", "Root graph task", "project-kata"),
+      blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
+    };
+    const blocked = issue("issue-blocked", "Blocked follow-up", "project-kata");
+    const { api } = createWorkspaceAPI([root, blocked]);
+
+    render(KataWorkspace, { props: { api } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Root graph task/ })).toBeTruthy();
+    });
+    const rootRow = screen.getByRole("button", { name: /Root graph task/ });
+    await fireEvent.click(within(rootRow.parentElement!).getByRole("button", { name: "Open reachable graph" }));
+    await fireEvent.click(graphNodeWithText("Blocked follow-up"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
+    });
+    // Without a route callback the selectedIssueUID prop never updates. The
+    // route-sync effect must not read that null prop as a route-driven
+    // deselect and clear the selection right after it was made.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
+  });
+
   it("opens a reachable graph from the task detail toolbar", async () => {
     const root = {
       ...issue("issue-root", "Root graph task", "project-kata"),

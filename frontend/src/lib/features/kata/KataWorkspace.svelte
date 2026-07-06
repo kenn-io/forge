@@ -737,7 +737,12 @@
       }
       return;
     }
-    if (!notify || selectedIssueUID === uid) {
+    // syncedRouteIssueUID asserts that the route prop and the store selection
+    // agree, so it may only be recorded when the prop actually carries this
+    // UID. Recording it for a non-routed selection (no onSelectedIssueChange,
+    // prop stays null) makes the route-sync effect read the null prop as a
+    // route-driven deselect and immediately clear the selection.
+    if (selectedIssueUID === uid) {
       syncedRouteIssueUID = uid;
     }
     if (notify) onSelectedIssueChange?.(uid);

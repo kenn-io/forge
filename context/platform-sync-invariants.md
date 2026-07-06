@@ -86,72 +86,40 @@ registry helpers return typed errors for missing providers or capabilities.
   changing state, merging, requesting review, or approving workflows.
   Server handlers translate these typed platform errors into the stable problem
   envelope described in [`context/error-handling.md`](./error-handling.md).
-- Review suggestion application is a provider capability, not a markdown/UI
-  shortcut. Providers that can apply suggestions must expose
-  `review_suggestion_application`, `mutation_head_binding`, and
-  `read_review_threads`, and implement
-  `internal/platform/client.go::ReviewSuggestionApplier`. The provider
-  contract is an all-or-nothing batch apply against the expected head; partial
-  success is not a valid implementation of this capability.
-- The server must rebuild each provider suggestion from persisted review-thread
-  metadata in
-  `internal/server/diff_review_handlers.go::applyReviewSuggestions` and
-  `validateReviewSuggestionThread`, including path, side, range, and reviewed
-  head. Clients may send replacement text and the expected head, but the server
-  must verify that replacement text exactly matches a persisted reviewer
-  suggestion fence from the stored review comment body before calling the
-  provider. Non-suggestion fenced code blocks are opaque examples and must be
-  skipped before looking for later suggestion fences, including Markdown fences
-  indented by up to three leading spaces. Stored CRLF line endings are
-  normalized to LF for matching; replacement text is otherwise not trimmed or
-  rewritten. The UI parser/preview must mirror this normalization and opaque
-  fence handling. Clients must not be trusted for provider comment ids, line
-  ranges, reviewed paths, or patch content authenticity.
-- Review suggestion apply availability must account for all upstream calls the
-  provider implementation makes. The neutral operation defaults to the REST
-  bucket, and providers with different needs must report them through
-  `internal/platform/client.go::OperationRateLimitReporter` using typed
-  operation names. An explicit empty or unknown bucket report must fail closed
-  as `rate_limited`; no report means the server descriptor default applies.
-  Mutation handlers must re-check the same operation buckets immediately before
-  calling the provider, because UI availability can go stale. GitHub currently
-  needs REST content reads and a GraphQL `createCommitOnBranch` mutation, so its
-  provider reports both buckets and either bucket being paused must hide or
-  disable the operation.
-- Review suggestion application mutates the source branch and is open-PR-only:
-  closed/merged local rows fail with `reason: not_open`, providers re-verify
-  live PR source state as close as possible to the branch mutation, including
-  open/closed state, head repository, head branch, and head SHA. Upstream
-  closed/merged races map to `reason: not_open`; live branch or SHA movement
-  maps to `stale_state`; and the UI withholds apply handlers for non-open PRs.
-  The live re-check is a best-effort preflight, not an atomic guard — no provider
-  offers commit-only-if-open or commit-only-if-this-PR-still-points-here. GitHub's
-  `expectedHeadOid` only protects the selected `{head repo, head branch}` from
-  moving under the mutation; it cannot prove the PR still points at that branch
-  after the final preflight. Provider stale failures still map to `stale_state`
-  (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `internal/github/client.go::ensureReviewSuggestionPullMutable`, `packages/ui/src/components/detail/PullDetail.svelte::applyTimelineSuggestion`).
-- For providers whose branch writes need an explicit source repository target
-  (GitHub currently), missing, unparseable, or inaccessible head repository
-  identity fails suggestion apply closed with `reason: head_repo_unknown`
-  before any provider branch mutation; providers must never fall back to the
-  base repository as a write target
-  (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `internal/github/client.go::githubSuggestionHeadRepo`, `internal/github/client.go::ensureReviewSuggestionPullMutable`).
-- Successful suggestion apply must refresh through the detail-sync broadcaster,
-  not a raw background sync, so detail observes the persisted new head/suggestions;
-  the post-apply refresh must rerun after any in-flight detail sync for the same
-  PR instead of deduping into it, because that sync may predate the commit
-  (`internal/server/diff_review_handlers.go::syncAfterReviewSuggestionApply`, `internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).
-- Suggestion apply controls should only expose actions for review-thread heads
-  that still match the current PR head; stale or unknown heads fail closed
-  server-side but should not remain clickable, and suggestions batched before
-  the head moved must not reach batch submit while staying removable
+- Review suggestion application is a provider capability
+  (`review_suggestion_application` + `mutation_head_binding` +
+  `read_review_threads`, via
+  `internal/platform/client.go::ReviewSuggestionApplier`): an all-or-nothing
+  batch apply against the expected head. Partial success is invalid.
+- The server rebuilds each suggestion from persisted review-thread metadata and
+  only accepts replacement text matching a stored suggestion fence (opaque
+  non-suggestion fences skipped, fences may be indented up to three spaces,
+  CRLF normalized to LF, no other rewriting; UI preview mirrors this). Never
+  trust clients for ids, ranges, paths, or patch content
+  (`internal/server/diff_review_handlers.go::applyReviewSuggestions`).
+- Providers report every upstream bucket the apply consumes through
+  `OperationRateLimitReporter`; an empty or unknown report fails closed as
+  `rate_limited`, and mutation handlers re-check buckets immediately before the
+  provider call because UI availability goes stale.
+- Suggestion apply mutates the source branch, is open-PR-only, and fails closed
+  with stable reasons: non-open rows and upstream closed/merged races →
+  `not_open`; missing, unparseable, or inaccessible head repo identity →
+  `head_repo_unknown` (never fall back to the base repo as a write target;
+  GitHub is currently the only provider needing an explicit source repo
+  target); live branch or SHA movement → `stale_state`. The live re-check
+  before mutation is best-effort — no provider offers commit-only-if-open — so
+  expected-head binding is the final integrity check
+  (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `internal/github/client.go::ensureReviewSuggestionPullMutable`).
+- Post-apply refresh goes through the detail-sync broadcaster and must rerun
+  after any in-flight sync for the same PR — that sync may predate the commit
+  (`internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).
+- The UI only exposes apply actions when the thread head matches a known
+  current PR head; stale or unknown heads disable actions, and stale batched
+  suggestions must not reach batch submit while staying removable
   (`packages/ui/src/components/detail/ReviewSuggestionBlock.svelte`, `packages/ui/src/components/detail/EventTimeline.svelte`).
-- Suggestion apply implementations must define deterministic handling for edge
-  cases before exposing the capability: duplicate thread ids, overlapping
-  ranges, stale heads, missing reviewed heads, missing head repository identity,
-  renamed or deleted files, binary files, large or unsupported content encodings,
-  inaccessible source repos, and provider paths with leading or trailing
-  whitespace must fail the entire batch with stable error reasons.
+- Remaining edge cases (duplicate thread ids, overlapping ranges, missing
+  reviewed heads, renamed/deleted/binary files, unsupported encodings,
+  whitespace-padded paths) fail the entire batch with stable reasons.
 - Forgejo and Gitea currently expose only SDK-proven mutations: comments,
   issue creation, issue and PR content/state edits, merge, and review approval.
   Workflow approval and ready-for-review must remain hidden or return typed

@@ -111,27 +111,20 @@ Some PR-derived state is only valid for one head commit.
   state between items.
 - When a refresh cannot prove the state belongs to the current head SHA, clear
   the stale derived state instead of preserving it.
-- Review-thread line ranges must preserve the comment commit as
-  `MRReviewThread.Range.DiffHeadSHA`, even for current threads
-  (`internal/github/sync.go::githubReviewLineRange`). This is distinct from
-  `MergeRequest.DiffHeadSHA`, which describes the currently synced diff
-  snapshot. Review suggestion application relies on the stored thread reviewed
-  head to reject stale suggestions before mutating the branch.
-- GitHub review suggestions apply through the source branch, not the base repo
-  default branch. `internal/github/client.go::ApplyReviewSuggestions` reads the
-  target files from the PR head repo at the expected head, applies the stored
-  review-thread line ranges locally as one all-or-nothing batch, and commits with
-  `createCommitOnBranch.expectedHeadOid` in
-  `internal/github/client.go::createCommitForReviewSuggestions`. The adapter
-  must reject provider paths with leading or trailing whitespace instead of
-  trimming them, preserve explicit terminal blank replacement lines, and avoid
-  re-adding a trailing newline when a suggestion deletes every line in a file.
-- GitHub's apply-suggestion operation consumes both the REST content API and the
-  GraphQL `createCommitOnBranch` mutation. The GitHub provider must report both
-  buckets through
+- `MRReviewThread.Range.DiffHeadSHA` preserves the comment commit even for
+  current threads and is distinct from `MergeRequest.DiffHeadSHA` (the synced
+  diff snapshot); suggestion apply uses the stored thread head to reject stale
+  suggestions (`internal/github/sync.go::githubReviewLineRange`).
+- Suggestion apply commits to the PR head repo/branch bound by
+  `createCommitOnBranch.expectedHeadOid`, never the base repo. Reject
+  whitespace-padded paths (do not trim), preserve terminal blank replacement
+  lines, and do not re-add a trailing newline when a suggestion deletes every
+  line (`internal/github/client.go::ApplyReviewSuggestions`).
+- Apply-suggestion consumes REST content reads plus the GraphQL
+  `createCommitOnBranch` mutation; the provider reports both buckets via
   `OperationRateLimitBuckets(platform.OperationApplyReviewSuggestion)` so a
-  paused GraphQL write budget disables this operation without making GraphQL a
-  provider-neutral requirement.
+  paused GraphQL budget disables the operation without making GraphQL
+  provider-neutral.
 
 ## Fallback Data Rules
 

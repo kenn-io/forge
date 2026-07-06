@@ -117,7 +117,10 @@ registry helpers return typed errors for missing providers or capabilities.
   current PR head; stale or unknown heads disable actions, and stale batched
   suggestions must not reach batch submit while staying removable. A suggestion
   preview built from a cached diff whose `diff_head_sha` no longer matches the
-  current head is treated as missing context (apply disabled) until reloaded
+  current head is treated as missing context (single apply and batch submit
+  disabled) until reloaded. PR diff responses always carry `diff_head_sha` —
+  the endpoint fails instead of serving a PR diff without a synced snapshot
+  head — so clients only need to handle the mismatch case
   (`packages/ui/src/components/detail/ReviewSuggestionBlock.svelte`, `packages/ui/src/components/detail/EventTimeline.svelte`).
 - Remaining edge cases (duplicate thread ids, overlapping ranges, missing
   reviewed heads, renamed/deleted/binary files, unsupported encodings,

@@ -4605,6 +4605,7 @@ export interface components {
              * @example /api/v1/schemas/DiffResponse.json
              */
             readonly $schema?: string;
+            /** @description Synced PR diff snapshot head this diff was computed from. Always set for pull request diffs (the endpoint fails when no snapshot head is synced); empty for commit and workspace diffs. Compare with the pull detail's platform_head_sha to detect stale cached diff context; unrelated to 'stale', which reports clone-refresh staleness. */
             diff_head_sha?: string;
             files: components["schemas"]["DiffFile"][] | null;
             stale: boolean;

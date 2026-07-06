@@ -19933,6 +19933,21 @@ func TestAPIGetDiff_SingleCommit(t *testing.T) {
 	require.Len(*resp.JSON200.Files, 1)
 }
 
+func TestAPIGetDiffReportsSyncedDiffHeadSHA(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	client, _, _, headSHA, _ := setupTestServerWithClones(t)
+	resp, err := client.HTTP.GetPullDiffWithResponse(
+		t.Context(), "gh", "acme", "widget", 1, nil,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.DiffHeadSha)
+	assert.Equal(headSHA, *resp.JSON200.DiffHeadSha)
+}
+
 func TestAPIGetRepoCommitDiff(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

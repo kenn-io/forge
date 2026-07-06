@@ -942,6 +942,7 @@ components:
           readOnly: true
           type: string
         diff_head_sha:
+          description: Synced PR diff snapshot head this diff was computed from. Always set for pull request diffs (the endpoint fails when no snapshot head is synced); empty for commit and workspace diffs. Compare with the pull detail's platform_head_sha to detect stale cached diff context; unrelated to 'stale', which reports clone-refresh staleness.
           type: string
         files:
           items:

@@ -336,7 +336,7 @@ type diffResponse struct {
 	// DiffHeadSHA is the synced PR diff snapshot head this diff was
 	// computed from; clients compare it against platform_head_sha to
 	// detect stale cached diff context. Empty for non-PR diffs.
-	DiffHeadSHA string `json:"diff_head_sha,omitempty"`
+	DiffHeadSHA string `json:"diff_head_sha,omitempty" doc:"Synced PR diff snapshot head this diff was computed from. Always set for pull request diffs (the endpoint fails when no snapshot head is synced); empty for commit and workspace diffs. Compare with the pull detail's platform_head_sha to detect stale cached diff context; unrelated to 'stale', which reports clone-refresh staleness."`
 }
 
 type filesResponse struct {

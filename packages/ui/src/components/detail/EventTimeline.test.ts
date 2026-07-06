@@ -1000,6 +1000,9 @@ describe("EventTimeline", () => {
     });
     expect(commitButton.disabled).toBe(true);
     expect(commitButton.title).toBe("The original diff context is not available");
+    const batchButton = screen.getByRole("button", { name: "Add suggestion to batch" }) as HTMLButtonElement;
+    expect(batchButton.disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Commit batch" })).toBeNull();
     await waitFor(() => {
       expect(loadDiff).toHaveBeenCalledTimes(1);
     });

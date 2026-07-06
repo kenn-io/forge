@@ -801,7 +801,9 @@ type DiffFile struct {
 // DiffResponse defines model for DiffResponse.
 type DiffResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string     `json:"$schema,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// DiffHeadSha Synced PR diff snapshot head this diff was computed from. Always set for pull request diffs (the endpoint fails when no snapshot head is synced); empty for commit and workspace diffs. Compare with the pull detail's platform_head_sha to detect stale cached diff context; unrelated to 'stale', which reports clone-refresh staleness.
 	DiffHeadSha         *string     `json:"diff_head_sha,omitempty"`
 	Files               *[]DiffFile `json:"files"`
 	Stale               bool        `json:"stale"`

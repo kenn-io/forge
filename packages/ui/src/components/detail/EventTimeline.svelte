@@ -904,10 +904,14 @@
   const batchedSuggestionKeys = $derived(batchedSuggestions.map((item) => item.key));
   // Suggestions batched before the PR head moved (or while it is unknown)
   // must not reach batch submit; the server would reject the whole batch.
+  // A stale cached diff context also withholds the batch, matching the
+  // per-row apply gating.
   const eligibleBatchedSuggestions = $derived(
-    batchedSuggestions.filter(
-      (item) => currentHeadSHA !== "" && item.reviewedHeadSHA === currentHeadSHA,
-    ),
+    diffContextStale
+      ? []
+      : batchedSuggestions.filter(
+          (item) => currentHeadSHA !== "" && item.reviewedHeadSHA === currentHeadSHA,
+        ),
   );
   let savingSuggestionBatch = $state(false);
 

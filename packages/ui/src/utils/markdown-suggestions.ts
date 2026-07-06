@@ -36,8 +36,19 @@ type Fence = {
 
 const suggestionInfo = /^suggestion(?:[\s:]|$)/i;
 
+function fenceContent(line: string): string | null {
+  let indent = 0;
+  while (indent < line.length && indent < 3 && line[indent] === " ") {
+    indent += 1;
+  }
+  if (line[indent] === " ") return null;
+  return line.slice(indent);
+}
+
 function openingFence(line: string): Fence | null {
-  const match = line.match(/^([`~]{3,})([^\r\n]*)$/);
+  const content = fenceContent(line);
+  if (content === null) return null;
+  const match = content.match(/^([`~]{3,})([^\r\n]*)$/);
   if (!match) return null;
   const marker = match[1]![0] as "`" | "~";
   if (!match[1]!.split("").every((char) => char === marker)) return null;
@@ -49,8 +60,14 @@ function openingFence(line: string): Fence | null {
 }
 
 function closesFence(line: string, fence: Fence): boolean {
-  const marker = fence.marker.replace(/[~`]/g, "\\$&");
-  return new RegExp(`^${marker}{${fence.length},}\\s*$`).test(line);
+  const content = fenceContent(line);
+  if (content === null) return false;
+  let count = 0;
+  while (count < content.length && content[count] === fence.marker) {
+    count += 1;
+  }
+  if (count < fence.length) return false;
+  return content.slice(count).trim() === "";
 }
 
 function closingFenceIndex(lines: string[], openIndex: number, fence: Fence): number {

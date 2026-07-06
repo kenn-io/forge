@@ -122,10 +122,14 @@ Some PR-derived state is only valid for one head commit.
   target files from the PR head repo at the expected head, applies the stored
   review-thread line ranges locally as one all-or-nothing batch, and commits with
   `createCommitOnBranch.expectedHeadOid` in
-  `internal/github/client.go::createCommitForReviewSuggestions`.
+  `internal/github/client.go::createCommitForReviewSuggestions`. The adapter
+  must reject provider paths with leading or trailing whitespace instead of
+  trimming them, preserve explicit terminal blank replacement lines, and avoid
+  re-adding a trailing newline when a suggestion deletes every line in a file.
 - GitHub's apply-suggestion operation consumes both the REST content API and the
   GraphQL `createCommitOnBranch` mutation. The GitHub provider must report both
-  buckets through `OperationRateLimitBuckets("apply_review_suggestion")` so a
+  buckets through
+  `OperationRateLimitBuckets(platform.OperationApplyReviewSuggestion)` so a
   paused GraphQL write budget disables this operation without making GraphQL a
   provider-neutral requirement.
 

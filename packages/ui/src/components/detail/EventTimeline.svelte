@@ -158,6 +158,11 @@
     thread: ReviewThread;
   };
 
+  type BatchedSuggestion = {
+    key: string;
+    request: ApplySuggestionRequest["suggestions"][number];
+  };
+
   function threadID(event: PREvent | IssueEvent): string | null {
     return typeof event.ThreadID === "string" && event.ThreadID.length > 0
       ? event.ThreadID
@@ -875,7 +880,8 @@
   let replyError = $state<string | null>(null);
   let applyingSuggestionKey = $state<string | null>(null);
   let suggestionError = $state<Record<string, string>>({});
-  let batchedSuggestionKeys = $state<string[]>([]);
+  let batchedSuggestions = $state<BatchedSuggestion[]>([]);
+  const batchedSuggestionKeys = $derived(batchedSuggestions.map((item) => item.key));
   let savingSuggestionBatch = $state(false);
 
   function canEditComment(event: PREvent | IssueEvent): boolean {
@@ -1099,40 +1105,39 @@
           [key]: detailStore?.getDetailError() ?? "Could not apply suggestion",
         };
       } else {
-        batchedSuggestionKeys = batchedSuggestionKeys.filter((item) => item !== key);
+        batchedSuggestions = batchedSuggestions.filter((item) => item.key !== key);
       }
     } finally {
       applyingSuggestionKey = null;
     }
   }
 
-  function toggleSuggestionBatch(event: PREvent | IssueEvent, block: MarkdownSuggestionBlock): void {
+  function toggleSuggestionBatch(
+    event: PREvent | IssueEvent,
+    block: Extract<MarkdownSuggestionBlock, { type: "suggestion" }>,
+    thread: ReviewThread,
+  ): void {
     const key = suggestionKey(event, block);
-    batchedSuggestionKeys = batchedSuggestionKeys.includes(key)
-      ? batchedSuggestionKeys.filter((item) => item !== key)
-      : [...batchedSuggestionKeys, key];
+    batchedSuggestions = batchedSuggestionKeys.includes(key)
+      ? batchedSuggestions.filter((item) => item.key !== key)
+      : [
+          ...batchedSuggestions,
+          {
+            key,
+            request: suggestionRequest(thread, block.replacement),
+          },
+        ];
   }
 
   function batchedSuggestionRequests(): ApplySuggestionRequest["suggestions"] {
-    const selected = new Set(batchedSuggestionKeys);
-    const suggestions: ApplySuggestionRequest["suggestions"] = [];
-    for (const entry of renderedTimelineEntries) {
-      const thread = entry.reviewThread?.thread;
-      if (!thread) continue;
-      for (const block of eventSuggestionBlocks(entry.event)) {
-        if (block.type !== "suggestion") continue;
-        if (!selected.has(suggestionKey(entry.event, block))) continue;
-        suggestions.push(suggestionRequest(thread, block.replacement));
-      }
-    }
-    return suggestions;
+    return batchedSuggestions.map((item) => item.request);
   }
 
   async function commitSuggestionBatch(): Promise<void> {
     if (onApplySuggestion === undefined || batchedSuggestionKeys.length === 0) return;
     const suggestions = batchedSuggestionRequests();
     if (suggestions.length === 0) {
-      batchedSuggestionKeys = [];
+      batchedSuggestions = [];
       return;
     }
     savingSuggestionBatch = true;
@@ -1140,7 +1145,7 @@
     try {
       const ok = await onApplySuggestion({ suggestions });
       if (ok) {
-        batchedSuggestionKeys = [];
+        batchedSuggestions = [];
       } else {
         const message = detailStore?.getDetailError() ?? "Could not apply suggestion batch";
         suggestionError = Object.fromEntries(batchedSuggestionKeys.map((key) => [key, message]));
@@ -1423,7 +1428,7 @@
                         ? () => void commitSuggestion(event, block, reviewThread.thread)
                         : undefined}
                       onToggleBatch={onApplySuggestion !== undefined
-                        ? () => toggleSuggestionBatch(event, block)
+                        ? () => toggleSuggestionBatch(event, block, reviewThread.thread)
                         : undefined}
                     />
                   {:else}

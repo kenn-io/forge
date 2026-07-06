@@ -15,11 +15,17 @@ const (
 	RateLimitBucketGraphQL RateLimitBucket = "graphql"
 )
 
+type OperationName string
+
+const (
+	OperationApplyReviewSuggestion OperationName = "apply_review_suggestion"
+)
+
 // OperationRateLimitReporter lets a provider override the server's default
 // operation-to-rate-bucket mapping when an implementation consumes a different
 // API budget than the provider-neutral operation normally would.
 type OperationRateLimitReporter interface {
-	OperationRateLimitBuckets(operation string) ([]RateLimitBucket, bool)
+	OperationRateLimitBuckets(operation OperationName) ([]RateLimitBucket, bool)
 }
 
 type RepositoryReader interface {

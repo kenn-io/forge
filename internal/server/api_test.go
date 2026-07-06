@@ -700,6 +700,7 @@ type apiTestGitLabProvider struct {
 	publishReviewErr    error
 	appliedSuggestions  []platform.ApplyReviewSuggestionsInput
 	applySuggestionsErr error
+	rateLimitBuckets    map[platform.OperationName][]platform.RateLimitBucket
 	resolvedThreads     []string
 	unresolvedThreads   []string
 }
@@ -724,6 +725,16 @@ func (p *apiTestGitLabProvider) Capabilities() platform.Capabilities {
 		ReadReleases:      true,
 		ReadCI:            true,
 	}
+}
+
+func (p *apiTestGitLabProvider) OperationRateLimitBuckets(
+	operation platform.OperationName,
+) ([]platform.RateLimitBucket, bool) {
+	if p.rateLimitBuckets == nil {
+		return nil, false
+	}
+	buckets, ok := p.rateLimitBuckets[operation]
+	return buckets, ok
 }
 
 func (p *apiTestGitLabProvider) PublishDiffReviewDraft(
@@ -15883,6 +15894,174 @@ func TestAPIApplyReviewSuggestionRejectsReplacementOutsideStoredSuggestion(t *te
 	)
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "body.suggestions[0].replacement")
+	assert.Empty(provider.appliedSuggestions)
+}
+
+func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	line := 11
+	require.NoError(database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
+		ProviderThreadID:  "provider-thread-1",
+		ProviderCommentID: "provider-comment-1",
+		Body: strings.Join([]string{
+			"Reviewer explained this with an indented markdown example.",
+			"",
+			"   ````markdown",
+			"```suggestion",
+			"return client.publishThreads();",
+			"```",
+			"   ````",
+			"",
+			"  ```suggestion",
+			"return actualSuggestion();",
+			"  ```",
+		}, "\n"),
+		AuthorLogin: "ada",
+		Range: db.ReviewLineRange{
+			Path:        "src/review.ts",
+			Side:        "right",
+			Line:        line,
+			NewLine:     &line,
+			LineType:    "context",
+			DiffHeadSHA: "abc123",
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}}))
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Empty(provider.appliedSuggestions)
+
+	rr = doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
+				"replacement": "return actualSuggestion();",
+			}},
+		},
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	require.Len(provider.appliedSuggestions, 1)
+	assert.Equal("return actualSuggestion();", provider.appliedSuggestions[0].Suggestions[0].Replacement)
+}
+
+func TestAPIApplyReviewSuggestionRejectsRateLimitedOperationBeforeProviderCall(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	provider.rateLimitBuckets = map[platform.OperationName][]platform.RateLimitBucket{
+		platform.OperationApplyReviewSuggestion: {platform.RateLimitBucketREST},
+	}
+	rt := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
+	srv.syncer.RateTrackers()[ghclient.RateBucketKey("gitlab", "gitlab.example.com")] = rt
+	rt.UpdateFromRate(ghclient.Rate{
+		Limit:     5000,
+		Remaining: 0,
+		Reset:     time.Now().UTC().Add(30 * time.Minute),
+	})
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	line := 11
+	require.NoError(database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
+		ProviderThreadID:  "provider-thread-1",
+		ProviderCommentID: "provider-comment-1",
+		Body:              "Please apply this.\n\n```suggestion\nreturn client.publishThreads();\n```",
+		AuthorLogin:       "ada",
+		Range: db.ReviewLineRange{
+			Path:        "src/review.ts",
+			Side:        "right",
+			Line:        line,
+			NewLine:     &line,
+			LineType:    "context",
+			DiffHeadSHA: "abc123",
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}}))
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+	require.Equal(http.StatusTooManyRequests, rr.Code, rr.Body.String())
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("rateLimited", problem.Code)
 	assert.Empty(provider.appliedSuggestions)
 }
 

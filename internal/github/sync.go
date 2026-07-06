@@ -815,8 +815,10 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 	}
 }
 
-func (p *gitHubClientProvider) OperationRateLimitBuckets(operation string) ([]platform.RateLimitBucket, bool) {
-	if operation != "apply_review_suggestion" {
+func (p *gitHubClientProvider) OperationRateLimitBuckets(
+	operation platform.OperationName,
+) ([]platform.RateLimitBucket, bool) {
+	if operation != platform.OperationApplyReviewSuggestion {
 		return nil, false
 	}
 	return []platform.RateLimitBucket{

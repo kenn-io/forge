@@ -118,6 +118,70 @@ func TestApplyReviewSuggestionEditsRejectsOverlap(t *testing.T) {
 	assert.Contains(t, err.Error(), "overlapping")
 }
 
+func TestApplyReviewSuggestionEditsPreservesTrailingBlankReplacementLine(t *testing.T) {
+	got, err := applyReviewSuggestionEdits("one\ntwo\n", []platform.ReviewSuggestion{
+		{
+			Range:       platform.DiffReviewLineRange{Path: "main.go", Side: "right", Line: 2},
+			Replacement: "TWO\n",
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "one\nTWO\n\n", got)
+}
+
+func TestApplyReviewSuggestionEditsDeletesOnlyLineWithoutLeavingNewline(t *testing.T) {
+	got, err := applyReviewSuggestionEdits("only\n", []platform.ReviewSuggestion{
+		{
+			Range:       platform.DiffReviewLineRange{Path: "main.go", Side: "right", Line: 1},
+			Replacement: "",
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func TestApplyReviewSuggestionsRejectsWhitespacePaddedPath(t *testing.T) {
+	content := base64.StdEncoding.EncodeToString([]byte("one\ntwo\n"))
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/fork/widget/contents/src/main.go", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"file","encoding":"base64","content":"` + content + `","path":"src/main.go","sha":"file-sha"}`))
+	})
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"createCommitOnBranch":{"commit":{"oid":"commit-sha","url":"https://github.com/fork/widget/commit/commit-sha"}}}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/",
+		srv.URL+"/api/uploads/",
+	)
+	require.NoError(t, err)
+	client := &liveClient{
+		gh:              ghClient,
+		ghWrite:         ghClient,
+		httpWriteClient: srv.Client(),
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	_, err = client.ApplyReviewSuggestions(t.Context(), "acme", "widget", 7, platform.ApplyReviewSuggestionsInput{
+		HeadBranch:       "feature/suggestion",
+		HeadRepoCloneURL: "https://github.com/fork/widget.git",
+		ExpectedHeadSHA:  "head-sha",
+		Suggestions: []platform.ReviewSuggestion{{
+			Range:       platform.DiffReviewLineRange{Path: "src/main.go ", Side: "right", Line: 2},
+			Replacement: "TWO",
+		}},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "leading or trailing whitespace")
+}
+
 func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

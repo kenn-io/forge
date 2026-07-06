@@ -84,3 +84,25 @@ func TestMarkdownSuggestionReplacementsSkipsNestedSuggestionFenceInCodeBlock(t *
 	_, err := verifyReviewSuggestionReplacement(body, "return client.publishThreads();")
 	assert.Error(t, err)
 }
+
+func TestMarkdownSuggestionReplacementsSkipsNestedSuggestionFenceInIndentedCodeBlock(t *testing.T) {
+	body := strings.Join([]string{
+		"Reviewer explained this with an indented markdown example.",
+		"",
+		"   ````markdown",
+		"```suggestion",
+		"return client.publishThreads();",
+		"```",
+		"   ````",
+		"",
+		"  ```suggestion",
+		"return actualSuggestion();",
+		"  ```",
+	}, "\n")
+
+	replacements := markdownSuggestionReplacements(body)
+	require.Equal(t, []string{"return actualSuggestion();"}, replacements)
+
+	_, err := verifyReviewSuggestionReplacement(body, "return client.publishThreads();")
+	assert.Error(t, err)
+}

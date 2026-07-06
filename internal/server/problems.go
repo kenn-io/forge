@@ -429,6 +429,27 @@ func problemRateLimited(provider, host string, retryAfter *time.Time) huma.Statu
 	)
 }
 
+func problemOperationRateLimited(repo db.Repo, rate rateLimitAvailability) huma.StatusError {
+	detail := rate.reason
+	if detail == "" {
+		detail = "Upstream rate limit exceeded"
+	}
+	details := map[string]any{
+		"reason":       availabilityCodeRateLimited,
+		"provider":     string(repoProviderKind(repo)),
+		"platformHost": repoProviderHost(repo),
+	}
+	if rate.retryAt != "" {
+		details["retryAfter"] = rate.retryAt
+	}
+	return newProblem(
+		http.StatusTooManyRequests,
+		CodeRateLimited,
+		detail,
+		details,
+	)
+}
+
 // problemBranchConflict returns the 409 used when a local branch already
 // exists with the workspace's requested name. The branch and suggested
 // alternative go into details.

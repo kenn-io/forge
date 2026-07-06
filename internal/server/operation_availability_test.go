@@ -549,6 +549,78 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		assert.True(suggestion.Available)
 		assert.Empty(suggestion.Code)
 	})
+
+	assertInvalidProviderBuckets := func(t *testing.T, buckets []platform.RateLimitBucket) {
+		t.Helper()
+		require := require.New(t)
+		assert := assert.New(t)
+		database := dbtest.Open(t)
+		provider := &apiTestGitLabProvider{
+			ref: platform.RepoRef{
+				Platform: platform.KindGitLab,
+				Host:     "gitlab.example.com",
+				Owner:    "group",
+				Name:     "project",
+				RepoPath: "group/project",
+			},
+			capabilities: &platform.Capabilities{
+				ReadRepositories:            true,
+				ReadMergeRequests:           true,
+				ReviewSuggestionApplication: true,
+				MutationHeadBinding:         true,
+				ReadReviewThreads:           true,
+			},
+			rateLimitBuckets: map[platform.OperationName][]platform.RateLimitBucket{
+				platform.OperationApplyReviewSuggestion: buckets,
+			},
+		}
+		registry, err := platform.NewRegistry(provider)
+		require.NoError(err)
+		syncer := ghclient.NewSyncerWithRegistry(
+			registry, database, nil,
+			[]ghclient.RepoRef{{
+				Platform:     platform.KindGitLab,
+				PlatformHost: "gitlab.example.com",
+				Owner:        "group",
+				Name:         "project",
+				RepoPath:     "group/project",
+			}},
+			time.Minute,
+			nil,
+			nil,
+		)
+		t.Cleanup(syncer.Stop)
+		srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+		t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+		_, err = database.UpsertRepo(t.Context(), db.RepoIdentity{
+			Platform:     "gitlab",
+			PlatformHost: "gitlab.example.com",
+			RepoPath:     "group/project",
+		})
+		require.NoError(err)
+
+		rr := doJSON(
+			t, srv, http.MethodGet,
+			"/api/v1/host/gitlab.example.com/repo/gitlab/group/project", nil,
+		)
+		require.Equal(http.StatusOK, rr.Code)
+		var resp repoResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+
+		suggestion := resp.Operations.ApplyReviewSuggestion
+		assert.False(suggestion.Available)
+		assert.Equal(availabilityCodeRateLimited, suggestion.Code)
+		assert.Contains(suggestion.UnavailableReason, "invalid rate-limit buckets")
+	}
+
+	t.Run("empty provider bucket report fails closed", func(t *testing.T) {
+		assertInvalidProviderBuckets(t, []platform.RateLimitBucket{})
+	})
+
+	t.Run("unknown provider bucket report fails closed", func(t *testing.T) {
+		assertInvalidProviderBuckets(t, []platform.RateLimitBucket{platform.RateLimitBucket("restt")})
+	})
 }
 
 func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {

@@ -2598,9 +2598,17 @@ func (c *liveClient) ApplyReviewSuggestions(
 
 	byPath := make(map[string][]platform.ReviewSuggestion)
 	for _, suggestion := range input.Suggestions {
-		path := strings.TrimSpace(suggestion.Range.Path)
-		if path == "" {
+		path := suggestion.Range.Path
+		trimmedPath := strings.TrimSpace(path)
+		if trimmedPath == "" {
 			return nil, githubSuggestionPlatformError(platform.ErrCodeInvalidArgument, "suggestion path is required", nil)
+		}
+		if path != trimmedPath {
+			return nil, githubSuggestionPlatformError(
+				platform.ErrCodeInvalidArgument,
+				"suggestion path has leading or trailing whitespace",
+				nil,
+			)
 		}
 		byPath[path] = append(byPath[path], suggestion)
 	}
@@ -2905,7 +2913,7 @@ func splitGitHubSuggestionContent(content string) ([]string, string, bool) {
 
 func joinGitHubSuggestionContent(lines []string, newline string, trailingNewline bool) string {
 	content := strings.Join(lines, newline)
-	if trailingNewline {
+	if trailingNewline && len(lines) > 0 {
 		content += newline
 	}
 	return content
@@ -2916,11 +2924,7 @@ func githubSuggestionReplacementLines(replacement string) []string {
 	if replacement == "" {
 		return nil
 	}
-	lines := strings.Split(replacement, "\n")
-	if lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	return lines
+	return strings.Split(replacement, "\n")
 }
 
 func (c *liveClient) DismissReview(

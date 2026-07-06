@@ -650,6 +650,80 @@ describe("EventTimeline", () => {
     });
   });
 
+  it("keeps hidden selected suggestions in the batch apply request", async () => {
+    const applySuggestion = vi.fn(async () => true);
+    const baseThread = makeReviewThreadEvent().diff_thread!;
+    const first = makeReviewThreadEvent({
+      ID: 1,
+      CreatedAt: "2024-06-01T12:01:00Z",
+      Body: ["First suggestion.", "", "```suggestion", "return firstSuggestion();", "```"].join("\n"),
+      diff_thread: {
+        ...baseThread,
+        id: "thread-1",
+        diff_head_sha: "abc123",
+      },
+    });
+    const second = makeReviewThreadEvent({
+      ID: 2,
+      CreatedAt: "2024-06-01T12:02:00Z",
+      Body: ["Second suggestion.", "", "```suggestion", "return secondSuggestion();", "```"].join("\n"),
+      diff_thread: {
+        ...baseThread,
+        id: "thread-2",
+        diff_head_sha: "abc123",
+      },
+    });
+    const props = {
+      events: [first, second],
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widget",
+      repoPath: "acme/widget",
+      number: 7,
+      onApplySuggestion: applySuggestion,
+    };
+    const context = new Map([
+      [
+        STORES_KEY,
+        {
+          diff: makeDiffStore(),
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        },
+      ],
+    ]);
+    const { rerender } = render(EventTimeline, { props, context });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Add suggestion to batch" })).toHaveLength(2);
+    });
+    for (const button of screen.getAllByRole("button", { name: "Add suggestion to batch" })) {
+      await fireEvent.click(button);
+    }
+    expect(screen.getByText("2 suggestions in batch")).toBeTruthy();
+
+    await rerender({ ...props, events: [first] });
+    await fireEvent.click(screen.getByRole("button", { name: "Commit batch" }));
+
+    expect(applySuggestion).toHaveBeenCalledTimes(1);
+    const suggestions = [...applySuggestion.mock.calls[0]![0].suggestions].sort((a, b) =>
+      a.threadID.localeCompare(b.threadID),
+    );
+    expect(suggestions).toEqual([
+      {
+        threadID: "thread-1",
+        replacement: "return firstSuggestion();",
+      },
+      {
+        threadID: "thread-2",
+        replacement: "return secondSuggestion();",
+      },
+    ]);
+  });
+
   it("disables suggestion application when the reviewed head is missing", async () => {
     const applySuggestion = vi.fn(async () => true);
     render(EventTimeline, {

@@ -243,6 +243,9 @@ func (s *Server) applyReviewSuggestions(
 			Replacement:       replacement,
 		})
 	}
+	if rate := s.mutationOperationRateLimit(*repo, descApplyReviewSuggestion); rate.limited {
+		return nil, problemOperationRateLimited(*repo, rate)
+	}
 
 	result, err := applier.ApplyReviewSuggestions(
 		ctx,
@@ -373,8 +376,23 @@ func closingMarkdownFenceIndex(lines []string, openIndex int, fence markdownFenc
 	return -1
 }
 
-func openingMarkdownFence(line string) (markdownFence, bool) {
+func markdownFenceContent(line string) (string, bool) {
 	line = strings.TrimSuffix(line, "\r")
+	indent := 0
+	for indent < len(line) && indent < 3 && line[indent] == ' ' {
+		indent++
+	}
+	if indent < len(line) && line[indent] == ' ' {
+		return "", false
+	}
+	return line[indent:], true
+}
+
+func openingMarkdownFence(line string) (markdownFence, bool) {
+	line, ok := markdownFenceContent(line)
+	if !ok {
+		return markdownFence{}, false
+	}
 	if len(line) < 3 {
 		return markdownFence{}, false
 	}
@@ -409,7 +427,10 @@ func markdownFenceInfoIsSuggestion(info string) bool {
 }
 
 func closesMarkdownFence(line string, fence markdownFence) bool {
-	line = strings.TrimSuffix(line, "\r")
+	line, ok := markdownFenceContent(line)
+	if !ok {
+		return false
+	}
 	count := 0
 	for count < len(line) && line[count] == fence.marker {
 		count++

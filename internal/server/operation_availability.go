@@ -37,7 +37,7 @@ const (
 	operationUpdateContent         = "update_content"
 	operationReplyReviewThread     = "reply_review_thread"
 	operationResolveReviewThread   = "resolve_review_thread"
-	operationApplyReviewSuggestion = "apply_review_suggestion"
+	operationApplyReviewSuggestion = string(platform.OperationApplyReviewSuggestion)
 )
 
 // Availability codes returned to clients. Empty code means available.
@@ -187,14 +187,10 @@ func (s *Server) repoOperationsWithContext(
 	opContext operationAvailabilityContext,
 ) RepoOperations {
 	caps := s.capabilitiesForRepo(repo)
-	rates := map[apiBucket]rateLimitAvailability{
-		apiBucketREST:    s.mutationRateLimitedReason(repo, apiBucketREST),
-		apiBucketGraphQL: s.mutationRateLimitedReason(repo, apiBucketGraphQL),
-	}
 	writeCred := s.writeCredentialGateForRepo(repo)
 	derive := func(op operationDescriptor) OperationAvailability {
 		return deriveOperationAvailabilityWithContext(
-			op, caps, repo, s.operationRateLimit(repo, op, rates), writeCred, opContext,
+			op, caps, repo, s.mutationOperationRateLimit(repo, op), writeCred, opContext,
 		)
 	}
 	return RepoOperations{
@@ -220,6 +216,13 @@ func (s *Server) repoOperationsWithContext(
 		ResolveReviewThread:   derive(descResolveReviewThread),
 		ApplyReviewSuggestion: derive(descApplyReviewSuggestion),
 	}
+}
+
+func (s *Server) mutationOperationRateLimit(repo db.Repo, op operationDescriptor) rateLimitAvailability {
+	return s.operationRateLimit(repo, op, map[apiBucket]rateLimitAvailability{
+		apiBucketREST:    s.mutationRateLimitedReason(repo, apiBucketREST),
+		apiBucketGraphQL: s.mutationRateLimitedReason(repo, apiBucketGraphQL),
+	})
 }
 
 func (s *Server) repoOperationsForMergeRequest(
@@ -328,26 +331,34 @@ func (s *Server) operationRateLimit(
 	op operationDescriptor,
 	rates map[apiBucket]rateLimitAvailability,
 ) rateLimitAvailability {
-	return operationRateLimitForBuckets(s.operationRateLimitBuckets(repo, op), rates)
+	buckets, ok := s.operationRateLimitBuckets(repo, op)
+	if !ok {
+		return invalidOperationRateLimitBucketReport(op)
+	}
+	return operationRateLimitForBuckets(buckets, rates)
 }
 
-func (s *Server) operationRateLimitBuckets(repo db.Repo, op operationDescriptor) []apiBucket {
+func (s *Server) operationRateLimitBuckets(repo db.Repo, op operationDescriptor) ([]apiBucket, bool) {
 	if s != nil && s.syncer != nil && s.syncer.Registry() != nil {
 		provider, err := s.syncer.Registry().Provider(repoProviderKind(repo), repoProviderHost(repo))
 		if err == nil {
 			if reporter, ok := provider.(platform.OperationRateLimitReporter); ok {
-				if buckets, ok := reporter.OperationRateLimitBuckets(op.name); ok {
+				if buckets, ok := reporter.OperationRateLimitBuckets(platform.OperationName(op.name)); ok {
 					if converted, ok := apiBucketsFromPlatform(buckets); ok {
-						return converted
+						return converted, true
 					}
+					return nil, false
 				}
 			}
 		}
 	}
-	return op.rateLimitBuckets()
+	return op.rateLimitBuckets(), true
 }
 
 func apiBucketsFromPlatform(buckets []platform.RateLimitBucket) ([]apiBucket, bool) {
+	if len(buckets) == 0 {
+		return nil, false
+	}
 	result := make([]apiBucket, 0, len(buckets))
 	for _, bucket := range buckets {
 		switch bucket {
@@ -360,6 +371,13 @@ func apiBucketsFromPlatform(buckets []platform.RateLimitBucket) ([]apiBucket, bo
 		}
 	}
 	return result, true
+}
+
+func invalidOperationRateLimitBucketReport(op operationDescriptor) rateLimitAvailability {
+	return rateLimitAvailability{
+		limited: true,
+		reason:  fmt.Sprintf("Provider reported invalid rate-limit buckets for %s", op.name),
+	}
 }
 
 func (op operationDescriptor) rateLimitBuckets() []apiBucket {

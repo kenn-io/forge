@@ -150,4 +150,52 @@ describe("createDetailStore", () => {
       );
     }
   });
+
+  it("fails closed when apply-suggestion conflict refresh returns no detail", async () => {
+    const tests = [
+      {
+        reason: "stale_state",
+        assertDetail: (detail: PullDetail | null) => {
+          expect(detail?.platform_head_sha).toBe("");
+          expect(detail?.merge_request.State).toBe("open");
+        },
+      },
+      {
+        reason: "not_open",
+        assertDetail: (detail: PullDetail | null) => {
+          expect(detail?.platform_head_sha).toBe("old-head");
+          expect(detail?.merge_request.State).toBe("closed");
+        },
+      },
+    ] as const;
+    for (const tt of tests) {
+      const get = vi.fn().mockResolvedValue({ data: pullDetail("old-head") });
+      const post = vi.fn(async (path: string) => {
+        if (path.endsWith("/review-suggestions/apply")) {
+          return { error: conflictProblem(tt.reason) };
+        }
+        if (path.endsWith("/sync")) {
+          return { error: undefined };
+        }
+        return { error: undefined };
+      });
+      const store = createDetailStore({
+        client: mockClient({ GET: get, POST: post }),
+      });
+      await store.loadDetail("acme", "widget", 7, {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        sync: false,
+      });
+
+      const ok = await store.applyReviewSuggestions("acme", "widget", 7, {
+        suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
+      });
+
+      expect(ok).toBe(false);
+      expect(store.getDetailError()).toBe("pull request state changed");
+      tt.assertDetail(store.getDetail());
+    }
+  });
 });

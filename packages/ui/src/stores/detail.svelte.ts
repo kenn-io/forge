@@ -47,11 +47,17 @@ function apiErrorMessage(error: { detail?: string; title?: string }, fallback: s
   return error.detail ?? error.title ?? fallback;
 }
 
-function shouldRefreshAfterApplySuggestionConflict(problem: ProblemBody): boolean {
+function applySuggestionRefreshReason(problem: ProblemBody): Exclude<ConflictReason, "conflict"> | undefined {
   const reason: ConflictReason | undefined = problemConflictReason(problem);
-  return (
-    reason === "stale_state" || reason === "head_unknown" || reason === "not_open" || reason === "head_repo_unknown"
-  );
+  if (
+    reason === "stale_state" ||
+    reason === "head_unknown" ||
+    reason === "not_open" ||
+    reason === "head_repo_unknown"
+  ) {
+    return reason;
+  }
+  return undefined;
 }
 
 function delay(ms: number): Promise<void> {
@@ -288,16 +294,17 @@ export function createDetailStore(opts: DetailStoreOptions) {
     number: number,
     gen: number,
     identity: DetailRequestRef,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const ref = detailRequestRef(owner, name, number, identity);
     syncing = true;
+    let refreshed = false;
     try {
       const { data, error: requestError } = await apiClient.POST(providerItemPath("pulls", ref, "/sync"), {
         params: {
           path: { ...providerRouteParams(ref), number: ref.number },
         },
       });
-      if (gen !== syncGeneration) return;
+      if (gen !== syncGeneration) return false;
       if (requestError) {
         throw new Error(apiErrorMessage(requestError, "sync failed"));
       }
@@ -308,6 +315,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           events: data.events ?? [],
         } as PullDetail);
         detailLoaded = data.detail_loaded ?? detailLoaded;
+        refreshed = true;
       }
     } catch {
       // Sync failure is non-fatal.
@@ -320,6 +328,25 @@ export function createDetailStore(opts: DetailStoreOptions) {
     if (gen === syncGeneration) {
       await refreshPullsIfActive();
     }
+    return refreshed;
+  }
+
+  function failClosedAfterApplySuggestionConflict(reason: Exclude<ConflictReason, "conflict">): void {
+    if (!detail) return;
+    if (reason === "not_open") {
+      detail = {
+        ...detail,
+        merge_request: {
+          ...detail.merge_request,
+          State: "closed",
+        },
+      };
+      return;
+    }
+    detail = {
+      ...detail,
+      platform_head_sha: "",
+    };
   }
 
   // --- writes ---
@@ -1139,9 +1166,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
       );
       if (requestError) {
         const message = apiErrorMessage(requestError, "failed to apply suggestion");
-        if (isProblem(requestError) && shouldRefreshAfterApplySuggestionConflict(requestError)) {
+        const refreshReason = isProblem(requestError) ? applySuggestionRefreshReason(requestError) : undefined;
+        if (refreshReason) {
           if (isDetailShowingRef(ref)) {
-            await syncDetail(owner, name, number, syncGeneration, ref);
+            const refreshed = await syncDetail(owner, name, number, syncGeneration, ref);
+            if (!refreshed && isDetailShowingRef(ref)) {
+              failClosedAfterApplySuggestionConflict(refreshReason);
+            }
           }
           storeError = message;
           return false;

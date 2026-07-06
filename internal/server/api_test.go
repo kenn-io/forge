@@ -757,8 +757,11 @@ func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
 	_ int,
 	input platform.ApplyReviewSuggestionsInput,
 ) (*platform.AppliedReviewSuggestions, error) {
+	if p.applySuggestionsErr != nil {
+		return nil, p.applySuggestionsErr
+	}
 	p.appliedSuggestions = append(p.appliedSuggestions, input)
-	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}, p.applySuggestionsErr
+	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}, nil
 }
 
 func (p *apiTestGitLabProvider) ListMergeRequestReviewThreads(
@@ -16088,6 +16091,70 @@ func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
 			assert.Equal(tt.reason, problem.Details["reason"])
 		})
 	}
+}
+
+func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitHubCapabilityServerWithProvider(
+		t, &caps, "https://github.example.com/fork/widget.git",
+	)
+	ctx := t.Context()
+	provider.applySuggestionsErr = &platform.Error{
+		Code:         platform.ErrCodeStaleState,
+		Provider:     platform.KindGitHub,
+		PlatformHost: "github.example.com",
+		Err:          errors.New("pull request head branch changed since it was reviewed"),
+	}
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.example.com",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+	ch, _ := srv.Hub().Subscribe(ctx, false)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/github.example.com/pulls/gh/acme/widget/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal(string(CodeConflict), problem.Code)
+	assert.Equal("target changed since it was reviewed; refresh and retry", problem.Detail)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
+	assert.Empty(provider.appliedSuggestions)
+	changed := readEventMatching(t, ch, func(ev Event) bool {
+		return ev.Type == "data_changed"
+	})
+	assert.Equal("data_changed", changed.Type)
 }
 
 func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {

@@ -651,6 +651,53 @@ describe("EventTimeline", () => {
     });
   });
 
+  it("disables stale suggestion controls after failed apply invalidates the current head", async () => {
+    const applySuggestion = vi.fn(async () => false);
+    const props = {
+      events: [
+        makeReviewThreadEvent({
+          Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join("\n"),
+          diff_thread: {
+            ...makeReviewThreadEvent().diff_thread!,
+            diff_head_sha: "abc123",
+          },
+        }),
+      ],
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widget",
+      repoPath: "acme/widget",
+      number: 7,
+      currentHeadSHA: "abc123",
+      onApplySuggestion: applySuggestion,
+    };
+    const context = new Map([
+      [
+        STORES_KEY,
+        {
+          diff: makeDiffStore(),
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        },
+      ],
+    ]);
+    const { rerender } = render(EventTimeline, { props, context });
+
+    await expectSuggestionPierreText(/return client\.publishThreads\(\);/);
+    await fireEvent.click(screen.getByRole("button", { name: "Commit suggestion" }));
+    expect(applySuggestion).toHaveBeenCalledTimes(1);
+
+    await rerender({ ...props, currentHeadSHA: "" });
+    const commitButton = screen.getByRole("button", { name: "Commit suggestion" }) as HTMLButtonElement;
+    const batchButton = screen.getByRole("button", { name: "Add suggestion to batch" }) as HTMLButtonElement;
+    expect(commitButton.disabled).toBe(true);
+    expect(commitButton.title).toBe("The current pull request head is not known yet");
+    expect(batchButton.disabled).toBe(true);
+  });
+
   it("keeps hidden selected suggestions in the batch apply request", async () => {
     const applySuggestion = vi.fn(async () => true);
     const baseThread = makeReviewThreadEvent().diff_thread!;

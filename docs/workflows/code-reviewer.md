@@ -4,8 +4,8 @@ Use middleman to review the newest PR context, check whether the branch is
 ready, and move into local follow-up work when needed.
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/code-reviewer-light.svg" alt="middleman code review view in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/code-reviewer-dark.svg" alt="middleman code review view in dark mode">
+  <img class="workflow-shot__image workflow-shot__image--light" src="/assets/generated/code-reviewer-light.svg" alt="middleman code review view in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="/assets/generated/code-reviewer-dark.svg" alt="middleman code review view in dark mode">
   <figcaption>PR detail brings together review status, CI context, discussion, files, and workspace creation.</figcaption>
 </figure>
 

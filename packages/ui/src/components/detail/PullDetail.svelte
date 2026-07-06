@@ -2340,6 +2340,7 @@
             repoName={name}
             {repoPath}
             {number}
+            currentHeadSHA={latestPlatformHeadSha}
             canResolveReviewThreads={capabilities.review_thread_resolution && !resolveThreadGate.unavailable}
             canReplyToThreads={capabilities.thread_reply && !stalePR && !replyThreadGate.unavailable}
             filtered={hasActiveTimelineFilters}

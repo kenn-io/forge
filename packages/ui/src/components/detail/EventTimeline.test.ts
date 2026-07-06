@@ -763,6 +763,52 @@ describe("EventTimeline", () => {
     expect(button.title).toBe("The suggestion is missing a reviewed head commit");
   });
 
+  it("disables suggestion application when the reviewed head is stale", async () => {
+    const applySuggestion = vi.fn(async () => true);
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeReviewThreadEvent({
+            Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join(
+              "\n",
+            ),
+            diff_thread: {
+              ...makeReviewThreadEvent().diff_thread!,
+              diff_head_sha: "old-head",
+            },
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        currentHeadSHA: "new-head",
+        onApplySuggestion: applySuggestion,
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    await expectSuggestionPierreText(/return client\.publishThreads\(\);/);
+    const commitButton = screen.getByRole("button", { name: "Commit suggestion" }) as HTMLButtonElement;
+    const batchButton = screen.getByRole("button", { name: "Add suggestion to batch" }) as HTMLButtonElement;
+    expect(commitButton.disabled).toBe(true);
+    expect(commitButton.title).toBe("The suggestion was reviewed on an older head commit");
+    expect(batchButton.disabled).toBe(true);
+  });
+
   it("renders threaded comments as separate compact rows with one-line previews", async () => {
     const { container } = render(EventTimeline, {
       props: {

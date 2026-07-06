@@ -124,12 +124,15 @@ registry helpers return typed errors for missing providers or capabilities.
 - Successful suggestion apply must refresh through the detail-sync broadcaster,
   not a raw background sync, so detail observes the persisted new head/suggestions
   (`internal/server/diff_review_handlers.go::syncAfterReviewSuggestionApply`).
+- Suggestion apply controls should only expose actions for review-thread heads
+  that still match the current PR head; stale heads fail closed server-side but
+  should not remain clickable (`packages/ui/src/components/detail/ReviewSuggestionBlock.svelte`).
 - Suggestion apply implementations must define deterministic handling for edge
   cases before exposing the capability: duplicate thread ids, overlapping
-  ranges, stale heads, missing reviewed heads, renamed or deleted files, binary
-  files, large or unsupported content encodings, inaccessible source repos, and
-  provider paths with leading or trailing whitespace must fail the entire batch
-  with stable error reasons.
+  ranges, stale heads, missing reviewed heads, missing head repository identity,
+  renamed or deleted files, binary files, large or unsupported content encodings,
+  inaccessible source repos, and provider paths with leading or trailing
+  whitespace must fail the entire batch with stable error reasons.
 - Forgejo and Gitea currently expose only SDK-proven mutations: comments,
   issue creation, issue and PR content/state edits, merge, and review approval.
   Workflow approval and ready-for-review must remain hidden or return typed

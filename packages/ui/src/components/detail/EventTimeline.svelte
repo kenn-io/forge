@@ -42,6 +42,7 @@
     repoName?: string;
     repoPath?: string | undefined;
     number?: number | undefined;
+    currentHeadSHA?: string | undefined;
     canResolveReviewThreads?: boolean;
     canReplyToThreads?: boolean;
     filtered?: boolean;
@@ -61,6 +62,7 @@
     repoName,
     repoPath,
     number = undefined,
+    currentHeadSHA = "",
     canResolveReviewThreads = false,
     canReplyToThreads = false,
     filtered = false,
@@ -1421,6 +1423,7 @@
                       thread={reviewThread.thread}
                       context={diff ? reviewThreadContext(diff, reviewThread.thread) : reviewThreadContext(null, reviewThread.thread)}
                       replacement={block.replacement}
+                      {currentHeadSHA}
                       applying={applyingSuggestionKey === blockKey}
                       batched={batchedSuggestionKeys.includes(blockKey)}
                       error={suggestionError[blockKey] || null}

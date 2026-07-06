@@ -246,6 +246,63 @@ func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
 	assert.Equal("one\nTWO\nthree\n", string(decoded))
 }
 
+func TestGitHubSuggestionHeadRepoRequiresCloneURL(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	tests := []struct {
+		name     string
+		cloneURL string
+		wantFull string
+		wantErr  bool
+	}{
+		{
+			name:     "same repo clone URL",
+			cloneURL: "https://github.com/acme/widget.git",
+			wantFull: "acme/widget",
+		},
+		{
+			name:     "fork clone URL",
+			cloneURL: "https://github.com/fork/widget.git",
+			wantFull: "fork/widget",
+		},
+		{
+			name:    "missing clone URL",
+			wantErr: true,
+		},
+		{
+			name:     "unparseable clone URL",
+			cloneURL: "not-a-url",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			headOwner, headRepo, fullName, err := githubSuggestionHeadRepo(
+				"acme",
+				"widget",
+				platform.ApplyReviewSuggestionsInput{HeadRepoCloneURL: tt.cloneURL},
+			)
+
+			if tt.wantErr {
+				require.Error(err)
+				var platformErr *platform.Error
+				require.ErrorAs(err, &platformErr)
+				assert.Equal(platform.ErrCodeInvalidArgument, platformErr.Code)
+				assert.Contains(err.Error(), "head repository is required")
+				return
+			}
+			require.NoError(err)
+			assert.Equal(tt.wantFull, fullName)
+			wantOwner, wantRepo, ok := strings.Cut(tt.wantFull, "/")
+			require.True(ok)
+			assert.Equal(wantOwner, headOwner)
+			assert.Equal(wantRepo, headRepo)
+		})
+	}
+}
+
 func TestListReleasesTracksRate(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)

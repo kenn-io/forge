@@ -2766,7 +2766,11 @@ func githubSuggestionHeadRepo(
 ) (string, string, string, error) {
 	fullName := ParseHeadRepoFullName(input.HeadRepoCloneURL)
 	if fullName == "" {
-		fullName = owner + "/" + repo
+		return "", "", "", githubSuggestionPlatformError(
+			platform.ErrCodeInvalidArgument,
+			"head repository is required",
+			nil,
+		)
 	}
 	headOwner, headRepo, ok := strings.Cut(fullName, "/")
 	if !ok || headOwner == "" || headRepo == "" || strings.Contains(headRepo, "/") {

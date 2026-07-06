@@ -9,6 +9,7 @@
     thread: ReviewThread;
     context: ReviewThreadContext;
     replacement: string;
+    currentHeadSHA?: string | undefined;
     applying?: boolean;
     batched?: boolean;
     error?: string | null;
@@ -20,6 +21,7 @@
     thread,
     context,
     replacement,
+    currentHeadSHA = "",
     applying = false,
     batched = false,
     error = null,
@@ -34,12 +36,16 @@
     !context.outdated &&
       thread.side.toLowerCase() !== "left" &&
       reviewedHeadSHA !== "" &&
+      (currentHeadSHA === "" || reviewedHeadSHA === currentHeadSHA) &&
       onCommit !== undefined,
   );
   const disabledReason = $derived.by(() => {
     if (context.outdated) return "The original diff context is not available";
     if (thread.side.toLowerCase() === "left") return "Suggestions on removed lines cannot be applied";
     if (reviewedHeadSHA === "") return "The suggestion is missing a reviewed head commit";
+    if (currentHeadSHA !== "" && reviewedHeadSHA !== currentHeadSHA) {
+      return "The suggestion was reviewed on an older head commit";
+    }
     if (onCommit === undefined) return "Suggestion application is unavailable";
     return "";
   });

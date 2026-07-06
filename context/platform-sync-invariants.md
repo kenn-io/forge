@@ -118,6 +118,12 @@ registry helpers return typed errors for missing providers or capabilities.
   needs REST content reads and a GraphQL `createCommitOnBranch` mutation, so its
   provider reports both buckets and either bucket being paused must hide or
   disable the operation.
+- Review suggestion application mutates the source branch and is open-PR-only:
+  closed/merged rows fail with `reason: not_open`, and the UI withholds apply
+  handlers for non-open PRs (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `packages/ui/src/components/detail/PullDetail.svelte::applyTimelineSuggestion`).
+- Successful suggestion apply must refresh through the detail-sync broadcaster,
+  not a raw background sync, so detail observes the persisted new head/suggestions
+  (`internal/server/diff_review_handlers.go::syncAfterReviewSuggestionApply`).
 - Suggestion apply implementations must define deterministic handling for edge
   cases before exposing the capability: duplicate thread ids, overlapping
   ranges, stale heads, missing reviewed heads, renamed or deleted files, binary

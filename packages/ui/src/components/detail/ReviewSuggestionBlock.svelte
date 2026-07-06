@@ -29,6 +29,7 @@
 
   const file = $derived(buildSuggestionDiffFile(thread, context, replacement));
   const reviewedHeadSHA = $derived(thread.diff_head_sha ?? "");
+  const showActions = $derived(onCommit !== undefined || onToggleBatch !== undefined);
   const canApply = $derived(
     !context.outdated &&
       thread.side.toLowerCase() !== "left" &&
@@ -55,29 +56,31 @@
   {#if error}
     <p class="review-suggestion__error">{error}</p>
   {/if}
-  <div class="review-suggestion__actions">
-    <button
-      class="review-suggestion__action review-suggestion__action--primary"
-      type="button"
-      onclick={onCommit}
-      disabled={!canApply || applying}
-      title={!canApply ? disabledReason : undefined}
-    >
-      <CheckIcon size={14} />
-      {applying ? "Committing..." : "Commit suggestion"}
-    </button>
-    <button
-      class="review-suggestion__action"
-      class:review-suggestion__action--selected={batched}
-      type="button"
-      onclick={onToggleBatch}
-      disabled={!canApply || applying || onToggleBatch === undefined}
-      title={!canApply ? disabledReason : undefined}
-    >
-      <PlusIcon size={14} />
-      {batched ? "Remove from batch" : "Add suggestion to batch"}
-    </button>
-  </div>
+  {#if showActions}
+    <div class="review-suggestion__actions">
+      <button
+        class="review-suggestion__action review-suggestion__action--primary"
+        type="button"
+        onclick={onCommit}
+        disabled={!canApply || applying}
+        title={!canApply ? disabledReason : undefined}
+      >
+        <CheckIcon size={14} />
+        {applying ? "Committing..." : "Commit suggestion"}
+      </button>
+      <button
+        class="review-suggestion__action"
+        class:review-suggestion__action--selected={batched}
+        type="button"
+        onclick={onToggleBatch}
+        disabled={!canApply || applying || onToggleBatch === undefined}
+        title={!canApply ? disabledReason : undefined}
+      >
+        <PlusIcon size={14} />
+        {batched ? "Remove from batch" : "Add suggestion to batch"}
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>

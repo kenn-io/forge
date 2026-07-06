@@ -278,7 +278,8 @@
   }
 
   async function applyTimelineSuggestion(input: ApplySuggestionRequest): Promise<boolean> {
-    if (stalePR || headActionsBlocked) return false;
+    if (stalePR || headActionsBlocked || applySuggestionGate.unavailable) return false;
+    if (currentPR()?.State !== "open") return false;
     return detailStore.applyReviewSuggestions(owner, name, number, input);
   }
 
@@ -2349,6 +2350,7 @@
               : undefined}
             onApplySuggestion={capabilities.review_suggestion_application
               && !stalePR
+              && pr.State === "open"
               && !headActionsBlocked
               && !applySuggestionGate.unavailable
                 ? applyTimelineSuggestion

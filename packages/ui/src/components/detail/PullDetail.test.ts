@@ -192,6 +192,7 @@ function renderPullDetail(
     updatePRContent: vi.fn(),
     refreshPendingCI: vi.fn(async () => undefined),
     editComment: vi.fn(),
+    applyReviewSuggestions: vi.fn(async () => true),
   };
 
   const rendered = render(PullDetailComponent, {
@@ -221,6 +222,52 @@ function renderPullDetail(
     ]),
   });
   return { ...rendered, detailStore };
+}
+
+function addReviewSuggestionToDetail(detail: PullDetail): void {
+  detail.repo.capabilities.review_suggestion_application = true;
+  detail.repo.operations = {
+    apply_review_suggestion: {
+      available: true,
+    },
+  } as unknown as PullDetail["repo"]["operations"];
+  detail.events = [
+    {
+      ID: 501,
+      MergeRequestID: detail.merge_request.ID,
+      PlatformID: 501,
+      PlatformExternalID: "review-comment-501",
+      EventType: "review_comment",
+      Author: "reviewer",
+      Summary: "",
+      Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join("\n"),
+      MetadataJSON: "",
+      CreatedAt: "2026-05-01T12:01:00Z",
+      DedupeKey: "review-comment-501",
+      ThreadID: null,
+      Resolvable: true,
+      Resolved: false,
+      diff_thread: {
+        id: "501",
+        provider_comment_id: "review-comment-501",
+        path: "src/review.ts",
+        side: "right",
+        start_side: "right",
+        start_line: 10,
+        line: 11,
+        new_line: 11,
+        line_type: "context",
+        diff_head_sha: "head",
+        commit_sha: "head",
+        body: "This can return directly.",
+        author_login: "reviewer",
+        resolved: false,
+        can_resolve: true,
+        created_at: "2026-05-01T12:01:00Z",
+        updated_at: "2026-05-01T12:01:00Z",
+      },
+    },
+  ];
 }
 
 function getActionMenuLabelsButton(): HTMLButtonElement {
@@ -806,6 +853,18 @@ describe("PullDetail approvals", () => {
     });
     expect(button.disabled).toBe(true);
     expect(button.title).toBe("No user credential for writes on github.com");
+  });
+
+  it("hides review suggestion apply actions when the pull request is not open", async () => {
+    const detail = pullDetail();
+    addReviewSuggestionToDetail(detail);
+    detail.merge_request.State = "closed";
+
+    renderPullDetail(detail);
+
+    expect(screen.getByText("This can return directly.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Commit suggestion" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add suggestion to batch" })).toBeNull();
   });
 
   it("disables approve with reason when submit_review is unavailable", async () => {

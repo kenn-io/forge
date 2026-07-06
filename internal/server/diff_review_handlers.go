@@ -183,6 +183,13 @@ func (s *Server) applyReviewSuggestions(
 	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found")
 	}
+	if mr.State != db.MergeRequestStateOpen {
+		return nil, problemConflict(
+			CodeConflict,
+			"pull request is not open",
+			map[string]any{"reason": "not_open"},
+		)
+	}
 	if len(input.Body.Suggestions) == 0 {
 		return nil, problemValidation("body.suggestions", "at least one suggestion is required")
 	}
@@ -442,15 +449,28 @@ func closesMarkdownFence(line string, fence markdownFence) bool {
 }
 
 func (s *Server) syncAfterReviewSuggestionApply(repo db.Repo, number int) {
-	s.runBackground(func(bgCtx context.Context) {
-		if syncErr := s.syncer.SyncMROnProvider(
-			bgCtx,
-			repoProviderKind(repo), repoProviderHost(repo),
-			repo.Owner, repo.Name, number,
-		); syncErr != nil {
-			slog.Warn("background sync after review suggestion apply", "err", syncErr)
-		}
-	})
+	kind := repoProviderKind(repo)
+	host := repoProviderHost(repo)
+	key := "pr:" + string(kind) + ":" + host + ":" + repo.RepoPath +
+		"#" + strconv.Itoa(number)
+	s.enqueueDetailSync(
+		key,
+		[]any{
+			"type", "pr",
+			"provider", string(kind),
+			"platform_host", host,
+			"repo_path", repo.RepoPath,
+			"owner", repo.Owner,
+			"name", repo.Name,
+			"number", number,
+			"source", "review_suggestion_apply",
+		},
+		func(ctx context.Context) error {
+			return s.syncer.SyncMROnProvider(
+				ctx, kind, host, repo.Owner, repo.Name, number,
+			)
+		},
+	)
 }
 
 func (s *Server) publishDiffReviewDraft(

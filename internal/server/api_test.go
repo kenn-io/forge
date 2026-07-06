@@ -15758,6 +15758,32 @@ func TestAPIPullDetailAttachesReviewThreadMetadata(t *testing.T) {
 	assert.NotContains(diffThread, "provider_thread_id")
 }
 
+func seedApplySuggestionReviewThread(t *testing.T, database *db.DB, mrID int64) db.MRReviewThread {
+	t.Helper()
+	require := require.New(t)
+	line := 11
+	require.NoError(database.UpsertMRReviewThreads(t.Context(), mrID, []db.MRReviewThread{{
+		ProviderThreadID:  "provider-thread-1",
+		ProviderCommentID: "provider-comment-1",
+		Body:              "Inline suggestion\n\n```suggestion\nreturn client.publishThreads();\n```",
+		AuthorLogin:       "ada",
+		Range: db.ReviewLineRange{
+			Path:        "src/review.ts",
+			Side:        "right",
+			Line:        line,
+			NewLine:     &line,
+			LineType:    "context",
+			DiffHeadSHA: "abc123",
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}}))
+	threads, err := database.ListMRReviewThreads(t.Context(), mrID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	return threads[0]
+}
+
 func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -15831,6 +15857,107 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 	assert.Equal("provider-comment-1", applied.Suggestions[0].ProviderCommentID)
 	assert.Equal("src/review.ts", applied.Suggestions[0].Range.Path)
 	assert.Equal("return client.publishThreads();", applied.Suggestions[0].Replacement)
+}
+
+func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	require.NoError(database.UpdateMRState(ctx, repo.ID, 7, string(db.MergeRequestStateClosed), nil, &now))
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal(string(CodeConflict), problem.Code)
+	assert.Equal("pull request is not open", problem.Detail)
+	require.NotNil(problem.Details)
+	assert.Equal("not_open", problem.Details["reason"])
+	assert.Empty(provider.appliedSuggestions)
+}
+
+func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+	ch, _ := srv.Hub().Subscribe(ctx, false)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	changed := readEventMatching(t, ch, func(ev Event) bool {
+		return ev.Type == "data_changed"
+	})
+	require.Equal("data_changed", changed.Type)
 }
 
 func TestAPIApplyReviewSuggestionRejectsReplacementOutsideStoredSuggestion(t *testing.T) {

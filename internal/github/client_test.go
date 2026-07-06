@@ -450,6 +450,95 @@ func TestApplyReviewSuggestionsFailsClosedWhenPullClosesBeforeMutation(t *testin
 	assert.Zero(graphQLCalls)
 }
 
+func TestApplyReviewSuggestionsFailsStaleWhenPullHeadChangesBeforeMutation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	content := base64.StdEncoding.EncodeToString([]byte("one\ntwo\nthree\n"))
+
+	tests := []struct {
+		name      string
+		secondRef string
+		secondSHA string
+		message   string
+	}{
+		{
+			name:      "retargeted branch",
+			secondRef: "feature/other",
+			secondSHA: "head-sha",
+			message:   "branch changed",
+		},
+		{
+			name:      "moved head",
+			secondRef: "feature/suggestion",
+			secondSHA: "new-head-sha",
+			message:   "head changed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var pullCalls int
+			var contentCalls int
+			var graphQLCalls int
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v3/repos/acme/widget/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
+				pullCalls++
+				if pullCalls == 1 {
+					writeReviewSuggestionPullResponse(w, "open", "fork/widget")
+					return
+				}
+				writeReviewSuggestionPullResponseWithHead(w, "open", "fork/widget", tt.secondRef, tt.secondSHA)
+			})
+			mux.HandleFunc("/api/v3/repos/fork/widget", func(w http.ResponseWriter, _ *http.Request) {
+				writeReviewSuggestionRepositoryResponse(w, "fork/widget")
+			})
+			mux.HandleFunc("/api/v3/repos/fork/widget/contents/src/main.go", func(w http.ResponseWriter, _ *http.Request) {
+				contentCalls++
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"type":"file","encoding":"base64","content":"` + content + `","path":"src/main.go","sha":"file-sha"}`))
+			})
+			mux.HandleFunc("/graphql", func(w http.ResponseWriter, _ *http.Request) {
+				graphQLCalls++
+				http.Error(w, "mutation should not run", http.StatusInternalServerError)
+			})
+			srv := httptest.NewServer(mux)
+			defer srv.Close()
+
+			ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+				srv.URL+"/api/v3/",
+				srv.URL+"/api/uploads/",
+			)
+			require.NoError(err)
+			client := &liveClient{
+				gh:              ghClient,
+				ghWrite:         ghClient,
+				httpWriteClient: srv.Client(),
+				graphQLEndpoint: srv.URL + "/graphql",
+			}
+
+			_, err = client.ApplyReviewSuggestions(t.Context(), "acme", "widget", 7, platform.ApplyReviewSuggestionsInput{
+				HeadBranch:       "feature/suggestion",
+				HeadRepoCloneURL: "https://github.com/fork/widget.git",
+				ExpectedHeadSHA:  "head-sha",
+				Suggestions: []platform.ReviewSuggestion{{
+					Range:       platform.DiffReviewLineRange{Path: "src/main.go", Side: "right", Line: 2},
+					Replacement: "TWO",
+				}},
+			})
+
+			require.Error(err)
+			require.ErrorIs(err, platform.ErrStaleState)
+			var platformErr *platform.Error
+			require.ErrorAs(err, &platformErr)
+			assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+			assert.Contains(err.Error(), tt.message)
+			assert.Equal(2, pullCalls)
+			assert.Equal(1, contentCalls)
+			assert.Zero(graphQLCalls)
+		})
+	}
+}
+
 func TestApplyReviewSuggestionsFailsClosedWhenLiveHeadRepoMissing(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -561,16 +650,28 @@ func TestApplyReviewSuggestionsFailsClosedWhenLiveHeadRepoInaccessible(t *testin
 }
 
 func writeReviewSuggestionPullResponse(w http.ResponseWriter, state string, headFullName string) {
+	writeReviewSuggestionPullResponseWithHead(w, state, headFullName, "feature/suggestion", "head-sha")
+}
+
+func writeReviewSuggestionPullResponseWithHead(
+	w http.ResponseWriter,
+	state string,
+	headFullName string,
+	headRef string,
+	headSHA string,
+) {
 	w.Header().Set("Content-Type", "application/json")
-	head := `{"repo":null}`
+	head := fmt.Sprintf(`{"repo":null,"ref":%q,"sha":%q}`, headRef, headSHA)
 	if headFullName != "" {
 		headOwner, headRepo, _ := strings.Cut(headFullName, "/")
 		head = fmt.Sprintf(
-			`{"repo":{"full_name":%q,"clone_url":%q,"owner":{"login":%q},"name":%q}}`,
+			`{"repo":{"full_name":%q,"clone_url":%q,"owner":{"login":%q},"name":%q},"ref":%q,"sha":%q}`,
 			headFullName,
 			"https://github.com/"+headFullName+".git",
 			headOwner,
 			headRepo,
+			headRef,
+			headSHA,
 		)
 	}
 	_, _ = fmt.Fprintf(w, `{"number":7,"state":%q,"head":%s}`, state, head)

@@ -2615,7 +2615,7 @@ func (c *liveClient) ApplyReviewSuggestions(
 	if len(byPath) == 0 {
 		return nil, githubSuggestionPlatformError(platform.ErrCodeInvalidArgument, "at least one suggestion is required", nil)
 	}
-	if err := c.ensureReviewSuggestionPullMutable(ctx, owner, repo, number, headFullName); err != nil {
+	if err := c.ensureReviewSuggestionPullMutable(ctx, owner, repo, number, headFullName, headBranch, expectedHeadSHA); err != nil {
 		return nil, err
 	}
 
@@ -2649,6 +2649,8 @@ func (c *liveClient) ensureReviewSuggestionPullMutable(
 	repo string,
 	number int,
 	headFullName string,
+	headBranch string,
+	expectedHeadSHA string,
 ) error {
 	pr, err := c.GetPullRequest(ctx, owner, repo, number)
 	if err != nil {
@@ -2660,6 +2662,17 @@ func (c *liveClient) ensureReviewSuggestionPullMutable(
 	liveHeadFullName := githubSuggestionLiveHeadRepoFullName(pr)
 	if liveHeadFullName == "" || !strings.EqualFold(liveHeadFullName, headFullName) {
 		return c.githubSuggestionConflict("head_repo_unknown", "pull request head repository is unknown")
+	}
+	if pr.Head == nil {
+		return c.githubSuggestionStaleState("pull request head changed since it was reviewed")
+	}
+	liveHeadBranch := strings.TrimSpace(pr.Head.GetRef())
+	if liveHeadBranch == "" || liveHeadBranch != headBranch {
+		return c.githubSuggestionStaleState("pull request head branch changed since it was reviewed")
+	}
+	liveHeadSHA := strings.TrimSpace(pr.Head.GetSHA())
+	if liveHeadSHA == "" || !strings.EqualFold(liveHeadSHA, expectedHeadSHA) {
+		return c.githubSuggestionStaleState("pull request head changed since it was reviewed")
 	}
 	headOwner, headRepo, ok := strings.Cut(liveHeadFullName, "/")
 	if !ok || headOwner == "" || headRepo == "" {
@@ -2693,6 +2706,15 @@ func (c *liveClient) githubSuggestionConflict(reason string, message string) err
 		Provider:     platform.KindGitHub,
 		PlatformHost: c.platformHost,
 		Details:      map[string]string{"reason": reason},
+		Err:          fmt.Errorf("%s", message),
+	}
+}
+
+func (c *liveClient) githubSuggestionStaleState(message string) error {
+	return &platform.Error{
+		Code:         platform.ErrCodeStaleState,
+		Provider:     platform.KindGitHub,
+		PlatformHost: c.platformHost,
 		Err:          fmt.Errorf("%s", message),
 	}
 }
@@ -2776,7 +2798,7 @@ func (c *liveClient) createCommitForReviewSuggestions(
 	message string,
 	additions []map[string]string,
 ) (*platform.AppliedReviewSuggestions, error) {
-	if err := c.ensureReviewSuggestionPullMutable(ctx, owner, repo, number, headFullName); err != nil {
+	if err := c.ensureReviewSuggestionPullMutable(ctx, owner, repo, number, headFullName, headBranch, expectedHeadSHA); err != nil {
 		return nil, err
 	}
 

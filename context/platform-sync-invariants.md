@@ -120,12 +120,13 @@ registry helpers return typed errors for missing providers or capabilities.
   disable the operation.
 - Review suggestion application mutates the source branch and is open-PR-only:
   closed/merged local rows fail with `reason: not_open`, providers re-verify
-  live PR state as close as possible to the branch mutation and map upstream
-  closed/merged races to the same reason, and the UI withholds apply handlers
-  for non-open PRs. The live re-check is a best-effort preflight, not an atomic
-  guard — no provider offers commit-only-if-open — so the expected-head binding
-  on the mutation is the final integrity check and provider stale failures map
-  to `stale_state`
+  live PR source state as close as possible to the branch mutation, including
+  open/closed state, head repository, head branch, and head SHA. Upstream
+  closed/merged races map to `reason: not_open`; live branch or SHA movement
+  maps to `stale_state`; and the UI withholds apply handlers for non-open PRs.
+  The live re-check is a best-effort preflight, not an atomic guard — no provider
+  offers commit-only-if-open — so the expected-head binding on the mutation is
+  the final integrity check and provider stale failures map to `stale_state`
   (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `internal/github/client.go::ensureReviewSuggestionPullMutable`, `packages/ui/src/components/detail/PullDetail.svelte::applyTimelineSuggestion`).
 - For providers whose branch writes need an explicit source repository target
   (GitHub currently), missing, unparseable, or inaccessible head repository

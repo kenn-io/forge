@@ -104,8 +104,9 @@ registry helpers return typed errors for missing providers or capabilities.
   skipped before looking for later suggestion fences, including Markdown fences
   indented by up to three leading spaces. Stored CRLF line endings are
   normalized to LF for matching; replacement text is otherwise not trimmed or
-  rewritten. Clients must not be trusted for provider comment ids, line ranges,
-  reviewed paths, or patch content authenticity.
+  rewritten. The UI parser/preview must mirror this normalization and opaque
+  fence handling. Clients must not be trusted for provider comment ids, line
+  ranges, reviewed paths, or patch content authenticity.
 - Review suggestion apply availability must account for all upstream calls the
   provider implementation makes. The neutral operation defaults to the REST
   bucket, and providers with different needs must report them through

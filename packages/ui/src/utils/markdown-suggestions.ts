@@ -89,7 +89,7 @@ function pushMarkdownBlock(blocks: MarkdownSuggestionBlock[], text: string): voi
 export function parseMarkdownSuggestions(raw: string): MarkdownSuggestionBlock[] {
   if (raw === "") return [];
 
-  const lines = raw.split("\n");
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
   const blocks: MarkdownSuggestionBlock[] = [];
   let markdownStart = 0;
   let lineIndex = 0;

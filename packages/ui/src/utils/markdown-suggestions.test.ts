@@ -51,6 +51,31 @@ describe("parseMarkdownSuggestions", () => {
     ]);
   });
 
+  test("parses CRLF suggestion fences with normalized replacement text", () => {
+    const blocks = parseMarkdownSuggestions(
+      ["Please apply this.", "", "```suggestion", "return compute();", "```", "", "Then rerun the check."].join("\r\n"),
+    );
+
+    expect(blocks).toEqual([
+      {
+        type: "markdown",
+        key: "markdown-0",
+        text: "Please apply this.\n\n",
+      },
+      {
+        type: "suggestion",
+        key: "suggestion-1",
+        replacement: "return compute();",
+        fenceLine: 3,
+      },
+      {
+        type: "markdown",
+        key: "markdown-2",
+        text: "\nThen rerun the check.",
+      },
+    ]);
+  });
+
   test("ignores suggestion-looking fences inside code blocks", () => {
     const blocks = parseMarkdownSuggestions(
       [

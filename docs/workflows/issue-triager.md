@@ -4,8 +4,8 @@ Use middleman to decide which issue needs attention next. You do not need to
 read every issue in arrival order.
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="/assets/generated/issue-triager-light.svg" alt="middleman issue triage view in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="/assets/generated/issue-triager-dark.svg" alt="middleman issue triage view in dark mode">
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/issue-triager-light.svg" alt="middleman issue triage view in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/issue-triager-dark.svg" alt="middleman issue triage view in dark mode">
   <figcaption>Issue detail, discussion, state, labels, and workspace creation stay in one view.</figcaption>
 </figure>
 

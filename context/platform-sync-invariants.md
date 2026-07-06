@@ -125,8 +125,10 @@ registry helpers return typed errors for missing providers or capabilities.
   closed/merged races map to `reason: not_open`; live branch or SHA movement
   maps to `stale_state`; and the UI withholds apply handlers for non-open PRs.
   The live re-check is a best-effort preflight, not an atomic guard — no provider
-  offers commit-only-if-open — so the expected-head binding on the mutation is
-  the final integrity check and provider stale failures map to `stale_state`
+  offers commit-only-if-open or commit-only-if-this-PR-still-points-here. GitHub's
+  `expectedHeadOid` only protects the selected `{head repo, head branch}` from
+  moving under the mutation; it cannot prove the PR still points at that branch
+  after the final preflight. Provider stale failures still map to `stale_state`
   (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `internal/github/client.go::ensureReviewSuggestionPullMutable`, `packages/ui/src/components/detail/PullDetail.svelte::applyTimelineSuggestion`).
 - For providers whose branch writes need an explicit source repository target
   (GitHub currently), missing, unparseable, or inaccessible head repository

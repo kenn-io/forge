@@ -450,6 +450,89 @@ func TestApplyReviewSuggestionsFailsClosedWhenPullClosesBeforeMutation(t *testin
 	assert.Zero(graphQLCalls)
 }
 
+func TestApplyReviewSuggestionsFailsStaleBeforeContentWhenPullHeadAlreadyChanged(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	tests := []struct {
+		name    string
+		headRef string
+		headSHA string
+		message string
+	}{
+		{
+			name:    "retargeted branch",
+			headRef: "feature/other",
+			headSHA: "head-sha",
+			message: "branch changed",
+		},
+		{
+			name:    "moved head",
+			headRef: "feature/suggestion",
+			headSHA: "new-head-sha",
+			message: "head changed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var repoCalls int
+			var contentCalls int
+			var graphQLCalls int
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v3/repos/acme/widget/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
+				writeReviewSuggestionPullResponseWithHead(w, "open", "fork/widget", tt.headRef, tt.headSHA)
+			})
+			mux.HandleFunc("/api/v3/repos/fork/widget", func(w http.ResponseWriter, _ *http.Request) {
+				repoCalls++
+				http.Error(w, "head repo should not be probed", http.StatusInternalServerError)
+			})
+			mux.HandleFunc("/api/v3/repos/fork/widget/contents/src/main.go", func(w http.ResponseWriter, _ *http.Request) {
+				contentCalls++
+				http.Error(w, "content should not be read", http.StatusInternalServerError)
+			})
+			mux.HandleFunc("/graphql", func(w http.ResponseWriter, _ *http.Request) {
+				graphQLCalls++
+				http.Error(w, "mutation should not run", http.StatusInternalServerError)
+			})
+			srv := httptest.NewServer(mux)
+			defer srv.Close()
+
+			ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+				srv.URL+"/api/v3/",
+				srv.URL+"/api/uploads/",
+			)
+			require.NoError(err)
+			client := &liveClient{
+				gh:              ghClient,
+				ghWrite:         ghClient,
+				httpWriteClient: srv.Client(),
+				graphQLEndpoint: srv.URL + "/graphql",
+			}
+
+			_, err = client.ApplyReviewSuggestions(t.Context(), "acme", "widget", 7, platform.ApplyReviewSuggestionsInput{
+				HeadBranch:       "feature/suggestion",
+				HeadRepoCloneURL: "https://github.com/fork/widget.git",
+				ExpectedHeadSHA:  "head-sha",
+				Suggestions: []platform.ReviewSuggestion{{
+					Range:       platform.DiffReviewLineRange{Path: "src/main.go", Side: "right", Line: 2},
+					Replacement: "TWO",
+				}},
+			})
+
+			require.Error(err)
+			require.ErrorIs(err, platform.ErrStaleState)
+			var platformErr *platform.Error
+			require.ErrorAs(err, &platformErr)
+			assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+			assert.Contains(err.Error(), tt.message)
+			assert.Zero(repoCalls)
+			assert.Zero(contentCalls)
+			assert.Zero(graphQLCalls)
+		})
+	}
+}
+
 func TestApplyReviewSuggestionsFailsStaleWhenPullHeadChangesBeforeMutation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

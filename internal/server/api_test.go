@@ -16017,6 +16017,79 @@ func TestAPIApplyReviewSuggestionPassesHeadRepoToGitHubProvider(t *testing.T) {
 	)
 }
 
+func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
+	// An open local row is not the last word: the provider re-verifies
+	// live PR state before mutating, and its stable conflict reasons
+	// must survive the wire mapping instead of collapsing into a
+	// generic conflict.
+	tests := []struct {
+		name   string
+		reason string
+	}{
+		{name: "closed upstream after sync", reason: "not_open"},
+		{name: "head repo lost after sync", reason: "head_repo_unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			caps := platform.Capabilities{
+				ReadRepositories:            true,
+				ReadMergeRequests:           true,
+				ReadIssues:                  true,
+				ReadComments:                true,
+				ReviewSuggestionApplication: true,
+				MutationHeadBinding:         true,
+				ReadReviewThreads:           true,
+			}
+			srv, database, provider := setupGitHubCapabilityServerWithProvider(
+				t, &caps, "https://github.example.com/fork/widget.git",
+			)
+			ctx := t.Context()
+			provider.applySuggestionsErr = &platform.Error{
+				Code:         platform.ErrCodeConflict,
+				Provider:     platform.KindGitHub,
+				PlatformHost: "github.example.com",
+				Details:      map[string]string{"reason": tt.reason},
+				Err:          errors.New("live pull request state rejected the apply"),
+			}
+
+			repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+				Platform:     "github",
+				PlatformHost: "github.example.com",
+				RepoPath:     "acme/widget",
+			})
+			require.NoError(err)
+			require.NotNil(repo)
+			mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+			require.NoError(err)
+			require.NotNil(mr)
+			thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+
+			rr := doJSON(
+				t,
+				srv,
+				http.MethodPost,
+				"/api/v1/host/github.example.com/pulls/gh/acme/widget/7/review-suggestions/apply",
+				map[string]any{
+					"expected_head_sha": "abc123",
+					"suggestions": []map[string]any{{
+						"thread_id":   strconv.FormatInt(thread.ID, 10),
+						"replacement": "return client.publishThreads();",
+					}},
+				},
+			)
+
+			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+			var problem rawProblemDetail
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal(string(CodeConflict), problem.Code)
+			require.NotNil(problem.Details)
+			assert.Equal(tt.reason, problem.Details["reason"])
+		})
+	}
+}
+
 func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
 	require := require.New(t)
 	caps := platform.Capabilities{

@@ -118,15 +118,20 @@ registry helpers return typed errors for missing providers or capabilities.
   needs REST content reads and a GraphQL `createCommitOnBranch` mutation, so its
   provider reports both buckets and either bucket being paused must hide or
   disable the operation.
-- Review suggestion application mutates the source branch and is open-PR-only
-  as an upstream guarantee: closed/merged local rows fail with
-  `reason: not_open`, providers must re-verify live PR state immediately before
-  branch mutation and map upstream closed/merged races to the same reason, and
-  the UI withholds apply handlers for non-open PRs
+- Review suggestion application mutates the source branch and is open-PR-only:
+  closed/merged local rows fail with `reason: not_open`, providers re-verify
+  live PR state as close as possible to the branch mutation and map upstream
+  closed/merged races to the same reason, and the UI withholds apply handlers
+  for non-open PRs. The live re-check is a best-effort preflight, not an atomic
+  guard — no provider offers commit-only-if-open — so the expected-head binding
+  on the mutation is the final integrity check and provider stale failures map
+  to `stale_state`
   (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `internal/github/client.go::ensureReviewSuggestionPullMutable`, `packages/ui/src/components/detail/PullDetail.svelte::applyTimelineSuggestion`).
-- Missing, unparseable, or inaccessible head repository identity fails
-  suggestion apply closed with `reason: head_repo_unknown` before any provider
-  branch mutation; providers must never fall back to the base repository as a write target
+- For providers whose branch writes need an explicit source repository target
+  (GitHub currently), missing, unparseable, or inaccessible head repository
+  identity fails suggestion apply closed with `reason: head_repo_unknown`
+  before any provider branch mutation; providers must never fall back to the
+  base repository as a write target
   (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `internal/github/client.go::githubSuggestionHeadRepo`, `internal/github/client.go::ensureReviewSuggestionPullMutable`).
 - Successful suggestion apply must refresh through the detail-sync broadcaster,
   not a raw background sync, so detail observes the persisted new head/suggestions;

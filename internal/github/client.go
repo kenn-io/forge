@@ -2665,7 +2665,20 @@ func (c *liveClient) ensureReviewSuggestionPullMutable(
 	if !ok || headOwner == "" || headRepo == "" {
 		return c.githubSuggestionConflict("head_repo_unknown", "pull request head repository is unknown")
 	}
-	if _, err := c.GetRepository(ctx, headOwner, headRepo); err != nil {
+	if err := c.ensureReviewSuggestionHeadRepoReachable(ctx, headOwner, headRepo); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *liveClient) ensureReviewSuggestionHeadRepoReachable(
+	ctx context.Context,
+	owner string,
+	repo string,
+) error {
+	_, resp, err := c.writeGH().Repositories.Get(ctx, owner, repo)
+	c.trackWriteRate(resp)
+	if err != nil {
 		if githubSuggestionHeadRepoUnavailable(err) {
 			return c.githubSuggestionConflict("head_repo_unknown", "pull request head repository is unknown")
 		}

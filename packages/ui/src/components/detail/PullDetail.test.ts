@@ -987,6 +987,9 @@ describe("PullDetail approvals", () => {
         platformHost: "github.com",
         repoPath: "acme/widget",
         hideWorkspaceAction: true,
+        // Background sync would re-fetch the original fixture and race
+        // the fail-closed state this test asserts.
+        autoSync: false,
       },
       context: new Map<symbol, unknown>([
         [API_CLIENT_KEY, apiClient],

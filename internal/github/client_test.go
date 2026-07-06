@@ -188,11 +188,15 @@ func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
 	content := base64.StdEncoding.EncodeToString([]byte("one\ntwo\nthree\n"))
 	var graphqlPayload graphQLRequest
 	var graphqlDecodeErr error
+	var pullCalls int
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/repos/acme/widget/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"number":7,"state":"open"}`))
+		pullCalls++
+		writeReviewSuggestionPullResponse(w, "open", "fork/widget")
+	})
+	mux.HandleFunc("/api/v3/repos/fork/widget", func(w http.ResponseWriter, _ *http.Request) {
+		writeReviewSuggestionRepositoryResponse(w, "fork/widget")
 	})
 	mux.HandleFunc("/api/v3/repos/fork/widget/contents/src/main.go", func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodGet, r.Method)
@@ -248,6 +252,7 @@ func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(addition["contents"].(string))
 	require.NoError(err)
 	assert.Equal("one\nTWO\nthree\n", string(decoded))
+	assert.Equal(2, pullCalls)
 }
 
 func TestApplyReviewSuggestionsFailsClosedWhenPullNotOpenUpstream(t *testing.T) {
@@ -258,8 +263,7 @@ func TestApplyReviewSuggestionsFailsClosedWhenPullNotOpenUpstream(t *testing.T) 
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/repos/acme/widget/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"number":7,"state":"closed"}`))
+		writeReviewSuggestionPullResponse(w, "closed", "")
 	})
 	mux.HandleFunc("/api/v3/repos/fork/widget/contents/src/main.go", func(w http.ResponseWriter, _ *http.Request) {
 		contentCalls++
@@ -303,6 +307,209 @@ func TestApplyReviewSuggestionsFailsClosedWhenPullNotOpenUpstream(t *testing.T) 
 	assert.Equal("not_open", platformErr.Details["reason"])
 	assert.Zero(contentCalls)
 	assert.Zero(graphqlCalls)
+}
+
+func TestApplyReviewSuggestionsFailsClosedWhenPullClosesBeforeMutation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	content := base64.StdEncoding.EncodeToString([]byte("one\ntwo\nthree\n"))
+	var pullCalls int
+	var contentCalls int
+	var graphQLCalls int
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/acme/widget/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
+		pullCalls++
+		if pullCalls == 1 {
+			writeReviewSuggestionPullResponse(w, "open", "fork/widget")
+			return
+		}
+		writeReviewSuggestionPullResponse(w, "closed", "")
+	})
+	mux.HandleFunc("/api/v3/repos/fork/widget", func(w http.ResponseWriter, _ *http.Request) {
+		writeReviewSuggestionRepositoryResponse(w, "fork/widget")
+	})
+	mux.HandleFunc("/api/v3/repos/fork/widget/contents/src/main.go", func(w http.ResponseWriter, _ *http.Request) {
+		contentCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"file","encoding":"base64","content":"` + content + `","path":"src/main.go","sha":"file-sha"}`))
+	})
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, _ *http.Request) {
+		graphQLCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"createCommitOnBranch":{"commit":{"oid":"commit-sha","url":"https://github.com/fork/widget/commit/commit-sha"}}}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/",
+		srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	client := &liveClient{
+		gh:              ghClient,
+		ghWrite:         ghClient,
+		httpWriteClient: srv.Client(),
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	_, err = client.ApplyReviewSuggestions(t.Context(), "acme", "widget", 7, platform.ApplyReviewSuggestionsInput{
+		HeadBranch:       "feature/suggestion",
+		HeadRepoCloneURL: "https://github.com/fork/widget.git",
+		ExpectedHeadSHA:  "head-sha",
+		Suggestions: []platform.ReviewSuggestion{{
+			Range:       platform.DiffReviewLineRange{Path: "src/main.go", Side: "right", Line: 2},
+			Replacement: "TWO",
+		}},
+	})
+
+	require.Error(err)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeConflict, platformErr.Code)
+	assert.Equal("not_open", platformErr.Details["reason"])
+	assert.Equal(2, pullCalls)
+	assert.Equal(1, contentCalls)
+	assert.Zero(graphQLCalls)
+}
+
+func TestApplyReviewSuggestionsFailsClosedWhenLiveHeadRepoMissing(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var contentCalls int
+	var graphQLCalls int
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/acme/widget/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
+		writeReviewSuggestionPullResponse(w, "open", "")
+	})
+	mux.HandleFunc("/api/v3/repos/fork/widget/contents/src/main.go", func(w http.ResponseWriter, _ *http.Request) {
+		contentCalls++
+		http.Error(w, "content should not be read", http.StatusInternalServerError)
+	})
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, _ *http.Request) {
+		graphQLCalls++
+		http.Error(w, "mutation should not run", http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/",
+		srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	client := &liveClient{
+		gh:              ghClient,
+		ghWrite:         ghClient,
+		httpWriteClient: srv.Client(),
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	_, err = client.ApplyReviewSuggestions(t.Context(), "acme", "widget", 7, platform.ApplyReviewSuggestionsInput{
+		HeadBranch:       "feature/suggestion",
+		HeadRepoCloneURL: "https://github.com/fork/widget.git",
+		ExpectedHeadSHA:  "head-sha",
+		Suggestions: []platform.ReviewSuggestion{{
+			Range:       platform.DiffReviewLineRange{Path: "src/main.go", Side: "right", Line: 2},
+			Replacement: "TWO",
+		}},
+	})
+
+	require.Error(err)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeConflict, platformErr.Code)
+	assert.Equal("head_repo_unknown", platformErr.Details["reason"])
+	assert.Zero(contentCalls)
+	assert.Zero(graphQLCalls)
+}
+
+func TestApplyReviewSuggestionsFailsClosedWhenLiveHeadRepoInaccessible(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var repoCalls int
+	var contentCalls int
+	var graphQLCalls int
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/acme/widget/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
+		writeReviewSuggestionPullResponse(w, "open", "fork/widget")
+	})
+	mux.HandleFunc("/api/v3/repos/fork/widget", func(w http.ResponseWriter, _ *http.Request) {
+		repoCalls++
+		http.Error(w, "not found", http.StatusNotFound)
+	})
+	mux.HandleFunc("/api/v3/repos/fork/widget/contents/src/main.go", func(w http.ResponseWriter, _ *http.Request) {
+		contentCalls++
+		http.Error(w, "content should not be read", http.StatusInternalServerError)
+	})
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, _ *http.Request) {
+		graphQLCalls++
+		http.Error(w, "mutation should not run", http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/",
+		srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	client := &liveClient{
+		gh:              ghClient,
+		ghWrite:         ghClient,
+		httpWriteClient: srv.Client(),
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	_, err = client.ApplyReviewSuggestions(t.Context(), "acme", "widget", 7, platform.ApplyReviewSuggestionsInput{
+		HeadBranch:       "feature/suggestion",
+		HeadRepoCloneURL: "https://github.com/fork/widget.git",
+		ExpectedHeadSHA:  "head-sha",
+		Suggestions: []platform.ReviewSuggestion{{
+			Range:       platform.DiffReviewLineRange{Path: "src/main.go", Side: "right", Line: 2},
+			Replacement: "TWO",
+		}},
+	})
+
+	require.Error(err)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeConflict, platformErr.Code)
+	assert.Equal("head_repo_unknown", platformErr.Details["reason"])
+	assert.Equal(1, repoCalls)
+	assert.Zero(contentCalls)
+	assert.Zero(graphQLCalls)
+}
+
+func writeReviewSuggestionPullResponse(w http.ResponseWriter, state string, headFullName string) {
+	w.Header().Set("Content-Type", "application/json")
+	head := `{"repo":null}`
+	if headFullName != "" {
+		headOwner, headRepo, _ := strings.Cut(headFullName, "/")
+		head = fmt.Sprintf(
+			`{"repo":{"full_name":%q,"clone_url":%q,"owner":{"login":%q},"name":%q}}`,
+			headFullName,
+			"https://github.com/"+headFullName+".git",
+			headOwner,
+			headRepo,
+		)
+	}
+	_, _ = fmt.Fprintf(w, `{"number":7,"state":%q,"head":%s}`, state, head)
+}
+
+func writeReviewSuggestionRepositoryResponse(w http.ResponseWriter, fullName string) {
+	w.Header().Set("Content-Type", "application/json")
+	owner, name, _ := strings.Cut(fullName, "/")
+	_, _ = fmt.Fprintf(
+		w,
+		`{"name":%q,"full_name":%q,"owner":{"login":%q}}`,
+		name,
+		fullName,
+		owner,
+	)
 }
 
 func TestGitHubSuggestionHeadRepoRequiresCloneURL(t *testing.T) {

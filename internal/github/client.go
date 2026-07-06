@@ -2615,7 +2615,7 @@ func (c *liveClient) ApplyReviewSuggestions(
 	if len(byPath) == 0 {
 		return nil, githubSuggestionPlatformError(platform.ErrCodeInvalidArgument, "at least one suggestion is required", nil)
 	}
-	if err := c.ensureReviewSuggestionPullOpen(ctx, owner, repo, number); err != nil {
+	if err := c.ensureReviewSuggestionPullMutable(ctx, owner, repo, number, headFullName); err != nil {
 		return nil, err
 	}
 
@@ -2643,25 +2643,75 @@ func (c *liveClient) ApplyReviewSuggestions(
 	return c.createCommitForReviewSuggestions(ctx, owner, repo, number, headFullName, headBranch, expectedHeadSHA, strings.TrimSpace(input.Message), additions)
 }
 
-func (c *liveClient) ensureReviewSuggestionPullOpen(
+func (c *liveClient) ensureReviewSuggestionPullMutable(
 	ctx context.Context,
 	owner string,
 	repo string,
 	number int,
+	headFullName string,
 ) error {
 	pr, err := c.GetPullRequest(ctx, owner, repo, number)
 	if err != nil {
 		return err
 	}
-	if strings.EqualFold(pr.GetState(), "open") {
-		return nil
+	if !strings.EqualFold(pr.GetState(), "open") {
+		return c.githubSuggestionConflict("not_open", "pull request is not open")
 	}
+	liveHeadFullName := githubSuggestionLiveHeadRepoFullName(pr)
+	if liveHeadFullName == "" || !strings.EqualFold(liveHeadFullName, headFullName) {
+		return c.githubSuggestionConflict("head_repo_unknown", "pull request head repository is unknown")
+	}
+	headOwner, headRepo, ok := strings.Cut(liveHeadFullName, "/")
+	if !ok || headOwner == "" || headRepo == "" {
+		return c.githubSuggestionConflict("head_repo_unknown", "pull request head repository is unknown")
+	}
+	if _, err := c.GetRepository(ctx, headOwner, headRepo); err != nil {
+		if githubSuggestionHeadRepoUnavailable(err) {
+			return c.githubSuggestionConflict("head_repo_unknown", "pull request head repository is unknown")
+		}
+		return err
+	}
+	return nil
+}
+
+func (c *liveClient) githubSuggestionConflict(reason string, message string) error {
 	return &platform.Error{
 		Code:         platform.ErrCodeConflict,
 		Provider:     platform.KindGitHub,
 		PlatformHost: c.platformHost,
-		Details:      map[string]string{"reason": "not_open"},
-		Err:          fmt.Errorf("pull request is not open"),
+		Details:      map[string]string{"reason": reason},
+		Err:          fmt.Errorf("%s", message),
+	}
+}
+
+func githubSuggestionLiveHeadRepoFullName(pr *gh.PullRequest) string {
+	if pr == nil || pr.Head == nil || pr.Head.Repo == nil {
+		return ""
+	}
+	if fullName := strings.TrimSpace(pr.Head.Repo.GetFullName()); fullName != "" {
+		return fullName
+	}
+	if fullName := ParseHeadRepoFullName(pr.Head.Repo.GetCloneURL()); fullName != "" {
+		return fullName
+	}
+	owner := strings.TrimSpace(pr.Head.Repo.GetOwner().GetLogin())
+	name := strings.TrimSpace(pr.Head.Repo.GetName())
+	if owner == "" || name == "" {
+		return ""
+	}
+	return owner + "/" + name
+}
+
+func githubSuggestionHeadRepoUnavailable(err error) bool {
+	var ghErr *gh.ErrorResponse
+	if !errors.As(err, &ghErr) || ghErr.Response == nil {
+		return false
+	}
+	switch ghErr.Response.StatusCode {
+	case http.StatusNotFound, http.StatusGone:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -2713,6 +2763,10 @@ func (c *liveClient) createCommitForReviewSuggestions(
 	message string,
 	additions []map[string]string,
 ) (*platform.AppliedReviewSuggestions, error) {
+	if err := c.ensureReviewSuggestionPullMutable(ctx, owner, repo, number, headFullName); err != nil {
+		return nil, err
+	}
+
 	type createCommitResponse struct {
 		Errors []graphQLError `json:"errors"`
 		Data   struct {

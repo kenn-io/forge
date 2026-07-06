@@ -4657,6 +4657,7 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 		Stale:               result.Stale,
 		WhitespaceOnlyCount: result.WhitespaceOnlyCount,
 		Files:               result.Files,
+		DiffHeadSHA:         resolved.diffSHAs.DiffHeadSHA,
 	}}, nil
 }
 

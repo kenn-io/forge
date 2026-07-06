@@ -802,6 +802,7 @@ type DiffFile struct {
 type DiffResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema              *string     `json:"$schema,omitempty"`
+	DiffHeadSha         *string     `json:"diff_head_sha,omitempty"`
 	Files               *[]DiffFile `json:"files"`
 	Stale               bool        `json:"stale"`
 	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`

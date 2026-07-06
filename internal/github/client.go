@@ -2918,9 +2918,14 @@ func githubCreateCommitGraphQLError(
 	for _, graphQLError := range graphQLErrors {
 		if strings.EqualFold(graphQLError.Type, "NOT_FOUND") ||
 			strings.Contains(graphQLError.Message, "Could not resolve") {
+			// Post-preflight resolution failures are head repo/branch
+			// races, not user-addressable 404s: fail closed with the
+			// same stable reason as the preflight so clients run
+			// conflict recovery.
 			return &platform.Error{
-				Code:     platform.ErrCodeNotFound,
+				Code:     platform.ErrCodeConflict,
 				Provider: platform.KindGitHub,
+				Details:  map[string]string{"reason": "head_repo_unknown"},
 				Err:      wrapped,
 			}
 		}

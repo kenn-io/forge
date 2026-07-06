@@ -115,7 +115,9 @@ registry helpers return typed errors for missing providers or capabilities.
   (`internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).
 - The UI only exposes apply actions when the thread head matches a known
   current PR head; stale or unknown heads disable actions, and stale batched
-  suggestions must not reach batch submit while staying removable
+  suggestions must not reach batch submit while staying removable. A suggestion
+  preview built from a cached diff whose `diff_head_sha` no longer matches the
+  current head is treated as missing context (apply disabled) until reloaded
   (`packages/ui/src/components/detail/ReviewSuggestionBlock.svelte`, `packages/ui/src/components/detail/EventTimeline.svelte`).
 - Remaining edge cases (duplicate thread ids, overlapping ranges, missing
   reviewed heads, renamed/deleted/binary files, unsupported encodings,

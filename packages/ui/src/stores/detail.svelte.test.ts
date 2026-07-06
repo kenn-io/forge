@@ -108,6 +108,76 @@ describe("createDetailStore", () => {
     });
   });
 
+  it("awaits a sync-enabled refresh after apply-suggestion success", async () => {
+    const get = vi.fn().mockResolvedValue({ data: pullDetail("old-head") });
+    const post = vi.fn(async (path: string) => {
+      if (path.endsWith("/review-suggestions/apply")) {
+        return { data: { status: "applied" }, error: undefined };
+      }
+      if (path.endsWith("/sync")) {
+        return { data: pullDetail("new-head"), error: undefined };
+      }
+      return { error: undefined };
+    });
+    const store = createDetailStore({
+      client: mockClient({ GET: get, POST: post }),
+      getPage: () => "pulls",
+      pulls: { loadPulls: vi.fn().mockResolvedValue(undefined) },
+    });
+    await store.loadDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+
+    const ok = await store.applyReviewSuggestions("acme", "widget", 7, {
+      suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
+    });
+
+    expect(ok).toBe(true);
+    expect(store.getDetail()?.platform_head_sha).toBe("new-head");
+    expect(post).toHaveBeenCalledWith(
+      "/pulls/{provider}/{owner}/{name}/{number}/sync",
+      expect.objectContaining({
+        params: expect.objectContaining({
+          path: expect.objectContaining({ provider: "github", owner: "acme", name: "widget", number: 7 }),
+        }),
+      }),
+    );
+  });
+
+  it("falls back to a cached refresh when the post-apply sync returns nothing", async () => {
+    const get = vi.fn().mockResolvedValue({ data: pullDetail("cached-head") });
+    const post = vi.fn(async (path: string) => {
+      if (path.endsWith("/review-suggestions/apply")) {
+        return { data: { status: "applied" }, error: undefined };
+      }
+      if (path.endsWith("/sync")) {
+        return { error: undefined };
+      }
+      return { error: undefined };
+    });
+    const store = createDetailStore({
+      client: mockClient({ GET: get, POST: post }),
+    });
+    await store.loadDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    const loadCalls = get.mock.calls.length;
+
+    const ok = await store.applyReviewSuggestions("acme", "widget", 7, {
+      suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
+    });
+
+    expect(ok).toBe(true);
+    expect(get.mock.calls.length).toBeGreaterThan(loadCalls);
+    expect(store.getDetail()?.platform_head_sha).toBe("cached-head");
+  });
+
   it("syncs detail before returning false for apply-suggestion state conflicts", async () => {
     for (const reason of ["stale_state", "head_unknown", "not_open", "head_repo_unknown"] as const) {
       const problem = conflictProblem(reason);

@@ -4605,6 +4605,7 @@ export interface components {
              * @example /api/v1/schemas/DiffResponse.json
              */
             readonly $schema?: string;
+            diff_head_sha?: string;
             files: components["schemas"]["DiffFile"][] | null;
             stale: boolean;
             /** Format: int64 */

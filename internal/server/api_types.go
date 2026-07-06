@@ -333,6 +333,10 @@ type diffResponse struct {
 	Stale               bool                `json:"stale"`
 	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
 	Files               []gitclone.DiffFile `json:"files"`
+	// DiffHeadSHA is the synced PR diff snapshot head this diff was
+	// computed from; clients compare it against platform_head_sha to
+	// detect stale cached diff context. Empty for non-PR diffs.
+	DiffHeadSHA string `json:"diff_head_sha,omitempty"`
 }
 
 type filesResponse struct {

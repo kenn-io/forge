@@ -1183,7 +1183,15 @@ export function createDetailStore(opts: DetailStoreOptions) {
       storeError = err instanceof Error ? err.message : String(err);
       return false;
     }
-    await refreshDetail(owner, name, number, syncGeneration, currentDetailRef(owner, name, number));
+    // The provider commit moved the head; a cached GET can race the
+    // server's async post-apply sync and leave stale controls enabled.
+    // Await a sync-enabled refresh so the detail reflects the new head,
+    // falling back to the cached view when the sync fails.
+    const identity = currentDetailRef(owner, name, number);
+    const synced = await syncDetail(owner, name, number, syncGeneration, identity);
+    if (!synced) {
+      await refreshDetail(owner, name, number, syncGeneration, identity);
+    }
     await refreshPullsIfActive();
     return true;
   }

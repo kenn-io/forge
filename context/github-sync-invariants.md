@@ -119,7 +119,9 @@ Some PR-derived state is only valid for one head commit.
   `createCommitOnBranch.expectedHeadOid`, never the base repo. Reject
   whitespace-padded paths (do not trim), preserve terminal blank replacement
   lines, and do not re-add a trailing newline when a suggestion deletes every
-  line (`internal/github/client.go::ApplyReviewSuggestions`).
+  line. Mutation-time `NOT_FOUND`/could-not-resolve failures are head repo or
+  branch races and map to conflict `head_repo_unknown`, not `not_found`
+  (`internal/github/client.go::ApplyReviewSuggestions`).
 - Apply-suggestion consumes REST content reads plus the GraphQL
   `createCommitOnBranch` mutation; the provider reports both buckets via
   `OperationRateLimitBuckets(platform.OperationApplyReviewSuggestion)` so a

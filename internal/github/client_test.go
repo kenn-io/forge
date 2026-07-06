@@ -772,6 +772,50 @@ func writeReviewSuggestionRepositoryResponse(w http.ResponseWriter, fullName str
 	)
 }
 
+func TestGitHubCreateCommitGraphQLErrorMapsStableReasons(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	tests := []struct {
+		name       string
+		errors     []graphQLError
+		wantCode   platform.PlatformErrorCode
+		wantReason string
+	}{
+		{
+			name:     "expected head moved",
+			errors:   []graphQLError{{Message: "expectedHeadOid does not match"}},
+			wantCode: platform.ErrCodeStaleState,
+		},
+		{
+			name:       "head repo resolution race",
+			errors:     []graphQLError{{Type: "NOT_FOUND", Message: "Could not resolve to a Repository"}},
+			wantCode:   platform.ErrCodeConflict,
+			wantReason: "head_repo_unknown",
+		},
+		{
+			name:       "head branch resolution race",
+			errors:     []graphQLError{{Message: "Could not resolve to a Ref"}},
+			wantCode:   platform.ErrCodeConflict,
+			wantReason: "head_repo_unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := githubCreateCommitGraphQLError("acme", "widget", 7, tt.errors)
+
+			require.Error(err)
+			var platformErr *platform.Error
+			require.ErrorAs(err, &platformErr)
+			assert.Equal(tt.wantCode, platformErr.Code)
+			if tt.wantReason != "" {
+				assert.Equal(tt.wantReason, platformErr.Details["reason"])
+			}
+		})
+	}
+}
+
 func TestGitHubSuggestionHeadRepoRequiresCloneURL(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

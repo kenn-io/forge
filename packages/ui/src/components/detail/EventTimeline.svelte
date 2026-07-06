@@ -77,6 +77,18 @@
   const diffStore = stores?.diff;
   const diffReviewDraft = stores?.diffReviewDraft;
   const diff = $derived(diffStore?.getDiff() ?? null);
+  // The cached diff can predate the current PR head (the store skips
+  // reloads for the same route). A preview built from that diff would
+  // show stale surrounding code for a suggestion applied to the newer
+  // head, so treat a known head mismatch as missing context.
+  const diffContextStale = $derived(
+    currentHeadSHA !== "" &&
+      diff !== null &&
+      (diff.diff_head_sha ?? "") !== "" &&
+      diff.diff_head_sha !== currentHeadSHA,
+  );
+  const suggestionDiff = $derived(diffContextStale ? null : diff);
+  let diffReloadedForHead = "";
 
   $effect(() => {
     if (!provider || !repoOwner || !repoName || !repoPath || number == null) return;
@@ -101,7 +113,12 @@
       current.repoPath === repoPath &&
       current.number === number
     ) {
-      return;
+      // Same route, but the loaded diff may predate the current head.
+      // Reload once per observed head; if the server still serves the
+      // older snapshot, the preview stays marked outdated instead of
+      // looping.
+      if (!diffContextStale || diffReloadedForHead === currentHeadSHA) return;
+      diffReloadedForHead = currentHeadSHA;
     }
     untrack(() => {
       void diffStore.loadDiff(repoOwner, repoName, number, {
@@ -1423,7 +1440,7 @@
                     {@const blockKey = suggestionKey(event, block)}
                     <ReviewSuggestionBlock
                       thread={reviewThread.thread}
-                      context={diff ? reviewThreadContext(diff, reviewThread.thread) : reviewThreadContext(null, reviewThread.thread)}
+                      context={suggestionDiff ? reviewThreadContext(suggestionDiff, reviewThread.thread) : reviewThreadContext(null, reviewThread.thread)}
                       replacement={block.replacement}
                       {currentHeadSHA}
                       applying={applyingSuggestionKey === blockKey}

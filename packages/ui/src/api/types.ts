@@ -108,6 +108,8 @@ export interface DiffResult {
   stale: boolean;
   whitespace_only_count: number;
   files: DiffFile[];
+  /** Synced PR diff snapshot head; compare with platform_head_sha to detect stale cached context. */
+  diff_head_sha?: string;
 }
 
 export interface FilesResult {

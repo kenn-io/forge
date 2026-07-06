@@ -938,6 +938,123 @@ describe("EventTimeline", () => {
     expect(screen.queryByRole("button", { name: "Remove from batch" })).toBeNull();
   });
 
+  it("marks the suggestion preview outdated and reloads when the cached diff predates the current head", async () => {
+    const applySuggestion = vi.fn(async () => true);
+    const loadDiff = vi.fn();
+    const diffStore = makeDiffStore({
+      getDiff: () =>
+        ({
+          ...(makeDiffStore().getDiff() as DiffResult),
+          diff_head_sha: "old-head",
+        }) as DiffResult,
+      getCurrentPR: () => ({
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+      }),
+      loadDiff,
+    } as unknown as Partial<DiffStore>);
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeReviewThreadEvent({
+            Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join(
+              "\n",
+            ),
+            diff_thread: {
+              ...makeReviewThreadEvent().diff_thread!,
+              diff_head_sha: "new-head",
+            },
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        currentHeadSHA: "new-head",
+        onApplySuggestion: applySuggestion,
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            diff: diffStore,
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    const commitButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: "Commit suggestion" }) as HTMLButtonElement;
+      expect(button).toBeTruthy();
+      return button;
+    });
+    expect(commitButton.disabled).toBe(true);
+    expect(commitButton.title).toBe("The original diff context is not available");
+    await waitFor(() => {
+      expect(loadDiff).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("keeps suggestion apply enabled when the cached diff matches the current head", async () => {
+    const applySuggestion = vi.fn(async () => true);
+    const diffStore = makeDiffStore({
+      getDiff: () =>
+        ({
+          ...(makeDiffStore().getDiff() as DiffResult),
+          diff_head_sha: "new-head",
+        }) as DiffResult,
+    } as unknown as Partial<DiffStore>);
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeReviewThreadEvent({
+            Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join(
+              "\n",
+            ),
+            diff_thread: {
+              ...makeReviewThreadEvent().diff_thread!,
+              diff_head_sha: "new-head",
+            },
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        currentHeadSHA: "new-head",
+        onApplySuggestion: applySuggestion,
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            diff: diffStore,
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    await expectSuggestionPierreText(/return client\.publishThreads\(\);/);
+    const commitButton = screen.getByRole("button", { name: "Commit suggestion" }) as HTMLButtonElement;
+    expect(commitButton.disabled).toBe(false);
+  });
+
   it("renders threaded comments as separate compact rows with one-line previews", async () => {
     const { container } = render(EventTimeline, {
       props: {

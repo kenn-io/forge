@@ -941,6 +941,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        diff_head_sha:
+          type: string
         files:
           items:
             $ref: "#/components/schemas/DiffFile"

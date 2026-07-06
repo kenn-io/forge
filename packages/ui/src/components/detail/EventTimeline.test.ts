@@ -605,7 +605,7 @@ describe("EventTimeline", () => {
         events: [
           makeReviewThreadEvent({
             Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join(
-              "\n",
+              "\r\n",
             ),
             diff_thread: {
               ...makeReviewThreadEvent().diff_thread!,

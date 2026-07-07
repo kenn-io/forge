@@ -421,9 +421,10 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     env:
-      # Pin to post-v0.50.0 commit with OpenAPI/Huma support.
-      # Update to next release tag when available.
-      ROBOREV_REF: 34091063a7d9c415c35a0faba18d41952b331b0f
+      # Pin to a post-v0.61.2 commit with panel reviews (panel_summary,
+      # omit_prompt, first_started_at). Update to next release tag when
+      # available.
+      ROBOREV_REF: d67d87dbfab7c75b9f4b09f482d5c9d4f705335a
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

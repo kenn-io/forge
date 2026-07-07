@@ -86,7 +86,6 @@ interface BuildOpts {
   platformHeadSha?: string;
   expectedHeadSha?: string;
   requireHeadPin?: boolean;
-  deferredMergePending?: boolean;
   onHeadConflict?: (reason: "stale_state" | "head_unknown") => void;
 }
 
@@ -126,7 +125,6 @@ function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
           }),
     stale: opts.stale ?? false,
     requireHeadPin: opts.requireHeadPin ?? false,
-    deferredMergePending: opts.deferredMergePending ?? false,
     stores: stores as unknown as PRDetailActionInput["stores"],
     client,
     ...(opts.approveCommentBody !== undefined && {
@@ -371,10 +369,6 @@ describe("canOpenMerge", () => {
 
   it("returns false when PR has merge conflicts (dirty)", () => {
     expect(canOpenMerge(buildInput({ mergeableState: "dirty" }))).toBe(false);
-  });
-
-  it("returns false while a deferred merge is already waiting on CI", () => {
-    expect(canOpenMerge(buildInput({ deferredMergePending: true }))).toBe(false);
   });
 
   it("returns false when head binding requires a reviewed head and only the platform head is known", () => {

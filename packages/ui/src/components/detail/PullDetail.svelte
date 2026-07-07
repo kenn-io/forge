@@ -839,7 +839,6 @@
       stores: { detail: detailStore, pulls },
       client,
       requireHeadPin: capabilities.mutation_head_binding,
-      deferredMergePending,
       ...(detailHeadSha !== "" && { expectedHeadSha: detailHeadSha }),
       setMergeModalOpen: (open: boolean) => { showMergeModal = open; },
       onAfterOpenMerge: closeActionMenu,
@@ -1942,43 +1941,34 @@
                 ? "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it"
                 : mergeOpUnavailable
                   ? mergeOp?.unavailable_reason ?? ""
-                  : ""}
-            {#if deferredMergePending}
-              <Button
-                class="btn--merge btn--merge-queued"
-                disabled
-                title="A background merge is waiting for the pending CI checks to pass. Close the pull request to cancel it."
-                tone="success"
-                surface="soft"
-                size="sm"
-                label="Merge queued for CI"
-                shortLabel="Merge queued"
-              >
+                  : deferredMergePending
+                    ? "A background merge runs when the pending CI checks pass. Click to merge immediately; close the pull request to cancel."
+                    : ""}
+            <Button
+              class={deferredMergePending ? "btn--merge btn--merge-queued" : "btn--merge"}
+              disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
+              title={mergeTitle}
+              onclick={() => {
+                if (stalePR || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
+                runOpenMerge(buildOpenMergeInput(pr, capabilities));
+              }}
+              tone="success"
+              surface={deferredMergePending ? "soft" : "solid"}
+              size="sm"
+              label={deferredMergePending ? "Merge queued" : mergeActionLabel(mergeSettings)}
+              shortLabel={deferredMergePending ? "Queued" : mergeActionShortLabel(mergeSettings)}
+            >
+              {#if deferredMergePending}
                 <ClockIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-              </Button>
-            {:else}
-              <Button
-                class="btn--merge"
-                disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
-                title={mergeTitle}
-                onclick={() => {
-                  if (stalePR || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
-                  runOpenMerge(buildOpenMergeInput(pr, capabilities));
-                }}
-                tone="success"
-                surface="solid"
-                size="sm"
-                label={mergeActionLabel(mergeSettings)}
-                shortLabel={mergeActionShortLabel(mergeSettings)}
-              >
+              {:else}
                 <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                {#snippet trailing()}
-                  {#if mergeActionHasMenu(mergeSettings)}
-                    <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
-                  {/if}
-                {/snippet}
-              </Button>
-            {/if}
+              {/if}
+              {#snippet trailing()}
+                {#if !deferredMergePending && mergeActionHasMenu(mergeSettings)}
+                  <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
+                {/if}
+              {/snippet}
+            </Button>
           {/if}
           {#if capabilities.state_mutation}
             {@const closeGate = operationGate(repoOperations?.close_pr)}
@@ -2225,6 +2215,7 @@
           expectedHeadSha={detailHeadSha}
           requireHeadPin={capabilities.mutation_head_binding}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
+          alreadyQueued={deferredMergePending}
           onheadconflict={handleHeadConflict}
           onclose={() => { showMergeModal = false; }}
           onqueued={() => {

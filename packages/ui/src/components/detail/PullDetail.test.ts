@@ -1105,11 +1105,20 @@ describe("PullDetail approvals", () => {
     expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
   });
 
-  it("replaces the merge action with a disabled queued indicator while a deferred merge waits", async () => {
+  it("shows the queued merge state and still allows an immediate merge while a deferred merge waits", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
     detail.deferred_merge_pending = true;
     detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      {
+        name: "build",
+        status: "in_progress",
+        conclusion: "",
+        url: "https://example.com/build",
+        app: "GitHub Actions",
+      },
+    ]);
 
     renderPullDetail(detail, {
       AllowSquashMerge: true,
@@ -1119,16 +1128,20 @@ describe("PullDetail approvals", () => {
     });
 
     const queued = await vi.waitFor(() => {
-      const found = screen.queryByRole("button", { name: "Merge queued for CI" });
+      const found = screen.queryByRole("button", { name: "Merge queued" });
       expect(found).not.toBeNull();
       return found as HTMLButtonElement;
     });
-    expect(queued.disabled).toBe(true);
-    expect(queued.title).toContain("background merge is waiting");
-    expect(screen.queryByRole("button", { name: "Squash and merge" })).toBeNull();
+    expect(queued.disabled).toBe(false);
+    expect(queued.title).toContain("Click to merge immediately");
 
+    // Clicking the queued action reopens the merge modal so the user can
+    // force an immediate merge — but it must not offer queueing a second
+    // deferred merge, which the server would reject.
     await fireEvent.click(queued);
-    expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Squash and merge" })).toBeTruthy();
   });
 
   it("opens the merge modal in normal mode when aggregate CI has already failed", async () => {

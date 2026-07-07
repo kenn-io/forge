@@ -213,6 +213,28 @@ describe("MergeModal head pinning", () => {
     scheduled.resolve({ data: {}, error: undefined, response: new Response("{}") });
   });
 
+  it("offers only an immediate merge when a deferred merge is already queued", async () => {
+    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
+    const onmerged = vi.fn();
+    renderModal(post, {
+      deferUntilChecksPass: true,
+      alreadyQueued: true,
+      onmerged,
+    });
+
+    // A second deferred queue would 409, so neither deferred action is offered.
+    expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Merge Anyway" })).toBeNull();
+    expect(screen.getByText(/A merge is already queued/)).toBeTruthy();
+
+    await confirmMerge();
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    const [path] = post.mock.calls[0];
+    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge");
+    expect(onmerged).toHaveBeenCalledTimes(1);
+  });
+
   it("enqueues a deferred merge when requested without granular pending checks", async () => {
     const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
     const onqueued = vi.fn();

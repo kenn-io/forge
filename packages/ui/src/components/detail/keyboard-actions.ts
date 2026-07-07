@@ -203,12 +203,6 @@ export interface PRDetailActionInput {
    */
   requireHeadPin?: boolean;
   /**
-   * True while a background "merge after CI" worker is waiting on this
-   * PR (detail.deferred_merge_pending). Opening the merge modal again
-   * would only 409 on the deferred endpoint, so merge is gated off.
-   */
-  deferredMergePending?: boolean;
-  /**
    * Approve mutation body. Empty string sends an approving review
    * with no comment (matching the existing button's behavior when
    * the user submits without typing into the textarea).
@@ -315,7 +309,6 @@ export function canOpenMerge(input: PRDetailActionInput): boolean {
     input.repoSettings !== null &&
     input.repoSettings.viewerCanMerge &&
     !input.stale &&
-    !input.deferredMergePending &&
     !hasMergeConflicts(input.pr) &&
     (!input.requireHeadPin || hasReviewedHeadPin(input))
   );

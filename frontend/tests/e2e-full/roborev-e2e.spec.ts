@@ -328,15 +328,22 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      const autoDesignRef = page.locator(".git-ref[title='auto-design-skip']");
-      await expect(autoDesignRef).toHaveCount(0);
+      const autoDesignSkipRef = page.locator(".git-ref[title='auto-design-skip']");
+      const autoDesignClassifyRef = page.locator(".git-ref[title='auto-design-classify']");
+      await expect(autoDesignSkipRef).toHaveCount(0);
+      await expect(autoDesignClassifyRef).toHaveCount(0);
 
       await page.getByLabel("Show auto-design").check();
 
-      await expect(autoDesignRef).toBeVisible({ timeout: 5_000 });
-      const autoDesignRow = page.locator(".job-row", { has: autoDesignRef });
-      await expect(autoDesignRow.locator(".status-badge")).toHaveText("skipped");
-      await expect(autoDesignRow.locator(".col-type")).toHaveText("review");
+      await expect(autoDesignSkipRef).toBeVisible({ timeout: 5_000 });
+      const autoDesignSkipRow = page.locator(".job-row", { has: autoDesignSkipRef });
+      await expect(autoDesignSkipRow.locator(".status-badge")).toHaveText("skipped");
+      await expect(autoDesignSkipRow.locator(".col-type")).toHaveText("review");
+
+      await expect(autoDesignClassifyRef).toBeVisible({ timeout: 5_000 });
+      const autoDesignClassifyRow = page.locator(".job-row", { has: autoDesignClassifyRef });
+      await expect(autoDesignClassifyRow.locator(".status-badge")).toHaveText("failed");
+      await expect(autoDesignClassifyRow.locator(".col-type")).toHaveText("classify");
     });
 
     test("reset each filter to default restores full list", async ({ page }) => {

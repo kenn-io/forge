@@ -128,7 +128,7 @@ var roborevBaseTime = time.Date(
 )
 
 // SeedRoborevDB creates a roborev-compatible SQLite database at path
-// with deterministic test data. The database contains 75 review jobs
+// with deterministic test data. The database contains 76 review jobs
 // across 2 repos, 5 branches, 3 agents, and all statuses.
 func SeedRoborevDB(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -205,7 +205,7 @@ func seedRoborevRepos(tx *sql.Tx) error {
 }
 
 func seedRoborevCommits(tx *sql.Tx) error {
-	for i := 1; i <= 75; i++ {
+	for i := 1; i <= 76; i++ {
 		repoID := 1
 		if i > 45 {
 			repoID = 2
@@ -231,7 +231,7 @@ func seedRoborevCommits(tx *sql.Tx) error {
 
 // Bulk jobs: IDs 1-69
 // IDs 1-45 in test-repo-alpha, IDs 46-69 in test-repo-beta.
-// Mutation fixtures (70-74) are inserted separately; we skip
+// Mutation fixtures (70-76) are inserted separately; we skip
 // IDs 70+ in the bulk insert to avoid conflicts.
 func seedRoborevBulkJobs(tx *sql.Tx) error {
 	type agentSpec struct {
@@ -502,6 +502,27 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 	)
 	if err != nil {
 		return fmt.Errorf("insert mutation job 75: %w", err)
+	}
+
+	// ID 76: failed auto-design classifier byproduct. It should be
+	// hidden by the same default filter as skipped auto-design rows.
+	enq76 := jobTime(76)
+	_, err = tx.Exec(
+		`INSERT INTO review_jobs
+		 (id, repo_id, commit_id, git_ref, branch,
+		  agent, model, status,
+		  enqueued_at, started_at, finished_at, error,
+		  job_type, review_type, source)
+		 VALUES (76, 1, 76, 'auto-design-classify', 'main',
+		         'auto-design', '', 'failed', ?, ?, ?,
+		         'classifier unavailable', 'classify', 'design',
+		         'auto_design')`,
+		enq76.Format(roborevTimeFmt),
+		enq76.Add(2*time.Minute).Format(roborevTimeFmt),
+		enq76.Add(3*time.Minute).Format(roborevTimeFmt),
+	)
+	if err != nil {
+		return fmt.Errorf("insert mutation job 76: %w", err)
 	}
 
 	// Reviews for mutation jobs 71 and 72 (fail, open)

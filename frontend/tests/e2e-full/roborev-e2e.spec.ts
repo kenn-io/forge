@@ -227,6 +227,93 @@ test.describe.serial("Roborev", () => {
       await expect(page.locator(".header-start .review-type", { hasText: "default" })).toBeVisible();
     });
 
+    test("route-selected panel drawer drains queued member refresh while table stays collapsed", async ({ page }) => {
+      let panelMemberRequests = 0;
+      let releaseFirstMemberFetch: (() => void) | undefined;
+      let resolveFirstMemberFetchStarted!: () => void;
+      const firstMemberFetchStarted = new Promise<void>((resolve) => {
+        resolveFirstMemberFetchStarted = resolve;
+      });
+      let resolveLatestMemberFetchServed!: () => void;
+      const latestMemberFetchServed = new Promise<void>((resolve) => {
+        resolveLatestMemberFetchServed = resolve;
+      });
+
+      await page.route("**/api/roborev/api/jobs?**", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.searchParams.get("panel_run") !== "panel-e2e-1") {
+          await route.continue();
+          return;
+        }
+
+        panelMemberRequests++;
+        if (panelMemberRequests === 1) {
+          resolveFirstMemberFetchStarted();
+          await new Promise<void>((resolve) => {
+            releaseFirstMemberFetch = resolve;
+          });
+          await route.continue();
+          return;
+        }
+
+        const response = await route.fetch();
+        const body = (await response.json()) as {
+          jobs?: Array<Record<string, unknown>> | null;
+          [key: string]: unknown;
+        };
+        const jobs = (body.jobs ?? []).map((job) => {
+          if (job["id"] === 77) {
+            return { ...job, panel_member_name: "fresh-default", verdict: "pass" };
+          }
+          if (job["id"] === 78) {
+            return { ...job, panel_member_name: "fresh-security", verdict: "pass" };
+          }
+          return job;
+        });
+        await route.fulfill({
+          response,
+          body: JSON.stringify({ ...body, jobs }),
+        });
+        resolveLatestMemberFetchServed();
+      });
+
+      await page.goto("/reviews/79");
+      await expect(page).toHaveURL(/\/reviews\/79$/);
+      await expect(page.locator(".job-table")).toBeVisible({
+        timeout: 15_000,
+      });
+      const parent = jobRowById(page, 79);
+      await expect(parent).toBeVisible();
+      await expect(parent).toHaveAttribute("aria-expanded", "false");
+      await expect(page.locator(".job-row.member")).toHaveCount(0);
+      await expect(page.locator(".drawer")).toBeVisible();
+      await firstMemberFetchStarted;
+      await expect(page.locator(".panel-line")).toContainText("Refreshing reviewers");
+
+      const listingReload = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.ok() &&
+          url.pathname.endsWith("/api/roborev/api/jobs") &&
+          url.searchParams.get("panel_run") === null &&
+          url.searchParams.get("status") === "done"
+        );
+      });
+      await selectStatusFilter(page, "Done");
+      await listingReload;
+      await expect(page.locator(".status-badge.status-done").first()).toBeVisible({
+        timeout: 5_000,
+      });
+      await expect(page.locator(".status-badge:not(.status-done)")).toHaveCount(0);
+
+      releaseFirstMemberFetch?.();
+      await latestMemberFetchServed;
+      await expect(page.locator(".panel-line")).toContainText("fresh-default pass");
+      await expect(page.locator(".panel-line")).toContainText("fresh-security pass");
+      await expect(parent).toHaveAttribute("aria-expanded", "false");
+      await expect(page.locator(".job-row.member")).toHaveCount(0);
+    });
+
     test("status badges show correct classes for each status", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);

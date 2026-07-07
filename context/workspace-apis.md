@@ -23,7 +23,10 @@ state.
   the resolved workspace target, so the detail pane and its workspace action
   render from one response. There is no separate workspace-target endpoint;
   do not reintroduce one. The UI hides the workspace action when the embedded
-  target has `available:false`.
+  target has `available:false`. The issue read is the critical path: the
+  daemon `/projects` read is best-effort on a short independent budget and
+  must never delay or fail the detail response. The response varies by
+  `X-Middleman-Kata-Daemon` and must keep declaring `Vary` on it.
 - `POST /kata/workspaces`: create or reuse a Kata-task-backed workspace. Kata
   tasks are not provider issues, so this path never resolves or syncs a
   provider issue row.

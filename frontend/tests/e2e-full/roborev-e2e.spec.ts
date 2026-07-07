@@ -98,6 +98,13 @@ test.describe.serial("Roborev", () => {
       await expect(members.nth(1).locator(".member-name")).toHaveText("security");
       await expect(members.nth(1).locator(".col-id")).toContainText("78");
 
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(/\/reviews\/79$/);
+      await expect(page.locator(".panel-line")).toContainText("2 reviewers:");
+      await expect(page.locator(".panel-line")).toContainText("default");
+      await page.keyboard.press("Escape");
+      await expect(page).toHaveURL(/\/reviews$/);
+
       await page.keyboard.press("ArrowLeft");
       await expect(members).toHaveCount(0);
       await page.keyboard.press("ArrowRight");
@@ -108,6 +115,7 @@ test.describe.serial("Roborev", () => {
       await page.keyboard.press("Enter");
       await expect(page).toHaveURL(/\/reviews\/77$/);
       await expect(page.locator(".drawer")).toBeVisible();
+      await expect(page.locator(".header-start .review-type", { hasText: "default" })).toBeVisible();
     });
 
     test("status badges show correct classes for each status", async ({ page }) => {
@@ -386,6 +394,10 @@ test.describe.serial("Roborev", () => {
       const autoDesignSkipRow = page.locator(".job-row", { has: autoDesignSkipRef });
       await expect(autoDesignSkipRow.locator(".status-badge")).toHaveText("skipped");
       await expect(autoDesignSkipRow.locator(".col-type")).toHaveText("review");
+      await autoDesignSkipRow.click();
+      await expect(page.locator(".header-start .review-type", { hasText: "auto-design" })).toBeVisible();
+      await expect(page.locator(".skip-reason")).toHaveText("Skipped: trivial diff");
+      await page.keyboard.press("Escape");
 
       await expect(autoDesignClassifyRef).toBeVisible({ timeout: 5_000 });
       const autoDesignClassifyRow = page.locator(".job-row", { has: autoDesignClassifyRef });

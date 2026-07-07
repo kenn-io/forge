@@ -49,6 +49,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let panelRequestedVersions: Record<string, number> = {};
   let activePanelFetchVersions: Record<string, number> = {};
   let pendingPanelRefreshes: Record<string, boolean> = {};
+  let interestedPanelRun: string | undefined = undefined;
 
   // SSE
   let sseConnected = $state(false);
@@ -147,6 +148,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
           expandedRuns[runUuid] = true;
         }
       }
+      if (interestedPanelRun) expandedRuns[interestedPanelRun] = true;
       for (const runUuid of Object.keys(expandedRuns)) void fetchPanelMembers(runUuid);
       // Clear highlight if the row is no longer visible.
       // Do NOT clear selectedJobId — the selected job may
@@ -322,6 +324,11 @@ export function createJobsStore(opts: JobsStoreOptions) {
     if (panelMembers[runUuid] === undefined && loadingMembers[runUuid] !== true) {
       void fetchPanelMembers(runUuid);
     }
+  }
+
+  function setPanelMemberInterest(runUuid: string | undefined): void {
+    interestedPanelRun = runUuid;
+    if (runUuid !== undefined) void fetchPanelMembers(runUuid);
   }
 
   function isPanelExpanded(runUuid: string): boolean {
@@ -531,6 +538,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     isSSEConnected,
     togglePanel,
     ensurePanelMembers,
+    setPanelMemberInterest,
     isPanelExpanded,
     getPanelMembers,
     isLoadingMembers,

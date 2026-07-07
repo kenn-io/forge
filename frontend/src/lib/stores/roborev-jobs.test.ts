@@ -371,6 +371,43 @@ describe("createJobsStore panel expansion", () => {
     expect(store.getHighlightedJobId()).toBe(10);
   });
 
+  it("refreshes interested panel members on listing reload while the table panel is collapsed", async () => {
+    const parent = makePanelParent(10);
+    let panelCalls = 0;
+    const client = {
+      GET: vi.fn().mockImplementation((_path: string, opts: { params: { query: Record<string, unknown> } }) => {
+        if (opts.params.query.panel_run === "run-10") {
+          panelCalls++;
+          return Promise.resolve({
+            data: {
+              jobs: [parent, makeMember(panelCalls === 1 ? 11 : 12, "run-10", 0)],
+              has_more: false,
+              stats: { done: 0, closed: 0, open: 0 },
+            },
+            error: undefined,
+          });
+        }
+        return Promise.resolve({
+          data: { jobs: [parent], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+          error: undefined,
+        });
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    await store.loadJobs();
+
+    store.setPanelMemberInterest("run-10");
+    await vi.waitFor(() => {
+      expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([11]);
+    });
+
+    await store.loadJobs();
+    await vi.waitFor(() => {
+      expect(panelCalls).toBe(2);
+      expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([12]);
+    });
+  });
+
   it("sorts panel parents by their displayed aggregate cost", async () => {
     const expensive = {
       ...makePanelParent(10),

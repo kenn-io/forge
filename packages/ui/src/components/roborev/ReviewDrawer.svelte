@@ -92,6 +92,7 @@
   const reviewIsClosed = $derived(
     stores.roborevReview?.isClosed() ?? false,
   );
+  let interestedPanelRun: string | undefined;
 
   const panelMembers = $derived.by(() => {
     const runUuid = selectedJob?.panel_run_uuid;
@@ -106,14 +107,13 @@
   );
 
   $effect(() => {
-    const runUuid = selectedJob?.panel_run_uuid;
-    if (
-      selectedJob &&
-      isPanelParent(selectedJob) &&
-      runUuid
-    ) {
-      stores.roborevJobs?.ensurePanelMembers(runUuid);
-    }
+    const runUuid =
+      selectedJob && isPanelParent(selectedJob)
+        ? selectedJob.panel_run_uuid
+        : undefined;
+    if (interestedPanelRun === runUuid) return;
+    interestedPanelRun = runUuid;
+    stores.roborevJobs?.setPanelMemberInterest(runUuid);
   });
 </script>
 

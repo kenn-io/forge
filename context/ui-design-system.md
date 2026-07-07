@@ -143,6 +143,15 @@ In this repo, the standard term is **chip**, not pill.
 
 When a screen needs semantic chip color, extend `Chip` with a named tone class such as `chip--blue`, `chip--green`, or `chip--red` instead of redefining local badge geometry. Screens may keep legacy class names for test selectors during migration, but sizing, casing, and spacing should come from `Chip`.
 
+### Tree Cells
+
+Tree-like rows inside dense tables should preserve the table's scan line.
+Keep IDs and primary row numbers in their normal column, and put disclosure
+chevrons plus child indentation inside the content cell that owns the
+hierarchy, such as a repo/ref or file-name cell. Do not use terminal/TUI
+connector glyphs, branch-line borders, or extra ornamental strokes to draw the
+tree. Indentation and a standard chevron are the affordance.
+
 ### ActionButton
 
 Use `ActionButton` for repeated action styling.

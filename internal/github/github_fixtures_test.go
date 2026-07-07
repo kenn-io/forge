@@ -1,6 +1,6 @@
 package github
 
-import gh "github.com/google/go-github/v84/github"
+import gh "github.com/google/go-github/v88/github"
 
 type ghWorkflowRunOpt func(*gh.WorkflowRun)
 

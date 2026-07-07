@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	gh "github.com/google/go-github/v84/github"
+	gh "github.com/google/go-github/v88/github"
 	"go.kenn.io/middleman/internal/config"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"

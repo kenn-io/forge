@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v7"
 	internalretry "go.kenn.io/middleman/internal/retry"
 )
 

@@ -19,8 +19,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	gh "github.com/google/go-github/v84/github"
-	gitlabapi "gitlab.com/gitlab-org/api/client-go"
+	gh "github.com/google/go-github/v88/github"
+	gitlabapi "gitlab.com/gitlab-org/api/client-go/v2"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"

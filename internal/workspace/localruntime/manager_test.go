@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v7"
 	"github.com/creack/pty/v2"
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"

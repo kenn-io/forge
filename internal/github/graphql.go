@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v84/github"
+	gh "github.com/google/go-github/v88/github"
 	"github.com/shurcooL/githubv4"
 	"go.kenn.io/middleman/internal/tokenauth"
 )

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	gh "github.com/google/go-github/v84/github"
+	gh "github.com/google/go-github/v88/github"
 	"github.com/stretchr/testify/require"
 )
 

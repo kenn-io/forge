@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v84/github"
+	gh "github.com/google/go-github/v88/github"
 	"go.kenn.io/middleman/internal/platform"
 )
 

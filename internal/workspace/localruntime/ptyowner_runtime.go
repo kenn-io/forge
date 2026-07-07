@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v7"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 	internalretry "go.kenn.io/middleman/internal/retry"
 )

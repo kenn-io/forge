@@ -144,3 +144,96 @@ describe("createJobsStore auto-design filter", () => {
     expect(lastQuery).not.toHaveProperty("hide_classify_jobs");
   });
 });
+
+describe("createJobsStore panel expansion", () => {
+  function makePanelParent(id: number): ReviewJob {
+    return {
+      ...makeJob(id),
+      job_type: "synthesis",
+      panel_role: "synthesis",
+      panel_run_uuid: `run-${id}`,
+      panel_summary: {
+        panel_run_uuid: `run-${id}`,
+        members_total: 2,
+        members_terminal: 2,
+        members_succeeded: 2,
+        members_failed: 0,
+        members_canceled: 0,
+        members_skipped: 0,
+      },
+    };
+  }
+
+  function makeMember(id: number, runUuid: string, index: number): ReviewJob {
+    return {
+      ...makeJob(id),
+      panel_role: "member",
+      panel_run_uuid: runUuid,
+      panel_member_index: index,
+      panel_member_name: index === 0 ? "default" : "security",
+    };
+  }
+
+  it("lazily fetches members sorted by panel_member_index on first expand", async () => {
+    const parent = makePanelParent(10);
+    const members = [makeMember(12, "run-10", 1), makeMember(11, "run-10", 0)];
+    const client = {
+      GET: vi.fn().mockImplementation((_path: string, opts: { params: { query: Record<string, unknown> } }) => {
+        if (opts.params.query.panel_run === "run-10") {
+          return Promise.resolve({
+            data: { jobs: [parent, ...members], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+            error: undefined,
+          });
+        }
+        return Promise.resolve({
+          data: { jobs: [parent], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+          error: undefined,
+        });
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    await store.loadJobs();
+
+    expect(store.isPanelExpanded("run-10")).toBe(false);
+    store.togglePanel(parent);
+    expect(store.isPanelExpanded("run-10")).toBe(true);
+    await vi.waitFor(() => {
+      expect(store.getPanelMembers("run-10")).toBeDefined();
+    });
+    expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([11, 12]);
+    expect(client.GET).toHaveBeenCalledWith("/api/jobs", {
+      params: { query: { panel_run: "run-10", limit: 0 } },
+    });
+
+    const calls = client.GET.mock.calls.length;
+    store.togglePanel(parent);
+    store.togglePanel(parent);
+    expect(store.isPanelExpanded("run-10")).toBe(true);
+    expect(client.GET.mock.calls.length).toBe(calls);
+  });
+
+  it("refreshes members of expanded panels when the listing reloads", async () => {
+    const parent = makePanelParent(10);
+    const client = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [parent], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    await store.loadJobs();
+    store.togglePanel(parent);
+    await vi.waitFor(() => expect(store.getPanelMembers("run-10")).toBeDefined());
+
+    const before = client.GET.mock.calls.filter(
+      (c) => (c[1] as { params: { query: Record<string, unknown> } }).params.query.panel_run === "run-10",
+    ).length;
+    await store.loadJobs();
+    await vi.waitFor(() => {
+      const after = client.GET.mock.calls.filter(
+        (c) => (c[1] as { params: { query: Record<string, unknown> } }).params.query.panel_run === "run-10",
+      ).length;
+      expect(after).toBe(before + 1);
+    });
+  });
+});

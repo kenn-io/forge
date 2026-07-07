@@ -1,6 +1,7 @@
 import type { RoborevClient } from "../../api/roborev/client.js";
 import type { components, operations } from "../../api/roborev/generated/schema.js";
 import { parseCostUsd } from "../../utils/roborev-cost.js";
+import { isPanelParent } from "../../utils/roborev-panel.js";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 type JobStats = components["schemas"]["JobStats"];
@@ -39,6 +40,13 @@ export function createJobsStore(opts: JobsStoreOptions) {
   // Sorting (client-side)
   let sortColumn = $state<SortColumn>("id");
   let sortDirection = $state<SortDirection>("desc");
+
+  // Panel expansion, keyed by panel_run_uuid. Member lists are cached per
+  // run and refreshed alongside the listing so SSE-driven reloads keep
+  // expanded panels live.
+  let expandedPanels = $state<Record<string, boolean>>({});
+  let panelMembers = $state<Record<string, ReviewJob[]>>({});
+  let loadingMembers = $state<Record<string, boolean>>({});
 
   // SSE
   let sseConnected = $state(false);
@@ -113,6 +121,12 @@ export function createJobsStore(opts: JobsStoreOptions) {
       jobs = sortJobs(data?.jobs ?? []);
       hasMore = data?.has_more ?? false;
       stats = data?.stats ?? { done: 0, closed: 0, open: 0 };
+      for (const job of jobs) {
+        const runUuid = job.panel_run_uuid;
+        if (runUuid && expandedPanels[runUuid] === true && panelMembers[runUuid] !== undefined) {
+          void fetchPanelMembers(runUuid);
+        }
+      }
       // Clear highlight if the row is no longer visible.
       // Do NOT clear selectedJobId — the selected job may
       // be on a later page (deep link, older job). The
@@ -219,6 +233,53 @@ export function createJobsStore(opts: JobsStoreOptions) {
       return;
     }
     void loadJobs();
+  }
+
+  async function fetchPanelMembers(runUuid: string): Promise<void> {
+    loadingMembers = { ...loadingMembers, [runUuid]: true };
+    try {
+      const { data, error } = await client.GET("/api/jobs", {
+        params: { query: { panel_run: runUuid, limit: 0 } },
+      });
+      if (error) throw new Error("Failed to load panel members");
+      const members = (data?.jobs ?? [])
+        .filter((job) => job.panel_role === "member")
+        .sort((a, b) => (a.panel_member_index ?? 0) - (b.panel_member_index ?? 0));
+      panelMembers = { ...panelMembers, [runUuid]: members };
+    } catch (err) {
+      opts.onError?.(err instanceof Error ? err.message : String(err));
+    } finally {
+      loadingMembers = { ...loadingMembers, [runUuid]: false };
+    }
+  }
+
+  function togglePanel(job: ReviewJob): void {
+    if (!isPanelParent(job)) return;
+    const runUuid = job.panel_run_uuid;
+    if (!runUuid) return;
+    const open = expandedPanels[runUuid] === true;
+    expandedPanels = { ...expandedPanels, [runUuid]: !open };
+    if (!open && panelMembers[runUuid] === undefined && loadingMembers[runUuid] !== true) {
+      void fetchPanelMembers(runUuid);
+    }
+  }
+
+  function ensurePanelMembers(runUuid: string): void {
+    if (panelMembers[runUuid] === undefined && loadingMembers[runUuid] !== true) {
+      void fetchPanelMembers(runUuid);
+    }
+  }
+
+  function isPanelExpanded(runUuid: string): boolean {
+    return expandedPanels[runUuid] === true;
+  }
+
+  function getPanelMembers(runUuid: string): ReviewJob[] | undefined {
+    return panelMembers[runUuid];
+  }
+
+  function isLoadingMembers(runUuid: string): boolean {
+    return loadingMembers[runUuid] === true;
   }
 
   // Selection — setSelectedJobId sets state only (no
@@ -397,6 +458,11 @@ export function createJobsStore(opts: JobsStoreOptions) {
     getSortColumn,
     getSortDirection,
     isSSEConnected,
+    togglePanel,
+    ensurePanelMembers,
+    isPanelExpanded,
+    getPanelMembers,
+    isLoadingMembers,
     loadJobs,
     loadMore,
     setFilter,

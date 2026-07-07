@@ -33,6 +33,8 @@
     deferUntilChecksPass?: boolean;
     onclose: () => void;
     onmerged: () => void;
+    /** Called when a deferred merge was accepted and now waits on CI. */
+    onqueued: () => void;
     onheadconflict?: ((reason: "stale_state" | "head_unknown", context?: string) => void) | undefined;
   }
 
@@ -42,7 +44,7 @@
     allowSquash, allowMerge, allowRebase,
     expectedHeadSha, requireHeadPin = false,
     deferUntilChecksPass = false,
-    onclose, onmerged, onheadconflict,
+    onclose, onmerged, onqueued, onheadconflict,
   }: Props = $props();
 
   // Captured once when the modal opens: a background detail refresh
@@ -147,7 +149,7 @@
         if (handleMergeError(error)) return;
       }
       if (deferred) {
-        onclose();
+        onqueued();
         return;
       }
       onmerged();

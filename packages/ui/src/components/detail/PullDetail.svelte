@@ -38,6 +38,7 @@
   } from "./keyboard-actions.js";
     import { SelectDropdown } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import ClockIcon from "@lucide/svelte/icons/clock";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
@@ -690,6 +691,12 @@
     (detailStore.getDetail()?.repo?.capabilities?.mutation_head_binding ?? false)
       && detailHeadSha === "",
   );
+  // A background "merge after CI" worker is waiting on this PR. The merge
+  // action is replaced by a queued indicator until the worker reports
+  // completion (deferred_merge_completed refreshes the detail).
+  const deferredMergePending = $derived(
+    detailStore.getDetail()?.deferred_merge_pending ?? false,
+  );
 
   function handleHeadConflict(
     reason: "stale_state" | "head_unknown",
@@ -832,6 +839,7 @@
       stores: { detail: detailStore, pulls },
       client,
       requireHeadPin: capabilities.mutation_head_binding,
+      deferredMergePending,
       ...(detailHeadSha !== "" && { expectedHeadSha: detailHeadSha }),
       setMergeModalOpen: (open: boolean) => { showMergeModal = open; },
       onAfterOpenMerge: closeActionMenu,
@@ -1935,27 +1943,42 @@
                 : mergeOpUnavailable
                   ? mergeOp?.unavailable_reason ?? ""
                   : ""}
-            <Button
-              class="btn--merge"
-              disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
-              title={mergeTitle}
-              onclick={() => {
-                if (stalePR || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
-                runOpenMerge(buildOpenMergeInput(pr, capabilities));
-              }}
-              tone="success"
-              surface="solid"
-              size="sm"
-              label={mergeActionLabel(mergeSettings)}
-              shortLabel={mergeActionShortLabel(mergeSettings)}
-            >
-              <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-              {#snippet trailing()}
-                {#if mergeActionHasMenu(mergeSettings)}
-                  <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
-                {/if}
-              {/snippet}
-            </Button>
+            {#if deferredMergePending}
+              <Button
+                class="btn--merge btn--merge-queued"
+                disabled
+                title="A background merge is waiting for the pending CI checks to pass. Close the pull request to cancel it."
+                tone="success"
+                surface="soft"
+                size="sm"
+                label="Merge queued for CI"
+                shortLabel="Merge queued"
+              >
+                <ClockIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              </Button>
+            {:else}
+              <Button
+                class="btn--merge"
+                disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
+                title={mergeTitle}
+                onclick={() => {
+                  if (stalePR || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
+                  runOpenMerge(buildOpenMergeInput(pr, capabilities));
+                }}
+                tone="success"
+                surface="solid"
+                size="sm"
+                label={mergeActionLabel(mergeSettings)}
+                shortLabel={mergeActionShortLabel(mergeSettings)}
+              >
+                <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                {#snippet trailing()}
+                  {#if mergeActionHasMenu(mergeSettings)}
+                    <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
+                  {/if}
+                {/snippet}
+              </Button>
+            {/if}
           {/if}
           {#if capabilities.state_mutation}
             {@const closeGate = operationGate(repoOperations?.close_pr)}
@@ -2204,6 +2227,16 @@
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           onheadconflict={handleHeadConflict}
           onclose={() => { showMergeModal = false; }}
+          onqueued={() => {
+            showMergeModal = false;
+            // Pick up deferred_merge_pending so the merge action renders
+            // as queued until the background worker completes.
+            void detailStore.refreshDetailOnly(owner, name, number, {
+              provider,
+              platformHost,
+              repoPath,
+            });
+          }}
           onmerged={() => {
             showMergeModal = false;
             headConflict = null;

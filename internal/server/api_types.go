@@ -123,9 +123,14 @@ type mergeRequestDetailResponse struct {
 	WorkflowApproval workflowApprovalResponse    `json:"workflow_approval"`
 	Warnings         []string                    `json:"warnings,omitempty"`
 	DetailLoaded     bool                        `json:"detail_loaded"`
-	DetailFetchedAt  string                      `json:"detail_fetched_at,omitempty"`
-	Workspace        *workspaceRef               `json:"workspace,omitempty"`
-	Stack            *stackContextResponse       `json:"stack,omitempty"`
+	// DeferredMergePending reports whether a background "merge after CI"
+	// worker is currently waiting on this pull request in this server
+	// process, so the UI can show the queued state instead of a merge
+	// action.
+	DeferredMergePending bool                  `json:"deferred_merge_pending"`
+	DetailFetchedAt      string                `json:"detail_fetched_at,omitempty"`
+	Workspace            *workspaceRef         `json:"workspace,omitempty"`
+	Stack                *stackContextResponse `json:"stack,omitempty"`
 	// Checks is the merge request's CI checks decoded from its cached
 	// ci_checks_json. Omitted when the merge request has no cached checks.
 	Checks []db.CICheck `json:"checks,omitempty"`

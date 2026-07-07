@@ -450,6 +450,12 @@ test.describe("detail action buttons", () => {
 
       await expect(modal).toHaveCount(0);
       await expect(page.locator(".pull-detail")).toBeVisible();
+
+      // While the background merge waits on CI, the merge action reads
+      // as queued and cannot start another merge.
+      const queued = page.getByRole("button", { name: "Merge queued for CI" });
+      await expect(queued).toBeVisible();
+      await expect(queued).toBeDisabled();
     } finally {
       await isolatedServer?.stop();
     }

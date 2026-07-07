@@ -627,6 +627,13 @@ func (s *Server) markDeferredMergeInFlight(key string) bool {
 	return true
 }
 
+func (s *Server) isDeferredMergePending(repo db.Repo, number int) bool {
+	s.deferredMergeMu.Lock()
+	defer s.deferredMergeMu.Unlock()
+	_, ok := s.deferredMergeInFlight[deferredMergeKey(repo, number)]
+	return ok
+}
+
 func (s *Server) clearDeferredMergeInFlight(key string) {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()

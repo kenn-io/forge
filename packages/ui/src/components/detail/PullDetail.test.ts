@@ -79,6 +79,7 @@ function pullDetail(): PullDetail {
   return {
     detail_loaded: true,
     detail_fetched_at: "2026-05-01T12:05:00Z",
+    deferred_merge_pending: false,
     diff_head_sha: "head",
     merge_base_sha: "base",
     platform_base_sha: "base",
@@ -1102,6 +1103,32 @@ describe("PullDetail approvals", () => {
 
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+  });
+
+  it("replaces the merge action with a disabled queued indicator while a deferred merge waits", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.deferred_merge_pending = true;
+    detail.merge_request.CIStatus = "pending";
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const queued = await vi.waitFor(() => {
+      const found = screen.queryByRole("button", { name: "Merge queued for CI" });
+      expect(found).not.toBeNull();
+      return found as HTMLButtonElement;
+    });
+    expect(queued.disabled).toBe(true);
+    expect(queued.title).toContain("background merge is waiting");
+    expect(screen.queryByRole("button", { name: "Squash and merge" })).toBeNull();
+
+    await fireEvent.click(queued);
+    expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull();
   });
 
   it("opens the merge modal in normal mode when aggregate CI has already failed", async () => {

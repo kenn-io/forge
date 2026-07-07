@@ -22,6 +22,7 @@ const baseProps = {
   allowRebase: true,
   onclose: () => {},
   onmerged: () => {},
+  onqueued: () => {},
 };
 
 describe("MergeModal modal frame integration", () => {
@@ -158,12 +159,14 @@ describe("MergeModal head pinning", () => {
     expect(onclose).not.toHaveBeenCalled();
   });
 
-  it("enqueues a deferred merge and closes when CI is still pending", async () => {
+  it("enqueues a deferred merge and reports it as queued when CI is still pending", async () => {
     const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
     const onclose = vi.fn();
+    const onqueued = vi.fn();
     renderModal(post, {
       deferUntilChecksPass: true,
       onclose,
+      onqueued,
     });
 
     await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".kit-modal-footer button" }));
@@ -172,7 +175,8 @@ describe("MergeModal head pinning", () => {
     const [path, init] = post.mock.calls[0];
     expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge/deferred");
     expect(init.body.method).toBe("squash");
-    expect(onclose).toHaveBeenCalledTimes(1);
+    expect(onqueued).toHaveBeenCalledTimes(1);
+    expect(onclose).not.toHaveBeenCalled();
   });
 
   it("offers an immediate merge override while CI is still pending", async () => {
@@ -211,10 +215,10 @@ describe("MergeModal head pinning", () => {
 
   it("enqueues a deferred merge when requested without granular pending checks", async () => {
     const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
-    const onclose = vi.fn();
+    const onqueued = vi.fn();
     renderModal(post, {
       deferUntilChecksPass: true,
-      onclose,
+      onqueued,
     });
 
     await fireEvent.click(screen.getByText("Merge after CI is complete", { selector: ".kit-modal-footer button" }));
@@ -222,6 +226,6 @@ describe("MergeModal head pinning", () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     const [path] = post.mock.calls[0];
     expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge/deferred");
-    expect(onclose).toHaveBeenCalledTimes(1);
+    expect(onqueued).toHaveBeenCalledTimes(1);
   });
 });

@@ -5576,6 +5576,7 @@ export interface components {
              */
             readonly $schema?: string;
             checks?: components["schemas"]["CICheck"][] | null;
+            deferred_merge_pending: boolean;
             detail_fetched_at?: string;
             detail_loaded: boolean;
             diff_head_sha: string;

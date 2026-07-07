@@ -444,6 +444,85 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(stored)
 	require.Equal("merged", string(stored.State))
+
+	// Once the background worker finishes, the detail response must stop
+	// reporting the queued merge so the UI returns to its normal actions.
+	require.Eventually(func() bool {
+		detailResp, detailErr := client.HTTP.GetPullOnHostWithResponse(
+			ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+		)
+		if detailErr != nil || detailResp.JSON200 == nil {
+			return false
+		}
+		return !detailResp.JSON200.DeferredMergePending
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestPullDetailReportsDeferredMergePendingWhileQueued(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	provider := &deferredMergeTestProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{
+			ref: ref,
+			ciChecks: map[string][]platform.CICheck{
+				"head-sha": {{
+					App:    "GitLab",
+					Name:   "pipeline",
+					Status: "in_progress",
+				}},
+			},
+		},
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
+	}
+	_, _, _, client := newDeferredMergeRouteServer(
+		t,
+		provider,
+		ref,
+		now,
+		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+	)
+
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.False(detailResp.JSON200.DeferredMergePending)
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode(), string(resp.Body))
+
+	// The pending check never completes, so the background worker keeps
+	// waiting; the detail response must report the queued merge.
+	detailResp, err = client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.True(detailResp.JSON200.DeferredMergePending)
 }
 
 func TestDeferMergeEndpointRejectsInvalidMergeMethodBeforeQueueing(t *testing.T) {

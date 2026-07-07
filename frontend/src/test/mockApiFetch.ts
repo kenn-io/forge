@@ -404,6 +404,7 @@ function pullDetailResponse(pr: (typeof pulls)[number]) {
     reviewed_head_sha: pr.platform_head_sha ?? "",
     detail_loaded: true,
     detail_fetched_at: "2026-03-30T14:00:00Z",
+    deferred_merge_pending: false,
     worktree_links: pr.worktree_links,
   };
 }

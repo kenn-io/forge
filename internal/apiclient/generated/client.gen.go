@@ -1709,26 +1709,27 @@ type MergeRequestState string
 // MergeRequestDetailResponse defines model for MergeRequestDetailResponse.
 type MergeRequestDetailResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string                      `json:"$schema,omitempty"`
-	Checks           *[]CICheck                   `json:"checks,omitempty"`
-	DetailFetchedAt  *string                      `json:"detail_fetched_at,omitempty"`
-	DetailLoaded     bool                         `json:"detail_loaded"`
-	DiffHeadSha      string                       `json:"diff_head_sha"`
-	Events           *[]MergeRequestEventResponse `json:"events"`
-	MergeBaseSha     string                       `json:"merge_base_sha"`
-	MergeRequest     MergeRequest                 `json:"merge_request"`
-	PlatformBaseSha  string                       `json:"platform_base_sha"`
-	PlatformHeadSha  string                       `json:"platform_head_sha"`
-	PlatformHost     string                       `json:"platform_host"`
-	Repo             RepoRefResponse              `json:"repo"`
-	RepoName         string                       `json:"repo_name"`
-	RepoOwner        string                       `json:"repo_owner"`
-	ReviewedHeadSha  string                       `json:"reviewed_head_sha"`
-	Stack            *StackContextResponse        `json:"stack,omitempty"`
-	Warnings         *[]string                    `json:"warnings,omitempty"`
-	WorkflowApproval WorkflowApprovalResponse     `json:"workflow_approval"`
-	Workspace        *WorkspaceRef                `json:"workspace,omitempty"`
-	WorktreeLinks    *[]WorktreeLinkResponse      `json:"worktree_links"`
+	Schema               *string                      `json:"$schema,omitempty"`
+	Checks               *[]CICheck                   `json:"checks,omitempty"`
+	DeferredMergePending bool                         `json:"deferred_merge_pending"`
+	DetailFetchedAt      *string                      `json:"detail_fetched_at,omitempty"`
+	DetailLoaded         bool                         `json:"detail_loaded"`
+	DiffHeadSha          string                       `json:"diff_head_sha"`
+	Events               *[]MergeRequestEventResponse `json:"events"`
+	MergeBaseSha         string                       `json:"merge_base_sha"`
+	MergeRequest         MergeRequest                 `json:"merge_request"`
+	PlatformBaseSha      string                       `json:"platform_base_sha"`
+	PlatformHeadSha      string                       `json:"platform_head_sha"`
+	PlatformHost         string                       `json:"platform_host"`
+	Repo                 RepoRefResponse              `json:"repo"`
+	RepoName             string                       `json:"repo_name"`
+	RepoOwner            string                       `json:"repo_owner"`
+	ReviewedHeadSha      string                       `json:"reviewed_head_sha"`
+	Stack                *StackContextResponse        `json:"stack,omitempty"`
+	Warnings             *[]string                    `json:"warnings,omitempty"`
+	WorkflowApproval     WorkflowApprovalResponse     `json:"workflow_approval"`
+	Workspace            *WorkspaceRef                `json:"workspace,omitempty"`
+	WorktreeLinks        *[]WorktreeLinkResponse      `json:"worktree_links"`
 }
 
 // MergeRequestEventResponse defines model for MergeRequestEventResponse.

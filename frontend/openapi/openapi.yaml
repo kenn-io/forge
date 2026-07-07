@@ -3035,6 +3035,8 @@ components:
           type:
             - array
             - "null"
+        deferred_merge_pending:
+          type: boolean
         detail_fetched_at:
           type: string
         detail_loaded:
@@ -3098,6 +3100,7 @@ components:
         - worktree_links
         - workflow_approval
         - detail_loaded
+        - deferred_merge_pending
       type: object
     MergeRequestEventResponse:
       additionalProperties: false

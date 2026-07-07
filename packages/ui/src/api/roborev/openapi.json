@@ -1,12 +1,59 @@
 {
   "components": {
     "schemas": {
+      "ActivityEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "event": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": ["ts", "event", "component", "message"],
+        "type": "object"
+      },
+      "ActivityOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/ActivityOutputBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityEntry"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": ["entries"],
+        "type": "object"
+      },
       "AddCommentRequest": {
         "additionalProperties": false,
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/AddCommentRequest.json"],
+            "example": "https://example.com/AddCommentRequest.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -62,6 +109,109 @@
         "required": ["agent", "total", "passed", "failed", "errors", "pass_rate", "median_duration_secs"],
         "type": "object"
       },
+      "AutoDesignStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "classifier_failed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "skipped_classifier": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipped_heuristic": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "triggered_classifier": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "triggered_heuristic": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "triggered_heuristic",
+          "skipped_heuristic",
+          "triggered_classifier",
+          "skipped_classifier",
+          "classifier_failed"
+        ],
+        "type": "object"
+      },
+      "BackfillTokensRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/BackfillTokensRequest.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionUsagePayload"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": ["sessions"],
+        "type": "object"
+      },
+      "BatchJobsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/BatchJobsOutputBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "results": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JobWithReview"
+            },
+            "type": "object"
+          }
+        },
+        "required": ["results"],
+        "type": "object"
+      },
+      "BatchJobsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/BatchJobsRequest.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "job_ids": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": ["job_ids"],
+        "type": "object"
+      },
       "BranchWithCount": {
         "additionalProperties": false,
         "properties": {
@@ -81,7 +231,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/CancelJobOutputBody.json"],
+            "example": "https://example.com/CancelJobOutputBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -98,7 +248,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/CancelJobRequest.json"],
+            "example": "https://example.com/CancelJobRequest.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -116,7 +266,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/CloseReviewOutputBody.json"],
+            "example": "https://example.com/CloseReviewOutputBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -133,7 +283,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/CloseReviewRequest.json"],
+            "example": "https://example.com/CloseReviewRequest.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -149,12 +299,57 @@
         "required": ["job_id", "closed"],
         "type": "object"
       },
+      "ComponentHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "healthy": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": ["name", "healthy"],
+        "type": "object"
+      },
+      "CostAggregate": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/CostAggregate.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "jobs_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "jobs_with_cost": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_usd": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": ["total_usd", "jobs_with_cost", "jobs_total", "complete"],
+        "type": "object"
+      },
       "DaemonStatus": {
         "additionalProperties": false,
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/DaemonStatus.json"],
+            "example": "https://example.com/DaemonStatus.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -163,9 +358,15 @@
             "format": "int64",
             "type": "integer"
           },
+          "address": {
+            "type": "string"
+          },
           "applied_jobs": {
             "format": "int64",
             "type": "integer"
+          },
+          "auto_design": {
+            "$ref": "#/components/schemas/AutoDesignStatus"
           },
           "canceled_jobs": {
             "format": "int64",
@@ -194,6 +395,16 @@
             "format": "int64",
             "type": "integer"
           },
+          "network": {
+            "type": "string"
+          },
+          "port": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "queue_paused": {
+            "type": "boolean"
+          },
           "queued_jobs": {
             "format": "int64",
             "type": "integer"
@@ -203,6 +414,10 @@
             "type": "integer"
           },
           "running_jobs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipped_jobs": {
             "format": "int64",
             "type": "integer"
           },
@@ -219,8 +434,10 @@
           "canceled_jobs",
           "applied_jobs",
           "rebased_jobs",
+          "skipped_jobs",
           "active_workers",
-          "max_workers"
+          "max_workers",
+          "queue_paused"
         ],
         "type": "object"
       },
@@ -262,6 +479,94 @@
         ],
         "type": "object"
       },
+      "EnqueueRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/EnqueueRequest.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "agentic": {
+            "type": "boolean"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "commit_sha": {
+            "type": "string"
+          },
+          "custom_prompt": {
+            "type": "string"
+          },
+          "diff_content": {
+            "type": "string"
+          },
+          "dirty_files": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "git_ref": {
+            "type": "string"
+          },
+          "job_type": {
+            "type": "string"
+          },
+          "min_severity": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "output_prefix": {
+            "type": "string"
+          },
+          "panel": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reasoning": {
+            "type": "string"
+          },
+          "repo_path": {
+            "type": "string"
+          },
+          "review_type": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": ["repo_path"],
+        "type": "object"
+      },
+      "EnqueueSkippedResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "skipped": {
+            "type": "boolean"
+          }
+        },
+        "required": ["skipped", "reason"],
+        "type": "object"
+      },
       "ErrorDetail": {
         "additionalProperties": false,
         "properties": {
@@ -279,19 +584,43 @@
         },
         "type": "object"
       },
+      "ErrorEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "job_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "level": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": ["ts", "level", "component", "message"],
+        "type": "object"
+      },
       "ErrorModel": {
         "additionalProperties": false,
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/ErrorModel.json"],
+            "example": "https://example.com/ErrorModel.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
           },
           "detail": {
             "description": "A human-readable explanation specific to this occurrence of the problem.",
-            "examples": ["Property foo is required but is missing."],
+            "example": "Property foo is required but is missing.",
             "type": "string"
           },
           "errors": {
@@ -299,33 +628,297 @@
             "items": {
               "$ref": "#/components/schemas/ErrorDetail"
             },
-            "type": ["array", "null"]
+            "nullable": true,
+            "type": "array"
           },
           "instance": {
             "description": "A URI reference that identifies the specific occurrence of the problem.",
-            "examples": ["https://example.com/error-log/abc123"],
+            "example": "https://example.com/error-log/abc123",
             "format": "uri",
             "type": "string"
           },
           "status": {
             "description": "HTTP status code",
-            "examples": [400],
+            "example": 400,
             "format": "int64",
             "type": "integer"
           },
           "title": {
             "description": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-            "examples": ["Bad Request"],
+            "example": "Bad Request",
             "type": "string"
           },
           "type": {
             "default": "about:blank",
             "description": "A URI reference to human-readable documentation for the error.",
-            "examples": ["https://example.com/errors/example"],
+            "example": "https://example.com/errors/example",
             "format": "uri",
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/ErrorResponse.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": ["error"],
+        "type": "object"
+      },
+      "ExportReview": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "branch": {
+            "nullable": true,
+            "type": "string"
+          },
+          "commit_sha": {
+            "nullable": true,
+            "type": "string"
+          },
+          "completed_at": {
+            "type": "string"
+          },
+          "content": {
+            "nullable": true,
+            "type": "string"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/ExportReviewCost"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "model": {
+            "nullable": true,
+            "type": "string"
+          },
+          "pr_number": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "pr_url": {
+            "nullable": true,
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "review_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subagents": {
+            "items": {
+              "$ref": "#/components/schemas/ExportSubagent"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_id",
+          "status",
+          "verdict",
+          "created_at",
+          "completed_at",
+          "duration_ms",
+          "project",
+          "repo",
+          "branch",
+          "commit_sha",
+          "pr_number",
+          "pr_url",
+          "agent",
+          "model",
+          "cost",
+          "content",
+          "subagents"
+        ],
+        "type": "object"
+      },
+      "ExportReviewCost": {
+        "additionalProperties": false,
+        "properties": {
+          "tokens_in": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "tokens_out": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "usd": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": ["tokens_in", "tokens_out", "usd"],
+        "type": "object"
+      },
+      "ExportReviewsDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/ExportReviewsDocument.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "database_id": {
+            "description": "Stable identity for the local review database; changes when the database is recreated.",
+            "type": "string"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "next_cursor": {
+            "description": "Opaque resume cursor emitted when reviews is non-empty; pass as cursor to resume after the last returned review.",
+            "nullable": true,
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/ExportReview"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "schema_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "tool_version": {
+            "type": "string"
+          },
+          "truncated": {
+            "description": "True when more matching rows are available immediately.",
+            "type": "boolean"
+          },
+          "window": {
+            "$ref": "#/components/schemas/ExportReviewsWindow"
+          }
+        },
+        "required": [
+          "schema_version",
+          "tool",
+          "tool_version",
+          "generated_at",
+          "database_id",
+          "profile",
+          "window",
+          "truncated",
+          "next_cursor",
+          "reviews"
+        ],
+        "type": "object"
+      },
+      "ExportReviewsWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "since": {
+            "nullable": true,
+            "type": "string"
+          },
+          "until": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": ["field", "since", "until"],
+        "type": "object"
+      },
+      "ExportSubagent": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "completed_at": {
+            "type": "string"
+          },
+          "content": {
+            "nullable": true,
+            "type": "string"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/ExportReviewCost"
+          },
+          "duration_ms": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "model": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "review_id": {
+            "type": "string"
+          },
+          "review_type": {
+            "nullable": true,
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_id",
+          "name",
+          "agent",
+          "model",
+          "review_type",
+          "verdict",
+          "completed_at",
+          "duration_ms",
+          "cost",
+          "content"
+        ],
         "type": "object"
       },
       "FailureStats": {
@@ -350,34 +943,91 @@
         "required": ["total", "retries", "errors"],
         "type": "object"
       },
-      "JobOutputResponse": {
+      "FixJobRequest": {
         "additionalProperties": false,
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/JobOutputResponse.json"],
+            "example": "https://example.com/FixJobRequest.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
           },
-          "has_more": {
+          "git_ref": {
+            "type": "string"
+          },
+          "parent_job_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "stale_job_id": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": ["parent_job_id"],
+        "type": "object"
+      },
+      "HealthStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/HealthStatus.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentHealth"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "error_count_24h": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "healthy": {
             "type": "boolean"
+          },
+          "recent_errors": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorEntry"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "uptime": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": ["healthy", "uptime", "version", "components", "recent_errors", "error_count_24h"],
+        "type": "object"
+      },
+      "JobIDRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/JobIDRequest.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
           },
           "job_id": {
             "format": "int64",
             "type": "integer"
-          },
-          "lines": {
-            "items": {
-              "$ref": "#/components/schemas/OutputLine"
-            },
-            "type": ["array", "null"]
-          },
-          "status": {
-            "type": "string"
           }
         },
-        "required": ["job_id", "status", "lines", "has_more"],
+        "required": ["job_id"],
         "type": "object"
       },
       "JobStats": {
@@ -397,6 +1047,23 @@
           }
         },
         "required": ["done", "closed", "open"],
+        "type": "object"
+      },
+      "JobStatusOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/JobStatusOutputBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": ["status"],
         "type": "object"
       },
       "JobTypeStats": {
@@ -421,12 +1088,25 @@
         "required": ["type", "count"],
         "type": "object"
       },
+      "JobWithReview": {
+        "additionalProperties": false,
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/ReviewJob"
+          },
+          "review": {
+            "$ref": "#/components/schemas/Review"
+          }
+        },
+        "required": ["job"],
+        "type": "object"
+      },
       "ListBranchesOutputBody": {
         "additionalProperties": false,
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/ListBranchesOutputBody.json"],
+            "example": "https://example.com/ListBranchesOutputBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -435,7 +1115,8 @@
             "items": {
               "$ref": "#/components/schemas/BranchWithCount"
             },
-            "type": ["array", "null"]
+            "nullable": true,
+            "type": "array"
           },
           "nulls_remaining": {
             "format": "int64",
@@ -454,7 +1135,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/ListCommentsOutputBody.json"],
+            "example": "https://example.com/ListCommentsOutputBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -463,7 +1144,8 @@
             "items": {
               "$ref": "#/components/schemas/Response"
             },
-            "type": ["array", "null"]
+            "nullable": true,
+            "type": "array"
           }
         },
         "required": ["responses"],
@@ -474,7 +1156,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/ListJobsOutputBody.json"],
+            "example": "https://example.com/ListJobsOutputBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -486,13 +1168,14 @@
             "items": {
               "$ref": "#/components/schemas/ReviewJob"
             },
-            "type": ["array", "null"]
+            "nullable": true,
+            "type": "array"
           },
           "stats": {
             "$ref": "#/components/schemas/JobStats"
           }
         },
-        "required": ["jobs", "has_more", "stats"],
+        "required": ["jobs", "has_more"],
         "type": "object"
       },
       "ListReposOutputBody": {
@@ -500,7 +1183,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/ListReposOutputBody.json"],
+            "example": "https://example.com/ListReposOutputBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -509,7 +1192,8 @@
             "items": {
               "$ref": "#/components/schemas/RepoWithCount"
             },
-            "type": ["array", "null"]
+            "nullable": true,
+            "type": "array"
           },
           "total_count": {
             "format": "int64",
@@ -517,23 +1201,6 @@
           }
         },
         "required": ["repos", "total_count"],
-        "type": "object"
-      },
-      "OutputLine": {
-        "additionalProperties": false,
-        "properties": {
-          "line_type": {
-            "type": "string"
-          },
-          "text": {
-            "type": "string"
-          },
-          "ts": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": ["ts", "text", "line_type"],
         "type": "object"
       },
       "OverviewStats": {
@@ -575,6 +1242,226 @@
         "required": ["total", "queued", "running", "done", "failed", "canceled", "applied", "rebased"],
         "type": "object"
       },
+      "PanelSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "first_started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "members_canceled": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "members_cost_complete": {
+            "type": "boolean"
+          },
+          "members_cost_usd": {
+            "format": "double",
+            "type": "number"
+          },
+          "members_failed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "members_skipped": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "members_succeeded": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "members_terminal": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "members_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "members_with_cost": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "panel_run_uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "panel_run_uuid",
+          "members_total",
+          "members_terminal",
+          "members_succeeded",
+          "members_failed",
+          "members_canceled",
+          "members_skipped"
+        ],
+        "type": "object"
+      },
+      "PingInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/PingInfo.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "pid": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": ["ok", "service", "version"],
+        "type": "object"
+      },
+      "QueuePauseOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/QueuePauseOutputBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "queue_paused": {
+            "type": "boolean"
+          }
+        },
+        "required": ["queue_paused"],
+        "type": "object"
+      },
+      "RegisterRepoRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/RegisterRepoRequest.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": ["repo_path"],
+        "type": "object"
+      },
+      "RemapMapping": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "new_sha": {
+            "type": "string"
+          },
+          "old_sha": {
+            "type": "string"
+          },
+          "patch_id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          }
+        },
+        "required": ["old_sha", "new_sha", "patch_id", "author", "subject", "timestamp"],
+        "type": "object"
+      },
+      "RemapRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/RemapRequest.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/RemapMapping"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": ["repo_path", "mappings"],
+        "type": "object"
+      },
+      "RemapResult": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/RemapResult.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "remapped": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipped": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": ["remapped", "skipped"],
+        "type": "object"
+      },
+      "Repo": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/Repo.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "identity": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "root_path": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "root_path", "name", "created_at"],
+        "type": "object"
+      },
       "RepoSummary": {
         "additionalProperties": false,
         "properties": {
@@ -611,6 +1498,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "identity": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -626,7 +1516,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/RerunJobOutputBody.json"],
+            "example": "https://example.com/RerunJobOutputBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -643,7 +1533,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/RerunJobRequest.json"],
+            "example": "https://example.com/RerunJobRequest.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -656,12 +1546,48 @@
         "required": ["job_id"],
         "type": "object"
       },
+      "ResolveRepoOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/ResolveRepoOutputBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "repo": {
+            "$ref": "#/components/schemas/ResolvedRepo"
+          },
+          "tracked": {
+            "type": "boolean"
+          }
+        },
+        "required": ["tracked"],
+        "type": "object"
+      },
+      "ResolvedRepo": {
+        "additionalProperties": false,
+        "properties": {
+          "identity": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "root_path": {
+            "type": "string"
+          }
+        },
+        "required": ["root_path", "identity", "name"],
+        "type": "object"
+      },
       "Response": {
         "additionalProperties": false,
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/Response.json"],
+            "example": "https://example.com/Response.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -707,7 +1633,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/Review.json"],
+            "example": "https://example.com/Review.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -764,17 +1690,36 @@
       "ReviewJob": {
         "additionalProperties": false,
         "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/ReviewJob.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
           "agent": {
             "type": "string"
           },
           "agentic": {
             "type": "boolean"
           },
+          "backup_agent": {
+            "type": "string"
+          },
+          "backup_model": {
+            "type": "string"
+          },
           "branch": {
             "type": "string"
           },
+          "claim_blocked": {
+            "type": "boolean"
+          },
           "closed": {
             "type": "boolean"
+          },
+          "command_line": {
+            "type": "string"
           },
           "commit_id": {
             "format": "int64",
@@ -785,6 +1730,13 @@
           },
           "diff_content": {
             "type": "string"
+          },
+          "dirty_files": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
           },
           "enqueued_at": {
             "format": "date-time",
@@ -807,11 +1759,36 @@
           "job_type": {
             "type": "string"
           },
+          "min_severity": {
+            "type": "string"
+          },
           "model": {
             "type": "string"
           },
           "output_prefix": {
             "type": "string"
+          },
+          "panel_member_config_json": {
+            "type": "string"
+          },
+          "panel_member_index": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "panel_member_name": {
+            "type": "string"
+          },
+          "panel_name": {
+            "type": "string"
+          },
+          "panel_role": {
+            "type": "string"
+          },
+          "panel_run_uuid": {
+            "type": "string"
+          },
+          "panel_summary": {
+            "$ref": "#/components/schemas/PanelSummary"
           },
           "parent_job_id": {
             "format": "int64",
@@ -859,6 +1836,12 @@
             "type": "string"
           },
           "session_id": {
+            "type": "string"
+          },
+          "skip_reason": {
+            "type": "string"
+          },
+          "source": {
             "type": "string"
           },
           "source_machine_id": {
@@ -909,12 +1892,73 @@
         ],
         "type": "object"
       },
+      "SessionUsagePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "cached_input_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "format": "double",
+            "type": "number"
+          },
+          "has_cost": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "has_token_data": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "input_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "peak_context_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "total_output_tokens": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": ["session_id", "has_token_data", "has_cost"],
+        "type": "object"
+      },
+      "ShutdownOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/ShutdownOutputBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": ["status"],
+        "type": "object"
+      },
       "Summary": {
         "additionalProperties": false,
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": ["https://example.com/Summary.json"],
+            "example": "https://example.com/Summary.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -923,10 +1967,14 @@
             "items": {
               "$ref": "#/components/schemas/AgentStats"
             },
-            "type": ["array", "null"]
+            "nullable": true,
+            "type": "array"
           },
           "branch": {
             "type": "string"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/CostAggregate"
           },
           "duration": {
             "$ref": "#/components/schemas/DurationStats"
@@ -938,7 +1986,8 @@
             "items": {
               "$ref": "#/components/schemas/JobTypeStats"
             },
-            "type": ["array", "null"]
+            "nullable": true,
+            "type": "array"
           },
           "overview": {
             "$ref": "#/components/schemas/OverviewStats"
@@ -950,7 +1999,8 @@
             "items": {
               "$ref": "#/components/schemas/RepoSummary"
             },
-            "type": ["array", "null"]
+            "nullable": true,
+            "type": "array"
           },
           "since": {
             "format": "date-time",
@@ -960,7 +2010,134 @@
             "$ref": "#/components/schemas/VerdictStats"
           }
         },
-        "required": ["since", "overview", "verdicts", "agents", "duration", "job_types", "failures"],
+        "required": ["since", "overview", "verdicts", "agents", "duration", "job_types", "failures", "cost"],
+        "type": "object"
+      },
+      "SyncStatusOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/SyncStatusOutputBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["enabled", "connected", "message"],
+        "type": "object"
+      },
+      "TokenResult": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "job_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": ["session_id", "status"],
+        "type": "object"
+      },
+      "TokenSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/TokenSummary.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "failed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/TokenResult"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "skipped": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updated": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": ["total", "updated", "skipped", "failed", "results"],
+        "type": "object"
+      },
+      "UpdateJobBranchOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/UpdateJobBranchOutputBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "updated": {
+            "type": "boolean"
+          }
+        },
+        "required": ["success", "updated"],
+        "type": "object"
+      },
+      "UpdateJobBranchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/UpdateJobBranchRequest.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "job_id": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": ["job_id", "branch"],
         "type": "object"
       },
       "VerdictStats": {
@@ -1000,8 +2177,49 @@
     "title": "roborev",
     "version": "dev"
   },
-  "openapi": "3.1.0",
+  "openapi": "3.0.3",
   "paths": {
+    "/api/activity": {
+      "get": {
+        "operationId": "list-activity",
+        "parameters": [
+          {
+            "description": "Maximum entries to return",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Maximum entries to return",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List recent daemon activity",
+        "tags": ["daemon"]
+      }
+    },
     "/api/branches": {
       "get": {
         "operationId": "list-branches",
@@ -1016,7 +2234,8 @@
               "items": {
                 "type": "string"
               },
-              "type": ["array", "null"]
+              "nullable": true,
+              "type": "array"
             }
           }
         ],
@@ -1095,7 +2314,7 @@
             "in": "query",
             "name": "job_id",
             "schema": {
-              "default": 0,
+              "default": -1,
               "description": "List comments by job ID",
               "format": "int64",
               "type": "integer"
@@ -1107,7 +2326,7 @@
             "in": "query",
             "name": "commit_id",
             "schema": {
-              "default": 0,
+              "default": -1,
               "description": "List comments by commit ID",
               "format": "int64",
               "type": "integer"
@@ -1150,6 +2369,373 @@
         "tags": ["comments"]
       }
     },
+    "/api/cost": {
+      "get": {
+        "operationId": "get-cost",
+        "parameters": [
+          {
+            "description": "Repo root paths (repeatable)",
+            "explode": true,
+            "in": "query",
+            "name": "repo",
+            "schema": {
+              "description": "Repo root paths (repeatable)",
+              "items": {
+                "type": "string"
+              },
+              "nullable": true,
+              "type": "array"
+            }
+          },
+          {
+            "description": "Filter by branch name",
+            "explode": false,
+            "in": "query",
+            "name": "branch",
+            "schema": {
+              "description": "Filter by branch name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only jobs with empty/unset branch",
+            "explode": false,
+            "in": "query",
+            "name": "branch_empty",
+            "schema": {
+              "description": "Only jobs with empty/unset branch",
+              "enum": ["true", "false"],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Time window (e.g. 7d); default all-time",
+            "explode": false,
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "description": "Time window (e.g. 7d); default all-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostAggregate"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get aggregate review cost",
+        "tags": ["daemon"]
+      }
+    },
+    "/api/enqueue": {
+      "post": {
+        "operationId": "enqueue-job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnqueueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ReviewJob"
+                    },
+                    {
+                      "$ref": "#/components/schemas/EnqueueSkippedResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ReviewJob"
+                    },
+                    {
+                      "$ref": "#/components/schemas/EnqueueSkippedResponse"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Enqueue a daemon job",
+        "tags": ["jobs"]
+      }
+    },
+    "/api/export/reviews": {
+      "get": {
+        "operationId": "export-reviews",
+        "parameters": [
+          {
+            "description": "Output format; only json is supported",
+            "explode": false,
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "default": "json",
+              "description": "Output format; only json is supported",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Export profile: content or metadata",
+            "explode": false,
+            "in": "query",
+            "name": "profile",
+            "schema": {
+              "default": "content",
+              "description": "Export profile: content or metadata",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive completed_at lower bound (RFC3339 or YYYY-MM-DD)",
+            "explode": false,
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "description": "Inclusive completed_at lower bound (RFC3339 or YYYY-MM-DD)",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exclusive completed_at upper bound (RFC3339 or YYYY-MM-DD; date-only means through that UTC day)",
+            "explode": false,
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "description": "Exclusive completed_at upper bound (RFC3339 or YYYY-MM-DD; date-only means through that UTC day)",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only include reviews marked closed",
+            "explode": false,
+            "in": "query",
+            "name": "closed_only",
+            "schema": {
+              "description": "Only include reviews marked closed",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Exact exported repo identifier filter",
+            "explode": false,
+            "in": "query",
+            "name": "repo",
+            "schema": {
+              "description": "Exact exported repo identifier filter",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact project display-name filter",
+            "explode": false,
+            "in": "query",
+            "name": "project",
+            "schema": {
+              "description": "Exact project display-name filter",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum top-level reviews in this page",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 500,
+              "description": "Maximum top-level reviews in this page",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque next_cursor from a previous page. Resumes strictly after its (completed_at, review_id) position; mutually exclusive with since.",
+            "explode": false,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "description": "Opaque next_cursor from a previous page. Resumes strictly after its (completed_at, review_id) position; mutually exclusive with since.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportReviewsDocument"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Cursor database_id does not match this local database"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Export completed reviews",
+        "tags": ["reviews"]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "get-health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get daemon health",
+        "tags": ["daemon"]
+      }
+    },
+    "/api/job/applied": {
+      "post": {
+        "operationId": "mark-job-applied",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobIDRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatusOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mark a fix job as applied",
+        "tags": ["jobs"]
+      }
+    },
     "/api/job/cancel": {
       "post": {
         "operationId": "cancel-job",
@@ -1189,29 +2775,212 @@
         "tags": ["jobs"]
       }
     },
-    "/api/job/output": {
+    "/api/job/fix": {
+      "post": {
+        "operationId": "create-fix-job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FixJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewJob"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create a background fix job",
+        "tags": ["jobs"]
+      }
+    },
+    "/api/job/log": {
       "get": {
-        "operationId": "get-job-output",
+        "operationId": "get-job-log",
         "parameters": [
           {
-            "description": "Job ID to fetch output for",
+            "description": "Job ID",
             "explode": false,
             "in": "query",
             "name": "job_id",
-            "required": true,
             "schema": {
-              "description": "Job ID to fetch output for",
-              "format": "int64",
-              "type": "integer"
+              "description": "Job ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Byte offset into the log file",
+            "explode": false,
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "description": "Byte offset into the log file",
+              "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get raw job log bytes",
+        "tags": ["jobs"]
+      }
+    },
+    "/api/job/output": {
+      "get": {
+        "operationId": "get-job-output",
+        "parameters": [
+          {
+            "description": "Job ID",
+            "explode": false,
+            "in": "query",
+            "name": "job_id",
+            "schema": {
+              "description": "Job ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Stream output as NDJSON when set to 1",
+            "explode": false,
+            "in": "query",
+            "name": "stream",
+            "schema": {
+              "description": "Stream output as NDJSON when set to 1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get or stream in-memory job output",
+        "tags": ["jobs"]
+      }
+    },
+    "/api/job/patch": {
+      "get": {
+        "operationId": "get-job-patch",
+        "parameters": [
+          {
+            "description": "Job ID",
+            "explode": false,
+            "in": "query",
+            "name": "job_id",
+            "schema": {
+              "description": "Job ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get a stored fix patch",
+        "tags": ["jobs"]
+      }
+    },
+    "/api/job/rebased": {
+      "post": {
+        "operationId": "mark-job-rebased",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobIDRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JobOutputResponse"
+                  "$ref": "#/components/schemas/JobStatusOutputBody"
                 }
               }
             },
@@ -1228,7 +2997,7 @@
             "description": "Error"
           }
         },
-        "summary": "Get live output for a running job",
+        "summary": "Mark a fix job as rebased",
         "tags": ["jobs"]
       }
     },
@@ -1271,6 +3040,45 @@
         "tags": ["jobs"]
       }
     },
+    "/api/job/update-branch": {
+      "post": {
+        "operationId": "update-job-branch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateJobBranchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateJobBranchOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Update a job branch",
+        "tags": ["jobs"]
+      }
+    },
     "/api/jobs": {
       "get": {
         "operationId": "list-jobs",
@@ -1281,7 +3089,7 @@
             "in": "query",
             "name": "id",
             "schema": {
-              "default": 0,
+              "default": -1,
               "description": "Return a single job by ID",
               "format": "int64",
               "type": "integer"
@@ -1298,13 +3106,17 @@
             }
           },
           {
-            "description": "Filter by repo root path",
-            "explode": false,
+            "description": "Filter by repo root path (repeatable)",
+            "explode": true,
             "in": "query",
             "name": "repo",
             "schema": {
-              "description": "Filter by repo root path",
-              "type": "string"
+              "description": "Filter by repo root path (repeatable)",
+              "items": {
+                "type": "string"
+              },
+              "nullable": true,
+              "type": "array"
             }
           },
           {
@@ -1370,6 +3182,38 @@
             }
           },
           {
+            "description": "Hide auto-design-router rows (job_type=classify and status=skipped)",
+            "explode": false,
+            "in": "query",
+            "name": "hide_classify_jobs",
+            "schema": {
+              "description": "Hide auto-design-router rows (job_type=classify and status=skipped)",
+              "enum": ["true", "false", ""],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Return all jobs (members + synthesis) of one panel run",
+            "explode": false,
+            "in": "query",
+            "name": "panel_run",
+            "schema": {
+              "description": "Return all jobs (members + synthesis) of one panel run",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Omit prompt and diff content from returned jobs (metadata-only listing)",
+            "explode": false,
+            "in": "query",
+            "name": "omit_prompt",
+            "schema": {
+              "description": "Omit prompt and diff content from returned jobs (metadata-only listing)",
+              "enum": ["true", "false", ""],
+              "type": "string"
+            }
+          },
+          {
             "description": "Filter repos by path prefix",
             "explode": false,
             "in": "query",
@@ -1385,7 +3229,7 @@
             "in": "query",
             "name": "limit",
             "schema": {
-              "default": -1,
+              "default": -999999,
               "description": "Max results (default 50, 0=unlimited, max 10000)",
               "format": "int64",
               "type": "integer"
@@ -1409,7 +3253,7 @@
             "in": "query",
             "name": "before",
             "schema": {
-              "default": 0,
+              "default": -1,
               "description": "Cursor: return jobs with ID \u003c this value",
               "format": "int64",
               "type": "integer"
@@ -1439,6 +3283,171 @@
           }
         },
         "summary": "List review jobs",
+        "tags": ["jobs"]
+      }
+    },
+    "/api/jobs/batch": {
+      "post": {
+        "operationId": "batch-jobs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchJobsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJobsOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Fetch jobs with reviews by ID",
+        "tags": ["jobs"]
+      }
+    },
+    "/api/ping": {
+      "get": {
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get daemon liveness identity",
+        "tags": ["daemon"]
+      }
+    },
+    "/api/queue/pause": {
+      "post": {
+        "operationId": "pause-queue",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuePauseOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Pause queue processing",
+        "tags": ["daemon"]
+      }
+    },
+    "/api/queue/unpause": {
+      "post": {
+        "operationId": "unpause-queue",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuePauseOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Resume queue processing",
+        "tags": ["daemon"]
+      }
+    },
+    "/api/remap": {
+      "post": {
+        "operationId": "remap-jobs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemapResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Remap jobs after git history rewrite",
         "tags": ["jobs"]
       }
     },
@@ -1493,6 +3502,86 @@
         "tags": ["repos"]
       }
     },
+    "/api/repos/register": {
+      "post": {
+        "operationId": "register-repo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRepoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Register a repository",
+        "tags": ["repos"]
+      }
+    },
+    "/api/repos/resolve": {
+      "get": {
+        "operationId": "resolve-repo",
+        "parameters": [
+          {
+            "description": "Absolute path or path inside a repository",
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "description": "Absolute path or path inside a repository",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolveRepoOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Resolve whether a path belongs to a tracked repo",
+        "tags": ["repos"]
+      }
+    },
     "/api/review": {
       "get": {
         "operationId": "get-review",
@@ -1503,7 +3592,7 @@
             "in": "query",
             "name": "job_id",
             "schema": {
-              "default": 0,
+              "default": -1,
               "description": "Look up review by job ID",
               "format": "int64",
               "type": "integer"
@@ -1585,6 +3674,35 @@
         "tags": ["reviews"]
       }
     },
+    "/api/shutdown": {
+      "post": {
+        "operationId": "shutdown",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShutdownOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Gracefully shut down the daemon",
+        "tags": ["daemon"]
+      }
+    },
     "/api/status": {
       "get": {
         "operationId": "get-status",
@@ -1611,6 +3729,40 @@
           }
         },
         "summary": "Get daemon status",
+        "tags": ["daemon"]
+      }
+    },
+    "/api/stream/events": {
+      "get": {
+        "operationId": "stream-events",
+        "parameters": [
+          {
+            "description": "Filter events by repo root path",
+            "explode": false,
+            "in": "query",
+            "name": "repo",
+            "schema": {
+              "description": "Filter events by repo root path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stream daemon events",
         "tags": ["daemon"]
       }
     },
@@ -1684,6 +3836,116 @@
         },
         "summary": "Get review summary statistics",
         "tags": ["daemon"]
+      }
+    },
+    "/api/sync/now": {
+      "post": {
+        "operationId": "sync-now",
+        "parameters": [
+          {
+            "description": "Stream sync progress as NDJSON when set to 1",
+            "explode": false,
+            "in": "query",
+            "name": "stream",
+            "schema": {
+              "description": "Stream sync progress as NDJSON when set to 1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Run an immediate sync",
+        "tags": ["sync"]
+      }
+    },
+    "/api/sync/status": {
+      "get": {
+        "operationId": "get-sync-status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncStatusOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get sync worker status",
+        "tags": ["sync"]
+      }
+    },
+    "/api/tokens/backfill": {
+      "post": {
+        "operationId": "backfill-tokens",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillTokensRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Backfill token usage from AgentsView payloads",
+        "tags": ["jobs"]
       }
     }
   }

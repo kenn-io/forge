@@ -6,20 +6,36 @@ interface LogLine {
   lineType: string;
 }
 
+interface RawLogLine {
+  ts?: unknown;
+  text?: unknown;
+  line_type?: unknown;
+}
+
+interface JobOutputSnapshot {
+  lines?: RawLogLine[] | null;
+}
+
 export interface LogStoreOptions {
   client: RoborevClient;
   baseUrl: string;
 }
 
 export function createLogStore(opts: LogStoreOptions) {
-  const client = opts.client;
-
   let lines = $state<LogLine[]>([]);
   let streaming = $state(false);
   let followMode = $state(true);
   let connectedJobId = $state<number | undefined>(undefined);
   let abortController: AbortController | null = null;
   let requestVersion = 0;
+
+  function logLineFromRaw(raw: RawLogLine): LogLine {
+    return {
+      ts: typeof raw.ts === "string" ? raw.ts : "",
+      text: typeof raw.text === "string" ? raw.text : "",
+      lineType: typeof raw.line_type === "string" ? raw.line_type : "",
+    };
+  }
 
   async function startStreaming(jobId: number): Promise<void> {
     stopStreaming();
@@ -60,15 +76,8 @@ export function createLogStore(opts: LogStoreOptions) {
           const trimmed = part.trim();
           if (!trimmed) continue;
           try {
-            const parsed = JSON.parse(trimmed);
-            lines = [
-              ...lines,
-              {
-                ts: parsed.ts ?? "",
-                text: parsed.text ?? "",
-                lineType: parsed.line_type ?? "",
-              },
-            ];
+            const parsed = JSON.parse(trimmed) as RawLogLine;
+            lines = [...lines, logLineFromRaw(parsed)];
           } catch {
             // Skip malformed NDJSON lines
           }
@@ -98,16 +107,12 @@ export function createLogStore(opts: LogStoreOptions) {
     stopStreaming();
     const version = ++requestVersion;
     lines = [];
-    const { data, error } = await client.GET("/api/job/output", {
-      params: { query: { job_id: jobId } },
-    });
-    if (error || !data) return;
+    const params = new URLSearchParams({ job_id: String(jobId) });
+    const resp = await fetch(`${opts.baseUrl}/api/job/output?${params}`);
+    if (!resp.ok) return;
+    const data = (await resp.json()) as JobOutputSnapshot;
     if (version !== requestVersion) return;
-    lines = (data.lines ?? []).map((l) => ({
-      ts: l.ts,
-      text: l.text,
-      lineType: l.line_type,
-    }));
+    lines = (data.lines ?? []).map(logLineFromRaw);
   }
 
   function toggleFollow(): void {

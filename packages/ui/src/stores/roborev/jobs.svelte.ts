@@ -48,7 +48,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
 
   function buildQuery(): ListJobsQuery {
     const q: ListJobsQuery = { limit: 50 };
-    if (filterRepo) q.repo = filterRepo;
+    if (filterRepo) q.repo = [filterRepo];
     if (filterBranch) q.branch = filterBranch;
     if (filterStatus) q.status = filterStatus;
     if (filterSearch) q.git_ref = filterSearch;

@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List recent daemon activity */
+        get: operations["list-activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/branches": {
         parameters: {
             query?: never;
@@ -55,6 +72,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get aggregate review cost */
+        get: operations["get-cost"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/enqueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue a daemon job */
+        post: operations["enqueue-job"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/export/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export completed reviews */
+        get: operations["export-reviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get daemon health */
+        get: operations["get-health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/job/applied": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a fix job as applied */
+        post: operations["mark-job-applied"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/job/cancel": {
         parameters: {
             query?: never;
@@ -72,6 +174,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/job/fix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a background fix job */
+        post: operations["create-fix-job"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/job/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get raw job log bytes */
+        get: operations["get-job-log"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/job/output": {
         parameters: {
             query?: never;
@@ -79,10 +215,44 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get live output for a running job */
+        /** Get or stream in-memory job output */
         get: operations["get-job-output"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/job/patch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a stored fix patch */
+        get: operations["get-job-patch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/job/rebased": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a fix job as rebased */
+        post: operations["mark-job-rebased"];
         delete?: never;
         options?: never;
         head?: never;
@@ -106,6 +276,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/job/update-branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Update a job branch */
+        post: operations["update-job-branch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -123,6 +310,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fetch jobs with reviews by ID */
+        post: operations["batch-jobs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get daemon liveness identity */
+        get: operations["ping"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/queue/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause queue processing */
+        post: operations["pause-queue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/queue/unpause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume queue processing */
+        post: operations["unpause-queue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/remap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remap jobs after git history rewrite */
+        post: operations["remap-jobs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/repos": {
         parameters: {
             query?: never;
@@ -132,6 +404,40 @@ export interface paths {
         };
         /** List repos with job counts */
         get: operations["list-repos"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register a repository */
+        post: operations["register-repo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve whether a path belongs to a tracked repo */
+        get: operations["resolve-repo"];
         put?: never;
         post?: never;
         delete?: never;
@@ -174,6 +480,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shutdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Gracefully shut down the daemon */
+        post: operations["shutdown"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -183,6 +506,23 @@ export interface paths {
         };
         /** Get daemon status */
         get: operations["get-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stream/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream daemon events */
+        get: operations["stream-events"];
         put?: never;
         post?: never;
         delete?: never;
@@ -208,10 +548,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sync/now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run an immediate sync */
+        post: operations["sync-now"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get sync worker status */
+        get: operations["get-sync-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tokens/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Backfill token usage from AgentsView payloads */
+        post: operations["backfill-tokens"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ActivityEntry: {
+            component: string;
+            details?: {
+                [key: string]: string;
+            };
+            event: string;
+            message: string;
+            /** Format: date-time */
+            ts: string;
+        };
+        ActivityOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/ActivityOutputBody.json
+             */
+            readonly $schema?: string;
+            entries: components["schemas"]["ActivityEntry"][] | null;
+        };
         AddCommentRequest: {
             /**
              * Format: uri
@@ -239,6 +649,49 @@ export interface components {
             passed: number;
             /** Format: int64 */
             total: number;
+        };
+        AutoDesignStatus: {
+            /** Format: int64 */
+            classifier_failed: number;
+            enabled: boolean;
+            /** Format: int64 */
+            skipped_classifier: number;
+            /** Format: int64 */
+            skipped_heuristic: number;
+            /** Format: int64 */
+            triggered_classifier: number;
+            /** Format: int64 */
+            triggered_heuristic: number;
+        };
+        BackfillTokensRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/BackfillTokensRequest.json
+             */
+            readonly $schema?: string;
+            dry_run?: boolean;
+            sessions: components["schemas"]["SessionUsagePayload"][] | null;
+        };
+        BatchJobsOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/BatchJobsOutputBody.json
+             */
+            readonly $schema?: string;
+            results: {
+                [key: string]: components["schemas"]["JobWithReview"];
+            };
+        };
+        BatchJobsRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/BatchJobsRequest.json
+             */
+            readonly $schema?: string;
+            job_ids: number[] | null;
         };
         BranchWithCount: {
             /** Format: int64 */
@@ -284,6 +737,26 @@ export interface components {
             /** Format: int64 */
             job_id: number;
         };
+        ComponentHealth: {
+            healthy: boolean;
+            message?: string;
+            name: string;
+        };
+        CostAggregate: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CostAggregate.json
+             */
+            readonly $schema?: string;
+            complete: boolean;
+            /** Format: int64 */
+            jobs_total: number;
+            /** Format: int64 */
+            jobs_with_cost: number;
+            /** Format: double */
+            total_usd: number;
+        };
         DaemonStatus: {
             /**
              * Format: uri
@@ -293,8 +766,10 @@ export interface components {
             readonly $schema?: string;
             /** Format: int64 */
             active_workers: number;
+            address?: string;
             /** Format: int64 */
             applied_jobs: number;
+            auto_design?: components["schemas"]["AutoDesignStatus"];
             /** Format: int64 */
             canceled_jobs: number;
             /** Format: int64 */
@@ -307,12 +782,18 @@ export interface components {
             machine_id?: string;
             /** Format: int64 */
             max_workers: number;
+            network?: string;
+            /** Format: int64 */
+            port?: number;
+            queue_paused: boolean;
             /** Format: int64 */
             queued_jobs: number;
             /** Format: int64 */
             rebased_jobs: number;
             /** Format: int64 */
             running_jobs: number;
+            /** Format: int64 */
+            skipped_jobs: number;
             version: string;
         };
         DurationStats: {
@@ -329,6 +810,37 @@ export interface components {
             /** Format: double */
             review_p99_secs: number;
         };
+        EnqueueRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnqueueRequest.json
+             */
+            readonly $schema?: string;
+            agent?: string;
+            agentic?: boolean;
+            branch?: string;
+            commit_sha?: string;
+            custom_prompt?: string;
+            diff_content?: string;
+            dirty_files?: string[] | null;
+            git_ref?: string;
+            job_type?: string;
+            min_severity?: string;
+            model?: string;
+            output_prefix?: string;
+            panel?: string;
+            provider?: string;
+            reasoning?: string;
+            repo_path: string;
+            review_type?: string;
+            since?: string;
+            source?: string;
+        };
+        EnqueueSkippedResponse: {
+            reason: string;
+            skipped: boolean;
+        };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -336,6 +848,15 @@ export interface components {
             message?: string;
             /** @description The value at the given location */
             value?: unknown;
+        };
+        ErrorEntry: {
+            component: string;
+            /** Format: int64 */
+            job_id?: number;
+            level: string;
+            message: string;
+            /** Format: date-time */
+            ts: string;
         };
         ErrorModel: {
             /**
@@ -376,6 +897,84 @@ export interface components {
              */
             type: string;
         };
+        ErrorResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/ErrorResponse.json
+             */
+            readonly $schema?: string;
+            error: string;
+        };
+        ExportReview: {
+            agent: string;
+            branch: string | null;
+            commit_sha: string | null;
+            completed_at: string;
+            content: string | null;
+            cost: components["schemas"]["ExportReviewCost"];
+            created_at: string;
+            /** Format: int64 */
+            duration_ms: number | null;
+            model: string | null;
+            /** Format: int64 */
+            pr_number: number | null;
+            pr_url: string | null;
+            project: string;
+            repo: string;
+            review_id: string;
+            status: string;
+            subagents: components["schemas"]["ExportSubagent"][] | null;
+            verdict: string;
+        };
+        ExportReviewCost: {
+            /** Format: int64 */
+            tokens_in: number | null;
+            /** Format: int64 */
+            tokens_out: number | null;
+            /** Format: double */
+            usd: number | null;
+        };
+        ExportReviewsDocument: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/ExportReviewsDocument.json
+             */
+            readonly $schema?: string;
+            /** @description Stable identity for the local review database; changes when the database is recreated. */
+            database_id: string;
+            generated_at: string;
+            /** @description Opaque resume cursor emitted when reviews is non-empty; pass as cursor to resume after the last returned review. */
+            next_cursor: string | null;
+            profile: string;
+            reviews: components["schemas"]["ExportReview"][] | null;
+            /** Format: int64 */
+            schema_version: number;
+            tool: string;
+            tool_version: string;
+            /** @description True when more matching rows are available immediately. */
+            truncated: boolean;
+            window: components["schemas"]["ExportReviewsWindow"];
+        };
+        ExportReviewsWindow: {
+            field: string;
+            since: string | null;
+            until: string | null;
+        };
+        ExportSubagent: {
+            agent: string;
+            completed_at: string;
+            content: string | null;
+            cost: components["schemas"]["ExportReviewCost"];
+            /** Format: int64 */
+            duration_ms: number | null;
+            model: string | null;
+            name: string;
+            review_id: string;
+            review_type: string | null;
+            verdict: string;
+        };
         FailureStats: {
             errors: {
                 [key: string]: number;
@@ -385,18 +984,44 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
-        JobOutputResponse: {
+        FixJobRequest: {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/JobOutputResponse.json
+             * @example https://example.com/FixJobRequest.json
              */
             readonly $schema?: string;
-            has_more: boolean;
+            git_ref?: string;
+            /** Format: int64 */
+            parent_job_id: number;
+            prompt?: string;
+            /** Format: int64 */
+            stale_job_id?: number;
+        };
+        HealthStatus: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/HealthStatus.json
+             */
+            readonly $schema?: string;
+            components: components["schemas"]["ComponentHealth"][] | null;
+            /** Format: int64 */
+            error_count_24h: number;
+            healthy: boolean;
+            recent_errors: components["schemas"]["ErrorEntry"][] | null;
+            uptime: string;
+            version: string;
+        };
+        JobIDRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/JobIDRequest.json
+             */
+            readonly $schema?: string;
             /** Format: int64 */
             job_id: number;
-            lines: components["schemas"]["OutputLine"][] | null;
-            status: string;
         };
         JobStats: {
             /** Format: int64 */
@@ -406,6 +1031,15 @@ export interface components {
             /** Format: int64 */
             open: number;
         };
+        JobStatusOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/JobStatusOutputBody.json
+             */
+            readonly $schema?: string;
+            status: string;
+        };
         JobTypeStats: {
             /** Format: int64 */
             applied?: number;
@@ -414,6 +1048,10 @@ export interface components {
             /** Format: int64 */
             rebased?: number;
             type: string;
+        };
+        JobWithReview: {
+            job: components["schemas"]["ReviewJob"];
+            review?: components["schemas"]["Review"];
         };
         ListBranchesOutputBody: {
             /**
@@ -446,7 +1084,7 @@ export interface components {
             readonly $schema?: string;
             has_more: boolean;
             jobs: components["schemas"]["ReviewJob"][] | null;
-            stats: components["schemas"]["JobStats"];
+            stats?: components["schemas"]["JobStats"];
         };
         ListReposOutputBody: {
             /**
@@ -458,12 +1096,6 @@ export interface components {
             repos: components["schemas"]["RepoWithCount"][] | null;
             /** Format: int64 */
             total_count: number;
-        };
-        OutputLine: {
-            line_type: string;
-            text: string;
-            /** Format: date-time */
-            ts: string;
         };
         OverviewStats: {
             /** Format: int64 */
@@ -483,6 +1115,104 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        PanelSummary: {
+            /** Format: date-time */
+            first_started_at?: string;
+            /** Format: int64 */
+            members_canceled: number;
+            members_cost_complete?: boolean;
+            /** Format: double */
+            members_cost_usd?: number;
+            /** Format: int64 */
+            members_failed: number;
+            /** Format: int64 */
+            members_skipped: number;
+            /** Format: int64 */
+            members_succeeded: number;
+            /** Format: int64 */
+            members_terminal: number;
+            /** Format: int64 */
+            members_total: number;
+            /** Format: int64 */
+            members_with_cost?: number;
+            panel_run_uuid: string;
+        };
+        PingInfo: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/PingInfo.json
+             */
+            readonly $schema?: string;
+            ok: boolean;
+            /** Format: int64 */
+            pid?: number;
+            service: string;
+            version: string;
+        };
+        QueuePauseOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/QueuePauseOutputBody.json
+             */
+            readonly $schema?: string;
+            queue_paused: boolean;
+        };
+        RegisterRepoRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/RegisterRepoRequest.json
+             */
+            readonly $schema?: string;
+            repo_path: string;
+        };
+        RemapMapping: {
+            author: string;
+            new_sha: string;
+            old_sha: string;
+            patch_id: string;
+            subject: string;
+            timestamp: string;
+        };
+        RemapRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/RemapRequest.json
+             */
+            readonly $schema?: string;
+            mappings: components["schemas"]["RemapMapping"][] | null;
+            repo_path: string;
+        };
+        RemapResult: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/RemapResult.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            remapped: number;
+            /** Format: int64 */
+            skipped: number;
+        };
+        Repo: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/Repo.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            identity?: string;
+            name: string;
+            root_path: string;
+        };
         RepoSummary: {
             /** Format: int64 */
             addressed: number;
@@ -498,6 +1228,7 @@ export interface components {
         RepoWithCount: {
             /** Format: int64 */
             count: number;
+            identity?: string;
             name: string;
             root_path: string;
         };
@@ -519,6 +1250,21 @@ export interface components {
             readonly $schema?: string;
             /** Format: int64 */
             job_id: number;
+        };
+        ResolveRepoOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/ResolveRepoOutputBody.json
+             */
+            readonly $schema?: string;
+            repo?: components["schemas"]["ResolvedRepo"];
+            tracked: boolean;
+        };
+        ResolvedRepo: {
+            identity: string;
+            name: string;
+            root_path: string;
         };
         Response: {
             /**
@@ -570,14 +1316,25 @@ export interface components {
             verdict_bool?: number;
         };
         ReviewJob: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/ReviewJob.json
+             */
+            readonly $schema?: string;
             agent: string;
             agentic: boolean;
+            backup_agent?: string;
+            backup_model?: string;
             branch?: string;
+            claim_blocked?: boolean;
             closed?: boolean;
+            command_line?: string;
             /** Format: int64 */
             commit_id?: number;
             commit_subject?: string;
             diff_content?: string;
+            dirty_files?: string[] | null;
             /** Format: date-time */
             enqueued_at: string;
             error?: string;
@@ -587,8 +1344,17 @@ export interface components {
             /** Format: int64 */
             id: number;
             job_type: string;
+            min_severity?: string;
             model?: string;
             output_prefix?: string;
+            panel_member_config_json?: string;
+            /** Format: int64 */
+            panel_member_index?: number;
+            panel_member_name?: string;
+            panel_name?: string;
+            panel_role?: string;
+            panel_run_uuid?: string;
+            panel_summary?: components["schemas"]["PanelSummary"];
             /** Format: int64 */
             parent_job_id?: number;
             patch?: string;
@@ -607,6 +1373,8 @@ export interface components {
             retry_count: number;
             review_type?: string;
             session_id?: string;
+            skip_reason?: string;
+            source?: string;
             source_machine_id?: string;
             /** Format: date-time */
             started_at?: string;
@@ -621,6 +1389,32 @@ export interface components {
             worker_id?: string;
             worktree_path?: string;
         };
+        SessionUsagePayload: {
+            agent?: string;
+            /** Format: int64 */
+            cached_input_tokens?: number;
+            /** Format: double */
+            cost_usd?: number;
+            has_cost: boolean | null;
+            has_token_data: boolean | null;
+            /** Format: int64 */
+            input_tokens?: number;
+            /** Format: int64 */
+            peak_context_tokens?: number;
+            project?: string;
+            session_id: string;
+            /** Format: int64 */
+            total_output_tokens?: number;
+        };
+        ShutdownOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/ShutdownOutputBody.json
+             */
+            readonly $schema?: string;
+            status: string;
+        };
         Summary: {
             /**
              * Format: uri
@@ -630,6 +1424,7 @@ export interface components {
             readonly $schema?: string;
             agents: components["schemas"]["AgentStats"][] | null;
             branch?: string;
+            cost: components["schemas"]["CostAggregate"];
             duration: components["schemas"]["DurationStats"];
             failures: components["schemas"]["FailureStats"];
             job_types: components["schemas"]["JobTypeStats"][] | null;
@@ -639,6 +1434,64 @@ export interface components {
             /** Format: date-time */
             since: string;
             verdicts: components["schemas"]["VerdictStats"];
+        };
+        SyncStatusOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/SyncStatusOutputBody.json
+             */
+            readonly $schema?: string;
+            connected: boolean;
+            enabled: boolean;
+            message: string;
+        };
+        TokenResult: {
+            agent?: string;
+            /** Format: int64 */
+            job_id?: number;
+            reason?: string;
+            session_id: string;
+            status: string;
+            summary?: string;
+        };
+        TokenSummary: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/TokenSummary.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            failed: number;
+            results: components["schemas"]["TokenResult"][] | null;
+            /** Format: int64 */
+            skipped: number;
+            /** Format: int64 */
+            total: number;
+            /** Format: int64 */
+            updated: number;
+        };
+        UpdateJobBranchOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/UpdateJobBranchOutputBody.json
+             */
+            readonly $schema?: string;
+            success: boolean;
+            updated: boolean;
+        };
+        UpdateJobBranchRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/UpdateJobBranchRequest.json
+             */
+            readonly $schema?: string;
+            branch: string;
+            /** Format: int64 */
+            job_id: number;
         };
         VerdictStats: {
             /** Format: int64 */
@@ -663,6 +1516,38 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "list-activity": {
+        parameters: {
+            query?: {
+                /** @description Maximum entries to return */
+                limit?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "list-branches": {
         parameters: {
             query?: {
@@ -764,6 +1649,227 @@ export interface operations {
             };
         };
     };
+    "get-cost": {
+        parameters: {
+            query?: {
+                /** @description Repo root paths (repeatable) */
+                repo?: string[] | null;
+                /** @description Filter by branch name */
+                branch?: string;
+                /** @description Only jobs with empty/unset branch */
+                branch_empty?: "true" | "false";
+                /** @description Time window (e.g. 7d); default all-time */
+                since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostAggregate"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "enqueue-job": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnqueueRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewJob"] | components["schemas"]["EnqueueSkippedResponse"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewJob"] | components["schemas"]["EnqueueSkippedResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "export-reviews": {
+        parameters: {
+            query?: {
+                /** @description Output format; only json is supported */
+                format?: string;
+                /** @description Export profile: content or metadata */
+                profile?: string;
+                /** @description Inclusive completed_at lower bound (RFC3339 or YYYY-MM-DD) */
+                since?: string;
+                /** @description Exclusive completed_at upper bound (RFC3339 or YYYY-MM-DD; date-only means through that UTC day) */
+                until?: string;
+                /** @description Only include reviews marked closed */
+                closed_only?: boolean;
+                /** @description Exact exported repo identifier filter */
+                repo?: string;
+                /** @description Exact project display-name filter */
+                project?: string;
+                /** @description Maximum top-level reviews in this page */
+                limit?: number;
+                /** @description Opaque next_cursor from a previous page. Resumes strictly after its (completed_at, review_id) position; mutually exclusive with since. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportReviewsDocument"];
+                };
+            };
+            /** @description Cursor database_id does not match this local database */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "mark-job-applied": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobIDRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStatusOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "cancel-job": {
         parameters: {
             query?: never;
@@ -797,11 +1903,69 @@ export interface operations {
             };
         };
     };
-    "get-job-output": {
+    "create-fix-job": {
         parameters: {
-            query: {
-                /** @description Job ID to fetch output for */
-                job_id: number;
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FixJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewJob"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "get-job-log": {
+        parameters: {
+            query?: {
+                /** @description Job ID */
+                job_id?: string;
+                /** @description Byte offset into the log file */
+                offset?: string;
             };
             header?: never;
             path?: never;
@@ -814,8 +1978,101 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
-                    "application/json": components["schemas"]["JobOutputResponse"];
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-job-output": {
+        parameters: {
+            query?: {
+                /** @description Job ID */
+                job_id?: string;
+                /** @description Stream output as NDJSON when set to 1 */
+                stream?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-job-patch": {
+        parameters: {
+            query?: {
+                /** @description Job ID */
+                job_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "mark-job-rebased": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobIDRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStatusOutputBody"];
                 };
             };
             /** @description Error */
@@ -862,6 +2119,39 @@ export interface operations {
             };
         };
     };
+    "update-job-branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateJobBranchRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateJobBranchOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "list-jobs": {
         parameters: {
             query?: {
@@ -869,8 +2159,8 @@ export interface operations {
                 id?: number;
                 /** @description Filter by job status */
                 status?: string;
-                /** @description Filter by repo root path */
-                repo?: string;
+                /** @description Filter by repo root path (repeatable) */
+                repo?: string[] | null;
                 /** @description Filter by git ref */
                 git_ref?: string;
                 /** @description Filter by branch name */
@@ -883,6 +2173,12 @@ export interface operations {
                 job_type?: string;
                 /** @description Exclude jobs of this type */
                 exclude_job_type?: string;
+                /** @description Hide auto-design-router rows (job_type=classify and status=skipped) */
+                hide_classify_jobs?: "true" | "false" | "";
+                /** @description Return all jobs (members + synthesis) of one panel run */
+                panel_run?: string;
+                /** @description Omit prompt and diff content from returned jobs (metadata-only listing) */
+                omit_prompt?: "true" | "false" | "";
                 /** @description Filter repos by path prefix */
                 repo_prefix?: string;
                 /** @description Max results (default 50, 0=unlimited, max 10000) */
@@ -918,6 +2214,159 @@ export interface operations {
             };
         };
     };
+    "batch-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchJobsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchJobsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    ping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PingInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "pause-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuePauseOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "unpause-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuePauseOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "remap-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemapRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemapResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "list-repos": {
         parameters: {
             query?: {
@@ -939,6 +2388,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListReposOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "register-repo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRepoRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Repo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "resolve-repo": {
+        parameters: {
+            query?: {
+                /** @description Absolute path or path inside a repository */
+                path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResolveRepoOutputBody"];
                 };
             };
             /** @description Error */
@@ -1019,6 +2533,35 @@ export interface operations {
             };
         };
     };
+    shutdown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShutdownOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "get-status": {
         parameters: {
             query?: never;
@@ -1036,6 +2579,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DaemonStatus"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "stream-events": {
+        parameters: {
+            query?: {
+                /** @description Filter events by repo root path */
+                repo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -1082,6 +2655,105 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "sync-now": {
+        parameters: {
+            query?: {
+                /** @description Stream sync progress as NDJSON when set to 1 */
+                stream?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-sync-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncStatusOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "backfill-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillTokensRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenSummary"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

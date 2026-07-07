@@ -6,7 +6,9 @@ default_stages = ["pre-commit"]
 # with any hook that reads or writes the same files. Layout:
 #   0   read-only guards (builtin checks, meta checks)
 #   1-3 file fixers, each mutating domain isolated from same-file hooks
-#   4   api-generate (rewrites generated Go/TS consumed by later groups)
+#   4   frontend-deps (bun install mutates node_modules, which every
+#       Node-based hook below reads; it must finish before they start)
+#   5   api-generate (rewrites generated Go/TS consumed by later groups)
 #   10  independent lanes: Go lint (sole Go mutator), frontend, rust, scripts
 #   20  read-only Go consumers that must see fixed and regenerated code
 
@@ -36,7 +38,8 @@ repo = "local"
 hooks = [
   { id = "gofmt", name = "gofmt", language = "system", entry = "gofmt -w", files = "\\.go$", priority = 3 },
   { id = "cargo-fmt", name = "cargo fmt", language = "system", entry = "cargo fmt --all", files = "^(Cargo\\.toml|Cargo\\.lock|rust/.*\\.rs|rust/.*/Cargo\\.toml)$", pass_filenames = false, priority = 3 },
-  { id = "api-generate", name = "regenerate api clients", language = "system", entry = "make api-generate", files = "^(go\\.mod|go\\.sum|cmd/middleman-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|internal/apiclient/.*|frontend/package\\.json|frontend/bun\\.lock)$", exclude = "^(internal/apiclient/generated/client\\.gen\\.go|internal/apiclient/spec/openapi\\.json)$", pass_filenames = false, priority = 4 },
+  { id = "frontend-deps", name = "install workspace dependencies", language = "system", entry = "make frontend-deps", always_run = true, pass_filenames = false, priority = 4 },
+  { id = "api-generate", name = "regenerate api clients", language = "system", entry = "make api-generate", files = "^(go\\.mod|go\\.sum|cmd/middleman-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|internal/apiclient/.*|frontend/package\\.json|frontend/bun\\.lock)$", exclude = "^(internal/apiclient/generated/client\\.gen\\.go|internal/apiclient/spec/openapi\\.json)$", pass_filenames = false, priority = 5 },
   { id = "golangci-lint", name = "golangci-lint --fix", language = "system", entry = "make lint", files = "^(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false, priority = 10 },
   { id = "frontend-check", name = "vite-plus frontend check", language = "system", entry = "make frontend-check", files = "^(vite\\.config\\.ts|package\\.json|bun\\.lock|frontend/((src|tests)/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json|vite\\.config\\.ts|playwright(-e2e)?\\.config\\.ts)|packages/(ui|github-app-ui)/(src/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json))$", pass_filenames = false, priority = 10 },
   { id = "cargo-clippy", name = "cargo clippy", language = "system", entry = "cargo clippy --workspace --all-targets -- -D warnings", files = "^(Cargo\\.toml|Cargo\\.lock|rust/.*\\.(rs|toml)|rust/.*/Cargo\\.toml)$", pass_filenames = false, priority = 10 },

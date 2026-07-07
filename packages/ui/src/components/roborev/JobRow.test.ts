@@ -41,4 +41,71 @@ describe("JobRow", () => {
 
     expect(screen.getByText("~$0.42")).toBeTruthy();
   });
+
+  describe("panel rows", () => {
+    it("renders a chevron, outcome split, and aggregate cost on a panel parent", () => {
+      const parent: ReviewJob = {
+        ...makeJob(JSON.stringify({ has_cost: true, cost_usd: 0.05 })),
+        id: 10,
+        job_type: "synthesis",
+        panel_role: "synthesis",
+        panel_run_uuid: "run-10",
+        status: "done",
+        panel_summary: {
+          panel_run_uuid: "run-10",
+          members_total: 3,
+          members_terminal: 3,
+          members_succeeded: 2,
+          members_failed: 1,
+          members_canceled: 0,
+          members_skipped: 0,
+          members_with_cost: 3,
+          members_cost_usd: 0.3,
+          members_cost_complete: true,
+        },
+      };
+
+      render(JobRow, {
+        props: {
+          job: parent,
+          selected: false,
+          highlighted: false,
+          onclick: () => {},
+          expandable: true,
+          expanded: false,
+          ontoggle: () => {},
+        },
+      });
+
+      expect(screen.getByText("2 ok · 1 failed")).toBeTruthy();
+      expect(screen.getByText("~$0.35")).toBeTruthy();
+      expect(screen.getByRole("button", { name: /expand panel/i })).toBeTruthy();
+    });
+
+    it("renders a member row with connector and member name", () => {
+      const member: ReviewJob = {
+        ...makeJob(),
+        id: 11,
+        panel_role: "member",
+        panel_run_uuid: "run-10",
+        panel_member_index: 0,
+        panel_member_name: "security",
+        verdict: "F",
+      };
+
+      render(JobRow, {
+        props: {
+          job: member,
+          selected: false,
+          highlighted: false,
+          onclick: () => {},
+          member: true,
+          lastMember: true,
+        },
+      });
+
+      expect(screen.getByText("security")).toBeTruthy();
+      expect(screen.getByText("└")).toBeTruthy();
+    });
+  });
 });

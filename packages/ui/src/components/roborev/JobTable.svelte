@@ -1,6 +1,7 @@
 <script lang="ts">
   import { EmptyState } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
+  import { isPanelParent } from "../../utils/roborev-panel.js";
   import JobRow from "./JobRow.svelte";
 
   const stores = getStores();
@@ -85,12 +86,44 @@
     <tbody>
       {#if jobsStore}
         {#each jobsStore.getJobs() as job (job.id)}
+          {@const runUuid = job.panel_run_uuid ?? undefined}
+          {@const expandable = isPanelParent(job) && runUuid !== undefined}
+          {@const expanded =
+            expandable &&
+            runUuid !== undefined &&
+            jobsStore.isPanelExpanded(runUuid)}
+          {@const members =
+            runUuid !== undefined
+              ? jobsStore.getPanelMembers(runUuid)
+              : undefined}
           <JobRow
             {job}
+            {members}
+            {expandable}
+            {expanded}
             selected={jobsStore.getSelectedJobId() === job.id}
             highlighted={jobsStore.getHighlightedJobId() === job.id}
             onclick={() => jobsStore.selectJob(job.id)}
+            ontoggle={() => jobsStore.togglePanel(job)}
           />
+          {#if expanded && runUuid !== undefined}
+            {#if jobsStore.isLoadingMembers(runUuid)}
+              <tr class="members-status-row">
+                <td colspan={columns.length}>Loading reviewers…</td>
+              </tr>
+            {:else}
+              {#each members ?? [] as panelMember, i (panelMember.id)}
+                <JobRow
+                  job={panelMember}
+                  member
+                  lastMember={i === (members?.length ?? 0) - 1}
+                  selected={jobsStore.getSelectedJobId() === panelMember.id}
+                  highlighted={jobsStore.getHighlightedJobId() === panelMember.id}
+                  onclick={() => jobsStore.selectJob(panelMember.id)}
+                />
+              {/each}
+            {/if}
+          {/if}
         {/each}
       {/if}
     </tbody>
@@ -183,6 +216,12 @@
     color: var(--accent-red);
   }
 
+  .members-status-row td {
+    padding: 6px 10px 6px 34px;
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    background: var(--bg-inset);
+  }
 
   .load-more {
     padding: 8px 12px;

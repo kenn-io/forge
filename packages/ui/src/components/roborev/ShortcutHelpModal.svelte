@@ -32,6 +32,10 @@
             <dd>Open drawer for selected row</dd>
           </div>
           <div class="shortcut-row">
+            <dt><KbdBadge keys={["→"]} /> / <KbdBadge keys={["←"]} /></dt>
+            <dd>Expand / collapse review panel</dd>
+          </div>
+          <div class="shortcut-row">
             <dt><KbdBadge keys={["x"]} /></dt>
             <dd>Cancel selected job</dd>
           </div>

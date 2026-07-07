@@ -1,6 +1,11 @@
 <script lang="ts">
+  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import type { components } from "../../api/roborev/generated/schema.js";
-  import { parseCostUsd } from "../../utils/roborev-cost.js";
+  import {
+    panelCostUsd,
+    panelElapsedStart,
+    panelStatusLabel,
+  } from "../../utils/roborev-panel.js";
   import { formatRelativeTime } from "@kenn-io/kit-ui";
   import StatusBadge from "./StatusBadge.svelte";
   import VerdictBadge from "./VerdictBadge.svelte";
@@ -12,13 +17,32 @@
     selected: boolean;
     highlighted: boolean;
     onclick: () => void;
+    members?: ReviewJob[] | undefined;
+    member?: boolean;
+    lastMember?: boolean;
+    expandable?: boolean;
+    expanded?: boolean;
+    ontoggle?: (() => void) | undefined;
   }
-  let { job, selected, highlighted, onclick }: Props =
-    $props();
+  let {
+    job,
+    selected,
+    highlighted,
+    onclick,
+    members,
+    member = false,
+    lastMember = false,
+    expandable = false,
+    expanded = false,
+    ontoggle,
+  }: Props = $props();
+
+  const panelStatus = $derived(panelStatusLabel(job));
 
   function formatElapsed(j: ReviewJob): string {
-    if (!j.started_at) return "--";
-    const start = new Date(j.started_at).getTime();
+    const startedAt = panelElapsedStart(j, members);
+    if (!startedAt) return "--";
+    const start = new Date(startedAt).getTime();
     const end = j.finished_at
       ? new Date(j.finished_at).getTime()
       : Date.now();
@@ -32,8 +56,8 @@
     return `${hrs}h ${remMins}m`;
   }
 
-  function formatCost(tokenUsage: string | undefined): string {
-    const cost = parseCostUsd(tokenUsage);
+  function formatCost(j: ReviewJob): string {
+    const cost = panelCostUsd(j, members);
     if (cost === null) return "--";
     return `~$${cost.toFixed(2)}`;
   }
@@ -48,6 +72,8 @@
   class="job-row"
   class:selected
   class:highlighted
+  class:member
+  aria-expanded={expandable ? expanded : undefined}
   role="button"
   tabindex="0"
   onclick={onclick}
@@ -56,6 +82,25 @@
   }}
 >
   <td class="col-id">
+    {#if expandable}
+      <button
+        class="chevron"
+        class:open={expanded}
+        type="button"
+        tabindex="-1"
+        aria-label={expanded ? "Collapse panel" : "Expand panel"}
+        onclick={(e) => {
+          e.stopPropagation();
+          ontoggle?.();
+        }}
+      >
+        <ChevronRightIcon size={12} strokeWidth={2} />
+      </button>
+    {:else if member}
+      <span class="member-connector mono" aria-hidden="true">
+        {lastMember ? "└" : "├"}
+      </span>
+    {/if}
     <span class="mono">{job.id}</span>
   </td>
   <td class="col-ref">
@@ -75,6 +120,12 @@
         {job.commit_subject}
       </span>
     {/if}
+    {#if member && job.panel_member_name}
+      <span class="member-name">{job.panel_member_name}</span>
+    {/if}
+    {#if panelStatus}
+      <span class="panel-status">{panelStatus}</span>
+    {/if}
   </td>
   <td class="col-agent">{job.agent}</td>
   <td class="col-status">
@@ -87,7 +138,7 @@
     {formatElapsed(job)}
   </td>
   <td class="col-cost mono">
-    {formatCost(job.token_usage)}
+    {formatCost(job)}
   </td>
   <td class="col-type">{job.job_type}</td>
   <td class="col-queued" title={job.enqueued_at}>
@@ -129,6 +180,10 @@
     );
   }
 
+  .job-row.member td {
+    background: var(--bg-inset);
+  }
+
   .job-row td {
     padding: 6px 10px;
     font-size: var(--font-size-sm);
@@ -146,6 +201,34 @@
     width: 60px;
     color: var(--text-muted);
     text-align: right;
+    white-space: nowrap;
+  }
+
+  .job-row.member .col-id {
+    padding-left: 24px;
+  }
+
+  .chevron {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted);
+    transition: transform 0.1s ease;
+    vertical-align: middle;
+    margin-right: 2px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .chevron.open {
+    transform: rotate(90deg);
+    color: var(--accent-blue);
+  }
+
+  .member-connector {
+    color: var(--text-muted);
+    margin-right: 2px;
   }
 
   .col-ref {
@@ -183,6 +266,19 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 280px;
+  }
+
+  .member-name {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--accent-blue);
+    font-weight: 500;
+  }
+
+  .panel-status {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
   }
 
   .col-agent {

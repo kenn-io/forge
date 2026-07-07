@@ -63,6 +63,13 @@ CREATE TABLE IF NOT EXISTS review_jobs (
   skip_reason TEXT,
   source TEXT,
   token_usage TEXT,
+  panel_run_uuid TEXT,
+  panel_role TEXT,
+  panel_name TEXT,
+  panel_member_name TEXT,
+  panel_member_index INTEGER,
+  panel_member_config_json TEXT,
+  claim_blocked INTEGER NOT NULL DEFAULT 0,
   uuid TEXT,
   agentic INTEGER NOT NULL DEFAULT 0,
   patch_id TEXT,
@@ -128,7 +135,7 @@ var roborevBaseTime = time.Date(
 )
 
 // SeedRoborevDB creates a roborev-compatible SQLite database at path
-// with deterministic test data. The database contains 76 review jobs
+// with deterministic test data. The database contains 79 review jobs
 // across 2 repos, 5 branches, 3 agents, and all statuses.
 func SeedRoborevDB(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -168,6 +175,9 @@ func SeedRoborevDB(path string) error {
 	if err := seedRoborevMutationFixtures(tx); err != nil {
 		return err
 	}
+	if err := seedRoborevPanelFixtures(tx); err != nil {
+		return err
+	}
 	if err := seedRoborevReviews(tx); err != nil {
 		return err
 	}
@@ -205,7 +215,7 @@ func seedRoborevRepos(tx *sql.Tx) error {
 }
 
 func seedRoborevCommits(tx *sql.Tx) error {
-	for i := 1; i <= 76; i++ {
+	for i := 1; i <= 79; i++ {
 		repoID := 1
 		if i > 45 {
 			repoID = 2
@@ -550,6 +560,88 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 		}
 	}
 
+	return nil
+}
+
+func seedRoborevPanelFixtures(tx *sql.Tx) error {
+	type panelJob struct {
+		id          int
+		agent       string
+		model       string
+		status      string
+		jobType     string
+		panelRole   string
+		memberName  any
+		memberIndex any
+		tokenUsage  string
+	}
+
+	const runUUID = "panel-e2e-1"
+	jobs := []panelJob{
+		{
+			id:          77,
+			agent:       "codex",
+			model:       "gpt-5.4",
+			status:      "done",
+			jobType:     "review",
+			panelRole:   "member",
+			memberName:  "default",
+			memberIndex: 0,
+			tokenUsage:  `{"total_output_tokens":1200,"cost_usd":0.10,"has_cost":true}`,
+		},
+		{
+			id:          78,
+			agent:       "claude",
+			model:       "claude-sonnet-4-6",
+			status:      "failed",
+			jobType:     "review",
+			panelRole:   "member",
+			memberName:  "security",
+			memberIndex: 1,
+			tokenUsage:  `{"total_output_tokens":2400,"cost_usd":0.20,"has_cost":true}`,
+		},
+		{
+			id:          79,
+			agent:       "codex",
+			model:       "gpt-5.4",
+			status:      "done",
+			jobType:     "synthesis",
+			panelRole:   "synthesis",
+			memberName:  nil,
+			memberIndex: nil,
+			tokenUsage:  `{"total_output_tokens":600,"cost_usd":0.05,"has_cost":true}`,
+		},
+	}
+
+	for _, j := range jobs {
+		enq := jobTime(j.id)
+		started := enq.Add(2 * time.Minute)
+		finished := started.Add(4 * time.Minute)
+		_, err := tx.Exec(
+			`INSERT INTO review_jobs
+			 (id, repo_id, commit_id, git_ref, branch,
+			  agent, model, status, enqueued_at,
+			  started_at, finished_at, job_type, token_usage,
+			  panel_run_uuid, panel_role, panel_name,
+			  panel_member_name, panel_member_index,
+			  panel_member_config_json, claim_blocked)
+			 VALUES (?, 1, ?, 'panel-e2e-1', 'main',
+			         ?, ?, ?, ?, ?, ?, ?, ?,
+			         ?, ?, 'seeded review panel',
+			         ?, ?, '{}', 0)`,
+			j.id, j.id,
+			j.agent, j.model, j.status,
+			enq.Format(roborevTimeFmt),
+			started.Format(roborevTimeFmt),
+			finished.Format(roborevTimeFmt),
+			j.jobType, j.tokenUsage,
+			runUUID, j.panelRole,
+			j.memberName, j.memberIndex,
+		)
+		if err != nil {
+			return fmt.Errorf("insert panel job %d: %w", j.id, err)
+		}
+	}
 	return nil
 }
 

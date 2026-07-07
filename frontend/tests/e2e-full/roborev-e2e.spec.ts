@@ -22,6 +22,12 @@ function parseElapsed(text: string): number {
   );
 }
 
+function jobRowById(page: Page, id: number) {
+  return page.locator(".job-row").filter({
+    has: page.locator(".col-id .mono", { hasText: new RegExp(`^${id}$`) }),
+  });
+}
+
 test.describe.serial("Roborev", () => {
   // Refuse to run if the e2e server is not proxying to the
   // script-managed seeded daemon. This catches the failure mode
@@ -52,15 +58,56 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      // Job 74 is the highest ID (first row in desc order):
-      // agent=claude, status=done (zero-duration fixture).
-      const firstRow = page.locator(".job-row").first();
-      await expect(firstRow).toBeVisible();
-      await expect(firstRow.locator(".col-id")).toContainText("74");
-      await expect(firstRow.locator(".col-agent")).toContainText("claude");
-      await expect(firstRow.locator(".status-badge")).toContainText("done");
+      // Job 74 is a stable zero-duration fixture:
+      // agent=claude, status=done, cost=$0.42.
+      const row = jobRowById(page, 74);
+      await expect(row).toBeVisible();
+      await expect(row.locator(".col-agent")).toContainText("claude");
+      await expect(row.locator(".status-badge")).toContainText("done");
       await expect(page.locator("th").filter({ hasText: "Cost" })).toBeVisible();
-      await expect(firstRow.locator(".col-cost")).toHaveText("~$0.42");
+      await expect(row.locator(".col-cost")).toHaveText("~$0.42");
+    });
+
+    test("panel parent expands to real member rows through the daemon proxy", async ({ page }) => {
+      await waitForReviewsReady(page);
+      await waitForJobRows(page, 10);
+
+      const parent = jobRowById(page, 79);
+      await expect(parent).toBeVisible();
+      await expect(parent.locator(".panel-status")).toContainText("1 ok · 1 failed");
+      await expect(parent.locator(".col-cost")).toHaveText("~$0.35");
+
+      const panelRunResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.ok() &&
+          url.pathname.endsWith("/api/roborev/api/jobs") &&
+          url.searchParams.get("panel_run") === "panel-e2e-1" &&
+          url.searchParams.get("omit_prompt") === "true"
+        );
+      });
+      await page.keyboard.press("j");
+      await expect(parent).toHaveClass(/highlighted/);
+      await page.keyboard.press("ArrowRight");
+      await panelRunResponse;
+
+      const members = page.locator(".job-row.member");
+      await expect(members).toHaveCount(2);
+      await expect(members.nth(0).locator(".member-name")).toHaveText("default");
+      await expect(members.nth(0).locator(".col-id")).toContainText("77");
+      await expect(members.nth(1).locator(".member-name")).toHaveText("security");
+      await expect(members.nth(1).locator(".col-id")).toContainText("78");
+
+      await page.keyboard.press("ArrowLeft");
+      await expect(members).toHaveCount(0);
+      await page.keyboard.press("ArrowRight");
+      await expect(members).toHaveCount(2);
+
+      await page.keyboard.press("j");
+      await expect(members.nth(0)).toHaveClass(/highlighted/);
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(/\/reviews\/77$/);
+      await expect(page.locator(".drawer")).toBeVisible();
     });
 
     test("status badges show correct classes for each status", async ({ page }) => {
@@ -180,7 +227,7 @@ test.describe.serial("Roborev", () => {
       }
 
       const totalCount = await page.locator(".job-row").count();
-      // Seed has 74 jobs total
+      // Seed has 77 parent-visible rows; panel members are hidden until expanded.
       expect(totalCount).toBeGreaterThanOrEqual(70);
     });
 

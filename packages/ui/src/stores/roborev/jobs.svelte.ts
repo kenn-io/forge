@@ -1,7 +1,6 @@
 import type { RoborevClient } from "../../api/roborev/client.js";
 import type { components, operations } from "../../api/roborev/generated/schema.js";
-import { parseCostUsd } from "../../utils/roborev-cost.js";
-import { isPanelParent } from "../../utils/roborev-panel.js";
+import { isPanelParent, panelCostUsd, panelElapsedStart } from "../../utils/roborev-panel.js";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 type JobStats = components["schemas"]["JobStats"];
@@ -47,6 +46,8 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let expandedPanels = $state<Record<string, boolean>>({});
   let panelMembers = $state<Record<string, ReviewJob[]>>({});
   let loadingMembers = $state<Record<string, boolean>>({});
+  let panelFetchVersions: Record<string, number> = {};
+  let pendingPanelRefreshes: Record<string, boolean> = {};
 
   // SSE
   let sseConnected = $state(false);
@@ -68,10 +69,16 @@ export function createJobsStore(opts: JobsStoreOptions) {
   }
 
   function getElapsedSeconds(job: ReviewJob): number {
-    if (!job.started_at) return -1;
-    const start = new Date(job.started_at).getTime();
+    const startedAt = panelElapsedStart(job, getPanelMembersForJob(job));
+    if (!startedAt) return -1;
+    const start = new Date(startedAt).getTime();
     const end = job.finished_at ? new Date(job.finished_at).getTime() : Date.now();
     return Math.max(0, Math.floor((end - start) / 1000));
+  }
+
+  function getPanelMembersForJob(job: ReviewJob): ReviewJob[] | undefined {
+    const runUuid = job.panel_run_uuid;
+    return runUuid ? panelMembers[runUuid] : undefined;
   }
 
   function getSortValue(job: ReviewJob, col: SortColumn): string | number {
@@ -87,7 +94,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       case "elapsed":
         return getElapsedSeconds(job);
       case "cost":
-        return parseCostUsd(job.token_usage) ?? -1;
+        return panelCostUsd(job, getPanelMembersForJob(job)) ?? -1;
       case "job_type":
         return job.job_type;
       case "enqueued_at":
@@ -121,19 +128,20 @@ export function createJobsStore(opts: JobsStoreOptions) {
       jobs = sortJobs(data?.jobs ?? []);
       hasMore = data?.has_more ?? false;
       stats = data?.stats ?? { done: 0, closed: 0, open: 0 };
+      const expandedRuns: Record<string, true> = {};
       for (const job of jobs) {
         const runUuid = job.panel_run_uuid;
         if (runUuid && expandedPanels[runUuid] === true && panelMembers[runUuid] !== undefined) {
-          void fetchPanelMembers(runUuid);
+          expandedRuns[runUuid] = true;
         }
       }
+      for (const runUuid of Object.keys(expandedRuns)) void fetchPanelMembers(runUuid);
       // Clear highlight if the row is no longer visible.
       // Do NOT clear selectedJobId — the selected job may
       // be on a later page (deep link, older job). The
       // drawer fetches its review independently.
       if (highlightedJobId !== undefined) {
-        const ids = new Set(jobs.map((j) => j.id));
-        if (!ids.has(highlightedJobId)) {
+        if (!getVisibleJobs().some((job) => job.id === highlightedJobId)) {
           highlightedJobId = undefined;
         }
       }
@@ -236,20 +244,40 @@ export function createJobsStore(opts: JobsStoreOptions) {
   }
 
   async function fetchPanelMembers(runUuid: string): Promise<void> {
+    if (loadingMembers[runUuid] === true) {
+      pendingPanelRefreshes = { ...pendingPanelRefreshes, [runUuid]: true };
+      return;
+    }
+
+    const version = (panelFetchVersions[runUuid] ?? 0) + 1;
+    panelFetchVersions = { ...panelFetchVersions, [runUuid]: version };
     loadingMembers = { ...loadingMembers, [runUuid]: true };
     try {
       const { data, error } = await client.GET("/api/jobs", {
-        params: { query: { panel_run: runUuid, limit: 0 } },
+        params: { query: { panel_run: runUuid, limit: 0, omit_prompt: "true" } },
       });
       if (error) throw new Error("Failed to load panel members");
+      if (panelFetchVersions[runUuid] !== version) return;
       const members = (data?.jobs ?? [])
         .filter((job) => job.panel_role === "member")
         .sort((a, b) => (a.panel_member_index ?? 0) - (b.panel_member_index ?? 0));
       panelMembers = { ...panelMembers, [runUuid]: members };
+      if (sortColumn === "cost" || sortColumn === "elapsed") {
+        jobs = sortJobs(jobs);
+      }
     } catch (err) {
-      opts.onError?.(err instanceof Error ? err.message : String(err));
+      if (panelFetchVersions[runUuid] === version) {
+        opts.onError?.(err instanceof Error ? err.message : String(err));
+      }
     } finally {
-      loadingMembers = { ...loadingMembers, [runUuid]: false };
+      if (panelFetchVersions[runUuid] === version) {
+        loadingMembers = { ...loadingMembers, [runUuid]: false };
+        if (pendingPanelRefreshes[runUuid] === true) {
+          const { [runUuid]: _pending, ...rest } = pendingPanelRefreshes;
+          pendingPanelRefreshes = rest;
+          if (expandedPanels[runUuid] === true) void fetchPanelMembers(runUuid);
+        }
+      }
     }
   }
 
@@ -335,27 +363,41 @@ export function createJobsStore(opts: JobsStoreOptions) {
 
   // Selection helpers for keyboard nav
   function selectNextJob(): void {
-    if (jobs.length === 0) return;
+    const visibleJobs = getVisibleJobs();
+    if (visibleJobs.length === 0) return;
     if (selectedJobId === undefined) {
-      selectJob(jobs[0]!.id);
+      selectJob(visibleJobs[0]!.id);
       return;
     }
-    const idx = jobs.findIndex((j) => j.id === selectedJobId);
-    if (idx < jobs.length - 1) {
-      selectJob(jobs[idx + 1]!.id);
+    const idx = visibleJobs.findIndex((j) => j.id === selectedJobId);
+    if (idx < visibleJobs.length - 1) {
+      selectJob(visibleJobs[idx + 1]!.id);
     }
   }
 
   function selectPrevJob(): void {
-    if (jobs.length === 0) return;
+    const visibleJobs = getVisibleJobs();
+    if (visibleJobs.length === 0) return;
     if (selectedJobId === undefined) {
-      selectJob(jobs[jobs.length - 1]!.id);
+      selectJob(visibleJobs[visibleJobs.length - 1]!.id);
       return;
     }
-    const idx = jobs.findIndex((j) => j.id === selectedJobId);
+    const idx = visibleJobs.findIndex((j) => j.id === selectedJobId);
     if (idx > 0) {
-      selectJob(jobs[idx - 1]!.id);
+      selectJob(visibleJobs[idx - 1]!.id);
     }
+  }
+
+  function getVisibleJobs(): ReviewJob[] {
+    const visible: ReviewJob[] = [];
+    for (const job of jobs) {
+      visible.push(job);
+      const runUuid = job.panel_run_uuid;
+      if (runUuid && expandedPanels[runUuid] === true) {
+        visible.push(...(panelMembers[runUuid] ?? []));
+      }
+    }
+    return visible;
   }
 
   // Highlight navigation (j/k without opening drawer)
@@ -364,26 +406,28 @@ export function createJobsStore(opts: JobsStoreOptions) {
   }
 
   function highlightNextJob(): void {
-    if (jobs.length === 0) return;
+    const visibleJobs = getVisibleJobs();
+    if (visibleJobs.length === 0) return;
     if (highlightedJobId === undefined) {
-      highlightedJobId = jobs[0]!.id;
+      highlightedJobId = visibleJobs[0]!.id;
       return;
     }
-    const idx = jobs.findIndex((j) => j.id === highlightedJobId);
-    if (idx < jobs.length - 1) {
-      highlightedJobId = jobs[idx + 1]!.id;
+    const idx = visibleJobs.findIndex((j) => j.id === highlightedJobId);
+    if (idx < visibleJobs.length - 1) {
+      highlightedJobId = visibleJobs[idx + 1]!.id;
     }
   }
 
   function highlightPrevJob(): void {
-    if (jobs.length === 0) return;
+    const visibleJobs = getVisibleJobs();
+    if (visibleJobs.length === 0) return;
     if (highlightedJobId === undefined) {
-      highlightedJobId = jobs[jobs.length - 1]!.id;
+      highlightedJobId = visibleJobs[visibleJobs.length - 1]!.id;
       return;
     }
-    const idx = jobs.findIndex((j) => j.id === highlightedJobId);
+    const idx = visibleJobs.findIndex((j) => j.id === highlightedJobId);
     if (idx > 0) {
-      highlightedJobId = jobs[idx - 1]!.id;
+      highlightedJobId = visibleJobs[idx - 1]!.id;
     }
   }
 
@@ -442,6 +486,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
 
   return {
     getJobs,
+    getVisibleJobs,
     isLoading,
     getHasMore,
     getStats,

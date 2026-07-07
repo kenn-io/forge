@@ -97,26 +97,36 @@
         if (!jobsStore) break;
         const highlightedId =
           jobsStore.getHighlightedJobId();
-        const job = jobsStore
-          .getJobs()
+        const highlighted = jobsStore
+          .getVisibleJobs()
           .find(
             (candidate) =>
               candidate.id === highlightedId,
           );
+        const panelParent =
+          highlighted && isPanelParent(highlighted)
+            ? highlighted
+            : jobsStore
+                .getJobs()
+                .find(
+                  (candidate) =>
+                    isPanelParent(candidate) &&
+                    candidate.panel_run_uuid ===
+                      highlighted?.panel_run_uuid,
+                );
         if (
-          job &&
-          isPanelParent(job) &&
-          job.panel_run_uuid
+          panelParent &&
+          panelParent.panel_run_uuid
         ) {
           const open = jobsStore.isPanelExpanded(
-            job.panel_run_uuid,
+            panelParent.panel_run_uuid,
           );
           if (
             (e.key === "ArrowRight" && !open) ||
             (e.key === "ArrowLeft" && open)
           ) {
             e.preventDefault();
-            jobsStore.togglePanel(job);
+            jobsStore.togglePanel(panelParent);
           }
         }
         break;

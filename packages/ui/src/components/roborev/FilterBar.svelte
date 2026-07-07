@@ -82,6 +82,15 @@
       e.currentTarget.checked,
     );
   }
+
+  function onShowAutoDesignChange(
+    e: Event & { currentTarget: HTMLInputElement },
+  ): void {
+    jobsStore?.setFilter(
+      "showAutoDesign",
+      e.currentTarget.checked,
+    );
+  }
 </script>
 
 <div class="filter-bar">
@@ -120,6 +129,16 @@
       {disabled}
     />
     Hide closed
+  </label>
+
+  <label class="hide-closed">
+    <input
+      type="checkbox"
+      checked={jobsStore?.getFilterShowAutoDesign() ?? false}
+      onchange={onShowAutoDesignChange}
+      {disabled}
+    />
+    Show auto-design
   </label>
 
   <button

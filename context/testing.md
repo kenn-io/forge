@@ -79,6 +79,14 @@ real runtime path plus a component or Vitest browser test for presentation. Do
 not require a duplicate full-stack browser test when it would only replay data
 that is already proven at those two boundaries.
 
+Every `@lucide/svelte/icons/<name>` import added anywhere in `frontend/src` or
+`packages/ui/src` must also be added to the `optimizeDeps.include` list in
+`frontend/vite.config.ts`. A missing entry passes locally on a warm Vite cache
+but fails the browser-lane CI job on a cold one: the optimizer discovers the
+icon mid-run, re-bundles, and the page reload breaks unrelated suites with
+"Failed to fetch dynamically imported module". Verify with the grep documented
+above that list in the config.
+
 Roborev `hide_classify_jobs` e2e fixtures must cover skipped design rows and classify-typed auto-design rows.
 Seed classify rows terminal unless testing worker mutation; live workers can rewrite queued/running rows during browser assertions (`internal/testutil/roborev_fixtures.go::seedRoborevMutationFixtures`).
 Keep injected Roborev `panel_run` failures controlled until the assertion observes them; drawer/list refresh demand can immediately retry member fetches and clear transient panel errors (`packages/ui/src/stores/roborev/jobs.svelte.ts::wantsPanelMembers`).

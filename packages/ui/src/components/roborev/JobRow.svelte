@@ -19,7 +19,6 @@
     onclick: () => void;
     members?: ReviewJob[] | undefined;
     member?: boolean;
-    lastMember?: boolean;
     expandable?: boolean;
     expanded?: boolean;
     ontoggle?: (() => void) | undefined;
@@ -31,7 +30,6 @@
     onclick,
     members,
     member = false,
-    lastMember = false,
     expandable = false,
     expanded = false,
     ontoggle,
@@ -82,50 +80,52 @@
   }}
 >
   <td class="col-id">
-    {#if expandable}
-      <button
-        class="chevron"
-        class:open={expanded}
-        type="button"
-        tabindex="-1"
-        aria-label={expanded ? "Collapse panel" : "Expand panel"}
-        onclick={(e) => {
-          e.stopPropagation();
-          ontoggle?.();
-        }}
-      >
-        <ChevronRightIcon size={12} strokeWidth={2} />
-      </button>
-    {:else if member}
-      <span class="member-connector mono" aria-hidden="true">
-        {lastMember ? "└" : "├"}
-      </span>
-    {/if}
     <span class="mono">{job.id}</span>
   </td>
-  <td class="col-ref">
-    <span class="ref-group">
-      {#if job.repo_name}
-        <span class="repo-name">{job.repo_name}</span>
+  <td class="col-ref" class:tree-cell={expandable || member}>
+    <span class="ref-line" class:ref-line--member={member}>
+      {#if expandable}
+        <button
+          class="chevron"
+          class:open={expanded}
+          type="button"
+          tabindex="-1"
+          aria-label={expanded ? "Collapse panel" : "Expand panel"}
+          onclick={(e) => {
+            e.stopPropagation();
+            ontoggle?.();
+          }}
+        >
+          <ChevronRightIcon size={12} strokeWidth={2} aria-hidden="true" />
+        </button>
+      {:else if member}
+        <span class="tree-spacer" aria-hidden="true"></span>
       {/if}
-      {#if job.branch}
-        <span class="branch-name">{job.branch}</span>
-      {/if}
-      <span class="git-ref mono" title={job.git_ref}>
-        {shortRef(job.git_ref)}
+      <span class="ref-stack">
+        <span class="ref-group">
+          {#if job.repo_name}
+            <span class="repo-name">{job.repo_name}</span>
+          {/if}
+          {#if job.branch}
+            <span class="branch-name">{job.branch}</span>
+          {/if}
+          <span class="git-ref mono" title={job.git_ref}>
+            {shortRef(job.git_ref)}
+          </span>
+        </span>
+        {#if job.commit_subject}
+          <span class="commit-subject" title={job.commit_subject}>
+            {job.commit_subject}
+          </span>
+        {/if}
+        {#if member && job.panel_member_name}
+          <span class="member-name">{job.panel_member_name}</span>
+        {/if}
+        {#if panelStatus}
+          <span class="panel-status">{panelStatus}</span>
+        {/if}
       </span>
     </span>
-    {#if job.commit_subject}
-      <span class="commit-subject" title={job.commit_subject}>
-        {job.commit_subject}
-      </span>
-    {/if}
-    {#if member && job.panel_member_name}
-      <span class="member-name">{job.panel_member_name}</span>
-    {/if}
-    {#if panelStatus}
-      <span class="panel-status">{panelStatus}</span>
-    {/if}
   </td>
   <td class="col-agent">{job.agent}</td>
   <td class="col-status">
@@ -204,15 +204,16 @@
     white-space: nowrap;
   }
 
-  .job-row.member .col-id {
-    padding-left: 24px;
-  }
-
   .chevron {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    border-radius: var(--radius-sm);
     color: var(--text-muted);
-    transition: transform 0.1s ease;
+    transition: transform 0.1s, background 0.1s, color 0.1s;
     vertical-align: middle;
     margin-right: 2px;
     padding: 0;
@@ -221,20 +222,42 @@
     cursor: pointer;
   }
 
+  .chevron:hover {
+    background: var(--bg-inset);
+    color: var(--text-primary);
+  }
+
   .chevron.open {
     transform: rotate(90deg);
     color: var(--accent-blue);
-  }
-
-  .member-connector {
-    color: var(--text-muted);
-    margin-right: 2px;
   }
 
   .col-ref {
     min-width: 160px;
     max-width: 300px;
     white-space: normal;
+  }
+
+  .ref-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .tree-cell .ref-line--member {
+    padding-left: 18px;
+  }
+
+  .tree-spacer {
+    flex: 0 0 14px;
+    width: 14px;
+    height: 14px;
+  }
+
+  .ref-stack {
+    display: block;
+    min-width: 0;
   }
 
   .ref-group {

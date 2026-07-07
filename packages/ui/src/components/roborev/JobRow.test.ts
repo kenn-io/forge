@@ -82,7 +82,7 @@ describe("JobRow", () => {
       expect(screen.getByRole("button", { name: /expand panel/i })).toBeTruthy();
     });
 
-    it("renders a member row with connector and member name", () => {
+    it("renders a member row with indented ref content and member name", () => {
       const member: ReviewJob = {
         ...makeJob(),
         id: 11,
@@ -100,12 +100,15 @@ describe("JobRow", () => {
           highlighted: false,
           onclick: () => {},
           member: true,
-          lastMember: true,
         },
       });
 
       expect(screen.getByText("security")).toBeTruthy();
-      expect(screen.getByText("└")).toBeTruthy();
+      const refCell = screen.getByText("security").closest(".col-ref");
+      expect(refCell?.classList.contains("tree-cell")).toBe(true);
+      expect(refCell?.querySelector(".tree-spacer")).toBeTruthy();
+      expect(screen.queryByText("└")).toBeNull();
+      expect(screen.queryByText("├")).toBeNull();
     });
   });
 });

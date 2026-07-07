@@ -120,7 +120,6 @@
                 <JobRow
                   job={panelMember}
                   member
-                  lastMember={i === (members?.length ?? 0) - 1}
                   selected={jobsStore.getSelectedJobId() === panelMember.id}
                   highlighted={jobsStore.getHighlightedJobId() === panelMember.id}
                   onclick={() => jobsStore.selectJob(panelMember.id)}

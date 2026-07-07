@@ -37,7 +37,7 @@ DEV_CLONE_PORT ?= 8092
 DEV_CLONE_FRONTEND_PORT ?= 5175
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
-        rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
+        rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps api-generate roborev-api-generate \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
         frontend-api-client-check font-size-token-check huma-route-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
@@ -153,6 +153,13 @@ frontend-dev-bun: frontend-deps
 
 # Run TypeScript/Svelte lint and type checks
 frontend-check: frontend-deps
+	$(MAKE) frontend-check-no-deps
+
+# Same checks without the bun install prerequisite. The pre-commit hook uses
+# this target because the priority-4 frontend-deps hook already installed
+# deps; running bun install again here would mutate node_modules while other
+# priority-10 Node hooks read it.
+frontend-check-no-deps: check-vite-plus-bin
 	$(VITE_PLUS_BIN) fmt --check frontend packages/ui packages/github-app-ui --no-error-on-unmatched-pattern --threads=1
 	$(VITE_PLUS_BIN) lint frontend packages/ui packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
 	cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src ../packages/ui/src

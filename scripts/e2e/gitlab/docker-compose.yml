@@ -1,6 +1,6 @@
 services:
   gitlab:
-    image: ${MIDDLEMAN_GITLAB_IMAGE:-gitlab/gitlab-ce:18.9.5-ce.0}
+    image: ${MIDDLEMAN_GITLAB_IMAGE:-gitlab/gitlab-ce:19.1.1-ce.0}
     shm_size: 256m
     ports:
       - "127.0.0.1:${GITLAB_HTTP_PORT:-18080}:80"

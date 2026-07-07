@@ -1,4 +1,4 @@
-ARG GITLAB_BASE_IMAGE=gitlab/gitlab-ce:18.9.5-ce.0
+ARG GITLAB_BASE_IMAGE=gitlab/gitlab-ce:19.1.1-ce.0
 FROM ${GITLAB_BASE_IMAGE}
 
 COPY bootstrap.sh wait.sh /opt/middleman/gitlab-fixture/

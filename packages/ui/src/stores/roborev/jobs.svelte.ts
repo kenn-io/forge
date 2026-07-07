@@ -95,6 +95,10 @@ export function createJobsStore(opts: JobsStoreOptions) {
     return undefined;
   }
 
+  function wantsPanelMembers(runUuid: string): boolean {
+    return expandedPanels[runUuid] === true || interestedPanelRun === runUuid;
+  }
+
   function getSortValue(job: ReviewJob, col: SortColumn): string | number {
     switch (col) {
       case "id":
@@ -145,7 +149,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       const expandedRuns: Record<string, true> = {};
       for (const job of jobs) {
         const runUuid = job.panel_run_uuid;
-        if (runUuid && expandedPanels[runUuid] === true) {
+        if (runUuid && wantsPanelMembers(runUuid)) {
           expandedRuns[runUuid] = true;
         }
       }
@@ -301,7 +305,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
           const { [runUuid]: _pending, ...rest } = pendingPanelRefreshes;
           pendingPanelRefreshes = rest;
           const queuedVersion = panelRequestedVersions[runUuid];
-          if (queuedVersion !== undefined && queuedVersion > version && expandedPanels[runUuid] === true) {
+          if (queuedVersion !== undefined && queuedVersion > version && wantsPanelMembers(runUuid)) {
             void runPanelMembersFetch(runUuid, queuedVersion);
           }
         }

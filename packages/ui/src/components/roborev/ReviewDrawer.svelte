@@ -94,6 +94,24 @@
   );
   let interestedPanelRun: string | undefined;
 
+  const selectedPanelRun = $derived(
+    selectedJob && isPanelParent(selectedJob)
+      ? selectedJob.panel_run_uuid
+      : undefined,
+  );
+
+  const panelError = $derived(
+    selectedPanelRun
+      ? stores.roborevJobs?.getPanelMemberError(selectedPanelRun)
+      : undefined,
+  );
+
+  const panelLoading = $derived(
+    selectedPanelRun
+      ? (stores.roborevJobs?.isLoadingMembers(selectedPanelRun) ?? false)
+      : false,
+  );
+
   const panelMembers = $derived.by(() => {
     const runUuid = selectedJob?.panel_run_uuid;
     if (!runUuid) return undefined;
@@ -107,13 +125,9 @@
   );
 
   $effect(() => {
-    const runUuid =
-      selectedJob && isPanelParent(selectedJob)
-        ? selectedJob.panel_run_uuid
-        : undefined;
-    if (interestedPanelRun === runUuid) return;
-    interestedPanelRun = runUuid;
-    stores.roborevJobs?.setPanelMemberInterest(runUuid);
+    if (interestedPanelRun === selectedPanelRun) return;
+    interestedPanelRun = selectedPanelRun;
+    stores.roborevJobs?.setPanelMemberInterest(selectedPanelRun);
   });
 </script>
 
@@ -198,7 +212,27 @@
     {#if panelHeader}
       <div class="panel-line">
         {panelHeader}
-        {#if selectedJob && !isTerminalStatus(selectedJob.status)}
+        {#if panelError}
+          <span class="panel-error">
+            Could not refresh reviewers.
+          </span>
+          {#if selectedPanelRun}
+            <button
+              type="button"
+              class="panel-retry"
+              onclick={() =>
+                stores.roborevJobs?.refreshPanelMembers(
+                  selectedPanelRun,
+                )}
+            >
+              Retry
+            </button>
+          {/if}
+        {:else if panelLoading}
+          <span class="panel-progress">
+            Refreshing reviewers...
+          </span>
+        {:else if selectedJob && !isTerminalStatus(selectedJob.status)}
           <span class="panel-progress">
             Panel still synthesizing...
           </span>
@@ -391,6 +425,20 @@
 
   .panel-progress {
     color: var(--accent-amber);
+  }
+
+  .panel-error {
+    color: var(--accent-red);
+  }
+
+  .panel-retry {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
   }
 
   .skip-reason {

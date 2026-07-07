@@ -120,10 +120,27 @@ test.describe.serial("Roborev", () => {
       const refreshContinued = new Promise<void>((resolve) => {
         resolveRefreshContinued = resolve;
       });
+      let failNextRefresh = false;
+      let allowRetryRefresh = false;
+      let failedRefresh = false;
+      let retryRefresh = false;
+      let resolveFailureServed!: () => void;
+      const failureServed = new Promise<void>((resolve) => {
+        resolveFailureServed = resolve;
+      });
+      let resolveRetryContinued!: () => void;
+      const retryContinued = new Promise<void>((resolve) => {
+        resolveRetryContinued = resolve;
+      });
       await page.route("**/api/roborev/api/jobs?**", async (route) => {
         const url = new URL(route.request().url());
+        if (url.searchParams.get("panel_run") !== "panel-e2e-1") {
+          await route.continue();
+          return;
+        }
+
         let heldRefresh = false;
-        if (!delayedRefresh && url.searchParams.get("panel_run") === "panel-e2e-1") {
+        if (!delayedRefresh) {
           delayedRefresh = true;
           heldRefresh = true;
           resolveRefreshStarted();
@@ -131,8 +148,34 @@ test.describe.serial("Roborev", () => {
             releaseRefresh = release;
           });
         }
+        if (heldRefresh) {
+          await route.continue();
+          resolveRefreshContinued();
+          return;
+        }
+        if (failNextRefresh && !failedRefresh) {
+          failedRefresh = true;
+          await route.fulfill({
+            status: 502,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "seeded panel refresh failure" }),
+          });
+          resolveFailureServed();
+          return;
+        }
+        if (failedRefresh && !allowRetryRefresh) {
+          await route.fulfill({
+            status: 502,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "seeded panel refresh failure" }),
+          });
+          return;
+        }
         await route.continue();
-        if (heldRefresh) resolveRefreshContinued();
+        if (!retryRefresh) {
+          retryRefresh = true;
+          resolveRetryContinued();
+        }
       });
 
       await page.keyboard.press("Enter");
@@ -143,6 +186,30 @@ test.describe.serial("Roborev", () => {
       await refreshContinued;
       await expect(page.locator(".members-status-row", { hasText: "Refreshing reviewers" })).toHaveCount(0);
       await expect(page).toHaveURL(/\/reviews\/79$/);
+      await page.keyboard.press("Escape");
+      await expect(page).toHaveURL(/\/reviews$/);
+      failNextRefresh = true;
+      await parent.click();
+      await failureServed;
+      await expect(page).toHaveURL(/\/reviews\/79$/);
+      await expect(page.locator(".drawer")).toBeVisible();
+      await expect(page.locator(".panel-error")).toContainText("Could not refresh reviewers.");
+      await expect(page.locator(".members-status-row.error")).toContainText("Could not refresh reviewers.");
+      allowRetryRefresh = true;
+      const retryResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.ok() &&
+          url.pathname.endsWith("/api/roborev/api/jobs") &&
+          url.searchParams.get("panel_run") === "panel-e2e-1" &&
+          url.searchParams.get("omit_prompt") === "true"
+        );
+      });
+      await page.locator(".panel-retry").click();
+      await retryContinued;
+      await retryResponse;
+      await expect(page.locator(".panel-error")).toHaveCount(0);
+      await expect(page.locator(".members-status-row.error")).toHaveCount(0);
       await page.keyboard.press("Escape");
       await expect(page).toHaveURL(/\/reviews$/);
       await page.keyboard.press("j");

@@ -27,6 +27,26 @@
       "matchManagers": ["bun", "custom.regex"],
       "groupName": "JavaScript dependencies",
       "groupSlug": "javascript-dependencies"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "matchManagers": ["docker-compose", "dockerfile"],
+      "groupName": "Docker images",
+      "groupSlug": "docker-images"
+    },
+    {
+      "matchManagers": ["mise"],
+      "groupName": "Developer tools",
+      "groupSlug": "dev-tools"
+    },
+    {
+      "matchDepNames": ["golangci-lint", "golangci/golangci-lint"],
+      "groupName": "golangci-lint",
+      "groupSlug": "golangci-lint"
     }
   ],
   "customManagers": [

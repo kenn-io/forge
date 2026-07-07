@@ -5,7 +5,7 @@ export interface MarkdownImageExpansionController {
   disconnect: () => void;
 }
 
-const IMAGE_SELECTOR = ".markdown-body img, .doc-markdown img, .diff-image-preview img";
+const IMAGE_SELECTOR = ".markdown-body img, .doc-markdown img";
 const EXPANDER_CLASS = "markdown-image-expander";
 const FOCUSABLE_SELECTOR = [
   "a[href]",

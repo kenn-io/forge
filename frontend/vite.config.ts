@@ -337,6 +337,9 @@ const config = {
       // kit-ui-owned transitive deps, reached through its excluded barrel
       // (the markdown pipeline peers plus its own icon set — the icon paths
       // below are shared with the frontend list where they overlap).
+      // mermaid is reached via kit-ui's dynamic import; without pre-bundling,
+      // its CJS deps (dayjs) are served raw and fail ESM default-import interop.
+      "@kenn-io/kit-ui > mermaid",
       "@kenn-io/kit-ui > marked",
       "@kenn-io/kit-ui > shiki",
       "@kenn-io/kit-ui > dompurify",
@@ -352,11 +355,13 @@ const config = {
       "@kenn-io/kit-ui > @lucide/svelte/icons/copy",
       "@kenn-io/kit-ui > @lucide/svelte/icons/ellipsis",
       "@kenn-io/kit-ui > @lucide/svelte/icons/funnel",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/maximize-2",
       "@kenn-io/kit-ui > @lucide/svelte/icons/monitor",
       "@kenn-io/kit-ui > @lucide/svelte/icons/moon",
       "@kenn-io/kit-ui > @lucide/svelte/icons/panel-left-close",
       "@kenn-io/kit-ui > @lucide/svelte/icons/panel-left-open",
       "@kenn-io/kit-ui > @lucide/svelte/icons/refresh-cw",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/rotate-ccw",
       "@kenn-io/kit-ui > @lucide/svelte/icons/search",
       "@kenn-io/kit-ui > @lucide/svelte/icons/sun",
       "@kenn-io/kit-ui > @lucide/svelte/icons/wrap-text",

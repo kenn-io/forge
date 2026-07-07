@@ -1431,7 +1431,7 @@ async function mockFilePreviewApi(page: Page): Promise<void> {
           path,
           media_type: "image/png",
           encoding: "base64",
-          content: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8z8AARQAFAAH/Adf2d8wAAAAASUVORK5CYII=",
+          content: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
         }),
       });
       return;
@@ -2275,7 +2275,7 @@ test.describe("diff view", () => {
     await expect(handlerFile.locator(".diff-text-preview")).toHaveCount(0);
 
     await clickTreeFileItem(page, "assets/logo.png");
-    await expect(page.locator(".diff-image-preview img[alt='assets/logo.png']")).toBeVisible();
+    await expect(page.locator(".kit-image-preview img[alt='assets/logo.png']")).toBeVisible();
   });
 
   test("rich preview side-by-side panes do not underline changed text", async ({ page }) => {
@@ -2658,8 +2658,9 @@ test.describe("diff view", () => {
 
   test("rich preview refetches blob content after a same-PR diff reload", async ({ page }) => {
     const firstLogo =
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8z8AARQAFAAH/Adf2d8wAAAAASUVORK5CYII=";
-    const secondLogo = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+    const secondLogo =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==";
     const logoResponses = [firstLogo, secondLogo];
     let diffFetchCount = 0;
     let previewFetchCount = 0;
@@ -2702,7 +2703,7 @@ test.describe("diff view", () => {
     await page.getByRole("switch", { name: "Rich preview" }).click();
     await clickTreeFileItem(page, "assets/logo.png");
 
-    const image = page.locator(".diff-image-preview img[alt='assets/logo.png']");
+    const image = page.locator(".kit-image-preview img[alt='assets/logo.png']");
     await expect(image).toHaveAttribute("src", `data:image/png;base64,${firstLogo}`);
     expect(previewFetchCount).toBe(1);
 

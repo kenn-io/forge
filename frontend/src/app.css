@@ -2,6 +2,8 @@
    breakpoints rationale) come from kit-ui; app.css only defines
    middleman-specific tokens on top. */
 @import "@kenn-io/kit-ui/theme.css";
+/* Mermaid viewer chrome plus the --mermaid- and --viewer-scrim tokens (opt-in kit module). */
+@import "@kenn-io/kit-ui/mermaid.css";
 
 /* Reset */
 *,
@@ -64,27 +66,9 @@
   --diff-stale-text: #9a6700; /* kit-ui-check-ignore: GitHub diff palette */
   --diff-stale-border: #d4a72c; /* kit-ui-check-ignore: GitHub diff palette */
 
-  /* Mermaid view — light theme */
-  --mermaid-bg: #ffffff; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-viewer-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-node-bg: #ffffff; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-node-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-node-border: #d0d7de; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-cluster-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-cluster-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-cluster-border: #d0d7de; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-line: #57606a; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-label-bg: #ffffff; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-label-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-note-bg: #fff8c5; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-note-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-note-border: #d4a72c; /* kit-ui-check-ignore: GitHub mermaid palette */
-
-  /* Media-viewer glass chrome (mermaid + image lightboxes): fixed
+  /* Media-viewer glass chrome (markdown image lightbox): fixed
      GitHub-dark glass regardless of app theme so controls stay legible
-     over media surfaces. */
-  --viewer-scrim: rgba(1, 4, 9, 0.72); /* kit-ui-check-ignore: viewer glass palette */
+     over media surfaces. --viewer-scrim comes from kit-ui's mermaid.css. */
   --viewer-control-bg: rgba(36, 41, 47, 0.92); /* kit-ui-check-ignore: viewer glass palette */
   --viewer-control-hover: rgba(48, 54, 61, 0.96); /* kit-ui-check-ignore: viewer glass palette */
   --viewer-control-border: rgba(139, 148, 158, 0.48); /* kit-ui-check-ignore: viewer glass palette */
@@ -122,23 +106,6 @@
   --diff-stale-bg: rgba(187, 128, 9, 0.15); /* kit-ui-check-ignore: GitHub diff palette */
   --diff-stale-text: #d29922; /* kit-ui-check-ignore: GitHub diff palette */
   --diff-stale-border: #9e6a03; /* kit-ui-check-ignore: GitHub diff palette */
-
-  /* Mermaid view — dark theme */
-  --mermaid-bg: #0d1117; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-viewer-bg: #4a4d4b; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-node-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-node-text: #24292f; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-node-border: #d0d7de; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-cluster-bg: #4a4d4b; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-cluster-text: #f0f6fc; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-cluster-border: #4a4d4b; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-line: #c9d1d9; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-text: #c9d1d9; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-label-bg: #30363d; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-label-text: #f0f6fc; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-note-bg: #30363d; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-note-text: #f0f6fc; /* kit-ui-check-ignore: GitHub mermaid palette */
-  --mermaid-note-border: #8b949e; /* kit-ui-check-ignore: GitHub mermaid palette */
 }
 
 /* Base. The root stays at the browser default (no html font-size) so the
@@ -272,226 +239,6 @@ a:hover {
   background: none;
   padding: 0;
 }
-.markdown-body pre.mermaid,
-.doc-markdown pre.mermaid {
-  background: var(--bg-surface);
-  text-align: center;
-}
-.markdown-body pre.mermaid svg,
-.doc-markdown pre.mermaid svg {
-  max-width: 100%;
-  height: auto;
-}
-.markdown-body pre.mermaid.mermaid-viewer,
-.doc-markdown pre.mermaid.mermaid-viewer {
-  position: relative;
-  height: clamp(180px, 34vw, 420px);
-  min-height: 180px;
-  padding: 0;
-  overflow: hidden;
-  background: var(--mermaid-viewer-bg);
-  border-color: var(--border-default);
-  border-radius: var(--radius-md);
-  text-align: initial;
-}
-.mermaid-viewer__viewport {
-  width: 100%;
-  height: 100%;
-  min-height: inherit;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  cursor: grab;
-  touch-action: none;
-}
-.mermaid-viewer__viewport--dragging {
-  cursor: grabbing;
-}
-.mermaid-viewer__pan {
-  width: calc(100% - 28px);
-  height: calc(100% - 28px);
-  max-width: calc(100% - 28px);
-  max-height: calc(100% - 28px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transform-origin: center center;
-  transition: transform 120ms ease-out;
-  will-change: transform;
-}
-.markdown-body pre.mermaid.mermaid-viewer svg,
-.doc-markdown pre.mermaid.mermaid-viewer svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  background: transparent;
-}
-.mermaid-viewer__controls {
-  position: absolute;
-  right: 10px;
-  z-index: 2;
-  display: grid;
-  gap: 6px;
-  pointer-events: auto;
-}
-.mermaid-viewer__controls--top {
-  top: 10px;
-  grid-template-columns: repeat(2, 34px);
-}
-.mermaid-viewer__controls--nav {
-  top: 50%;
-  grid-template-columns: 34px;
-  transform: translateY(-50%);
-}
-.mermaid-viewer__button {
-  width: 34px;
-  height: 34px;
-}
-.mermaid-viewer__button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--viewer-control-border);
-  border-radius: var(--radius-md);
-  background: var(--viewer-control-bg);
-  color: var(--viewer-control-text);
-  font-family: var(--font-sans);
-  font-size: var(--font-size-lg);
-  line-height: 1;
-  box-shadow: var(--viewer-control-shadow);
-}
-.mermaid-viewer__button:hover {
-  background: var(--viewer-control-hover);
-}
-.mermaid-viewer__button:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
-}
-.mermaid-viewer__button[data-copied="true"] {
-  color: var(--accent-green);
-  border-color: color-mix(in srgb, var(--accent-green) 70%, transparent);
-}
-.markdown-body pre.mermaid.mermaid-viewer .edgeLabel,
-.doc-markdown pre.mermaid.mermaid-viewer .edgeLabel,
-.mermaid-viewer-lightbox .edgeLabel {
-  color: var(--mermaid-label-text);
-}
-.markdown-body pre.mermaid.mermaid-viewer .edgeLabel text,
-.doc-markdown pre.mermaid.mermaid-viewer .edgeLabel text,
-.mermaid-viewer-lightbox .edgeLabel text {
-  fill: var(--mermaid-label-text) !important;
-}
-.markdown-body pre.mermaid.mermaid-viewer .edgeLabel span,
-.markdown-body pre.mermaid.mermaid-viewer .edgeLabel p,
-.markdown-body pre.mermaid.mermaid-viewer .edgeLabel div,
-.doc-markdown pre.mermaid.mermaid-viewer .edgeLabel span,
-.doc-markdown pre.mermaid.mermaid-viewer .edgeLabel p,
-.doc-markdown pre.mermaid.mermaid-viewer .edgeLabel div,
-.mermaid-viewer-lightbox .edgeLabel span,
-.mermaid-viewer-lightbox .edgeLabel p,
-.mermaid-viewer-lightbox .edgeLabel div {
-  color: var(--mermaid-label-text) !important;
-}
-.mermaid-viewer-lightbox {
-  position: fixed;
-  /* kit-ui-check-ignore: full-screen pan/zoom diagram lightbox with its own chrome, not a dialog surface */
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 28px;
-  background: var(--viewer-scrim);
-}
-.mermaid-viewer-lightbox__panel {
-  position: relative;
-  width: min(96vw, 1540px);
-  height: min(84vh, 760px);
-  overflow: hidden;
-  background: var(--mermaid-bg);
-  border: 2px solid color-mix(in srgb, var(--text-secondary) 72%, var(--border-default));
-  border-radius: var(--radius-lg);
-  box-shadow: var(--viewer-panel-shadow);
-}
-.mermaid-viewer-lightbox .mermaid-viewer__viewport {
-  background: transparent;
-}
-.mermaid-viewer-lightbox .mermaid-viewer__pan {
-  width: calc(100% - 96px);
-  height: calc(100% - 96px);
-  max-width: none;
-  max-height: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.mermaid-viewer-lightbox svg {
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
-}
-.mermaid-viewer-lightbox .mermaid-viewer__controls--nav {
-  right: 24px;
-  bottom: 24px;
-  top: auto;
-  transform: none;
-}
-.mermaid-viewer-lightbox__close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-  color: var(--text-secondary);
-  font-size: var(--font-size-xl);
-}
-.mermaid-viewer-lightbox__close:hover {
-  background: color-mix(in srgb, var(--bg-surface-hover) 76%, transparent);
-  color: var(--text-primary);
-}
-@media (prefers-reduced-motion: reduce) {
-  .mermaid-viewer__pan {
-    transition: none;
-  }
-}
-@media (max-width: 640px) {
-  .markdown-body pre.mermaid.mermaid-viewer,
-  .doc-markdown pre.mermaid.mermaid-viewer {
-    height: 240px;
-  }
-  .mermaid-viewer__controls--top,
-  .mermaid-viewer__controls--nav {
-    grid-template-columns: 30px;
-  }
-  .mermaid-viewer__controls--top {
-    grid-template-columns: repeat(2, 30px);
-  }
-  .mermaid-viewer__button {
-    width: 30px;
-    height: 30px;
-  }
-  .mermaid-viewer-lightbox {
-    padding: 10px;
-  }
-  .mermaid-viewer-lightbox__panel {
-    width: 100%;
-    height: 88vh;
-  }
-  .mermaid-viewer-lightbox .mermaid-viewer__pan {
-    width: calc(100% - 32px);
-    height: calc(100% - 72px);
-  }
-  .mermaid-viewer-lightbox .mermaid-viewer__controls--nav {
-    right: 12px;
-    bottom: 12px;
-  }
-}
 .markdown-body a {
   color: var(--accent-blue);
 }
@@ -610,6 +357,7 @@ a:hover {
 }
 .markdown-image-lightbox {
   position: fixed;
+  /* kit-ui-check-ignore: imperative lightbox bolted onto rendered markdown img elements, not a component-owned dialog surface */
   inset: 0;
   z-index: 96;
   display: flex;

@@ -19,7 +19,7 @@
         "@codemirror/lang-markdown": "^6.5.0",
         "@codemirror/state": "^6.6.0",
         "@codemirror/view": "^6.43.0",
-        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#063a2ea19836e93ccc9002b65f75360b08e61980",
+        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#0479c75df2c420a3032e10e40f1a288dab4289f0",
         "@lucide/svelte": "1.21.0",
         "@middleman/ui": "workspace:*",
         "@pierre/diffs": "1.2.11",
@@ -74,7 +74,7 @@
       "name": "@middleman/ui",
       "version": "0.0.1",
       "dependencies": {
-        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#063a2ea19836e93ccc9002b65f75360b08e61980",
+        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#0479c75df2c420a3032e10e40f1a288dab4289f0",
         "@lucide/svelte": "1.21.0",
         "@pierre/diffs": "1.2.11",
         "@pierre/trees": "1.0.0-beta.4",
@@ -232,7 +232,7 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@kenn-io/kit-ui": ["@kenn-io/kit-ui@github:kenn-io/kit-ui#063a2ea", { "peerDependencies": { "@lucide/svelte": ">=1.0.0", "dompurify": "^3.2.0", "marked": "^18.0.0", "shiki": "^4.0.0", "svelte": "^5.29.0" }, "bin": { "kit-ui-check": "./bin/kit-ui-check.mjs" } }, "kenn-io-kit-ui-063a2ea", "sha512-99i46xC2ZEVU+WYXHjmXPuPO8eytug2iWDtAeC99TWFUtIECr7o+JYyYxGbLD1OIdhFfWhhygVZTFc98u8/+OA=="],
+    "@kenn-io/kit-ui": ["@kenn-io/kit-ui@github:kenn-io/kit-ui#0479c75", { "peerDependencies": { "@lucide/svelte": ">=1.0.0", "dompurify": "^3.2.0", "marked": "^18.0.0", "mermaid": ">=11.15.0 <12", "shiki": "^4.0.0", "svelte": "^5.29.0" }, "optionalPeers": ["mermaid"], "bin": { "kit-ui-check": "./bin/kit-ui-check.mjs" } }, "kenn-io-kit-ui-0479c75", "sha512-0xc2Azj9rBUr/Fz8/ux2yf5KlcHJNEcQdG3dxGv5dXPqJqFKPImf5kO6p+uFk6iiKYXIxldUGgMS5Bo7lTIegw=="],
 
     "@lezer/common": ["@lezer/common@1.5.2", "", {}, "sha512-sxQE460fPZyU3sdc8lafxiPwJHBzZRy/udNFynGQky1SePYBdhkBl1kOagA9uT3pxR8K09bOrmTUqA9wb/PjSQ=="],
 

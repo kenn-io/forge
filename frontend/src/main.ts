@@ -1,8 +1,9 @@
+import { initMarkdownMermaidRendering } from "@kenn-io/kit-ui/utils/markdown-mermaid";
+import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
 import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
 import { initMarkdownImageExpansion } from "./lib/utils/markdownImages.js";
-import { initMarkdownMermaidRendering } from "./lib/utils/markdownMermaid.js";
 
 const target = document.getElementById("app");
 
@@ -12,4 +13,6 @@ if (!target) {
 
 mount(App, { target });
 initMarkdownImageExpansion(target);
-initMarkdownMermaidRendering(target);
+initMarkdownMermaidRendering(target, {
+  onLightboxOpen: () => pushModalFrame("mermaid-lightbox", []),
+});

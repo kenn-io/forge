@@ -12,6 +12,7 @@ import { Marked, type MarkedExtension, type Tokens } from "marked";
 // the kit utility ever stopped escaping quotes, these become attribute
 // injection; markdown.test.ts pins the quote-bearing attribute cases.
 import { codeFenceLanguage, escapeHtml } from "@kenn-io/kit-ui/utils/markdown";
+import { mermaidCodeFence } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { providerItemRefExtension, type RepoContext } from "@middleman/ui/utils/markdown";
 import {
   joinFolderPath,
@@ -405,8 +406,7 @@ function wikilinkAnchor(
 function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
   return {
     code(token: Tokens.Code): string | false {
-      if (!isMermaidFence(token.lang)) return false;
-      return `<pre class="mermaid">${escapeHtml(token.text)}</pre>`;
+      return mermaidCodeFence(token.text, codeFenceLanguage(token.lang)) ?? false;
     },
     link(this: { parser: { parseInline: (tokens: Tokens.Generic[]) => string } }, token: Tokens.Link) {
       const inner = this.parser.parseInline(token.tokens ?? []);
@@ -491,10 +491,6 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
       return `<h${level} id="${escapeHtml(id)}">${inner}</h${level}>`;
     },
   };
-}
-
-function isMermaidFence(lang: string | undefined): boolean {
-  return codeFenceLanguage(lang) === "mermaid";
 }
 
 function isExternal(href: string): boolean {

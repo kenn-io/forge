@@ -389,7 +389,7 @@ test.describe("docs workspace", () => {
 
       const rendered = page.locator(".doc-markdown");
       await expect(rendered.locator("code.language-mermaid")).toHaveCount(0);
-      await expect(rendered.locator("pre.mermaid.mermaid-viewer svg")).toBeVisible();
+      await expect(rendered.locator("pre.mermaid.kit-mermaid-viewer .kit-mermaid-viewer__pan svg")).toBeVisible();
       await expect(rendered.getByRole("button", { name: "Copy Mermaid source" })).toBeVisible();
       await expect(rendered.getByRole("button", { name: "Open diagram in expanded view" })).toBeVisible();
     } finally {

@@ -15,6 +15,7 @@ import DOMPurify from "dompurify";
 // kit-ui-check-ignore: sanitizer must run app-side around the custom renderer
 import type { UponSanitizeAttributeHook } from "dompurify";
 import { codeFenceLanguage, codeHighlightPlan, escapeHtml, shikiStyleIsAllowed } from "@kenn-io/kit-ui/utils/markdown";
+import { mermaidCodeFence } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { getSingletonHighlighter, type BundledLanguage, type Highlighter } from "shiki";
 import { canonicalProvider } from "../api/provider-routes.js";
 import { itemReferenceAnchorAttributes } from "./item-reference.js";
@@ -243,10 +244,6 @@ function getShikiHighlighter(): Promise<Highlighter> {
   return shikiHighlighterPromise;
 }
 
-function isMermaidFence(lang: string | undefined): boolean {
-  return codeFenceLanguage(lang) === "mermaid";
-}
-
 function plainCodeBlock(text: string): string {
   return `<pre><code>${escapeHtml(text)}</code></pre>`;
 }
@@ -283,10 +280,7 @@ const taskListRenderer: RendererObject = {
     return `<blockquote>\n${inner}</blockquote>\n`;
   },
   code(token: Tokens.Code): string | false {
-    if (isMermaidFence(token.lang)) {
-      return `<pre class="mermaid">${escapeHtml(token.text)}</pre>`;
-    }
-    return renderHighlightedCode(token);
+    return mermaidCodeFence(token.text, codeFenceLanguage(token.lang)) ?? renderHighlightedCode(token);
   },
   // The checkbox renderer is called during the recursive parse
   // of a listitem's inner tokens. It allocates the next task

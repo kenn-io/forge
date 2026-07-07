@@ -311,8 +311,7 @@ test.describe.serial("Roborev", () => {
 
       const beforeCount = await page.locator(".job-row").count();
 
-      // Check the hide-closed checkbox
-      await page.locator(".hide-closed input[type=checkbox]").check();
+      await page.getByLabel("Hide closed").check();
 
       // Auto-retry until the row count drops to or below the
       // unfiltered baseline. The seed has closed jobs that should
@@ -323,6 +322,21 @@ test.describe.serial("Roborev", () => {
         const afterCount = await page.locator(".job-row").count();
         expect(afterCount).toBeLessThanOrEqual(beforeCount);
       }).toPass({ timeout: 5_000 });
+    });
+
+    test("show auto-design reveals skipped router byproducts", async ({ page }) => {
+      await waitForReviewsReady(page);
+      await waitForJobRows(page, 10);
+
+      const autoDesignRef = page.locator(".git-ref[title='auto-design-skip']");
+      await expect(autoDesignRef).toHaveCount(0);
+
+      await page.getByLabel("Show auto-design").check();
+
+      await expect(autoDesignRef).toBeVisible({ timeout: 5_000 });
+      const autoDesignRow = page.locator(".job-row", { has: autoDesignRef });
+      await expect(autoDesignRow.locator(".status-badge")).toHaveText("skipped");
+      await expect(autoDesignRow.locator(".col-type")).toHaveText("review");
     });
 
     test("reset each filter to default restores full list", async ({ page }) => {

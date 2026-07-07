@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS review_jobs (
   requested_provider TEXT,
   reasoning TEXT NOT NULL DEFAULT 'thorough',
   status TEXT NOT NULL CHECK(status IN (
-    'queued','running','done','failed','canceled','applied','rebased'
+    'queued','running','done','failed','canceled','applied','rebased','skipped'
   )) DEFAULT 'queued',
   enqueued_at TEXT NOT NULL DEFAULT (datetime('now')),
   started_at TEXT,
@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS review_jobs (
   job_type TEXT NOT NULL DEFAULT 'review',
   review_type TEXT NOT NULL DEFAULT '',
   provider TEXT,
+  skip_reason TEXT,
+  source TEXT,
   token_usage TEXT,
   uuid TEXT,
   agentic INTEGER NOT NULL DEFAULT 0,
@@ -126,7 +128,7 @@ var roborevBaseTime = time.Date(
 )
 
 // SeedRoborevDB creates a roborev-compatible SQLite database at path
-// with deterministic test data. The database contains ~75 review jobs
+// with deterministic test data. The database contains 75 review jobs
 // across 2 repos, 5 branches, 3 agents, and all statuses.
 func SeedRoborevDB(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -478,6 +480,28 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 	)
 	if err != nil {
 		return fmt.Errorf("insert mutation job 74: %w", err)
+	}
+
+	// ID 75: skipped auto-design byproduct. It should be hidden
+	// by default via hide_classify_jobs=true, then visible when
+	// the Reviews UI opts in to auto-design rows.
+	enq75 := jobTime(75)
+	_, err = tx.Exec(
+		`INSERT INTO review_jobs
+		 (id, repo_id, commit_id, git_ref, branch,
+		  agent, model, status,
+		  enqueued_at, started_at, finished_at, job_type,
+		  review_type, skip_reason, source)
+		 VALUES (75, 1, 75, 'auto-design-skip', 'main',
+		         'auto-design', '', 'skipped', ?, ?, ?,
+		         'review', 'design', 'trivial diff',
+		         'auto_design')`,
+		enq75.Format(roborevTimeFmt),
+		enq75.Add(2*time.Minute).Format(roborevTimeFmt),
+		enq75.Add(2*time.Minute).Format(roborevTimeFmt),
+	)
+	if err != nil {
+		return fmt.Errorf("insert mutation job 75: %w", err)
 	}
 
 	// Reviews for mutation jobs 71 and 72 (fail, open)

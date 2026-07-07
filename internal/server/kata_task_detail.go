@@ -18,6 +18,12 @@ import (
 // hung remote daemon cannot pin the API handler.
 const kataDaemonReadTimeout = 20 * time.Second
 
+// kataDaemonProjectsReadTimeout bounds the best-effort project-name read.
+// The issue detail is the critical path; a slow or hung projects route must
+// not hold the detail response, so this budget is much shorter and expiry
+// falls back to the name carried by the issue payload.
+const kataDaemonProjectsReadTimeout = 3 * time.Second
+
 // maxKataDaemonReadBytes caps how much of a daemon response middleman will
 // buffer for a single task detail read.
 const maxKataDaemonReadBytes = 8 << 20
@@ -33,7 +39,12 @@ type kataTaskDetailResponse struct {
 	WorkspaceTarget kataWorkspaceTargetResponse `json:"workspace_target"`
 }
 
-type kataTaskDetailOutput = bodyOutput[kataTaskDetailResponse]
+type kataTaskDetailOutput struct {
+	// The response depends on the selected daemon, so caches must key on the
+	// daemon header just like the passthrough proxy does.
+	Vary string `header:"Vary"`
+	Body kataTaskDetailResponse
+}
 
 type kataDaemonReadResult struct {
 	status int
@@ -65,6 +76,8 @@ func (s *Server) kataTaskDetail(
 
 	ctx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
 	defer cancel()
+	projectsCtx, cancelProjects := context.WithTimeout(ctx, kataDaemonProjectsReadTimeout)
+	defer cancelProjects()
 
 	detailCh := make(chan kataDaemonReadResult, 1)
 	projectsCh := make(chan kataDaemonReadResult, 1)
@@ -72,10 +85,12 @@ func (s *Server) kataTaskDetail(
 		detailCh <- kataDaemonGet(ctx, client, daemon, baseURL+"/api/v1/issues/"+url.PathEscape(issueUID))
 	}()
 	go func() {
-		projectsCh <- kataDaemonGet(ctx, client, daemon, baseURL+"/api/v1/projects")
+		projectsCh <- kataDaemonGet(projectsCtx, client, daemon, baseURL+"/api/v1/projects")
 	}()
+	// Issue read outcomes (including errors) return without joining the
+	// best-effort projects read; the buffered channel lets its goroutine
+	// finish on its own after the handler returns.
 	detail := <-detailCh
-	projects := <-projectsCh
 
 	if detail.err != nil {
 		return nil, newProblem(
@@ -119,6 +134,7 @@ func (s *Server) kataTaskDetail(
 		)
 	}
 
+	projects := <-projectsCh
 	metadata := db.WorkspaceKataMetadata{
 		DaemonID:    daemon.ID,
 		ProjectUID:  parsedDetail.Issue.ProjectUID,
@@ -134,6 +150,7 @@ func (s *Server) kataTaskDetail(
 	}
 
 	return &kataTaskDetailOutput{
+		Vary: kataDaemonHeaderName,
 		Body: kataTaskDetailResponse{
 			Detail:          json.RawMessage(detail.body),
 			ETag:            detail.header.Get("ETag"),

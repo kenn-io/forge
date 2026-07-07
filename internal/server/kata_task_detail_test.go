@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -183,6 +184,113 @@ url = "`+daemon.URL+`"
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.Equal("issue-kata-1", resp.Detail.Issue.UID)
 	assert.False(resp.WorkspaceTarget.Available)
+}
+
+func TestKataTaskDetailSetsDaemonVaryHeader(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	daemon := startKataTaskDetailDaemon(t,
+		`{"issue":{"uid":"issue-kata-1","project_id":7,"project_uid":"project-kata","short_id":"task-123","title":"Fix widget","revision":4},"comments":[],"labels":[],"links":[]}`,
+		`{"projects":[{"id":7,"uid":"project-kata","name":"Kata"}]}`,
+	)
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataProxyCatalog(t, home, `
+[[daemon]]
+name = "desktop"
+url = "`+daemon.URL+`"
+`)
+	srv, _ := setupTestServer(t)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/tasks/issue-kata-1", nil)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Contains(rr.Header().Values("Vary"), "X-Middleman-Kata-Daemon")
+}
+
+func TestKataTaskDetailDoesNotWaitOnHungProjectsRead(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	release := make(chan struct{})
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/issues/issue-kata-1":
+			_, _ = w.Write([]byte(`{"issue":{"uid":"issue-kata-1","project_id":7,"project_uid":"project-kata","project_name":"Kata","short_id":"task-123","title":"Fix widget","revision":4},"comments":[],"labels":[],"links":[]}`))
+		case "/api/v1/projects":
+			<-release
+			_, _ = w.Write([]byte(`{"projects":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(func() {
+		close(release)
+		daemon.Close()
+	})
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataProxyCatalog(t, home, `
+[[daemon]]
+name = "desktop"
+url = "`+daemon.URL+`"
+`)
+	srv, _ := setupTestServer(t)
+
+	start := time.Now()
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/tasks/issue-kata-1", nil)
+	elapsed := time.Since(start)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	// The projects read is best-effort: a hung daemon route must not hold
+	// the detail response anywhere near the full daemon read timeout.
+	assert.Less(elapsed, kataDaemonReadTimeout/2)
+
+	var resp struct {
+		Detail struct {
+			Issue struct {
+				UID string `json:"uid"`
+			} `json:"issue"`
+		} `json:"detail"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.Equal("issue-kata-1", resp.Detail.Issue.UID)
+}
+
+func TestKataTaskDetailIssueErrorDoesNotWaitOnProjectsRead(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	release := make(chan struct{})
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/projects" {
+			<-release
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(func() {
+		close(release)
+		daemon.Close()
+	})
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataProxyCatalog(t, home, `
+[[daemon]]
+name = "desktop"
+url = "`+daemon.URL+`"
+`)
+	srv, _ := setupTestServer(t)
+
+	start := time.Now()
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/tasks/issue-missing", nil)
+	elapsed := time.Since(start)
+
+	require.Equal(http.StatusNotFound, rr.Code, rr.Body.String())
+	// Issue read outcomes return immediately; they never join the
+	// best-effort projects read.
+	assert.Less(elapsed, 2*time.Second)
 }
 
 func TestKataTaskDetailUnknownIssueReturnsNotFound(t *testing.T) {

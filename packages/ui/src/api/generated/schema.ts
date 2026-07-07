@@ -12054,6 +12054,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    Vary?: string;
                     [name: string]: unknown;
                 };
                 content: {

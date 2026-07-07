@@ -12886,6 +12886,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/KataTaskDetailResponse"
           description: OK
+          headers:
+            Vary:
+              schema:
+                type: string
         default:
           content:
             application/problem+json:

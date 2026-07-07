@@ -45,7 +45,8 @@ export function createLogStore(opts: LogStoreOptions) {
     lines = [];
 
     abortController = new AbortController();
-    const url = `${opts.baseUrl}/api/job/log?job_id=${jobId}`;
+    const params = new URLSearchParams({ job_id: String(jobId), stream: "1" });
+    const url = `${opts.baseUrl}/api/job/output?${params}`;
 
     try {
       const resp = await fetch(url, {
@@ -110,7 +111,12 @@ export function createLogStore(opts: LogStoreOptions) {
     const params = new URLSearchParams({ job_id: String(jobId) });
     const resp = await fetch(`${opts.baseUrl}/api/job/output?${params}`);
     if (!resp.ok) return;
-    const data = (await resp.json()) as JobOutputSnapshot;
+    let data: JobOutputSnapshot;
+    try {
+      data = (await resp.json()) as JobOutputSnapshot;
+    } catch {
+      return;
+    }
     if (version !== requestVersion) return;
     lines = (data.lines ?? []).map(logLineFromRaw);
   }

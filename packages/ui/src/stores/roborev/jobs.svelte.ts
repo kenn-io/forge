@@ -46,7 +46,8 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let expandedPanels = $state<Record<string, boolean>>({});
   let panelMembers = $state<Record<string, ReviewJob[]>>({});
   let loadingMembers = $state<Record<string, boolean>>({});
-  let panelFetchVersions: Record<string, number> = {};
+  let panelRequestedVersions: Record<string, number> = {};
+  let activePanelFetchVersions: Record<string, number> = {};
   let pendingPanelRefreshes: Record<string, boolean> = {};
 
   // SSE
@@ -79,6 +80,17 @@ export function createJobsStore(opts: JobsStoreOptions) {
   function getPanelMembersForJob(job: ReviewJob): ReviewJob[] | undefined {
     const runUuid = job.panel_run_uuid;
     return runUuid ? panelMembers[runUuid] : undefined;
+  }
+
+  function getPanelParentForMemberId(memberId: number): ReviewJob | undefined {
+    for (const job of jobs) {
+      const runUuid = job.panel_run_uuid;
+      if (!runUuid || !isPanelParent(job)) continue;
+      if (panelMembers[runUuid]?.some((member) => member.id === memberId)) {
+        return job;
+      }
+    }
+    return undefined;
   }
 
   function getSortValue(job: ReviewJob, col: SortColumn): string | number {
@@ -131,7 +143,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       const expandedRuns: Record<string, true> = {};
       for (const job of jobs) {
         const runUuid = job.panel_run_uuid;
-        if (runUuid && expandedPanels[runUuid] === true && panelMembers[runUuid] !== undefined) {
+        if (runUuid && expandedPanels[runUuid] === true) {
           expandedRuns[runUuid] = true;
         }
       }
@@ -142,7 +154,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       // drawer fetches its review independently.
       if (highlightedJobId !== undefined) {
         if (!getVisibleJobs().some((job) => job.id === highlightedJobId)) {
-          highlightedJobId = undefined;
+          highlightedJobId = getPanelParentForMemberId(highlightedJobId)?.id;
         }
       }
     } catch (err) {
@@ -244,20 +256,25 @@ export function createJobsStore(opts: JobsStoreOptions) {
   }
 
   async function fetchPanelMembers(runUuid: string): Promise<void> {
+    const version = (panelRequestedVersions[runUuid] ?? 0) + 1;
+    panelRequestedVersions = { ...panelRequestedVersions, [runUuid]: version };
     if (loadingMembers[runUuid] === true) {
       pendingPanelRefreshes = { ...pendingPanelRefreshes, [runUuid]: true };
       return;
     }
 
-    const version = (panelFetchVersions[runUuid] ?? 0) + 1;
-    panelFetchVersions = { ...panelFetchVersions, [runUuid]: version };
+    await runPanelMembersFetch(runUuid, version);
+  }
+
+  async function runPanelMembersFetch(runUuid: string, version: number): Promise<void> {
+    activePanelFetchVersions = { ...activePanelFetchVersions, [runUuid]: version };
     loadingMembers = { ...loadingMembers, [runUuid]: true };
     try {
       const { data, error } = await client.GET("/api/jobs", {
         params: { query: { panel_run: runUuid, limit: 0, omit_prompt: "true" } },
       });
       if (error) throw new Error("Failed to load panel members");
-      if (panelFetchVersions[runUuid] !== version) return;
+      if (panelRequestedVersions[runUuid] !== version) return;
       const members = (data?.jobs ?? [])
         .filter((job) => job.panel_role === "member")
         .sort((a, b) => (a.panel_member_index ?? 0) - (b.panel_member_index ?? 0));
@@ -266,16 +283,21 @@ export function createJobsStore(opts: JobsStoreOptions) {
         jobs = sortJobs(jobs);
       }
     } catch (err) {
-      if (panelFetchVersions[runUuid] === version) {
+      if (panelRequestedVersions[runUuid] === version) {
         opts.onError?.(err instanceof Error ? err.message : String(err));
       }
     } finally {
-      if (panelFetchVersions[runUuid] === version) {
+      if (activePanelFetchVersions[runUuid] === version) {
+        const { [runUuid]: _active, ...activeRest } = activePanelFetchVersions;
+        activePanelFetchVersions = activeRest;
         loadingMembers = { ...loadingMembers, [runUuid]: false };
         if (pendingPanelRefreshes[runUuid] === true) {
           const { [runUuid]: _pending, ...rest } = pendingPanelRefreshes;
           pendingPanelRefreshes = rest;
-          if (expandedPanels[runUuid] === true) void fetchPanelMembers(runUuid);
+          const queuedVersion = panelRequestedVersions[runUuid];
+          if (queuedVersion !== undefined && queuedVersion > version && expandedPanels[runUuid] === true) {
+            void runPanelMembersFetch(runUuid, queuedVersion);
+          }
         }
       }
     }
@@ -286,6 +308,10 @@ export function createJobsStore(opts: JobsStoreOptions) {
     const runUuid = job.panel_run_uuid;
     if (!runUuid) return;
     const open = expandedPanels[runUuid] === true;
+    if (open && highlightedJobId !== undefined) {
+      const highlightedMember = panelMembers[runUuid]?.some((member) => member.id === highlightedJobId) ?? false;
+      if (highlightedMember) highlightedJobId = job.id;
+    }
     expandedPanels = { ...expandedPanels, [runUuid]: !open };
     if (!open && panelMembers[runUuid] === undefined && loadingMembers[runUuid] !== true) {
       void fetchPanelMembers(runUuid);
@@ -393,7 +419,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     for (const job of jobs) {
       visible.push(job);
       const runUuid = job.panel_run_uuid;
-      if (runUuid && expandedPanels[runUuid] === true) {
+      if (runUuid && expandedPanels[runUuid] === true && loadingMembers[runUuid] !== true) {
         visible.push(...(panelMembers[runUuid] ?? []));
       }
     }

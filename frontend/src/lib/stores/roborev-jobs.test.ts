@@ -277,7 +277,98 @@ describe("createJobsStore panel expansion", () => {
     store.highlightPrevJob();
     expect(store.getHighlightedJobId()).toBe(11);
     await store.loadJobs();
-    expect(store.getHighlightedJobId()).toBe(11);
+    expect(store.getHighlightedJobId()).toBe(10);
+  });
+
+  it("hides cached members from visible navigation while a refresh is loading", async () => {
+    const parent = makePanelParent(10);
+    const slowRefresh = deferred<{
+      data: { jobs: ReviewJob[]; has_more: boolean; stats: { done: number; closed: number; open: number } };
+      error: undefined;
+    }>();
+    let panelCalls = 0;
+    const client = {
+      GET: vi.fn().mockImplementation((_path: string, opts: { params: { query: Record<string, unknown> } }) => {
+        if (opts.params.query.panel_run === "run-10") {
+          panelCalls++;
+          if (panelCalls === 1) {
+            return Promise.resolve({
+              data: {
+                jobs: [parent, makeMember(11, "run-10", 0)],
+                has_more: false,
+                stats: { done: 0, closed: 0, open: 0 },
+              },
+              error: undefined,
+            });
+          }
+          return slowRefresh.promise;
+        }
+        return Promise.resolve({
+          data: { jobs: [parent], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+          error: undefined,
+        });
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    await store.loadJobs();
+    store.togglePanel(parent);
+    await vi.waitFor(() => {
+      expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10, 11]);
+    });
+
+    store.highlightJob(11);
+    await store.loadJobs();
+    await vi.waitFor(() => expect(panelCalls).toBe(2));
+
+    expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10]);
+    expect(store.getHighlightedJobId()).toBe(10);
+
+    slowRefresh.resolve({
+      data: {
+        jobs: [parent, makeMember(12, "run-10", 0)],
+        has_more: false,
+        stats: { done: 0, closed: 0, open: 0 },
+      },
+      error: undefined,
+    });
+    await vi.waitFor(() => {
+      expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10, 12]);
+    });
+  });
+
+  it("moves highlight to the parent when closing a panel from a member row", async () => {
+    const parent = makePanelParent(10);
+    const client = {
+      GET: vi.fn().mockImplementation((_path: string, opts: { params: { query: Record<string, unknown> } }) => {
+        if (opts.params.query.panel_run === "run-10") {
+          return Promise.resolve({
+            data: {
+              jobs: [parent, makeMember(11, "run-10", 0)],
+              has_more: false,
+              stats: { done: 0, closed: 0, open: 0 },
+            },
+            error: undefined,
+          });
+        }
+        return Promise.resolve({
+          data: { jobs: [parent], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+          error: undefined,
+        });
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    await store.loadJobs();
+    store.togglePanel(parent);
+    await vi.waitFor(() => {
+      expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10, 11]);
+    });
+
+    store.highlightJob(11);
+    store.togglePanel(parent);
+
+    expect(store.isPanelExpanded("run-10")).toBe(false);
+    expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10]);
+    expect(store.getHighlightedJobId()).toBe(10);
   });
 
   it("sorts panel parents by their displayed aggregate cost", async () => {
@@ -382,5 +473,67 @@ describe("createJobsStore panel expansion", () => {
       expect(panelCalls).toBe(3);
       expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([13]);
     });
+  });
+
+  it("keeps accepted members when a stale in-flight refresh is followed by a failed latest refresh", async () => {
+    const parent = makePanelParent(10);
+    const staleRefresh = deferred<{
+      data: { jobs: ReviewJob[]; has_more: boolean; stats: { done: number; closed: number; open: number } };
+      error: undefined;
+    }>();
+    const onError = vi.fn();
+    let panelCalls = 0;
+    const client = {
+      GET: vi.fn().mockImplementation((_path: string, opts: { params: { query: Record<string, unknown> } }) => {
+        if (opts.params.query.panel_run === "run-10") {
+          panelCalls++;
+          if (panelCalls === 1) {
+            return Promise.resolve({
+              data: {
+                jobs: [parent, makeMember(11, "run-10", 0)],
+                has_more: false,
+                stats: { done: 0, closed: 0, open: 0 },
+              },
+              error: undefined,
+            });
+          }
+          if (panelCalls === 2) return staleRefresh.promise;
+          return Promise.resolve({
+            data: undefined,
+            error: { message: "newest refresh failed" },
+          });
+        }
+        return Promise.resolve({
+          data: { jobs: [parent], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+          error: undefined,
+        });
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn(), onError });
+    await store.loadJobs();
+    store.togglePanel(parent);
+    await vi.waitFor(() => {
+      expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([11]);
+    });
+
+    await store.loadJobs();
+    await vi.waitFor(() => expect(panelCalls).toBe(2));
+    await store.loadJobs();
+    expect(panelCalls).toBe(2);
+
+    staleRefresh.resolve({
+      data: {
+        jobs: [parent, makeMember(12, "run-10", 0)],
+        has_more: false,
+        stats: { done: 0, closed: 0, open: 0 },
+      },
+      error: undefined,
+    });
+
+    await vi.waitFor(() => {
+      expect(panelCalls).toBe(3);
+      expect(onError).toHaveBeenCalledWith("Failed to load panel members");
+    });
+    expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([11]);
   });
 });

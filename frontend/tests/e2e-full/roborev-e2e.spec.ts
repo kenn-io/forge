@@ -112,6 +112,13 @@ test.describe.serial("Roborev", () => {
 
       await page.keyboard.press("j");
       await expect(members.nth(0)).toHaveClass(/highlighted/);
+      await page.keyboard.press("ArrowLeft");
+      await expect(members).toHaveCount(0);
+      await expect(parent).toHaveClass(/highlighted/);
+      await page.keyboard.press("ArrowRight");
+      await expect(members).toHaveCount(2);
+      await page.keyboard.press("j");
+      await expect(members.nth(0)).toHaveClass(/highlighted/);
       await page.keyboard.press("Enter");
       await expect(page).toHaveURL(/\/reviews\/77$/);
       await expect(page.locator(".drawer")).toBeVisible();

@@ -1942,7 +1942,7 @@
                 : mergeOpUnavailable
                   ? mergeOp?.unavailable_reason ?? ""
                   : deferredMergePending
-                    ? "A background merge runs when the pending CI checks pass. Click to merge immediately; close the pull request to cancel."
+                    ? "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
                     : ""}
             <Button
               class={deferredMergePending ? "btn--merge btn--merge-queued" : "btn--merge"}

@@ -3277,6 +3277,13 @@ func (s *Server) mergePRWithBody(
 	_ = s.db.UpdateMRState(ctx, repo.ID, number, "merged", &now, &now)
 	s.markClosedLinkedNotificationsDone(ctx)
 
+	// The merge landed, so any deferred merge still queued for this pull
+	// request is superseded: its worker stands down silently instead of
+	// later reporting a failure for a pull request that is already merged.
+	// (A deferred worker completing through this same path supersedes its
+	// own handle, which is a no-op by the time it broadcasts completion.)
+	s.supersedeDeferredMerge(deferredMergeKey(*repo, number))
+
 	return mergePRBody{
 		Merged:  result.Merged,
 		SHA:     result.SHA,

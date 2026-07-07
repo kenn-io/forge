@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
@@ -22,6 +23,32 @@ const (
 type deferredMergeCheckKey struct {
 	App  string
 	Name string
+}
+
+// deferredMergeHandle tracks one queued background merge. A successful
+// user-initiated immediate merge supersedes the queued worker: the worker
+// must stand down silently instead of later broadcasting a misleading
+// "no longer open" failure for a pull request the maintainer just merged.
+type deferredMergeHandle struct {
+	superseded chan struct{}
+	once       sync.Once
+}
+
+func newDeferredMergeHandle() *deferredMergeHandle {
+	return &deferredMergeHandle{superseded: make(chan struct{})}
+}
+
+func (h *deferredMergeHandle) supersede() {
+	h.once.Do(func() { close(h.superseded) })
+}
+
+func (h *deferredMergeHandle) isSuperseded() bool {
+	select {
+	case <-h.superseded:
+		return true
+	default:
+		return false
+	}
 }
 
 type deferredMergeTargetSnapshot struct {
@@ -149,7 +176,8 @@ func (s *Server) enqueueDeferredMerge(
 		)
 	}
 	key := deferredMergeKey(*repo, number)
-	if !s.markDeferredMergeInFlight(key) {
+	handle, marked := s.markDeferredMergeInFlight(key)
+	if !marked {
 		return deferMergePRBody{}, problemConflict(
 			CodeConflict,
 			"a deferred merge is already waiting for this pull request",
@@ -158,7 +186,7 @@ func (s *Server) enqueueDeferredMerge(
 	}
 	started := s.runBackground(func(bgCtx context.Context) {
 		defer s.clearDeferredMergeInFlight(key)
-		s.runDeferredMerge(bgCtx, *repo, number, body, pendingKeys, queuedTarget, pollInterval, maxWait)
+		s.runDeferredMerge(bgCtx, *repo, number, body, pendingKeys, queuedTarget, pollInterval, maxWait, handle)
 	})
 	if !started {
 		s.clearDeferredMergeInFlight(key)
@@ -179,6 +207,7 @@ func (s *Server) runDeferredMerge(
 	queuedTarget deferredMergeTargetSnapshot,
 	pollInterval time.Duration,
 	maxWait time.Duration,
+	handle *deferredMergeHandle,
 ) {
 	if maxWait <= 0 {
 		maxWait = defaultDeferredMergeMaxWait
@@ -190,25 +219,30 @@ func (s *Server) runDeferredMerge(
 	for {
 		state, err := s.refreshDeferredMergeCI(ctx, repo, number, pendingKeys, queuedTarget)
 		if err != nil {
-			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error())
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 			return
 		}
 		switch state {
 		case "passed":
-			s.completeDeferredMerge(ctx, repo, number, body, queuedTarget)
+			s.completeDeferredMerge(ctx, repo, number, body, queuedTarget, handle)
 			return
 		case "failed":
-			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "a current CI check failed; merge was not performed")
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "a current CI check failed; merge was not performed", handle)
 			return
 		case "unknown":
-			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "aggregate CI status is unavailable after refresh; merge was not performed")
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "aggregate CI status is unavailable after refresh; merge was not performed", handle)
 			return
 		}
 		select {
 		case <-ctx.Done():
 			return
+		case <-handle.superseded:
+			// The pull request was merged through the immediate path while
+			// this worker waited; there is nothing left to do and no failure
+			// to report.
+			return
 		case <-timeout.C:
-			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "timed out waiting for pending CI checks to finish; merge was not performed")
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "timed out waiting for pending CI checks to finish; merge was not performed", handle)
 			return
 		case <-ticker.C:
 		}
@@ -346,16 +380,21 @@ func (s *Server) completeDeferredMerge(
 	number int,
 	body mergePRInputBody,
 	queuedTarget deferredMergeTargetSnapshot,
+	handle *deferredMergeHandle,
 ) {
 	if err := s.ensureDeferredMergeTargetUnchanged(ctx, repo, number, queuedTarget); err != nil {
-		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error())
+		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return
 	}
 	result, err := s.mergePRWithBody(ctx, string(repoProviderKind(repo)), repoProviderHost(repo), repo.Owner, repo.Name, number, body)
 	if err != nil {
-		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error())
+		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return
 	}
+	// Clear pending before announcing completion: clients refresh detail the
+	// moment they see deferred_merge_completed, and that refresh must not
+	// read a stale deferred_merge_pending=true.
+	s.clearDeferredMergeInFlight(deferredMergeKey(repo, number))
 	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 	s.hub.Broadcast(Event{
 		Type: "deferred_merge_completed",
@@ -484,7 +523,15 @@ func deferredMergeHeadSHA(body mergePRInputBody, queuedHeadSHA string) string {
 	return queuedHeadSHA
 }
 
-func (s *Server) broadcastDeferredMergeFailure(repo db.Repo, number int, headSHA string, message string) {
+func (s *Server) broadcastDeferredMergeFailure(repo db.Repo, number int, headSHA string, message string, handle *deferredMergeHandle) {
+	// A superseded worker lost its pull request to a successful immediate
+	// merge; reporting a deferred-merge failure for it would be misleading.
+	if handle != nil && handle.isSuperseded() {
+		return
+	}
+	// Clear pending before announcing the failure, for the same
+	// refresh-on-event ordering reason as the success path.
+	s.clearDeferredMergeInFlight(deferredMergeKey(repo, number))
 	slog.Warn("deferred merge failed",
 		"provider", repoProviderKind(repo),
 		"platform_host", repoProviderHost(repo),
@@ -614,17 +661,18 @@ func deferredMergeKey(repo db.Repo, number int) string {
 	return string(repoProviderKind(repo)) + ":" + repoProviderHost(repo) + ":" + repo.RepoPath + "#" + strconv.Itoa(number)
 }
 
-func (s *Server) markDeferredMergeInFlight(key string) bool {
+func (s *Server) markDeferredMergeInFlight(key string) (*deferredMergeHandle, bool) {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()
 	if s.deferredMergeInFlight == nil {
-		s.deferredMergeInFlight = make(map[string]struct{})
+		s.deferredMergeInFlight = make(map[string]*deferredMergeHandle)
 	}
 	if _, ok := s.deferredMergeInFlight[key]; ok {
-		return false
+		return nil, false
 	}
-	s.deferredMergeInFlight[key] = struct{}{}
-	return true
+	handle := newDeferredMergeHandle()
+	s.deferredMergeInFlight[key] = handle
+	return handle, true
 }
 
 func (s *Server) isDeferredMergePending(repo db.Repo, number int) bool {
@@ -637,5 +685,20 @@ func (s *Server) isDeferredMergePending(repo db.Repo, number int) bool {
 func (s *Server) clearDeferredMergeInFlight(key string) {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()
+	delete(s.deferredMergeInFlight, key)
+}
+
+// supersedeDeferredMerge stands down any queued deferred merge for the key
+// after a merge landed through another path. Pending state clears here, before
+// callers observe the merge result, so a detail refresh triggered by the merge
+// never reports a queued merge that no longer exists.
+func (s *Server) supersedeDeferredMerge(key string) {
+	s.deferredMergeMu.Lock()
+	defer s.deferredMergeMu.Unlock()
+	handle, ok := s.deferredMergeInFlight[key]
+	if !ok {
+		return
+	}
+	handle.supersede()
 	delete(s.deferredMergeInFlight, key)
 }

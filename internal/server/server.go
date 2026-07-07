@@ -179,7 +179,7 @@ type Server struct {
 	detailSyncInFlight     map[string]struct{}
 	detailSyncPending      map[string]detailSyncJob
 	deferredMergeMu        sync.Mutex
-	deferredMergeInFlight  map[string]struct{}
+	deferredMergeInFlight  map[string]*deferredMergeHandle
 	deferredMergeMaxWait   time.Duration
 	writeCredProbeMu       sync.Mutex
 	writeCredProbes        map[string]writeCredentialProbe

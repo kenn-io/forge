@@ -258,8 +258,9 @@
       {/if}
       {#if alreadyQueued}
         <div class="ci-defer-note">
-          A merge is already queued and runs when the pending CI checks pass.
-          Merging here merges immediately instead.
+          A merge is already queued; it runs only if the CI checks that were
+          pending when it was queued pass. Merging here merges immediately
+          instead.
         </div>
       {:else if deferUntilChecksPass}
         <div class="ci-defer-note">

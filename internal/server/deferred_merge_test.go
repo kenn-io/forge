@@ -445,17 +445,16 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	require.NotNil(stored)
 	require.Equal("merged", string(stored.State))
 
-	// Once the background worker finishes, the detail response must stop
-	// reporting the queued merge so the UI returns to its normal actions.
-	require.Eventually(func() bool {
-		detailResp, detailErr := client.HTTP.GetPullOnHostWithResponse(
-			ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-		)
-		if detailErr != nil || detailResp.JSON200 == nil {
-			return false
-		}
-		return !detailResp.JSON200.DeferredMergePending
-	}, time.Second, 10*time.Millisecond)
+	// Clients refresh detail the moment they receive
+	// deferred_merge_completed, so pending must already be false on the
+	// very first read after the event — not eventually.
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.False(detailResp.JSON200.DeferredMergePending)
 }
 
 func TestPullDetailReportsDeferredMergePendingWhileQueued(t *testing.T) {
@@ -523,6 +522,95 @@ func TestPullDetailReportsDeferredMergePendingWhileQueued(t *testing.T) {
 	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.True(detailResp.JSON200.DeferredMergePending)
+}
+
+func TestImmediateMergeSupersedesQueuedDeferredMerge(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	provider := &deferredMergeTestProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{
+			ref: ref,
+			ciChecks: map[string][]platform.CICheck{
+				"head-sha": {{
+					App:    "GitLab",
+					Name:   "pipeline",
+					Status: "in_progress",
+				}},
+			},
+		},
+		mergeCh: make(chan deferredMergeTestMergeCall, 2),
+	}
+	srv, database, repoID, client := newDeferredMergeRouteServer(
+		t,
+		provider,
+		ref,
+		now,
+		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+	)
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	deferResp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(202, deferResp.StatusCode(), string(deferResp.Body))
+
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(200, mergeResp.StatusCode(), string(mergeResp.Body))
+
+	// The immediate merge supersedes the queued worker: pending clears with
+	// the merge response, not on the worker's next poll.
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.False(detailResp.JSON200.DeferredMergePending)
+
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Equal("merged", string(stored.State))
+
+	// The superseded worker must stand down silently: a deferred-merge
+	// failure event for a pull request the user just merged is misleading.
+	deadline := time.After(300 * time.Millisecond)
+	for {
+		select {
+		case ev := <-events:
+			require.NotEqual("deferred_merge_completed", ev.Event.Type)
+		case <-deadline:
+			return
+		}
+	}
 }
 
 func TestDeferMergeEndpointRejectsInvalidMergeMethodBeforeQueueing(t *testing.T) {
@@ -1360,6 +1448,16 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 	}
 	require.Equal("failed", completed.Status)
 	require.Contains(completed.Error, "timed out waiting for pending CI checks")
+	// Failure events follow the same ordering contract as completions:
+	// pending is cleared before the broadcast, so the first detail read
+	// after the event must not report a queued merge.
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.False(detailResp.JSON200.DeferredMergePending)
 	require.Eventually(func() bool {
 		srv.deferredMergeMu.Lock()
 		defer srv.deferredMergeMu.Unlock()

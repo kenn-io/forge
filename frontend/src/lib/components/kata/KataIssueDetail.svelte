@@ -450,13 +450,11 @@
   }
 
   .crumb-id {
-    min-width: 0;
+    flex: none;
     color: var(--text-secondary);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     font-weight: 650;
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
   }
 

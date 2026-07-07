@@ -2463,7 +2463,7 @@ test("kata detail formats task events from the configured external daemon", asyn
     await expect(detail).toContainText("+blocks");
     await expect(detail).toContainText("-related (2)");
     await expect(detail).not.toContainText("issue.links_changed");
-    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events?limit=100");
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events?limit=1000");
   } finally {
     await server.stop();
     kataHome.restore();
@@ -3671,7 +3671,7 @@ test("kata daemon switch restarts the target stream after stale route churn", as
     await expect(page.getByRole("button", { name: /Rake the yard/ })).toBeVisible();
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
-    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/events?limit=100");
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/events?limit=1000");
 
     await page.getByRole("button", { name: "All Open" }).click();
     releaseEvents();

@@ -277,10 +277,10 @@ describe("createJobsStore panel expansion", () => {
     store.highlightPrevJob();
     expect(store.getHighlightedJobId()).toBe(11);
     await store.loadJobs();
-    expect(store.getHighlightedJobId()).toBe(10);
+    expect(store.getHighlightedJobId()).toBe(11);
   });
 
-  it("hides cached members from visible navigation while a refresh is loading", async () => {
+  it("keeps cached members visible in navigation while a refresh is loading", async () => {
     const parent = makePanelParent(10);
     const slowRefresh = deferred<{
       data: { jobs: ReviewJob[]; has_more: boolean; stats: { done: number; closed: number; open: number } };
@@ -320,8 +320,8 @@ describe("createJobsStore panel expansion", () => {
     await store.loadJobs();
     await vi.waitFor(() => expect(panelCalls).toBe(2));
 
-    expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10]);
-    expect(store.getHighlightedJobId()).toBe(10);
+    expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10, 11]);
+    expect(store.getHighlightedJobId()).toBe(11);
 
     slowRefresh.resolve({
       data: {
@@ -334,6 +334,7 @@ describe("createJobsStore panel expansion", () => {
     await vi.waitFor(() => {
       expect(store.getVisibleJobs().map((j) => j.id)).toEqual([10, 12]);
     });
+    expect(store.getHighlightedJobId()).toBe(10);
   });
 
   it("moves highlight to the parent when closing a panel from a member row", async () => {
@@ -572,5 +573,6 @@ describe("createJobsStore panel expansion", () => {
       expect(onError).toHaveBeenCalledWith("Failed to load panel members");
     });
     expect(store.getPanelMembers("run-10")?.map((j) => j.id)).toEqual([11]);
+    expect(store.getPanelMemberError("run-10")).toBe("Failed to load panel members");
   });
 });

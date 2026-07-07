@@ -96,6 +96,10 @@
             runUuid !== undefined
               ? jobsStore.getPanelMembers(runUuid)
               : undefined}
+          {@const memberError =
+            runUuid !== undefined
+              ? jobsStore.getPanelMemberError(runUuid)
+              : undefined}
           <JobRow
             {job}
             {members}
@@ -107,7 +111,7 @@
             ontoggle={() => jobsStore.togglePanel(job)}
           />
           {#if expanded && runUuid !== undefined}
-            {#if jobsStore.isLoadingMembers(runUuid)}
+            {#if jobsStore.isLoadingMembers(runUuid) && members === undefined}
               <tr class="members-status-row">
                 <td colspan={columns.length}>Loading reviewers…</td>
               </tr>
@@ -122,6 +126,25 @@
                   onclick={() => jobsStore.selectJob(panelMember.id)}
                 />
               {/each}
+              {#if jobsStore.isLoadingMembers(runUuid)}
+                <tr class="members-status-row">
+                  <td colspan={columns.length}>Refreshing reviewers…</td>
+                </tr>
+              {/if}
+              {#if memberError}
+                <tr class="members-status-row error">
+                  <td colspan={columns.length}>
+                    Could not refresh reviewers.
+                    <button
+                      type="button"
+                      class="members-retry"
+                      onclick={() => jobsStore.refreshPanelMembers(runUuid)}
+                    >
+                      Retry
+                    </button>
+                  </td>
+                </tr>
+              {/if}
             {/if}
           {/if}
         {/each}
@@ -221,6 +244,21 @@
     font-size: var(--font-size-xs);
     color: var(--text-muted);
     background: var(--bg-inset);
+  }
+
+  .members-status-row.error td {
+    color: var(--accent-red);
+  }
+
+  .members-retry {
+    margin-left: 8px;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
   }
 
   .load-more {

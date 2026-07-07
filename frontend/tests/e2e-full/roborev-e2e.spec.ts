@@ -110,6 +110,41 @@ test.describe.serial("Roborev", () => {
       await page.keyboard.press("ArrowRight");
       await expect(members).toHaveCount(2);
 
+      let releaseRefresh: (() => void) | undefined;
+      let delayedRefresh = false;
+      let resolveRefreshStarted!: () => void;
+      const refreshStarted = new Promise<void>((resolve) => {
+        resolveRefreshStarted = resolve;
+      });
+      let resolveRefreshContinued!: () => void;
+      const refreshContinued = new Promise<void>((resolve) => {
+        resolveRefreshContinued = resolve;
+      });
+      await page.route("**/api/roborev/api/jobs?**", async (route) => {
+        const url = new URL(route.request().url());
+        let heldRefresh = false;
+        if (!delayedRefresh && url.searchParams.get("panel_run") === "panel-e2e-1") {
+          delayedRefresh = true;
+          heldRefresh = true;
+          resolveRefreshStarted();
+          await new Promise<void>((release) => {
+            releaseRefresh = release;
+          });
+        }
+        await route.continue();
+        if (heldRefresh) resolveRefreshContinued();
+      });
+
+      await page.keyboard.press("Enter");
+      await refreshStarted;
+      await expect(members).toHaveCount(2);
+      await expect(page.locator(".members-status-row")).toContainText("Refreshing reviewers");
+      releaseRefresh?.();
+      await refreshContinued;
+      await expect(page.locator(".members-status-row", { hasText: "Refreshing reviewers" })).toHaveCount(0);
+      await expect(page).toHaveURL(/\/reviews\/79$/);
+      await page.keyboard.press("Escape");
+      await expect(page).toHaveURL(/\/reviews$/);
       await page.keyboard.press("j");
       await expect(members.nth(0)).toHaveClass(/highlighted/);
       await page.keyboard.press("ArrowLeft");

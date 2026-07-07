@@ -34,6 +34,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let filterSearch = $state<string | undefined>(undefined);
   let filterHideClosed = $state(false);
   let filterJobType = $state<string | undefined>(undefined);
+  let filterShowAutoDesign = $state(false);
 
   // Sorting (client-side)
   let sortColumn = $state<SortColumn>("id");
@@ -54,6 +55,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     if (filterSearch) q.git_ref = filterSearch;
     if (filterHideClosed) q.closed = "false";
     if (filterJobType) q.job_type = filterJobType;
+    if (!filterShowAutoDesign) q.hide_classify_jobs = "true";
     return q;
   }
 
@@ -177,6 +179,9 @@ export function createJobsStore(opts: JobsStoreOptions) {
         break;
       case "jobType":
         filterJobType = value as string | undefined;
+        break;
+      case "showAutoDesign":
+        filterShowAutoDesign = value as boolean;
         break;
     }
     void loadJobs();
@@ -361,6 +366,9 @@ export function createJobsStore(opts: JobsStoreOptions) {
   function getFilterJobType(): string | undefined {
     return filterJobType;
   }
+  function getFilterShowAutoDesign(): boolean {
+    return filterShowAutoDesign;
+  }
   function getSortColumn(): SortColumn {
     return sortColumn;
   }
@@ -385,6 +393,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     getFilterSearch,
     getFilterHideClosed,
     getFilterJobType,
+    getFilterShowAutoDesign,
     getSortColumn,
     getSortDirection,
     isSSEConnected,

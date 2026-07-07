@@ -113,3 +113,34 @@ describe("createJobsStore elapsed sorting", () => {
     expect(store.getJobs().map((job) => job.id)).toEqual([8, 2, 6, 5]);
   });
 });
+
+describe("createJobsStore auto-design filter", () => {
+  function makeClient() {
+    return {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+  }
+
+  it("sends hide_classify_jobs by default and drops it when showAutoDesign is on", async () => {
+    const client = makeClient();
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+
+    await store.loadJobs();
+
+    expect(store.getFilterShowAutoDesign()).toBe(false);
+    expect(client.GET).toHaveBeenLastCalledWith("/api/jobs", {
+      params: { query: expect.objectContaining({ hide_classify_jobs: "true" }) },
+    });
+
+    store.setFilter("showAutoDesign", true);
+    await vi.waitFor(() => {
+      expect(client.GET.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    const lastQuery = client.GET.mock.calls.at(-1)?.[1]?.params?.query as Record<string, unknown>;
+    expect(lastQuery).not.toHaveProperty("hide_classify_jobs");
+  });
+});

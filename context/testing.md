@@ -97,6 +97,11 @@ icon mid-run, re-bundles, and the page reload breaks unrelated suites with
 "Failed to fetch dynamically imported module". Verify with the grep documented
 above that list in the config.
 
+Full-stack e2e serves the frontend embedded in the e2e-server binary
+(`internal/web/dist`), not live sources: run `make frontend` before building
+`cmd/e2e-server` locally, or the suite silently validates a stale bundle and
+passes on frontend changes that CI then fails.
+
 Roborev `hide_classify_jobs` e2e fixtures must cover skipped design rows and classify-typed auto-design rows.
 Seed classify rows terminal unless testing worker mutation; live workers can rewrite queued/running rows during browser assertions (`internal/testutil/roborev_fixtures.go::seedRoborevMutationFixtures`).
 Keep injected Roborev `panel_run` failures controlled until the assertion observes them; drawer/list refresh demand can immediately retry member fetches and clear transient panel errors (`packages/ui/src/stores/roborev/jobs.svelte.ts::wantsPanelMembers`).

@@ -18,9 +18,12 @@ state.
 - `POST /repos/{owner}/{name}/issues/{number}/workspace`: create or reuse an
   issue-backed workspace; these start from the repo's current `origin/HEAD`,
   not from a PR head branch.
-- `POST /kata/workspace-target`: resolve whether a Kata task has a clear
-  repository target. The UI should hide the workspace action when this returns
-  `available:false`.
+- `GET /kata/tasks/{issue_uid}`: middleman's combined Kata task read. It
+  fetches the daemon's issue detail server-side and returns it together with
+  the resolved workspace target, so the detail pane and its workspace action
+  render from one response. There is no separate workspace-target endpoint;
+  do not reintroduce one. The UI hides the workspace action when the embedded
+  target has `available:false`.
 - `POST /kata/workspaces`: create or reuse a Kata-task-backed workspace. Kata
   tasks are not provider issues, so this path never resolves or syncs a
   provider issue row.

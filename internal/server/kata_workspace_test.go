@@ -40,7 +40,7 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata",
 		"project_name": "Kata",
@@ -49,10 +49,6 @@ worktree_base_path = %q
 		"qualified_id": "Kata#task-123",
 		"title":        "Fix widget",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("github", resp.Repo.Provider)
@@ -93,7 +89,7 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "github.com/acme/widget",
 		"project_name": "widget",
@@ -101,10 +97,6 @@ worktree_base_path = %q
 		"short_id":     "task-123",
 		"title":        "Fix widget",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
@@ -136,16 +128,12 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata",
 		"project_name": "widget",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
@@ -177,16 +165,12 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata-opaque",
 		"project_name": "widget",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
@@ -223,16 +207,12 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata",
 		"project_name": "Widget",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -275,16 +255,12 @@ worktree_base_path = %q
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata-opaque",
 		"project_name": "Widget",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
@@ -308,7 +284,7 @@ name = "middleman"
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-middleman",
 		"project_name": "middleman",
@@ -316,10 +292,6 @@ name = "middleman"
 		"short_id":     "task-123",
 		"title":        "Fix workspace affordance",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("github", resp.Repo.Provider)
@@ -357,23 +329,18 @@ name = "middleman"
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "middleman"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-middleman",
 		"project_name": "middleman",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
 
 func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresTrackedRepo(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -386,16 +353,12 @@ owner = "acme"
 name = "middleman"
 `, &mockGH{})
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-middleman",
 		"project_name": "middleman",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -419,16 +382,12 @@ name = "middle*"
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middle-earth"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-middleman",
 		"project_name": "middleman",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("github", resp.Repo.Provider)
@@ -461,16 +420,12 @@ name = "middle*"
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "middleman"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-middleman",
 		"project_name": "middleman",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -498,16 +453,12 @@ name = "middle*"
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "middleman"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-middleman",
 		"project_name": "middleman",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -537,16 +488,12 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata",
 		"project_name": "widget",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
@@ -601,17 +548,6 @@ func TestReadKataProjectTOMLReadsRegularFile(t *testing.T) {
 	assert.Equal("Widget", project.Name)
 }
 
-func TestKataWorkspaceTargetRequiresDaemonID(t *testing.T) {
-	require := require.New(t)
-
-	srv, _, _ := setupTestServerWithConfig(t)
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
-		"project_uid": "project-kata",
-		"issue_uid":   "issue-kata-1",
-	})
-	require.Equal(http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
-}
-
 func TestKataWorkspaceTargetUnavailableWhenAutomaticMappingAmbiguous(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -650,16 +586,12 @@ worktree_base_path = %q
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata",
 		"project_name": "Widget",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -708,16 +640,12 @@ name = "middleman"
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata",
 		"project_name": "middleman",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -757,26 +685,21 @@ worktree_base_path = %q
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata-opaque",
 		"project_name": "Widget",
 		"issue_uid":    "issue-kata-1",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
 
 func TestKataWorkspaceTargetUnavailableWhenMappingMissing(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 
 	srv, _, _ := setupTestServerWithConfig(t)
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata",
 		"project_name": "Kata",
@@ -784,10 +707,6 @@ func TestKataWorkspaceTargetUnavailableWhenMappingMissing(t *testing.T) {
 		"short_id":     "task-123",
 		"title":        "Fix widget",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 	assert.Nil(resp.ExistingWorkspace)
@@ -844,7 +763,7 @@ repo_path = "acme/widget"
 		},
 	}))
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspace-target", map[string]any{
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata",
 		"project_name": "Kata",
@@ -852,10 +771,6 @@ repo_path = "acme/widget"
 		"short_id":     "task-123",
 		"title":        "Fix widget",
 	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp kataWorkspaceTargetResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Available)
 	require.NotNil(resp.ExistingWorkspace)
 	assert.Equal("ws-kata-existing", resp.ExistingWorkspace.ID)

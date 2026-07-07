@@ -299,18 +299,20 @@ describe("kata task HTTP client", () => {
           },
         },
       },
-      "/api/v1/issues/issue-capture": {
-        headers: { etag: '"rev-2"' },
+      "/api/v1/kata/tasks/issue-capture": {
         body: {
-          issue: {
-            ...issue("issue-capture", "Capture retry", "project-inbox", {
-              scheduled_on: "2026-05-20",
-            }),
-            revision: 2,
+          etag: '"rev-2"',
+          detail: {
+            issue: {
+              ...issue("issue-capture", "Capture retry", "project-inbox", {
+                scheduled_on: "2026-05-20",
+              }),
+              revision: 2,
+            },
+            comments: [],
+            labels: [],
+            links: [],
           },
-          comments: [],
-          labels: [],
-          links: [],
         },
       },
     });
@@ -336,7 +338,7 @@ describe("kata task HTTP client", () => {
     expect(calls.map((call) => proxyPath(call.url))).toEqual([
       "/api/v1/projects/7/issues",
       "/api/v1/projects/7/issues/issue-capture/metadata",
-      "/api/v1/issues/issue-capture",
+      "/api/v1/kata/tasks/issue-capture",
     ]);
     expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("home");
     expect(calls[1]!.headers.get(KATA_DAEMON_HEADER)).toBe("home");
@@ -632,24 +634,33 @@ describe("kata task HTTP client", () => {
     ]);
   });
 
-  test("calls issue detail by uid and exposes response etags", async () => {
+  test("reads the combined task detail and exposes etags and the workspace target", async () => {
     const { calls, fetchImpl } = createFetchStub({
-      "/api/v1/issues/issue-1": {
-        headers: { etag: '"rev-3"' },
-        body: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+      "/api/v1/kata/tasks/issue-1": {
+        body: {
+          etag: '"rev-3"',
+          detail: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+          workspace_target: { available: true, item_type: "kata_task", item_key: "kata:home:project-kata:issue-1" },
+        },
       },
     });
     const api = createKataTaskAPI({ fetchImpl });
 
-    await expect(api.issue("issue-1")).resolves.toMatchObject({ etag: '"rev-3"', issue: { title: "Shown issue" } });
+    await expect(api.issue("issue-1")).resolves.toMatchObject({
+      etag: '"rev-3"',
+      issue: { title: "Shown issue" },
+      workspace_target: { available: true },
+    });
 
-    expect(proxyPath(calls[0]!.url)).toBe("/api/v1/issues/issue-1");
+    expect(proxyPath(calls[0]!.url)).toBe("/api/v1/kata/tasks/issue-1");
   });
 
   test("uses an explicit daemon for pinned issue detail reads", async () => {
     const { calls, fetchImpl } = createFetchStub({
-      "/api/v1/issues/issue-1": {
-        body: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+      "/api/v1/kata/tasks/issue-1": {
+        body: {
+          detail: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+        },
       },
     });
     const api = createKataTaskAPI({ fetchImpl, getDaemonId: () => "default" });
@@ -661,10 +672,12 @@ describe("kata task HTTP client", () => {
 
   test("threads abort signals through issue and events fetches", async () => {
     const { fetchImpl } = createFetchStub({
-      "/api/v1/issues/issue-1": {
-        body: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+      "/api/v1/kata/tasks/issue-1": {
+        body: {
+          detail: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+        },
       },
-      "/api/v1/events?limit=100": {
+      "/api/v1/events?limit=1000": {
         body: { reset_required: false, events: [], next_after_id: 0 },
       },
     });
@@ -751,9 +764,9 @@ describe("kata task HTTP client", () => {
     expect(graph.nodes[0]?.project_name).toBe("Work");
   });
 
-  test("paginates issue-scoped event reads until the requested filtered limit is reached", async () => {
+  test("paginates issue-scoped event reads in large pages until the requested filtered limit is reached", async () => {
     const { calls, fetchImpl } = createFetchStub({
-      "/api/v1/events?after_id=4&limit=2": {
+      "/api/v1/events?after_id=4&limit=1000": {
         body: {
           reset_required: false,
           events: [
@@ -763,7 +776,7 @@ describe("kata task HTTP client", () => {
           next_after_id: 6,
         },
       },
-      "/api/v1/events?after_id=6&limit=2": {
+      "/api/v1/events?after_id=6&limit=1000": {
         body: {
           reset_required: false,
           events: [
@@ -779,8 +792,8 @@ describe("kata task HTTP client", () => {
     const events = await api.events({ issue_uid: "issue-1", after_id: 4, limit: 2 });
 
     expect(calls.map((call) => proxyPath(call.url))).toEqual([
-      "/api/v1/events?after_id=4&limit=2",
-      "/api/v1/events?after_id=6&limit=2",
+      "/api/v1/events?after_id=4&limit=1000",
+      "/api/v1/events?after_id=6&limit=1000",
     ]);
     expect(events.events.map((event) => event.event_uid)).toEqual(["event-6", "event-8"]);
   });
@@ -1112,11 +1125,11 @@ describe("kata task HTTP client", () => {
 
   test("throws revision conflicts only for current revision_conflict envelopes", async () => {
     const { fetchImpl } = createFetchStub({
-      "/api/v1/issues/issue-1": {
+      "/api/v1/kata/tasks/issue-1": {
         status: 412,
         body: { error: { code: "revision_conflict", message: "stale revision" } },
       },
-      "/api/v1/issues/issue-2": {
+      "/api/v1/kata/tasks/issue-2": {
         status: 412,
         body: { error: { code: "precondition_failed", message: "missing dependency" } },
       },

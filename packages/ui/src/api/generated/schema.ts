@@ -2080,17 +2080,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/kata/workspace-target": {
+    "/kata/tasks/{issue_uid}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get Kata task detail with workspace target */
+        get: operations["get-kata-task-detail"];
         put?: never;
-        /** Resolve Kata workspace target */
-        post: operations["resolve-kata-workspace-target"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5327,13 +5327,20 @@ export interface components {
             provider: string;
             repo_path: string;
         };
-        KataWorkspaceTargetResponse: {
+        KataTaskDetailResponse: {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/KataWorkspaceTargetResponse.json
+             * @example /api/v1/schemas/KataTaskDetailResponse.json
              */
             readonly $schema?: string;
+            /** @description Verbatim Kata daemon issue detail payload */
+            detail: unknown;
+            /** @description Daemon issue detail ETag, when the daemon provided one */
+            etag?: string;
+            workspace_target: components["schemas"]["KataWorkspaceTargetResponse"];
+        };
+        KataWorkspaceTargetResponse: {
             available: boolean;
             existing_workspace?: components["schemas"]["WorkspaceRef"];
             item_key?: string;
@@ -12029,18 +12036,20 @@ export interface operations {
             };
         };
     };
-    "resolve-kata-workspace-target": {
+    "get-kata-task-detail": {
         parameters: {
             query?: never;
-            header?: never;
-            path?: never;
+            header?: {
+                /** @description Kata daemon id; the effective default daemon when empty */
+                "X-Middleman-Kata-Daemon"?: string;
+            };
+            path: {
+                /** @description Kata issue UID */
+                issue_uid: string;
+            };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KataWorkspaceTaskRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description OK */
             200: {
@@ -12048,7 +12057,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KataWorkspaceTargetResponse"];
+                    "application/json": components["schemas"]["KataTaskDetailResponse"];
                 };
             };
             /** @description Error */

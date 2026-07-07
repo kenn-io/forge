@@ -6,6 +6,7 @@ import type {
   KataReachableGraphResponse,
   KataRecurrence,
   KataTaskAPI,
+  KataTaskDetail,
   KataTaskEvent,
   KataTaskEventsResponse,
   KataTaskIssuesQuery,
@@ -175,7 +176,7 @@ function detail(
   uid: string,
   rows = initialIssues,
   commentsByUID = new Map<string, ReturnType<typeof makeComment>[]>(),
-) {
+): KataTaskDetail {
   const found = rows.find((candidate) => candidate.uid === uid) ?? rows[0]!;
   const labels = (found.labels ?? []).map((label) => ({
     issue_id: found.id,

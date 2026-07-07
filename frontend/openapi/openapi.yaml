@@ -2483,16 +2483,30 @@ components:
         - platform_host
         - repo_path
       type: object
-    KataWorkspaceTargetResponse:
+    KataTaskDetailResponse:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - /api/v1/schemas/KataWorkspaceTargetResponse.json
+            - /api/v1/schemas/KataTaskDetailResponse.json
           format: uri
           readOnly: true
           type: string
+        detail:
+          description: Verbatim Kata daemon issue detail payload
+        etag:
+          description: Daemon issue detail ETag, when the daemon provided one
+          type: string
+        workspace_target:
+          $ref: "#/components/schemas/KataWorkspaceTargetResponse"
+      required:
+        - detail
+        - workspace_target
+      type: object
+    KataWorkspaceTargetResponse:
+      additionalProperties: false
+      properties:
         available:
           type: boolean
         existing_workspace:
@@ -12848,21 +12862,29 @@ paths:
       summary: List Kata daemons
       tags:
         - Kata
-  /kata/workspace-target:
-    post:
-      operationId: resolve-kata-workspace-target
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/KataWorkspaceTaskRequest"
-        required: true
+  /kata/tasks/{issue_uid}:
+    get:
+      operationId: get-kata-task-detail
+      parameters:
+        - description: Kata issue UID
+          in: path
+          name: issue_uid
+          required: true
+          schema:
+            description: Kata issue UID
+            type: string
+        - description: Kata daemon id; the effective default daemon when empty
+          in: header
+          name: X-Middleman-Kata-Daemon
+          schema:
+            description: Kata daemon id; the effective default daemon when empty
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/KataWorkspaceTargetResponse"
+                $ref: "#/components/schemas/KataTaskDetailResponse"
           description: OK
         default:
           content:
@@ -12870,7 +12892,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: Resolve Kata workspace target
+      summary: Get Kata task detail with workspace target
       tags:
         - Kata
   /kata/workspaces:

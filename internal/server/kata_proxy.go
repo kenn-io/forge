@@ -106,27 +106,38 @@ func (s *Server) closeKataProxyIdleConnections() {
 }
 
 func (s *Server) selectKataProxyDaemon(w http.ResponseWriter, r *http.Request) (kata.Daemon, bool) {
+	selected, problem := selectKataDaemonForID(r.Header.Get(kataDaemonHeaderName))
+	if problem != nil {
+		writeProblemResponse(w, problem)
+		return kata.Daemon{}, false
+	}
+	return selected, true
+}
+
+// selectKataDaemonForID resolves the catalog daemon addressed by the
+// X-Middleman-Kata-Daemon header value (the effective default daemon when
+// empty) to a reachable target. Shared by the passthrough proxy and the
+// server-side Kata task reads.
+func selectKataDaemonForID(headerID string) (kata.Daemon, *ProblemError) {
 	catalog, err := kata.LoadCatalog()
 	if err != nil {
-		writeProblemResponse(w, newProblem(
+		return kata.Daemon{}, newProblem(
 			http.StatusBadRequest,
 			CodeBadRequest,
 			err.Error(),
 			nil,
-		))
-		return kata.Daemon{}, false
+		)
 	}
 	if len(catalog.Daemons) == 0 {
-		writeProblemResponse(w, newProblem(
+		return kata.Daemon{}, newProblem(
 			http.StatusServiceUnavailable,
 			CodeServiceUnavailable,
 			"no Kata daemon configured",
 			nil,
-		))
-		return kata.Daemon{}, false
+		)
 	}
 
-	id := strings.TrimSpace(r.Header.Get(kataDaemonHeaderName))
+	id := strings.TrimSpace(headerID)
 	if id == "" {
 		id = effectiveKataDefaultID(catalog.Daemons)
 	}
@@ -140,24 +151,22 @@ func (s *Server) selectKataProxyDaemon(w http.ResponseWriter, r *http.Request) (
 		}
 	}
 	if !found {
-		writeProblemResponse(w, newProblem(
+		return kata.Daemon{}, newProblem(
 			http.StatusBadRequest,
 			CodeBadRequest,
 			"unknown Kata daemon",
 			map[string]any{"daemon": id},
-		))
-		return kata.Daemon{}, false
+		)
 	}
 
 	selected, err := kata.ResolveDaemon(configured)
 	if err != nil {
-		writeProblemResponse(w, newProblem(
+		return kata.Daemon{}, newProblem(
 			http.StatusBadRequest,
 			CodeBadRequest,
 			err.Error(),
 			map[string]any{"daemon": configured.ID},
-		))
-		return kata.Daemon{}, false
+		)
 	}
 	if selected.Local && selected.URL == "" {
 		selected.URL = kata.DiscoverLocalDaemonURL()
@@ -170,15 +179,14 @@ func (s *Server) selectKataProxyDaemon(w http.ResponseWriter, r *http.Request) (
 		}
 	}
 	if selected.URL == "" {
-		writeProblemResponse(w, newProblem(
+		return kata.Daemon{}, newProblem(
 			http.StatusServiceUnavailable,
 			CodeServiceUnavailable,
 			"Kata daemon is not reachable",
 			map[string]any{"daemon": selected.ID},
-		))
-		return kata.Daemon{}, false
+		)
 	}
-	return selected, true
+	return selected, nil
 }
 
 func newKataDaemonProxyEntry(d kata.Daemon) (kataProxyCacheEntry, error) {

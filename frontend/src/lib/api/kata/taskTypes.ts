@@ -203,7 +203,13 @@ export interface KataTaskDetail {
   links: KataTaskLink[];
   parent?: KataTaskRef | undefined;
   children?: KataTaskSummary[] | undefined;
+  // Resolved by middleman alongside the daemon detail read, so the
+  // workspace action renders together with the pane instead of after a
+  // second round trip.
+  workspace_target?: KataWorkspaceTarget | undefined;
 }
+
+export type KataWorkspaceTarget = import("./workspaces.js").KataWorkspaceTarget;
 
 export interface KataTaskEvent {
   event_id: number;

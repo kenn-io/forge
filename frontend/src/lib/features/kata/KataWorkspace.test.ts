@@ -29,10 +29,9 @@ import {
   resetKataWorkspaceTestState,
 } from "./KataWorkspaceTestSupport.js";
 
-const { mockCreateKataWorkspaceForTask, mockNavigate, mockResolveKataWorkspaceTarget } = vi.hoisted(() => ({
+const { mockCreateKataWorkspaceForTask, mockNavigate } = vi.hoisted(() => ({
   mockCreateKataWorkspaceForTask: vi.fn(),
   mockNavigate: vi.fn(),
-  mockResolveKataWorkspaceTarget: vi.fn(),
 }));
 
 vi.mock("../../api/kata/workspaces.js", async (importOriginal) => {
@@ -40,7 +39,6 @@ vi.mock("../../api/kata/workspaces.js", async (importOriginal) => {
   return {
     ...actual,
     createKataWorkspaceForTask: mockCreateKataWorkspaceForTask,
-    resolveKataWorkspaceTarget: mockResolveKataWorkspaceTarget,
   };
 });
 
@@ -72,8 +70,6 @@ describe("KataWorkspace", () => {
     resetKataWorkspaceTestState();
     mockCreateKataWorkspaceForTask.mockReset();
     mockNavigate.mockReset();
-    mockResolveKataWorkspaceTarget.mockReset();
-    mockResolveKataWorkspaceTarget.mockResolvedValue({ available: false });
   });
 
   afterEach(() => {
@@ -974,7 +970,7 @@ describe("KataWorkspace", () => {
         ],
       }),
     );
-    mockResolveKataWorkspaceTarget.mockResolvedValue({
+    const target: KataWorkspaceTarget = {
       available: true,
       repo: {
         provider: "github",
@@ -986,7 +982,7 @@ describe("KataWorkspace", () => {
       },
       item_type: "kata_task",
       item_key: "issue-pay-rent",
-    });
+    };
     mockCreateKataWorkspaceForTask.mockResolvedValue({
       id: "workspace-kata",
       item_type: "kata_task",
@@ -995,6 +991,10 @@ describe("KataWorkspace", () => {
       status: "creating",
     });
     const { api } = createWorkspaceAPI();
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => ({
+      ...detail(uid, initialIssues),
+      workspace_target: target,
+    }));
 
     render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
 
@@ -1002,14 +1002,6 @@ describe("KataWorkspace", () => {
       expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
       expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
     });
-    expect(mockResolveKataWorkspaceTarget).toHaveBeenCalledWith(
-      expect.objectContaining({
-        daemon_id: "home",
-        project_uid: "project-finances",
-        project_name: "Finances",
-        issue_uid: "issue-pay-rent",
-      }),
-    );
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => {
@@ -1052,9 +1044,11 @@ describe("KataWorkspace", () => {
       item_type: "kata_task",
       item_key: "issue-pay-rent",
     };
-    const refreshedTarget = deferred<KataWorkspaceTarget>();
-    mockResolveKataWorkspaceTarget.mockResolvedValueOnce(target).mockReturnValueOnce(refreshedTarget.promise);
     const { api, addLabel } = createWorkspaceAPI();
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => ({
+      ...detail(uid, initialIssues),
+      workspace_target: target,
+    }));
 
     render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
 
@@ -1068,11 +1062,63 @@ describe("KataWorkspace", () => {
 
     await waitFor(() => {
       expect(addLabel).toHaveBeenCalledWith(expect.objectContaining({ ref: "issue-pay-rent" }), "middleman", "blocked");
-      expect(mockResolveKataWorkspaceTarget).toHaveBeenCalledTimes(2);
     });
     expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
+  });
 
-    refreshedTarget.resolve(target);
+  it("renders the workspace action together with the detail payload", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const { api } = createWorkspaceAPI();
+    const slowDetail = deferred<ReturnType<typeof detail>>();
+    let holdEmailSusanDetail = false;
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+      if (holdEmailSusanDetail && uid === "issue-email-susan") return slowDetail.promise;
+      return detail(uid, initialIssues);
+    });
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
+    });
+
+    holdEmailSusanDetail = true;
+    await fireEvent.click(screen.getByRole("button", { name: /Email Susan re: Q3/ }));
+    expect(screen.queryByRole("heading", { name: "Email Susan re: Q3" })).toBeNull();
+
+    // The combined payload carries the target: pane and action land in the
+    // same flush, with no separate resolution that could pop in later.
+    slowDetail.resolve({
+      ...detail("issue-email-susan", initialIssues),
+      workspace_target: {
+        available: true,
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "middleman",
+          repo_path: "acme/middleman",
+          capabilities: defaultProviderCapabilities,
+        },
+        item_type: "kata_task",
+        item_key: "issue-email-susan",
+      },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
+    });
   });
 
   it("opens an existing workspace for the selected Kata task", async () => {
@@ -1089,16 +1135,19 @@ describe("KataWorkspace", () => {
         ],
       }),
     );
-    mockResolveKataWorkspaceTarget.mockResolvedValue({
-      available: true,
-      existing_workspace: {
-        id: "workspace-existing",
-        status: "ready",
-      },
-      item_type: "kata_task",
-      item_key: "issue-pay-rent",
-    });
     const { api } = createWorkspaceAPI();
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => ({
+      ...detail(uid, initialIssues),
+      workspace_target: {
+        available: true,
+        existing_workspace: {
+          id: "workspace-existing",
+          status: "ready",
+        },
+        item_type: "kata_task",
+        item_key: "issue-pay-rent",
+      },
+    }));
 
     render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
 

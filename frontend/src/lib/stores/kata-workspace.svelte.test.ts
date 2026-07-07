@@ -973,6 +973,79 @@ describe("kata workspace store", () => {
     });
   });
 
+  test("selecting an issue records detail-visible and events-loaded timing measures", async () => {
+    performance.clearMarks();
+    performance.clearMeasures();
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+
+    await store.selectIssue("issue-pay-rent");
+
+    await vi.waitFor(() => {
+      expect(performance.getEntriesByName("kata:select-issue:detail-visible", "measure")).toHaveLength(1);
+      expect(performance.getEntriesByName("kata:select-issue:events-loaded", "measure")).toHaveLength(1);
+    });
+  });
+
+  test("a superseded selection does not record timing measures", async () => {
+    performance.clearMarks();
+    performance.clearMeasures();
+    const { api, signals } = apiWithHangingIssueDetail();
+    const store = createKataWorkspaceStore({ api });
+
+    const first = store.selectIssue("issue-pay-rent");
+    const second = store.selectIssue("issue-call-dentist");
+    await expect(second).resolves.toBe(true);
+    await expect(first).resolves.toBe(false);
+
+    expect(signals[0]?.aborted).toBe(true);
+    expect(performance.getEntriesByName("kata:select-issue:detail-visible", "measure")).toHaveLength(1);
+    expect(performance.getEntriesByName("kata:select-issue:events-loaded", "measure")).toHaveLength(1);
+  });
+
+  test("slow events loading does not delay showing the selected issue detail", async () => {
+    const api = createFakeKataTaskAPI();
+    const slowEvents = deferred<KataTaskEventsResponse>();
+    api.mocks.events.mockReturnValue(slowEvents.promise);
+    const store = createKataWorkspaceStore({ api });
+
+    const selection = store.selectIssue("issue-pay-rent");
+    await vi.waitFor(() => {
+      expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
+    });
+    expect(store.pendingSelectionUID).toBeNull();
+    expect(store.selectedEvents).toEqual([]);
+
+    slowEvents.resolve({ reset_required: false, events: [events[0]!], next_after_id: 1 });
+    await expect(selection).resolves.toBe(true);
+    expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-pay-rent"]);
+  });
+
+  test("a selection superseded while its events read is in flight keeps the newer selection", async () => {
+    const api = createFakeKataTaskAPI();
+    const slowEvents = deferred<KataTaskEventsResponse>();
+    let holdPayRentEvents = false;
+    api.mocks.events.mockImplementation((query: KataTaskEventsQuery = {}) => {
+      if (holdPayRentEvents && query.issue_uid === "issue-pay-rent") return slowEvents.promise;
+      const rows = events.filter((event) => (query.issue_uid ? event.issue_uid === query.issue_uid : true));
+      return Promise.resolve({ reset_required: false, events: rows, next_after_id: rows.at(-1)?.event_id ?? 0 });
+    });
+    const store = createKataWorkspaceStore({ api });
+
+    holdPayRentEvents = true;
+    const first = store.selectIssue("issue-pay-rent");
+    await vi.waitFor(() => {
+      expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
+    });
+    holdPayRentEvents = false;
+    await expect(store.selectIssue("issue-call-dentist")).resolves.toBe(true);
+
+    slowEvents.resolve({ reset_required: false, events: [events[0]!], next_after_id: 1 });
+    await expect(first).resolves.toBe(false);
+    expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
+    expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+  });
+
   test("failed recurrence loading does not block issue selection", async () => {
     const loaded = [recurrence({ id: 1, template_title: "Loaded recurrence" })];
     const api = createFakeKataTaskAPI();

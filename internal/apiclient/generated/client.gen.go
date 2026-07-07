@@ -1502,10 +1502,21 @@ type KataProjectRepoMapping struct {
 	RepoPath     string  `json:"repo_path"`
 }
 
+// KataTaskDetailResponse defines model for KataTaskDetailResponse.
+type KataTaskDetailResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Detail Verbatim Kata daemon issue detail payload
+	Detail interface{} `json:"detail"`
+
+	// Etag Daemon issue detail ETag, when the daemon provided one
+	Etag            *string                     `json:"etag,omitempty"`
+	WorkspaceTarget KataWorkspaceTargetResponse `json:"workspace_target"`
+}
+
 // KataWorkspaceTargetResponse defines model for KataWorkspaceTargetResponse.
 type KataWorkspaceTargetResponse struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema            *string          `json:"$schema,omitempty"`
 	Available         bool             `json:"available"`
 	ExistingWorkspace *WorkspaceRef    `json:"existing_workspace,omitempty"`
 	ItemKey           *string          `json:"item_key,omitempty"`
@@ -3573,6 +3584,12 @@ type ListIssuesParams struct {
 	Offset   *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetKataTaskDetailParams defines parameters for GetKataTaskDetail.
+type GetKataTaskDetailParams struct {
+	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
+	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
+}
+
 // ReplaceMessagesSavedSearchesParams defines parameters for ReplaceMessagesSavedSearches.
 type ReplaceMessagesSavedSearchesParams struct {
 	IfMatch        *string `json:"If-Match,omitempty"`
@@ -4015,9 +4032,6 @@ type SetIssueLabelsJSONRequestBody = SetLabelsRequest
 
 // CreateIssueWorkspaceJSONRequestBody defines body for CreateIssueWorkspace for application/json ContentType.
 type CreateIssueWorkspaceJSONRequestBody = CreateIssueWorkspaceInputBody
-
-// ResolveKataWorkspaceTargetJSONRequestBody defines body for ResolveKataWorkspaceTarget for application/json ContentType.
-type ResolveKataWorkspaceTargetJSONRequestBody = KataWorkspaceTaskRequest
 
 // CreateKataWorkspaceJSONRequestBody defines body for CreateKataWorkspace for application/json ContentType.
 type CreateKataWorkspaceJSONRequestBody = KataWorkspaceTaskRequest
@@ -4755,10 +4769,8 @@ type ClientInterface interface {
 	// ListKataDaemons request
 	ListKataDaemons(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ResolveKataWorkspaceTargetWithBody request with any body
-	ResolveKataWorkspaceTargetWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	ResolveKataWorkspaceTarget(ctx context.Context, body ResolveKataWorkspaceTargetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetKataTaskDetail request
+	GetKataTaskDetail(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateKataWorkspaceWithBody request with any body
 	CreateKataWorkspaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -7560,20 +7572,8 @@ func (c *Client) ListKataDaemons(ctx context.Context, reqEditors ...RequestEdito
 	return c.Client.Do(req)
 }
 
-func (c *Client) ResolveKataWorkspaceTargetWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewResolveKataWorkspaceTargetRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ResolveKataWorkspaceTarget(ctx context.Context, body ResolveKataWorkspaceTargetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewResolveKataWorkspaceTargetRequest(c.Server, body)
+func (c *Client) GetKataTaskDetail(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetKataTaskDetailRequest(c.Server, issueUid, params)
 	if err != nil {
 		return nil, err
 	}
@@ -18871,27 +18871,23 @@ func NewListKataDaemonsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewResolveKataWorkspaceTargetRequest calls the generic ResolveKataWorkspaceTarget builder with application/json body
-func NewResolveKataWorkspaceTargetRequest(server string, body ResolveKataWorkspaceTargetJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
+// NewGetKataTaskDetailRequest generates requests for GetKataTaskDetail
+func NewGetKataTaskDetailRequest(server string, issueUid string, params *GetKataTaskDetailParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "issue_uid", issueUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
-	bodyReader = bytes.NewReader(buf)
-	return NewResolveKataWorkspaceTargetRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewResolveKataWorkspaceTargetRequestWithBody generates requests for ResolveKataWorkspaceTarget with any type of body
-func NewResolveKataWorkspaceTargetRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/kata/workspace-target")
+	operationPath := fmt.Sprintf("/kata/tasks/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -18901,12 +18897,25 @@ func NewResolveKataWorkspaceTargetRequestWithBody(server string, contentType str
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Add("Content-Type", contentType)
+	if params != nil {
+
+		if params.XMiddlemanKataDaemon != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Kata-Daemon", *params.XMiddlemanKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Middleman-Kata-Daemon", headerParam0)
+		}
+
+	}
 
 	return req, nil
 }
@@ -27110,10 +27119,8 @@ type ClientWithResponsesInterface interface {
 	// ListKataDaemonsWithResponse request
 	ListKataDaemonsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListKataDaemonsResponse, error)
 
-	// ResolveKataWorkspaceTargetWithBodyWithResponse request with any body
-	ResolveKataWorkspaceTargetWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveKataWorkspaceTargetResponse, error)
-
-	ResolveKataWorkspaceTargetWithResponse(ctx context.Context, body ResolveKataWorkspaceTargetJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveKataWorkspaceTargetResponse, error)
+	// GetKataTaskDetailWithResponse request
+	GetKataTaskDetailWithResponse(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*GetKataTaskDetailResponse, error)
 
 	// CreateKataWorkspaceWithBodyWithResponse request with any body
 	CreateKataWorkspaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateKataWorkspaceResponse, error)
@@ -30737,15 +30744,15 @@ func (r ListKataDaemonsResponse) StatusCode() int {
 	return 0
 }
 
-type ResolveKataWorkspaceTargetResponse struct {
+type GetKataTaskDetailResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *KataWorkspaceTargetResponse
+	JSON200                       *KataTaskDetailResponse
 	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
-func (r ResolveKataWorkspaceTargetResponse) Status() string {
+func (r GetKataTaskDetailResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -30753,7 +30760,7 @@ func (r ResolveKataWorkspaceTargetResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r ResolveKataWorkspaceTargetResponse) StatusCode() int {
+func (r GetKataTaskDetailResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -35543,21 +35550,13 @@ func (c *ClientWithResponses) ListKataDaemonsWithResponse(ctx context.Context, r
 	return ParseListKataDaemonsResponse(rsp)
 }
 
-// ResolveKataWorkspaceTargetWithBodyWithResponse request with arbitrary body returning *ResolveKataWorkspaceTargetResponse
-func (c *ClientWithResponses) ResolveKataWorkspaceTargetWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveKataWorkspaceTargetResponse, error) {
-	rsp, err := c.ResolveKataWorkspaceTargetWithBody(ctx, contentType, body, reqEditors...)
+// GetKataTaskDetailWithResponse request returning *GetKataTaskDetailResponse
+func (c *ClientWithResponses) GetKataTaskDetailWithResponse(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*GetKataTaskDetailResponse, error) {
+	rsp, err := c.GetKataTaskDetail(ctx, issueUid, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseResolveKataWorkspaceTargetResponse(rsp)
-}
-
-func (c *ClientWithResponses) ResolveKataWorkspaceTargetWithResponse(ctx context.Context, body ResolveKataWorkspaceTargetJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveKataWorkspaceTargetResponse, error) {
-	rsp, err := c.ResolveKataWorkspaceTarget(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseResolveKataWorkspaceTargetResponse(rsp)
+	return ParseGetKataTaskDetailResponse(rsp)
 }
 
 // CreateKataWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateKataWorkspaceResponse
@@ -41567,22 +41566,22 @@ func ParseListKataDaemonsResponse(rsp *http.Response) (*ListKataDaemonsResponse,
 	return response, nil
 }
 
-// ParseResolveKataWorkspaceTargetResponse parses an HTTP response from a ResolveKataWorkspaceTargetWithResponse call
-func ParseResolveKataWorkspaceTargetResponse(rsp *http.Response) (*ResolveKataWorkspaceTargetResponse, error) {
+// ParseGetKataTaskDetailResponse parses an HTTP response from a GetKataTaskDetailWithResponse call
+func ParseGetKataTaskDetailResponse(rsp *http.Response) (*GetKataTaskDetailResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ResolveKataWorkspaceTargetResponse{
+	response := &GetKataTaskDetailResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest KataWorkspaceTargetResponse
+		var dest KataTaskDetailResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

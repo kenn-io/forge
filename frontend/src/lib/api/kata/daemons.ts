@@ -8,6 +8,7 @@ export type KataDaemonInfo = components["schemas"]["KataDaemonResponse"];
 
 const API_PREFIX = "/api" + "/v1";
 const KATA_PROXY_ROUTE = `${API_PREFIX}/kata/proxy`;
+const KATA_TASKS_ROUTE = `${API_PREFIX}/kata/tasks`;
 
 function appPath(path: string): string {
   const basePath = typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/";
@@ -25,7 +26,15 @@ export function kataProxyPath(path: string): string {
   return appPath(`${KATA_PROXY_ROUTE}${normalized}`);
 }
 
-function isSameOriginProxyRequest(input: RequestInfo | URL): boolean {
+// Path of middleman's combined task-detail read: daemon detail enriched with
+// the workspace target, served by middleman itself rather than the proxy.
+export function kataTaskDetailPath(uid: string): string {
+  return appPath(`${KATA_TASKS_ROUTE}/${encodeURIComponent(uid)}`);
+}
+
+// Daemon-scoped requests carry the daemon selection header: everything under
+// the passthrough proxy, plus middleman's own daemon-backed task reads.
+function isSameOriginKataDaemonRequest(input: RequestInfo | URL): boolean {
   const origin = globalThis.location?.origin;
   if (!origin) return true;
   let raw: string;
@@ -36,7 +45,11 @@ function isSameOriginProxyRequest(input: RequestInfo | URL): boolean {
 
   try {
     const url = new URL(raw, origin);
-    return url.origin === origin && url.pathname.startsWith(appPath(`${KATA_PROXY_ROUTE}/`));
+    if (url.origin !== origin) return false;
+    return (
+      url.pathname.startsWith(appPath(`${KATA_PROXY_ROUTE}/`)) ||
+      url.pathname.startsWith(appPath(`${KATA_TASKS_ROUTE}/`))
+    );
   } catch {
     return false;
   }
@@ -77,7 +90,7 @@ export function withKataDaemon(fetchImpl: typeof fetch, getId: () => string | un
       new Headers(init.headers).forEach((value, key) => headers.set(key, value));
     }
 
-    if (!isSameOriginProxyRequest(input)) {
+    if (!isSameOriginKataDaemonRequest(input)) {
       if (!headers.has(KATA_DAEMON_HEADER)) return fetchImpl(input, init);
       headers.delete(KATA_DAEMON_HEADER);
       return fetchImpl(input, { ...init, headers });

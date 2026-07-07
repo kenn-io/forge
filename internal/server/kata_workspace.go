@@ -45,8 +45,6 @@ type kataWorkspaceTargetResponse struct {
 	ExistingWorkspace *workspaceRef    `json:"existing_workspace,omitempty"`
 }
 
-type kataWorkspaceTargetOutput = bodyOutput[kataWorkspaceTargetResponse]
-
 type kataResolvedWorkspaceRepo struct {
 	Provider     string
 	PlatformHost string
@@ -76,22 +74,16 @@ func (body kataWorkspaceTaskRequest) metadata() (db.WorkspaceKataMetadata, error
 	return metadata, nil
 }
 
-func (s *Server) kataWorkspaceTarget(
+func (s *Server) kataWorkspaceTargetForMetadata(
 	ctx context.Context,
-	input *kataWorkspaceTaskInput,
-) (*kataWorkspaceTargetOutput, error) {
-	metadata, err := input.Body.metadata()
-	if err != nil {
-		return nil, err
-	}
+	metadata db.WorkspaceKataMetadata,
+) (kataWorkspaceTargetResponse, error) {
 	target, ok, err := s.resolveKataWorkspaceRepo(ctx, metadata)
 	if err != nil {
-		return nil, err
+		return kataWorkspaceTargetResponse{}, err
 	}
 	if !ok {
-		return &kataWorkspaceTargetOutput{
-			Body: kataWorkspaceTargetResponse{Available: false},
-		}, nil
+		return kataWorkspaceTargetResponse{Available: false}, nil
 	}
 	repoRef := s.repoRefFromParts(
 		target.Provider, target.PlatformHost, target.Owner, target.Name,
@@ -112,7 +104,7 @@ func (s *Server) kataWorkspaceTarget(
 		resp.ItemKey,
 	)
 	if err != nil {
-		return nil, problemInternal("lookup existing Kata workspace: " + err.Error())
+		return kataWorkspaceTargetResponse{}, problemInternal("lookup existing Kata workspace: " + err.Error())
 	}
 	if existing != nil {
 		resp.ExistingWorkspace = &workspaceRef{
@@ -120,7 +112,7 @@ func (s *Server) kataWorkspaceTarget(
 			Status: existing.Status,
 		}
 	}
-	return &kataWorkspaceTargetOutput{Body: resp}, nil
+	return resp, nil
 }
 
 func (s *Server) createKataWorkspace(
@@ -507,12 +499,12 @@ const httpStatusAccepted = 202
 
 func registerKataWorkspaceAPI(api huma.API, s *Server) {
 	huma.Register(api, huma.Operation{
-		OperationID: "resolve-kata-workspace-target",
-		Method:      "POST",
-		Path:        "/kata/workspace-target",
-		Summary:     "Resolve Kata workspace target",
+		OperationID: "get-kata-task-detail",
+		Method:      "GET",
+		Path:        "/kata/tasks/{issue_uid}",
+		Summary:     "Get Kata task detail with workspace target",
 		Tags:        []string{"Kata"},
-	}, s.kataWorkspaceTarget)
+	}, s.kataTaskDetail)
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-kata-workspace",
 		Method:        "POST",

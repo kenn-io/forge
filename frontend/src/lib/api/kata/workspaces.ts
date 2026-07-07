@@ -34,19 +34,6 @@ export function kataWorkspaceIdentityFromIssue(
   return identity;
 }
 
-export function resolveKataWorkspaceTarget(identity: KataWorkspaceTaskIdentity): Promise<KataWorkspaceTarget> {
-  return client
-    .POST("/kata/workspace-target", {
-      body: identity,
-    })
-    .then(({ data, error, response }) => {
-      if (!data) {
-        throw new Error(requestErrorMessage(error, `POST /kata/workspace-target -> ${response.status}`));
-      }
-      return data;
-    });
-}
-
 export function createKataWorkspaceForTask(identity: KataWorkspaceTaskIdentity): Promise<KataWorkspaceResponse> {
   return client
     .POST("/kata/workspaces", {

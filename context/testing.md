@@ -81,6 +81,7 @@ that is already proven at those two boundaries.
 
 Roborev `hide_classify_jobs` e2e fixtures must cover skipped design rows and classify-typed auto-design rows.
 Seed classify rows terminal unless testing worker mutation; live workers can rewrite queued/running rows during browser assertions (`internal/testutil/roborev_fixtures.go::seedRoborevMutationFixtures`).
+Keep injected Roborev `panel_run` failures controlled until the assertion observes them; drawer/list refresh demand can immediately retry member fetches and clear transient panel errors (`packages/ui/src/stores/roborev/jobs.svelte.ts::wantsPanelMembers`).
 
 Kata reachable-graph tests can use `window.__middleman_kata_graph_debug` in
 browser/e2e runs, or `kata-graph-debug.ts` directly in unit tests, to inspect

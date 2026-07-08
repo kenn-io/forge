@@ -323,6 +323,9 @@ Kata frontend adaptation:
 - Task-list header controls should expand every visible task tree recursively
   through the task-detail API, and collapse should hide cached descendants
   without reintroducing them as top-level flat rows.
+- Project-scoped task filters must resolve the Kata project UID and read the
+  daemon's project issue list instead of filtering the all-project issue list
+  locally (`frontend/src/lib/api/kata/taskClient.ts::searchProject`).
 - Replace direct daemon URL/localStorage bootstrap with calls to middleman's
   Kata daemon roster and proxy.
 - Use a middleman-owned selector header for proxied daemon requests.

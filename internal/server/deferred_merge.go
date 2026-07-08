@@ -185,11 +185,11 @@ func (s *Server) enqueueDeferredMerge(
 		)
 	}
 	started := s.runBackground(func(bgCtx context.Context) {
-		defer s.clearDeferredMergeInFlight(key)
+		defer s.clearDeferredMergeInFlight(key, handle)
 		s.runDeferredMerge(bgCtx, *repo, number, body, pendingKeys, queuedTarget, pollInterval, maxWait, handle)
 	})
 	if !started {
-		s.clearDeferredMergeInFlight(key)
+		s.clearDeferredMergeInFlight(key, handle)
 		return deferMergePRBody{}, problemServiceUnavailable("server is shutting down")
 	}
 	return deferMergePRBody{
@@ -219,6 +219,9 @@ func (s *Server) runDeferredMerge(
 	for {
 		state, err := s.refreshDeferredMergeCI(ctx, repo, number, pendingKeys, queuedTarget)
 		if err != nil {
+			if errors.Is(err, errDeferredMergeTargetMerged) {
+				return
+			}
 			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 			return
 		}
@@ -383,6 +386,9 @@ func (s *Server) completeDeferredMerge(
 	handle *deferredMergeHandle,
 ) {
 	if err := s.ensureDeferredMergeTargetUnchanged(ctx, repo, number, queuedTarget); err != nil {
+		if errors.Is(err, errDeferredMergeTargetMerged) {
+			return
+		}
 		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return
 	}
@@ -394,7 +400,7 @@ func (s *Server) completeDeferredMerge(
 	// Clear pending before announcing completion: clients refresh detail the
 	// moment they see deferred_merge_completed, and that refresh must not
 	// read a stale deferred_merge_pending=true.
-	s.clearDeferredMergeInFlight(deferredMergeKey(repo, number))
+	s.clearDeferredMergeInFlight(deferredMergeKey(repo, number), handle)
 	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 	s.hub.Broadcast(Event{
 		Type: "deferred_merge_completed",
@@ -478,13 +484,26 @@ func deferredMergeTargetMatchesProvider(mr platform.MergeRequest, queued deferre
 	)
 }
 
+// errDeferredMergeTargetMerged marks a queued deferred merge whose pull
+// request was already merged through another path (an immediate merge or an
+// external merge observed via sync). The worker stands down silently on it: a
+// "failed" event for a pull request that ended up merged is misleading. The
+// supersede handle cannot cover this alone — the worker syncs provider state
+// independently, so it can observe the merge before supersedeDeferredMerge
+// runs in the immediate-merge path.
+var errDeferredMergeTargetMerged = errors.New("pull request was already merged; deferred merge has nothing left to do")
+
 // deferredMergeRequireOpenDB fails a deferred merge whose target is no longer
 // open in the local snapshot. Closing a pull request is the only cancel a user
 // has for a queued deferred merge, so the background worker must abort once the
 // close has synced rather than merge a pull request the maintainer retracted.
+// A merged target returns errDeferredMergeTargetMerged instead of a failure.
 func deferredMergeRequireOpenDB(mr *db.MergeRequest) error {
 	if mr == nil {
 		return errors.New("pull request no longer exists")
+	}
+	if mr.State == db.MergeRequestStateMerged {
+		return errDeferredMergeTargetMerged
 	}
 	if mr.State != db.MergeRequestStateOpen {
 		return errors.New("pull request is no longer open; deferred merge was not performed")
@@ -496,8 +515,13 @@ func deferredMergeRequireOpenDB(mr *db.MergeRequest) error {
 // immediately before merging. This is the authoritative gate: the local row can
 // lag a close until the next sync, and a closed pull request that is reopened
 // with the same head must not be silently merged by the queued worker.
+// A merged target returns errDeferredMergeTargetMerged instead of a failure.
 func deferredMergeRequireOpenProvider(mr platform.MergeRequest) error {
-	if !strings.EqualFold(strings.TrimSpace(mr.State), string(db.MergeRequestStateOpen)) {
+	state := strings.TrimSpace(mr.State)
+	if strings.EqualFold(state, string(db.MergeRequestStateMerged)) {
+		return errDeferredMergeTargetMerged
+	}
+	if !strings.EqualFold(state, string(db.MergeRequestStateOpen)) {
 		return errors.New("pull request is no longer open; deferred merge was not performed")
 	}
 	return nil
@@ -531,7 +555,7 @@ func (s *Server) broadcastDeferredMergeFailure(repo db.Repo, number int, headSHA
 	}
 	// Clear pending before announcing the failure, for the same
 	// refresh-on-event ordering reason as the success path.
-	s.clearDeferredMergeInFlight(deferredMergeKey(repo, number))
+	s.clearDeferredMergeInFlight(deferredMergeKey(repo, number), handle)
 	slog.Warn("deferred merge failed",
 		"provider", repoProviderKind(repo),
 		"platform_host", repoProviderHost(repo),
@@ -682,10 +706,16 @@ func (s *Server) isDeferredMergePending(repo db.Repo, number int) bool {
 	return ok
 }
 
-func (s *Server) clearDeferredMergeInFlight(key string) {
+// clearDeferredMergeInFlight removes the key only while it still maps to
+// handle. Terminal paths clear before broadcasting, so a new deferred merge
+// can be queued for the same key before the old worker goroutine runs its
+// deferred cleanup; that cleanup must not delete the newer handle.
+func (s *Server) clearDeferredMergeInFlight(key string, handle *deferredMergeHandle) {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()
-	delete(s.deferredMergeInFlight, key)
+	if s.deferredMergeInFlight[key] == handle {
+		delete(s.deferredMergeInFlight, key)
+	}
 }
 
 // supersedeDeferredMerge stands down any queued deferred merge for the key

@@ -1644,6 +1644,110 @@ func TestDeferMergeEndpointBroadcastsFailureWhenTargetClosedWhileWaiting(t *test
 	}
 }
 
+func TestDeferMergeEndpointStandsDownSilentlyWhenTargetMergedWhileWaiting(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	ciStarted := make(chan struct{})
+	ciRelease := make(chan struct{})
+	provider := &deferredMergeTestProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{
+			ref: ref,
+			ciChecks: map[string][]platform.CICheck{
+				"head-sha": {{
+					App:        "GitLab",
+					Name:       "pipeline",
+					Status:     "completed",
+					Conclusion: "success",
+				}},
+			},
+		},
+		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
+		ciStarted: ciStarted,
+		ciRelease: ciRelease,
+	}
+	srv, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
+		App: "GitLab", Name: "pipeline", Status: "in_progress",
+	}})
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode(), string(resp.Body))
+
+	select {
+	case <-ciStarted:
+	case <-time.After(time.Second):
+		require.FailNow("timed out waiting for deferred CI refresh to start")
+	}
+	// The pull request is merged through another path (an immediate merge or
+	// an external merge observed via sync) while the worker waits. Unlike a
+	// close, the merged outcome satisfies the queued intent, so the worker
+	// must stand down silently instead of broadcasting a misleading failure.
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      7001,
+		Number:          7,
+		URL:             "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Title:           "Defer merge",
+		Author:          "ada",
+		State:           "merged",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "head-sha",
+		PlatformBaseSHA: "base-sha",
+		CIStatus:        "pending",
+		CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{{
+			App: "GitLab", Name: "pipeline", Status: "in_progress",
+		}}),
+		CIHadPending:   true,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	close(ciRelease)
+
+	require.Eventually(func() bool {
+		srv.deferredMergeMu.Lock()
+		defer srv.deferredMergeMu.Unlock()
+		return len(srv.deferredMergeInFlight) == 0
+	}, time.Second, 10*time.Millisecond)
+	select {
+	case call := <-provider.mergeCh:
+		require.Failf("unexpected merge", "merge call: %+v", call)
+	default:
+	}
+	deadline := time.After(300 * time.Millisecond)
+	for {
+		select {
+		case ev := <-events:
+			require.NotEqual("deferred_merge_completed", ev.Event.Type)
+		case <-deadline:
+			return
+		}
+	}
+}
+
 func TestDeferMergeEndpointBroadcastsFailureWhenProviderClosedBeforeMerge(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
@@ -1746,6 +1850,35 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderClosedBeforeMerge(t *tes
 		require.Failf("unexpected merge", "merge call: %+v", call)
 	default:
 	}
+}
+
+func TestClearDeferredMergeInFlightKeepsNewerHandle(t *testing.T) {
+	require := require.New(t)
+	srv := &Server{}
+	key := "gitlab:gitlab.example.com:group/project#7"
+
+	stale, marked := srv.markDeferredMergeInFlight(key)
+	require.True(marked)
+	// Terminal paths clear the key before broadcasting, so a new deferred
+	// merge can be queued before the old worker goroutine runs its deferred
+	// cleanup for the same key.
+	srv.clearDeferredMergeInFlight(key, stale)
+	current, marked := srv.markDeferredMergeInFlight(key)
+	require.True(marked)
+
+	// The old worker's deferred cleanup must not delete the newer handle;
+	// otherwise the active deferred merge becomes untracked and a duplicate
+	// can be queued.
+	srv.clearDeferredMergeInFlight(key, stale)
+	srv.deferredMergeMu.Lock()
+	got := srv.deferredMergeInFlight[key]
+	srv.deferredMergeMu.Unlock()
+	require.Same(current, got)
+
+	srv.clearDeferredMergeInFlight(key, current)
+	srv.deferredMergeMu.Lock()
+	require.Empty(srv.deferredMergeInFlight)
+	srv.deferredMergeMu.Unlock()
 }
 
 func mustDeferredMergeChecksJSON(t *testing.T, checks []db.CICheck) string {

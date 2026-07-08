@@ -20,9 +20,11 @@ func TestLiveGitHubRateLimitSnapshotUsesGoGitHub(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	client := gh.NewClient(nil)
+	client, err := gh.NewClient()
+	require.NoError(err)
 	if token := liveGitHubToken(); token != "" {
-		client = gh.NewClient(oauthHTTPClient(token))
+		client, err = gh.NewClient(gh.WithHTTPClient(oauthHTTPClient(token)))
+		require.NoError(err)
 	}
 
 	limits, resp, err := client.RateLimit.Get(ctx)

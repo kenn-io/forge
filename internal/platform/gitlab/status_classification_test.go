@@ -17,7 +17,8 @@ import (
 // as the gitlab.ErrNotFound sentinel instead.
 func gitlabStatusError(host string, status int) *gitlab.ErrorResponse {
 	return &gitlab.ErrorResponse{
-		Message: "boom",
+		StatusCode: status,
+		Message:    "boom",
 		Response: &http.Response{
 			StatusCode: status,
 			Request: &http.Request{

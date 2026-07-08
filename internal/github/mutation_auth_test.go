@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v88/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -31,13 +30,13 @@ func newSplitAuthTestClient(
 	}
 	readHTTP := &http.Client{Transport: authRT}
 	writeHTTP := &http.Client{Transport: mutationAuthTransport{base: authRT}}
-	ghRead, err := gh.NewClient(readHTTP).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghRead, err := newEnterpriseGHClient(readHTTP,
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(t, err)
-	ghWrite, err := gh.NewClient(writeHTTP).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghWrite, err := newEnterpriseGHClient(writeHTTP,
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(t, err)
 	return &liveClient{
 		gh:              ghRead,
@@ -342,9 +341,9 @@ func TestMutationAuthFallsBackToReadClientWhenUnsplit(t *testing.T) {
 		Base:      http.DefaultTransport,
 		SetHeader: tokenauth.BearerAuthHeader,
 	}
-	ghClient, err := gh.NewClient(&http.Client{Transport: authRT}).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghClient, err := newEnterpriseGHClient(&http.Client{Transport: authRT},
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(t, err)
 	c := &liveClient{gh: ghClient}
 

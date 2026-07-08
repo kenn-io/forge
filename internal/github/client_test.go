@@ -27,6 +27,10 @@ import (
 // Compile-time assertion that liveClient satisfies Client.
 var _ Client = (*liveClient)(nil)
 
+func newEnterpriseGHClient(hc *http.Client, baseURL, uploadURL string) (*gh.Client, error) {
+	return gh.NewClient(gh.WithHTTPClient(hc), gh.WithEnterpriseURLs(baseURL, uploadURL))
+}
+
 func (m *mockClient) ListPullRequestTimelineEvents(
 	_ context.Context, _, _ string, _ int,
 ) ([]PullRequestTimelineEvent, error) {
@@ -156,10 +160,10 @@ func TestApplyReviewSuggestionsRejectsWhitespacePaddedPath(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
 		srv.URL+"/api/v3/",
-		srv.URL+"/api/uploads/",
-	)
+		srv.URL+"/api/uploads/")
+
 	require.NoError(t, err)
 	client := &liveClient{
 		gh:              ghClient,
@@ -213,10 +217,10 @@ func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
 		srv.URL+"/api/v3/",
-		srv.URL+"/api/uploads/",
-	)
+		srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	client := &liveClient{
 		gh:              ghClient,
@@ -295,15 +299,15 @@ func TestApplyReviewSuggestionsProbesHeadRepoWithWriteCredential(t *testing.T) {
 	writeSrv := httptest.NewServer(writeMux)
 	defer writeSrv.Close()
 
-	readGH, err := gh.NewClient(readSrv.Client()).WithEnterpriseURLs(
+	readGH, err := newEnterpriseGHClient(readSrv.Client(),
 		readSrv.URL+"/api/v3/",
-		readSrv.URL+"/api/uploads/",
-	)
+		readSrv.URL+"/api/uploads/")
+
 	require.NoError(err)
-	writeGH, err := gh.NewClient(writeSrv.Client()).WithEnterpriseURLs(
+	writeGH, err := newEnterpriseGHClient(writeSrv.Client(),
 		writeSrv.URL+"/api/v3/",
-		writeSrv.URL+"/api/uploads/",
-	)
+		writeSrv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	client := &liveClient{
 		gh:              readGH,
@@ -354,10 +358,10 @@ func TestApplyReviewSuggestionsFailsClosedWhenPullNotOpenUpstream(t *testing.T) 
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
 		srv.URL+"/api/v3/",
-		srv.URL+"/api/uploads/",
-	)
+		srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	client := &liveClient{
 		gh:              ghClient,
@@ -418,10 +422,10 @@ func TestApplyReviewSuggestionsFailsClosedWhenPullClosesBeforeMutation(t *testin
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
 		srv.URL+"/api/v3/",
-		srv.URL+"/api/uploads/",
-	)
+		srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	client := &liveClient{
 		gh:              ghClient,
@@ -498,10 +502,10 @@ func TestApplyReviewSuggestionsFailsStaleBeforeContentWhenPullHeadAlreadyChanged
 			srv := httptest.NewServer(mux)
 			defer srv.Close()
 
-			ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+			ghClient, err := newEnterpriseGHClient(srv.Client(),
 				srv.URL+"/api/v3/",
-				srv.URL+"/api/uploads/",
-			)
+				srv.URL+"/api/uploads/")
+
 			require.NoError(err)
 			client := &liveClient{
 				gh:              ghClient,
@@ -587,10 +591,10 @@ func TestApplyReviewSuggestionsFailsStaleWhenPullHeadChangesBeforeMutation(t *te
 			srv := httptest.NewServer(mux)
 			defer srv.Close()
 
-			ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+			ghClient, err := newEnterpriseGHClient(srv.Client(),
 				srv.URL+"/api/v3/",
-				srv.URL+"/api/uploads/",
-			)
+				srv.URL+"/api/uploads/")
+
 			require.NoError(err)
 			client := &liveClient{
 				gh:              ghClient,
@@ -643,10 +647,10 @@ func TestApplyReviewSuggestionsFailsClosedWhenLiveHeadRepoMissing(t *testing.T) 
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
 		srv.URL+"/api/v3/",
-		srv.URL+"/api/uploads/",
-	)
+		srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	client := &liveClient{
 		gh:              ghClient,
@@ -700,10 +704,10 @@ func TestApplyReviewSuggestionsFailsClosedWhenLiveHeadRepoInaccessible(t *testin
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
 		srv.URL+"/api/v3/",
-		srv.URL+"/api/uploads/",
-	)
+		srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	client := &liveClient{
 		gh:              ghClient,
@@ -894,9 +898,9 @@ func TestListReleasesTracksRate(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	c := &liveClient{gh: ghClient, rateTracker: rt}
 
@@ -932,9 +936,9 @@ func TestListTagsTracksRate(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	c := &liveClient{gh: ghClient, rateTracker: rt}
 
@@ -1010,9 +1014,9 @@ func TestListOpenIssuesLogsFetchProgressForLargeIssueSet(t *testing.T) {
 	defer srv.Close()
 	serverURL = srv.URL
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	c := &liveClient{gh: ghClient}
 
@@ -1093,9 +1097,9 @@ func TestListOpenPullRequestsLogsFetchProgressForLargePullRequestSet(t *testing.
 	defer srv.Close()
 	serverURL = srv.URL
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	c := &liveClient{gh: ghClient}
 
@@ -1175,9 +1179,9 @@ func TestListRepositoriesByOwnerUsesAuthenticatedEndpointForViewer(t *testing.T)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	c := &liveClient{gh: ghClient}
 
@@ -1236,9 +1240,9 @@ func TestListRepositoriesByOwnerUsesInstallationReposWithAppToken(t *testing.T) 
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	c := &liveClient{
 		gh: ghClient,
@@ -1294,9 +1298,9 @@ func TestListRepositoriesByOwnerSkipsInstallationReposForUnmatchedOwner(t *testi
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	c := &liveClient{
 		gh: ghClient,
@@ -1347,9 +1351,9 @@ func TestListRepositoriesByOwnerUsesPublicUserEndpointForOtherUsers(t *testing.T
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
-	)
+	ghClient, err := newEnterpriseGHClient(srv.Client(),
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+
 	require.NoError(err)
 	c := &liveClient{gh: ghClient}
 
@@ -1711,7 +1715,7 @@ func TestMarkPullRequestReadyForReviewUsesGraphQLMutation(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+	ghClient, err := newEnterpriseGHClient(srv.Client(), srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
 	require.NoError(err)
 
 	c := &liveClient{
@@ -1760,7 +1764,7 @@ func TestConvertPullRequestToDraftUsesGraphQLMutation(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+	ghClient, err := newEnterpriseGHClient(srv.Client(), srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
 	require.NoError(err)
 
 	c := &liveClient{
@@ -1804,7 +1808,7 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+	ghClient, err := newEnterpriseGHClient(srv.Client(), srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
 	require.NoError(err)
 
 	c := &liveClient{

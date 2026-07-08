@@ -281,20 +281,20 @@ func NewClient(
 	)}
 
 	newGHClient := func(hc *http.Client) (*gh.Client, error) {
+		opts := []gh.ClientOptionsFunc{gh.WithHTTPClient(hc)}
 		if options.baseURLOverride != "" {
-			return gh.NewClient(hc).WithEnterpriseURLs(
+			opts = append(opts, gh.WithEnterpriseURLs(
 				options.baseURLOverride+"/api/v3/",
 				options.baseURLOverride+"/api/uploads/",
-			)
+			))
+		} else if platformHost != "" && platformHost != "github.com" {
+			baseURL := "https://" + platformHost + "/api/v3/"
+			uploadURL := "https://" + platformHost + "/api/uploads/"
+			opts = append(opts, gh.WithEnterpriseURLs(baseURL, uploadURL))
 		}
-		if platformHost == "" || platformHost == "github.com" {
-			return gh.NewClient(hc), nil
-		}
-		baseURL := "https://" + platformHost + "/api/v3/"
-		uploadURL := "https://" + platformHost + "/api/uploads/"
-		client, err := gh.NewClient(hc).WithEnterpriseURLs(baseURL, uploadURL)
+		client, err := gh.NewClient(opts...)
 		if err != nil {
-			return nil, fmt.Errorf("create enterprise client: %w", err)
+			return nil, fmt.Errorf("create github client: %w", err)
 		}
 		return client, nil
 	}
@@ -1556,7 +1556,7 @@ func (c *liveClient) GetIssueIfChanged(
 	etag string,
 ) (*gh.Issue, string, bool, error) {
 	u := fmt.Sprintf("repos/%v/%v/issues/%v", owner, repo, number)
-	req, err := c.gh.NewRequest(http.MethodGet, u, nil)
+	req, err := c.gh.NewRequest(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -1565,7 +1565,7 @@ func (c *liveClient) GetIssueIfChanged(
 	}
 
 	issue := new(gh.Issue)
-	resp, err := c.gh.Do(ctx, req, issue)
+	resp, err := c.gh.Do(req, issue)
 	c.trackRate(resp)
 	if err != nil {
 		if IsNotModified(err) {
@@ -1597,7 +1597,7 @@ func (c *liveClient) GetPullRequestIfChanged(
 	etag string,
 ) (*gh.PullRequest, string, bool, error) {
 	u := fmt.Sprintf("repos/%v/%v/pulls/%v", owner, repo, number)
-	req, err := c.gh.NewRequest(http.MethodGet, u, nil)
+	req, err := c.gh.NewRequest(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -1606,7 +1606,7 @@ func (c *liveClient) GetPullRequestIfChanged(
 	}
 
 	pr := new(gh.PullRequest)
-	resp, err := c.gh.Do(ctx, req, pr)
+	resp, err := c.gh.Do(req, pr)
 	c.trackRate(resp)
 	if err != nil {
 		if IsNotModified(err) {
@@ -2442,6 +2442,7 @@ func (c *liveClient) ApproveWorkflowRun(
 	ctx context.Context, owner, repo string, runID int64,
 ) error {
 	req, err := c.writeGH().NewRequest(
+		ctx,
 		"POST",
 		fmt.Sprintf("repos/%s/%s/actions/runs/%d/approve", owner, repo, runID),
 		nil,
@@ -2453,7 +2454,7 @@ func (c *liveClient) ApproveWorkflowRun(
 		)
 	}
 
-	resp, err := c.writeGH().Do(ctx, req, nil)
+	resp, err := c.writeGH().Do(req, nil)
 	c.trackWriteRate(resp)
 	if err != nil {
 		return fmt.Errorf(

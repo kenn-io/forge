@@ -15,9 +15,9 @@
     "test:e2e": "node node_modules/vite-plus/bin/vp run middleman-frontend#test:e2e && cd packages/github-app-ui && node ../../node_modules/vite-plus/bin/vp build --logLevel warn && node node_modules/.bin/playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "1.61.0",
-    "@sveltejs/mcp": "0.1.24",
-    "svelte-check": "4.6.0",
+    "@playwright/test": "1.61.1",
+    "@sveltejs/mcp": "0.1.25",
+    "svelte-check": "4.7.1",
     "vite-plus": "0.2.1"
   },
   "overrides": {

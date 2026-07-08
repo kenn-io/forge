@@ -12,14 +12,14 @@
     "typecheck": "cd ../.. && node node_modules/vite-plus/bin/vp run github-app-ui-package-typecheck"
   },
   "devDependencies": {
-    "@playwright/test": "1.61.0",
+    "@playwright/test": "1.61.1",
     "@sveltejs/vite-plugin-svelte": "7.1.2",
     "@tsconfig/svelte": "5.0.8",
     "@types/node": "^26.0.0",
-    "playwright": "1.61.0",
-    "svelte": "5.56.3",
-    "svelte-check": "4.6.0",
-    "vite": "8.0.16",
+    "playwright": "1.61.1",
+    "svelte": "5.56.4",
+    "svelte-check": "4.7.1",
+    "vite": "8.1.2",
     "vite-plus": "0.2.1"
   }
 }

@@ -61,6 +61,10 @@ notice the regression:
 - frontend store/component tests for provider refs and generated route helpers;
 - optional live/container tests when fakes cannot validate provider API drift.
 
+Provider container fixture image bumps must keep every launch default and baked
+image tag on one release, or local e2e and bake paths can test different
+provider versions (`internal/server/gitlab_container_e2e_test.go::TestGitLabContainerE2E`).
+
 Regenerate OpenAPI and generated clients with `make api-generate` after Huma
 route or API type changes.
 

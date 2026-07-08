@@ -350,10 +350,20 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     return normalizeKataProjectList(result.body);
   }
 
-  async function fetchIssuesByStatus(status: "open" | "closed", daemonId?: string): Promise<KataTaskSummary[]> {
-    const path = status === "closed" ? taskPath("/issues?status=closed&limit=500") : taskPath("/issues?status=open");
+  async function fetchIssuesByStatus(
+    status: "open" | "closed",
+    daemonId?: string,
+    project?: KataProjectSummary,
+  ): Promise<KataTaskSummary[]> {
+    const params = new URLSearchParams();
+    params.set("status", status);
+    if (status === "closed") params.set("limit", "500");
+    const basePath = project ? `/projects/${project.id}/issues` : "/issues";
+    const path = taskPath(`${basePath}?${params.toString()}`);
     const result = await request<unknown>(path, { headers: daemonHeaders(daemonId) });
-    return normalizeKataTaskList(result.body).groups.flatMap((group) => group.issues);
+    return normalizeKataTaskList(result.body)
+      .groups.flatMap((group) => group.issues)
+      .map((issue) => withProjectIdentity(issue, project));
   }
 
   async function fetchIssue(
@@ -396,6 +406,21 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     return filterSearchIssues(await fetchIssuesByStatus(filters.status, daemonId), filters);
   }
 
+  async function searchProjectIssueList(
+    filters: KataTaskSearchFilters & { scope: { kind: "project"; project_uid: string } },
+    project: KataProjectSummary,
+    daemonId?: string,
+  ): Promise<KataTaskSummary[]> {
+    if (filters.status === "all") {
+      const [open, closed] = await Promise.all([
+        fetchIssuesByStatus("open", daemonId, project),
+        fetchIssuesByStatus("closed", daemonId, project),
+      ]);
+      return filterSearchIssues([...open, ...closed], filters);
+    }
+    return filterSearchIssues(await fetchIssuesByStatus(filters.status, daemonId, project), filters);
+  }
+
   async function hydrateProjectSearchRows(
     issues: KataTaskSummary[],
     filters: KataTaskSearchFilters & { scope: { kind: "project"; project_uid: string } },
@@ -421,13 +446,13 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     filters: KataTaskSearchFilters & { scope: { kind: "project"; project_uid: string } },
     daemonId?: string,
   ) {
-    if (filters.query.trim() === "") {
-      return searchAllProjects(filters, daemonId);
-    }
     const projects = await fetchProjects(daemonId);
     const project = projects.projects.find((item) => item.uid === filters.scope.project_uid);
     if (!project) {
       return filterSearchIssues([], filters);
+    }
+    if (filters.query.trim() === "") {
+      return searchProjectIssueList(filters, project, daemonId);
     }
     const params = new URLSearchParams();
     params.set("q", filters.query);

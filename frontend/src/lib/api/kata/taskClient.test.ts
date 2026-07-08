@@ -436,13 +436,28 @@ describe("kata task HTTP client", () => {
     ]);
   });
 
-  test("project-scoped search without a query uses generic issue lists", async () => {
+  test("project-scoped search without a query uses project issue lists", async () => {
     const { calls, fetchImpl } = createFetchStub({
-      "/api/v1/issues?status=open": {
+      "/api/v1/projects?include=stats": {
+        body: { projects: [project("project-work", "Work")] },
+      },
+      "/api/v1/projects/1/issues?status=open": {
         body: {
           issues: [
-            issue("issue-work", "Work backlog", "project-work", {}, "open"),
-            issue("issue-personal", "Personal backlog", "project-personal", {}, "open"),
+            {
+              id: 11,
+              uid: "issue-work",
+              project_id: 1,
+              short_id: "work",
+              qualified_id: "Work#work",
+              title: "Work backlog",
+              status: "open",
+              metadata: {},
+              revision: 1,
+              author: "fixture-user",
+              created_at: "2026-05-01T12:00:00.000Z",
+              updated_at: "2026-05-15T16:00:00.000Z",
+            },
           ],
         },
       },
@@ -457,8 +472,13 @@ describe("kata task HTTP client", () => {
       query: "",
     });
 
-    expect(results.issues.map((item) => item.title)).toEqual(["Work backlog"]);
-    expect(calls.map((call) => proxyPath(call.url))).toEqual(["/api/v1/issues?status=open"]);
+    expect(results.issues.map((item) => [item.title, item.project_uid, item.project_name])).toEqual([
+      ["Work backlog", "project-work", "Work"],
+    ]);
+    expect(calls.map((call) => proxyPath(call.url))).toEqual([
+      "/api/v1/projects?include=stats",
+      "/api/v1/projects/1/issues?status=open",
+    ]);
   });
 
   test("project search enriches raw search issues with the scoped project identity", async () => {

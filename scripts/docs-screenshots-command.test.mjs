@@ -19,7 +19,14 @@ test("docs screenshot regeneration uses root Playwright dependencies", async () 
     rootPkg.scripts?.["docs:screenshots"],
     "node node_modules/vite-plus/bin/vp exec -- playwright test --config docs/screenshots/playwright.config.ts --project=chromium",
   );
-  assert.equal(rootPkg.devDependencies?.["@playwright/test"], "1.61.0");
+  // The exact version is checked against the CI container by
+  // scripts/check-playwright-version.mjs; here only the exact-pin shape
+  // matters, so Playwright bumps don't have to touch this test.
+  assert.match(
+    rootPkg.devDependencies?.["@playwright/test"] ?? "",
+    /^\d+\.\d+\.\d+$/,
+    "root package.json must pin an exact @playwright/test version",
+  );
 
   const list = spawnSync(process.execPath, ["node_modules/vite-plus/bin/vp", "run", "docs:screenshots", "--list"], {
     encoding: "utf8",

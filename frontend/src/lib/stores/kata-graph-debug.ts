@@ -3,6 +3,7 @@ export type KataGraphDebugEventKind =
   | "detail-load-complete"
   | "detail-load-stale"
   | "detail-load-start"
+  | "events-load-error"
   | "graph-load-complete"
   | "graph-load-error"
   | "graph-load-start"

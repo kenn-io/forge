@@ -29,7 +29,11 @@ state.
   when the issue payload carries no project name. Server-side daemon reads
   never follow redirects, matching the passthrough proxy and health probe.
   The response varies by `X-Middleman-Kata-Daemon` and must keep declaring
-  `Vary` on it.
+  `Vary` on it. The frontend mirrors the critical-path rule: a direct task
+  selection resolves (and syncs the route) as soon as the detail applies,
+  with the event-log read finishing in a guarded background continuation
+  whose failure must not fail the selection
+  (`frontend/src/lib/stores/kata-workspace.svelte.ts::loadSelectedIssue`).
 - `POST /kata/workspaces`: create or reuse a Kata-task-backed workspace. Kata
   tasks are not provider issues, so this path never resolves or syncs a
   provider issue row.

@@ -933,7 +933,9 @@ describe("kata workspace store", () => {
     expect(api.mocks.issues).not.toHaveBeenCalled();
     expect(store.currentView.name).toBe("today");
     expect(store.selectedIssue?.issue.title).toBe("Call dentist");
-    expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+    await vi.waitFor(() => {
+      expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+    });
   });
 
   test("loading an issue loads the full recurrence list for that issue project", async () => {
@@ -1009,16 +1011,35 @@ describe("kata workspace store", () => {
     api.mocks.events.mockReturnValue(slowEvents.promise);
     const store = createKataWorkspaceStore({ api });
 
-    const selection = store.selectIssue("issue-pay-rent");
-    await vi.waitFor(() => {
-      expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
-    });
+    // The selection itself resolves while the events read is still in
+    // flight: callers sync the route from this promise, so a slow event-log
+    // walk must not hold it.
+    await expect(store.selectIssue("issue-pay-rent")).resolves.toBe(true);
+    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
     expect(store.pendingSelectionUID).toBeNull();
     expect(store.selectedEvents).toEqual([]);
 
     slowEvents.resolve({ reset_required: false, events: [events[0]!], next_after_id: 1 });
-    await expect(selection).resolves.toBe(true);
-    expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-pay-rent"]);
+    await vi.waitFor(() => {
+      expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-pay-rent"]);
+    });
+  });
+
+  test("a failed events read does not fail an already-rendered selection", async () => {
+    const api = createFakeKataTaskAPI();
+    api.mocks.events.mockRejectedValue(new Error("event log walk failed"));
+    const store = createKataWorkspaceStore({ api });
+
+    await expect(store.selectIssue("issue-pay-rent")).resolves.toBe(true);
+
+    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
+    expect(store.pendingSelectionUID).toBeNull();
+    // Flush the background events continuation before proving it left the
+    // rendered detail in place with an empty event log.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
+    expect(store.selectedEvents).toEqual([]);
   });
 
   test("a selection superseded while its events read is in flight keeps the newer selection", async () => {
@@ -1033,17 +1054,21 @@ describe("kata workspace store", () => {
     const store = createKataWorkspaceStore({ api });
 
     holdPayRentEvents = true;
-    const first = store.selectIssue("issue-pay-rent");
-    await vi.waitFor(() => {
-      expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
-    });
+    // The first selection resolves once its detail is applied, even though
+    // its events read is still held open.
+    await expect(store.selectIssue("issue-pay-rent")).resolves.toBe(true);
+    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
     holdPayRentEvents = false;
     await expect(store.selectIssue("issue-call-dentist")).resolves.toBe(true);
 
+    // The stale events finally landing must not leak into the newer
+    // selection's event log.
     slowEvents.resolve({ reset_required: false, events: [events[0]!], next_after_id: 1 });
-    await expect(first).resolves.toBe(false);
     expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
-    expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+    await vi.waitFor(() => {
+      expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+    });
+    expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
   });
 
   test("failed recurrence loading does not block issue selection", async () => {
@@ -1061,7 +1086,9 @@ describe("kata workspace store", () => {
     await expect(store.selectIssue("issue-call-dentist")).resolves.toBe(true);
 
     expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
-    expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+    await vi.waitFor(() => {
+      expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+    });
     expect(store.selectedRecurrences).toEqual([]);
     expect(store.pendingSelectionUID).toBeNull();
   });
@@ -1551,7 +1578,9 @@ describe("kata workspace store", () => {
       "Payment is scheduled.",
     );
     expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
-    expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+    await vi.waitFor(() => {
+      expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+    });
   });
 
   test("delayed mutation detail load does not overwrite a newer manual selection", async () => {
@@ -1582,7 +1611,9 @@ describe("kata workspace store", () => {
     await mutation;
 
     expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
-    expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+    await vi.waitFor(() => {
+      expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
+    });
   });
 
   test("a selection made while a remote-event view refresh is in flight is not discarded", async () => {

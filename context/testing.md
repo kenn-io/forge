@@ -36,6 +36,16 @@ backend/API behavior can affect the SPA contract even when no TypeScript files
 moved. Manual `workflow_dispatch` forces all buckets on so maintainers can
 request a full test pass.
 
+## Dependency versions in guard tests
+
+Guard tests must not assert a literal dependency version (for example
+`assert.equal(pkg.devDependencies["@playwright/test"], "1.61.0")`); every
+Renovate bump then fails lint until someone hand-edits the test. Assert the
+shape that actually matters (exact pin, correct source of the dependency) and
+leave cross-file version lockstep to a dedicated checker such as
+`scripts/check-playwright-version.mjs`, which reads the current pin instead of
+hardcoding one.
+
 ## Provider work
 
 When adding or changing a provider, pick tests at the boundary where users would

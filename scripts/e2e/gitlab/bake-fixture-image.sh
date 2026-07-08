@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-GITLAB_VERSION="${GITLAB_VERSION:-18.9.5-ce.0}"
+GITLAB_VERSION="${GITLAB_VERSION:-19.1.1-ce.0}"
 GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-V9q!T3m#R7p-L2x@N6s}"
 RUNTIME_IMAGE="${GITLAB_FIXTURE_RUNTIME_IMAGE:-middleman/gitlab-ce-fixture-runtime:$GITLAB_VERSION}"
 FIXTURE_IMAGE="${GITLAB_FIXTURE_IMAGE:-middleman/gitlab-ce-fixture:$GITLAB_VERSION}"

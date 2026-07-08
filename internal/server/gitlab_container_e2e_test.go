@@ -56,7 +56,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Minute)
 	defer cancel()
 
-	image := envOrDefault("MIDDLEMAN_GITLAB_IMAGE", "gitlab/gitlab-ce:18.9.5-ce.0")
+	image := envOrDefault("MIDDLEMAN_GITLAB_IMAGE", "gitlab/gitlab-ce:19.1.1-ce.0")
 	rootPassword := envOrDefault("GITLAB_ROOT_PASSWORD", "V9q!T3m#R7p-L2x@N6s")
 	httpPort := envOrDefault("GITLAB_HTTP_PORT", freeLoopbackPort(t))
 	stackID := compose.StackIdentifier(envOrDefault("MIDDLEMAN_GITLAB_COMPOSE_PROJECT", "middleman-gitlab-e2e"))

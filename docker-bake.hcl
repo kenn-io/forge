@@ -1,5 +1,5 @@
 variable "GITLAB_VERSION" {
-  default = "18.9.5-ce.0"
+  default = "19.1.1-ce.0"
 }
 
 variable "GITLAB_BASE_IMAGE" {

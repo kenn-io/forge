@@ -8,7 +8,7 @@ Run the Go e2e test:
 MIDDLEMAN_GITLAB_CONTAINER_E2E=1 make test-gitlab-container
 ```
 
-The test starts `gitlab/gitlab-ce:18.9.5-ce.0` through testcontainers' Docker Compose module, waits for GitLab Rails to serve the sign-in page, runs `bootstrap.sh`, and syncs the seeded project into a real SQLite database. Override the image with `MIDDLEMAN_GITLAB_IMAGE` when checking a different GitLab release.
+The test starts `gitlab/gitlab-ce:19.1.1-ce.0` through testcontainers' Docker Compose module, waits for GitLab Rails to serve the sign-in page, runs `bootstrap.sh`, and syncs the seeded project into a real SQLite database. Override the image with `MIDDLEMAN_GITLAB_IMAGE` when checking a different GitLab release.
 
 By default the Go test uses the Compose project `middleman-gitlab-e2e`, maps GitLab to a free loopback port, and runs `docker compose down` without `-v` during cleanup. The named GitLab volumes are kept so repeated local runs do not pay the full database initialization cost. Set `MIDDLEMAN_GITLAB_COMPOSE_PROJECT` or `GITLAB_HTTP_PORT` if you need a specific project name or port.
 
@@ -51,7 +51,7 @@ Cold GitLab boot plus API bootstrap is slow. To prepare a reusable local image f
 
 ```sh
 make gitlab-fixture-bake
-MIDDLEMAN_GITLAB_IMAGE=middleman/gitlab-ce-fixture:18.9.5-ce.0 \
+MIDDLEMAN_GITLAB_IMAGE=middleman/gitlab-ce-fixture:19.1.1-ce.0 \
   MIDDLEMAN_GITLAB_CONTAINER_E2E=1 \
   make test-gitlab-container
 ```

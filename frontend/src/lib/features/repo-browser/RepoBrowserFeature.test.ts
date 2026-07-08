@@ -296,7 +296,7 @@ describe("RepoBrowserFeature", () => {
       target: { value: "v1" },
     });
     await fireEvent.click(screen.getByRole("tab", { name: "Tags 1" }));
-    await fireEvent.click(screen.getByRole("option", { name: "tag: v1.0.0 tag-sha" }));
+    await fireEvent.click(screen.getByRole("option", { name: "v1.0.0 tag-sha" }));
     await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(9));
     await waitFor(() => {
       expect(onRouteChange).toHaveBeenLastCalledWith(
@@ -348,13 +348,13 @@ describe("RepoBrowserFeature", () => {
     await fireEvent.input(input, { target: { value: "v1" } });
 
     expect(screen.getByRole("tab", { name: "Branches 3" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("option", { name: "branch: release/v1 release-" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "release/v1 release-" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "tag: v1.0.0 tag-sha" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("tab", { name: "Tags 2" }));
 
     expect(screen.getByRole("tab", { name: "Tags 2" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("option", { name: "tag: v1.0.0 tag-sha" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "v1.0.0 tag-sha" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "branch: release/v1 release-" })).toBeNull();
   });
 
@@ -371,7 +371,7 @@ describe("RepoBrowserFeature", () => {
 
     await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
     await fireEvent.click(await screen.findByRole("button", { name: "Select repository ref: branch: main main-sha" }));
-    await fireEvent.click(screen.getByRole("option", { name: "branch: main main-sha" }));
+    await fireEvent.click(screen.getByRole("option", { name: "main main-sha" }));
     await tick();
 
     expect(client.GET).toHaveBeenCalledTimes(5);

@@ -713,7 +713,7 @@
                   }}
                   onmouseenter={() => (refPickerHighlightIndex = index)}
                 >
-                  <span class="option-label">{ref.type}: {ref.name || ref.sha.slice(0, 12)}</span>
+                  <span class="option-label">{ref.name || ref.sha.slice(0, 12)}</span>
                   {#if ref.sha}
                     <span class="option-meta">{ref.sha.slice(0, 8)}</span>
                   {/if}

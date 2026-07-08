@@ -244,11 +244,11 @@ test.describe("repository source browser", () => {
       await browser.getByRole("button", { name: /Select repository ref: branch: main/ }).click();
       await browser.getByRole("combobox", { name: "Search repository refs" }).fill("feature");
       await expect(browser.getByRole("tab", { name: /Branches/ })).toHaveAttribute("aria-selected", "true");
-      await expect(browser.getByRole("option", { name: /branch: feature\/caching/ })).toBeVisible();
+      await expect(browser.getByRole("option", { name: /feature\/caching/ })).toBeVisible();
       await expect(browser.getByRole("option", { name: /tag:/ })).toHaveCount(0);
 
       const featureTreeLoaded = treeResponse(page, "feature/caching");
-      await browser.getByRole("option", { name: /branch: feature\/caching/ }).click();
+      await browser.getByRole("option", { name: /feature\/caching/ }).click();
       await featureTreeLoaded;
       await expect(page).toHaveURL(/ref_name=feature%2Fcaching/);
 
@@ -289,7 +289,7 @@ test.describe("repository source browser", () => {
       const routeBeforeReselect = page.url();
 
       await browser.getByRole("button", { name: /Select repository ref: branch: main/ }).click();
-      await browser.getByRole("option", { name: /branch: main/ }).click();
+      await browser.getByRole("option", { name: /main/ }).click();
 
       await expect(browser.getByRole("combobox", { name: "Search repository refs" })).toHaveCount(0);
       expect(page.url()).toBe(routeBeforeReselect);

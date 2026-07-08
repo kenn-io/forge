@@ -23,16 +23,26 @@ state.
   the resolved workspace target, so the detail pane and its workspace action
   render from one response. There is no separate workspace-target endpoint;
   do not reintroduce one. The UI hides the workspace action when the embedded
-  target has `available:false`. The issue read is the critical path: the
-  daemon `/projects` read is best-effort on a short independent budget and
-  must never delay or fail the detail response; the handler waits on it only
-  when the issue payload carries no project name. Server-side daemon reads
-  never follow redirects, matching the passthrough proxy and health probe.
-  The response varies by `X-Middleman-Kata-Daemon` and must keep declaring
-  `Vary` on it. The frontend mirrors the critical-path rule: a direct task
-  selection resolves (and syncs the route) as soon as the detail applies,
-  with the event-log read finishing in a guarded background continuation
-  whose failure must not fail the selection
+  target has `available:false`. The issue read is the critical path and the
+  `/projects` read is best-effort enrichment that must never fail the detail
+  response. The exact latency contract: when the issue payload carries
+  `project_name`, the handler never waits on `/projects` (it takes the
+  result only if already available); when the payload has no name, it may
+  wait only up to the short `/projects`-specific budget
+  (`internal/server/kata_task_detail.go::kataDaemonProjectsReadTimeout`)
+  before falling back to the (empty) payload name. Server-side daemon reads
+  never follow redirects, matching the passthrough proxy and health probe: a
+  redirected issue read surfaces as a `502 upstream_error`, and a redirected
+  `/projects` read is just a failed best-effort read that falls back to the
+  payload name. All outcomes, including problem responses, depend on the
+  daemon selection and must declare `Vary: X-Middleman-Kata-Daemon`. The
+  frontend mirrors the critical-path rule for direct user selections only: a
+  direct selection resolves (and syncs the route) as soon as the detail
+  applies, with the event-log read finishing in a guarded background
+  continuation whose failure silently leaves the event list empty rather
+  than failing the selection. View/bootstrap loads intentionally stay
+  atomic; do not move them to the background-events behavior, or the
+  route-sync effect can stomp a fresh selection
   (`frontend/src/lib/stores/kata-workspace.svelte.ts::loadSelectedIssue`).
 - `POST /kata/workspaces`: create or reuse a Kata-task-backed workspace. Kata
   tasks are not provider issues, so this path never resolves or syncs a

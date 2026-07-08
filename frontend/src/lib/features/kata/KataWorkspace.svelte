@@ -385,13 +385,13 @@
     return `${route.view ?? ""}\u0000${route.scope ?? ""}\u0000${route.issue ?? ""}`;
   }
 
-  function routeChangeMatchesPendingSelection(route: KataRouteSnapshot): boolean {
+  function routeChangeMatchesAwaitedSelection(route: KataRouteSnapshot): boolean {
     return (
       route.view === syncedRouteViewName &&
       route.scope === syncedRouteScopeUID &&
       route.issue !== null &&
       route.issue === awaitingSelectedIssueRouteUID &&
-      route.issue === store.pendingSelectionUID
+      (route.issue === store.pendingSelectionUID || route.issue === store.selectedIssue?.issue.uid)
     );
   }
 
@@ -401,7 +401,7 @@
     const signature = routeSignature(snapshot);
     if (signature === observedRouteSignature) return;
     observedRouteSignature = signature;
-    if (routeChangeMatchesPendingSelection(snapshot)) return;
+    if (routeChangeMatchesAwaitedSelection(snapshot)) return;
     beginNavigation();
     store.invalidatePendingLoads();
   });

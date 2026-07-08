@@ -341,6 +341,9 @@ url = "`+daemon.URL+`"
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/tasks/issue-missing", nil)
 	require.Equal(http.StatusNotFound, rr.Code, rr.Body.String())
+	// Error outcomes depend on the daemon selection just like successes, so
+	// they must not be cache-shared across daemon headers.
+	require.Contains(rr.Header().Values("Vary"), kataDaemonHeaderName)
 }
 
 func TestKataTaskDetailUnreachableDaemonReturnsUpstreamError(t *testing.T) {
@@ -357,6 +360,58 @@ url = "http://127.0.0.1:1"
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/tasks/issue-kata-1", nil)
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
+	require.Contains(rr.Header().Values("Vary"), kataDaemonHeaderName)
+}
+
+func TestKataTaskDetailProjectsRedirectFallsBackToPayloadName(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Only the /projects route redirects; the unfollowed redirect must be
+	// treated as a failed best-effort read that falls back to the issue
+	// payload, not followed to another target and not an error.
+	var redirectTargetHits atomic.Int32
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		redirectTargetHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"projects":[{"id":7,"uid":"project-kata","name":"Kata"}]}`))
+	}))
+	t.Cleanup(redirectTarget.Close)
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/issues/issue-kata-1":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"issue":{"uid":"issue-kata-1","project_id":7,"project_uid":"project-kata","project_name":"Payload name","short_id":"task-123","title":"Fix widget","revision":4},"comments":[],"labels":[],"links":[]}`))
+		case "/api/v1/projects":
+			http.Redirect(w, r, redirectTarget.URL+r.URL.Path, http.StatusFound)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(daemon.Close)
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataProxyCatalog(t, home, `
+[[daemon]]
+name = "desktop"
+url = "`+daemon.URL+`"
+`)
+	// Name-based mapping against the payload name proves the fallback was
+	// used: the projects listing (which the redirect withheld) is the only
+	// other source of a project name.
+	srv, database, _ := setupTestServerWithConfigContent(t, kataTaskDetailTestConfig(t, "[project]\nname = \"Payload name\"\n"), &mockGH{})
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/tasks/issue-kata-1", nil)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var resp struct {
+		WorkspaceTarget kataWorkspaceTargetResponse `json:"workspace_target"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.True(resp.WorkspaceTarget.Available)
+	assert.Zero(redirectTargetHits.Load())
 }
 
 func TestKataTaskDetailSelectsDaemonFromHeader(t *testing.T) {

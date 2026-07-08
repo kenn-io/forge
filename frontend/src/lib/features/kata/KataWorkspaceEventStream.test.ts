@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import type {
   KataTaskAPI,
+  KataTaskEventsQuery,
   KataTaskEventsResponse,
   KataTaskIssuesQuery,
   KataTaskSummary,
@@ -19,6 +20,35 @@ import {
   projects,
   resetKataWorkspaceTestState,
 } from "./KataWorkspaceTestSupport.js";
+
+// Mounting KataWorkspace always fetches the daemon roster and opens the live
+// event stream; tests that are not about stream behavior still need both to
+// succeed, or the stream error recovery reloads the view mid-test.
+function mockDaemonAndStreamFetch(): void {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
+    if (url.pathname === "/api/v1/kata/daemons") {
+      return Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      });
+    }
+    if (url.pathname === "/api/v1/kata/proxy/api/v1/events/stream") {
+      return new Response(new ReadableStream<Uint8Array>({}), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }
+    return new Response("not found", { status: 404 });
+  });
+}
 
 describe("KataWorkspace", () => {
   beforeEach(() => {
@@ -182,6 +212,97 @@ describe("KataWorkspace", () => {
       expect(screen.queryByText("Select a task")).toBeNull();
     });
     expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-email-susan");
+  });
+
+  it("routes a clicked task before its event-log read completes", async () => {
+    mockDaemonAndStreamFetch();
+    const { api } = createWorkspaceAPI();
+    const slowEvents = deferred<KataTaskEventsResponse>();
+    vi.mocked(api.events).mockImplementation(async (query: KataTaskEventsQuery = {}, opts) => {
+      if (query.issue_uid === "issue-email-susan") {
+        return await new Promise<KataTaskEventsResponse>((resolve, reject) => {
+          const abort = () => reject(new DOMException("Aborted", "AbortError"));
+          if (opts?.signal?.aborted) {
+            abort();
+            return;
+          }
+          opts?.signal?.addEventListener("abort", abort, { once: true });
+          slowEvents.promise.then(resolve, reject);
+        });
+      }
+      return { reset_required: false, events: [], next_after_id: 0 };
+    });
+    const onSelectedIssueChange = vi.fn();
+
+    const { rerender } = render(KataWorkspace, { props: { api, onSelectedIssueChange } });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Email Susan re: Q3/ })).toBeTruthy();
+    });
+    onSelectedIssueChange.mockClear();
+
+    await fireEvent.click(screen.getByRole("button", { name: /Email Susan re: Q3/ }));
+
+    // The detail pane and the route callback both land while the event-log
+    // read is still held open; a slow walk must not leave the URL on the
+    // previous task.
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-email-susan");
+    });
+    await rerender({ api, onSelectedIssueChange, selectedIssueUID: "issue-email-susan" });
+
+    slowEvents.resolve({
+      reset_required: false,
+      events: [
+        {
+          event_id: 10,
+          event_uid: "event-email-susan-created",
+          origin_instance_uid: "instance-1",
+          type: "issue.created",
+          project_id: 3,
+          project_uid: "project-kata",
+          project_name: "Kata",
+          issue_id: 2,
+          issue_uid: "issue-email-susan",
+          issue_short_id: "email-susan",
+          actor: "fixture-user",
+          created_at: fetchedAt,
+        },
+      ],
+      next_after_id: 10,
+    });
+    await waitFor(() => {
+      expect(screen.getByText("created the task")).toBeTruthy();
+    });
+  });
+
+  it("routes a clicked task even when its event-log read fails", async () => {
+    mockDaemonAndStreamFetch();
+    const { api } = createWorkspaceAPI();
+    vi.mocked(api.events).mockImplementation(async (query: KataTaskEventsQuery = {}) => {
+      if (query.issue_uid === "issue-email-susan") throw new Error("event log walk failed");
+      return { reset_required: false, events: [], next_after_id: 0 };
+    });
+    const onSelectedIssueChange = vi.fn();
+
+    render(KataWorkspace, { props: { api, onSelectedIssueChange } });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Email Susan re: Q3/ })).toBeTruthy();
+    });
+    onSelectedIssueChange.mockClear();
+
+    await fireEvent.click(screen.getByRole("button", { name: /Email Susan re: Q3/ }));
+
+    // The failed best-effort events read must neither fail the selection
+    // nor block the route update.
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-email-susan");
+    });
   });
 
   it("surfaces a disconnected live Kata event stream", async () => {

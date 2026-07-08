@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/kata"
 )
@@ -60,7 +62,16 @@ type kataDaemonReadResult struct {
 func (s *Server) kataTaskDetail(
 	ctx context.Context,
 	input *kataTaskDetailInput,
-) (*kataTaskDetailOutput, error) {
+) (out *kataTaskDetailOutput, err error) {
+	// Every outcome of this handler depends on the daemon selection header,
+	// so problem responses must declare Vary just like the success path (and
+	// the passthrough proxy); otherwise a cache could reuse one daemon's
+	// error for another daemon's request.
+	defer func() {
+		if err != nil {
+			err = huma.ErrorWithHeaders(err, http.Header{"Vary": []string{kataDaemonHeaderName}})
+		}
+	}()
 	issueUID := strings.TrimSpace(input.IssueUID)
 	if issueUID == "" {
 		return nil, problemValidation("path.issue_uid", "issue_uid is required")

@@ -19,9 +19,9 @@ import (
 const kataDaemonReadTimeout = 20 * time.Second
 
 // kataDaemonProjectsReadTimeout bounds the best-effort project-name read.
-// The issue detail is the critical path; a slow or hung projects route must
-// not hold the detail response, so this budget is much shorter and expiry
-// falls back to the name carried by the issue payload.
+// The issue detail is the critical path: the handler waits on this budget
+// only when the issue payload carries no project name of its own, and
+// expiry falls back to that payload name.
 const kataDaemonProjectsReadTimeout = 3 * time.Second
 
 // maxKataDaemonReadBytes caps how much of a daemon response middleman will
@@ -134,11 +134,24 @@ func (s *Server) kataTaskDetail(
 		)
 	}
 
-	projects := <-projectsCh
+	projectName := parsedDetail.Issue.ProjectName
+	if projectName == "" {
+		// Only an empty payload name is worth waiting (briefly) for the
+		// projects listing; otherwise take it only when already available so
+		// a slow projects route never delays the detail response.
+		projects := <-projectsCh
+		projectName = kataProjectNameForUID(projects, parsedDetail.Issue.ProjectUID, projectName)
+	} else {
+		select {
+		case projects := <-projectsCh:
+			projectName = kataProjectNameForUID(projects, parsedDetail.Issue.ProjectUID, projectName)
+		default:
+		}
+	}
 	metadata := db.WorkspaceKataMetadata{
 		DaemonID:    daemon.ID,
 		ProjectUID:  parsedDetail.Issue.ProjectUID,
-		ProjectName: kataProjectNameForUID(projects, parsedDetail.Issue.ProjectUID, parsedDetail.Issue.ProjectName),
+		ProjectName: projectName,
 		IssueUID:    issueUID,
 		ShortID:     parsedDetail.Issue.ShortID,
 		QualifiedID: parsedDetail.Issue.QualifiedID,
@@ -191,7 +204,15 @@ func kataDaemonHTTPClient(d kata.Daemon) (*http.Client, string, error) {
 		transport = newDefaultKataDaemonTransport()
 	}
 	base := strings.TrimSuffix(target.String(), "/")
-	return &http.Client{Transport: transport}, base, nil
+	// Like the proxy and health probe, never follow daemon redirects: a
+	// misconfigured or malicious daemon must not bounce server-side reads
+	// (and their Authorization header) to another target.
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}, base, nil
 }
 
 // kataProjectNameForUID resolves the project name for repo mapping from the

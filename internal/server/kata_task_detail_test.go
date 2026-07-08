@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -244,9 +245,9 @@ url = "`+daemon.URL+`"
 	elapsed := time.Since(start)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	// The projects read is best-effort: a hung daemon route must not hold
-	// the detail response anywhere near the full daemon read timeout.
-	assert.Less(elapsed, kataDaemonReadTimeout/2)
+	// The issue payload already carries project_name, so the hung projects
+	// read must not hold the detail response even for its own short budget.
+	assert.Less(elapsed, kataDaemonProjectsReadTimeout)
 
 	var resp struct {
 		Detail struct {
@@ -291,6 +292,38 @@ url = "`+daemon.URL+`"
 	// Issue read outcomes return immediately; they never join the
 	// best-effort projects read.
 	assert.Less(elapsed, 2*time.Second)
+}
+
+func TestKataTaskDetailDoesNotFollowDaemonRedirects(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// A daemon must not be able to bounce server-side reads to another
+	// target; the redirect itself is treated as an upstream failure.
+	var redirectTargetHits atomic.Int32
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		redirectTargetHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issue":{"uid":"issue-kata-1","project_id":7,"project_uid":"project-kata","title":"Fix widget","revision":4},"comments":[],"labels":[],"links":[]}`))
+	}))
+	t.Cleanup(redirectTarget.Close)
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget.URL+r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(daemon.Close)
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataProxyCatalog(t, home, `
+[[daemon]]
+name = "desktop"
+url = "`+daemon.URL+`"
+`)
+	srv, _ := setupTestServer(t)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/tasks/issue-kata-1", nil)
+
+	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
+	assert.Zero(redirectTargetHits.Load())
 }
 
 func TestKataTaskDetailUnknownIssueReturnsNotFound(t *testing.T) {

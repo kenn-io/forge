@@ -25,8 +25,11 @@ state.
   do not reintroduce one. The UI hides the workspace action when the embedded
   target has `available:false`. The issue read is the critical path: the
   daemon `/projects` read is best-effort on a short independent budget and
-  must never delay or fail the detail response. The response varies by
-  `X-Middleman-Kata-Daemon` and must keep declaring `Vary` on it.
+  must never delay or fail the detail response; the handler waits on it only
+  when the issue payload carries no project name. Server-side daemon reads
+  never follow redirects, matching the passthrough proxy and health probe.
+  The response varies by `X-Middleman-Kata-Daemon` and must keep declaring
+  `Vary` on it.
 - `POST /kata/workspaces`: create or reuse a Kata-task-backed workspace. Kata
   tasks are not provider issues, so this path never resolves or syncs a
   provider issue row.

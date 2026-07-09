@@ -512,9 +512,13 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
     return;
   }
 
-  const issueCreateRoute = /^\/api\/v1\/projects\/(\d+)\/issues$/.exec(url.pathname);
-  if (issueCreateRoute) {
-    await handleIssueCreate(state, req, res, Number(issueCreateRoute[1]));
+  const issueListRoute = /^\/api\/v1\/projects\/(\d+)\/issues$/.exec(url.pathname);
+  if (issueListRoute) {
+    if (req.method === "GET") {
+      await handleProjectIssueList(state, res, Number(issueListRoute[1]), url);
+      return;
+    }
+    await handleIssueCreate(state, req, res, Number(issueListRoute[1]));
     return;
   }
 
@@ -1081,6 +1085,46 @@ async function handleIssueEdit(
   found.revision += 1;
   res.setHeader("ETag", `"rev-${found.revision}"`);
   writeJSON(res, 200, { changed: true, issue: found });
+}
+
+// Project-scoped issue lists share the generic /api/v1/issues stall and
+// duplicate hooks: blank-query project scopes load their backlog through
+// this route, so tests that gate or 409 "the issue list" keep working no
+// matter which list route the workspace refresh takes.
+async function handleProjectIssueList(
+  state: BackendState,
+  res: ServerResponse,
+  projectID: number,
+  url: URL,
+): Promise<void> {
+  const project = state.projects.find((candidate) => candidate.id === projectID);
+  if (!project) {
+    writeJSON(res, 404, { error: "not_found" });
+    return;
+  }
+  const barrier = state.issuesBarrier;
+  state.issuesBarrier = undefined;
+  await barrier;
+  const duplicate = state.duplicateIssueListResponses.shift();
+  if (duplicate) {
+    writeJSON(res, 409, {
+      error: {
+        code: "duplicate_issue",
+        message: "possible duplicate",
+        details: {
+          duplicate_candidates: duplicate.candidates,
+        },
+      },
+    });
+    return;
+  }
+  writeJSON(res, 200, {
+    issues: issuesForStatus(
+      state.issues.filter((issue) => issue.project_id === projectID),
+      url.searchParams.get("status"),
+    ),
+    fetched_at: now,
+  });
 }
 
 async function handleIssueCreate(
@@ -2242,6 +2286,26 @@ test("kata workspace shows duplicate candidates from reset refreshes without rep
   }
 });
 
+test("kata project filter without a query loads the backlog through the project issue list", async ({ page }) => {
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=all&scope=project-kata`);
+
+    const taskList = page.locator(".kata-list");
+    await expect(page).toHaveURL(/scope=project-kata/);
+    await expect(taskList.getByRole("button", { name: /Email Susan re: Q3/ })).toBeVisible();
+    await expect(taskList.getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/projects/2/issues?status=open");
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata workspace surfaces duplicate candidates from a multi-event catch-up page", async ({ page }) => {
   let releaseEvents!: () => void;
   const eventsBarrier = new Promise<void>((resolve) => {
@@ -2287,7 +2351,7 @@ test("kata workspace surfaces duplicate candidates from a multi-event catch-up p
     await expect(page).toHaveURL(/scope=project-kata/);
     await expect(taskList.getByRole("button", { name: /Email Susan re: Q3/ })).toBeVisible();
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events?after_id=0&limit=100");
-    const issueListPath = "GET /api/v1/issues?status=open";
+    const issueListPath = "GET /api/v1/projects/2/issues?status=open";
     const issueListCount = backend.state.seenPaths.filter((path) => path === issueListPath).length;
 
     releaseEvents();
@@ -3220,12 +3284,13 @@ test("kata sidebar switches system views and renders project areas", async ({ pa
     await expect(page.getByRole("heading", { name: "Inbox", level: 2 })).toBeVisible();
 
     backend.state.issuesBarrier = projectIssuesBarrier;
+    const financesIssueListPath = "GET /api/v1/projects/1/issues?status=open";
     const issueRequestsBeforeProjectClick = backend.state.seenPaths.filter(
-      (seenPath) => seenPath === "GET /api/v1/issues?status=open",
+      (seenPath) => seenPath === financesIssueListPath,
     ).length;
     await page.getByRole("button", { name: /^Finances\s+1$/ }).click();
     await expect
-      .poll(() => backend.state.seenPaths.filter((seenPath) => seenPath === "GET /api/v1/issues?status=open").length)
+      .poll(() => backend.state.seenPaths.filter((seenPath) => seenPath === financesIssueListPath).length)
       .toBeGreaterThan(issueRequestsBeforeProjectClick);
     await page.getByRole("button", { name: "Inbox" }).click();
     await expect(page.getByRole("heading", { name: "Inbox", level: 2 })).toBeVisible();

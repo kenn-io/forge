@@ -531,7 +531,7 @@ describe("kata task HTTP client", () => {
     ]);
   });
 
-  test("project search hydrates labels from issue lists before applying the label filter", async () => {
+  test("project search hydrates labels from the project issue list before applying the label filter", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/projects?include=stats": {
         body: { projects: [project("project-work", "Work")] },
@@ -560,9 +560,26 @@ describe("kata task HTTP client", () => {
           ],
         },
       },
-      "/api/v1/issues?status=open": {
+      "/api/v1/projects/1/issues?status=open": {
         body: {
-          issues: [{ ...issue("issue-rent", "Pay rent", "project-work", {}, "open"), labels: ["money"] }],
+          issues: [
+            {
+              // Remote daemon project lists can omit project identity;
+              // the scoped path stamps it, so the row still hydrates.
+              id: 5,
+              uid: "issue-rent",
+              project_id: 1,
+              short_id: "ABC",
+              title: "Pay rent",
+              status: "open",
+              labels: ["money"],
+              metadata: {},
+              revision: 1,
+              author: "fixture-user",
+              created_at: "2026-05-01T12:00:00.000Z",
+              updated_at: "2026-05-15T16:00:00.000Z",
+            },
+          ],
         },
       },
     });
@@ -581,7 +598,7 @@ describe("kata task HTTP client", () => {
     expect(calls.map((call) => proxyPath(call.url))).toEqual([
       "/api/v1/projects?include=stats",
       "/api/v1/projects/1/search?q=rent",
-      "/api/v1/issues?status=open",
+      "/api/v1/projects/1/issues?status=open",
     ]);
   });
 

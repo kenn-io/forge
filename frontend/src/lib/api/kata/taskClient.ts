@@ -424,15 +424,17 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
   async function hydrateProjectSearchRows(
     issues: KataTaskSummary[],
     filters: KataTaskSearchFilters & { scope: { kind: "project"; project_uid: string } },
+    project: KataProjectSummary,
     daemonId?: string,
   ): Promise<KataTaskSummary[]> {
     if (filters.label.trim() === "" || issues.length === 0) return issues;
-    const rows = await searchAllProjects(
+    const rows = await searchProjectIssueList(
       {
         ...filters,
         query: "",
         label: "",
       },
+      project,
       daemonId,
     );
     const byUID = new Map(rows.map((issue) => [issue.uid, issue]));
@@ -459,7 +461,12 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     const result = await request<unknown>(taskPath(`/projects/${project.id}/search?${params.toString()}`), {
       headers: daemonHeaders(daemonId),
     });
-    const issues = await hydrateProjectSearchRows(normalizeSearchResults(result.body, project), filters, daemonId);
+    const issues = await hydrateProjectSearchRows(
+      normalizeSearchResults(result.body, project),
+      filters,
+      project,
+      daemonId,
+    );
     return filterSearchIssues(issues, filters, { applyQuery: false });
   }
 

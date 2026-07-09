@@ -147,7 +147,7 @@ Run:
 
 ```bash
 cd frontend && ../node_modules/.bin/vp test
-cd frontend && MIDDLEMAN_E2E_OUTPUT_FILE=../tmp/kata-e2e.log node ./scripts/run-e2e-to-file.ts --project=chromium tests/e2e-full/kata.spec.ts
+cd frontend && MIDDLEMAN_E2E_OUTPUT_FILE=../tmp/kata-e2e.log node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts
 ```
 
 Expected: both commands exit zero.

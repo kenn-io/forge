@@ -379,23 +379,17 @@ describe("kata task HTTP client", () => {
     expect(proxyPath(calls[0]!.url)).toBe("/api/v1/issues?status=closed&limit=500");
   });
 
-  test("filters issue views by project and area after normalizing generic lists", async () => {
-    const { fetchImpl } = createFetchStub({
+  test("loads project-scoped issue views through the project issue list", async () => {
+    const healthProject = { ...project("project-health", "Health", { area: "Personal" }), id: 7 };
+    const { calls, fetchImpl } = createFetchStub({
       "/api/v1/projects?include=stats": {
-        body: {
-          projects: [
-            project("project-health", "Health", { area: "Personal" }),
-            project("project-work", "Work", { area: "Work" }),
-          ],
-        },
+        body: { projects: [healthProject] },
       },
       "/api/v1/issues?status=open": {
-        body: {
-          issues: [
-            issue("issue-health", "Health task", "project-health"),
-            issue("issue-work", "Work task", "project-work"),
-          ],
-        },
+        body: { issues: [issue("issue-contaminating", "Contaminating task", "project-health")] },
+      },
+      "/api/v1/projects/7/issues?status=open": {
+        body: { issues: [issue("issue-health", "Health task", "project-health")] },
       },
     });
     const api = createKataTaskAPI({ fetchImpl });
@@ -403,6 +397,24 @@ describe("kata task HTTP client", () => {
     const view = await api.issues({ view: "all", area: "Personal", project_uid: "project-health" });
 
     expect(view.groups.flatMap((group) => group.issues).map((item) => item.title)).toEqual(["Health task"]);
+    expect(calls.map((call) => proxyPath(call.url))).toEqual([
+      "/api/v1/projects?include=stats",
+      "/api/v1/projects/7/issues?status=open",
+    ]);
+  });
+
+  test("returns an empty issue view for an unknown project UID", async () => {
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/projects?include=stats": {
+        body: { projects: [project("project-work", "Work")] },
+      },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+
+    const view = await api.issues({ view: "all", project_uid: "project-missing" });
+
+    expect(view.groups).toEqual([]);
+    expect(calls.map((call) => proxyPath(call.url))).toEqual(["/api/v1/projects?include=stats"]);
   });
 
   test("searches a project by integer project id and normalizes server search results", async () => {

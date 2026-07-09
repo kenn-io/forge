@@ -105,6 +105,7 @@ type BackendState = {
   duplicateIssueListResponses: DuplicateIssueListResponse[];
   duplicateProjectSearches: DuplicateProjectSearchResponse[];
   events: EventRow[];
+  genericIssues?: IssueSummary[] | undefined;
   issues: IssueSummary[];
   links: LinkRow[];
   nextCommentID: number;
@@ -237,6 +238,7 @@ type LinkRow = ReturnType<typeof linkRow>;
 type RecurrenceRow = ReturnType<typeof recurrenceRow>;
 type KataBackendOptions = {
   events?: EventRow[] | undefined;
+  genericIssues?: IssueSummary[] | undefined;
   projects?: ProjectRow[] | undefined;
   issues?: IssueSummary[] | undefined;
   links?: LinkRow[] | undefined;
@@ -426,6 +428,7 @@ async function startKataBackend(options: KataBackendOptions = {}): Promise<Backe
     duplicateIssueListResponses: [],
     duplicateProjectSearches: [...(options.duplicateProjectSearches ?? [])],
     events: [...(options.events ?? [])],
+    genericIssues: options.genericIssues,
     issues: rows,
     links: [...(options.links ?? [])],
     nextCommentID: 2,
@@ -669,7 +672,7 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
         }
       }
       writeJSON(res, 200, {
-        issues: issuesForStatus(state.issues, url.searchParams.get("status")),
+        issues: issuesForStatus(state.genericIssues ?? state.issues, url.searchParams.get("status")),
         fetched_at: now,
       });
       return;
@@ -2287,7 +2290,14 @@ test("kata workspace shows duplicate candidates from reset refreshes without rep
 });
 
 test("kata project filter without a query loads the backlog through the project issue list", async ({ page }) => {
-  const backend = await startKataBackend();
+  const contaminatingIssue = {
+    ...issues[1]!,
+    uid: "issue-generic-contamination",
+    short_id: "kat-contamination",
+    qualified_id: "Kata#kat-contamination",
+    title: "Generic list contamination",
+  };
+  const backend = await startKataBackend({ genericIssues: [contaminatingIssue] });
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
 
@@ -2298,6 +2308,7 @@ test("kata project filter without a query loads the backlog through the project 
     await expect(page).toHaveURL(/scope=project-kata/);
     await expect(taskList.getByRole("button", { name: /Email Susan re: Q3/ })).toBeVisible();
     await expect(taskList.getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
+    await expect(taskList.getByRole("button", { name: /Generic list contamination/ })).toHaveCount(0);
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/projects/2/issues?status=open");
   } finally {
     await server.stop();

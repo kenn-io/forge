@@ -570,14 +570,15 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     },
 
     async issues(query) {
+      const daemonId = getDaemonId();
       const status = query.view === "logbook" ? "closed" : "open";
-      const genericIssuesPromise = query.project_uid === undefined ? fetchIssuesByStatus(status) : undefined;
-      const projectsPromise = fetchProjects();
+      const genericIssuesPromise = query.project_uid === undefined ? fetchIssuesByStatus(status, daemonId) : undefined;
+      const projectsPromise = fetchProjects(daemonId);
       const issuesPromise =
         genericIssuesPromise ??
         projectsPromise.then((projects) => {
           const project = projects.projects.find((item) => item.uid === query.project_uid);
-          return project ? fetchIssuesByStatus(status, undefined, project) : [];
+          return project ? fetchIssuesByStatus(status, daemonId, project) : [];
         });
       const [issues, projects] = await Promise.all([issuesPromise, projectsPromise]);
       const projectMap = new Map(projects.projects.map((project) => [project.uid, project]));

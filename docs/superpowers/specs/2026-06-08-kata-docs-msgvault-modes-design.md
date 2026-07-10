@@ -338,8 +338,10 @@ Kata frontend adaptation:
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
 - Browser route changes remain queued while a daemon switch or rollback is
   provisional, then apply to the accepted workspace after the transaction
-  settles. If target and rollback both fail, no workspace is accepted and route
-  effects remain suppressed until a later successful bootstrap
+  settles. A successful bootstrap does not publish its provisional selection
+  when the route signature changed during the switch. If target and rollback
+  both fail, no workspace is accepted and route effects remain suppressed until
+  a later successful bootstrap
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::routeSignature`).
 - Event-driven proxy reads keep switching fail-closed until they settle. The
   Kata proxy applies a 30-second total deadline to ordinary TCP and Unix-socket

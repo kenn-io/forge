@@ -4263,6 +4263,19 @@ test("kata daemon switch restarts the target stream after stale route churn", as
     metadata: { area: "Work", sidebar_order: 1 },
     open_count: 1,
   };
+  const queuedWorkIssue = issueSummary({
+    id: 2020,
+    uid: "issue-work-queued",
+    project_id: workProject.id,
+    project_uid: workProject.uid,
+    project_name: workProject.name,
+    short_id: "work-2",
+    qualified_id: "Work#work-2",
+    title: "Verify the rollout",
+    body: "Selected by browser history during the daemon switch.",
+    labels: ["work"],
+    metadata: { scheduled_on: today },
+  });
   const home = await startKataBackend({
     projects: [homeProject],
     issues: [
@@ -4297,6 +4310,7 @@ test("kata daemon switch restarts the target stream after stale route churn", as
         labels: ["work"],
         metadata: { scheduled_on: today },
       }),
+      queuedWorkIssue,
     ],
     eventsBarrier: stalledEvents,
   });
@@ -4317,15 +4331,18 @@ test("kata daemon switch restarts the target stream after stale route churn", as
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
     await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/events?limit=1000");
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Visible only from the work daemon.");
 
     await page.evaluate(() => {
-      window.history.pushState({}, "", "/kata?view=all");
+      window.history.pushState({}, "", "/kata?view=all&issue=issue-work-queued");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     releaseEvents();
 
     await expect(page.getByTestId("daemon-chip")).toContainText("work");
     await expect(page.getByRole("button", { name: /Ship the release/ })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(queuedWorkIssue.body);
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues/issue-work-queued");
     await expect
       .poll(() => work.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
       .toBeGreaterThanOrEqual(1);

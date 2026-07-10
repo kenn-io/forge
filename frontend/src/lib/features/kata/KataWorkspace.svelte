@@ -655,6 +655,7 @@
     const previousView = store.currentView.name;
     const previousFilters = store.searchFilters;
     const previousIssueUID = store.selectedIssue?.issue.uid ?? null;
+    const routeAtSwitchStart = routeSignature(currentRouteSnapshot());
     switchingDaemon = true;
     terminalDaemonFailure = false;
     closeReachableGraph();
@@ -703,8 +704,10 @@
         return;
       }
       const nextUID = store.selectedIssue?.issue.uid ?? null;
-      syncedRouteIssueUID = selectedIssueUID ?? null;
-      onSelectedIssueChange?.(nextUID);
+      if (routeSignature(currentRouteSnapshot()) === routeAtSwitchStart) {
+        syncedRouteIssueUID = selectedIssueUID ?? null;
+        onSelectedIssueChange?.(nextUID);
+      }
       startEventStream();
     } finally {
       switchingDaemon = false;

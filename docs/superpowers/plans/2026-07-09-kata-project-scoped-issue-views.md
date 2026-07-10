@@ -524,3 +524,22 @@ Fail a reset-triggered issue refresh in the Playwright backend and assert the se
 - [x] **Step 4: Run final verification and commit**
 
 Run Go proxy tests, the full Vite+ suite, and the complete Chromium/Firefox Kata Playwright spec before committing.
+
+### Task 13: Preserve queued issue routes after successful switches
+
+**Files:**
+
+- Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+
+- [x] **Step 1: Avoid publishing a stale bootstrap selection**
+
+Capture the route signature at switch start and publish the bootstrap-selected issue only when the route remains unchanged through the transaction.
+
+- [x] **Step 2: Cover successful switch route churn**
+
+Stall target event synchronization after bootstrap selects its first task, queue a different target task through browser history, then prove the queued detail wins and the target stream starts.
+
+- [x] **Step 3: Run final verification and commit**
+
+Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.

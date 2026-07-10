@@ -27,6 +27,7 @@
   --chrome-dock-resize-hit-size: 7px;
   --chrome-dock-resize-hit-outset: 4px;
   --chrome-dock-resize-stripe-offset: 2px;
+  --z-flash: 1050;
   --budget-green: #4ade80; /* kit-ui-check-ignore: budget-bar palette */
   --budget-yellow: #fbbf24; /* kit-ui-check-ignore: budget-bar palette */
   --budget-red: #f87171; /* kit-ui-check-ignore: budget-bar palette */
@@ -146,6 +147,11 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* Action failures must remain visible while their retryable modal stays open. */
+#app .kit-flash-stack {
+  z-index: var(--z-flash);
 }
 
 /* Scrollbars */

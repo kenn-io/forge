@@ -34,6 +34,28 @@
   } from "../../stores/sidebar.svelte.js";
   import { openPalette } from "../../stores/keyboard/palette-state.svelte.js";
 
+  interface Props {
+    onheightchange?: ((height: number) => void) | undefined;
+  }
+
+  let { onheightchange = undefined }: Props = $props();
+  let headerFrame: HTMLDivElement | null = $state(null);
+
+  $effect(() => {
+    const node = headerFrame;
+    const notify = onheightchange;
+    if (!node || !notify) return;
+
+    const update = () => notify(node.getBoundingClientRect().height);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      notify(0);
+    };
+  });
+
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
 
   const hasSidebarStrip = $derived(
@@ -222,15 +244,16 @@
 <!-- The app header renders through kit TopBar; app-top-bar is the app-owned
      selector alias (the kit element also carries .kit-top-bar) used by the
      app-startup/focus/embedded/routing specs to assert header presence. -->
-<TopBar
-  class="app-top-bar"
-  {tabs}
-  bind:active={activeTab}
-  bind:collapsed={tabsCollapsed}
-  centerTabs
-  ariaLabel="Page"
-  onchange={handleTabChange}
->
+<div class="top-bar-frame" bind:this={headerFrame}>
+  <TopBar
+    class="app-top-bar"
+    {tabs}
+    bind:active={activeTab}
+    bind:collapsed={tabsCollapsed}
+    centerTabs
+    ariaLabel="Page"
+    onchange={handleTabChange}
+  >
   {#snippet left()}
     {#if isSidebarCollapsed() && isSidebarToggleEnabled() && !hasSidebarStrip}
       <HeaderIconButton
@@ -320,9 +343,15 @@
       </HeaderIconButton>
     {/if}
   {/snippet}
-</TopBar>
+  </TopBar>
+</div>
 
 <style>
+  .top-bar-frame {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
   .brand {
     display: inline-flex;
     align-items: center;

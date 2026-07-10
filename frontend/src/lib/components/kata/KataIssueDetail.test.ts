@@ -183,6 +183,25 @@ describe("KataIssueDetail", () => {
     expect(onEditIssue).toHaveBeenCalledWith("issue-1", { body: "Updated body" });
   });
 
+  it("keeps title and description drafts open after failed saves", async () => {
+    const onEditIssue = vi.fn(async () => false);
+    renderDetail({ onEditIssue });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+    await fireEvent.input(screen.getByLabelText("Edit title"), {
+      target: { value: "Unsaved title" },
+    });
+    await fireEvent.keyDown(screen.getByLabelText("Edit title"), { key: "Enter" });
+    expect(((await screen.findByLabelText("Edit title")) as HTMLInputElement).value).toBe("Unsaved title");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit description" }));
+    await fireEvent.input(screen.getByLabelText("Edit description"), {
+      target: { value: "Unsaved body" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(((await screen.findByLabelText("Edit description")) as HTMLTextAreaElement).value).toBe("Unsaved body");
+  });
+
   it("moves to a non-inbox project from the crumb picker", async () => {
     const onMoveIssue = vi.fn(async () => {});
     renderDetail({ onMoveIssue });

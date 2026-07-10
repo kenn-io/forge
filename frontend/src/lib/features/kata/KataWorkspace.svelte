@@ -77,7 +77,7 @@
   }
 
   type SplitOrientation = "vertical" | "horizontal";
-  type FailureSurface = "flash" | "daemon" | "none";
+  type FailureSurface = "flash" | "daemon" | "view" | "none";
   type ListMode = "tasks" | "reachableGraph";
 
   function graphLayoutDirectionForSplit(orientation: SplitOrientation): KataGraphLayoutDirection {
@@ -100,6 +100,7 @@
   let viewLoadingGeneration = 0;
   let viewWorkCount = $state(0);
   let error = $state<string | null>(null);
+  let viewError = $state<string | null>(null);
   let lastTaskError: string | null = null;
   let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let daemonInfos = $state.raw<KataDaemonInfo[]>([]);
@@ -219,6 +220,7 @@
 
   function clearTaskErrors(surface: FailureSurface = "daemon"): void {
     if (surface === "daemon") error = null;
+    if (surface === "view") viewError = null;
     lastTaskError = null;
   }
 
@@ -228,6 +230,8 @@
       showFlash(message, { tone: "danger" });
     } else if (surface === "daemon") {
       error = message;
+    } else if (surface === "view") {
+      viewError = message;
     }
   }
 
@@ -433,7 +437,7 @@
     viewScopeLoadSignature = signature;
     const viewName = routeViewName ?? null;
     const scopeUID = routeScopeUID ?? null;
-    void runViewTask(() => loadRouteViewScope(viewName, scopeUID)).then((ok) => {
+    void runViewTask(() => loadRouteViewScope(viewName, scopeUID), "view").then((ok) => {
       if (viewScopeLoadSignature === signature) {
         viewScopeLoadSignature = null;
       }
@@ -491,7 +495,7 @@
         if (failedRouteSignature !== null && failedRouteSignature !== signature) {
           // The route moved off a failed target; drop the stale failure
           // surface so the new destination starts clean.
-          clearTaskErrors();
+          clearTaskErrors("view");
           failedRouteSignature = null;
         }
         if (failedRouteSignature === signature) return;
@@ -522,7 +526,7 @@
           beginNavigation();
           resetDetailDrafts();
           const uid = selectedIssueUID!;
-          const ok = await runViewTask(() => store.selectIssue(uid));
+          const ok = await runViewTask(() => store.selectIssue(uid), "view");
           if (!ok) {
             // The routed task cannot be shown; keeping the previous
             // detail under the new URL would lie about what is open.
@@ -539,7 +543,7 @@
         }
         // mismatch === "clear"
         beginNavigation();
-        clearTaskErrors();
+        clearTaskErrors("view");
         resetDetailDrafts();
         store.clearSelection();
         selectionFromRoute = false;
@@ -592,7 +596,7 @@
     if (failedRouteSignature !== null && failedRouteSignature !== fullRouteSignature()) {
       // The route moved off a failed target; drop the stale failure
       // surface even when the new route is already converged.
-      clearTaskErrors();
+      clearTaskErrors("view");
       failedRouteSignature = null;
     }
     if (failedRouteSignature === fullRouteSignature()) return;
@@ -752,7 +756,7 @@
       if (!selectedIssueMatchesStatusFilter(nextStatus)) {
         store.clearSelection();
       }
-      await runViewTask(() => store.updateSearchFilters(filters));
+      await runViewTask(() => store.updateSearchFilters(filters), "view");
       if (!isCurrentNavigation(generation)) return;
       const nextScopeUID = scopeUIDFromFilters(store.searchFilters);
       if (nextScopeUID !== (routeScopeUID ?? null)) {
@@ -780,7 +784,7 @@
       // this navigation has already discarded.
       store.clearSelection();
       selectionFromRoute = false;
-      await runViewTask(() => store.openView(viewName, { selectFirst: false }));
+      await runViewTask(() => store.openView(viewName, { selectFirst: false }), "view");
       if (!isCurrentNavigation(generation)) return;
       onRouteStateChange?.({
         view: viewName,
@@ -801,8 +805,9 @@
       // detail request can't fail into a stale workspace error while the
       // scoped list is still loading.
       store.invalidatePendingLoads();
-      const ok = await runViewTask(() =>
-        store.updateSearchFilters({ scope: { kind: "project", project_uid: projectUID } }),
+      const ok = await runViewTask(
+        () => store.updateSearchFilters({ scope: { kind: "project", project_uid: projectUID } }),
+        "view",
       );
       if (!ok || !isCurrentNavigation(generation)) return;
       onRouteStateChange?.({
@@ -941,7 +946,7 @@
     await withRouteEmission(async () => {
       const generation = beginNavigation();
       resetDetailDrafts();
-      const ok = await runViewTask(() => store.selectIssue(uid));
+      const ok = await runViewTask(() => store.selectIssue(uid), "view");
       if (!ok || !isCurrentNavigation(generation)) return;
       if (notify) onSelectedIssueChange?.(uid);
     });
@@ -1179,6 +1184,9 @@
     />
 
     <main class="kata-main" aria-label="Kata tasks">
+      {#if viewError}
+        <p class="kata-view-error" role="alert">{viewError}</p>
+      {/if}
       <KataResizableSash
         orientation={splitOrientation}
         primarySize={activeSplitSize}
@@ -1325,6 +1333,13 @@
     gap: 16px;
   }
 
+  .kata-view-error {
+    flex: 0 0 auto;
+    margin: var(--space-4) var(--space-5) 0;
+    color: var(--accent-red);
+    font-size: var(--font-size-sm);
+  }
+
   .kata-header-title {
     min-width: 0;
     display: flex;
@@ -1376,6 +1391,7 @@
     min-width: 0;
     min-height: 0;
     display: flex;
+    flex-direction: column;
     overflow: hidden;
   }
 

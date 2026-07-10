@@ -499,6 +499,7 @@ describe("KataWorkspace", () => {
       expect(screen.getByText("detail failed").getAttribute("role")).toBe("alert");
       expect(screen.getByText("Select a task")).toBeTruthy();
     });
+    expect(screen.getByText("detail failed").closest(".daemon-fallback-status")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Root graph task" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Blocked follow-up" })).toBeNull();
   });

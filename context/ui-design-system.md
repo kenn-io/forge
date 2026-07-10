@@ -104,8 +104,9 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   modes reserve its footprint unless embed config hides it
   (`frontend/src/lib/components/layout/AppHeader.svelte::reserveProviderRepoSelectorSlot`).
 - Flash: one shared store (`@middleman/ui/stores/flash`); kit `FlashBanner`
-  mounts once per shell in a page-level fixed layer beneath shell chrome,
-  never inside feature containers; stacking is intended (`frontend/src/App.svelte:967`).
+  mounts once per shell in a page-level fixed layer below measured shell chrome
+  and above modal backdrops, never inside feature containers; headerless shells
+  use the viewport edge (`frontend/src/App.svelte:968`).
 
 `kit-ui-check` gates at zero findings in both `make frontend-check` and the
 Vite+ `frontend-check` task behind CI's `vp run -w check`. Suppress only

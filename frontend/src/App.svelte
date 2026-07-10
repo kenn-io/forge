@@ -144,6 +144,7 @@
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
   let viewportWidth = $state(window.innerWidth);
+  let renderedHeaderHeight = $state(0);
   let hasCoarsePointer = $state(window.matchMedia("(pointer: coarse)").matches);
   let kataDaemonInfos = $state<Awaited<ReturnType<typeof fetchKataDaemons>>>([]);
   let kataDefaultDaemonId = $state<string | undefined>(undefined);
@@ -968,7 +969,13 @@
   <!-- Mounted once above the focus/full-shell branching so flashes raised
        through the shared store stay visible in every presentation, not just
        the desktop shell. -->
-  <FlashBanner top={shouldUseFocusPresentation() ? "0" : "var(--header-height)"} />
+  <FlashBanner
+    top={shouldUseFocusPresentation() || isHeaderHidden()
+      ? "0"
+      : renderedHeaderHeight > 0
+        ? `${renderedHeaderHeight}px`
+        : "var(--header-height)"}
+  />
   {#if shouldUseFocusPresentation()}
     {@const r = getRoute()}
     <main
@@ -1114,7 +1121,7 @@
     </section>
   {:else}
     {#if !isHeaderHidden()}
-      <AppHeader />
+      <AppHeader onheightchange={(height) => (renderedHeaderHeight = height)} />
     {/if}
 
     <main class="app-main">

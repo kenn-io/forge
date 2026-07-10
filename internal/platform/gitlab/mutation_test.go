@@ -149,6 +149,43 @@ func TestGitLabCommentMutations(t *testing.T) {
 	}
 }
 
+func TestGitLabDeleteCommentMutations(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		call func(*Client) error
+	}{
+		{
+			name: "merge request comment",
+			path: "/api/v4/projects/42/merge_requests/7/notes/9001",
+			call: func(client *Client) error {
+				return client.DeleteMergeRequestComment(context.Background(), projectRef(), 7, 9001)
+			},
+		},
+		{
+			name: "issue comment",
+			path: "/api/v4/projects/42/issues/11/notes/9001",
+			call: func(client *Client) error {
+				return client.DeleteIssueComment(context.Background(), projectRef(), 11, 9001)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(http.MethodDelete, r.Method)
+				assert.Equal(tt.path, r.URL.EscapedPath())
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+
+			assert.NoError(tt.call(newTestClient(t, server.URL)))
+		})
+	}
+}
+
 func TestGitLabSetMergeRequestStateSendsStateEvent(t *testing.T) {
 	tests := []struct {
 		state          string

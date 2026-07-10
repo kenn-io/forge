@@ -232,6 +232,9 @@ func (m *mockGH) CreateIssueComment(context.Context, string, string, int, string
 func (m *mockGH) EditIssueComment(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
 	return nil, nil
 }
+func (m *mockGH) DeleteIssueComment(context.Context, string, string, int64) error {
+	return nil
+}
 func (m *mockGH) CreatePullRequestReviewCommentReply(
 	context.Context, string, string, int, string, int64,
 ) (*gh.PullRequestComment, error) {

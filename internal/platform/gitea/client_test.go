@@ -458,6 +458,8 @@ func TestClientMutationCapabilityUsesGiteaEndpoints(t *testing.T) {
 			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
 				"id": 10, "body": "comment", "user": map[string]any{"login": "alice"},
 			}))
+		case "DELETE /api/v1/repos/owner/repo/issues/comments/10":
+			w.WriteHeader(http.StatusNoContent)
 		case "POST /api/v1/repos/owner/repo/issues",
 			"PATCH /api/v1/repos/owner/repo/issues/8":
 			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
@@ -489,6 +491,8 @@ func TestClientMutationCapabilityUsesGiteaEndpoints(t *testing.T) {
 	require.NoError(err)
 	_, err = client.EditIssueComment(context.Background(), ref, 8, 10, "comment")
 	require.NoError(err)
+	require.NoError(client.DeleteMergeRequestComment(context.Background(), ref, 7, 10))
+	require.NoError(client.DeleteIssueComment(context.Background(), ref, 8, 10))
 	_, err = client.CreateIssue(context.Background(), ref, "issue", "body")
 	require.NoError(err)
 	_, err = client.SetIssueState(context.Background(), ref, 8, "closed")
@@ -505,6 +509,8 @@ func TestClientMutationCapabilityUsesGiteaEndpoints(t *testing.T) {
 	assert.Equal([]string{
 		"POST /api/v1/repos/owner/repo/issues/7/comments",
 		"PATCH /api/v1/repos/owner/repo/issues/comments/10",
+		"DELETE /api/v1/repos/owner/repo/issues/comments/10",
+		"DELETE /api/v1/repos/owner/repo/issues/comments/10",
 		"POST /api/v1/repos/owner/repo/issues",
 		"PATCH /api/v1/repos/owner/repo/issues/8",
 		"PATCH /api/v1/repos/owner/repo/pulls/7",

@@ -1249,6 +1249,15 @@ func (p *gitHubClientProvider) EditMergeRequestComment(
 	return platformgithub.NormalizeCommentEvent(ref, number, comment), nil
 }
 
+func (p *gitHubClientProvider) DeleteMergeRequestComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	_ int,
+	commentID int64,
+) error {
+	return p.client.DeleteIssueComment(ctx, ref.Owner, ref.Name, commentID)
+}
+
 func (p *gitHubClientProvider) ReplyToThread(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1303,6 +1312,15 @@ func (p *gitHubClientProvider) EditIssueComment(
 		return platform.IssueEvent{}, fmt.Errorf("provider returned no comment")
 	}
 	return platformgithub.NormalizeIssueCommentEvent(ref, number, comment), nil
+}
+
+func (p *gitHubClientProvider) DeleteIssueComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	_ int,
+	commentID int64,
+) error {
+	return p.client.DeleteIssueComment(ctx, ref.Owner, ref.Name, commentID)
 }
 
 func (p *gitHubClientProvider) SetMergeRequestState(

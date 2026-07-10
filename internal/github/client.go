@@ -124,6 +124,7 @@ type Client interface {
 	ApproveWorkflowRun(ctx context.Context, owner, repo string, runID int64) error
 	CreateIssueComment(ctx context.Context, owner, repo string, number int, body string) (*gh.IssueComment, error)
 	EditIssueComment(ctx context.Context, owner, repo string, commentID int64, body string) (*gh.IssueComment, error)
+	DeleteIssueComment(ctx context.Context, owner, repo string, commentID int64) error
 	CreatePullRequestReviewCommentReply(ctx context.Context, owner, repo string, number int, body string, commentID int64) (*gh.PullRequestComment, error)
 	GetRepository(ctx context.Context, owner, repo string) (*gh.Repository, error)
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
@@ -2491,6 +2492,17 @@ func (c *liveClient) EditIssueComment(
 		)
 	}
 	return comment, nil
+}
+
+func (c *liveClient) DeleteIssueComment(
+	ctx context.Context, owner, repo string, commentID int64,
+) error {
+	resp, err := c.writeGH().Issues.DeleteComment(ctx, owner, repo, commentID)
+	c.trackWriteRate(resp)
+	if err != nil {
+		return fmt.Errorf("deleting comment %d on %s/%s: %w", commentID, owner, repo, err)
+	}
+	return nil
 }
 
 func (c *liveClient) CreatePullRequestReviewCommentReply(

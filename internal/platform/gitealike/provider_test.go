@@ -92,6 +92,8 @@ func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
 	require.NoError(err)
 	editedComment, err := provider.EditIssueComment(context.Background(), ref, 8, 10, "edited")
 	require.NoError(err)
+	require.NoError(provider.DeleteMergeRequestComment(context.Background(), ref, 7, 10))
+	require.NoError(provider.DeleteIssueComment(context.Background(), ref, 8, 10))
 	issue, err := provider.CreateIssue(context.Background(), ref, "issue", "body")
 	require.NoError(err)
 	closedPR, err := provider.SetMergeRequestState(context.Background(), ref, 7, "closed")
@@ -118,7 +120,7 @@ func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
 	assert.Equal("abc", merged.SHA)
 	assert.Equal("edited", editedPR.Title)
 	assert.Equal([]string{
-		"create_pr_comment", "create_issue_comment", "edit_issue_comment", "create_issue",
+		"create_pr_comment", "create_issue_comment", "edit_issue_comment", "delete_comment", "delete_comment", "create_issue",
 		"edit_pull:closed", "edit_issue:closed", "merge:squash", "edit_pull:",
 	}, transport.mutationCalls)
 }
@@ -482,6 +484,11 @@ func (t *fakeTransport) EditIssueComment(_ context.Context, _ platform.RepoRef, 
 	comment := t.comment
 	comment.Body = body
 	return comment, nil
+}
+
+func (t *fakeTransport) DeleteIssueComment(context.Context, platform.RepoRef, int64) error {
+	t.mutationCalls = append(t.mutationCalls, "delete_comment")
+	return nil
 }
 
 func (t *fakeTransport) CreateIssue(context.Context, platform.RepoRef, string, string) (IssueDTO, error) {

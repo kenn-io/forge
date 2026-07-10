@@ -44,6 +44,7 @@ type LabelTransport interface {
 type MutationTransport interface {
 	CreateIssueComment(ctx context.Context, ref platform.RepoRef, number int, body string) (CommentDTO, error)
 	EditIssueComment(ctx context.Context, ref platform.RepoRef, commentID int64, body string) (CommentDTO, error)
+	DeleteIssueComment(ctx context.Context, ref platform.RepoRef, commentID int64) error
 	CreateIssue(ctx context.Context, ref platform.RepoRef, title string, body string) (IssueDTO, error)
 	EditIssue(ctx context.Context, ref platform.RepoRef, number int, opts IssueMutationOptions) (IssueDTO, error)
 	EditPullRequest(ctx context.Context, ref platform.RepoRef, number int, opts PullRequestMutationOptions) (PullRequestDTO, error)

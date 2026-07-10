@@ -847,6 +847,28 @@ func (c *FixtureClient) EditIssueComment(
 	return nil, fmt.Errorf("%w: comment %d", errFixtureNotFound, commentID)
 }
 
+func (c *FixtureClient) DeleteIssueComment(
+	_ context.Context, owner, repo string, commentID int64,
+) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	prefix := repoKey(owner, repo) + "#"
+	for key, comments := range c.Comments {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		for index, comment := range comments {
+			if comment.GetID() != commentID {
+				continue
+			}
+			c.Comments[key] = slices.Delete(comments, index, index+1)
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: comment %d", errFixtureNotFound, commentID)
+}
+
 func (c *FixtureClient) CreatePullRequestReviewCommentReply(
 	_ context.Context, owner, repo string, number int, body string, commentID int64,
 ) (*gh.PullRequestComment, error) {

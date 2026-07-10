@@ -202,6 +202,7 @@ type mockGH struct {
 	editIssueContentFn         func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
 	createIssueCommentFn       func(context.Context, string, string, int, string) (*gh.IssueComment, error)
 	editIssueCommentFn         func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
+	deleteIssueCommentFn       func(context.Context, string, string, int64) error
 	createReviewCommentReplyFn func(context.Context, string, string, int, string, int64) (*gh.PullRequestComment, error)
 	createReviewFn             func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
 	createReviewWithCommentsFn func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
@@ -485,6 +486,15 @@ func (m *mockGH) EditIssueComment(
 		CreatedAt: &now,
 		UpdatedAt: &now,
 	}, nil
+}
+
+func (m *mockGH) DeleteIssueComment(
+	ctx context.Context, owner, repo string, commentID int64,
+) error {
+	if m.deleteIssueCommentFn != nil {
+		return m.deleteIssueCommentFn(ctx, owner, repo, commentID)
+	}
+	return nil
 }
 
 func (m *mockGH) CreatePullRequestReviewCommentReply(
@@ -17977,6 +17987,21 @@ func (t *apiTestGitealikeTransport) EditIssueComment(
 	t.pullComments = upsertComment(t.pullComments, comment)
 	t.issueComments = upsertComment(t.issueComments, comment)
 	return comment, nil
+}
+
+func (t *apiTestGitealikeTransport) DeleteIssueComment(
+	_ context.Context,
+	_ platform.RepoRef,
+	commentID int64,
+) error {
+	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("delete_comment:%d", commentID))
+	t.pullComments = slices.DeleteFunc(t.pullComments, func(comment gitealike.CommentDTO) bool {
+		return comment.ID == commentID
+	})
+	t.issueComments = slices.DeleteFunc(t.issueComments, func(comment gitealike.CommentDTO) bool {
+		return comment.ID == commentID
+	})
+	return nil
 }
 
 func (t *apiTestGitealikeTransport) CreateIssue(

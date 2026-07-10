@@ -440,6 +440,22 @@ func (p *Provider) EditMergeRequestComment(
 	return NormalizeMergeRequestEvents(p.kind, ref, number, []CommentDTO{comment}, nil, nil)[0], nil
 }
 
+func (p *Provider) DeleteMergeRequestComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	_ int,
+	commentID int64,
+) error {
+	transport, err := p.mutationTransport("comment_mutation")
+	if err != nil {
+		return err
+	}
+	if err := transport.DeleteIssueComment(ctx, ref, commentID); err != nil {
+		return p.mapError(err)
+	}
+	return nil
+}
+
 func (p *Provider) CreateIssueComment(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -473,6 +489,22 @@ func (p *Provider) EditIssueComment(
 		return platform.IssueEvent{}, p.mapError(err)
 	}
 	return NormalizeIssueComments(p.kind, ref, number, []CommentDTO{comment})[0], nil
+}
+
+func (p *Provider) DeleteIssueComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	_ int,
+	commentID int64,
+) error {
+	transport, err := p.mutationTransport("comment_mutation")
+	if err != nil {
+		return err
+	}
+	if err := transport.DeleteIssueComment(ctx, ref, commentID); err != nil {
+		return p.mapError(err)
+	}
+	return nil
 }
 
 func (p *Provider) CreateIssue(

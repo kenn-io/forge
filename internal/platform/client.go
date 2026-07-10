@@ -92,8 +92,10 @@ type CommentMutator interface {
 		commentID int64,
 		body string,
 	) (MergeRequestEvent, error)
+	DeleteMergeRequestComment(ctx context.Context, ref RepoRef, number int, commentID int64) error
 	CreateIssueComment(ctx context.Context, ref RepoRef, number int, body string) (IssueEvent, error)
 	EditIssueComment(ctx context.Context, ref RepoRef, number int, commentID int64, body string) (IssueEvent, error)
+	DeleteIssueComment(ctx context.Context, ref RepoRef, number int, commentID int64) error
 }
 
 type StateMutator interface {

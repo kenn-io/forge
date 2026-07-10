@@ -155,6 +155,25 @@ func (c *Client) EditMergeRequestComment(
 	return mergeRequestNoteEvent(normalizedRef, number, note, ""), nil
 }
 
+func (c *Client) DeleteMergeRequestComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	commentID int64,
+) error {
+	pid, _, err := c.projectScopedArg(ctx, ref)
+	if err != nil {
+		return err
+	}
+	_, err = c.api.Notes.DeleteMergeRequestNote(
+		pid, int64(number), commentID, gitlab.WithContext(ctx),
+	)
+	if err != nil {
+		return c.mapGitLabError("delete_merge_request_comment", err)
+	}
+	return nil
+}
+
 func (c *Client) CreateIssueComment(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -199,6 +218,25 @@ func (c *Client) EditIssueComment(
 		return platform.IssueEvent{}, c.mapGitLabError("edit_issue_comment", err)
 	}
 	return issueNoteEvent(normalizedRef, number, note), nil
+}
+
+func (c *Client) DeleteIssueComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	commentID int64,
+) error {
+	pid, _, err := c.projectScopedArg(ctx, ref)
+	if err != nil {
+		return err
+	}
+	_, err = c.api.Notes.DeleteIssueNote(
+		pid, int64(number), commentID, gitlab.WithContext(ctx),
+	)
+	if err != nil {
+		return c.mapGitLabError("delete_issue_comment", err)
+	}
+	return nil
 }
 
 func (c *Client) SetMergeRequestState(

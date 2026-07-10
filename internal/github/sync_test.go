@@ -1016,6 +1016,11 @@ func (m *mockClient) EditIssueComment(
 	return nil, nil
 }
 
+func (m *mockClient) DeleteIssueComment(context.Context, string, string, int64) error {
+	m.trackCall()
+	return nil
+}
+
 func (m *mockClient) CreatePullRequestReviewCommentReply(
 	_ context.Context, _, _ string, _ int, _ string, _ int64,
 ) (*gh.PullRequestComment, error) {

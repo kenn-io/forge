@@ -86,6 +86,23 @@ func TestClientInterfaceIncludesListPullRequestReviewThreads(t *testing.T) {
 	require.True(t, ok)
 }
 
+func TestDeleteIssueCommentUsesWriteAPI(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodDelete, r.Method)
+		assert.Equal("/api/v3/repos/acme/widgets/issues/comments/44", r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	ghClient, err := newEnterpriseGHClient(server.Client(), server.URL+"/api/v3/", server.URL+"/api/uploads/")
+	require.NoError(err)
+	client := &liveClient{gh: ghClient}
+
+	require.NoError(client.DeleteIssueComment(t.Context(), "acme", "widgets", 44))
+}
+
 func TestApplyReviewSuggestionEdits(t *testing.T) {
 	assert := assert.New(t)
 	content := "package main\nfunc main() {\n\tfmt.Println(\"old\")\n}\n"

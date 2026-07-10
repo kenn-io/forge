@@ -61,6 +61,18 @@ describe("KataDaemonSwitcher", () => {
     expect(onSelect).toHaveBeenCalledWith("work");
   });
 
+  it("disables daemon choices while workspace work is in flight", async () => {
+    const onSelect = vi.fn();
+    render(KataDaemonSwitcher, { props: { daemons, activeId: "home", disabled: true, onSelect } });
+
+    const chip = screen.getByTestId("daemon-chip") as HTMLButtonElement;
+    expect(chip.disabled).toBe(true);
+    await fireEvent.click(chip);
+
+    expect(screen.queryByTestId("daemon-row-work")).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("renders a daemon's operator hint when present", async () => {
     const withHint: KataDaemonInfo[] = [
       {
@@ -87,5 +99,19 @@ describe("KataDaemonSwitcher", () => {
     const menu = container.querySelector(".daemon-menu");
     expect(menu).toBeTruthy();
     expect(menu!.getAttribute("data-align")).toBe("start");
+  });
+
+  it("shows an active daemon connection error without opening the menu", () => {
+    render(KataDaemonSwitcher, {
+      props: {
+        daemons,
+        activeId: "home",
+        activeStatusLabel: "Connection failed",
+        activeStatusTone: "error",
+        onSelect: () => {},
+      },
+    });
+
+    expect(screen.getByRole("status", { name: "Connection: error" }).textContent).toContain("Connection failed");
   });
 });

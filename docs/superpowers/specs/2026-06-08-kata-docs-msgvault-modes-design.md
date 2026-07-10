@@ -327,11 +327,11 @@ Kata frontend adaptation:
   daemon's project issue list instead of filtering the all-project issue list
   locally (`frontend/src/lib/api/kata/taskClient.ts::searchProject`).
 - Kata workspace owns a dedicated task client; accepted provenance pins its
-  row actions, automatic reloads, workspace identity, events, and stream while
-  other surfaces follow their own selector (`frontend/src/App.svelte::kataWorkspaceAPI`).
+  selector, row actions, reloads, workspace identity, events, and stream while
+  other surfaces follow their own selection (`frontend/src/App.svelte::kataWorkspaceAPI`).
 - An explicit daemon switch clears all old daemon-scoped state before changing
-  selectors; failed replacement data is cleared before rollback, and a failed
-  rollback stays empty with its stream stopped (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
+  selectors and is disabled during mutations/switches; failed rollback stays
+  empty with its stream stopped (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
 - Replace direct daemon URL/localStorage bootstrap with calls to middleman's
   Kata daemon roster and proxy.
 - Use a middleman-owned selector header for proxied daemon requests.

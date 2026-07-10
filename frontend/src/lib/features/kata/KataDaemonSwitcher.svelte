@@ -10,10 +10,18 @@
     activeId: string | undefined;
     activeStatusLabel?: string | undefined;
     activeStatusTone?: "error" | undefined;
+    disabled?: boolean | undefined;
     onSelect: (id: string) => void;
   }
 
-  let { daemons, activeId, activeStatusLabel = undefined, activeStatusTone = undefined, onSelect }: Props = $props();
+  let {
+    daemons,
+    activeId,
+    activeStatusLabel = undefined,
+    activeStatusTone = undefined,
+    disabled = false,
+    onSelect,
+  }: Props = $props();
 
   let open = $state(false);
   const active = $derived(
@@ -23,6 +31,7 @@
   );
 
   function choose(id: string): void {
+    if (disabled) return;
     open = false;
     if (id !== active?.id) onSelect(id);
   }
@@ -49,12 +58,20 @@
     title="Switch Kata daemon"
     aria-haspopup="menu"
     aria-expanded={open}
-    onclick={() => (open = !open)}
+    {disabled}
+    onclick={() => {
+      if (!disabled) open = !open;
+    }}
   >
     <ServerIcon class="chip-icon" size={13} strokeWidth={1.9} aria-hidden="true" />
     <span class="chip-label">{active?.id ?? "kata"}</span>
     <ChevronDownIcon size={12} strokeWidth={2} aria-hidden="true" />
   </button>
+  {#if activeStatusLabel}
+    <span class="daemon-status" class:error={activeStatusTone === "error"} role="status" aria-label="Connection: error">
+      {activeStatusLabel}
+    </span>
+  {/if}
 
   {#if open}
     <div class="daemon-menu" data-align="start" role="menu" aria-label="Configured Kata daemons">
@@ -66,6 +83,7 @@
           data-testid={`daemon-row-${daemon.id}`}
           role="menuitemradio"
           aria-checked={daemon.id === active?.id}
+          {disabled}
           onclick={() => choose(daemon.id)}
         >
           <span class={`dot dot--${daemonStatusTone(daemon)}`} aria-hidden="true"></span>
@@ -119,6 +137,16 @@
   .chip-icon {
     color: var(--text-muted);
     flex: none;
+  }
+
+  .daemon-status {
+    align-self: center;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .daemon-status.error {
+    color: var(--accent-red);
   }
 
   .dot {

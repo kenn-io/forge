@@ -125,7 +125,8 @@
   const activeSplitSize = $derived(splitSizes[splitOrientation]);
   const graphLayoutDirection = $derived(graphLayoutDirectionForSplit(splitOrientation));
   const activeKataDaemonId = $derived(
-    getActiveKataDaemon() ??
+    store.daemonId ??
+      getActiveKataDaemon() ??
       getDefaultKataDaemon() ??
       daemonInfos.find((daemon) => daemon.default)?.id ??
       daemonInfos[0]?.id,
@@ -619,8 +620,9 @@
   }
 
   async function switchKataDaemon(id: string): Promise<void> {
-    if (switchingDaemon) return;
+    if (switchingDaemon || viewLoading || store.hasPendingMutations) return;
     const previousExplicitDaemon = getActiveKataDaemon();
+    const previousDaemon = store.daemonId ?? activeKataDaemonId;
     if (id === activeKataDaemonId) return;
 
     const generation = beginNavigation();
@@ -646,7 +648,7 @@
       }, "daemon");
       if (!ok) {
         store.clearDaemonState(previousView);
-        setActiveKataDaemon(previousExplicitDaemon);
+        setActiveKataDaemon(previousDaemon);
         const restored = await runViewTask(async () => {
           await store.bootstrap(previousView, previousIssueUID);
           await store.updateSearchFilters(previousFilters);
@@ -658,6 +660,7 @@
           }
         }, "daemon");
         if (restored) {
+          setActiveKataDaemon(previousExplicitDaemon);
           await store.syncEventCursor();
           startEventStream();
         }
@@ -908,6 +911,7 @@
           activeId={activeKataDaemonId}
           activeStatusLabel={activeDaemonStatusLabel()}
           activeStatusTone={activeDaemonStatusLabel() ? "error" : undefined}
+          disabled={switchingDaemon || viewLoading || store.hasPendingMutations}
           onSelect={(id) => {
             void switchKataDaemon(id);
           }}

@@ -1385,6 +1385,32 @@ describe("kata workspace store", () => {
     expect(store.selectedIssue?.issue.revision).toBe(3);
   });
 
+  test("keeps daemon switching blocked until queued metadata patches finish", async () => {
+    const api = createFakeKataTaskAPI();
+    const firstPatch = deferred<{ changed: boolean; issue: KataTaskSummary; etag: string }>();
+    const secondPatch = deferred<{ changed: boolean; issue: KataTaskSummary; etag: string }>();
+    api.mocks.patchIssueMetadata.mockReturnValueOnce(firstPatch.promise).mockReturnValueOnce(secondPatch.promise);
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap();
+
+    const first = store.patchMetadata("issue-pay-rent", "fixture-user", { scheduled_on: "2026-05-20" });
+    const second = store.patchMetadata("issue-pay-rent", "fixture-user", { deadline_on: "2026-05-21" });
+    await vi.waitFor(() => {
+      expect(api.mocks.patchIssueMetadata).toHaveBeenCalledTimes(1);
+      expect(store.hasPendingMutations).toBe(true);
+    });
+
+    firstPatch.resolve({ changed: true, issue: { ...issues[0]!, revision: 2 }, etag: '"rev-2"' });
+    await vi.waitFor(() => {
+      expect(api.mocks.patchIssueMetadata).toHaveBeenCalledTimes(2);
+      expect(store.hasPendingMutations).toBe(true);
+    });
+    secondPatch.resolve({ changed: true, issue: { ...issues[0]!, revision: 3 }, etag: '"rev-3"' });
+    await Promise.all([first, second]);
+
+    expect(store.hasPendingMutations).toBe(false);
+  });
+
   test("moveIssue uses the selected ETag and refreshes projects", async () => {
     const api = createFakeKataTaskAPI();
     const store = createKataWorkspaceStore({ api });

@@ -296,6 +296,8 @@ export class KataWorkspaceStore {
   searchFilters = $state.raw<KataTaskSearchFilters>(defaultKataTaskSearchFilters());
   duplicateCandidates = $state.raw<KataDuplicateCandidateDisplay[]>([]);
   pendingSelectionUID = $state<string | null>(null);
+  pendingMutationCount = $state(0);
+  hasPendingMutations = $derived(this.pendingMutationCount > 0);
   private taskCache = $state.raw<Map<string, KataTaskSummary>>(new Map());
   cachedTasks = $derived([...this.taskCache.values()]);
 
@@ -906,18 +908,23 @@ export class KataWorkspaceStore {
     operation: (target: KataTaskMutationTarget) => Promise<KataTaskMutationResponse>,
     options: { preserveSelection?: boolean } = {},
   ): Promise<void> {
-    const preserveSelection = options.preserveSelection ?? true;
-    const target = this.targetForIssue(uid);
-    const selectionBeforeMutation = this.detailRequestID;
-    const result = await operation(target);
-    this.captureMutationETag(result);
-    const currentSelectedUID = this.pendingSelectionUID ?? this.selectedIssue?.issue.uid;
-    const preferredUID = preserveSelection
-      ? selectionBeforeMutation === this.detailRequestID
-        ? uid
-        : currentSelectedUID
-      : undefined;
-    await this.refreshCurrentView(preferredUID);
+    this.pendingMutationCount += 1;
+    try {
+      const preserveSelection = options.preserveSelection ?? true;
+      const target = this.targetForIssue(uid);
+      const selectionBeforeMutation = this.detailRequestID;
+      const result = await operation(target);
+      this.captureMutationETag(result);
+      const currentSelectedUID = this.pendingSelectionUID ?? this.selectedIssue?.issue.uid;
+      const preferredUID = preserveSelection
+        ? selectionBeforeMutation === this.detailRequestID
+          ? uid
+          : currentSelectedUID
+        : undefined;
+      await this.refreshCurrentView(preferredUID);
+    } finally {
+      this.pendingMutationCount -= 1;
+    }
   }
 
   private targetForIssue(uid: string): KataTaskMutationTarget {

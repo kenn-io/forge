@@ -376,3 +376,30 @@ Clear daemon-scoped display state before changing the selector. On replacement f
 - [x] **Step 4: Run final verification and commit**
 
 Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.
+
+### Task 7: Align selector and mutation lifecycle with accepted provenance
+
+**Files:**
+
+- Modify: `frontend/src/lib/stores/kata-workspace.svelte.ts`
+- Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
+- Modify: `frontend/src/lib/features/kata/KataDaemonSwitcher.svelte`
+- Test: `frontend/src/lib/stores/kata-workspace.svelte.test.ts`
+- Test: `frontend/src/lib/features/kata/KataDaemonSwitcher.test.ts`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+
+- [x] **Step 1: Keep selector identity on the accepted workspace daemon**
+
+Render and compare explicit choices against accepted provenance. Capture that daemon for rollback even when a refreshed roster advertises another default.
+
+- [x] **Step 2: Block switching through mutation and switch transitions**
+
+Track task mutations through their post-mutation refresh and disable the selector while mutation, view, or switch work is active, including overlapping selector choices.
+
+- [x] **Step 3: Cover drifted selection and terminal rollback failure**
+
+After browser-side default drift, fail a third-daemon switch and prove rollback restores the accepted daemon before a real switch to the displayed default. Also prove double failure leaves empty state, a stopped stream, and a visible connection error.
+
+- [x] **Step 4: Run final verification and commit**
+
+Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.

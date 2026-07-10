@@ -3671,6 +3671,8 @@ test("kata workspace switches between configured external daemons", async ({ pag
     await expect(page.getByTestId("daemon-chip")).toContainText("work");
     await expect(taskList.getByRole("button", { name: /Ship the release/ })).toBeVisible();
     await expect(taskList.getByRole("button", { name: /Rake the yard/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Work\s+1$/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Home\s+1$/ })).toHaveCount(0);
   } finally {
     await server.stop();
     kataHome.restore();

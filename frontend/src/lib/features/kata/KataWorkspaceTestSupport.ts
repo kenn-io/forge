@@ -242,6 +242,7 @@ function createDaemonWorkspaceAPI(rowsByDaemon: Record<string, KataTaskSummary[]
   }
 
   return {
+    bindWorkflowDaemon: vi.fn(),
     instance: vi.fn(
       async (): Promise<KataInstanceResponse> => ({
         instance_uid: "instance-1",

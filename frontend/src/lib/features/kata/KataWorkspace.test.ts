@@ -810,6 +810,7 @@ describe("KataWorkspace", () => {
     });
     expect(screen.queryByRole("heading", { name: "Pay rent" })).toBeNull();
     expect(api.issues).toHaveBeenCalledTimes(2);
+    expect(api.bindWorkflowDaemon).toHaveBeenCalledWith();
   });
 
   it("keeps the daemon switcher visible for a single daemon after connecting", async () => {
@@ -1557,9 +1558,13 @@ describe("KataWorkspace", () => {
 
     await waitFor(() => {
       expect(getActiveKataDaemon()).toBe("work");
-      expect(within(links).getByText("Work linked task")).toBeTruthy();
+      const currentDetail = screen.getByRole("region", { name: "Task detail" });
+      const currentLinks = within(currentDetail).getByRole("region", { name: "Links" });
+      expect(within(currentLinks).getByText("Work linked task")).toBeTruthy();
     });
-    expect(within(links).queryByText("Home linked task")).toBeNull();
+    const currentDetail = screen.getByRole("region", { name: "Task detail" });
+    const currentLinks = within(currentDetail).getByRole("region", { name: "Links" });
+    expect(within(currentLinks).queryByText("Home linked task")).toBeNull();
   });
 
   it("resets detail drafts when switching selected tasks", async () => {

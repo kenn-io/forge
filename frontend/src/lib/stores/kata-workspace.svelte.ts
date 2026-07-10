@@ -310,6 +310,11 @@ export class KataWorkspaceStore {
     this.api = options.api ?? createKataTaskAPI();
   }
 
+  clearDaemonBinding(): void {
+    this.daemonId = undefined;
+    this.api.bindWorkflowDaemon?.();
+  }
+
   async bootstrap(
     viewName: KataTaskViewName = "today",
     preferredIssueUID?: string | null,

@@ -636,6 +636,8 @@
     // daemon reload: its failure mid-switch would otherwise surface a
     // stale error from the previous daemon.
     store.invalidatePendingLoads();
+    store.clearSelection();
+    store.clearDaemonBinding();
     setActiveKataDaemon(id);
     stopEventStream();
     try {

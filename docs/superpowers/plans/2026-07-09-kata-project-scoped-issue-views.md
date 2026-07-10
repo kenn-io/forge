@@ -326,3 +326,24 @@ Resolve the effective workflow daemon once at the start of `events()` and send t
 - [x] **Step 5: Run final verification and commit**
 
 Run the complete task-client unit suite, full Vite+ suite, and complete Chromium/Firefox Kata Playwright spec before committing.
+
+### Task 5: Keep explicit daemon-switch bootstrap coherent
+
+**Files:**
+
+- Modify: `frontend/src/lib/stores/kata-workspace.svelte.ts`
+- Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
+- Test: `frontend/src/lib/features/kata/KataWorkspace.test.ts`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+
+- [x] **Step 1: Reproduce mixed daemon bootstrap**
+
+Assert the switch clears the client binding and that the full-stack sidebar replaces the old daemon's project catalog alongside the new task rows.
+
+- [x] **Step 2: Clear old selection and binding at the explicit switch boundary**
+
+After invalidating pending loads, clear the old selected task and workflow daemon before setting the new active daemon. The subsequent bootstrap can then route instance, projects, issues, and stream setup consistently; failed switches re-bootstrap the captured previous daemon and selection.
+
+- [x] **Step 3: Run final verification and commit**
+
+Run the full affected frontend and Kata Playwright suites before committing.

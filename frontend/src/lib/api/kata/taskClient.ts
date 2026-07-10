@@ -1,4 +1,4 @@
-import { getActiveKataDaemon } from "../../stores/active-kata-daemon.svelte.js";
+import { getActiveKataDaemon, getDefaultKataDaemon } from "../../stores/active-kata-daemon.svelte.js";
 import { KATA_DAEMON_HEADER, kataProxyPath, kataTaskDetailPath, withKataDaemon } from "./daemons.js";
 import {
   normalizeKataEvents,
@@ -41,6 +41,7 @@ import { localDateString } from "../dates.js";
 export interface CreateKataTaskAPIOptions {
   fetchImpl?: typeof fetch | undefined;
   getDaemonId?: (() => string | undefined) | undefined;
+  getDefaultDaemonId?: (() => string | undefined) | undefined;
 }
 
 interface RequestResult<T> {
@@ -257,6 +258,7 @@ export function getLastKataTaskResponseHeaders(api: KataTaskAPI): Headers | unde
 
 export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataTaskAPI {
   const getDaemonId = options.getDaemonId ?? getActiveKataDaemon;
+  const getDefaultDaemonId = options.getDefaultDaemonId ?? getDefaultKataDaemon;
   const fetchImpl = withKataDaemon(options.fetchImpl ?? fetch, getDaemonId);
   let api: KataTaskAPI;
 
@@ -582,7 +584,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     },
 
     async issues(query) {
-      const daemonId = getDaemonId();
+      const daemonId = getDaemonId() ?? getDefaultDaemonId();
       const status = query.view === "logbook" ? "closed" : "open";
       const genericIssuesPromise =
         query.project_uid === undefined ? fetchIssuesByStatus(status, daemonId, undefined, true) : undefined;
@@ -606,7 +608,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     },
 
     async search(filters, opts): Promise<KataTaskSearchResponse> {
-      const daemonId = opts?.daemonId ?? getDaemonId();
+      const daemonId = opts?.daemonId ?? getDaemonId() ?? getDefaultDaemonId();
       const issues =
         filters.scope.kind === "project"
           ? await searchProject(

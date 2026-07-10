@@ -4,7 +4,7 @@
 
 **Goal:** Ensure project-scoped Kata views render only rows returned by the selected project's issue-list endpoint.
 
-**Architecture:** Keep unscoped views on the generic issue list and preserve their parallel project/list loading. For scoped views and searches, snapshot and explicitly pin the starting daemon, resolve `project_uid` from its project catalog before loading issues, pass the resolved project into the existing `fetchIssuesByStatus` helper, and treat an unknown UID as an empty scope.
+**Architecture:** Keep unscoped views on the generic issue list and preserve their parallel project/list loading. For scoped views and searches, resolve `activeDaemonId ?? rosterDefaultDaemonId` to a concrete starting daemon, resolve `project_uid` from its project catalog before loading issues, pass the resolved project into the existing `fetchIssuesByStatus` helper, and treat an unknown UID as an empty scope.
 
 **Tech Stack:** TypeScript, Vite+ unit tests, Playwright full-stack e2e fixture.
 
@@ -13,7 +13,7 @@
 - Do not add a compatibility shim or new API route.
 - Preserve generic all-project loading for queries without `project_uid`.
 - Preserve the bounded `limit=500` query for logbook views.
-- Pin every multi-request issue/search operation to its starting daemon, including an empty header for the default daemon.
+- Pin every multi-request issue/search operation to its concrete starting daemon, including the roster's default ID when no daemon is explicitly active.
 - Run the full frontend Vite+ suite and affected Playwright Kata test after the final edit.
 
 ---
@@ -117,7 +117,7 @@ Expected: FAIL because the generic route is requested and its contaminating row 
 Replace the unconditional issue-list promise in `issues()` with project-aware selection while retaining parallel loading for unscoped views:
 
 ```typescript
-const daemonId = getDaemonId();
+const daemonId = getDaemonId() ?? getDefaultDaemonId();
 const status = query.view === "logbook" ? "closed" : "open";
 const genericIssuesPromise =
   query.project_uid === undefined ? fetchIssuesByStatus(status, daemonId, undefined, true) : undefined;
@@ -158,3 +158,87 @@ Expected: both commands exit zero.
 - [x] **Step 8: Commit the review fix**
 
 Stage only the plan, client, client test, and Kata e2e spec, then create a hook-enforced conventional commit explaining that scoped routed views previously still consumed the generic list.
+
+### Task 2: Pin multi-request view and search operations
+
+**Files:**
+
+- Modify: `frontend/src/lib/api/kata/taskClient.ts:41-45,258-270,343-475,584-622`
+- Test: `frontend/src/lib/api/kata/taskClient.test.ts`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+- Modify: `docs/superpowers/specs/2026-07-09-kata-project-scoped-issue-views-design.md`
+
+**Interfaces:**
+
+- Consumes: `getActiveKataDaemon()` and `getDefaultKataDaemon()` from the active-daemon store.
+- Produces: operation-wide concrete daemon pinning for `KataTaskAPI.issues()` and `KataTaskAPI.search()`.
+
+- [x] **Step 1: Add failing unit regressions for issue views, searches, and label hydration**
+
+Add `getDefaultDaemonId?: () => string | undefined` to the test-injectable client options. In `taskClient.test.ts`, use fetch wrappers that change the active or default getter after the catalog response and assert the captured headers:
+
+```typescript
+expect(issueViewCalls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home"]);
+expect(projectSearchCalls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home"]);
+expect(labelHydrationCalls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home", "home"]);
+```
+
+The label-hydration case must use `query: "rent"`, `label: "money"`, a search response without labels, and `/api/v1/projects/1/issues?status=open` returning the `money` label.
+
+- [x] **Step 2: Run the focused unit regressions and verify they fail on daemon drift**
+
+Run:
+
+```bash
+cd frontend && ../node_modules/.bin/vp test run --project unit src/lib/api/kata/taskClient.test.ts -t "pins project-scoped|hydrates labels"
+```
+
+Expected before the fix: later requests carry `work` or an empty header instead of the starting concrete `home` ID.
+
+- [x] **Step 3: Add a failing two-daemon full-stack default-change regression**
+
+Extend `BackendState` and `KataBackendOptions` with `projectsBarrier?: Promise<void>` and await it before the fixture returns `GET /api/v1/projects`. Start `home` and `work` backends with the same project ID/UID but distinct rows, configure `home` as the default, navigate directly to that project scope, and wait until the home catalog request stalls. Rewrite the Kata config with `work` as `active_daemon`, release the barrier, then assert:
+
+```typescript
+await expect(taskList.getByRole("button", { name: /Home scoped task/ })).toBeVisible();
+await expect(taskList.getByRole("button", { name: /Foreign work task/ })).toHaveCount(0);
+await expect.poll(() => home.state.seenPaths).toContain("GET /api/v1/projects/7/issues?status=open");
+expect(work.state.seenPaths).not.toContain("GET /api/v1/projects/7/issues?status=open");
+```
+
+- [x] **Step 4: Run the full-stack regression and verify the foreign row wins before the fix**
+
+Run:
+
+```bash
+cd frontend && MIDDLEMAN_E2E_OUTPUT_FILE=../tmp/kata-default-daemon-red.log node ./scripts/run-e2e-to-file.ts --project=chromium tests/e2e-full/kata.spec.ts -g "starting default daemon when configuration changes"
+```
+
+Expected before the fix: FAIL because `Foreign work task` renders after the server resolves the changed default for the project-list request.
+
+- [x] **Step 5: Resolve the concrete daemon and propagate pinned headers**
+
+Resolve the operation daemon once at both public entry points:
+
+```typescript
+const daemonId = opts?.daemonId ?? getDaemonId() ?? getDefaultDaemonId();
+```
+
+Thread `pinned = true` through `fetchProjects`, `fetchIssuesByStatus`, `searchAllProjects`, `searchProjectIssueList`, `searchProject`, and `hydrateProjectSearchRows`. Each request must choose `pinnedDaemonHeaders(daemonId)` when pinned so catalog, open/closed lists, text search, and label hydration share the same concrete header.
+
+- [x] **Step 6: Run focused and full verification**
+
+Run:
+
+```bash
+cd frontend && ../node_modules/.bin/vp test run --project unit src/lib/api/kata/taskClient.test.ts
+cd frontend && MIDDLEMAN_E2E_OUTPUT_FILE=../tmp/kata-default-daemon-green.log node ./scripts/run-e2e-to-file.ts --project=chromium tests/e2e-full/kata.spec.ts -g "starting default daemon when configuration changes"
+cd frontend && ../node_modules/.bin/vp test --maxWorkers=2
+cd frontend && MIDDLEMAN_E2E_OUTPUT_FILE=../tmp/kata-e2e.log node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts
+```
+
+Expected: all commands exit zero; the full Vite+ and complete Chromium/Firefox Kata suites pass.
+
+- [x] **Step 7: Commit the daemon-pinning follow-up**
+
+Stage the client, unit tests, Kata full-stack spec, design, and plan. Create a hook-enforced conventional commit explaining that concrete daemon IDs prevent numeric project IDs from crossing daemon boundaries.

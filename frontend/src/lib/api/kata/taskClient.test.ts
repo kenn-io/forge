@@ -443,7 +443,7 @@ describe("kata task HTTP client", () => {
   });
 
   test("pins project-scoped issue views to the default daemon", async () => {
-    let daemonId: string | undefined;
+    let defaultDaemonId = "home";
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/projects?include=stats": {
         body: { projects: [project("project-work", "Work")] },
@@ -453,18 +453,19 @@ describe("kata task HTTP client", () => {
       },
     });
     const api = createKataTaskAPI({
-      getDaemonId: () => daemonId,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => defaultDaemonId,
       fetchImpl: async (input, init) => {
         const response = await fetchImpl(input, init);
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-        if (proxyPath(url) === "/api/v1/projects?include=stats") daemonId = "work";
+        if (proxyPath(url) === "/api/v1/projects?include=stats") defaultDaemonId = "work";
         return response;
       },
     });
 
     await api.issues({ view: "all", project_uid: "project-work" });
 
-    expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["", ""]);
+    expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home"]);
   });
 
   test("searches a project by integer project id and normalizes server search results", async () => {
@@ -625,6 +626,7 @@ describe("kata task HTTP client", () => {
   });
 
   test("project search hydrates labels from the project issue list before applying the label filter", async () => {
+    let defaultDaemonId = "home";
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/projects?include=stats": {
         body: { projects: [project("project-work", "Work")] },
@@ -676,7 +678,15 @@ describe("kata task HTTP client", () => {
         },
       },
     });
-    const api = createKataTaskAPI({ fetchImpl });
+    const api = createKataTaskAPI({
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => defaultDaemonId,
+      fetchImpl: async (input, init) => {
+        const response = await fetchImpl(input, init);
+        defaultDaemonId = "work";
+        return response;
+      },
+    });
 
     const results = await api.search({
       scope: { kind: "project", project_uid: "project-work" },
@@ -693,6 +703,7 @@ describe("kata task HTTP client", () => {
       "/api/v1/projects/1/search?q=rent",
       "/api/v1/projects/1/issues?status=open",
     ]);
+    expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home", "home"]);
   });
 
   test("project search trusts server-ranked text matches outside the returned issue summary", async () => {

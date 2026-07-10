@@ -1101,6 +1101,31 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return true;
   }
 
+  async function deleteComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
+    const ref = currentDetailRef(owner, name, number);
+    storeError = null;
+    try {
+      const { error: requestError } = await apiClient.DELETE(providerItemPath("pulls", ref, "/comments/{comment_id}"), {
+        headers: { "Content-Type": "application/json" },
+        params: {
+          path: {
+            ...providerRouteParams(ref),
+            number,
+            comment_id: commentID,
+          },
+        },
+      });
+      if (requestError) {
+        throw new Error(apiErrorMessage(requestError, "failed to delete comment"));
+      }
+    } catch (err) {
+      storeError = err instanceof Error ? err.message : String(err);
+      return false;
+    }
+    await refreshDetail(owner, name, number, syncGeneration, ref);
+    return true;
+  }
+
   async function replyToDiscussion(
     owner: string,
     name: string,
@@ -1221,6 +1246,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     toggleDetailPRStar,
     submitComment,
     editComment,
+    deleteComment,
     replyToDiscussion,
     applyReviewSuggestions,
   };

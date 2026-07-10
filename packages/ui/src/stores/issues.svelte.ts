@@ -688,6 +688,34 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return true;
   }
 
+  async function deleteIssueComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
+    const ref = currentIssueDetailRef(owner, name, number);
+    detailError = null;
+    try {
+      const { error: requestError } = await apiClient.DELETE(
+        providerItemPath("issues", ref, "/comments/{comment_id}"),
+        {
+          headers: { "Content-Type": "application/json" },
+          params: {
+            path: {
+              ...providerRouteParams(ref),
+              number,
+              comment_id: commentID,
+            },
+          },
+        },
+      );
+      if (requestError) {
+        throw new Error(apiErrorMessage(requestError, "failed to delete comment"));
+      }
+    } catch (err) {
+      detailError = err instanceof Error ? err.message : String(err);
+      return false;
+    }
+    await refreshIssueDetail(owner, name, number, ref);
+    return true;
+  }
+
   // Replaces the in-memory issue body without touching the server. Pair
   // with saveIssueBodyInBackground for instant-feedback edits like
   // task-list checkbox clicks. Marks the body as unsaved so a
@@ -999,6 +1027,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     setIssueAssignees,
     submitIssueComment,
     editIssueComment,
+    deleteIssueComment,
     setLocalIssueBody,
     saveIssueBodyInBackground,
     hasUnsavedLocalBody,

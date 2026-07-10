@@ -40,6 +40,55 @@ function makeDetail(events: unknown[] = [], number = 1): MockDetail {
 }
 
 describe("createDetailStore submitComment", () => {
+  it("deletes a PR comment and refreshes the detail", async () => {
+    const get = vi.fn(async () => ({ data: makeDetail([]) }));
+    const del = vi.fn(async () => ({ error: undefined }));
+    const store = createDetailStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: del,
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadDetail("octo", "repo", 1, pullRef);
+    await Promise.resolve();
+    get.mockClear();
+
+    const ok = await store.deleteComment("octo", "repo", 1, 44);
+
+    expect(ok).toBe(true);
+    expect(del).toHaveBeenCalledWith("/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}", {
+      headers: { "Content-Type": "application/json" },
+      params: {
+        path: { provider: "github", owner: "octo", name: "repo", number: 1, comment_id: 44 },
+      },
+    });
+    expect(get).toHaveBeenCalled();
+  });
+
+  it("keeps PR detail unchanged when comment deletion fails", async () => {
+    const get = vi.fn(async () => ({ data: makeDetail([{ ID: 44 }]) }));
+    const store = createDetailStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: vi.fn(async () => ({ error: { detail: "provider denied deletion" } })),
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadDetail("octo", "repo", 1, pullRef);
+    await Promise.resolve();
+    get.mockClear();
+
+    const ok = await store.deleteComment("octo", "repo", 1, 44);
+
+    expect(ok).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+    expect(store.getDetailError()).toBe("provider denied deletion");
+    expect(store.getDetail()?.events).toEqual([{ ID: 44 }]);
+  });
+
   it("never flips loading flag while refreshing after a comment", async () => {
     const detailData = makeDetail();
     const loadingDuringRefresh: boolean[] = [];

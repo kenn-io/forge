@@ -40,6 +40,33 @@ function makeDetail(events: unknown[] = [], number = 1): MockIssueDetail {
 }
 
 describe("createIssuesStore submitIssueComment", () => {
+  it("deletes an issue comment and refreshes the detail", async () => {
+    const get = vi.fn(async () => ({ data: makeDetail([]) }));
+    const del = vi.fn(async () => ({ error: undefined }));
+    const store = createIssuesStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: del,
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadIssueDetail("octo", "repo", 1, issueRef);
+    await Promise.resolve();
+    get.mockClear();
+
+    const ok = await store.deleteIssueComment("octo", "repo", 1, 44);
+
+    expect(ok).toBe(true);
+    expect(del).toHaveBeenCalledWith("/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}", {
+      headers: { "Content-Type": "application/json" },
+      params: {
+        path: { provider: "github", owner: "octo", name: "repo", number: 1, comment_id: 44 },
+      },
+    });
+    expect(get).toHaveBeenCalled();
+  });
+
   it("refreshes the issues list after posting a comment when on the issues page", async () => {
     const detailData = makeDetail();
     const getCalls: string[] = [];

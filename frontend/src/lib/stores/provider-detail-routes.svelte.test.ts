@@ -119,6 +119,7 @@ describe("provider-aware detail API routes", () => {
       DELETE: vi.fn(),
     } as unknown as MiddlemanClient;
     const showFlash = vi.spyOn(flash, "showFlash").mockImplementation(() => {});
+    showFlash.mockClear();
     const store = createDetailStore({ client });
 
     await store.loadDetail("acme", "widgets", 1, {
@@ -134,7 +135,9 @@ describe("provider-aware detail API routes", () => {
       repoPath: "acme/widgets",
     });
 
-    expect(showFlash).toHaveBeenCalledWith("Could not refresh CI checks; showing last known status.");
+    expect(showFlash).toHaveBeenCalledWith("Could not refresh CI checks; showing last known status.", {
+      tone: "warning",
+    });
     showFlash.mockRestore();
   });
 
@@ -161,6 +164,7 @@ describe("provider-aware detail API routes", () => {
       DELETE: vi.fn(),
     } as unknown as MiddlemanClient;
     const showFlash = vi.spyOn(flash, "showFlash").mockImplementation(() => {});
+    showFlash.mockClear();
     const store = createDetailStore({ client });
 
     await store.loadDetail("acme", "widgets", 1, {
@@ -176,7 +180,7 @@ describe("provider-aware detail API routes", () => {
       repoPath: "acme/widgets",
     });
 
-    expect(showFlash).toHaveBeenCalledWith("refresh PR CI: upstream unavailable");
+    expect(showFlash).toHaveBeenCalledWith("refresh PR CI: upstream unavailable", { tone: "danger" });
     showFlash.mockRestore();
   });
 

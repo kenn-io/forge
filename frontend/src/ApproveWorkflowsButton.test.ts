@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import * as flash from "@middleman/ui/stores/flash";
 
 const mockPost = vi.fn();
 const mockRefreshDetailOnly = vi.fn();
@@ -32,6 +33,7 @@ describe("ApproveWorkflowsButton", () => {
 
   afterEach(() => {
     cleanup();
+    for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
   });
 
   it("renders a count when more than one workflow needs approval", () => {
@@ -87,7 +89,7 @@ describe("ApproveWorkflowsButton", () => {
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
 
-  it("shows an inline error when approval fails", async () => {
+  it("shows a danger flash when approval fails", async () => {
     mockPost.mockResolvedValue({
       error: { detail: "GitHub API error" },
     });
@@ -106,7 +108,11 @@ describe("ApproveWorkflowsButton", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /^approve workflows$/i }));
 
-    expect(screen.getByText("GitHub API error")).toBeTruthy();
+    expect(flash.getFlash()).toMatchObject({
+      message: "GitHub API error",
+      tone: "danger",
+    });
+    expect(screen.queryByText("GitHub API error")).toBeNull();
     expect(mockRefreshDetailOnly).not.toHaveBeenCalled();
   });
 });

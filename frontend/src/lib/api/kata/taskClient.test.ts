@@ -442,6 +442,31 @@ describe("kata task HTTP client", () => {
     expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home"]);
   });
 
+  test("pins project-scoped issue views to the default daemon", async () => {
+    let daemonId: string | undefined;
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/projects?include=stats": {
+        body: { projects: [project("project-work", "Work")] },
+      },
+      "/api/v1/projects/1/issues?status=open": {
+        body: { issues: [issue("issue-work", "Work task", "project-work")] },
+      },
+    });
+    const api = createKataTaskAPI({
+      getDaemonId: () => daemonId,
+      fetchImpl: async (input, init) => {
+        const response = await fetchImpl(input, init);
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        if (proxyPath(url) === "/api/v1/projects?include=stats") daemonId = "work";
+        return response;
+      },
+    });
+
+    await api.issues({ view: "all", project_uid: "project-work" });
+
+    expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["", ""]);
+  });
+
   test("searches a project by integer project id and normalizes server search results", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/projects?include=stats": {
@@ -516,6 +541,37 @@ describe("kata task HTTP client", () => {
       "/api/v1/projects?include=stats",
       "/api/v1/projects/1/issues?status=open",
     ]);
+  });
+
+  test("pins project-scoped search requests to the starting daemon", async () => {
+    let daemonId = "home";
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/projects?include=stats": {
+        body: { projects: [project("project-work", "Work")] },
+      },
+      "/api/v1/projects/1/issues?status=open": {
+        body: { issues: [issue("issue-work", "Work backlog", "project-work")] },
+      },
+    });
+    const api = createKataTaskAPI({
+      getDaemonId: () => daemonId,
+      fetchImpl: async (input, init) => {
+        const response = await fetchImpl(input, init);
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        if (proxyPath(url) === "/api/v1/projects?include=stats") daemonId = "work";
+        return response;
+      },
+    });
+
+    await api.search({
+      scope: { kind: "project", project_uid: "project-work" },
+      status: "open",
+      owner: "",
+      label: "",
+      query: "",
+    });
+
+    expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home"]);
   });
 
   test("project search enriches raw search issues with the scoped project identity", async () => {

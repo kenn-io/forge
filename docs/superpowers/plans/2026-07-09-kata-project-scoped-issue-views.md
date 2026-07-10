@@ -4,7 +4,7 @@
 
 **Goal:** Ensure project-scoped Kata views render only rows returned by the selected project's issue-list endpoint.
 
-**Architecture:** Keep unscoped views on the generic issue list and preserve their parallel project/list loading. For scoped views, resolve `project_uid` from the project catalog before loading issues, pass the resolved project into the existing `fetchIssuesByStatus` helper, and treat an unknown UID as an empty scope.
+**Architecture:** Keep unscoped views on the generic issue list and preserve their parallel project/list loading. For scoped views and searches, snapshot and explicitly pin the starting daemon, resolve `project_uid` from its project catalog before loading issues, pass the resolved project into the existing `fetchIssuesByStatus` helper, and treat an unknown UID as an empty scope.
 
 **Tech Stack:** TypeScript, Vite+ unit tests, Playwright full-stack e2e fixture.
 
@@ -13,6 +13,7 @@
 - Do not add a compatibility shim or new API route.
 - Preserve generic all-project loading for queries without `project_uid`.
 - Preserve the bounded `limit=500` query for logbook views.
+- Pin every multi-request issue/search operation to its starting daemon, including an empty header for the default daemon.
 - Run the full frontend Vite+ suite and affected Playwright Kata test after the final edit.
 
 ---
@@ -118,13 +119,14 @@ Replace the unconditional issue-list promise in `issues()` with project-aware se
 ```typescript
 const daemonId = getDaemonId();
 const status = query.view === "logbook" ? "closed" : "open";
-const genericIssuesPromise = query.project_uid === undefined ? fetchIssuesByStatus(status, daemonId) : undefined;
-const projectsPromise = fetchProjects(daemonId);
+const genericIssuesPromise =
+  query.project_uid === undefined ? fetchIssuesByStatus(status, daemonId, undefined, true) : undefined;
+const projectsPromise = fetchProjects(daemonId, true);
 const issuesPromise =
   genericIssuesPromise ??
   projectsPromise.then((projects) => {
     const project = projects.projects.find((item) => item.uid === query.project_uid);
-    return project ? fetchIssuesByStatus(status, daemonId, project) : [];
+    return project ? fetchIssuesByStatus(status, daemonId, project, true) : [];
   });
 const [issues, projects] = await Promise.all([issuesPromise, projectsPromise]);
 ```
